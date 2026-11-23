@@ -7,7 +7,7 @@
  * `tests/migration-reach.integration.test.ts` does through this function.
  *
  * See `./migration-reach` for the check that refuses unrecognized histories. This runner can
- * reconcile the known pre-merge Personal SaaS trial journal.
+ * reconcile known branch histories whose SQL is missing below Drizzle’s high-water mark.
  */
 
 import { createHash } from "node:crypto";
@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Sql, TransactionSql } from "postgres";
+import { reconcileCorsairPilotMigrations } from "./corsair-pilot-migrations";
 import {
   type AppliedMigration,
   type FolderMigration,
@@ -187,9 +188,9 @@ async function reconcileBillingJournal(
 ): Promise<boolean> {
   const stamps = [1795189760197, 1795189760198, 1795189760199];
   const tags = [
-    "0106_test_credit",
-    "0107_test_credit_reconciliation",
-    "0108_test_credit_cutoff_index",
+    "0110_test_credit",
+    "0111_test_credit_reconciliation",
+    "0112_test_credit_cutoff_index",
   ];
   const billingLength =
     stamps.findIndex((stamp) => stamp === migratorHighWaterMark(applied)) + 1;
@@ -227,6 +228,59 @@ async function reconcileBillingJournal(
   return true;
 }
 
+const CORSAIR_TAGS = new Set([
+  "0105_corsair_slack_personal",
+  "0106_corsair_slack_shared",
+  "0107_corsair_shared_storage",
+  "0108_corsair_revocation",
+]);
+
+/** Fill gaps only for an exact applied prefix of one of the two parent journals. */
+async function reconcileParentJournal(
+  tx: TransactionSql,
+  journal: MigrationsJournal,
+  migrationsFolder: string,
+  folder: readonly FolderMigration[],
+  saasFolder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+) {
+  const trialIndex = folder.findIndex(({ tag }) => tag === FIRST_TRIAL_TAG);
+  const corsair = folder.filter(({ tag }) => CORSAIR_TAGS.has(tag));
+  const lastSaasIndex = saasFolder.findIndex(
+    ({ tag }) => tag === "0116_test_credit_embedding_replay",
+  );
+  if (
+    trialIndex < 0 ||
+    corsair.length !== CORSAIR_TAGS.size ||
+    lastSaasIndex < 0
+  )
+    return;
+
+  const mainFolder = [...folder.slice(0, trialIndex), ...corsair];
+  const appliedByStamp = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  if (appliedByStamp.size !== applied.length) return;
+
+  const matchesPrefix = (parent: readonly FolderMigration[]) =>
+    applied.length <= parent.length &&
+    parent
+      .slice(0, applied.length)
+      .every(({ when, hash }) => appliedByStamp.get(when) === hash);
+  if (
+    !matchesPrefix(mainFolder) &&
+    !matchesPrefix(saasFolder.slice(0, lastSaasIndex + 1))
+  )
+    return;
+
+  const mark = migratorHighWaterMark(applied);
+  if (mark === undefined) return;
+  for (const migration of folder) {
+    if (migration.when <= mark && !appliedByStamp.has(migration.when))
+      await applyJournalEntry(tx, journal, migrationsFolder, migration);
+  }
+}
+
 /**
  * Check, then migrate, with nothing able to commit in between.
  *
@@ -259,25 +313,42 @@ export async function applyMigrations(
   await client.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK}, 0))`;
 
-    let applied = await appliedMigrations(tx, journal);
+    let applied = await reconcileCorsairPilotMigrations(
+      tx,
+      migrationsFolder,
+      folder,
+      await appliedMigrations(tx, journal),
+      journal,
+    );
     let outOfReach = migrationsOutOfReach(folder, applied);
-    if (
-      outOfReach.length > 0 &&
-      ((await reconcileTrialJournal(
-        tx,
-        journal,
-        migrationsFolder,
-        folder,
-        applied,
-      )) ||
+    if (outOfReach.length > 0) {
+      const saasFolder = folder.filter(({ tag }) => !CORSAIR_TAGS.has(tag));
+      if (
+        (await reconcileTrialJournal(
+          tx,
+          journal,
+          migrationsFolder,
+          saasFolder,
+          applied,
+        )) ||
         (await reconcileBillingJournal(
           tx,
           journal,
           migrationsFolder,
-          folder,
+          saasFolder,
           applied,
-        )))
-    ) {
+        ))
+      ) {
+        applied = await appliedMigrations(tx, journal);
+      }
+      await reconcileParentJournal(
+        tx,
+        journal,
+        migrationsFolder,
+        folder,
+        saasFolder,
+        applied,
+      );
       applied = await appliedMigrations(tx, journal);
       outOfReach = migrationsOutOfReach(folder, applied);
     }

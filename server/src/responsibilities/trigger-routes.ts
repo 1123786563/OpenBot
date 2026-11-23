@@ -15,6 +15,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import type { CorsairEventOperations } from "../plugins/corsair/event-operations";
+import { githubId } from "../plugins/corsair/github";
+import {
+  githubEventEnvelope,
+  githubEventSubject,
+  githubPilotEventType,
+} from "../plugins/corsair/github-event-subject";
 import {
   linearTimestampFresh,
   verifyBearer,
@@ -39,6 +46,7 @@ export type TriggerIngressDeps = {
   ingest: (event: ResponsibilityEvent) => Promise<ResponsibilityEventResult>;
   auditStore?: AuditStore;
   now?: () => number;
+  corsairEvents?: CorsairEventOperations;
 };
 export type DeliveryOutcome =
   | ({ status: "queued" } & ResponsibilityEventResult)
@@ -80,6 +88,11 @@ export async function deliverToTrigger(
     type: delivery.type.slice(0, 128) || "received",
     payload: fitPayload(delivery.payload),
   });
+  if (!result.eventId)
+    return {
+      status: "ignored",
+      reason: "Trigger excluded from Corsair cutover.",
+    };
   if (deps.auditStore && !result.duplicate)
     await recordAuditEvent(deps.auditStore, {
       eventType: "responsibility.triggered",
@@ -189,6 +202,7 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
         payload: Record<string, unknown>;
       },
       extraPass = true,
+      receiptId?: string,
     ) => {
       const filter =
         trigger.config.kind === "slack" ? null : trigger.config.filter;
@@ -199,6 +213,8 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
         extraPass &&
           (!filter || matchesFilter(filter, delivery.type, delivery.payload)),
       );
+      if (receiptId)
+        await deps.corsairEvents?.finishLegacy(receiptId, trigger.id, outcome);
       if (outcome.status === "inactive" && trigger.kind === "webhook")
         return context.json(
           { error: outcome.reason, accepted: false, queued: false },
@@ -290,11 +306,90 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
             403,
           );
         const action = str(payload.action);
-        return deliver({
-          deliveryId: signedBodyId(raw),
-          type: action ? `${event}.${action}` : event,
-          payload,
-        });
+        const eventType = action ? `${event}.${action}` : event;
+        const repositoryId = githubId.safeParse(
+          payload.repository &&
+            typeof payload.repository === "object" &&
+            "id" in payload.repository
+            ? payload.repository.id
+            : undefined,
+        );
+        const bodyId = signedBodyId(raw);
+        const { occurredAt } = githubEventSubject(eventType, payload);
+        const envelope = githubEventEnvelope.safeParse(payload);
+        const corsairEligible =
+          envelope.success &&
+          !!envelope.data.installation &&
+          !!envelope.data.repository;
+        const receipt =
+          deps.corsairEvents?.tracks("github") && repositoryId.success
+            ? await deps.corsairEvents.receiveLegacy({
+                provider: "github",
+                source: String(repositoryId.data),
+                eventKey: bodyId.slice("body-".length),
+                eventType,
+                occurredAt,
+                corsairEligible,
+                installationId:
+                  envelope.success && envelope.data.installation
+                    ? String(envelope.data.installation.id)
+                    : undefined,
+                receivedAt: new Date(now()),
+                triggerIds: [trigger.id],
+              })
+            : null;
+        if (receipt?.owner === "corsair")
+          return context.json({
+            accepted: true,
+            queued: false,
+            reason: "Corsair owns this source.",
+          });
+        if (receipt && deps.corsairEvents) {
+          const state = (
+            await deps.corsairEvents.legacyDispatchable(receipt.id)
+          ).get(trigger.id);
+          if (!state)
+            return context.json({
+              accepted: true,
+              queued: false,
+              reason: "Trigger already reconciled.",
+            });
+          if (occurredAt && trigger.createdAt > occurredAt) {
+            const outcome = {
+              status: "ignored" as const,
+              reason: "trigger-created-after-event",
+            };
+            await deps.corsairEvents.finishLegacy(
+              receipt.id,
+              trigger.id,
+              outcome,
+            );
+            return context.json(outcomeBody(outcome));
+          }
+          if (
+            state !== "queued" &&
+            githubPilotEventType.safeParse(eventType).success &&
+            (!occurredAt ||
+              (await deps.corsairEvents.requiresReplayEvidence(
+                receipt.id,
+                trigger.id,
+                occurredAt,
+                new Date(now()),
+              )))
+          ) {
+            const reason = "Historical Trigger eligibility requires review.";
+            await deps.corsairEvents.finishLegacy(receipt.id, trigger.id, {
+              status: "review",
+              reason,
+            });
+            return context.json({ accepted: true, queued: false, reason });
+          }
+        }
+        return deliver(
+          { deliveryId: bodyId, type: eventType, payload },
+          true,
+          receipt?.id,
+        );
       }
       case "linear": {
         if (

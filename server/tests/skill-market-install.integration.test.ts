@@ -1013,7 +1013,7 @@ test("a browser computer approval carries on with the market version that emitte
         resumeWaiting: async () => {
           throw new Error("Unexpected responsibility");
         },
-      },
+      } as never,
       groupConversations: { continueWaiting: (_id, run) => run() },
       approvalContinuationRunner: async (input) => {
         const carry = input.continuation;
@@ -1557,7 +1557,7 @@ for (const phase of [
           approvalService: guardedApprovals,
           executeApprovedAction: never,
           database,
-          responsibilityStore: { resumeWaiting: never },
+          responsibilityStore: { resumeWaiting: never } as never,
           groupConversations: {
             continueWaiting: async (_id, run, reason) =>
               reason ? { replyText: reason } : run(),

@@ -481,6 +481,7 @@ describe("turning an app off from its own page", () => {
     await user.click(
       await view.findByRole("switch", { name: "Turn Exa on or off" }),
     );
+    // Turning an app off asks first; the switch never moves on its own.
     await user.click(await view.findByRole("button", { name: "Turn off" }));
     expect(await view.findByText("The Connections list")).toBeTruthy();
     expect(router.state.location.pathname).toBe("/connections");

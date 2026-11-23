@@ -1,6 +1,8 @@
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { isThreadBusy } from "@openbot/toolkit/lease";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
+import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
+import { SlackEventAccessRetry } from "../plugins/corsair/slack/event-run-access";
 import { runAuthorizedWork } from "../work/execution";
 import type { WorkQueue } from "../work/queue";
 import type { ResponsibilityRunContext, ResponsibilityStore } from "./types";
@@ -109,9 +111,34 @@ export function createResponsibilityEngine(options: {
           }))
         )
           throw new Error("Responsibility work lease expired before dispatch.");
-        const context = await store.beginRun(runId, {
-          recovered: item.attempts > 1,
-        });
+        const context = await store
+          .beginRun(runId, { recovered: item.attempts > 1 })
+          .catch(async (error: unknown) => {
+            if (
+              !(
+                error instanceof GithubEventAccessRetry ||
+                error instanceof SlackEventAccessRetry
+              )
+            )
+              throw error;
+            const released = await queue.release({
+              kind: RESPONSIBILITY_RUN_KIND,
+              key: item.key,
+              owner: input.owner,
+              delayMs: 30_000,
+              reason: error.message,
+              uncounted: true,
+            });
+            if (!released)
+              throw new Error(
+                "Responsibility work lease was lost while checking event access.",
+              );
+            return "retry" as const;
+          });
+        if (context === "retry") {
+          report.busy.push(runId);
+          continue;
+        }
         if (!context) {
           await finish(item.key);
           report.skipped.push(runId);

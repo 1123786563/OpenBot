@@ -281,6 +281,7 @@ export function createDeliveryWebhookRoutes(deps: {
   approvals?: PairedApprovals;
   /** Test seam; production uses the responsibilities lane's `ingestSlackEvent`. */
   ingestSlack?: OpenTagAgentDeps["ingestSlack"];
+  corsairSlackTeamId?: string;
   /** Redeems OpenBot linked-account codes sent to the Slack app in a DM; cancels one posted in a channel. */
   identity?: OpenTagAgentDeps["identity"];
 }) {
@@ -300,6 +301,7 @@ export function createDeliveryWebhookRoutes(deps: {
       handleOpenTagRun(
         {
           opentag,
+          corsairSlackTeamId: deps.corsairSlackTeamId,
           router: deps.router,
           store: deps.store,
           scopeFor: deps.scopeFor,

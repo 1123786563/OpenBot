@@ -113,23 +113,31 @@ const originalTrialStamps = [
 
 test.each([
   { startingPoint: "fresh", mainThrough: 0, trialLength: 0 },
-  { startingPoint: "main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "pre-Corsair main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "current Personal SaaS", mainThrough: 93, trialLength: 0 },
   { startingPoint: "early trial", mainThrough: 89, trialLength: 1 },
   {
     startingPoint: "full pre-direct-chat trial",
     mainThrough: 89,
     trialLength: 12,
   },
-  { startingPoint: "current integration", mainThrough: 90, trialLength: 13 },
+  { startingPoint: "legacy integration", mainThrough: 90, trialLength: 13 },
   { startingPoint: "divergent trial", mainThrough: 89, trialLength: 12 },
 ])(
   "migrating from the $startingPoint journal into SkillHub and Personal SaaS",
   async ({ startingPoint, mainThrough, trialLength }) => {
     const folder = fileURLToPath(new URL("../drizzle", import.meta.url));
     const migrations = await readMigrationFolder(folder);
+    const corsair = migrations.filter(({ tag }) => /_corsair_/.test(tag));
+    const saas = migrations
+      .slice(93)
+      .filter((entry) => !corsair.includes(entry));
     const historical = [
       ...migrations.slice(0, mainThrough),
-      ...migrations.slice(93, 93 + trialLength).map((entry, index) => {
+      ...(startingPoint === "Corsair main" ? corsair : []),
+      ...(startingPoint === "current Personal SaaS" ? saas : []),
+      ...saas.slice(0, trialLength).map((entry, index) => {
         const when = originalTrialStamps[index];
         if (when === undefined) throw new Error("Missing trial stamp");
         return { ...entry, when };
@@ -152,7 +160,7 @@ test.each([
       if (historical.length) await applyMigrations(client, legacyFolder);
       const directChat = "direct_chat_runs";
       expect(await exists(client, directChat)).toBe(mainThrough >= 90);
-      if (trialLength) {
+      if (trialLength || startingPoint === "current Personal SaaS") {
         await client`insert into personal_saas_accounts (issuer, subject, email)
           values ('https://casdoor.example', 'participant', 'participant@example.test')`;
         await client`insert into personal_workspaces (owner_id)
@@ -168,8 +176,18 @@ test.each([
         return;
       }
 
+      if (startingPoint === "Corsair main") {
+        await client`insert into corsair_integrations (id, name) values ('merge-fixture', 'merge fixture')`;
+      }
       await applyMigrations(client, folder);
       await applyMigrations(client, folder);
+      expect(await exists(client, "corsair_accounts")).toBe(true);
+      expect(await exists(client, "corsair_github_connections")).toBe(true);
+      if (startingPoint === "Corsair main") {
+        expect(
+          await client`select id from corsair_integrations where id = 'merge-fixture'`,
+        ).toHaveLength(1);
+      }
       expect(await exists(client, directChat)).toBe(true);
       expect(await exists(client, "personal_intelligence_runs")).toBe(true);
       expect(await exists(client, "skill_market_installations")).toBe(true);
@@ -186,7 +204,7 @@ test.each([
           created_at: String(when),
         })),
       );
-      if (trialLength) {
+      if (trialLength || startingPoint === "current Personal SaaS") {
         expect([
           ...(await client`select email from personal_saas_accounts
           join personal_workspaces on personal_workspaces.owner_id = personal_saas_accounts.id

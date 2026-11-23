@@ -1,6 +1,6 @@
 {
-  "id": "c32ac701-2677-423f-b4b0-546f7e4c9fd9",
-  "prevId": "f78dca04-7b55-4207-b2b7-f523a64a9b80",
+  "id": "e96c6212-8033-4ef4-95b5-1cb0ba9a1bf1",
+  "prevId": "785d6cac-d595-464a-b7f2-44e24566fb2c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3953,403 +3953,6 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.skill_market_installations": {
-      "name": "skill_market_installations",
-      "schema": "",
-      "columns": {
-        "command": {
-          "name": "command",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_id": {
-          "name": "version_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registry_skill_id": {
-          "name": "registry_skill_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "instructions": {
-          "name": "instructions",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "installed_by": {
-          "name": "installed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "skill_market_installations_command_skill_market_sources_command_fk": {
-          "name": "skill_market_installations_command_skill_market_sources_command_fk",
-          "tableFrom": "skill_market_installations",
-          "tableTo": "skill_market_sources",
-          "columnsFrom": [
-            "command"
-          ],
-          "columnsTo": [
-            "command"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "skill_market_installations_agent_id_agents_id_fk": {
-          "name": "skill_market_installations_agent_id_agents_id_fk",
-          "tableFrom": "skill_market_installations",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "skill_market_installations_agent_id_command_pk": {
-          "name": "skill_market_installations_agent_id_command_pk",
-          "columns": [
-            "agent_id",
-            "command"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.skill_market_runs": {
-      "name": "skill_market_runs",
-      "schema": "",
-      "columns": {
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registry": {
-          "name": "registry",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registry_skill_id": {
-          "name": "registry_skill_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_id": {
-          "name": "version_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pause_reason": {
-          "name": "pause_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "snapshot": {
-          "name": "snapshot",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "computer_tool_calls": {
-          "name": "computer_tool_calls",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        }
-      },
-      "indexes": {
-        "skill_market_runs_version_idx": {
-          "name": "skill_market_runs_version_idx",
-          "columns": [
-            {
-              "expression": "registry",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "registry_skill_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "version_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "skill_market_runs_actor_id_users_id_fk": {
-          "name": "skill_market_runs_actor_id_users_id_fk",
-          "tableFrom": "skill_market_runs",
-          "tableTo": "users",
-          "columnsFrom": [
-            "actor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "skill_market_runs_bot_id_agents_id_fk": {
-          "name": "skill_market_runs_bot_id_agents_id_fk",
-          "tableFrom": "skill_market_runs",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk": {
-          "name": "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk",
-          "columns": [
-            "actor_id",
-            "bot_id",
-            "thread_id",
-            "run_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.skill_market_sources": {
-      "name": "skill_market_sources",
-      "schema": "",
-      "columns": {
-        "command": {
-          "name": "command",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "registry": {
-          "name": "registry",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "skill_market_source_key": {
-          "name": "skill_market_source_key",
-          "columns": [
-            {
-              "expression": "registry",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "namespace",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "skill_market_sources_command_skills_slug_fk": {
-          "name": "skill_market_sources_command_skills_slug_fk",
-          "tableFrom": "skill_market_sources",
-          "tableTo": "skills",
-          "columnsFrom": [
-            "command"
-          ],
-          "columnsTo": [
-            "slug"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.skill_market_version_disablements": {
-      "name": "skill_market_version_disablements",
-      "schema": "",
-      "columns": {
-        "registry": {
-          "name": "registry",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registry_skill_id": {
-          "name": "registry_skill_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_id": {
-          "name": "version_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "skill_market_version_disablements_registry_registry_skill_id_version_id_pk": {
-          "name": "skill_market_version_disablements_registry_registry_skill_id_version_id_pk",
-          "columns": [
-            "registry",
-            "registry_skill_id",
-            "version_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -13345,161 +12948,1031 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.test_credit_accounts": {
-      "name": "test_credit_accounts",
+    "public.skill_market_installations": {
+      "name": "skill_market_installations",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
+        "command": {
+          "name": "command",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructions": {
+          "name": "instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installed_by": {
+          "name": "installed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
           "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "issuer": {
-          "name": "issuer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
+          "default": "now()"
         }
       },
       "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "test_credit_accounts_issuer_subject_unique": {
-          "name": "test_credit_accounts_issuer_subject_unique",
-          "nullsNotDistinct": false,
+      "foreignKeys": {
+        "skill_market_installations_command_skill_market_sources_command_fk": {
+          "name": "skill_market_installations_command_skill_market_sources_command_fk",
+          "tableFrom": "skill_market_installations",
+          "tableTo": "skill_market_sources",
+          "columnsFrom": [
+            "command"
+          ],
+          "columnsTo": [
+            "command"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "skill_market_installations_agent_id_agents_id_fk": {
+          "name": "skill_market_installations_agent_id_agents_id_fk",
+          "tableFrom": "skill_market_installations",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "skill_market_installations_agent_id_command_pk": {
+          "name": "skill_market_installations_agent_id_command_pk",
           "columns": [
-            "issuer",
-            "subject"
+            "agent_id",
+            "command"
           ]
         }
       },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.test_credit_batches": {
-      "name": "test_credit_batches",
+    "public.skill_market_runs": {
+      "name": "skill_market_runs",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pause_reason": {
+          "name": "pause_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "computer_tool_calls": {
+          "name": "computer_tool_calls",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        }
+      },
+      "indexes": {
+        "skill_market_runs_version_idx": {
+          "name": "skill_market_runs_version_idx",
+          "columns": [
+            {
+              "expression": "registry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "registry_skill_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "skill_market_runs_actor_id_users_id_fk": {
+          "name": "skill_market_runs_actor_id_users_id_fk",
+          "tableFrom": "skill_market_runs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "skill_market_runs_bot_id_agents_id_fk": {
+          "name": "skill_market_runs_bot_id_agents_id_fk",
+          "tableFrom": "skill_market_runs",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "bot_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk": {
+          "name": "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk",
+          "columns": [
+            "actor_id",
+            "bot_id",
+            "thread_id",
+            "run_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.skill_market_sources": {
+      "name": "skill_market_sources",
+      "schema": "",
+      "columns": {
+        "command": {
+          "name": "command",
+          "type": "text",
           "primaryKey": true,
           "notNull": true
         },
-        "amount": {
-          "name": "amount",
-          "type": "bigint",
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "skill_market_source_key": {
+          "name": "skill_market_source_key",
+          "columns": [
+            {
+              "expression": "registry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "skill_market_sources_command_skills_slug_fk": {
+          "name": "skill_market_sources_command_skills_slug_fk",
+          "tableFrom": "skill_market_sources",
+          "tableTo": "skills",
+          "columnsFrom": [
+            "command"
+          ],
+          "columnsTo": [
+            "slug"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.skill_market_version_disablements": {
+      "name": "skill_market_version_disablements",
+      "schema": "",
+      "columns": {
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         }
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "test_credit_batch_positive": {
-          "name": "test_credit_batch_positive",
-          "value": "\"test_credit_batches\".\"amount\" > 0"
+      "compositePrimaryKeys": {
+        "skill_market_version_disablements_registry_registry_skill_id_version_id_pk": {
+          "name": "skill_market_version_disablements_registry_registry_skill_id_version_id_pk",
+          "columns": [
+            "registry",
+            "registry_skill_id",
+            "version_id"
+          ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.test_credit_enrollments": {
-      "name": "test_credit_enrollments",
+    "public.corsair_account_defaults": {
+      "name": "corsair_account_defaults",
       "schema": "",
       "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
+        "openbot_kind": {
+          "name": "openbot_kind",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "batch_id": {
-          "name": "batch_id",
-          "type": "uuid",
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp with time zone",
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "github_user_id": {
+          "name": "github_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "github_subject_scope": {
+          "name": "github_subject_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "test_credit_enrollments_account_id_test_credit_accounts_id_fk": {
-          "name": "test_credit_enrollments_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "test_credit_enrollments",
-          "tableTo": "test_credit_accounts",
+        "corsair_account_defaults_person_id_users_id_fk": {
+          "name": "corsair_account_defaults_person_id_users_id_fk",
+          "tableFrom": "corsair_account_defaults",
           "columnsFrom": [
-            "account_id"
+            "person_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
-        "test_credit_enrollments_batch_id_test_credit_batches_id_fk": {
-          "name": "test_credit_enrollments_batch_id_test_credit_batches_id_fk",
-          "tableFrom": "test_credit_enrollments",
-          "tableTo": "test_credit_batches",
+        "corsair_defaults_github_subject_fk": {
+          "name": "corsair_defaults_github_subject_fk",
+          "tableFrom": "corsair_account_defaults",
           "columnsFrom": [
-            "batch_id"
+            "openbot_kind",
+            "workspace_id",
+            "registration",
+            "person_id",
+            "github_subject_scope",
+            "github_user_id"
           ],
+          "tableTo": "corsair_accounts",
           "columnsTo": [
+            "openbot_kind",
+            "workspace_id",
+            "registration",
+            "person_id",
+            "subject_scope",
+            "external_user_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "corsair_defaults_account_owner_fk": {
+          "name": "corsair_defaults_account_owner_fk",
+          "tableFrom": "corsair_account_defaults",
+          "columnsFrom": [
+            "openbot_kind",
+            "workspace_id",
+            "registration",
+            "person_id",
+            "connection_id"
+          ],
+          "tableTo": "corsair_accounts",
+          "columnsTo": [
+            "openbot_kind",
+            "workspace_id",
+            "registration",
+            "person_id",
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
-        "test_credit_enrollments_account_id_batch_id_pk": {
-          "name": "test_credit_enrollments_account_id_batch_id_pk",
+        "corsair_account_defaults_openbot_kind_workspace_id_person_id_registration_pk": {
+          "name": "corsair_account_defaults_openbot_kind_workspace_id_person_id_registration_pk",
           "columns": [
-            "account_id",
-            "batch_id"
+            "openbot_kind",
+            "workspace_id",
+            "person_id",
+            "registration"
           ]
         }
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "corsair_defaults_shape": {
+          "name": "corsair_defaults_shape",
+          "value": "(\"corsair_account_defaults\".\"openbot_kind\" = 'github-personal' and \"corsair_account_defaults\".\"github_user_id\" is not null and \"corsair_account_defaults\".\"github_subject_scope\" is not null and \"corsair_account_defaults\".\"github_subject_scope\" = '' and \"corsair_account_defaults\".\"connection_id\" is null) or\n    (\"corsair_account_defaults\".\"openbot_kind\" = 'slack-personal' and \"corsair_account_defaults\".\"github_user_id\" is null and \"corsair_account_defaults\".\"github_subject_scope\" is null and \"corsair_account_defaults\".\"connection_id\" is not null)"
+        }
+      },
       "isRLSEnabled": false
     },
-    "public.test_credit_evidence": {
-      "name": "test_credit_evidence",
+    "public.corsair_accounts": {
+      "name": "corsair_accounts",
       "schema": "",
       "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()::text"
         },
-        "operation_id": {
-          "name": "operation_id",
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "evidence_id": {
-          "name": "evidence_id",
+        "integration_id": {
+          "name": "integration_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "config": {
+          "name": "config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "dek": {
+          "name": "dek",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "openbot_kind": {
+          "name": "openbot_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject_scope": {
+          "name": "subject_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "external_user_id": {
+          "name": "external_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credential": {
+          "name": "credential",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "gen_random_uuid()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verification_required_at": {
+          "name": "verification_required_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shared_workspace_id": {
+          "name": "shared_workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "app_id": {
+          "name": "app_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "team_id": {
+          "name": "team_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bot_user_id": {
+          "name": "bot_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel_ids": {
+          "name": "channel_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "corsair_accounts_tenant_integration_idx": {
+          "name": "corsair_accounts_tenant_integration_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "integration_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "corsair_accounts_integration_id_corsair_integrations_id_fk": {
+          "name": "corsair_accounts_integration_id_corsair_integrations_id_fk",
+          "tableFrom": "corsair_accounts",
+          "columnsFrom": [
+            "integration_id"
+          ],
+          "tableTo": "corsair_integrations",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "corsair_accounts_person_id_users_id_fk": {
+          "name": "corsair_accounts_person_id_users_id_fk",
+          "tableFrom": "corsair_accounts",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "corsair_account_personal_subject": {
+          "name": "corsair_account_personal_subject",
+          "columns": [
+            "openbot_kind",
+            "workspace_id",
+            "registration",
+            "person_id",
+            "subject_scope",
+            "external_user_id"
+          ],
+          "nullsNotDistinct": false
+        },
+        "corsair_account_owner": {
+          "name": "corsair_account_owner",
+          "columns": [
+            "openbot_kind",
+            "workspace_id",
+            "registration",
+            "person_id",
+            "id"
+          ],
+          "nullsNotDistinct": false
+        },
+        "corsair_account_shared_workspace": {
+          "name": "corsair_account_shared_workspace",
+          "columns": [
+            "shared_workspace_id"
+          ],
+          "nullsNotDistinct": false
+        },
+        "corsair_account_id_kind": {
+          "name": "corsair_account_id_kind",
+          "columns": [
+            "id",
+            "openbot_kind"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "corsair_accounts_openbot_shape": {
+          "name": "corsair_accounts_openbot_shape",
+          "value": "\n    case \"corsair_accounts\".\"openbot_kind\"\n      when 'github-personal' then \"corsair_accounts\".\"subject_scope\" = '' and \"corsair_accounts\".\"subject_scope\" is not null\n        and \"corsair_accounts\".\"person_id\" is not null and \"corsair_accounts\".\"workspace_id\" is not null and \"corsair_accounts\".\"registration\" is not null\n        and \"corsair_accounts\".\"external_user_id\" is not null and \"corsair_accounts\".\"label\" is not null and \"corsair_accounts\".\"credential\" is not null\n        and \"corsair_accounts\".\"revision\" is not null and \"corsair_accounts\".\"expires_at\" is not null\n      when 'slack-personal' then \"corsair_accounts\".\"subject_scope\" is not null and \"corsair_accounts\".\"subject_scope\" <> ''\n        and \"corsair_accounts\".\"person_id\" is not null and \"corsair_accounts\".\"workspace_id\" is not null and \"corsair_accounts\".\"registration\" is not null\n        and \"corsair_accounts\".\"external_user_id\" is not null and \"corsair_accounts\".\"label\" is not null and \"corsair_accounts\".\"credential\" is not null\n        and \"corsair_accounts\".\"revision\" is not null and \"corsair_accounts\".\"expires_at\" is not null\n      when 'slack-shared' then \"corsair_accounts\".\"shared_workspace_id\" is not null and \"corsair_accounts\".\"app_id\" is not null\n        and \"corsair_accounts\".\"team_id\" is not null and \"corsair_accounts\".\"bot_id\" is not null and \"corsair_accounts\".\"bot_user_id\" is not null\n        and cardinality(\"corsair_accounts\".\"channel_ids\") > 0 and \"corsair_accounts\".\"channel_ids\" is not null\n      when 'registration' then \"corsair_accounts\".\"workspace_id\" is not null and \"corsair_accounts\".\"registration\" is not null\n      else \"corsair_accounts\".\"openbot_kind\" is null\n    end"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.corsair_entities": {
+      "name": "corsair_entities",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()::text"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "goal_id": {
+          "name": "goal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "connection_revision": {
+          "name": "connection_revision",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "repository_node_id": {
+          "name": "repository_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_types": {
+          "name": "event_types",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "corsair_entities_source_idx": {
+          "name": "corsair_entities_source_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "registration",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "installation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "repository_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "corsair_entities_goal_idx": {
+          "name": "corsair_entities_goal_idx",
+          "columns": [
+            {
+              "expression": "goal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "corsair_entities_account_id_corsair_accounts_id_fk": {
+          "name": "corsair_entities_account_id_corsair_accounts_id_fk",
+          "tableFrom": "corsair_entities",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "tableTo": "corsair_accounts",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "corsair_entities_goal_id_responsibilities_id_fk": {
+          "name": "corsair_entities_goal_id_responsibilities_id_fk",
+          "tableFrom": "corsair_entities",
+          "columnsFrom": [
+            "goal_id"
+          ],
+          "tableTo": "responsibilities",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "corsair_entities_account_type_entity": {
+          "name": "corsair_entities_account_type_entity",
+          "columns": [
+            "account_id",
+            "entity_type",
+            "entity_id"
+          ],
+          "nullsNotDistinct": false
+        },
+        "corsair_entities_repository_scope": {
+          "name": "corsair_entities_repository_scope",
+          "columns": [
+            "workspace_id",
+            "registration",
+            "entity_id",
+            "entity_type"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.corsair_event_dispatches": {
+      "name": "corsair_event_dispatches",
+      "schema": "",
+      "columns": {
+        "receipt_id": {
+          "name": "receipt_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger_id": {
+          "name": "trigger_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -13510,272 +13983,98 @@
           "primaryKey": false,
           "notNull": true
         },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cost": {
-          "name": "cost",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recorded_at": {
-          "name": "recorded_at",
+        "next_attempt_at": {
+          "name": "next_attempt_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "now()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
-      "indexes": {},
-      "foreignKeys": {
-        "test_credit_evidence_operation_fk": {
-          "name": "test_credit_evidence_operation_fk",
-          "tableFrom": "test_credit_evidence",
-          "tableTo": "test_credit_operations",
-          "columnsFrom": [
-            "account_id",
-            "operation_id"
+      "indexes": {
+        "corsair_event_dispatches_pending_idx": {
+          "name": "corsair_event_dispatches_pending_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
           ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"corsair_event_dispatches\".\"outcome\" in ('pending', 'retry')",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "corsair_event_dispatches_receipt_id_corsair_events_id_fk": {
+          "name": "corsair_event_dispatches_receipt_id_corsair_events_id_fk",
+          "tableFrom": "corsair_event_dispatches",
+          "columnsFrom": [
+            "receipt_id"
+          ],
+          "tableTo": "corsair_events",
           "columnsTo": [
-            "account_id",
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "corsair_event_dispatches_run_id_responsibility_runs_id_fk": {
+          "name": "corsair_event_dispatches_run_id_responsibility_runs_id_fk",
+          "tableFrom": "corsair_event_dispatches",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "tableTo": "responsibility_runs",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {
-        "test_credit_evidence_account_id_operation_id_evidence_id_pk": {
-          "name": "test_credit_evidence_account_id_operation_id_evidence_id_pk",
+        "corsair_event_dispatches_receipt_id_trigger_id_pk": {
+          "name": "corsair_event_dispatches_receipt_id_trigger_id_pk",
           "columns": [
-            "account_id",
-            "operation_id",
-            "evidence_id"
+            "receipt_id",
+            "trigger_id"
           ]
         }
       },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "test_credit_evidence_amounts": {
-          "name": "test_credit_evidence_amounts",
-          "value": "\n      \"test_credit_evidence\".\"input_tokens\" >= 0 AND \"test_credit_evidence\".\"output_tokens\" >= 0 AND \"test_credit_evidence\".\"cost\" >= 0\n      AND (\"test_credit_evidence\".\"outcome\" <> 'zero_cost' OR \"test_credit_evidence\".\"cost\" = 0)\n    "
+      "uniqueConstraints": {
+        "corsair_event_dispatches_run_id_unique": {
+          "name": "corsair_event_dispatches_run_id_unique",
+          "columns": [
+            "run_id"
+          ],
+          "nullsNotDistinct": false
         }
       },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.test_credit_issuance_budgets": {
-      "name": "test_credit_issuance_budgets",
+    "public.corsair_events": {
+      "name": "corsair_events",
       "schema": "",
       "columns": {
         "id": {
           "name": "id",
           "type": "text",
           "primaryKey": true,
-          "notNull": true
-        },
-        "total": {
-          "name": "total",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued": {
-          "name": "issued",
-          "type": "bigint",
-          "primaryKey": false,
           "notNull": true,
-          "default": "0"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "test_credit_issuance_budget_total": {
-          "name": "test_credit_issuance_budget_total",
-          "value": "\"test_credit_issuance_budgets\".\"total\" >= 0"
-        },
-        "test_credit_issuance_budget_issued": {
-          "name": "test_credit_issuance_budget_issued",
-          "value": "\"test_credit_issuance_budgets\".\"issued\" >= 0 AND \"test_credit_issuance_budgets\".\"issued\" <= \"test_credit_issuance_budgets\".\"total\""
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.test_credit_issuances": {
-      "name": "test_credit_issuances",
-      "schema": "",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "budget_id": {
-          "name": "budget_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "batch_id": {
-          "name": "batch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued_at": {
-          "name": "issued_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "test_credit_issuances_account_id_test_credit_accounts_id_fk": {
-          "name": "test_credit_issuances_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "test_credit_issuances",
-          "tableTo": "test_credit_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "test_credit_issuances_budget_id_test_credit_issuance_budgets_id_fk": {
-          "name": "test_credit_issuances_budget_id_test_credit_issuance_budgets_id_fk",
-          "tableFrom": "test_credit_issuances",
-          "tableTo": "test_credit_issuance_budgets",
-          "columnsFrom": [
-            "budget_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "test_credit_issuances_batch_id_test_credit_batches_id_fk": {
-          "name": "test_credit_issuances_batch_id_test_credit_batches_id_fk",
-          "tableFrom": "test_credit_issuances",
-          "tableTo": "test_credit_batches",
-          "columnsFrom": [
-            "batch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "test_credit_issuance_amount_positive": {
-          "name": "test_credit_issuance_amount_positive",
-          "value": "\"test_credit_issuances\".\"amount\" > 0"
-        },
-        "test_credit_issuance_state": {
-          "name": "test_credit_issuance_state",
-          "value": "(\"test_credit_issuances\".\"state\" = 'pending' AND \"test_credit_issuances\".\"issued_at\" IS NULL) OR (\"test_credit_issuances\".\"state\" = 'issued' AND \"test_credit_issuances\".\"issued_at\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.test_credit_operations": {
-      "name": "test_credit_operations",
-      "schema": "",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "permit": {
-          "name": "permit",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "price_version": {
-          "name": "price_version",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "route": {
-          "name": "route",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reserved": {
-          "name": "reserved",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "charged": {
-          "name": "charged",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
+          "default": "gen_random_uuid()::text"
         },
         "created_at": {
           "name": "created_at",
@@ -13784,41 +14083,103 @@
           "notNull": true,
           "default": "now()"
         },
-        "rerun_of_operation_id": {
-          "name": "rerun_of_operation_id",
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "cutoff_hold": {
-          "name": "cutoff_hold",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "eligible_evidence_id": {
-          "name": "eligible_evidence_id",
+        "registration": {
+          "name": "registration",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "dispatched_at": {
-          "name": "dispatched_at",
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body_hash": {
+          "name": "body_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pilot_dispatch": {
+          "name": "pilot_dispatch",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disposition": {
+          "name": "disposition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fanout_at": {
+          "name": "fanout_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }
       },
       "indexes": {
-        "test_credit_operations_due_cutoff_idx": {
-          "name": "test_credit_operations_due_cutoff_idx",
+        "corsair_events_account_type_created_idx": {
+          "name": "corsair_events_account_type_created_idx",
           "columns": [
-            {
-              "expression": "dispatched_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
             {
               "expression": "account_id",
               "isExpression": false,
@@ -13826,76 +14187,424 @@
               "nulls": "last"
             },
             {
-              "expression": "id",
+              "expression": "event_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "where": "\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"cutoff_hold\" IS NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
+        },
+        "corsair_events_pending_idx": {
+          "name": "corsair_events_pending_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "registration",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"corsair_events\".\"delivery_id\" is not null and \"corsair_events\".\"fanout_at\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {
-        "test_credit_operations_account_id_test_credit_accounts_id_fk": {
-          "name": "test_credit_operations_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "test_credit_operations",
-          "tableTo": "test_credit_accounts",
+        "corsair_events_account_id_corsair_accounts_id_fk": {
+          "name": "corsair_events_account_id_corsair_accounts_id_fk",
+          "tableFrom": "corsair_events",
           "columnsFrom": [
             "account_id"
           ],
+          "tableTo": "corsair_accounts",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "corsair_events_delivery": {
+          "name": "corsair_events_delivery",
+          "columns": [
+            "workspace_id",
+            "registration",
+            "delivery_id"
+          ],
+          "nullsNotDistinct": false
         },
-        "test_credit_rerun_original_fk": {
-          "name": "test_credit_rerun_original_fk",
-          "tableFrom": "test_credit_operations",
-          "tableTo": "test_credit_operations",
-          "columnsFrom": [
-            "account_id",
-            "rerun_of_operation_id"
+        "corsair_events_body": {
+          "name": "corsair_events_body",
+          "columns": [
+            "workspace_id",
+            "registration",
+            "body_hash"
           ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "corsair_events_status": {
+          "name": "corsair_events_status",
+          "value": "\"corsair_events\".\"status\" in ('pending', 'processing', 'completed', 'failed')"
+        },
+        "corsair_events_delivery_shape": {
+          "name": "corsair_events_delivery_shape",
+          "value": "\"corsair_events\".\"delivery_id\" is null or (\n    \"corsair_events\".\"workspace_id\" is not null and \"corsair_events\".\"registration\" is not null and \"corsair_events\".\"body_hash\" is not null and \"corsair_events\".\"pilot_dispatch\" is not null\n  )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.corsair_integrations": {
+      "name": "corsair_integrations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()::text"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "config": {
+          "name": "config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "dek": {
+          "name": "dek",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.corsair_oauth_states": {
+      "name": "corsair_oauth_states",
+      "schema": "",
+      "columns": {
+        "state_hash": {
+          "name": "state_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration": {
+          "name": "registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verifier": {
+          "name": "verifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "corsair_oauth_states_person_id_users_id_fk": {
+          "name": "corsair_oauth_states_person_id_users_id_fk",
+          "tableFrom": "corsair_oauth_states",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "tableTo": "users",
           "columnsTo": [
-            "account_id",
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
-        "test_credit_operations_account_id_id_pk": {
-          "name": "test_credit_operations_account_id_id_pk",
+        "corsair_oauth_states_provider_state_hash_pk": {
+          "name": "corsair_oauth_states_provider_state_hash_pk",
           "columns": [
-            "account_id",
-            "id"
+            "provider",
+            "state_hash"
           ]
         }
       },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "test_credit_cutoff_hold_amount": {
-          "name": "test_credit_cutoff_hold_amount",
-          "value": "\"test_credit_operations\".\"cutoff_hold\" BETWEEN 0 AND \"test_credit_operations\".\"reserved\""
+        "corsair_oauth_states_provider": {
+          "name": "corsair_oauth_states_provider",
+          "value": "(\"corsair_oauth_states\".\"provider\" = 'github' and \"corsair_oauth_states\".\"verifier\" is not null) or (\"corsair_oauth_states\".\"provider\" = 'slack' and \"corsair_oauth_states\".\"verifier\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.corsair_permissions": {
+      "name": "corsair_permissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()::text"
         },
-        "test_credit_rerun_distinct": {
-          "name": "test_credit_rerun_distinct",
-          "value": "\"test_credit_operations\".\"rerun_of_operation_id\" <> \"test_credit_operations\".\"id\""
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
-        "test_credit_operation_amounts": {
-          "name": "test_credit_operation_amounts",
-          "value": "\n    \"test_credit_operations\".\"reserved\" >= 0 AND\n    (\"test_credit_operations\".\"charged\" IS NULL OR \"test_credit_operations\".\"charged\" BETWEEN 0 AND \"test_credit_operations\".\"reserved\")\n  "
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
-        "test_credit_operation_state": {
-          "name": "test_credit_operation_state",
-          "value": "\n    ((\"test_credit_operations\".\"state\" = 'released' OR (\"test_credit_operations\".\"state\" = 'reserved' AND \"test_credit_operations\".\"dispatched_at\" IS NULL))\n      AND \"test_credit_operations\".\"charged\" IS NULL AND \"test_credit_operations\".\"input_tokens\" IS NULL AND \"test_credit_operations\".\"output_tokens\" IS NULL)\n    OR (\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"dispatched_at\" IS NOT NULL\n      AND \"test_credit_operations\".\"charged\" IS NULL AND \"test_credit_operations\".\"input_tokens\" IS NULL AND \"test_credit_operations\".\"output_tokens\" IS NULL)\n    OR (\"test_credit_operations\".\"state\" = 'settled' AND \"test_credit_operations\".\"dispatched_at\" IS NOT NULL\n      AND \"test_credit_operations\".\"charged\" IS NOT NULL AND \"test_credit_operations\".\"input_tokens\" IS NOT NULL AND \"test_credit_operations\".\"output_tokens\" IS NOT NULL\n      AND \"test_credit_operations\".\"input_tokens\" >= 0 AND \"test_credit_operations\".\"output_tokens\" >= 0)\n  "
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "plugin": {
+          "name": "plugin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "endpoint": {
+          "name": "endpoint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "args": {
+          "name": "args",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "corsair_permissions_token_idx": {
+          "name": "corsair_permissions_token_idx",
+          "columns": [
+            {
+              "expression": "token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "corsair_permissions_status": {
+          "name": "corsair_permissions_status",
+          "value": "\"corsair_permissions\".\"status\" in ('pending', 'approved', 'executing', 'completed', 'denied', 'expired', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.corsair_shared_access": {
+      "name": "corsair_shared_access",
+      "schema": "",
+      "columns": {
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "openbot_kind": {
+          "name": "openbot_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'slack-shared'"
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted": {
+          "name": "granted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "approval": {
+          "name": "approval",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "corsair_shared_access_bot_id_agents_id_fk": {
+          "name": "corsair_shared_access_bot_id_agents_id_fk",
+          "tableFrom": "corsair_shared_access",
+          "columnsFrom": [
+            "bot_id"
+          ],
+          "tableTo": "agents",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "corsair_shared_access_account_fk": {
+          "name": "corsair_shared_access_account_fk",
+          "tableFrom": "corsair_shared_access",
+          "columnsFrom": [
+            "installation_id",
+            "openbot_kind"
+          ],
+          "tableTo": "corsair_accounts",
+          "columnsTo": [
+            "id",
+            "openbot_kind"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "corsair_shared_access_installation_id_bot_id_pk": {
+          "name": "corsair_shared_access_installation_id_bot_id_pk",
+          "columns": [
+            "installation_id",
+            "bot_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "corsair_shared_access_kind": {
+          "name": "corsair_shared_access_kind",
+          "value": "\"corsair_shared_access\".\"openbot_kind\" = 'slack-shared'"
         }
       },
       "isRLSEnabled": false

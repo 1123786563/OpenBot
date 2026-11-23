@@ -50,6 +50,11 @@ function app(store: {
        * naming no row, which falls through to the flow below exactly as a non-brokered row does.
        */
       serverAddress: async () => undefined,
+      // The Corsair cutover guard every connect route passes through; nothing here is cut over.
+      withLegacyAuthorization: async <T>(
+        _input: { serverId: string; actor: string; callback?: string },
+        run: () => Promise<T>,
+      ) => run(),
       ...store,
     } as never,
     signedIn(),

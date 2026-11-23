@@ -15,6 +15,7 @@ import {
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
 import { decisionInvalidated } from "../personal-saas/decision-access";
+import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import {
   isMarketVersionPause,
   MarketRunPaused,
@@ -333,7 +334,13 @@ export function createApprovalService(
           authority.owner === approved.actorId &&
           authority.digest === approved.actionDigest
         )
-          return;
+          return candidate.requireOneTime
+            ? {
+                approvalId: authority.approvalId,
+                approvalDigest: authority.digest,
+                complete: async () => undefined,
+              }
+            : undefined;
       }
       /*
        * The person's own earlier answer in this conversation comes first, before any policy that
@@ -416,17 +423,28 @@ export function createApprovalService(
        * withdraw what the task is waiting on. Only a stricter answer, a hand-off or a refusal,
        * keeps its own source.
        */
-      const outcome: ApprovalPolicyOutcome | undefined =
-        taskAsks &&
+      let outcome = evaluated;
+      if (
         evaluated?.behaviour !== "hand_off" &&
         evaluated?.behaviour !== "deny"
-          ? {
-              behaviour: "ask",
-              source: "task",
-              reason: TASK_ASKS,
-              ...(evaluated?.review ? { review: evaluated.review } : {}),
-            }
-          : evaluated;
+      ) {
+        if (candidate.requireOneTime) {
+          outcome = {
+            behaviour: "ask",
+            source: "safety",
+            closed: true,
+            reason: "This Corsair action requires one-time Approval.",
+            ...(evaluated?.review ? { review: evaluated.review } : {}),
+          };
+        } else if (taskAsks) {
+          outcome = {
+            behaviour: "ask",
+            source: "task",
+            reason: TASK_ASKS,
+            ...(evaluated?.review ? { review: evaluated.review } : {}),
+          };
+        }
+      }
       if (origin) await store.checkDecisionAccess?.(candidate.actorId, origin);
       if (outcome) {
         if (outcome.behaviour === "allow") return;
@@ -462,9 +480,12 @@ export function createApprovalService(
         throw new ApprovalAlreadyAnsweredError(DECLINED_BY_PERSON);
       if (
         request.status === "approved" &&
+        candidate.dispatch !== "corsair-shared-goal" &&
+        (!candidate.requireOneTime || request.decision === "allow_once") &&
         (await store.consume(action.actorId, request.id, action.actionDigest))
       )
         return {
+          ...(candidate.requireOneTime ? { approvalId: request.id } : {}),
           complete: async (output) => {
             const content =
               typeof output === "string" ? output : JSON.stringify(output);
@@ -745,6 +766,13 @@ export function createApprovalService(
           let current: ApprovalAction | undefined;
           let refusal: string | undefined;
           try {
+            if (
+              request.action.requireOneTime &&
+              request.decision !== "allow_once"
+            )
+              throw new ApprovalRefusedError(
+                "This Corsair action requires one-time Approval.",
+              );
             current = await dependencies.validate(request.action);
             if (
               current.actorId !== ownerUserId ||
@@ -753,7 +781,19 @@ export function createApprovalService(
               throw new ApprovalRefusedError(
                 "The approved action or resolved target has changed.",
               );
-            if (!(await store.consume(ownerUserId, id, current.actionDigest))) {
+            if (
+              current.dispatch !== request.action.dispatch ||
+              (current.dispatch === "corsair-shared-goal" &&
+                !current.requireOneTime)
+            )
+              throw new ApprovalRefusedError(
+                "The approved dispatch has changed.",
+              );
+            // Shared Goal dispatch claims the Approval after it checks live source access.
+            if (
+              current.dispatch !== "corsair-shared-goal" &&
+              !(await store.consume(ownerUserId, id, current.actionDigest))
+            ) {
               // Still `approved`: an "Always allow" whose rule was revoked before it ran. Anything
               // else means another replica took the request, and it continues the conversation.
               if ((await store.get(ownerUserId, id)).status !== "approved")
@@ -798,6 +838,11 @@ export function createApprovalService(
                 throw new Error("The approved action returned no result.");
               result = { content };
             } catch (error) {
+              if (
+                current.dispatch === "corsair-shared-goal" &&
+                error instanceof GithubEventAccessRetry
+              )
+                throw error;
               const reason =
                 error instanceof Error ? error.message : String(error);
               result = { content: reason, error: reason };

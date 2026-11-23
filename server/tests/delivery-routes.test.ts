@@ -34,6 +34,7 @@ function fixture(
   options: {
     converse?: ConverseResult;
     bound?: boolean;
+    corsairSlackTeamId?: string;
     identity?: IdentityAdapter;
     /** Makes every Reachability lookup throw, as a store that is down would. */
     challengeError?: Error;
@@ -62,6 +63,7 @@ function fixture(
     statusUrl: "https://o.test/api/delivery/webhooks/sms/status",
   });
   const routes = createDeliveryWebhookRoutes({
+    corsairSlackTeamId: options.corsairSlackTeamId,
     router: {
       receive: async (input) => {
         calls.push(input);
@@ -700,6 +702,43 @@ test("in a conversation others may read, the answer goes to the owner privately"
     expect(sent[0]?.text).toBe("Your salary review is attached.");
   }
 });
+test("OpenTag delivers a channel turn while Corsair owns Goal dispatch for that team", async () => {
+  const f = fixture({ corsairSlackTeamId: "T1" });
+  const result = await run(f, {
+    context: [sender("slack:T1:U1", { id: "C0123456789", kind: "channel" })],
+    messages: [{ id: "m1", role: "user", content: "<@UBOT> hi" }],
+  });
+  expect(result.events.at(-1)).toMatchObject({ type: "RUN_FINISHED" });
+  expect(
+    f.calls.find(
+      (call) => typeof call === "object" && call !== null && "converse" in call,
+    ),
+  ).toMatchObject({
+    converse: {
+      transport: "slack",
+      realm: "T1",
+      identity: "U1",
+      externalId: "event:Ev9",
+      text: "hi",
+    },
+  });
+  expect(
+    f.calls.find(
+      (call) => typeof call === "object" && call !== null && "notify" in call,
+    ),
+  ).toMatchObject({
+    notify: [
+      { threadId: "canonical" },
+      { text: "Hello from your Bot.", kind: "reply" },
+    ],
+  });
+  expect(
+    f.calls.some(
+      (call) => typeof call === "object" && call !== null && "trigger" in call,
+    ),
+  ).toBe(false);
+});
+
 test("verified Slack events feed the owners' triggers once, and observe-only runs stay quiet", async () => {
   const f = fixture();
   await run(f, {
