@@ -12,7 +12,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@/i18n";
+import { I18nProvider, initI18n } from "@/i18n";
 import { authKeys } from "@/lib/auth/queries";
 import { pinLocale } from "./i18n";
 import { appReturnPath, resumeUrlFor } from "@/lib/auth/resume";
@@ -658,4 +658,83 @@ test("every provider keeps its own name, in the interface language", async () =>
     view.getByRole("button", { name: "Continue with Microsoft" }),
   ).toBeTruthy();
   expect(view.getByRole("button", { name: "Continue with Okta" })).toBeTruthy();
+});
+
+/*
+ * The first frame: whichever language the visit opens in, the sign page is already speaking it
+ * before anyone touches a setting. `initI18n` is what main.tsx calls before rendering.
+ */
+
+/** Makes the browser ask for `languages`, most preferred first, until the returned function runs. */
+function browserSpeaks(languages: string[]): () => void {
+  const asked = Object.getOwnPropertyDescriptor(navigator, "languages");
+  Object.defineProperty(navigator, "languages", {
+    configurable: true,
+    get: () => languages,
+  });
+  return () => {
+    if (asked) Object.defineProperty(navigator, "languages", asked);
+    else Reflect.deleteProperty(navigator, "languages");
+  };
+}
+
+test("the sign page speaks the browser's language from its first frame", async () => {
+  const unSpeak = browserSpeaks(["zh-Hans-CN"]);
+  try {
+    localStorage.clear(); // no saved choice: the browser decides
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "登录 OpenBot" }),
+    ).toBeTruthy();
+    expect(view.getByRole("button", { name: "使用 Google 继续" })).toBeTruthy();
+    // Even the tab is titled in the interface language before anyone switches anything.
+    expect(document.title).toBe("登录 · OpenBot");
+  } finally {
+    unSpeak();
+  }
+});
+
+test("a browser asking for Traditional Chinese reads the sign page in English", async () => {
+  const unSpeak = browserSpeaks(["zh-Hant-TW"]);
+  try {
+    localStorage.clear();
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "Sign in to OpenBot" }),
+    ).toBeTruthy();
+    expect(document.title).toBe("Sign in · OpenBot");
+  } finally {
+    unSpeak();
+  }
+});
+
+test("a language this browser kept decides the sign page's first frame over the browser's ask", async () => {
+  localStorage.setItem("openbot-locale", "zh-CN");
+  const unSpeak = browserSpeaks(["en-GB"]);
+  try {
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "登录 OpenBot" }),
+    ).toBeTruthy();
+  } finally {
+    unSpeak();
+  }
 });
