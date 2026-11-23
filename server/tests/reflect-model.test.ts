@@ -135,6 +135,27 @@ test("a Hindsight model callback uses authenticated run scope and Test Credit ad
       "/v1/reserve",
       "/v1/reconcile",
     ]);
+    calls.length = 0;
+    let authorized = true;
+    expect(
+      await gateway.reflect({
+        ...run,
+        canDispatch: async () => authorized,
+        request: async (ticket) => {
+          expect((await callback(ticket)).status).toBe(200);
+          authorized = false;
+          const retry = await callback(ticket);
+          expect(retry.status).toBe(403);
+          expect(await retry.text()).not.toContain("amber");
+          return { unverifiedText: "must be discarded" };
+        },
+      }),
+    ).toBeNull();
+    expect(calls.map(({ path }) => path)).toEqual([
+      "/v1/reserve",
+      "/v1/dispatch",
+      "/v1/reconcile",
+    ]);
   } finally {
     control.stop(true);
   }
