@@ -29,7 +29,11 @@ beforeAll(() => {
   awayFromOpenBot();
 });
 beforeEach(() => i18n.changeLanguage("en"));
-afterEach(cleanup);
+// Tests here may end in Chinese; the next file's tests expect English.
+afterEach(async () => {
+  await i18n.changeLanguage("en");
+  cleanup();
+});
 afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();

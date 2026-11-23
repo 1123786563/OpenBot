@@ -65,7 +65,9 @@ beforeEach(async () => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
+  // Tests here may end in Chinese; the next file's tests expect English.
+  await i18n.changeLanguage("en");
   cleanup();
   for (const client of clients) client.clear();
   clients.length = 0;

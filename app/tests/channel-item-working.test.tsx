@@ -1,8 +1,15 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render } from "@testing-library/react";
-import { setLocalePreference } from "@/i18n";
+import { i18n, setLocalePreference } from "@/i18n";
 import { ChannelItemContent } from "@/components/app-sidebar/channel-item-content";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { settleReactWork } from "./settle-react-work";
@@ -13,6 +20,10 @@ import { settleReactWork } from "./settle-react-work";
  */
 
 beforeAll(() => GlobalRegistrator.register());
+beforeEach(async () => {
+  // The language singleton is shared with every other test file in the run.
+  await i18n.changeLanguage("en");
+});
 afterEach(cleanup);
 afterAll(async () => {
   await settleReactWork();
