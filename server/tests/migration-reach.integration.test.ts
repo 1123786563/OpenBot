@@ -56,7 +56,7 @@ afterAll(async () => {
   } finally {
     await admin.end({ timeout: 5 });
   }
-});
+}, 30_000);
 
 type Entry = { tag: string; when: number; sql: string };
 

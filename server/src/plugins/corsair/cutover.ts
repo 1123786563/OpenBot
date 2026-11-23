@@ -7,6 +7,7 @@ import {
   withAuditTransaction,
 } from "../../audit";
 import type { Database } from "../../db/client";
+import type { BrokerProvider } from "../access";
 import { dispatchWhileConnected, RevocationRefusal } from "./revocation";
 
 export const corsairApp = z.enum(["github", "slack"]);
@@ -397,7 +398,7 @@ export async function dispatchTrackedLegacyWrite<
     actorId: string;
     botId: string;
     ref: string;
-    provider: "composio" | "arcade";
+    provider: BrokerProvider;
     vendorUserId: string;
     accountId?: string;
     credentialActorId: string;

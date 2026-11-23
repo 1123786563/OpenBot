@@ -439,6 +439,9 @@ jobs:
       # from that Bot's own dependency tree.
       - run: bun install --frozen-lockfile
         working-directory: agent-mastra
+      # Workspace storage tests import dockerode from the Supervisor's own lockfile.
+      - run: bun install --frozen-lockfile
+        working-directory: supervisor
       # Same for the desktop app: root test discovery imports its React tests, whose JSX runtime is
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
