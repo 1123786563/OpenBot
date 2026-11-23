@@ -14,6 +14,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,12 +74,17 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
   const unpublish = useMutation(unpublishTeamBotMutationOptions(queryClient));
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  if (data.isPending) return null;
+  if (data.isPending) {
+    return <ReadStatus kind="loading" message="Loading Bot sharing…" />;
+  }
   if (data.error) {
     return (
-      <p className="mt-6 text-destructive text-sm" role="alert">
-        {data.error.message}
-      </p>
+      <ReadError
+        message="Couldn’t load Bot sharing"
+        retry={() => data.refetch()}
+        retryBelow
+        retrying={data.isFetching}
+      />
     );
   }
   const published = data.data.teamBots.find((bot) => bot.id === agent.id);

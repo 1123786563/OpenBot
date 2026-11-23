@@ -522,18 +522,45 @@ test("retries an initial Browser state failure from the page", async () => {
   stateFails = true;
   const view = draw(<BrowserPage />, "/?recordings=1");
   expect(
-    (await view.findByRole("alert", {}, { timeout: 3000 })).textContent,
+    (await view.findByRole("alert", {}, { timeout: 8000 })).textContent,
   ).toContain("Couldn't load your browser");
   stateFails = false;
-  await userEvent
-    .setup({ document })
-    .click(view.getByRole("button", { name: "Try again" }));
+  const retry = view.getByRole("button", { name: "Retry" });
+  retry.focus();
+  await userEvent.setup({ document }).keyboard("{Enter}");
   await view.findByRole("button", { name: "Open browser" });
   expect(view.queryByRole("alert")).toBeNull();
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      view.getByRole("heading", { name: "Teach a Bot" }),
+    ),
+  );
 });
 
 const opens = () =>
   writes.filter((write) => write.path === browserApiPaths.open).length;
+
+test("retrying browser status keeps the original browser open", async () => {
+  state = screenState();
+  openAnswer = answerFor("screen");
+  const view = draw(<BrowserPage />);
+  const screen = await view.findByLabelText(SCREEN);
+  stateFails = true;
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: browserKeys.state }),
+  );
+  expect(
+    (await view.findByRole("alert", {}, { timeout: 5000 })).textContent,
+  ).toContain("Couldn't refresh browser status.");
+  expect(view.getByLabelText(SCREEN)).toBe(screen);
+  stateFails = false;
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
+  expect(view.getByLabelText(SCREEN)).toBe(screen);
+  expect(opens()).toBe(1);
+});
 
 /**
  * Starts a recording of the task already named: Start recording in Record's popover above a browser in the page; on
@@ -1141,8 +1168,11 @@ test("on OpenBot Desktop a recording discarded from the Recorder's mark in the b
     },
   };
   const view = draw(<BrowserPage />);
-  const said = await view.findByRole("status");
-  expect(said.textContent).toBe(
+  const discarded = await view.findByText(
+    "Discarded. You chose not to save it.",
+  );
+  const said = discarded.closest('[role="status"]');
+  expect(said?.textContent).toBe(
     "Submit an expense reportDiscarded. You chose not to save it.",
   );
 });
@@ -2513,7 +2543,7 @@ test("arriving while the browser is not answering, the page says so rather than 
   const view = draw(<BrowserPage />);
   expect(await view.findByText(NOT_ANSWERING)).toBeTruthy();
   expect(view.getAllByText(NOT_ANSWERING)).toHaveLength(1);
-  expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
 });
 
 test("on OpenBot Desktop a window that is not answering says so", async () => {
@@ -2547,8 +2577,7 @@ test("while a browser in the page opens on arrival, the page is laid out as it w
   expect(view.queryByText("Opening your browser…")).toBeNull();
 });
 
-test("while the browser's state is first read, the page draws nothing, so a browser that is a window on the desktop never flashes one opening in the page", async () => {
-  // The data-access rule for the quick read: no placeholder. Only a browser known to open in the page says it is opening.
+test("the first state read shows progress without opening a browser window", async () => {
   state = nativeState();
   let read = () => {};
   stateHeld = new Promise<void>((resolve) => {
@@ -2557,11 +2586,14 @@ test("while the browser's state is first read, the page draws nothing, so a brow
   const view = draw(<BrowserPage />);
   await settleReactWork();
   expect(view.queryByText("Opening your browser…")).toBeNull();
-  expect(view.queryByRole("heading", { name: "Teach a Bot" })).toBeNull();
+  expect(view.getByRole("heading", { name: "Teach a Bot" })).toBeTruthy();
+  expect(view.getByRole("status").textContent).toContain(
+    "Checking your browser",
+  );
   read();
-  expect(
-    await view.findByRole("heading", { name: "Teach a Bot" }),
-  ).toBeTruthy();
+  await waitFor(() =>
+    expect(view.queryByText("Checking your browser…")).toBeNull(),
+  );
   expect(view.queryByText("Opening your browser…")).toBeNull();
   expect(opens()).toBe(0);
 });

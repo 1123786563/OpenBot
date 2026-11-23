@@ -23,6 +23,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   ActionUnavailable,
   useActionConfirmation,
@@ -50,6 +51,7 @@ import {
   teamApprovalSettingsMutationOptions,
   updateTeamApprovalRuleMutationOptions,
 } from "@/lib/approvals";
+import { ClientError } from "@/lib/client";
 import { reviewerGuidanceQueryOptions } from "@/lib/reviewer-guidance/queries";
 import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
 import { SharedUseRequests } from "./shared-use-requests";
@@ -112,9 +114,12 @@ export function TeamApprovalSettings() {
   );
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const error = inbox.error;
-  if (inbox.isPending && !error) return null;
-  const settings = inbox.data?.team;
-  const teamRules = inbox.data?.teamRules ?? [];
+  const denied =
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403);
+  const inboxData = denied ? undefined : inbox.data;
+  const settings = inboxData?.team;
+  const teamRules = inboxData?.teamRules ?? [];
 
   function confirmSetting({
     id,
@@ -207,10 +212,27 @@ export function TeamApprovalSettings() {
   return (
     <>
       {confirmation}
-      {error ? (
-        <p className="mt-6 text-destructive text-sm" role="alert">
-          {error.message}
-        </p>
+      {inbox.isPending || error ? (
+        <section className="mt-6">
+          {error ? (
+            <ReadError
+              description={
+                inboxData
+                  ? "The settings and rules already loaded are still shown."
+                  : undefined
+              }
+              message="Couldn't load team approval settings."
+              retry={inbox.refetch}
+              retryBelow
+              retrying={inbox.isFetching}
+            />
+          ) : (
+            <ReadStatus
+              kind="loading"
+              message="Loading team approval settings…"
+            />
+          )}
+        </section>
       ) : null}
       {settings ? (
         <PageSection title="Team settings">
@@ -377,49 +399,51 @@ export function TeamApprovalSettings() {
           </PageRows>
         </PageSection>
       ) : null}
-      <PageSection
-        description="These apply to every member's Bots. Members can't change them."
-        title="Team rules"
-      >
-        {teamRules.length === 0 ? (
-          <PageEmpty icon={IconChecklist} title="No team rules" />
-        ) : null}
-        <PageRows>
-          {teamRules.map((rule) => (
-            <Fragment key={rule.id}>
-              <RuleRow
-                disabled={revokeTeam.isPending || changeTeamRule.isPending}
-                onChange={(behaviour) => confirmRule(rule, behaviour)}
-                onRevoke={() => confirmRule(rule)}
-                rule={rule}
-                team
-              />
-              <Separator />
-            </Fragment>
-          ))}
-          <Item
-            render={
-              <Link id="describe-team-rule" to="/admin/approvals/describe" />
-            }
-            size="sm"
-          >
-            <ItemMedia variant="icon">
-              <IconSparkles />
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Describe it in words</ItemTitle>
-              <ItemDescription>
-                Say what Bots should do, and your model writes the rules.
-              </ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <IconChevronRight className="size-4 text-muted-foreground" />
-            </ItemActions>
-          </Item>
-          <Separator />
-          <RuleForm label="Add a team rule" save={addTeamRule} />
-        </PageRows>
-      </PageSection>
+      {inboxData ? (
+        <PageSection
+          description="These apply to every member's Bots. Members can't change them."
+          title="Team rules"
+        >
+          {teamRules.length === 0 ? (
+            <PageEmpty icon={IconChecklist} title="No team rules" />
+          ) : null}
+          <PageRows>
+            {teamRules.map((rule) => (
+              <Fragment key={rule.id}>
+                <RuleRow
+                  disabled={revokeTeam.isPending || changeTeamRule.isPending}
+                  onChange={(behaviour) => confirmRule(rule, behaviour)}
+                  onRevoke={() => confirmRule(rule)}
+                  rule={rule}
+                  team
+                />
+                <Separator />
+              </Fragment>
+            ))}
+            <Item
+              render={
+                <Link id="describe-team-rule" to="/admin/approvals/describe" />
+              }
+              size="sm"
+            >
+              <ItemMedia variant="icon">
+                <IconSparkles />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>Describe it in words</ItemTitle>
+                <ItemDescription>
+                  Say what Bots should do, and your model writes the rules.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <IconChevronRight className="size-4 text-muted-foreground" />
+              </ItemActions>
+            </Item>
+            <Separator />
+            <RuleForm label="Add a team rule" save={addTeamRule} />
+          </PageRows>
+        </PageSection>
+      ) : null}
       <SharedUseRequests />
     </>
   );

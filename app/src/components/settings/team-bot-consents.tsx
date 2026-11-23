@@ -1,11 +1,13 @@
+import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
   ItemContent,
-  ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -19,42 +21,62 @@ import { clearTeamBotConsentsMutationOptions } from "@/lib/team-bots";
  * which is the question every other row on Approvals answers, not a connection of its own.
  */
 export function TeamBotConsents() {
-  const personal =
-    useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const capabilities = useQuery(deploymentCapabilitiesQueryOptions());
   const clear = useMutation(clearTeamBotConsentsMutationOptions());
-  if (personal) return null;
+  const { confirmation, requestConfirmation } = useActionConfirmation();
+  if (capabilities.isError) {
+    return (
+      <ReadError
+        message="Couldn't check whether shared Bot controls are available."
+        retry={capabilities.refetch}
+        retrying={capabilities.isFetching}
+      />
+    );
+  }
+  if (capabilities.data?.edition !== "team") return null;
   return (
     <PageSection
       description="A Bot shared with you uses its owner's apps. It uses yours only where you said yes in a conversation."
       title="Shared Bots"
     >
-      {clear.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {clear.error.message}
-        </p>
-      ) : null}
       <PageRows>
-        <Item size="sm">
-          <ItemContent>
-            <ItemTitle>Apps you let shared Bots use</ItemTitle>
-            <ItemDescription>
-              {clear.isSuccess
-                ? "Reset. Each shared Bot will ask again."
-                : "Forget every answer, so each shared Bot asks again."}
-            </ItemDescription>
+        <Item className="flex-wrap items-start" size="sm">
+          <ItemContent className="min-w-0 basis-56">
+            <ItemTitle className="line-clamp-none">
+              Apps you let shared Bots use
+            </ItemTitle>
+            <Text as="p" color="secondary" size="sm">
+              Clear saved answers so shared Bots ask again before using your
+              apps.
+            </Text>
           </ItemContent>
           <ItemActions>
             <Button
               disabled={clear.isPending}
-              onClick={() => clear.mutate()}
+              onClick={(event) => {
+                requestConfirmation({
+                  title: "Reset all shared Bot permissions?",
+                  description:
+                    "OpenBot will clear every answer you saved about shared Bots using your connected apps. Each shared Bot will ask again before it uses your apps.",
+                  confirmLabel: "Reset all permissions",
+                  pendingLabel: "Resetting…",
+                  failureMessage:
+                    "Couldn't reset shared Bot permissions. Try again.",
+                  successMessage:
+                    "Shared Bot permissions reset. Each shared Bot will ask again.",
+                  trigger: event.currentTarget,
+                  run: () => clear.mutateAsync(),
+                });
+              }}
               size="sm"
               variant="outline"
             >
-              Reset
+              Reset permissions
             </Button>
           </ItemActions>
         </Item>
       </PageRows>
+      {confirmation}
     </PageSection>
   );
 }

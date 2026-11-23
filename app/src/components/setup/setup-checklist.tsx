@@ -101,8 +101,10 @@ export function SetupChecklist({
   return (
     <div className="flex w-full flex-col gap-3" data-setup-checklist="">
       {recheck.error ? (
+        /* Says what is on screen (the last check's list) and names the control beside it, rather
+           than a "Try again." that is not a button. */
         <p className="text-sm text-destructive" role="alert">
-          Couldn't check again. Try again.
+          Couldn't check again. The list below is from the last check.
         </p>
       ) : null}
       {/* Placeholder rows while the first answer is on its way, so the list is not blank. */}
@@ -203,18 +205,18 @@ function pillFor(row: SetupRow) {
   if (row.status === "ready")
     return {
       label: "Ready",
-      tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+      tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
     };
   if (row.status === "not_checked")
     return {
       label: "Not checked",
-      tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
     };
   return {
     label: "Needs setup",
     tone: row.required
       ? "bg-destructive/10 text-destructive"
-      : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      : "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   };
 }
 

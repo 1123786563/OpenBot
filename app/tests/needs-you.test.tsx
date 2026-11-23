@@ -530,6 +530,6 @@ test("Tasks shows an empty inbox only after approvals load successfully", async 
   approvals.resolve(
     Response.json({ error: "Approvals unavailable" }, { status: 503 }),
   );
-  await view.findByText("Approvals unavailable");
+  await view.findByText("Couldn’t load approvals and questions");
   expect(view.queryByText("No Bot tasks yet")).toBeNull();
 });

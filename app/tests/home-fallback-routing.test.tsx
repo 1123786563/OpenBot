@@ -2,6 +2,12 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { text } from "prompt-area/helpers";
+import {
+  composeDraftKey,
+  draftSegments,
+  readComposeDraft,
+} from "@/lib/channels/compose-draft";
 import { pluginKeys } from "@/lib/plugins/queries";
 import {
   agent,
@@ -25,6 +31,7 @@ afterEach(() => {
   global.fetch = originalFetch;
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 afterAll(async () => {
@@ -74,6 +81,71 @@ test("/ starts the box with the words a link hands over, and sends them only whe
   const user = userEvent.setup({ document: view.container.ownerDocument });
   await user.click(await view.findByRole("button", { name: "Send message" }));
   await waitFor(() => expect(starts).toEqual([["own-public"]]));
+});
+
+test("Home restores an unsent draft without replacing a linked starter", async () => {
+  const own = agent({ id: "own", name: "Own Bot", visibility: "public" });
+  const view = renderHome(queryClientWithAgents([own]));
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(await view.findByRole("textbox", { name: "Message" }));
+  await user.keyboard("Draft before refreshing");
+  view.unmount();
+
+  const starter = renderHome(
+    queryClientWithAgents([own]),
+    "/?ask=Check%20my%20calendar",
+  );
+  expect(
+    (await starter.findByRole("textbox", { name: "Message" })).textContent,
+  ).toBe("Check my calendar");
+  starter.unmount();
+
+  const restored = renderHome(queryClientWithAgents([own]));
+  const editor = await restored.findByRole("textbox", {
+    name: "Message",
+    description: "Draft restored. Your unsent message is saved in this tab.",
+  });
+  expect(editor.textContent).toBe("Draft before refreshing");
+});
+
+test("choosing specific Bots copies the message and retains the Home draft", async () => {
+  const own = agent({ id: "own", name: "Own Bot", visibility: "public" });
+  const query = queryClientWithAgents([own], "draft-owner");
+  const view = renderHome(query);
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(await view.findByRole("textbox", { name: "Message" }));
+  await user.keyboard("Review the budget");
+  await user.click(
+    view.getByRole("button", { name: "Choose Bots for a new conversation" }),
+  );
+  await view.findByText("New conversation destination");
+
+  const composition = view.router.state.location.state.newConversation;
+  expect(composition).toBeTruthy();
+  const source = composeDraftKey("draft-owner", "home", "message");
+  const destination = composeDraftKey(
+    "draft-owner",
+    composition ?? "",
+    "message",
+  );
+  const message = [text("Review the budget")];
+  expect(readComposeDraft(destination, draftSegments)).toEqual(message);
+  expect(readComposeDraft(source, draftSegments)).toEqual(message);
+});
+
+test("a Bot named on Home is carried into To when copying the draft", async () => {
+  const own = agent({ id: "own", name: "Own Bot", visibility: "public" });
+  const view = renderHome(queryClientWithAgents([own]));
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(await view.findByRole("textbox", { name: "Message" }));
+  await user.keyboard("@Own");
+  await user.click(await view.findByRole("option", { name: /Own Bot/ }));
+  await user.keyboard("Review the budget");
+  await user.click(
+    view.getByRole("button", { name: "Choose Bots for a new conversation" }),
+  );
+  await view.findByText("New conversation destination");
+  expect(view.router.state.location.searchStr).toBe("?agent=own");
 });
 
 test("/ fallback routing matches the server default when route selection is unavailable", async () => {
@@ -212,9 +284,7 @@ test("a failed start is reachable from Home without replacing a new draft", asyn
   const composer = await view.findByRole("textbox", { name: "Message" });
   await user.type(composer, "something new");
   expect(composer.textContent).toBe("something new");
-  await user.click(
-    view.getByRole("link", { name: /Resume conversation · ask analyst/ }),
-  );
+  await user.click(view.getByRole("link", { name: /ask analyst/ }));
   expect(await view.findByText("ask analyst")).toBeTruthy();
   expect(starts).toEqual([]);
 });

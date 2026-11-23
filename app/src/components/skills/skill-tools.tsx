@@ -116,10 +116,23 @@ export function SkillTools({
 
   if (plugins.isPending) return null;
   if (!plugins.data) {
+    /* The draft stays on screen above: retrying in place, not "Reload the page.", which would
+       throw away everything already typed into the skill. */
     return (
-      <p className="mt-4 text-destructive text-sm" role="alert">
-        Couldn't load the tools. Reload the page.
-      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <p className="text-destructive text-sm" role="alert">
+          Couldn't load the tools.
+        </p>
+        <Button
+          disabled={plugins.isFetching}
+          onClick={() => void plugins.refetch()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {plugins.isFetching ? "Retrying…" : "Retry"}
+        </Button>
+      </div>
     );
   }
 
@@ -230,7 +243,9 @@ export function SkillTools({
         open={current !== undefined}
       >
         {current ? (
-          <DialogContent {...astryxScope}>
+          /* One named exit: Done commits the picks, and the built-in close beside it read
+             as a second, different way out of the same choice. */
+          <DialogContent {...astryxScope} showCloseButton={false}>
             <DialogHeader>
               <DialogTitle>{current.title}</DialogTitle>
               <DialogDescription>

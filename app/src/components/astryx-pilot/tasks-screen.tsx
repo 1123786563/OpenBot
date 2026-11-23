@@ -1,14 +1,12 @@
-import { Button } from "@astryxdesign/core/Button";
-import { IconChecklist } from "@tabler/icons-react";
+import { Tab, TabList } from "@astryxdesign/core/TabList";
+import { VStack } from "@astryxdesign/core/VStack";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useWaitingRows } from "@/components/approvals/waiting";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
-import {
-  PageEmpty,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { InlineEmpty } from "@/components/layout/page-parts";
+import { PageSection, PageShell } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
 import {
   NeedsYouRows,
   useNeedsYouTasks,
@@ -45,31 +43,52 @@ function rememberView(view: TasksView) {
 
 export function TasksScreen() {
   const [view, setView] = useState<TasksView>(rememberedView);
+  const id = useId();
+  const activePanel = `${id}-active`;
+  const upcomingPanel = `${id}-up-next`;
   return (
-    <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <AstryxSurface className="bot-task-views flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <PageShell
-        backButton={{ label: "Routines", linkProps: { to: "/routines" } }}
         description="Review work your Bots are doing and revisit completed tasks."
         title="Bot tasks"
       >
-        <fieldset className="flex min-w-0 flex-wrap gap-2">
-          <legend className="sr-only">Task view</legend>
-          {(["active", "up_next"] satisfies TasksView[]).map((option) => (
-            <Button
-              aria-pressed={view === option}
-              key={option}
-              label={option === "active" ? "Active" : "Up next"}
-              onClick={() => {
-                setView(option);
-                rememberView(option);
-              }}
-              variant={view === option ? "primary" : "secondary"}
-            />
-          ))}
-        </fieldset>
-        <div className="mt-6">
-          {view === "active" ? <ActiveView /> : <SuggestionsInbox />}
-        </div>
+        <VStack gap={4}>
+          <TabList
+            aria-label="Task views"
+            onChange={(value) => {
+              if (value === "active" || value === "up_next") {
+                setView(value);
+                rememberView(value);
+              }
+            }}
+            role="tablist"
+            size="lg"
+            value={view}
+          >
+            <Tab label="Active" panelId={activePanel} value="active" />
+            <Tab label="Up next" panelId={upcomingPanel} value="up_next" />
+          </TabList>
+          <section
+            aria-label="Active"
+            hidden={view !== "active"}
+            id={activePanel}
+            role="tabpanel"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: The ARIA tabs pattern puts the focusable target on the panel.
+            tabIndex={0}
+          >
+            {view === "active" ? <ActiveView /> : null}
+          </section>
+          <section
+            aria-label="Up next"
+            hidden={view !== "up_next"}
+            id={upcomingPanel}
+            role="tabpanel"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: The ARIA tabs pattern puts the focusable target on the panel.
+            tabIndex={0}
+          >
+            {view === "up_next" ? <SuggestionsInbox /> : null}
+          </section>
+        </VStack>
       </PageShell>
     </AstryxSurface>
   );
@@ -82,19 +101,24 @@ function ActiveView() {
   const listed = [...tasks, ...done];
 
   return (
-    <div className="flex flex-col gap-7">
+    <VStack gap={6}>
+      {taskList.pending || waiting.isPending ? (
+        <ReadStatus kind="loading" message="Loading Bot tasks…" />
+      ) : null}
       {taskList.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {taskList.error.message}
-        </p>
+        <ReadStatus
+          kind="error"
+          message="Couldn’t load Bot tasks"
+          retry={taskList.refetch}
+        />
       ) : !taskList.pending &&
         !waiting.isPending &&
         !waiting.error &&
         listed.length === 0 &&
         waiting.rows.length === 0 ? (
-        <PageEmpty icon={IconChecklist} title="No Bot tasks yet">
+        <InlineEmpty title="No Bot tasks yet">
           Work your Bots start and tasks you complete will appear here.
-        </PageEmpty>
+        </InlineEmpty>
       ) : null}
       {TASK_ORDER.map((status) => {
         const group = listed.filter((entry) => entry.status === status);
@@ -111,9 +135,11 @@ function ActiveView() {
         );
       })}
       {waiting.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {waiting.error.message}
-        </p>
+        <ReadStatus
+          kind="error"
+          message="Couldn’t load approvals and questions"
+          retry={waiting.refetch}
+        />
       ) : null}
       <BotResponsibilities />
       <PageSection title="Routines">
@@ -122,6 +148,6 @@ function ActiveView() {
         </Link>
         <RoutinesList embedded />
       </PageSection>
-    </div>
+    </VStack>
   );
 }

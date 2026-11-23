@@ -80,7 +80,7 @@ test("Asana and Attio are fully scoped: one permission across one action", () =>
       toolkit.actionCount,
     ]).toEqual([1, 1, 1]);
     expect(consentBreadth(toolkit)).toBe(
-      "This app uses 1 separate permission across 1 action.",
+      "Approving this app grants 1 permission that covers 1 action.",
     );
   }
 });
@@ -90,7 +90,7 @@ test("more than one permission, fully scoped", () => {
     consentBreadth(
       app({ actionCount: 30, permissionCount: 4, scopedActionCount: 30 }),
     ),
-  ).toBe("This app uses 4 separate permissions across 30 actions.");
+  ).toBe("Approving this app grants 4 permissions that cover 30 actions.");
 });
 
 test("AirtableApi is the mixed shape: names the further K that need no permission", () => {
@@ -101,7 +101,7 @@ test("AirtableApi is the mixed shape: names the further K that need no permissio
     airtable.actionCount,
   ]).toEqual([1, 1, 2]);
   expect(consentBreadth(airtable)).toBe(
-    "This app uses 1 separate permission across 2 actions. A further 1 requests no permission of its own and becomes callable with any approval here.",
+    "Approving this app grants 1 permission that covers 2 actions. One more action needs no permission of its own: approving any action here also lets a Bot call it.",
   );
 });
 
@@ -111,7 +111,7 @@ test("the mixed shape with several further actions", () => {
       app({ actionCount: 10, permissionCount: 2, scopedActionCount: 6 }),
     ),
   ).toBe(
-    "This app uses 2 separate permissions across 10 actions. A further 4 request no permission of their own and become callable with any approval here.",
+    "Approving this app grants 2 permissions that cover 10 actions. 4 more actions need no permission of their own: approving any action here also lets a Bot call them.",
   );
 });
 
@@ -131,7 +131,7 @@ test("it renders on the enablement step, before enabling", () => {
     />,
   );
   expect(html).toContain('data-testid="breadth-note"');
-  expect(html).toContain("1 separate permission across 2 actions");
+  expect(html).toContain("1 permission that covers 2 actions");
 });
 
 test("no copy promises confinement", () => {

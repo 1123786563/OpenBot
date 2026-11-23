@@ -112,6 +112,7 @@ export function InactiveComputersSection() {
   return (
     <ControlsSection
       description="Stopping a computer ends its running Bots and keeps its disk. The Bot gets a fresh computer next session. To stop one person's computers, go to People."
+      readErrorMessage="Couldn't load Idle computers and Network settings."
       title="Idle computers"
     >
       {({ data, setSetting }) => (
@@ -160,6 +161,7 @@ export function NetworkSection() {
   return (
     <ControlsSection
       description="Control where Bot computers can connect. Changes apply within seconds without a restart. Group policies override the organization’s policy unless it is locked."
+      readErrorMessage={false}
       title="Network"
     >
       {({ data }) => {

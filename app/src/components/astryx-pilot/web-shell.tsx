@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useId, useRef } from "react";
@@ -37,12 +38,28 @@ function AstryxWebFrame({ children }: { children: ReactNode }) {
   return (
     <>
       <AttentionNotifier />
-      <AppSidebar navId={navId} returnFocus={trigger} />
-      <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
-        <div {...astryxScope} className="astryx-web-bar">
+      <AppSidebar navId={navId} returnFocus={trigger} variant="sidebar" />
+      <SidebarInset
+        className="min-h-0 min-w-0 overflow-hidden"
+        id="main-content"
+        tabIndex={-1}
+      >
+        <HStack
+          {...astryxScope}
+          as="header"
+          align="center"
+          gap={2}
+          paddingInline={3}
+          minHeight="var(--spacing-12)"
+          style={{
+            ...astryxScope.style,
+            flexShrink: 0,
+            borderBlockEnd: "thin solid var(--color-border)",
+          }}
+        >
           <AstryxNavigationToggle navId={navId} trigger={trigger} />
           {isMobile || !open ? <AstryxBrand /> : null}
-        </div>
+        </HStack>
         <UpdateBanner />
         <SelfHostBanner />
         {children}

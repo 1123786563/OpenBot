@@ -71,6 +71,12 @@ const BACK = {
   linkProps: { to: "/admin/components" },
 } as const;
 
+/** "ClaimSummary" -> "Claim summary": the name a person gave it, as far as the slug holds it. */
+function fallbackTitle(name: string) {
+  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export const Route = createFileRoute("/_authed/admin/components/$name")({
   component: RouteComponent,
 });
@@ -102,7 +108,7 @@ function RouteComponent() {
    */
   if (components.isPending) {
     return (
-      <CapabilityPage backButton={BACK} title="Components">
+      <CapabilityPage backButton={BACK} title={fallbackTitle(name)}>
         <div
           aria-busy="true"
           aria-label="Loading"
@@ -119,10 +125,10 @@ function RouteComponent() {
 
   if (components.error) {
     return (
-      <CapabilityPage backButton={BACK} title="Components">
+      <CapabilityPage backButton={BACK} title={fallbackTitle(name)}>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <p className="text-destructive text-sm" role="alert">
-            Couldn't load components.
+            Couldn't load this component.
           </p>
           <Button
             disabled={components.isFetching}
@@ -351,7 +357,8 @@ function ComponentDetail({
                 <ItemContent>
                   <ItemTitle>Not in this build</ItemTitle>
                   <ItemDescription>
-                    OpenBot can't draw it. The settings below have no effect.
+                    This build cannot draw it, so the settings below have no
+                    effect.
                   </ItemDescription>
                 </ItemContent>
               </Item>
@@ -375,10 +382,15 @@ function ComponentDetail({
               </ItemDescription>
             </ItemContent>
             <ItemActions>
+              {/*
+               * A component this build cannot draw has no effect however it is set, so the
+               * switch says so by being inert rather than contradicting the notice above it.
+               */}
               <Switch
                 aria-label="Published"
                 checked={component.published}
                 data-testid={`publish-${component.name}`}
+                disabled={!renderable}
                 onCheckedChange={onPublish}
               />
             </ItemActions>

@@ -1030,16 +1030,6 @@ export function createComputerRoutes(
     const denied = requireAdmin(context);
     if (denied) return denied;
 
-    if (!auditReader) {
-      return context.json(
-        {
-          error:
-            "This deployment records no readable trail, so there is no history to test against.",
-        },
-        501,
-      );
-    }
-
     const body = (await context.req.json().catch(() => null)) as {
       policy?: unknown;
       limit?: unknown;
@@ -1080,6 +1070,16 @@ export function createComputerRoutes(
         );
       }
       limit = rawLimit;
+    }
+
+    if (!auditReader) {
+      return context.json(
+        {
+          error:
+            "This deployment records no readable trail, so there is no history to test against.",
+        },
+        501,
+      );
     }
 
     // Computer actions and app calls, newest first across both: one policy decides both, and a rule

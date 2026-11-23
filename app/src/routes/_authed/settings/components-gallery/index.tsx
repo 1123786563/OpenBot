@@ -3,12 +3,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { ComponentPreview } from "@/components/component-preview";
 import { SettingsItemBackground } from "@/components/settings/background";
+import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 import { componentListQueryOptions } from "@/lib/components/queries";
 import { galleryComponent } from "@/lib/copilot/gallery-registry";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -61,10 +63,33 @@ function RouteComponent() {
 
   return (
     <CapabilityPage description={words.intro} title="Components gallery">
-      {components.isPending ? null : components.error ? (
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          Couldn't load components. Reload the page.
-        </p>
+      {components.isPending ? (
+        /* The grid's own shape while it loads, so the page is never blank. */
+        <div
+          aria-busy="true"
+          aria-label="Loading components"
+          role="status"
+          className="mt-12 grid w-full grid-cols-1 gap-4 md:grid-cols-2"
+        >
+          {[0, 1, 2, 3].map((key) => (
+            <Skeleton key={key} className="aspect-square rounded-lg" />
+          ))}
+        </div>
+      ) : components.error ? (
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load components.
+          </p>
+          <Button
+            disabled={components.isFetching}
+            onClick={() => void components.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {components.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : published?.length === 0 ? (
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
           <EmptyHeader>

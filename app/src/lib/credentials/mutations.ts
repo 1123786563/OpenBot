@@ -10,14 +10,21 @@ export type CredentialInput = {
   plaintext: string;
 };
 
-export function createCredentialMutationOptions(queryClient: QueryClient) {
+export function saveCredentialMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: (input: CredentialInput) =>
-      client("/api/admin/credentials", {
+    mutationFn: ({
+      previousCredentialId,
+      ...input
+    }: CredentialInput & { previousCredentialId: string | null }) => {
+      const endpoint = previousCredentialId
+        ? `/api/admin/credentials/${encodeURIComponent(previousCredentialId)}/rotate`
+        : "/api/admin/credentials";
+      return client(endpoint, {
         method: "POST",
-        body: input,
+        body: previousCredentialId ? input : { ...input, createOnly: true },
         fallback: "Credential operation failed",
-      }),
+      });
+    },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: credentialKeys.all }),
   });

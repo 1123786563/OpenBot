@@ -3,9 +3,11 @@ import {
   IconBolt,
   IconBox,
   IconClock,
+  IconCoins,
   IconPlug,
   IconSettings,
   IconShieldLock,
+  IconTarget,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { OpenBotLogo } from "@/components/edition/openbot-logo";
@@ -19,7 +21,9 @@ export type NavigationItem =
       id:
         | "bots"
         | "routines"
+        | "goals"
         | "capabilities"
+        | "credits"
         | "connections"
         | "admin"
         | "settings";
@@ -27,10 +31,13 @@ export type NavigationItem =
       to:
         | "/bots"
         | "/routines"
+        | "/responsibilities"
         | "/capabilities"
+        | "/billing"
         | "/connections"
         | "/admin"
         | "/settings";
+      search?: { view: "goals" };
       icon: Icon;
       section: "primary" | "account";
       /** Admin routes are guarded on the server; the entry is hidden from people who cannot open them. */
@@ -80,6 +87,14 @@ export const NAVIGATION: readonly NavigationItem[] = [
     section: "primary",
   },
   {
+    id: "goals",
+    label: "Goals",
+    to: "/responsibilities",
+    search: { view: "goals" },
+    icon: IconTarget,
+    section: "primary",
+  },
+  {
     id: "capabilities",
     label: "Capabilities",
     to: "/capabilities",
@@ -91,6 +106,13 @@ export const NAVIGATION: readonly NavigationItem[] = [
     label: "Connections",
     to: "/connections",
     icon: IconPlug,
+    section: "primary",
+  },
+  {
+    id: "credits",
+    label: "Credits",
+    to: "/billing",
+    icon: IconCoins,
     section: "primary",
   },
   {

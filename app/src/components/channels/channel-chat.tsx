@@ -52,12 +52,8 @@ import {
   setChannelBusy,
 } from "@/lib/channels/mutations";
 import {
-  claimFirstSend,
   findFirstMessage,
-  finishPendingStart,
-  readPendingStart,
   restorePendingAttachments,
-  savePendingStart,
 } from "@/lib/channels/pending-start";
 import {
   type AgentChannel,
@@ -65,6 +61,11 @@ import {
   channelKeys,
 } from "@/lib/channels/queries";
 import { runReply } from "@/lib/channels/run-reply";
+import {
+  discardDirectFirstMessage,
+  type FirstMessageRecovery,
+  resumeDirectFirstMessage,
+} from "@/lib/channels/start";
 import {
   onTurnFinishedAway,
   turnFinishedAway,
@@ -559,10 +560,11 @@ export function ChannelChat({
   const firstOwner = useRef(user?.id);
   firstOwner.current = user?.id;
   const [firstAttempt, setFirstAttempt] = useState(0);
-  const [firstError, setFirstError] = useState<{
-    message: string;
-    action: "retry" | "check";
-  } | null>(null);
+  const [checkingFirstMessage, setCheckingFirstMessage] = useState(false);
+  const resendFirstMessage = useRef(false);
+  const [firstError, setFirstError] = useState<FirstMessageRecovery | null>(
+    null,
+  );
   const [copyStatus, setCopyStatus] = useState("");
   const {
     requestConfirmation: requestDraftDiscard,
@@ -1243,13 +1245,24 @@ export function ChannelChat({
       );
 
     if (beforeFirstSend) await beforeFirstSend();
-    const message = sent ?? {
-      content: toMessageContent(trimmed, attachments),
-      id: newId(),
-      role: "user" as const,
-    };
-    if (!credit || !target.messages.some(({ id }) => id === message.id))
-      target.addMessage(message);
+    if (beforeFirstSend && sent && existingMessageIds.has(sent.id)) {
+      target.setMessages([
+        ...target.messages.filter((message) => message.id !== sent.id),
+        sent,
+      ]);
+    } else if (
+      !credit ||
+      !sent ||
+      !target.messages.some(({ id }) => id === sent.id)
+    ) {
+      target.addMessage(
+        sent ?? {
+          content: toMessageContent(trimmed, attachments),
+          id: newId(),
+          role: "user",
+        },
+      );
+    }
     report(trimmed || describeAttachments(attachments), null);
 
     // Providers reject later turns if prior tool calls have no result; repair before sending.
@@ -1694,6 +1707,7 @@ export function ChannelChat({
     if (!channel.active || !isReady) {
       const timer = setTimeout(
         () => {
+          setCheckingFirstMessage(false);
           setFirstError({
             action: "check",
             message: channel.active
@@ -1705,123 +1719,66 @@ export function ChannelChat({
       );
       return () => clearTimeout(timer);
     }
-    setFirstError(null);
     const { id } = first;
     let current = true;
 
     const attempt = async () => {
       await joinedPromise;
-      if (!current || firstOwner.current !== owner) return;
-      const stored = readPendingStart(owner, id);
-      if (!stored || stored.state === "finished") {
-        setFirst(null);
-        return;
-      }
-      const verify = async () => {
-        const history = await readThreadMessages(
-          channel.threadId,
-          runtimeAgentId,
-        );
-        if (
-          history.availability === "ready" &&
-          history.messages.some(
-            (message) => message.id === id && message.role === "user",
-          )
-        ) {
+      const isCurrent = () => current && firstOwner.current === owner;
+      if (!isCurrent()) return;
+      const resend = resendFirstMessage.current;
+      resendFirstMessage.current = false;
+      const result = await resumeDirectFirstMessage({
+        queryClient: queries,
+        owner,
+        id,
+        channelId: channel.id,
+        resend,
+        isCurrent,
+        readHistory: async () => {
+          const version = ++historyReadVersion.current;
+          const history = await readThreadMessages(
+            channel.threadId,
+            runtimeAgentId,
+          );
+          if (isCurrent() && version === historyReadVersion.current) {
+            setUnreadable(history.unreadable);
+            setHistoryAvailability(history.availability);
+            setHistoryReadFailed(history.availability === "unavailable");
+          }
+          return history;
+        },
+        onDelivered: (history) => {
           const target = agentRef.current;
           const merged = mergeStoredMessages(target.messages, history.messages);
           if (merged !== target.messages) target.setMessages(merged);
-          finishPendingStart(owner, id, channel.id, false);
-          if (current) setFirst(null);
-          return;
-        }
-        if (current) {
+        },
+        send: async (text, attachments, beforeSend) => {
+          await sayRef.current(
+            text,
+            attachments,
+            { id, role: "user", content: toMessageContent(text, attachments) },
+            beforeSend,
+          );
+        },
+      });
+      if (!isCurrent()) return;
+      if (result === "finished") setFirst(null);
+      else if (result !== "inactive") setFirstError(result);
+    };
+
+    void attempt()
+      .catch(() => {
+        if (current)
           setFirstError({
             action: "check",
             message:
-              history.availability === "ready"
-                ? "Your message is saved here. It hasn’t appeared in the Thread yet. Check again to see whether it arrived."
-                : "Your message is saved here, but the Thread couldn’t be checked. Check again when you’re back online.",
+              "Your message is saved here. Delivery is still unconfirmed.",
           });
-        }
-      };
-
-      if (stored.progress.phase === "submitted") {
-        await verify();
-        return;
-      }
-      if (
-        stored.progress.phase !== "ready" ||
-        stored.progress.channelId !== channel.id
-      )
-        return;
-
-      let submitted = false;
-      try {
-        const attachments = restorePendingAttachments(stored.draft);
-        await sayRef.current(
-          stored.draft.text,
-          attachments,
-          {
-            id,
-            role: "user",
-            content: toMessageContent(stored.draft.text, attachments),
-          },
-          async () => {
-            if (!current || firstOwner.current !== owner)
-              throw new Error("The conversation was closed.");
-            const latest = readPendingStart(owner, id);
-            if (
-              latest?.state !== "pending" ||
-              latest.progress.phase !== "ready"
-            ) {
-              submitted = true;
-              throw new Error("The message is already being checked.");
-            }
-            const claimed = await claimFirstSend(owner, id);
-            submitted = true;
-            const beforeSend = readPendingStart(owner, id);
-            if (
-              beforeSend?.state === "pending" &&
-              beforeSend.progress.phase === "ready"
-            ) {
-              savePendingStart(owner, id, {
-                ...beforeSend,
-                progress: { phase: "submitted", channelId: channel.id },
-              });
-            }
-            if (
-              !claimed ||
-              beforeSend?.state !== "pending" ||
-              !current ||
-              firstOwner.current !== owner
-            ) {
-              throw new Error("The message is already being checked.");
-            }
-          },
-        );
-        finishPendingStart(owner, id, channel.id, false);
-        if (current) setFirst(null);
-      } catch {
-        if (submitted) {
-          await verify();
-        } else if (current) {
-          setFirstError({
-            action: "retry",
-            message: "Your message is saved here. Try again to send it.",
-          });
-        }
-      }
-    };
-
-    void attempt().catch(() => {
-      if (current)
-        setFirstError({
-          action: "check",
-          message:
-            "Your message is saved here. Check again to see whether it arrived.",
-        });
-    });
+      })
+      .finally(() => {
+        if (current) setCheckingFirstMessage(false);
+      });
     return () => {
       current = false;
     };
@@ -1833,6 +1790,7 @@ export function ChannelChat({
     firstAttempt,
     isReady,
     joinedPromise,
+    queries,
     runtimeAgentId,
     user?.id,
   ]);
@@ -1935,6 +1893,7 @@ export function ChannelChat({
               )
             }
             disabled={!channel.active || Boolean(first)}
+            pendingMessageId={first?.id}
             messages={withVoiceChats(
               transcriptMessages(agent.messages, seed).map(shownAnswer),
               voiceArchive.entries,
@@ -1963,13 +1922,19 @@ export function ChannelChat({
                       retryLabel={
                         firstError.action === "check"
                           ? "Check again"
-                          : "Try again"
+                          : firstError.action === "resend"
+                            ? "Resend message"
+                            : "Try again"
                       }
                       retry={() => {
-                        setFirstError(null);
+                        if (checkingFirstMessage) return;
+                        resendFirstMessage.current =
+                          firstError.action === "resend";
+                        setCheckingFirstMessage(true);
                         setFirstAttempt((attempt) => attempt + 1);
                       }}
-                      retrying={false}
+                      retrying={checkingFirstMessage}
+                      retryBelow
                     />
 
                     <Stack direction="horizontal" gap={2} wrap="wrap">
@@ -1993,6 +1958,7 @@ export function ChannelChat({
                       <Button
                         size="sm"
                         label="Discard browser copy"
+                        isDisabled={checkingFirstMessage}
                         onClick={(event) => {
                           const owner = user?.id;
                           if (!owner) return;
@@ -2007,11 +1973,10 @@ export function ChannelChat({
                             successMessage: "Browser copy discarded.",
                             trigger: event.currentTarget,
                             run: async () => {
-                              finishPendingStart(
+                              discardDirectFirstMessage(
                                 owner,
                                 first.id,
                                 channel.id,
-                                false,
                               );
                               setFirst(null);
                             },
@@ -2076,25 +2041,27 @@ export function ChannelChat({
                     }
                   }}
                 />
-                {(voiceArchive.error ||
-                  (historyReadFailed && historyNotice)) && (
-                  <ConversationReadError
-                    title={
-                      voiceArchive.error && historyReadFailed
-                        ? "Couldn't load earlier messages or voice chats."
-                        : voiceArchive.error
-                          ? "Couldn't load voice chats."
-                          : (historyNotice ?? "Couldn't load earlier messages.")
-                    }
-                    description={
-                      voiceArchive.error
-                        ? "You can keep using this conversation."
-                        : undefined
-                    }
-                    retry={retryArchive}
-                    retrying={retryingHistory || voiceArchive.fetching}
-                  />
-                )}
+                {!first &&
+                  (voiceArchive.error ||
+                    (historyReadFailed && historyNotice)) && (
+                    <ConversationReadError
+                      title={
+                        voiceArchive.error && historyReadFailed
+                          ? "Couldn't load earlier messages or voice chats."
+                          : voiceArchive.error
+                            ? "Couldn't load voice chats."
+                            : (historyNotice ??
+                              "Couldn't load earlier messages.")
+                      }
+                      description={
+                        voiceArchive.error
+                          ? "You can keep using this conversation."
+                          : undefined
+                      }
+                      retry={retryArchive}
+                      retrying={retryingHistory || voiceArchive.fetching}
+                    />
+                  )}
                 {voiceContextNotice && (
                   <p
                     className="pb-2 text-sm text-muted-foreground"
@@ -2103,7 +2070,7 @@ export function ChannelChat({
                     {voiceContextNotice}
                   </p>
                 )}
-                {historyNotice && !historyReadFailed ? (
+                {!first && historyNotice && !historyReadFailed ? (
                   <p
                     className="pb-2 text-sm text-muted-foreground"
                     role="status"

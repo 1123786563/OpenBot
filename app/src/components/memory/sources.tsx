@@ -1,12 +1,13 @@
 import { IconPlugConnected, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Fragment, useId, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -118,10 +119,15 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
       description="Apps you connected that this Bot can read show up here, and you can add more. Sources refresh every 15 minutes. Only this Bot sees what they hold."
       title="App sources"
     >
-      {sources.isPending ? null : sources.error ? (
-        <p role="alert" className="mt-4 text-destructive text-sm">
-          {sources.error.message}
-        </p>
+      {sources.isPending ? (
+        <ReadStatus kind="loading" message="Loading app sources…" />
+      ) : sources.error ? (
+        <ReadError
+          message="Couldn’t load app sources"
+          retry={() => sources.refetch()}
+          retryBelow
+          retrying={sources.isFetching}
+        />
       ) : shown.length === 0 ? (
         <PageEmpty
           action={

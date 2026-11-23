@@ -1,11 +1,10 @@
-import { IconBook, IconChevronRight } from "@tabler/icons-react";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { IconBook, IconChevronRight, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { type MouseEventHandler, useRef } from "react";
+import type { ComponentProps } from "react";
 import { z } from "zod";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
-import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
-import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotRoster } from "@/components/bots/bot-roster";
 import {
   PageRows,
@@ -31,68 +30,68 @@ export const Route = createFileRoute("/_authed/_app/bots/")({
   component: BotsPage,
 });
 
+function CreateBotLink({
+  href: _href,
+  ...props
+}: ComponentProps<"a"> & { to?: string }) {
+  return <Link {...props} id="bots-new" to="/bots" search={{ new: true }} />;
+}
+
 function BotsPage() {
   const { new: creating } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const createTrigger = useRef<HTMLElement | null>(null);
-  const rememberCreateTrigger: MouseEventHandler<HTMLElement> = (event) => {
-    if (
-      event.button === 0 &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      !event.shiftKey
-    ) {
-      createTrigger.current = event.currentTarget;
-    }
-  };
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   return (
-    <AstryxSurface className="astryx-bots-surface flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageShell
-        action={<NewBotAction onClick={rememberCreateTrigger} primary />}
-        description={
-          personal
-            ? "Open a Bot to get started."
-            : "Manage your Bots and access those shared with you."
-        }
-        title="Bots"
-      >
-        <BotRoster onNewBotClick={rememberCreateTrigger} />
-        {personal ? <WhatYourBotsKnow /> : null}
-        <NewBotSheet
-          onClose={() => void navigate({ search: {} })}
-          onCreated={(agentId) => {
-            /*
-             * Close first, then go. Navigating straight to the Bot unmounted this page with the sheet
-             * still on it, so it vanished instead of sliding away. Replacing the `?new` entry means Back
-             * from the new Bot lands on the roster, not on an empty sheet.
-             */
-            void navigate({ replace: true, search: {} });
-            window.setTimeout(
-              () =>
-                void navigate({
-                  params: { agentId },
-                  search: {},
-                  to: "/bots/$agentId",
-                }),
-              SHEET_CLOSE_MS,
-            );
-          }}
-          open={creating === true}
-          returnFocus={() => {
-            const trigger = createTrigger.current;
-            createTrigger.current = null;
-            return trigger?.isConnected
-              ? trigger
-              : document.querySelector<HTMLAnchorElement>(
-                  "[data-slot=page-header] a[href*='new=true']",
-                );
-          }}
+    <PageShell
+      action={
+        <AstryxButton
+          as={CreateBotLink}
+          className="bot-primary-action"
+          href="/bots?new=true"
+          icon={<IconPlus size="1em" aria-hidden="true" />}
+          label="New Bot"
+          size="lg"
+          variant="primary"
         />
-      </PageShell>
-    </AstryxSurface>
+      }
+      description={
+        personal
+          ? "Your Bots for everyday work."
+          : "Manage your Bots and access those shared with you."
+      }
+      title="Bots"
+    >
+      <BotRoster />
+      {personal ? <WhatYourBotsKnow /> : null}
+      <NewBotSheet
+        finalFocus={() => document.getElementById("bots-new")}
+        onClose={() =>
+          void navigate({
+            replace: true,
+            search: (previous) => ({ ...previous, new: undefined }),
+          })
+        }
+        onCreated={(agentId) => {
+          /*
+           * Close first, then go. Navigating straight to the Bot unmounted this page with the sheet
+           * still on it, so it vanished instead of sliding away. Replacing the `?new` entry means Back
+           * from the new Bot lands on the roster, not on an empty sheet.
+           */
+          void navigate({ replace: true, search: {} });
+          window.setTimeout(
+            () =>
+              void navigate({
+                params: { agentId },
+                search: {},
+                to: "/bots/$agentId",
+              }),
+            SHEET_CLOSE_MS,
+          );
+        }}
+        open={creating === true}
+      />
+    </PageShell>
   );
 }
 

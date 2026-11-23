@@ -1,5 +1,4 @@
 import {
-  IconBulb,
   IconChevronDown,
   IconChevronRight,
   IconClock,
@@ -10,11 +9,13 @@ import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useId, useState } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
+import { InlineEmpty } from "@/components/layout/page-parts";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -80,8 +81,7 @@ const SUGGESTIONS_SHOWN = 3;
 
 /**
  * What the person's Bots found in their check-ins, each with why, its source and its Bot, to Start
- * as a task or Hide. The skins list it on its own (OpenDuet's Up next, OpenMuse's Ideas); OpenBot's
- * own pages list the same rows under Needs you.
+ * as a task or Hide. Ideas and Up next present these suggestions on their own.
  */
 export function SuggestionsInbox({
   agentId,
@@ -115,10 +115,14 @@ export function SuggestionsInbox({
   const visible = hidden ? shown.slice(0, SUGGESTIONS_SHOWN) : shown;
   return (
     <PageSection title="Suggested next steps">
-      {suggestions.isPending ? null : suggestions.error ? (
-        <p role="alert" className="mt-4 text-destructive text-sm">
-          {suggestions.error.message}
-        </p>
+      {suggestions.isPending ? (
+        <ReadStatus kind="loading" message="Loading suggested next steps…" />
+      ) : suggestions.error ? (
+        <ReadStatus
+          kind="error"
+          message="Couldn’t load suggested next steps"
+          retry={suggestions.refetch}
+        />
       ) : shown.length ? (
         <PageRows>
           {visible.map((suggestion, index) => (
@@ -151,10 +155,10 @@ export function SuggestionsInbox({
           ) : null}
         </PageRows>
       ) : (
-        <PageEmpty icon={IconBulb} title="Nothing needs you right now">
+        <InlineEmpty title="Nothing needs you right now">
           When a Bot's check-in finds something that needs you, it shows up
           here.
-        </PageEmpty>
+        </InlineEmpty>
       )}
     </PageSection>
   );
@@ -200,18 +204,23 @@ export function ProactiveResearchSettings({
     (setting) => fixedBot === undefined || setting.agentId === fixedBot,
   );
   const canAdd =
-    settings.isSuccess && (fixedBot === undefined || shown.length === 0);
+    settings.isSuccess &&
+    (fixedBot === undefined ? shown.length > 0 : shown.length === 0);
   return (
     <PageSection
       action={
         canAdd ? (
-          <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
-            <IconPlus />
+          <Button
+            onClick={() => setAdding(true)}
+            size={fixedBot === undefined ? "sm" : "default"}
+            variant={fixedBot === undefined ? "ghost" : "outline"}
+          >
+            {fixedBot === undefined ? <IconPlus /> : null}
             Turn on check-ins
           </Button>
         ) : null
       }
-      description="A Bot offers a check-in when you look at something together that keeps changing, like a document or your inbox. It reads that once a day, or as often as you choose, and tells you when something there needs you. It can only read: it can't send messages, change anything in an app, or use a browser or computer."
+      description="Your Bot checks for changes on a schedule and flags what needs you. Check-ins are read-only."
       title="Check-ins"
     >
       {showIdeasLink ? (
@@ -241,10 +250,16 @@ export function ProactiveResearchSettings({
           )}
         </p>
       ) : null}
-      {settings.isPending ? null : settings.error ? (
-        <p role="alert" className="mt-4 text-destructive text-sm">
-          {settings.error.message}
-        </p>
+      {settings.isPending ? (
+        <ReadStatus kind="loading" message="Loading check-ins…" />
+      ) : settings.error ? (
+        <ReadStatus
+          kind="error"
+          message="Couldn’t load check-ins"
+          retry={settings.refetch}
+        />
+      ) : shown.length === 0 && fixedBot !== undefined ? (
+        <p className="mt-3 text-muted-foreground text-sm">No check-ins yet</p>
       ) : shown.length === 0 ? (
         <PageEmpty
           action={

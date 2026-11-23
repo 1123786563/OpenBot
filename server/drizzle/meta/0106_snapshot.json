@@ -1,6 +1,6 @@
 {
-  "id": "6902ac1f-e445-45cd-aeeb-5385407292dd",
-  "prevId": "c1ea881c-4a10-45be-9783-0deda4897422",
+  "id": "632c8180-8d9b-4b9d-ade7-edf1962f699e",
+  "prevId": "8e98b3d7-b77c-406f-916a-26409283feb0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13276,6 +13276,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "version": {
           "name": "version",
           "type": "text",
@@ -13834,19 +13852,6 @@
           "type": "bigint",
           "primaryKey": false,
           "notNull": true
-        },
-        "paid_hold_microcredits": {
-          "name": "paid_hold_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "0"
-        },
-        "paid_charge_microcredits": {
-          "name": "paid_charge_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
         },
         "charged": {
           "name": "charged",
@@ -14927,12 +14932,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "consumed_microcredits": {
-          "name": "consumed_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
         "state": {
           "name": "state",
           "type": "text",
@@ -15041,6 +15040,335 @@
           "value": "\"paid_credit_allocations\".\"amount_microcredits\" > 0"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.skill_market_equivalences": {
+      "name": "skill_market_equivalences",
+      "schema": "",
+      "columns": {
+        "registry_id": {
+          "name": "registry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_skill_id": {
+          "name": "target_skill_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_version_id": {
+          "name": "target_version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_slug": {
+          "name": "target_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "skill_market_equivalence_target_skill_idx": {
+          "name": "skill_market_equivalence_target_skill_idx",
+          "columns": [
+            {
+              "expression": "target_skill_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "skill_market_equivalence_source_skill_idx": {
+          "name": "skill_market_equivalence_source_skill_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "skill_market_equivalences_registry_id_skill_market_migration_receipts_registry_id_fk": {
+          "name": "skill_market_equivalences_registry_id_skill_market_migration_receipts_registry_id_fk",
+          "tableFrom": "skill_market_equivalences",
+          "tableTo": "skill_market_migration_receipts",
+          "columnsFrom": [
+            "registry_id"
+          ],
+          "columnsTo": [
+            "registry_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "skill_market_equivalences_source_registry_skill_id_version_id_pk": {
+          "name": "skill_market_equivalences_source_registry_skill_id_version_id_pk",
+          "columns": [
+            "source",
+            "registry_skill_id",
+            "version_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "skill_market_equivalences_target_version_id_unique": {
+          "name": "skill_market_equivalences_target_version_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "target_version_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bifrost_market_reviews": {
+      "name": "bifrost_market_reviews",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "bifrost_market_reviews_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "skill_id": {
+          "name": "skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_uuid": {
+          "name": "version_uuid",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_by": {
+          "name": "withdrawn_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "bifrost_market_reviews_skill_id_bifrost_market_skills_id_fk": {
+          "name": "bifrost_market_reviews_skill_id_bifrost_market_skills_id_fk",
+          "tableFrom": "bifrost_market_reviews",
+          "tableTo": "bifrost_market_skills",
+          "columnsFrom": [
+            "skill_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "bifrost_market_reviews_version_uuid_unique": {
+          "name": "bifrost_market_reviews_version_uuid_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "version_uuid"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.skill_market_migration_receipts": {
+      "name": "skill_market_migration_receipts",
+      "schema": "",
+      "columns": {
+        "registry_id": {
+          "name": "registry_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bifrost_market_skills": {
+      "name": "bifrost_market_skills",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "bifrost_market_skills_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "skill_uuid": {
+          "name": "skill_uuid",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "bifrost_market_skills_skill_uuid_unique": {
+          "name": "bifrost_market_skills_skill_uuid_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "skill_uuid"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

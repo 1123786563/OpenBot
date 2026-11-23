@@ -339,9 +339,8 @@ test("a choice made before sharing was turned off says it applies again, and an 
 test("a read that fails says so, and a save that fails says why", async () => {
   failRead = true;
   const failed = draw();
-  await failed.findByText(
-    "Couldn't load your Learning settings. Reload the page.",
-  );
+  await failed.findByText("Couldn't load your Learning settings.");
+  expect(failed.getByRole("button", { name: "Retry" })).toBeTruthy();
   cleanup();
   queryClient.clear();
   failRead = false;

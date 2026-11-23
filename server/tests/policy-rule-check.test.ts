@@ -183,6 +183,21 @@ describe("saving a boundary", () => {
 });
 
 describe("the dry-run of a rule that doesn't compile", () => {
+  test("checks the rule when there is no readable audit history", async () => {
+    const api = app(createPolicyStore(ALLOW_ALL));
+    const path = "http://t/api/computers/policy-dry-run";
+    const broken = await api.request(
+      path,
+      request("POST", { policy: { ...ALLOW_ALL, deny: ["tool.name =="] } }),
+    );
+    expect(broken.status).toBe(400);
+    const valid = await api.request(
+      path,
+      request("POST", { policy: { ...ALLOW_ALL, deny: ["true"] } }),
+    );
+    expect(valid.status).toBe(501);
+  });
+
   test("reports the rule and why, and replays nothing", async () => {
     let read = 0;
     const reader = {

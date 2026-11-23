@@ -1,25 +1,6 @@
-import {
-  IconArrowLeft,
-  IconBrain,
-  IconBuildingBank,
-  IconBulb,
-  IconChecks,
-  IconCode,
-  IconDeviceDesktop,
-  IconKey,
-  IconLayoutGrid,
-  IconListDetails,
-  IconLockAccess,
-  IconPuzzle,
-  IconRadar,
-  IconShieldCheck,
-  IconSlash,
-  IconUsers,
-  IconZoomQuestion,
-} from "@tabler/icons-react";
+import { IconArrowLeft } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   Sidebar,
   SidebarContent,
@@ -31,155 +12,16 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { managePaths } from "@/lib/manage-paths";
+import { ADMIN_NAVIGATION } from "./admin-navigation";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 const adminLinkOptions = { to: "/admin" } satisfies LinkOptions;
 
-/**
- * The same four groups, in the same order, as the admin index.
- *
- * A rail that lists ten things flat asks somebody to know which of them is the one they want. The
- * grouping is the only navigation help this screen offers, so it has to agree with the page it
- * navigates to — two different orderings of the same ten links is worse than either ordering.
- */
-const GROUPS: {
-  label: string;
-  items: {
-    icon: React.ComponentType<{ className?: string }>;
-    linkOptions: LinkOptions;
-    title: string;
-  }[];
-}[] = [
-  {
-    label: "What Bots can reach",
-    items: [
-      {
-        title: "Credentials",
-        icon: IconKey,
-        linkOptions: { to: "/admin/credentials" },
-      },
-      {
-        title: "Boundaries",
-        icon: IconShieldCheck,
-        linkOptions: { to: "/admin/boundaries" },
-      },
-      {
-        title: "Approvals",
-        icon: IconChecks,
-        linkOptions: { to: "/admin/approvals" },
-      },
-      {
-        title: "Computers",
-        icon: IconDeviceDesktop,
-        linkOptions: { to: "/admin/computers" },
-      },
-    ],
-  },
-  {
-    label: "What Bots can do",
-    items: [
-      {
-        title: "Plugins",
-        icon: IconPuzzle,
-        linkOptions: { to: "/admin/plugins" },
-      },
-      {
-        title: "Providers",
-        icon: IconBrain,
-        linkOptions: { to: "/admin/providers" },
-      },
-      {
-        title: "Skills",
-        icon: IconSlash,
-        linkOptions: { to: "/admin/skills" },
-      },
-      {
-        title: "Automatic learning",
-        icon: IconBulb,
-        linkOptions: { to: "/admin/learning" },
-      },
-      {
-        title: "Check-ins",
-        icon: IconRadar,
-        linkOptions: { to: "/admin/proactive" },
-      },
-      {
-        title: "UI components",
-        icon: IconLayoutGrid,
-        linkOptions: { to: "/admin/components" },
-      },
-      {
-        title: "Playground",
-        icon: IconCode,
-        linkOptions: { to: "/admin/playground" },
-      },
-    ],
-  },
-  {
-    label: "Who can get in",
-    items: [
-      {
-        title: "People",
-        icon: IconUsers,
-        linkOptions: { to: "/admin/people" },
-      },
-      {
-        title: "Permissions",
-        icon: IconLockAccess,
-        linkOptions: { to: "/admin/permissions" },
-      },
-      {
-        title: "Identity providers",
-        icon: IconBuildingBank,
-        linkOptions: { to: "/admin/identity-providers" },
-      },
-    ],
-  },
-  {
-    label: "What happened",
-    items: [
-      {
-        title: managePaths("team").auditLabel,
-        icon: IconListDetails,
-        linkOptions: { to: "/admin/audit" },
-      },
-      {
-        title: "What would happen",
-        icon: IconZoomQuestion,
-        linkOptions: { to: "/admin/what-if" },
-      },
-    ],
-  },
-];
-
 export function AdminSidebar({
-  preview,
-}: {
-  preview?: {
-    id: string;
-    returnFocus: React.RefObject<HTMLButtonElement | null>;
-  };
-}) {
+  ...props
+}: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar
-      variant="inset"
-      {...(preview
-        ? {
-            ...astryxScope,
-            className: "astryx-web-nav astryx-admin-nav",
-            mobileNavigation: {
-              title: "Admin navigation",
-              popup: {
-                ...astryxScope,
-                className: "astryx-web-nav astryx-admin-nav",
-                id: `${preview.id}-dialog`,
-                finalFocus: preview.returnFocus,
-              },
-            },
-          }
-        : {})}
-    >
+    <Sidebar variant="inset" {...props}>
       {/*
        * Pinned to the same height as the app sidebar's header. Left to itself this one is 60px
        * against the app's 45px — `p-2` around a `size="lg"` button rather than a fixed height — so
@@ -194,69 +36,63 @@ export function AdminSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               render={(props) => (
-                <Link
-                  {...appLinkOptions}
-                  activeOptions={{ exact: true }}
-                  {...props}
-                >
+                <Link {...appLinkOptions} {...props}>
                   <IconArrowLeft className="mr-2 h-4 w-4" />
-                  Back to app
+                  Workspace
                 </Link>
               )}
             />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent
-        role={preview ? "navigation" : undefined}
-        aria-label={preview ? "Admin navigation" : undefined}
-        id={preview?.id}
-      >
-        <SidebarGroup>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              {/*
-               * `activeOptions.exact`, because /admin is a prefix of every other route here and
-               * would otherwise light up on all of them.
-               */}
-              <SidebarMenuButton
-                render={(props) => (
-                  <Link
-                    {...adminLinkOptions}
-                    activeOptions={{ exact: true }}
-                    activeProps={{ className: "bg-foreground/5" }}
-                    {...props}
-                  >
-                    Overview
-                  </Link>
-                )}
-              />
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-        {GROUPS.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-            <SidebarMenu className="gap-px">
-              {group.items.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    render={(props) => (
-                      <Link
-                        {...item.linkOptions}
-                        activeProps={{ className: "bg-foreground/5" }}
-                        {...props}
-                      >
-                        <item.icon className="mr-2 h-4 w-4" />
-                        {item.title}
-                      </Link>
-                    )}
-                  />
-                </SidebarMenuItem>
-              ))}
+      <SidebarContent>
+        <nav aria-label="Admin">
+          <SidebarGroup>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                {/*
+                 * `activeOptions.exact`, because /admin is a prefix of every other route here and
+                 * would otherwise light up on all of them.
+                 */}
+                <SidebarMenuButton
+                  render={(props) => (
+                    <Link
+                      {...adminLinkOptions}
+                      activeOptions={{ exact: true }}
+                      activeProps={{ "data-active": true }}
+                      {...props}
+                    >
+                      Overview
+                    </Link>
+                  )}
+                />
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
-        ))}
+          {ADMIN_NAVIGATION.map((group) => (
+            <SidebarGroup key={group.title}>
+              <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
+              <SidebarMenu className="gap-px">
+                {group.items.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      render={(props) => (
+                        <Link
+                          {...item.linkOptions}
+                          activeProps={{ "data-active": true }}
+                          {...props}
+                        >
+                          <item.icon className="mr-2 h-4 w-4" />
+                          {item.title}
+                        </Link>
+                      )}
+                    />
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          ))}
+        </nav>
       </SidebarContent>
       <SidebarRail />
     </Sidebar>

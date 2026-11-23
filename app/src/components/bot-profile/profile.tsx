@@ -1,3 +1,4 @@
+import { Banner } from "@astryxdesign/core/Banner";
 import {
   IconBell,
   IconChevronRight,
@@ -11,6 +12,7 @@ import type * as React from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { BotNeedsYou } from "@/components/needs-you/board";
 import { DoneTasks, useNeedsYou } from "@/components/needs-you/needs-you";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
@@ -125,120 +127,149 @@ export function BotProfile({
         {agent.canManage ? (
           <SharedAppNotice botId={agent.id} reason="publish" />
         ) : null}
-        {lifecycle.isPending ? null : lifecycle.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load this Bot's settings. Reload the page.
-          </p>
+        {lifecycle.isPending ? (
+          <ReadStatus kind="loading" message="Loading your Bot settings…" />
+        ) : lifecycle.error ? (
+          <ReadError
+            message="Couldn’t load your Bot settings"
+            retry={() => lifecycle.refetch()}
+            retryBelow
+            retrying={lifecycle.isFetching}
+          />
         ) : (
-          <PageRows>
-            <Item size="sm">
-              <ItemMedia variant="icon">
-                <IconPlayerPause />
-              </ItemMedia>
-              <ItemContent>
-                {/* On means working, the way a responsibility's Active switch reads: titled "Paused",
+          <>
+            {pause.isError && (
+              <Banner
+                description="Use Active to try again."
+                role="alert"
+                status="error"
+                title={
+                  pause.variables.paused
+                    ? "Couldn’t pause this Bot"
+                    : "Couldn’t resume this Bot"
+                }
+              />
+            )}
+            {notify.isError && (
+              <Banner
+                description="Choose your notification preference again."
+                role="alert"
+                status="error"
+                title="Couldn’t save notifications"
+              />
+            )}
+            <PageRows>
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconPlayerPause />
+                </ItemMedia>
+                <ItemContent>
+                  {/* On means working, the way a responsibility's Active switch reads: titled "Paused",
                     the row showed the word "Paused" beside a switch that was off for a running Bot. */}
-                <ItemTitle>Active</ItemTitle>
-                <ItemDescription>
-                  {lifecycle.data.paused
-                    ? "Paused. Nothing runs for you until you turn it back on."
-                    : "Works on its goals, routines, hand-offs and follow-ups for you."}
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <Switch
-                  aria-label="Active"
-                  checked={!lifecycle.data.paused}
-                  disabled={pause.isPending}
-                  onCheckedChange={(active) =>
-                    pause.mutate({ agentId: agent.id, paused: !active })
-                  }
-                />
-              </ItemActions>
-            </Item>
-            <Separator />
-            <Item size="sm">
-              <ItemMedia variant="icon">
-                <IconBell />
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>Notifications</ItemTitle>
-                <ItemDescription>
-                  {NOTIFY_LABEL[lifecycle.data.notify]}. Sidebar badges always
-                  show.
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <Select
-                  disabled={notify.isPending}
-                  // The label map, so the closed trigger says "Everything" rather than the raw value.
-                  items={NOTIFY_LABEL}
-                  onValueChange={(next) => {
-                    if (next === lifecycle.data.notify) return;
-                    notify.mutate({
-                      agentId: agent.id,
-                      notify: next as BotNotify,
-                    });
-                  }}
-                  value={lifecycle.data.notify}
-                >
-                  <SelectTrigger aria-label="Notifications">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent {...astryxScope}>
-                    {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {NOTIFY_LABEL[value]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </ItemActions>
-            </Item>
-            {permission === "default" ? (
-              <>
-                <Separator />
-                <Item size="sm">
-                  <ItemMedia variant="icon">
-                    <IconBell />
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>Browser notifications</ItemTitle>
-                    <ItemDescription>
-                      Off in this browser. Turn them on to hear when a Bot needs
-                      you.
-                    </ItemDescription>
-                  </ItemContent>
-                  <ItemActions>
-                    <Button
-                      onClick={() => void requestNotificationPermission()}
-                      size="sm"
-                      variant="outline"
-                    >
-                      Turn on
-                    </Button>
-                  </ItemActions>
-                </Item>
-              </>
-            ) : null}
-            <Separator />
-            <Item
-              render={<Link to="/channel/new" search={{ agent: agent.id }} />}
-              size="sm"
-            >
-              <ItemMedia variant="icon">
-                <IconMessage />
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>Message {agent.name}</ItemTitle>
-                <ItemDescription>Start a conversation.</ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <IconChevronRight className="size-4 text-muted-foreground" />
-              </ItemActions>
-            </Item>
-            <BotActivityRow agentId={agent.id} />
-          </PageRows>
+                  <ItemTitle>Active</ItemTitle>
+                  <ItemDescription>
+                    {lifecycle.data.paused
+                      ? "Paused. Nothing runs for you until you turn it back on."
+                      : "Works on its goals, routines, hand-offs and follow-ups for you."}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <Switch
+                    aria-label="Active"
+                    checked={!lifecycle.data.paused}
+                    disabled={pause.isPending}
+                    onCheckedChange={(active) =>
+                      pause.mutate({ agentId: agent.id, paused: !active })
+                    }
+                  />
+                </ItemActions>
+              </Item>
+              <Separator />
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconBell />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>Notifications</ItemTitle>
+                  <ItemDescription>
+                    {NOTIFY_LABEL[lifecycle.data.notify]}. Sidebar badges always
+                    show.
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <Select
+                    disabled={notify.isPending}
+                    // The label map, so the closed trigger says "Everything" rather than the raw value.
+                    items={NOTIFY_LABEL}
+                    onValueChange={(next) => {
+                      if (next === lifecycle.data.notify) return;
+                      notify.mutate({
+                        agentId: agent.id,
+                        notify: next as BotNotify,
+                      });
+                    }}
+                    value={lifecycle.data.notify}
+                  >
+                    <SelectTrigger aria-label="Notifications">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent {...astryxScope}>
+                      {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map(
+                        (value) => (
+                          <SelectItem key={value} value={value}>
+                            {NOTIFY_LABEL[value]}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                </ItemActions>
+              </Item>
+              {permission === "default" ? (
+                <>
+                  <Separator />
+                  <Item size="sm">
+                    <ItemMedia variant="icon">
+                      <IconBell />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle>Browser notifications</ItemTitle>
+                      <ItemDescription>
+                        Off in this browser. Turn them on to hear when a Bot
+                        needs you.
+                      </ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      <Button
+                        onClick={() => void requestNotificationPermission()}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Turn on
+                      </Button>
+                    </ItemActions>
+                  </Item>
+                </>
+              ) : null}
+              <Separator />
+              <Item
+                render={<Link to="/channel/new" search={{ agent: agent.id }} />}
+                size="sm"
+              >
+                <ItemMedia variant="icon">
+                  <IconMessage />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>Message {agent.name}</ItemTitle>
+                  <ItemDescription>Start a conversation.</ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <IconChevronRight className="size-4 text-muted-foreground" />
+                </ItemActions>
+              </Item>
+              <BotActivityRow agentId={agent.id} />
+            </PageRows>
+          </>
         )}
       </PageSection>
 

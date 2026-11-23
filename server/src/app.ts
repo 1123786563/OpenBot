@@ -690,6 +690,7 @@ export function createApp(
     context.json({
       mode: config.runtime.mode,
       durableHistory: config.runtime.durableHistory,
+      directMessageReplay: config.runtime.mode === "openbot",
       ...((billing?.testCreditConversations ??
       Boolean(billing?.casdoorIdentityOf))
         ? { testCreditConversations: true }
@@ -1595,16 +1596,34 @@ export function createApp(
       );
     }
 
-    const body = await context.req.json().catch(() => null);
+    const body: unknown = await context.req.json().catch(() => null);
     const input = credentialInput(body, context.var.actor.id);
     if (!input) {
       return context.json({ error: "Credential input is invalid." }, 400);
     }
 
-    return context.json(
-      { credential: await credentialService.create(input) },
-      201,
-    );
+    const createOnly =
+      body && typeof body === "object" && "createOnly" in body
+        ? body.createOnly
+        : undefined;
+    if (createOnly !== undefined && createOnly !== true) {
+      return context.json({ error: "Credential input is invalid." }, 400);
+    }
+    try {
+      return context.json(
+        {
+          credential: await credentialService.create(
+            createOnly ? { ...input, createOnly: true } : input,
+          ),
+        },
+        201,
+      );
+    } catch (error) {
+      if (error instanceof CredentialRefusedError) {
+        return context.json({ error: error.message }, error.status);
+      }
+      throw error;
+    }
   });
   app.post(
     "/api/admin/credentials/:credentialId/rotate",

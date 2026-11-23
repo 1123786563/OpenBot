@@ -140,27 +140,47 @@ const REPORT: GuidanceBacktest = {
 const sent: { path: string; method: string; body: unknown }[] = [];
 const originalFetch = global.fetch;
 let saved: string | null = null;
+let failSavedRead = false;
+let failPreview = false;
+let failCheck = false;
+let failRemove = false;
 
 beforeEach(() => {
   sent.length = 0;
   saved = null;
+  failSavedRead = false;
+  failPreview = false;
+  failCheck = false;
+  failRemove = false;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const unavailable = () =>
+      Response.json({ error: "Unavailable" }, { status: 503 });
     if (method !== "GET") sent.push({ path, method, body });
     if (path.endsWith("/api/approvals/team/guidance/check"))
-      return Response.json(body.text === WEAKENS ? REFUSED : READING);
-    if (path.endsWith("/api/approvals/team/guidance/backtest"))
-      return method === "GET"
-        ? Response.json({ calls: 5, skippedSafety: 1 })
-        : Response.json(REPORT);
+      return failCheck
+        ? unavailable()
+        : Response.json(body.text === WEAKENS ? REFUSED : READING);
+    if (path.endsWith("/api/approvals/team/guidance/backtest")) {
+      if (method === "GET")
+        return failPreview
+          ? unavailable()
+          : Response.json({ calls: 5, skippedSafety: 1 });
+      return Response.json(REPORT);
+    }
     if (path.endsWith("/api/approvals/team/guidance")) {
       if (method === "PUT") {
         saved = body.text;
         return Response.json({ guidance: saved, ...READING });
       }
-      return Response.json({ guidance: saved });
+      if (method === "DELETE") {
+        if (failRemove) return unavailable();
+        saved = null;
+        return Response.json({ ok: true });
+      }
+      return failSavedRead ? unavailable() : Response.json({ guidance: saved });
     }
     if (path.includes("/api/agents"))
       return Response.json({
@@ -211,6 +231,58 @@ function open() {
 
 const saveButton = (view: ReturnType<typeof render>) =>
   view.getByRole("button", { name: "Save guidance" }) as HTMLButtonElement;
+
+test("guidance and backtest reads can recover without losing the draft", async () => {
+  failSavedRead = true;
+  failPreview = true;
+  const { view, user } = open();
+  expect(await view.findByText("Couldn't load saved guidance.")).toBeTruthy();
+  expect(view.queryByLabelText("Guidance")).toBeNull();
+  failSavedRead = false;
+  await user.click(view.getByRole("button", { name: "Retry" }));
+  const field = await view.findByLabelText("Guidance");
+  await user.type(field, DEALS);
+  await user.click(view.getByRole("button", { name: "Check guidance" }));
+  expect(
+    await view.findByText("Couldn't load recent decisions for testing."),
+  ).toBeTruthy();
+  failPreview = false;
+  await user.click(view.getByRole("button", { name: "Retry" }));
+  expect(
+    await view.findByRole("button", { name: "Test on 5 requests" }),
+  ).toBeTruthy();
+  expect((field as HTMLTextAreaElement).value).toBe(DEALS);
+
+  failCheck = true;
+  await user.click(view.getByRole("button", { name: "Check guidance" }));
+  expect(await view.findByRole("alert")).toBeTruthy();
+  expect(saveButton(view).disabled).toBe(true);
+  expect((field as HTMLTextAreaElement).value).toBe(DEALS);
+});
+
+test("removing guidance requires confirmation and retries within the dialog", async () => {
+  saved = DEALS;
+  failRemove = true;
+  const { view, user, router } = open();
+  await user.click(
+    await view.findByRole("button", { name: "Remove guidance" }),
+  );
+  expect(
+    await view.findByRole("alertdialog", { name: "Remove the guidance?" }),
+  ).toBeTruthy();
+  expect(sent).toHaveLength(0);
+  await user.click(view.getByRole("button", { name: "Remove guidance" }));
+  expect(
+    await view.findByText("Couldn't remove the guidance. Try again."),
+  ).toBeTruthy();
+  expect(saved).toBe(DEALS);
+  failRemove = false;
+  await user.click(view.getByRole("button", { name: "Try again" }));
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe("/admin/approvals"),
+  );
+  expect(saved).toBeNull();
+});
 
 test("guidance is checked, tested on recent decisions after saying how many model calls that makes, and saved by Save", async () => {
   const { view, router, user } = open();

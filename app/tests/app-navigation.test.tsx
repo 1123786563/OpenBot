@@ -147,7 +147,7 @@ function renderSidebar(
     routeTree: createRootRoute({
       component: () => (
         <SidebarProvider>
-          <AppSidebar navId="test-navigation" returnFocus={{ current: null }} />
+          <AppSidebar />
           {/* Mounted once by the signed-in layout; here so the entry has something to open. */}
           <TeamFeaturesDialog />
         </SidebarProvider>
@@ -175,35 +175,35 @@ function expected(role: "admin" | "user", section: "primary" | "account") {
   return navigationFor(role)
     .filter(isNavigationLink)
     .filter((item) => item.section === section)
-    .map((item) => ({ label: item.label, to: item.to }));
+    .map((item) => ({
+      label: item.label,
+      to: item.search
+        ? `${item.to}?${new URLSearchParams(item.search)}`
+        : item.to,
+    }));
 }
 
 test.each(["user", "admin"] as const)(
   "the sidebar draws exactly the shared list for a %s",
   async (role) => {
     const { view, user } = renderSidebar(role);
-    const nav = await view.findByRole("navigation", {
-      name: "Main navigation",
+    const workspace = await view.findByRole("navigation", {
+      name: "Workspace",
     });
     expect(
-      links(nav).map(({ label, to }) => ({
+      links(workspace).map(({ label, to }) => ({
         label: label.replace(/\d+$/, ""),
         to,
       })),
-    ).toEqual([
-      ...expected(role, "primary"),
-      { label: "Goals", to: "/responsibilities?view=goals" },
-      { label: "Tasks", to: "/tasks" },
-      { label: "Ideas", to: "/ideas" },
-      { label: "Credits", to: "/billing" },
-      { label: "Activity", to: "/s/activity" },
-    ]);
+    ).toEqual(expected(role, "primary"));
     // Scheduled work has its own place beside Bots, where somebody looking for it looks first.
     expect(
-      within(nav).getByRole("link", { name: "Routines" }).getAttribute("href"),
+      within(workspace)
+        .getByRole("link", { name: "Routines" })
+        .getAttribute("href"),
     ).toBe("/routines");
     // Bots keeps its count of what waits on the person, and only Bots has one.
-    const badge = within(nav).getByRole("img", {
+    const badge = within(workspace).getByRole("img", {
       name: "1 thing needs you",
     });
     expect(badge.closest("a")?.getAttribute("href")).toBe("/bots");
@@ -256,6 +256,7 @@ test("Admin is in the list for admins only", () => {
   expect(ids("user")).toEqual([
     "bots",
     "routines",
+    "goals",
     "capabilities",
     "connections",
     "settings",
@@ -273,7 +274,9 @@ test("the personal edition has no Admin or Capabilities, and a feature list in A
   expect(personal.map((item) => item.id)).toEqual([
     "bots",
     "routines",
+    "goals",
     "connections",
+    "credits",
     "team-features",
     "settings",
   ]);

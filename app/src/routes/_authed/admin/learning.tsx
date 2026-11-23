@@ -12,7 +12,6 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { Fragment, useId, useState } from "react";
 import {
   PeopleProposalsSection,
@@ -20,6 +19,7 @@ import {
   WhoApprovesSection,
 } from "@/components/admin/controls/people-learning";
 import { SkillSharingSection } from "@/components/admin/controls/skill-sharing-section";
+import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -28,7 +28,6 @@ import {
 } from "@/components/layout/page-shell";
 import { LearnedSkillDialog } from "@/components/learning/learned-skill-dialog";
 import { ProposalDialog } from "@/components/learning/proposal-dialog";
-import { skillTitle } from "@/lib/learning/display";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -42,6 +41,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { skillTitle } from "@/lib/learning/display";
 import {
   reviewLearningProposalMutationOptions,
   startLearningRunMutationOptions,
@@ -60,6 +60,40 @@ import {
   saveLearningSettings,
 } from "@/lib/learning/queries";
 import { queryClient as appQueryClient } from "@/query-client";
+
+/**
+ * A read failure said with the section it belongs to and a Retry beside it, so no section of this
+ * page recovers only by reloading. The server's own sentence leads (it is written for the person;
+ * the tests pin the passthrough) and the curated one stands in when it has nothing to say.
+ */
+function SectionReadError({
+  error,
+  fallback,
+  retrying,
+  onRetry,
+}: {
+  error: Error;
+  fallback: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-3">
+      <p className="text-destructive text-sm" role="alert">
+        {error.message || fallback}
+      </p>
+      <Button
+        disabled={retrying}
+        onClick={onRetry}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        {retrying ? "Retrying…" : "Retry"}
+      </Button>
+    </div>
+  );
+}
 
 /** Placeholder rows while a section loads: enough to fill the view, not to suggest a count. */
 const LOADING_ROWS = ["a", "b", "c", "d"];
@@ -183,7 +217,9 @@ function ContainerSetup({
       )}
       {(create.error || automatic.createError) && (
         <p role="alert" className="text-destructive">
-          {create.error?.message ?? automatic.createError}
+          {create.error
+            ? "Couldn't create the container. Try again."
+            : (automatic.createError ?? null)}
         </p>
       )}
       {automatic.instructions && (
@@ -256,6 +292,190 @@ export function LearningPage() {
       description="Learn from finished conversations, review the skills OpenBot proposes, and give published skills to Bots."
     >
       <PageSection
+        title="Review and publish"
+        description="OpenBot studies finished conversations and proposes skills. Review and publish them below. Bots only use published skills."
+      >
+        <div className="grid gap-4">
+          <label className="grid gap-2 text-sm" htmlFor="learning-roster-bot">
+            Show the container for
+            {agents.error ? (
+              /* Without the roster every option would read as its raw id; say the read failed
+                 and offer the retry rather than naming Bots by their ids. */
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-destructive text-sm" role="alert">
+                  Couldn't load the Bot list.
+                </p>
+                <Button
+                  disabled={agents.isFetching}
+                  onClick={() => void agents.refetch()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {agents.isFetching ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+            ) : (
+              <select
+                className={selectClass}
+                id="learning-roster-bot"
+                value={selected}
+                onChange={(event) => setSelected(event.target.value)}
+              >
+                <option value="">Deployment default</option>
+                {botIds.map((id) => (
+                  <option key={id} value={id}>
+                    {nameFor(id)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+          {overview.isPending && <p role="status">Checking the backend…</p>}
+          {overview.error && (
+            <SectionReadError
+              error={overview.error}
+              fallback="Couldn't load the learning overview."
+              retrying={overview.isFetching}
+              onRetry={() => void overview.refetch()}
+            />
+          )}
+          {snapshot && (
+            <>
+              <p className="text-sm">
+                {snapshot.configuration === "configured"
+                  ? `${snapshot.container?.name} (${snapshot.container?.id})`
+                  : snapshot.configuration === "invalid"
+                    ? "The selected container or its instrumentation isn't available."
+                    : snapshot.configuration === "selection_required"
+                      ? "Choose a Bot, or set a default container."
+                      : "No Learning container is assigned."}
+              </p>
+              {snapshot.modelProblem && (
+                <p role="alert" className="text-destructive text-sm">
+                  {snapshot.modelProblem}
+                </p>
+              )}
+              <dl className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
+                {(
+                  [
+                    ["Threads ready", snapshot.pendingThreadCount],
+                    ["Candidates to review", snapshot.pendingCandidateCount],
+                    ["Published skills", snapshot.publishedSkillCount],
+                    ["Insights", snapshot.insightCount],
+                  ] as const
+                ).map(([label, count]) =>
+                  // An older Intelligence with no dashboard does not count these for a project key.
+                  count === null ? null : (
+                    <div key={label}>
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="font-semibold text-xl">{count}</dd>
+                    </div>
+                  ),
+                )}
+              </dl>
+              <p className="text-sm">
+                {snapshot.hasActiveRun
+                  ? "An analysis is running."
+                  : snapshot.latestRunStatus
+                    ? `Latest analysis: ${snapshot.latestRunStatus}.`
+                    : "No analysis has run yet."}
+              </p>
+              {/* Links into Intelligence's dashboard, where there is one to link to. */}
+              {(snapshot.links.learning || snapshot.links.candidates) && (
+                <div className="flex flex-wrap gap-4 text-sm underline">
+                  {snapshot.links.learning && (
+                    <a
+                      href={snapshot.links.learning}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Manage Learning in the backend dashboard
+                    </a>
+                  )}
+                  {snapshot.links.candidates && (
+                    <a
+                      href={snapshot.links.candidates}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Review skill candidates
+                    </a>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          {selected && (
+            <div className="grid gap-2 rounded-lg border p-4 text-sm">
+              <h3 className="font-medium">Skill delivery</h3>
+              {delivery.isPending ? (
+                <p>Checking delivery…</p>
+              ) : delivery.error ? (
+                <SectionReadError
+                  error={delivery.error}
+                  fallback="Couldn't load the delivery status."
+                  retrying={delivery.isFetching}
+                  onRetry={() => void delivery.refetch()}
+                />
+              ) : (
+                delivery.data && (
+                  <>
+                    <p>
+                      {!delivery.data.configured
+                        ? "Delivery is off for this Bot."
+                        : !delivery.data.initialized
+                          ? "Waiting for the first verified skill snapshot."
+                          : delivery.data.stale
+                            ? "Using the last verified snapshot. A refresh is pending."
+                            : "A verified snapshot is available."}
+                    </p>
+                    {delivery.data.revision && (
+                      <p>Loaded revision: {delivery.data.revision}</p>
+                    )}
+                    {delivery.data.lastCheckedAt && (
+                      <p>
+                        Last checked:{" "}
+                        {new Date(delivery.data.lastCheckedAt).toLocaleString()}
+                      </p>
+                    )}
+                    {delivery.data.error && (
+                      <p role="alert">{delivery.data.error.message}</p>
+                    )}
+                  </>
+                )
+              )}
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={overview.isFetching || delivery.isFetching}
+            onClick={() => {
+              void overview.refetch();
+              if (selected) void delivery.refetch();
+              // The sections below read the same container, and a run only moves on when read again.
+              for (const key of [
+                learningKeys.proposals(selected || undefined),
+                learningKeys.runs(selected || undefined),
+                learningKeys.skills(selected || undefined),
+              ])
+                void queryClient.invalidateQueries({ queryKey: key });
+            }}
+          >
+            Refresh status
+          </Button>
+          <p className="text-muted-foreground text-sm">
+            OpenBot keeps project credentials on the server. Turning Learning
+            off here keeps settings and conversation assignments. Schedules stay
+            in the backend.
+          </p>
+        </div>
+      </PageSection>
+      <ProposedSkills agentId={selected || undefined} />
+      {/* The review workflow first: it is what this page is opened for. Participation
+          configures what new conversations use, and nothing there changes the lists below. */}
+      <PageSection
         title="Participation"
         description="Container changes apply to new conversations. Existing ones keep their first container. Containers must already exist in the same project. Until you save here, OpenBot uses that project's openbot container."
       >
@@ -263,9 +483,12 @@ export function LearningPage() {
           <p role="status">Loading Learning settings…</p>
         )}
         {settingsQuery.error && (
-          <p role="alert" className="text-destructive">
-            {settingsQuery.error.message}
-          </p>
+          <SectionReadError
+            error={settingsQuery.error}
+            fallback="Couldn't load the learning settings."
+            retrying={settingsQuery.isFetching}
+            onRetry={() => void settingsQuery.refetch()}
+          />
         )}
         {settings && (
           <form
@@ -383,166 +606,13 @@ export function LearningPage() {
             </div>
             {save.error && (
               <p role="alert" className="text-destructive">
-                {save.error.message}
+                Couldn't save the learning settings. Your changes are still on
+                screen.
               </p>
             )}
           </form>
         )}
       </PageSection>
-      <PageSection
-        title="Review and publish"
-        description="OpenBot studies finished conversations and proposes skills. Review and publish them below. Bots only use published skills."
-      >
-        <div className="grid gap-4">
-          <label className="grid gap-2 text-sm">
-            Show the container for
-            <select
-              className={selectClass}
-              value={selected}
-              onChange={(event) => setSelected(event.target.value)}
-            >
-              <option value="">Deployment default</option>
-              {botIds.map((id) => (
-                <option key={id} value={id}>
-                  {nameFor(id)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {overview.isPending && <p role="status">Checking the backend…</p>}
-          {overview.error && (
-            <p role="alert" className="text-destructive">
-              {overview.error.message}
-            </p>
-          )}
-          {snapshot && (
-            <>
-              <p className="text-sm">
-                {snapshot.configuration === "configured"
-                  ? `${snapshot.container?.name} (${snapshot.container?.id})`
-                  : snapshot.configuration === "invalid"
-                    ? "The selected container or its instrumentation isn't available."
-                    : snapshot.configuration === "selection_required"
-                      ? "Choose a Bot, or set a default container."
-                      : "No Learning container is assigned."}
-              </p>
-              {snapshot.modelProblem && (
-                <p role="alert" className="text-destructive text-sm">
-                  {snapshot.modelProblem}
-                </p>
-              )}
-              <dl className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
-                {(
-                  [
-                    ["Threads ready", snapshot.pendingThreadCount],
-                    ["Candidates to review", snapshot.pendingCandidateCount],
-                    ["Published skills", snapshot.publishedSkillCount],
-                    ["Insights", snapshot.insightCount],
-                  ] as const
-                ).map(([label, count]) =>
-                  // An older Intelligence with no dashboard does not count these for a project key.
-                  count === null ? null : (
-                    <div key={label}>
-                      <dt className="text-muted-foreground">{label}</dt>
-                      <dd className="font-semibold text-xl">{count}</dd>
-                    </div>
-                  ),
-                )}
-              </dl>
-              <p className="text-sm">
-                {snapshot.hasActiveRun
-                  ? "An analysis is running."
-                  : snapshot.latestRunStatus
-                    ? `Latest analysis: ${snapshot.latestRunStatus}.`
-                    : "No analysis has run yet."}
-              </p>
-              {/* Links into Intelligence's dashboard, where there is one to link to. */}
-              {(snapshot.links.learning || snapshot.links.candidates) && (
-                <div className="flex flex-wrap gap-4 text-sm underline">
-                  {snapshot.links.learning && (
-                    <a
-                      href={snapshot.links.learning}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Manage Learning in the backend dashboard
-                    </a>
-                  )}
-                  {snapshot.links.candidates && (
-                    <a
-                      href={snapshot.links.candidates}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Review skill candidates
-                    </a>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-          {selected && (
-            <div className="grid gap-2 rounded-lg border p-4 text-sm">
-              <h3 className="font-medium">Skill delivery</h3>
-              {delivery.isPending ? (
-                <p>Checking delivery…</p>
-              ) : delivery.error ? (
-                <p role="alert">{delivery.error.message}</p>
-              ) : (
-                delivery.data && (
-                  <>
-                    <p>
-                      {!delivery.data.configured
-                        ? "Delivery is off for this Bot."
-                        : !delivery.data.initialized
-                          ? "Waiting for the first verified skill snapshot."
-                          : delivery.data.stale
-                            ? "Using the last verified snapshot. A refresh is pending."
-                            : "A verified snapshot is available."}
-                    </p>
-                    {delivery.data.revision && (
-                      <p>Loaded revision: {delivery.data.revision}</p>
-                    )}
-                    {delivery.data.lastCheckedAt && (
-                      <p>
-                        Last checked:{" "}
-                        {new Date(delivery.data.lastCheckedAt).toLocaleString()}
-                      </p>
-                    )}
-                    {delivery.data.error && (
-                      <p role="alert">{delivery.data.error.message}</p>
-                    )}
-                  </>
-                )
-              )}
-            </div>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            disabled={overview.isFetching || delivery.isFetching}
-            onClick={() => {
-              void overview.refetch();
-              if (selected) void delivery.refetch();
-              // The sections below read the same container, and a run only moves on when read again.
-              for (const key of [
-                learningKeys.proposals(selected || undefined),
-                learningKeys.runs(selected || undefined),
-                learningKeys.skills(selected || undefined),
-              ])
-                void queryClient.invalidateQueries({ queryKey: key });
-            }}
-          >
-            Refresh status
-          </Button>
-          <p className="text-muted-foreground text-sm">
-            OpenBot keeps project credentials on the server. Turning Learning
-            off here keeps settings and conversation assignments. Schedules stay
-            in the backend.
-          </p>
-        </div>
-      </PageSection>
-      <ProposedSkills agentId={selected || undefined} />
       <AnalysisRuns agentId={selected || undefined} />
       <PublishedSkills agentId={selected || undefined} />
       <WhoApprovesSection />
@@ -595,7 +665,7 @@ function ProposedSkills({ agentId }: { agentId?: string }) {
       )}
       {learnNow.error && (
         <p role="alert" className="mt-4 text-destructive text-sm">
-          {learnNow.error.message}
+          Couldn't start learning. Try again.
         </p>
       )}
       {proposals.isPending ? (
@@ -619,9 +689,12 @@ function ProposedSkills({ agentId }: { agentId?: string }) {
           </PageRows>
         </div>
       ) : proposals.error ? (
-        <p role="alert" className="mt-4 text-destructive text-sm">
-          {proposals.error.message}
-        </p>
+        <SectionReadError
+          error={proposals.error}
+          fallback="Couldn't load the proposed skills."
+          retrying={proposals.isFetching}
+          onRetry={() => void proposals.refetch()}
+        />
       ) : !containerId ? (
         <PageEmpty icon={IconSparkles} title="No container">
           Choose a container under Participation to see the skills OpenBot
@@ -771,9 +844,12 @@ function AnalysisRuns({ agentId }: { agentId?: string }) {
           </PageRows>
         </div>
       ) : runs.error ? (
-        <p role="alert" className="mt-4 text-destructive text-sm">
-          {runs.error.message}
-        </p>
+        <SectionReadError
+          error={runs.error}
+          fallback="Couldn't load the learning runs."
+          retrying={runs.isFetching}
+          onRetry={() => void runs.refetch()}
+        />
       ) : !runs.data.containerId ? (
         <PageEmpty icon={IconHistory} title="No container">
           Choose a container under Participation to see its analysis runs.
@@ -846,9 +922,12 @@ function PublishedSkills({ agentId }: { agentId?: string }) {
           </PageRows>
         </div>
       ) : skills.error ? (
-        <p role="alert" className="mt-4 text-destructive text-sm">
-          {skills.error.message}
-        </p>
+        <SectionReadError
+          error={skills.error}
+          fallback="Couldn't load the published skills."
+          retrying={skills.isFetching}
+          onRetry={() => void skills.refetch()}
+        />
       ) : !skills.data.containerId ? (
         <PageEmpty icon={IconSparkles} title="No container">
           Choose a container under Participation to see its published skills.

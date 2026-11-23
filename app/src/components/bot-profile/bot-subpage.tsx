@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import type * as React from "react";
+import {
+  BotDetailsState,
+  botDetailsUnavailable,
+} from "@/components/bot-profile/bot-details-state";
 import { PageShell } from "@/components/layout/page-shell";
 import { type AgentProfile, agentQueryOptions } from "@/lib/agents/queries";
 
@@ -24,23 +28,22 @@ export function BotSubpage({
   children: (agent: AgentProfile) => React.ReactNode;
 }) {
   const agent = useQuery(agentQueryOptions(agentId));
+  const unavailable = botDetailsUnavailable(agent.error);
   return (
     <PageShell
-      action={action}
-      backButton={{
-        label: agent.data?.name ?? "Bot",
-        linkProps: { params: { agentId }, to: "/bots/$agentId" },
-      }}
+      action={agent.data && !unavailable ? action : undefined}
+      backButton={
+        unavailable
+          ? { label: "Bots", linkProps: { to: "/bots" } }
+          : {
+              label: agent.data?.name ?? "Bot",
+              linkProps: { params: { agentId }, to: "/bots/$agentId" },
+            }
+      }
       description={description}
       title={title}
     >
-      {agent.isPending ? null : agent.error ? (
-        <p className="mt-6 text-destructive text-sm" role="alert">
-          Couldn't open this Bot. It may not be shared with you.
-        </p>
-      ) : (
-        children(agent.data)
-      )}
+      <BotDetailsState query={agent}>{children}</BotDetailsState>
     </PageShell>
   );
 }

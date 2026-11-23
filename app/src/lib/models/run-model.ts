@@ -1,6 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { z } from "zod";
 import { toast } from "@/components/ui/toast";
+import {
+  readComposeDraft,
+  writeComposeDraft,
+} from "@/lib/channels/compose-draft";
 import { queryClient } from "@/query-client";
 import { type ModelPick, requestFor, shownPick } from "./effort";
 import { setConversationModelMutationOptions } from "./mutations";
@@ -11,6 +16,10 @@ import {
 } from "./queries";
 
 const SAVE_FAILED_TOAST = "conversation-model-save";
+const draftModelSchema = z.object({
+  model: z.string().nullable(),
+  effort: z.string().nullable(),
+});
 
 /**
  * The model and thinking effort one conversation runs on, as its picker shows them, and the way
@@ -76,11 +85,17 @@ export function useConversationModel(
  * The pick for a conversation that does not exist yet. Held here until the first message creates
  * the conversation, which saves it before that message runs (`lib/channels/start.ts`).
  */
-export function useDraftModel(catalogue: ModelCatalogue | undefined) {
-  const [picked, setPicked] = useState<ConversationModel>({
-    model: null,
-    effort: null,
-  });
+export function useDraftModel(
+  catalogue: ModelCatalogue | undefined,
+  storageKey?: string,
+) {
+  const [picked, setPicked] = useState<ConversationModel>(
+    () =>
+      readComposeDraft(storageKey, draftModelSchema) ?? {
+        model: null,
+        effort: null,
+      },
+  );
   const value = shownPick(picked, catalogue);
   const requested = value ? requestFor(value, catalogue) : null;
   return {
@@ -90,6 +105,10 @@ export function useDraftModel(catalogue: ModelCatalogue | undefined) {
       requested && (requested.model !== null || requested.effort !== null)
         ? requested
         : null,
-    choose: (pick: ModelPick) => setPicked(requestFor(pick, catalogue)),
+    choose: (pick: ModelPick) => {
+      const requested = requestFor(pick, catalogue);
+      setPicked(requested);
+      writeComposeDraft(storageKey, requested);
+    },
   };
 }

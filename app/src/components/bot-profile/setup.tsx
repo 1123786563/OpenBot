@@ -17,6 +17,7 @@ import { astryxScope } from "@/components/astryx-pilot/theme";
 import { TestCreditModelPicker } from "@/components/channels/test-credit-model-picker";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import {
   Dialog,
   DialogBody,
@@ -317,18 +318,21 @@ function IsolatedRow({
   agent: AgentProfile;
   onSave: (isolated: boolean) => Promise<unknown>;
 }) {
-  const { data: capabilities } = useQuery(agentCapabilitiesQueryOptions());
-  const { data: mine } = useQuery(myCapabilitiesQueryOptions());
+  const deployment = useQuery(agentCapabilitiesQueryOptions());
+  const permission = useQuery(myCapabilitiesQueryOptions());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const available = capabilities?.isolationAvailable ?? false;
-  const allowed = mine?.capabilities.isolatedComputers !== false;
+  const available = deployment.data?.isolationAvailable ?? false;
+  const allowed = permission.data?.capabilities.isolatedComputers !== false;
+  const checking = deployment.isPending || (available && permission.isPending);
+  const checkFailed = deployment.isError || (available && permission.isError);
+  const showCheck = !agent.systemOwned && !agent.isolated;
   const isPublic = agent.visibility === "public";
   // A Bot that comes with OpenBot belongs to nobody, and the switch is a person's.
   const editable =
     agent.canManage &&
     !agent.systemOwned &&
-    (agent.isolated || (available && allowed));
+    (agent.isolated || (available && allowed && !checking && !checkFailed));
 
   const summary = agent.systemOwned
     ? "Comes with OpenBot, so it runs on the computer of whoever is using it."
@@ -340,11 +344,13 @@ function IsolatedRow({
           : agent.isolationOffReason === "deployment"
             ? ISOLATION_GONE
             : sharedSummary(isPublic)
-      : !available
-        ? ISOLATION_UNAVAILABLE
-        : !allowed && agent.canManage
-          ? ISOLATION_NOT_ALLOWED
-          : sharedSummary(isPublic);
+      : checking || checkFailed
+        ? sharedSummary(isPublic)
+        : !available
+          ? ISOLATION_UNAVAILABLE
+          : !allowed && agent.canManage
+            ? ISOLATION_NOT_ALLOWED
+            : sharedSummary(isPublic);
 
   return (
     <Item size="sm">
@@ -356,6 +362,21 @@ function IsolatedRow({
         <ItemDescription className="line-clamp-none">
           {error ?? summary}
         </ItemDescription>
+        {showCheck && checking ? (
+          <ItemDescription role="status">
+            Checking whether isolation is available…
+          </ItemDescription>
+        ) : null}
+        {showCheck && checkFailed ? (
+          <ReadError
+            message="Couldn’t check whether isolation is available"
+            retry={() =>
+              deployment.isError ? deployment.refetch() : permission.refetch()
+            }
+            retryBelow
+            retrying={deployment.isFetching || permission.isFetching}
+          />
+        ) : null}
       </ItemContent>
       <ItemActions>
         {agent.canManage && !agent.systemOwned ? (

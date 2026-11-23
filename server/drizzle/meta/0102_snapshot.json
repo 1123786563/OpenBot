@@ -1,6 +1,6 @@
 {
-  "id": "71840f72-b9f3-4381-aa77-e4542e39a968",
-  "prevId": "a308fceb-a138-4856-8a04-602e1b482011",
+  "id": "dcdc314d-52df-4aa9-9dda-b7014036d587",
+  "prevId": "f78dca04-7b55-4207-b2b7-f523a64a9b80",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13276,6 +13276,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "version": {
           "name": "version",
           "type": "text",
@@ -14225,91 +14243,110 @@
       },
       "isRLSEnabled": false
     },
-    "public.lago_usage_events": {
-      "name": "lago_usage_events",
+    "public.skill_market_equivalences": {
+      "name": "skill_market_equivalences",
       "schema": "",
       "columns": {
-        "event_id": {
-          "name": "event_id",
+        "registry_id": {
+          "name": "registry_id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true
         },
-        "account_id": {
-          "name": "account_id",
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registry_skill_id": {
+          "name": "registry_skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_skill_id": {
+          "name": "target_skill_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "operation_id": {
-          "name": "operation_id",
+        "target_version_id": {
+          "name": "target_version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_slug": {
+          "name": "target_slug",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "resource": {
-          "name": "resource",
+        "version": {
+          "name": "version",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_microcredits": {
-          "name": "amount_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
+        "fingerprint": {
+          "name": "fingerprint",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "failure": {
-          "name": "failure",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": true
         }
       },
       "indexes": {
-        "lago_usage_events_pending_idx": {
-          "name": "lago_usage_events_pending_idx",
+        "skill_market_equivalence_target_skill_idx": {
+          "name": "skill_market_equivalence_target_skill_idx",
           "columns": [
             {
-              "expression": "state",
+              "expression": "target_skill_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "skill_market_equivalence_source_skill_idx": {
+          "name": "skill_market_equivalence_source_skill_idx",
+          "columns": [
+            {
+              "expression": "source",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "created_at",
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -14322,12 +14359,128 @@
         }
       },
       "foreignKeys": {
-        "lago_usage_events_account_id_test_credit_accounts_id_fk": {
-          "name": "lago_usage_events_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "lago_usage_events",
-          "tableTo": "test_credit_accounts",
+        "skill_market_equivalences_registry_id_skill_market_migration_receipts_registry_id_fk": {
+          "name": "skill_market_equivalences_registry_id_skill_market_migration_receipts_registry_id_fk",
+          "tableFrom": "skill_market_equivalences",
+          "tableTo": "skill_market_migration_receipts",
           "columnsFrom": [
-            "account_id"
+            "registry_id"
+          ],
+          "columnsTo": [
+            "registry_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "skill_market_equivalences_source_registry_skill_id_version_id_pk": {
+          "name": "skill_market_equivalences_source_registry_skill_id_version_id_pk",
+          "columns": [
+            "source",
+            "registry_skill_id",
+            "version_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "skill_market_equivalences_target_version_id_unique": {
+          "name": "skill_market_equivalences_target_version_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "target_version_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bifrost_market_reviews": {
+      "name": "bifrost_market_reviews",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "bifrost_market_reviews_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "skill_id": {
+          "name": "skill_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_uuid": {
+          "name": "version_uuid",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_by": {
+          "name": "withdrawn_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "bifrost_market_reviews_skill_id_bifrost_market_skills_id_fk": {
+          "name": "bifrost_market_reviews_skill_id_bifrost_market_skills_id_fk",
+          "tableFrom": "bifrost_market_reviews",
+          "tableTo": "bifrost_market_skills",
+          "columnsFrom": [
+            "skill_id"
           ],
           "columnsTo": [
             "id"
@@ -14338,156 +14491,33 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "lago_usage_events_account_id_operation_id_unique": {
-          "name": "lago_usage_events_account_id_operation_id_unique",
+        "bifrost_market_reviews_version_uuid_unique": {
+          "name": "bifrost_market_reviews_version_uuid_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "account_id",
-            "operation_id"
+            "version_uuid"
           ]
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "lago_usage_events_amounts": {
-          "name": "lago_usage_events_amounts",
-          "value": "\"lago_usage_events\".\"input_tokens\" >= 0 AND \"lago_usage_events\".\"output_tokens\" >= 0 AND \"lago_usage_events\".\"amount_microcredits\" >= 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.pilot_provider_cost_holds": {
-      "name": "pilot_provider_cost_holds",
+    "public.skill_market_migration_receipts": {
+      "name": "skill_market_migration_receipts",
       "schema": "",
       "columns": {
-        "path": {
-          "name": "path",
+        "registry_id": {
+          "name": "registry_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bound_microcredits": {
-          "name": "bound_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cost_microcredits": {
-          "name": "cost_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'held'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "pilot_provider_cost_holds_account_id_test_credit_accounts_id_fk": {
-          "name": "pilot_provider_cost_holds_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "pilot_provider_cost_holds",
-          "tableTo": "test_credit_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "pilot_provider_cost_holds_path_account_id_operation_id_pk": {
-          "name": "pilot_provider_cost_holds_path_account_id_operation_id_pk",
-          "columns": [
-            "path",
-            "account_id",
-            "operation_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pilot_provider_cost_holds_amounts": {
-          "name": "pilot_provider_cost_holds_amounts",
-          "value": "\"pilot_provider_cost_holds\".\"bound_microcredits\" >= 0 AND (\"pilot_provider_cost_holds\".\"cost_microcredits\" IS NULL OR \"pilot_provider_cost_holds\".\"cost_microcredits\" >= 0)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.pilot_provider_cost_limit_events": {
-      "name": "pilot_provider_cost_limit_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "path": {
-          "name": "path",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true
         },
-        "from_limit_microcredits": {
-          "name": "from_limit_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "to_limit_microcredits": {
-          "name": "to_limit_microcredits",
-          "type": "bigint",
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "by": {
-          "name": "by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {},
@@ -14498,47 +14528,48 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.pilot_provider_cost_limits": {
-      "name": "pilot_provider_cost_limits",
+    "public.bifrost_market_skills": {
+      "name": "bifrost_market_skills",
       "schema": "",
       "columns": {
-        "path": {
-          "name": "path",
-          "type": "text",
+        "id": {
+          "name": "id",
+          "type": "integer",
           "primaryKey": true,
-          "notNull": true
-        },
-        "limit_microcredits": {
-          "name": "limit_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updatedBy": {
-          "name": "updatedBy",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "identity": {
+            "type": "always",
+            "name": "bifrost_market_skills_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "skill_uuid": {
+          "name": "skill_uuid",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pilot_provider_cost_limits_nonnegative": {
-          "name": "pilot_provider_cost_limits_nonnegative",
-          "value": "\"pilot_provider_cost_limits\".\"limit_microcredits\" >= 0"
+      "uniqueConstraints": {
+        "bifrost_market_skills_skill_uuid_unique": {
+          "name": "bifrost_market_skills_skill_uuid_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "skill_uuid"
+          ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

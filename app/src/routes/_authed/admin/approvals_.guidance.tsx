@@ -1,23 +1,17 @@
 import { IconShieldLock } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { GuidanceBacktestField } from "@/components/approvals/guidance-backtest";
-import {
-  GovernancePage,
-  governanceOverlay,
-} from "@/components/astryx-pilot/governance";
+import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { ReadingStatus } from "@/components/boundaries/rule-reading";
 import { PageCard, PageSection } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
 import {
   Field,
   FieldDescription,
@@ -39,7 +33,6 @@ import {
   guidanceBacktestPreviewQueryOptions,
   reviewerGuidanceQueryOptions,
 } from "@/lib/reviewer-guidance/queries";
-import { queryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/admin/approvals_/guidance")({
   component: ReviewerGuidancePage,
@@ -61,6 +54,8 @@ const BACK = {
  */
 function ReviewerGuidancePage() {
   const navigate = Route.useNavigate();
+  const queryClient = useQueryClient();
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const saved = useQuery(reviewerGuidanceQueryOptions());
   const preview = useQuery(guidanceBacktestPreviewQueryOptions());
   const save = useMutation(saveReviewerGuidanceMutationOptions(queryClient));
@@ -80,13 +75,15 @@ function ReviewerGuidancePage() {
   const passed =
     checked !== null && checked.text === text && checked.reading.check.ok;
   const unchanged = text === (saved.data ?? "");
-  const ready = passed && !unchanged;
-  const [removing, setRemoving] = useState(false);
+  const canWrite = saved.isSuccess && !remove.isPending;
+  const ready =
+    canWrite && passed && !unchanged && !check.isPending && !save.isPending;
   const back = () => void navigate({ to: "/admin/approvals" });
 
   const runCheck = () => {
-    if (!text || check.isPending) return;
+    if (!text || check.isPending || save.isPending) return;
     save.reset();
+    setChecked(null);
     check.mutate(text, {
       onSuccess: (reading) => setChecked({ text, reading }),
     });
@@ -98,11 +95,21 @@ function ReviewerGuidancePage() {
       description="Tell the reviewer what your organization needs a person for, or what is routine. It reads your guidance with every action it checks. Nothing changes until you save."
       title="Guidance for auto-review"
     >
-      {saved.isPending ? null : saved.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {saved.error.message}
-        </p>
-      ) : (
+      {saved.isError ? (
+        <ReadError
+          message="Couldn't load saved guidance."
+          description={
+            saved.data === undefined
+              ? undefined
+              : "Your draft will be here after you reload the saved guidance."
+          }
+          retry={saved.refetch}
+          retrying={saved.isFetching}
+        />
+      ) : saved.isPending ? (
+        <ReadStatus kind="loading" message="Loading saved guidance…" />
+      ) : null}
+      {saved.data !== undefined ? (
         <form
           noValidate
           onSubmit={(event) => {
@@ -119,7 +126,7 @@ function ReviewerGuidancePage() {
                 >
                   Cancel
                 </Button>
-                <Button disabled={!ready || save.isPending} type="submit">
+                <Button disabled={!ready} type="submit">
                   {save.isPending ? "Saving…" : "Save guidance"}
                 </Button>
               </>
@@ -133,6 +140,7 @@ function ReviewerGuidancePage() {
                   that sees only your words says what they change.
                 </FieldDescription>
                 <Textarea
+                  disabled={save.isPending}
                   id="reviewer-guidance"
                   maxLength={GUIDANCE_LIMIT}
                   onChange={(event) => setDraft(event.target.value)}
@@ -153,7 +161,7 @@ function ReviewerGuidancePage() {
                 </p>
                 <div>
                   <Button
-                    disabled={!text || check.isPending}
+                    disabled={!text || check.isPending || save.isPending}
                     onClick={runCheck}
                     size="sm"
                     type="button"
@@ -183,7 +191,18 @@ function ReviewerGuidancePage() {
                   warning={null}
                 />
               ) : null}
-              {passed ? (
+              {passed && preview.isError ? (
+                <ReadError
+                  message="Couldn't load recent decisions for testing."
+                  retry={preview.refetch}
+                  retrying={preview.isFetching}
+                />
+              ) : passed && preview.isPending ? (
+                <ReadStatus
+                  kind="loading"
+                  message="Loading recent decisions for testing…"
+                />
+              ) : passed ? (
                 <GuidanceBacktestField
                   preview={preview.data}
                   run={backtest}
@@ -198,7 +217,7 @@ function ReviewerGuidancePage() {
             ) : null}
           </PageCard>
         </form>
-      )}
+      ) : null}
       {saved.data ? (
         <PageSection
           description="The reviewer goes back to its own instructions from the next action it checks."
@@ -206,9 +225,32 @@ function ReviewerGuidancePage() {
         >
           <Button
             className="mt-4"
-            onClick={() => {
-              remove.reset();
-              setRemoving(true);
+            disabled={!canWrite || save.isPending}
+            onClick={(event) => {
+              requestConfirmation({
+                title: "Remove the guidance?",
+                description:
+                  "The reviewer goes back to its own instructions from the next action it checks.",
+                confirmLabel: "Remove guidance",
+                pendingLabel: "Removing…",
+                failureMessage: "Couldn't remove the guidance. Try again.",
+                trigger: event.currentTarget,
+                refresh: saved.refetch,
+                run: async () => {
+                  const latest = queryClient.getQueryState(
+                    reviewerGuidanceQueryOptions().queryKey,
+                  );
+                  if (
+                    latest?.status !== "success" ||
+                    latest.data !== saved.data
+                  )
+                    throw new ActionUnavailable(
+                      "The saved guidance changed. Close this dialog and review it before removing it.",
+                    );
+                  await remove.mutateAsync();
+                  back();
+                },
+              });
             }}
             variant="destructive"
           >
@@ -216,39 +258,7 @@ function ReviewerGuidancePage() {
           </Button>
         </PageSection>
       ) : null}
-      <Dialog onOpenChange={setRemoving} open={removing}>
-        <DialogContent {...governanceOverlay}>
-          <DialogHeader>
-            <DialogTitle>Remove the guidance?</DialogTitle>
-            <DialogDescription>
-              The reviewer goes back to its own instructions from the next
-              action it checks.
-            </DialogDescription>
-          </DialogHeader>
-          {remove.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {remove.error.message}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              onClick={() => setRemoving(false)}
-              size="sm"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(undefined, { onSuccess: back })}
-              size="sm"
-              variant="destructive"
-            >
-              {remove.isPending ? "Removing…" : "Remove"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {confirmation}
     </GovernancePage>
   );
 }
