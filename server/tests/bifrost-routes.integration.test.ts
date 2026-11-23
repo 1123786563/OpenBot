@@ -62,6 +62,12 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     const { catalog } = await configure.json();
     const revision = catalog.routes.a.revision;
     const report = fixtureTraceReport(harnessImage, { ...a, revision });
+    const terminalRecord = JSON.stringify({
+      requestId: report.cancellation.upstream.requestId,
+      outcome: "cancelled",
+      terminatedAt: report.cancellation.upstream.terminal.terminatedAt,
+    });
+    report.cancellation.upstream.terminal.recordDigest = `sha256:${Bun.CryptoHasher.hash("sha256", terminalRecord, "hex")}`;
     const publish = () =>
       request("/publication", "POST", { routes: ["a"], defaultRoute: "a" });
     expect((await request("/routes/a/verify", "POST", report)).status).toBe(
@@ -80,6 +86,27 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     ).toBe(409);
     expect((await publish()).status).toBe(409);
     await Bun.write(file, JSON.stringify(report));
+    expect(
+      (await request("/routes/a/verify", "POST", { revision })).status,
+    ).toBe(409);
+    const terminalFile = join(dir, `${revision}.cancel.json`);
+    await Bun.write(terminalFile, "{}");
+    expect(
+      (await request("/routes/a/verify", "POST", { revision })).status,
+    ).toBe(409);
+    const wrongRecord = terminalRecord.replace(
+      report.cancellation.upstream.requestId,
+      "different-request",
+    );
+    const wrongRecordReport = structuredClone(report);
+    wrongRecordReport.cancellation.upstream.terminal.recordDigest = `sha256:${Bun.CryptoHasher.hash("sha256", wrongRecord, "hex")}`;
+    await Bun.write(file, JSON.stringify(wrongRecordReport));
+    await Bun.write(terminalFile, wrongRecord);
+    expect(
+      (await request("/routes/a/verify", "POST", { revision })).status,
+    ).toBe(409);
+    await Bun.write(file, JSON.stringify(report));
+    await Bun.write(terminalFile, terminalRecord);
     expect(
       (await request("/routes/a/verify", "POST", { revision })).status,
     ).toBe(200);

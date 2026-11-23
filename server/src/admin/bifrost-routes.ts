@@ -13,8 +13,10 @@ import {
   configure,
   emptyCatalog,
   pilotCatalogKey,
+  providerCancellationRecord,
   publication,
   publish,
+  qualificationReport,
   releaseSchema,
   verify,
   view,
@@ -118,10 +120,39 @@ export function createBifrostAdminRoutes(
     const file = Bun.file(
       join(evidenceDirectory, `${input.data.revision}.json`),
     );
-    const report: unknown =
+    const report = qualificationReport.safeParse(
       file.size <= 32_768
         ? await file.json().catch(() => undefined)
+        : undefined,
+    );
+    if (!report.success)
+      throw new CatalogConflict("Missing valid live-provider evidence.");
+
+    const terminalFile = Bun.file(
+      join(evidenceDirectory, `${input.data.revision}.cancel.json`),
+    );
+    const terminalRecord =
+      terminalFile.size > 0 && terminalFile.size <= 32_768
+        ? await terminalFile.arrayBuffer().catch(() => undefined)
         : undefined;
+    const terminal = report.data.cancellation.upstream.terminal;
+    const record = providerCancellationRecord.safeParse(
+      terminalRecord
+        ? await new Response(terminalRecord).json().catch(() => undefined)
+        : undefined,
+    );
+    if (
+      !terminalRecord ||
+      !record.success ||
+      record.data.requestId !== terminal.requestId ||
+      record.data.terminatedAt !== terminal.terminatedAt ||
+      `sha256:${Bun.CryptoHasher.hash("sha256", terminalRecord, "hex")}` !==
+        terminal.recordDigest
+    ) {
+      throw new CatalogConflict(
+        "Missing matching provider cancellation record.",
+      );
+    }
     const by = context.var.actor.id;
     const result = await update(by, async (current) => {
       if (
@@ -130,7 +161,7 @@ export function createBifrostAdminRoutes(
       ) {
         throw new CatalogConflict("Bifrost route revision changed.");
       }
-      const catalog = verify(current, id, report, by);
+      const catalog = verify(current, id, report.data, by);
       return { catalog, result: { catalog, active: view(catalog) } };
     });
     return context.json(result);

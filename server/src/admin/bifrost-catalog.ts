@@ -121,7 +121,7 @@ const completedStep = step.extend({
   gateway: gatewayTrace.extend({ usage }),
   upstream: providerTrace.extend({ usage }),
 });
-const traceEvidence = evidenceIdentity.extend({
+const traceEvidenceV2 = evidenceIdentity.extend({
   version: z.literal(2),
   stream: completedStep.extend({
     outputChunks: z.number().int().min(2),
@@ -158,11 +158,30 @@ const traceEvidence = evidenceIdentity.extend({
     .optional(),
 });
 
+export const providerCancellationRecord = z.strictObject({
+  requestId: reference,
+  outcome: z.literal("cancelled"),
+  terminatedAt: z.iso.datetime(),
+});
+
+export const qualificationReport = traceEvidenceV2.extend({
+  version: z.literal(3),
+  cancellation: traceEvidenceV2.shape.cancellation.extend({
+    upstream: providerTrace.extend({
+      terminal: providerCancellationRecord.extend({
+        source: z.literal("provider-record"),
+        recordRef: reference,
+        recordDigest: sha256,
+      }),
+    }),
+  }),
+});
+
 const configuredRoute = route.extend({
   revision: z.uuid(),
   verification: z
     .strictObject({
-      report: z.union([traceEvidence, legacyEvidence]),
+      report: z.union([qualificationReport, traceEvidenceV2, legacyEvidence]),
       by: z.string(),
       at: z.iso.datetime(),
     })
@@ -228,7 +247,7 @@ export function configure(current: Catalog, input: Configuration): Catalog {
   };
 }
 
-type TraceEvidence = z.infer<typeof traceEvidence>;
+type TraceEvidence = z.infer<typeof qualificationReport>;
 type ConfiguredRoute = z.infer<typeof configuredRoute>;
 
 function matchesTrace(
@@ -278,7 +297,9 @@ function matchesTrace(
     (!tool ||
       (tool.invocation.gateway.runId === tool.result.gateway.runId &&
         tool.invocation.toolCallId === tool.result.toolResultFor)) &&
-    Date.parse(cancellation.upstream.terminatedAt) >=
+    cancellation.upstream.terminal.requestId ===
+      cancellation.upstream.requestId &&
+    Date.parse(cancellation.upstream.terminal.terminatedAt) >=
       Date.parse(cancellation.clientAbortedAt) &&
     matchesMeter(inputLimit, inputLimit.requestId) &&
     inputLimit.meter.inputTokenUpperBound > entry.maxInputTokens &&
@@ -317,7 +338,7 @@ export function verify(
   const entry = Object.hasOwn(current.routes, id)
     ? current.routes[id]
     : undefined;
-  const parsed = traceEvidence.safeParse(input);
+  const parsed = qualificationReport.safeParse(input);
   if (!entry || !parsed.success)
     throw new CatalogConflict("Missing valid live-provider evidence.");
   const report = parsed.data;
@@ -369,6 +390,7 @@ export function publish(
     if (
       !entry?.verification ||
       !("version" in entry.verification.report) ||
+      entry.verification.report.version !== 3 ||
       !matchesTrace(entry.verification.report, entry, current.harnessImage)
     )
       throw new CatalogConflict("Each published route requires verification.");
@@ -404,6 +426,7 @@ export function view(current: Catalog) {
       Object.hasOwn(current.routes, option.id) &&
       current.routes[option.id]?.revision === option.revision &&
       "version" in option.verification.report &&
+      option.verification.report.version === 3 &&
       matchesTrace(option.verification.report, option, current.harnessImage),
   );
   const defaultRoute = current.publication?.defaultRoute;

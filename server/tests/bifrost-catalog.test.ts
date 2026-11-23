@@ -139,6 +139,58 @@ test("legacy evidence stays readable and cannot qualify a route", () => {
   expect(() => publish(stored, ["a"], "a", "admin")).toThrow("verification");
 });
 
+test("retained v2 reports stay readable without qualifying as provider cancellation", async () => {
+  for (const filename of [
+    "e2fd40ab-313f-45a0-acbc-7cab7bb98894.json",
+    "d13818f8-1290-468d-9577-c1cfa60677de.json",
+  ]) {
+    const report = await Bun.file(
+      new URL(
+        `../../docs/evidence/bifrost-publication/${filename}`,
+        import.meta.url,
+      ),
+    ).json();
+    const initial = configure(emptyCatalog, {
+      harnessImage: report.harnessImage,
+      routes: {
+        a: {
+          ...route,
+          provider: report.provider,
+          model: report.model,
+          gatewayRevision: report.gatewayRevision,
+          meteringRevision: report.meteringRevision,
+          maxInputTokens: 4096,
+          maxOutputTokens: 64,
+        },
+      },
+    });
+    const draft = { ...initial.routes.a!, revision: report.revision };
+    const verification = {
+      report,
+      by: "admin",
+      at: report.cancellation.clientAbortedAt,
+    };
+    const oldRelease = releaseSchema.parse({
+      id: crypto.randomUUID(),
+      by: verification.by,
+      at: verification.at,
+      harnessImage: report.harnessImage,
+      defaultRoute: "a",
+      routes: [
+        { ...draft, id: "a", verification, maxChargeMicrocredits: "4160" },
+      ],
+    });
+    const stored = catalogSchema.parse({
+      ...initial,
+      routes: { a: { ...draft, verification } },
+      publication: oldRelease,
+    });
+    expect(() => verify(stored, "a", report, "admin")).toThrow("evidence");
+    expect(() => publish(stored, ["a"], "a", "admin")).toThrow("verification");
+    expect(view(stored)).toMatchObject({ options: [], defaultRoute: null });
+  }
+});
+
 test.each([
   [
     "substituted upstream model",
@@ -201,7 +253,27 @@ test.each([
   [
     "missing provider cancellation",
     (report) => {
-      report.cancellation.upstream.outcome = "disconnected";
+      report.cancellation.upstream.terminal.outcome = "disconnected";
+    },
+  ],
+  [
+    "a provider terminal record for a different request",
+    (report) => {
+      report.cancellation.upstream.terminal.requestId =
+        report.stream.upstream.requestId;
+    },
+  ],
+  [
+    "provider termination before the client abort",
+    (report) => {
+      report.cancellation.upstream.terminal.terminatedAt =
+        "2026-01-01T00:59:59Z";
+    },
+  ],
+  [
+    "gateway finalization as the terminal record source",
+    (report) => {
+      report.cancellation.upstream.terminal.source = "gateway-log";
     },
   ],
   [

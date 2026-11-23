@@ -8,7 +8,7 @@ count equals the provider's reported prompt_tokens for text, tool-schema and
 tool-result shapes (verified in docs/billing-zhipu-output-cap.md), so a small
 framing margin keeps the bound conservative without drifting over route caps.
 
-Run next to the verification workload:
+Run inside the isolated Bifrost workload:
 
   ZHIPU_API_KEY=... \
   OPENBOT_BIFROST_METER_TOKEN=<secret> \
@@ -25,7 +25,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 TOKENIZER_URL = "https://open.bigmodel.cn/api/paas/v4/tokenizer"
 FRAMING_MARGIN = 2
@@ -41,6 +41,14 @@ except KeyError as missing:
 _log = open(LOG_PATH, "a", buffering=1)
 
 
+class RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+tokenizer_client = build_opener(ProxyHandler({}), RejectRedirects())
+
+
 def tokenize(model, payload):
     request = Request(
         TOKENIZER_URL,
@@ -50,7 +58,7 @@ def tokenize(model, payload):
             "Content-Type": "application/json",
         },
     )
-    with urlopen(request, timeout=20) as response:
+    with tokenizer_client.open(request, timeout=20) as response:
         usage = json.load(response)["usage"]
     return usage["prompt_tokens"] + usage.get("image_tokens", 0), usage.get("request_id")
 
@@ -110,4 +118,5 @@ class Meter(BaseHTTPRequestHandler):
         pass
 
 
-HTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 32813), Meter).serve_forever()
+if __name__ == "__main__":
+    HTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 32813), Meter).serve_forever()
