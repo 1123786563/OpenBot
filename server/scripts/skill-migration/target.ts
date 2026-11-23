@@ -7,7 +7,7 @@ import {
 } from "../../src/skill-market/bifrost";
 import { bifrostNamespace, exactVersion } from "../../src/skill-market/config";
 import { encodeImportedSkillDocument } from "../../src/skill-market/imported-document";
-import { packageManifest } from "./source";
+import { packageManifest } from "../../src/skill-market/package-manifest";
 
 export class MigrationConflict extends Error {}
 

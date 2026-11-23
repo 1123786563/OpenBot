@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { unzipSync } from "fflate";
 import postgres from "postgres";
 import { z } from "zod";
-import { packageManifest } from "../../scripts/skill-migration/source";
 import { createBifrostMarket } from "../../src/skill-market/bifrost";
+import { packageManifest } from "../../src/skill-market/package-manifest";
 
 const sourceUrl = "postgres://bifrost:fixture@db/skillhub_fixture";
 const targetUrl =

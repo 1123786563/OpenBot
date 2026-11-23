@@ -20,13 +20,13 @@ import {
   exactVersion,
   skillHubOrigin,
 } from "./config";
-
 import {
   equivalentVersionKeys,
   equivalentVersions,
   lockMarketEquivalences,
   type MarketVersionKey,
 } from "./equivalences";
+import { installedMarketSource } from "./installed-source";
 
 const versionIdentityFields = z.object({
   registrySkillId: z.number().int().min(1).max(2147483647),
@@ -90,12 +90,12 @@ export function installedMarketDisablement(database: Pick<Database, "select">) {
   const legacy = skillMarketEquivalences;
   return or(
     and(
-      eq(disablements.source, install.registry),
+      eq(disablements.source, installedMarketSource.source),
       eq(disablements.registrySkillId, install.registrySkillId),
       eq(disablements.versionId, install.versionId),
     ),
     and(
-      eq(install.registry, bifrostNamespace),
+      eq(installedMarketSource.source, bifrostNamespace),
       exists(
         equivalentVersions(database).where(
           and(
@@ -382,9 +382,9 @@ export function marketVersionMethods(database: Database) {
     async marketVersionsForAdministration() {
       const installed = await database
         .selectDistinct({
-          source: skillMarketInstallations.registry,
-          namespace: skillMarketInstallations.namespace,
-          slug: skillMarketInstallations.slug,
+          source: installedMarketSource.source,
+          namespace: installedMarketSource.namespace,
+          slug: installedMarketSource.slug,
           registrySkillId: skillMarketInstallations.registrySkillId,
           versionId: skillMarketInstallations.versionId,
           version: skillMarketInstallations.version,

@@ -12,8 +12,8 @@ tables. It uses each version's recorded file count, total bytes, and file
 SHA-256 values to verify the objects before writing to Bifrost.
 
 Use a dedicated pinned Bifrost v2.6.0 target with PostgreSQL blob storage.
-Apply the current [reader views](skill-market-reader.sql). Keep destination
-publishing paused while importing and verifying. Confirm that the private
+Apply the current [reader schema and publication trigger](skill-market-reader.sql) before
+importing. Keep destination publishing paused while importing and verifying. Confirm that the private
 management origin and the reader database reach the same Bifrost instance.
 
 Supply these settings in a private operator environment file.
@@ -79,9 +79,10 @@ report records the following for each source version.
   covers every original relative path and file byte.
 - `provenance` records source publication and withdrawal state, publisher
   and owner IDs, moderation records, and the matching OpenBot confirmation
-  when one was supplied. A preserved reviewer decision is source evidence.
-  Eligibility in Bifrost still requires the OpenBot review and withdrawal
-  checks.
+  when one was supplied. Applying the receipt carries forward an exact
+  confirmation with matching approved moderation evidence for a published,
+  compatible package. The record keeps the original reviewer and date.
+  Existing Bifrost reviews and withdrawals take precedence.
 - `status: "withdrawn"` and `status: "historical"` preserve source
   identity, manifest and provenance with `target: null`. The retained
   snapshot supplies the corresponding bytes, including versions no longer
@@ -112,8 +113,8 @@ The OpenBot database retains the receipt, including historical and withdrawn
 entries. Existing installations keep their original instructions and source
 identities until a Bot manager explicitly switches versions. Verify that the
 Bifrost version picker uses the reserved command and that approved target
-versions are available to switch to. OpenBot reviews for Bifrost are still
-required. An emergency disablement applies to both identities of an equivalent
+versions are available to switch to. Versions without a qualifying transferred
+confirmation require a Bifrost review. An emergency disablement applies to both identities of an equivalent
 version. Restoring either identity allows new invocations. Previously paused
 runs retain their pause.
 

@@ -237,8 +237,10 @@ def seed_market():
         "skill_md_body": "Current instructions.\n",
         "files": [{"path": "assets/fixture.bin", "source_type": "text", "content": "current bytes"}],
     })
-    for slug in ["missing-blob", "wrong-size", "mutable-url"]:
+    for slug in ["missing-blob", "wrong-size", "mutable-url", "missing-file-row", "altered-blob"]:
         files = body["files"][:1]
+        if slug == "altered-blob":
+            files = [{"path": "references/unique.md", "source_type": "text", "content": "original"}]
         if slug == "mutable-url":
             files = [{"path": "references/live.md", "source_type": "url", "source_url": "http://upstream:8080/v1/models", "mime_type": "text/plain"}]
         request(path, client=client, body={**body, "name": slug, "files": files})

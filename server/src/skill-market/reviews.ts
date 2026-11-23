@@ -88,6 +88,34 @@ export async function readBifrostReview(
   return saved?.review;
 }
 
+// A receipt can supply the original reviewer and date. An exact existing
+// review, including a withdrawal, keeps precedence over either caller.
+export async function insertBifrostReview(
+  transaction: Transaction,
+  identity: BifrostPackageIdentity,
+  review: { reviewedBy: string; reviewedAt?: Date },
+) {
+  await transaction
+    .insert(bifrostMarketSkills)
+    .values({ skillUuid: identity.skillId })
+    .onConflictDoNothing();
+  const [skill] = await transaction
+    .select({ id: bifrostMarketSkills.id })
+    .from(bifrostMarketSkills)
+    .where(eq(bifrostMarketSkills.skillUuid, identity.skillId));
+  await transaction
+    .insert(bifrostMarketReviews)
+    .values({
+      skillId: skill.id,
+      versionUuid: identity.versionId,
+      slug: identity.slug,
+      version: identity.version,
+      fingerprint: identity.fingerprint,
+      ...review,
+    })
+    .onConflictDoNothing();
+}
+
 export function bifrostReviewMethods(database: Database) {
   return {
     bifrostReview: (identity: BifrostPackageIdentity) =>
@@ -101,25 +129,9 @@ export function bifrostReviewMethods(database: Database) {
         await lockMarketEquivalences(transaction, "read");
         if (!(await verifiedBifrostPackageMatches(transaction, identity)))
           return false;
-        await transaction
-          .insert(bifrostMarketSkills)
-          .values({ skillUuid: identity.skillId })
-          .onConflictDoNothing();
-        const [skill] = await transaction
-          .select({ id: bifrostMarketSkills.id })
-          .from(bifrostMarketSkills)
-          .where(eq(bifrostMarketSkills.skillUuid, identity.skillId));
-        await transaction
-          .insert(bifrostMarketReviews)
-          .values({
-            skillId: skill.id,
-            versionUuid: identity.versionId,
-            slug: identity.slug,
-            version: identity.version,
-            fingerprint: identity.fingerprint,
-            reviewedBy: reviewerId,
-          })
-          .onConflictDoNothing();
+        await insertBifrostReview(transaction, identity, {
+          reviewedBy: reviewerId,
+        });
         return Boolean(await lockActiveBifrostReview(transaction, identity));
       });
     },

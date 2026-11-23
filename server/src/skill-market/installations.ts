@@ -19,6 +19,7 @@ import {
   qualifyMarketVersionForWrite,
 } from "./disablements";
 import { commandSource, lockMarketEquivalences } from "./equivalences";
+import { installedMarketSource } from "./installed-source";
 import { bifrostReviewMethods, lockActiveBifrostReview } from "./reviews";
 
 type InstallablePreview = Pick<
@@ -60,11 +61,15 @@ function matchesSource(source: Source) {
   );
 }
 
+type ExpectedInstallation = {
+  expectedVersionId: number;
+  expectedRegistry?: string;
+};
+
 function matchesInstallation(
   agentId: string,
   command: string,
-  expectedVersionId: number,
-  expectedRegistry?: string,
+  { expectedVersionId, expectedRegistry }: ExpectedInstallation,
 ) {
   return and(
     eq(skillMarketInstallations.agentId, agentId),
@@ -72,7 +77,7 @@ function matchesInstallation(
     eq(skillMarketInstallations.versionId, expectedVersionId),
     expectedRegistry === undefined
       ? undefined
-      : eq(skillMarketInstallations.registry, expectedRegistry),
+      : eq(installedMarketSource.source, expectedRegistry),
   );
 }
 
@@ -173,15 +178,12 @@ export function marketSkillMethods(database: Database) {
         .from(skillMarketEquivalences)
         .where(
           and(
-            eq(
-              skillMarketEquivalences.source,
-              skillMarketInstallations.registry,
-            ),
+            eq(skillMarketEquivalences.source, installedMarketSource.source),
             eq(
               skillMarketEquivalences.namespace,
-              skillMarketInstallations.namespace,
+              installedMarketSource.namespace,
             ),
-            eq(skillMarketEquivalences.slug, skillMarketInstallations.slug),
+            eq(skillMarketEquivalences.slug, installedMarketSource.slug),
             eq(
               skillMarketEquivalences.registrySkillId,
               skillMarketInstallations.registrySkillId,
@@ -193,9 +195,9 @@ export function marketSkillMethods(database: Database) {
       return database
         .select({
           command: skillMarketInstallations.command,
-          namespace: skillMarketInstallations.namespace,
-          slug: skillMarketInstallations.slug,
-          registry: skillMarketInstallations.registry,
+          namespace: installedMarketSource.namespace,
+          slug: installedMarketSource.slug,
+          registry: installedMarketSource.source,
           catalogSlug: alias.slug,
           title: skillMarketInstallations.title,
           version: skillMarketInstallations.version,
@@ -211,8 +213,7 @@ export function marketSkillMethods(database: Database) {
       actor: Actor,
       agentId: string,
       command: string,
-      expectedVersionId: number,
-      expectedRegistry?: string,
+      previous: ExpectedInstallation,
     ) {
       return database.transaction(async (transaction) => {
         const [target] = await registeredBotProfiles(transaction)
@@ -222,14 +223,7 @@ export function marketSkillMethods(database: Database) {
 
         const [removed] = await transaction
           .delete(skillMarketInstallations)
-          .where(
-            matchesInstallation(
-              agentId,
-              command,
-              expectedVersionId,
-              expectedRegistry,
-            ),
-          )
+          .where(matchesInstallation(agentId, command, previous))
           .returning({ command: skillMarketInstallations.command });
         return removed ? "uninstalled" : "stale-installation";
       });
@@ -258,8 +252,7 @@ export function marketSkillMethods(database: Database) {
       actor: Actor,
       agentId: string,
       { preview, packageIdentity }: InstallQualification,
-      expectedVersionId?: number,
-      expectedRegistry?: string,
+      previous?: ExpectedInstallation,
     ) {
       return database.transaction(async (transaction) => {
         const [target] = await registeredBotProfiles(transaction)
@@ -290,14 +283,13 @@ export function marketSkillMethods(database: Database) {
           preview,
           packageIdentity?.skillId,
         );
-        const reservation =
-          expectedVersionId === undefined
-            ? await reserveCommand(
-                transaction,
-                { ...canonical, title: preview.title },
-                canonical.slug,
-              )
-            : undefined;
+        const reservation = !previous
+          ? await reserveCommand(
+              transaction,
+              { ...canonical, title: preview.title },
+              canonical.slug,
+            )
+          : undefined;
         if (reservation?.kind === "command-unavailable") return reservation;
         const command =
           reservation?.command ??
@@ -332,18 +324,11 @@ export function marketSkillMethods(database: Database) {
           installedBy: actor.id,
         };
         // Both writes use the same qualified payload and transaction boundary.
-        if (expectedVersionId !== undefined) {
+        if (previous !== undefined) {
           const [updated] = await transaction
             .update(skillMarketInstallations)
             .set(snapshot)
-            .where(
-              matchesInstallation(
-                agentId,
-                command,
-                expectedVersionId,
-                expectedRegistry,
-              ),
-            )
+            .where(matchesInstallation(agentId, command, previous))
             .returning({ command: skillMarketInstallations.command });
           return updated
             ? ({ kind: "switched", command, version } as const)
@@ -358,7 +343,13 @@ export function marketSkillMethods(database: Database) {
         if (inserted) return { kind: "installed", command, version } as const;
 
         const [current] = await transaction
-          .select()
+          .select({
+            ...installedMarketSource,
+            version: skillMarketInstallations.version,
+            versionId: skillMarketInstallations.versionId,
+            registrySkillId: skillMarketInstallations.registrySkillId,
+            fingerprint: skillMarketInstallations.fingerprint,
+          })
           .from(skillMarketInstallations)
           .where(
             and(
@@ -366,7 +357,7 @@ export function marketSkillMethods(database: Database) {
               eq(skillMarketInstallations.command, command),
             ),
           );
-        return current?.registry === preview.source &&
+        return current?.source === preview.source &&
           current.version === version &&
           current.versionId === versionId &&
           current.registrySkillId === registrySkillId &&

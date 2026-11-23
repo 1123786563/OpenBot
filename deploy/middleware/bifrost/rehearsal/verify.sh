@@ -90,9 +90,24 @@ docker exec "$project-fixture" python /fixture.py skills
 if [[ "$mode" == "--skill-market" || "$mode" == "--skill-migration" || "$mode" == "--skill-cutover" ]]; then
   market_rehearsal=1
   repository=$(cd "$directory/../../.." && pwd)
+  docker exec "$project-db" psql -v ON_ERROR_STOP=1 -U bifrost -d restored_upgrade \
+    -c "CREATE ROLE openbot_skill_reader LOGIN PASSWORD 'fixture-market-reader'"
+  docker exec -i "$project-db" psql -v ON_ERROR_STOP=1 -U bifrost -d restored_upgrade \
+    < "$directory/skill-market-reader.sql"
   docker exec "$project-fixture" python /fixture.py seed-market
   docker exec -i "$project-db" psql -v ON_ERROR_STOP=1 -U bifrost -d restored_upgrade <<'SQL'
-CREATE ROLE openbot_skill_reader LOGIN PASSWORD 'fixture-market-reader';
+DELETE FROM public.skill_files WHERE skill_version_id IN (
+  SELECT version.id FROM public.skill_versions AS version
+  JOIN public.skills AS skill ON skill.id = version.skill_id
+  WHERE skill.name = 'missing-file-row'
+);
+UPDATE public.skill_file_blobs SET data = convert_to('altered!', 'UTF8')
+WHERE id IN (
+  SELECT file.blob_id FROM public.skill_files AS file
+  JOIN public.skill_versions AS version ON version.id = file.skill_version_id
+  JOIN public.skills AS skill ON skill.id = version.skill_id
+  WHERE skill.name = 'altered-blob'
+);
 UPDATE public.skill_files SET blob_id = NULL
 WHERE skill_version_id IN (
   SELECT version.id FROM public.skill_versions AS version
@@ -106,8 +121,6 @@ WHERE skill_version_id IN (
   WHERE skill.name = 'wrong-size'
 );
 SQL
-  docker exec -i "$project-db" psql -v ON_ERROR_STOP=1 -U bifrost -d restored_upgrade \
-    < "$directory/skill-market-reader.sql"
   docker run --rm --network "$project" -v "$repository:/work:ro" -w /work \
     -e BIFROST_SKILL_MARKET_DATABASE_URL=postgres://openbot_skill_reader:fixture-market-reader@db/restored_upgrade \
     oven/bun:1.4.3-alpine bun --no-env-file server/tests/support/bifrost-market-rehearsal.ts

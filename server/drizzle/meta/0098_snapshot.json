@@ -1,5 +1,5 @@
 {
-  "id": "a622988d-02eb-433a-b33d-6bb3beee7e6a",
+  "id": "acd526c8-909e-43e0-922b-08e5b5edd1b3",
   "prevId": "40d97885-9c67-42a7-8881-9ea454e18965",
   "version": "7",
   "dialect": "postgresql",
@@ -4275,19 +4275,19 @@
           "name": "registry",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "namespace": {
           "name": "namespace",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "slug": {
           "name": "slug",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "version": {
           "name": "version",

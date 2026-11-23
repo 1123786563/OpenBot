@@ -789,6 +789,12 @@ describe("admin credential API", () => {
       undefined,
       {
         list: async () => [],
+        rotate: async () => {
+          throw new Error("Unexpected credential rotation");
+        },
+        revoke: async () => {
+          throw new Error("Unexpected credential revocation");
+        },
         create: async (input) => {
           created.push(input);
           return {

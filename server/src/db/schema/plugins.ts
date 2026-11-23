@@ -945,9 +945,9 @@ export const skillMarketInstallations = pgTable(
     agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
-    registry: text("registry").notNull(),
-    namespace: text("namespace").notNull(),
-    slug: text("slug").notNull(),
+    registry: text("registry"),
+    namespace: text("namespace"),
+    slug: text("slug"),
     version: text("version").notNull(),
     versionId: integer("version_id").notNull(),
     registrySkillId: integer("registry_skill_id").notNull(),

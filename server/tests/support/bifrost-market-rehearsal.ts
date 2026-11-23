@@ -69,7 +69,23 @@ try {
   );
   assert.equal(Buffer.from(files["scripts/check.sh"]).toString(), "echo old\n");
 
-  for (const slug of ["missing-blob", "wrong-size", "mutable-url"]) {
+  // The upgrade fixture predates the seal trigger, even though its data is readable.
+  assert.equal(
+    (
+      await routes.request(
+        "/bifrost/upgrade-rehearsal/versions/1.0.0/download",
+        { headers },
+      )
+    ).status,
+    502,
+  );
+  for (const slug of [
+    "missing-blob",
+    "wrong-size",
+    "mutable-url",
+    "missing-file-row",
+    "altered-blob",
+  ]) {
     const error = await routes.request(
       `/bifrost/${slug}/versions/1.0.0/download`,
       { headers },
@@ -99,6 +115,9 @@ try {
     reader`insert into public.skills (name) values ('denied')`,
     { code: "42501" },
   );
+  await assert.rejects(reader`delete from openbot_skill_market.package_seals`, {
+    code: "42501",
+  });
   await assert.rejects(reader`delete from public.skills`, { code: "42501" });
   await assert.rejects(reader`select * from public.skills`, { code: "42501" });
   console.log(

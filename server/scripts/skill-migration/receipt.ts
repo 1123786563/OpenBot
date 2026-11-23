@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -14,6 +13,7 @@ import {
 import {
   bifrostPackageIdentity,
   checkArchivePaths,
+  compatibilityDeclaration,
   type createBifrostMarket,
   maxFiles,
   maxPackageBytes,
@@ -32,8 +32,15 @@ import {
   equivalentVersionKeys,
   lockMarketEquivalences,
 } from "../../src/skill-market/equivalences";
-import { migrationReviewMatches } from "../../src/skill-market/reviews";
-import { packageManifest } from "./source";
+import { installedMarketSource } from "../../src/skill-market/installed-source";
+import {
+  manifestFingerprint,
+  packageManifest,
+} from "../../src/skill-market/package-manifest";
+import {
+  insertBifrostReview,
+  migrationReviewMatches,
+} from "../../src/skill-market/reviews";
 
 const sourceScope = z.object({
   source: z.string().refine((value) => skillHubOrigin(value) === value),
@@ -114,6 +121,50 @@ function recordUnique(index: Map<string, string>, key: string, value: string) {
   index.set(key, value);
 }
 
+function confirmedLegacyReview(
+  entry: z.infer<typeof evidence>,
+  version: Awaited<
+    ReturnType<ReturnType<typeof createBifrostMarket>["readExactPackage"]>
+  >,
+) {
+  const { source, provenance } = entry;
+  const { confirmation } = provenance;
+  if (
+    !confirmation ||
+    provenance.status !== "PUBLISHED" ||
+    provenance.yankedAt !== null ||
+    confirmation.versionId !== source.versionId ||
+    confirmation.slug !== source.slug ||
+    confirmation.version !== source.version ||
+    confirmation.fingerprint !== source.fingerprint ||
+    version.files.size !== 1 ||
+    version.frontmatter.compatibility?.trim()
+  )
+    return;
+
+  const parsed = compatibilityDeclaration.safeParse(version.frontmatter);
+  const declared = parsed.data?.metadata?.["openbot-compatibility"];
+  if (
+    !declared ||
+    declared.scripts ||
+    declared.supportingFiles ||
+    declared.dedicatedRuntime
+  )
+    return;
+
+  const approved = provenance.reviews.find(
+    (review) =>
+      review.reviewTaskId === String(confirmation.reviewTaskId) &&
+      review.reviewerId === confirmation.reviewerId &&
+      review.status === "APPROVED",
+  );
+  if (approved?.reviewedAt)
+    return {
+      reviewedBy: confirmation.reviewerId,
+      reviewedAt: new Date(approved.reviewedAt),
+    };
+}
+
 export async function applySkillMarketReceipt(
   database: Database,
   market: Pick<ReturnType<typeof createBifrostMarket>, "readExactPackage">,
@@ -137,13 +188,14 @@ export async function applySkillMarketReceipt(
   const targetVersions = new Set<string>();
   const coordinates = new Set<string>();
   const mappings: (typeof skillMarketEquivalences.$inferInsert)[] = [];
+  const transferredReviews: {
+    identity: z.infer<typeof bifrostPackageIdentity>;
+    review: NonNullable<ReturnType<typeof confirmedLegacyReview>>;
+  }[] = [];
 
   for (const entry of report.entries) {
     const { source, target, package: manifest } = entry;
     const paths = manifest.files.map(({ path }) => path);
-    const digest = createHash("sha256");
-    for (const file of manifest.files)
-      digest.update(`${file.path}:${file.sha256}\n`);
     checkArchivePaths(paths.filter((path) => path !== "SKILL.md"));
     const coordinate = JSON.stringify([source.slug, source.version]);
     if (
@@ -157,7 +209,7 @@ export async function applySkillMarketReceipt(
       manifest.files.reduce((size, file) => size + file.size, 0) >
         maxPackageBytes ||
       source.fingerprint !== manifest.fingerprint ||
-      manifest.fingerprint !== `sha256:${digest.digest("hex")}`
+      manifest.fingerprint !== manifestFingerprint(manifest.files)
     )
       throw new Error(
         "The verified receipt contains inconsistent source evidence.",
@@ -197,6 +249,9 @@ export async function applySkillMarketReceipt(
         "The Bifrost package no longer matches the verified receipt.",
       );
 
+    const review = confirmedLegacyReview(entry, exact);
+    if (review) transferredReviews.push({ identity, review });
+
     mappings.push({
       ...source,
       registryId,
@@ -220,12 +275,18 @@ export async function applySkillMarketReceipt(
     }
 
     const installations = await transaction
-      .select()
+      .select({
+        ...installedMarketSource,
+        versionId: skillMarketInstallations.versionId,
+        registrySkillId: skillMarketInstallations.registrySkillId,
+        version: skillMarketInstallations.version,
+        fingerprint: skillMarketInstallations.fingerprint,
+      })
       .from(skillMarketInstallations)
       .where(
         and(
-          eq(skillMarketInstallations.registry, report.source.source),
-          eq(skillMarketInstallations.namespace, report.source.namespace),
+          eq(installedMarketSource.source, report.source.source),
+          eq(installedMarketSource.namespace, report.source.namespace),
         ),
       );
     const activeSnapshots = await transaction
@@ -297,6 +358,8 @@ export async function applySkillMarketReceipt(
     await transaction
       .insert(skillMarketMigrationReceipts)
       .values({ registryId: report.target.registryId, evidence: report });
+    for (const { identity, review } of transferredReviews)
+      await insertBifrostReview(transaction, identity, review);
     for (const mapping of mappings) {
       await transaction.insert(skillMarketEquivalences).values(mapping);
       for (const key of await equivalentVersionKeys(transaction, mapping)) {

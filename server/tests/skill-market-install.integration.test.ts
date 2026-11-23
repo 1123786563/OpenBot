@@ -10,7 +10,7 @@ import { LLMock } from "@copilotkit/aimock";
 import { MCPMock } from "@copilotkit/aimock/mcp";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { unzipSync, zipSync } from "fflate";
 import type { MiddlewareHandler } from "hono";
 import postgres from "postgres";
@@ -21,7 +21,6 @@ import {
   observeApprovalAgent,
 } from "../../app/src/lib/copilot/approval-context";
 import { applySkillMarketReceipt } from "../scripts/skill-migration/receipt";
-import { packageManifest } from "../scripts/skill-migration/source";
 import { migrationTarget } from "../scripts/skill-migration/target";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { mintRunAssertion } from "../src/agents/callback-token";
@@ -77,6 +76,7 @@ import { createRoutineStore } from "../src/routines/store";
 import { createBifrostMarket } from "../src/skill-market/bifrost";
 import { loadSkillMarketConfig } from "../src/skill-market/config";
 import { encodeImportedSkillDocument } from "../src/skill-market/imported-document";
+import { packageManifest } from "../src/skill-market/package-manifest";
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
 import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -120,7 +120,7 @@ const anotherBot = `another-${suite}`;
 const emptyBot = `empty-${suite}`;
 const spareBot = `spare-${suite}`;
 const legacyFirstBytes = Buffer.from(
-  `---\nname: ${slug}\ndescription: Exact notes\n---\nSummarize in three bullets.`,
+  `---\nname: ${slug}\ndescription: Exact notes\nmetadata:\n  openbot-compatibility: {scripts: false, supportingFiles: false, dedicatedRuntime: false}\n---\nSummarize in three bullets.`,
 );
 const legacyManifest = packageManifest(
   new Map([["SKILL.md", legacyFirstBytes]]),
@@ -591,6 +591,36 @@ async function cutoverApprovalFixture() {
   };
 }
 
+async function createBifrostReaderFixture(reader: postgres.Sql) {
+  await reader`create table openbot_skill_market.version_rows (
+    id uuid primary key, skill_id uuid, name text, version text,
+    skill_md_body text, frontmatter_snapshot jsonb, created_at timestamptz default now()
+  )`;
+  await reader`create view openbot_skill_market.versions as
+    select *, encode(sha256(convert_to(
+      jsonb_build_array(skill_id, name, version, skill_md_body, frontmatter_snapshot)::text, 'UTF8'
+    )), 'hex') as document_sha256
+    from openbot_skill_market.version_rows
+  `;
+  await reader`create table openbot_skill_market.files (
+    skill_version_id uuid, path text, source_type text, file_size_bytes integer, data bytea
+  )`;
+  await reader`create table openbot_skill_market.package_seals (
+    version_id uuid primary key, document_sha256 text, files jsonb
+  )`;
+}
+
+async function sealFixtureVersion(
+  reader: postgres.Sql,
+  versionId: string,
+  files: ReadonlyMap<string, Uint8Array> = new Map(),
+) {
+  await reader`insert into openbot_skill_market.package_seals
+    select id, document_sha256, ${reader.json(packageManifest(files).files)}
+    from openbot_skill_market.versions where id = ${versionId}
+  `;
+}
+
 test("cutover preserves legacy commands and approvals, and recovers post-reopen writes", async () => {
   const realReader = process.env.OPENBOT_REHEARSAL_BIFROST_READER;
   const readerUrl = realReader ?? testDatabaseUrl();
@@ -746,8 +776,18 @@ test("cutover preserves legacy commands and approvals, and recovers post-reopen 
           publishedAt: new Date(0).toISOString(),
           yankedAt: null,
           yankReason: null,
-          reviews: [],
-          confirmation: null,
+          reviews: [
+            {
+              reviewTaskId: "1",
+              status: "APPROVED",
+              submittedBy: owner,
+              reviewerId: "reviewer",
+              reviewedAt: new Date(0).toISOString(),
+              comment: null,
+              decisionMethod: null,
+            },
+          ],
+          confirmation: legacyConfig.confirmations["3"],
         },
       },
       {
@@ -785,22 +825,40 @@ test("cutover preserves legacy commands and approvals, and recovers post-reopen 
       await reader`create table openbot_skill_market.catalog (
       name text, description text, latest_version text, skill_id uuid
     )`;
-      await reader`create table openbot_skill_market.versions (
-      id uuid primary key, skill_id uuid, name text, version text,
-      skill_md_body text, frontmatter_snapshot jsonb, created_at timestamptz default now()
-    )`;
-      await reader`create table openbot_skill_market.files (
-      skill_version_id uuid, path text, source_type text, file_size_bytes integer, data bytea
-    )`;
+      await createBifrostReaderFixture(reader);
       await reader`insert into openbot_skill_market.catalog values
       (${slug}, 'Notes', '2.0.0', ${skillId})`;
       await reader`insert into openbot_skill_market.versions
       (id, skill_id, name, version, skill_md_body, frontmatter_snapshot)
       values (${firstId}, ${skillId}, ${slug}, '1.0.0', ${first.body}, ${reader.json(first.snapshot)}),
              (${secondId}, ${skillId}, ${slug}, '2.0.0',  ${second.body}, ${reader.json(second.snapshot)})`;
+      await sealFixtureVersion(reader, firstId);
+      await sealFixtureVersion(reader, secondId);
     }
 
-    expect((await install(spareBot)).status).toBe(201);
+    expect([200, 201]).toContain((await install(bot)).status);
+    const [oldRead] = await database.execute(sql`select source.registry,
+        installation.registry as snapshot_registry, installation.version
+      from skill_market_installations installation
+      join skill_market_sources source using (command)
+      where installation.agent_id = ${bot} and installation.command = ${slug}`);
+    expect(oldRead).toEqual({
+      registry: original.source,
+      snapshot_registry: original.source,
+      version: "1.0.0",
+    });
+    // Old binaries still write the pre-0098 column list during a rolling deploy.
+    await database.execute(sql`insert into skill_market_installations
+      (agent_id, command, version, version_id, registry_skill_id, fingerprint,
+       title, summary, instructions, installed_by)
+      select ${spareBot}, command, version, version_id, registry_skill_id, fingerprint,
+             title, summary, instructions, installed_by
+      from skill_market_installations where agent_id = ${bot} and command = ${slug}
+    `);
+    const [legacyRow] =
+      await database.execute(sql`select registry, namespace, slug
+      from skill_market_installations where agent_id = ${spareBot} and command = ${slug}`);
+    expect(legacyRow).toEqual({ registry: null, namespace: null, slug: null });
     expect(await slash(spareBot)).toContain("Summarize in three bullets.");
     const originalSnapshot = (await store.listForAgent(spareBot)).skills.find(
       (skill) => skill.slug === slug,
@@ -898,6 +956,16 @@ test("cutover preserves legacy commands and approvals, and recovers post-reopen 
     expect(
       await applySkillMarketReceipt(database, exactReader, scope, receipt),
     ).toBe("already-applied");
+    const [transferred] = await database
+      .select()
+      .from(bifrostMarketReviews)
+      .where(eq(bifrostMarketReviews.versionUuid, firstId));
+    expect(transferred).toMatchObject({
+      fingerprint,
+      reviewedBy: "reviewer",
+      reviewedAt: new Date(0),
+      withdrawnAt: null,
+    });
     const [savedReceipt] = await database
       .select()
       .from(skillMarketMigrationReceipts)
@@ -986,17 +1054,28 @@ test("cutover preserves legacy commands and approvals, and recovers post-reopen 
       ).status,
     ).toBe(409);
 
+    state = "published";
+    for (const [operation, body] of [
+      ["install", { agentId: anotherBot }],
+      ["switch", { agentId: spareBot, expectedVersionId: 3 }],
+    ] as const) {
+      expect(
+        (
+          await request(
+            `/catalog/${slug}/versions/1.0.0/${operation}`,
+            "POST",
+            body,
+          )
+        ).status,
+      ).toBe(422);
+    }
+    state = "offline";
+
     const firstPreview = await (await request(`${target}/1.0.0`, "GET")).json();
-    expect(firstPreview.installable).toBe(false);
-    expect(
-      (
-        await request(
-          `${target}/1.0.0/review`,
-          "PUT",
-          firstPreview.packageIdentity,
-        )
-      ).status,
-    ).toBe(204);
+    expect(firstPreview).toMatchObject({
+      installable: true,
+      reviewStatus: "approved",
+    });
     const reviewed = await (await request(`${target}/1.0.0`, "GET")).json();
     const equivalent = {
       source: "bifrost",
@@ -1052,6 +1131,7 @@ test("cutover preserves legacy commands and approvals, and recovers post-reopen 
         await request(`${target}/2.0.0/switch`, "POST", {
           agentId: spareBot,
           expectedVersionId: 3,
+          expectedRegistry: original.source,
         })
       ).status,
     ).toBe(200);
@@ -1158,13 +1238,41 @@ test("cutover preserves legacy commands and approvals, and recovers post-reopen 
         .status,
     ).toBe(204);
     expect(await slash(spareBot)).toContain("Produce an outline.");
+    expect(
+      (
+        await request(
+          `${target}/1.0.0/review`,
+          "DELETE",
+          firstPreview.packageIdentity,
+        )
+      ).status,
+    ).toBe(204);
+    expect(
+      await applySkillMarketReceipt(database, exactReader, scope, receipt),
+    ).toBe("already-applied");
+    expect(
+      await (await request(`${target}/1.0.0`, "GET")).json(),
+    ).toMatchObject({
+      reviewStatus: "withdrawn",
+      installable: false,
+    });
+    state = "published";
+    market = marketConfig(readerUrl, false);
+    expect(
+      (
+        await request(`/catalog/${slug}/versions/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(422);
+    expect(await slash(anotherBot)).toContain("Summarize in three bullets.");
   } finally {
     await approvalsAtCutover.close();
     await store.uninstallMarketSkill(
       { id: "admin", role: "admin", email: "admin@example.test" },
       emptyBot,
       slug,
-      4,
+      { expectedVersionId: 4 },
     );
     await store.revoke("mcp", protectedTool, emptyBot, "admin@example.test");
     await request("/version-disablements", "DELETE", originalSecond);
@@ -1174,7 +1282,7 @@ test("cutover preserves legacy commands and approvals, and recovers post-reopen 
           { id: "admin", role: "admin", email: "admin@example.test" },
           id,
           item.command,
-          item.versionId,
+          { expectedVersionId: item.versionId },
         );
       }
     }
@@ -1230,13 +1338,7 @@ test("Bifrost review qualifies only the exact package the administrator previewe
     await reader`create table openbot_skill_market.catalog (
       name text, description text, latest_version text
     )`;
-    await reader`create table openbot_skill_market.versions (
-      id uuid primary key, skill_id uuid, name text, version text,
-      skill_md_body text, frontmatter_snapshot jsonb, created_at timestamptz default now()
-    )`;
-    await reader`create table openbot_skill_market.files (
-      skill_version_id uuid, path text, source_type text, file_size_bytes integer, data bytea
-    )`;
+    await createBifrostReaderFixture(reader);
     await reader`insert into openbot_skill_market.catalog values
       (${bifrostSlug}, 'Notes', '1.0.0')`;
     const versionId = randomUUID();
@@ -1255,6 +1357,14 @@ test("Bifrost review qualifies only the exact package the administrator previewe
     await reader`insert into openbot_skill_market.files values
       (${bundledId}, 'references/notes.md', 'text', 5, ${Buffer.from("notes")})`;
 
+    expect((await request(marketPath, "GET")).status).toBe(502);
+    await sealFixtureVersion(reader, versionId);
+    await sealFixtureVersion(reader, secondId);
+    await sealFixtureVersion(
+      reader,
+      bundledId,
+      new Map([["references/notes.md", Buffer.from("notes")]]),
+    );
     const preview = await request(marketPath, "GET");
     expect(preview.status).toBe(200);
     const { packageIdentity, installable } = await preview.json();
@@ -1308,6 +1418,12 @@ test("Bifrost review qualifies only the exact package the administrator previewe
     expect(Buffer.from(entries["references/notes.md"]).toString()).toBe(
       "notes",
     );
+    await reader`update openbot_skill_market.files set data = ${Buffer.from("other")} where skill_version_id = ${bundledId}`;
+    expect((await request(`${bundlePath}/download`, "GET")).status).toBe(502);
+    await reader`delete from openbot_skill_market.files where skill_version_id = ${bundledId}`;
+    expect((await request(bundlePath, "GET")).status).toBe(502);
+    await reader`insert into openbot_skill_market.files values
+      (${bundledId}, 'references/notes.md', 'text', 5, ${Buffer.from("notes")})`;
     await reader`update openbot_skill_market.files set data = null where skill_version_id = ${bundledId}`;
     expect((await request(bundlePath, "GET")).status).toBe(502);
     expect((await install(bundlePath, bot)).status).toBe(502);
@@ -1357,7 +1473,7 @@ test("Bifrost review qualifies only the exact package the administrator previewe
 
     await reader`update openbot_skill_market.versions
       set skill_md_body = 'Changed instructions.' where id = ${versionId}`;
-    expect((await install(marketPath, anotherBot, owner)).status).toBe(422);
+    expect((await install(marketPath, anotherBot, owner)).status).toBe(502);
     expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
 
     await reader`update openbot_skill_market.versions
@@ -1378,7 +1494,7 @@ test("Bifrost review qualifies only the exact package the administrator previewe
     expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
 
     // Remove the reader's catalog relation to simulate an outage without affecting OpenBot's DB.
-    await reader`alter table openbot_skill_market.versions rename to versions_offline`;
+    await reader`alter view openbot_skill_market.versions rename to versions_offline`;
     expect((await install(secondPath, emptyBot, owner)).status).toBe(502);
     expect(await slash(bot, bifrostSlug)).toContain("Reviewed instructions.");
     expect(await slash(anotherBot, bifrostSlug)).toContain(

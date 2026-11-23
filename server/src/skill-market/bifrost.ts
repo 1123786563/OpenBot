@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { Zip, ZipPassThrough } from "fflate";
 import postgres from "postgres";
 import { stringify } from "yaml";
@@ -11,6 +10,7 @@ import {
   exactVersion,
 } from "./config";
 import { decodeImportedSkillDocument } from "./imported-document";
+import { manifestFingerprint, sha256 } from "./package-manifest";
 
 export { bifrostSlug as bifrostSkillName } from "./config";
 
@@ -28,7 +28,15 @@ const fileRow = z.object({
   source_type: z.enum(["text", "dataurl", "upload"]),
   size: z.number().int().nonnegative(),
 });
+const digest = z.string().regex(/^[0-9a-f]{64}$/);
+const packageSeal = z.object({
+  document_sha256: digest,
+  files: z
+    .array(z.object({ path: z.string().max(1024), sha256: digest }))
+    .max(maxFiles),
+});
 const versionRow = z.object({
+  document_sha256: digest,
   id: z.uuid(),
   skill_id: z.uuid(),
   version: exactVersion,
@@ -42,7 +50,7 @@ const versionRow = z.object({
     .catchall(z.json()),
 });
 const storedFile = z.object({ path: z.string(), data: z.instanceof(Buffer) });
-const compatibilityDeclaration = z.object({
+export const compatibilityDeclaration = z.object({
   metadata: z
     .object({
       "openbot-compatibility": z.preprocess(
@@ -76,20 +84,6 @@ export const bifrostPackageIdentity = z.object({
 });
 
 export type BifrostPackageIdentity = z.infer<typeof bifrostPackageIdentity>;
-
-export function bifrostPackageFingerprint(
-  files: ReadonlyMap<string, Uint8Array>,
-) {
-  const hash = createHash("sha256");
-  const entries = [...files].sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0,
-  );
-  for (const [path, bytes] of entries) {
-    const digest = createHash("sha256").update(bytes).digest("hex");
-    hash.update(`${path}:${digest}\n`);
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
 
 export class IncompleteBifrostPackage extends Error {
   constructor() {
@@ -142,7 +136,7 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
     version: string,
   ) {
     const rows = await connection`
-      select id, skill_id, version, skill_md_body, frontmatter_snapshot
+      select id, skill_id, version, skill_md_body, frontmatter_snapshot, document_sha256
       from openbot_skill_market.versions
       where name = ${slug} and version = ${version}
       limit 2
@@ -166,6 +160,20 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
       "isolation level repeatable read read only",
       async (transaction) => {
         const selected = await findVersion(transaction, slug, version);
+        const [record] = await transaction`
+          select document_sha256, files
+          from openbot_skill_market.package_seals
+          where version_id = ${selected.id}
+        `;
+        const expected = packageSeal.safeParse(record);
+        if (
+          !expected.success ||
+          expected.data.document_sha256 !== selected.document_sha256
+        )
+          throw new IncompleteBifrostPackage();
+        const expectedFiles = new Map(
+          expected.data.files.map(({ path, sha256 }) => [path, sha256]),
+        );
         let original: Buffer | undefined;
         try {
           original = decodeImportedSkillDocument(
@@ -192,7 +200,8 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
         const manifest = z.array(fileRow).safeParse(rows);
         if (
           !manifest.success ||
-          rows.length > maxFiles ||
+          rows.length !== expected.data.files.length ||
+          rows.length !== expectedFiles.size ||
           manifest.data.reduce(
             (total, file) => total + file.size,
             main.length,
@@ -216,7 +225,11 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
         const entries = new Map<string, Uint8Array>([["SKILL.md", main]]);
         for (const file of manifest.data) {
           const data = byPath.get(file.path);
-          if (!data || data.byteLength !== file.size)
+          if (
+            !data ||
+            data.byteLength !== file.size ||
+            sha256(data) !== expectedFiles.get(file.path)
+          )
             throw new IncompleteBifrostPackage();
           entries.set(file.path, data);
         }
@@ -228,7 +241,10 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
             version: selected.version,
             skillId: selected.skill_id,
             versionId: selected.id,
-            fingerprint: bifrostPackageFingerprint(entries),
+            fingerprint: manifestFingerprint([
+              { path: "SKILL.md", sha256: sha256(main) },
+              ...expected.data.files,
+            ]),
           }),
           frontmatter: selected.frontmatter_snapshot,
           instructions: selected.skill_md_body,

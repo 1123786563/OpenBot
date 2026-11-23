@@ -11,6 +11,7 @@ import {
   vendorNameOf,
 } from "../../db/schema";
 import { installedMarketDisablement } from "../../skill-market/disablements";
+import { installedMarketSource } from "../../skill-market/installed-source";
 import { catalogueEntry, classifyTool } from "../catalogue";
 import {
   corsairBrokerInputSchema,
@@ -362,9 +363,9 @@ export function grantMethods(context: StoreContext) {
           summary: skillMarketInstallations.summary,
           instructions: skillMarketInstallations.instructions,
           identity: {
-            source: skillMarketInstallations.registry,
-            namespace: skillMarketInstallations.namespace,
-            slug: skillMarketInstallations.slug,
+            source: installedMarketSource.source,
+            namespace: installedMarketSource.namespace,
+            slug: installedMarketSource.slug,
             registrySkillId: skillMarketInstallations.registrySkillId,
             versionId: skillMarketInstallations.versionId,
             version: skillMarketInstallations.version,

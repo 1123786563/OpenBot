@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type postgres from "postgres";
@@ -9,22 +8,10 @@ import {
   maxPackageBytes,
 } from "../../src/skill-market/bifrost";
 
-const sha256 = (bytes: Uint8Array | string) =>
-  createHash("sha256").update(bytes).digest("hex");
-
-export function packageManifest(files: ReadonlyMap<string, Uint8Array>) {
-  const entries = [...files]
-    .sort(([left], [right]) => (left < right ? -1 : Number(left !== right)))
-    .map(([path, bytes]) => ({
-      path,
-      size: bytes.byteLength,
-      sha256: sha256(bytes),
-    }));
-  return {
-    files: entries,
-    fingerprint: `sha256:${sha256(entries.map((file) => `${file.path}:${file.sha256}\n`).join(""))}`,
-  };
-}
+import {
+  packageManifest,
+  sha256,
+} from "../../src/skill-market/package-manifest";
 
 const fileRow = z.object({
   path: z.string().max(1024),

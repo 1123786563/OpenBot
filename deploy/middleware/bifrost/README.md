@@ -10,8 +10,9 @@ contents are suitable for that audience.
    `openbot_skill_reader`. Give it no role memberships. Set its password
    with `\password openbot_skill_reader` in `psql`.
 3. As the Bifrost database owner, apply [skill-market-reader.sql](skill-market-reader.sql)
-   to the Bifrost database. The script grants the reader `SELECT` on the
-   three catalog views. Allow the reader to connect to the Bifrost database
+   to the Bifrost database before publishing or importing any versions. The script
+   installs the publication trigger and grants the reader `SELECT` on the
+   catalog views and package seals. Allow the reader to connect to the Bifrost database
    through the private PostgreSQL endpoint.
 4. Put `BIFROST_SKILL_MARKET_DATABASE_URL` in the OpenBot server's private
    environment. Use the reader login and the Bifrost database name. For
@@ -22,22 +23,33 @@ contents are suitable for that audience.
    routes and keeps its existing inference access rules.
 
 Bifrost becomes the market search source when the reader URL is set. Keep
-the SkillHub settings to retain reads and installation eligibility for
-legacy SkillHub coordinates. Bifrost versions support preview and download.
-Administrators approve exact Bifrost versions in OpenBot before installation.
+the SkillHub settings to retain reads for legacy SkillHub coordinates.
+Installs and switches use Bifrost while its reader is configured. Selecting
+SkillHub as the active catalog restores legacy install and switch eligibility.
+Installed snapshots and uninstalls work in either mode.
 
 ## Package files
 
 Publish attachment content as text, a data URL, or an upload backed by
-Bifrost's PostgreSQL blob store. OpenBot reconstructs `SKILL.md` from the
-selected version's frontmatter and Markdown body. It checks the attachment
-paths and stored byte lengths before returning a ZIP. The download accepts
-up to 256 attachments and 32 MiB of uncompressed package data.
+Bifrost's PostgreSQL blob store. Native Bifrost publication records a seal
+for each version in the same PostgreSQL transaction. This separate record
+binds the repository identifiers, Markdown, frontmatter, and every attachment
+path and byte digest. OpenBot checks the seal against the exact version in a
+consistent database snapshot before preview or ZIP creation. Administrators
+approve eligible fingerprints in OpenBot before installation. The reader
+accepts up to 256 attachments and 32 MiB of uncompressed package data.
 
-Mutable URL sources, object-store references, and missing or mismatched
-blobs cause the download to fail. The version's PostgreSQL file rows are
-the attachment manifest. Bifrost v2.6.0 does not store independent content
-checksums for those blobs.
+Keep seals with the Bifrost database backups. The seal trusts Bifrost's
+publication transaction and the database owner. It detects later storage
+changes and missing data. Versions published before the trigger was installed
+have no trusted seal. To qualify one, publish a new version from an
+independently retained, verified package. Never seal current rows retroactively.
+
+Configure the PostgreSQL blob store for this deployment. Bifrost's upstream
+object-storage attachments lack locally verifiable bytes and are outside this
+reader's supported storage contract. Object-storage references, mutable URL
+sources, missing file rows, and missing or altered blobs fail closed, including
+for otherwise valid SKILL.md content.
 
 ## Rehearse locally
 

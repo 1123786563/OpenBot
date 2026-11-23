@@ -113,7 +113,7 @@ test("signed-in users share published catalog previews while direct reads enforc
   ).toBe(false);
 });
 
-test("legacy compatibility still requires the reviewed fingerprint when Bifrost is enabled", async () => {
+test("legacy previews remain readable in Bifrost mode with install disabled", async () => {
   const fingerprint = `sha256:${"a".repeat(64)}`;
   let resolvedFingerprint = fingerprint;
   const routes = createSkillMarketRoutes(
@@ -179,7 +179,12 @@ test("legacy compatibility still requires the reviewed fingerprint when Bifrost 
     },
   );
   const first = await routes.request("/catalog/summarize/versions/1.0.0");
-  expect(await first.json()).toMatchObject({ installable: true, reasons: [] });
+  expect(await first.json()).toMatchObject({
+    installable: false,
+    reasons: [
+      "Select a Bifrost version to install or switch this market skill.",
+    ],
+  });
   resolvedFingerprint = `sha256:${"b".repeat(64)}`;
   const changed = await routes.request("/catalog/summarize/versions/1.0.0");
   expect(await changed.json()).toMatchObject({

@@ -35,6 +35,8 @@ const writesPaused = {
 const commandBody = z.strictObject({
   command: z.string().trim().min(1).max(40).regex(slashCommand),
 });
+const legacyWritesUnavailable =
+  "Select a Bifrost version to install or switch this market skill.";
 const reviewUnavailable =
   "This exact Bifrost package has no active OpenBot review.";
 const packageChanged =
@@ -155,8 +157,7 @@ export function createSkillMarketRoutes(
       context.var.actor,
       agentId,
       command,
-      body.data.expectedVersionId,
-      body.data.expectedRegistry,
+      body.data,
     );
     switch (result) {
       case "forbidden":
@@ -282,13 +283,11 @@ export function createSkillMarketRoutes(
       const input = await context.req.json().catch(() => null);
       const body =
         operation === "switch"
-          ? switchBody.safeParse(input)
+          ? switchBody
+              .transform(({ agentId, ...previous }) => ({ agentId, previous }))
+              .safeParse(input)
           : installBody
-              .transform((data) => ({
-                ...data,
-                expectedVersionId: undefined,
-                expectedRegistry: undefined,
-              }))
+              .transform(({ agentId }) => ({ agentId, previous: undefined }))
               .safeParse(input);
       if (!body.success)
         return context.json(
@@ -300,10 +299,16 @@ export function createSkillMarketRoutes(
           },
           400,
         );
-      const { agentId, expectedVersionId, expectedRegistry } = body.data;
+      const { agentId, previous } = body.data;
       const { actor } = context.var;
       if (!(await installations.marketInstallTargets(actor, agentId)).length) {
         return context.json({ error: forbidden }, 403);
+      }
+
+      if (bifrost && namespace !== bifrost.namespace) {
+        if (namespace !== legacy?.namespace)
+          throw new CatalogEntryUnavailable();
+        return context.json({ error: legacyWritesUnavailable }, 422);
       }
 
       const qualify = async () => {
@@ -346,8 +351,7 @@ export function createSkillMarketRoutes(
         actor,
         agentId,
         qualified,
-        expectedVersionId,
-        expectedRegistry,
+        previous,
       );
       switch (result.kind) {
         case "forbidden":
@@ -441,13 +445,17 @@ export function createSkillMarketRoutes(
           ? await market.preview(namespace, slug, version)
           : null;
     if (!preview) throw new CatalogEntryUnavailable();
+    const visiblePreview =
+      preview.installable && bifrost && namespace !== bifrost.namespace
+        ? { ...preview, installable: false, reasons: [legacyWritesUnavailable] }
+        : preview;
     if (
       !installations ||
       !("registrySkillId" in preview) ||
       preview.registrySkillId === undefined ||
       preview.versionId === undefined
     )
-      return context.json(preview);
+      return context.json(visiblePreview);
     const reason = await installations.marketVersionDisableReason({
       source: preview.source,
       registrySkillId: preview.registrySkillId,
@@ -458,12 +466,12 @@ export function createSkillMarketRoutes(
         ...preview,
         installable: false,
         reasons: [
-          ...preview.reasons,
+          ...visiblePreview.reasons,
           marketVersionDisabledMessage(version, reason),
         ],
         disableReason: reason,
       });
-    if (!preview.installable) return context.json(preview);
+    if (!visiblePreview.installable) return context.json(visiblePreview);
     if (config.writesFrozen)
       return context.json({
         ...preview,
