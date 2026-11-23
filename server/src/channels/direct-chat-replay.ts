@@ -177,21 +177,29 @@ export async function stopDirectChatRun(
   return true;
 }
 
-export async function appendDirectChatEvent(
+type AppendEventOptions = {
+  reply?: { id: string; content: string };
+  traceRuns?: boolean;
+  streamReply?: boolean;
+  externalOutcome?: Run["externalOutcome"];
+};
+
+export function appendDirectChatEvent(
   database: Database,
   key: RunKey,
   event: BaseEvent,
-  {
-    reply,
-    traceRuns,
-    streamReply,
-    externalOutcome,
-  }: {
-    reply?: { id: string; content: string };
-    traceRuns?: boolean;
-    streamReply?: boolean;
-    externalOutcome?: Run["externalOutcome"];
-  } = {},
+  options?: AppendEventOptions,
+) {
+  return database.transaction((tx) =>
+    appendDirectChatEventInTransaction(tx, key, event, options),
+  );
+}
+
+export async function appendDirectChatEventInTransaction(
+  tx: RunTransaction,
+  key: RunKey,
+  event: BaseEvent,
+  { reply, traceRuns, streamReply, externalOutcome }: AppendEventOptions = {},
 ) {
   const events: BaseEvent[] =
     reply && streamReply
@@ -210,55 +218,53 @@ export async function appendDirectChatEvent(
           event,
         ]
       : [event];
-  return database.transaction(async (tx) => {
-    const running = and(matchingRun(key), eq(directChatRuns.status, "running"));
-    const delta =
-      event.type === EventType.TEXT_MESSAGE_CONTENT &&
-      "delta" in event &&
-      typeof event.delta === "string"
-        ? event.delta
-        : null;
-    const status = reply
-      ? "completed"
-      : event.type === EventType.RUN_ERROR
-        ? "failed"
-        : undefined;
-    const [row] = await tx
-      .update(directChatRuns)
-      .set({
-        eventCursor: sql`${directChatRuns.eventCursor} + ${events.length}`,
-        ...partialUpdate(event),
-        ...(delta !== null
-          ? {
-              partialReply: sql`coalesce(${directChatRuns.partialReply}, '') || ${delta}`,
-            }
-          : {}),
-        ...(reply
-          ? {
-              assistantMessageId: reply.id,
-              reply: reply.content,
-              partialMessageId: null,
-              partialReply: null,
-            }
-          : {}),
-        ...(status ? { status } : {}),
-        ...(externalOutcome !== undefined ? { externalOutcome } : {}),
-      })
-      .where(running)
-      .returning({ cursor: directChatRuns.eventCursor, ...traceFields });
-    if (!row) return false;
-    await tx.insert(directChatRunEvents).values(
-      events.map((event, index) => ({
-        ...key,
-        cursor: row.cursor - events.length + index + 1,
-        event,
-      })),
-    );
-    if (traceRuns && status) {
-      await queueRunTraces(tx, [row], status);
-    }
-    return true;
-  });
+  const running = and(matchingRun(key), eq(directChatRuns.status, "running"));
+  const delta =
+    event.type === EventType.TEXT_MESSAGE_CONTENT &&
+    "delta" in event &&
+    typeof event.delta === "string"
+      ? event.delta
+      : null;
+  const status = reply
+    ? "completed"
+    : event.type === EventType.RUN_ERROR
+      ? "failed"
+      : undefined;
+  const [row] = await tx
+    .update(directChatRuns)
+    .set({
+      eventCursor: sql`${directChatRuns.eventCursor} + ${events.length}`,
+      ...partialUpdate(event),
+      ...(delta !== null
+        ? {
+            partialReply: sql`coalesce(${directChatRuns.partialReply}, '') || ${delta}`,
+          }
+        : {}),
+      ...(reply
+        ? {
+            assistantMessageId: reply.id,
+            reply: reply.content,
+            partialMessageId: null,
+            partialReply: null,
+          }
+        : {}),
+      ...(status ? { status } : {}),
+      ...(externalOutcome !== undefined ? { externalOutcome } : {}),
+    })
+    .where(running)
+    .returning({ cursor: directChatRuns.eventCursor, ...traceFields });
+  if (!row) return false;
+  await tx.insert(directChatRunEvents).values(
+    events.map((event, index) => ({
+      ...key,
+      cursor: row.cursor - events.length + index + 1,
+      event,
+    })),
+  );
+  if (traceRuns && status) {
+    await queueRunTraces(tx, [row], status);
+  }
+  return true;
 }
 
 export async function readDirectChatReplay(

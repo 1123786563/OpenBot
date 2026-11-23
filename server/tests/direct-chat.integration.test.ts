@@ -3706,6 +3706,9 @@ test.each([
   "managed",
   "managed-uncertain",
   "native-selection",
+  "native-write-lock",
+  "managed-write-lock",
+  "managed-evidence-write-lock",
   "late-user",
   "late-background",
   "late-authorized",
@@ -3901,6 +3904,8 @@ async function exercisePublishedSkill(mode: string) {
       skills: [{ id, access: "shared" }],
     });
     const native = mode.startsWith("native");
+    const writeLock = mode.endsWith("-write-lock");
+    const evidenceWriteLock = mode === "managed-evidence-write-lock";
     const late = mode.startsWith("late");
     const background = mode.startsWith("late-background");
     const selectionChanged = mode === "native-selection";
@@ -3949,10 +3954,13 @@ async function exercisePublishedSkill(mode: string) {
         }
       },
     });
+    const runtimeDatabase = writeLock
+      ? createDatabase(databaseUrl, TEST_POOL)
+      : database;
     try {
       const mount = () =>
         web(
-          database,
+          runtimeDatabase,
           bob,
           bot.id,
           async (input) => {
@@ -4020,6 +4028,19 @@ async function exercisePublishedSkill(mode: string) {
           (await aliceChat.request(revoke, { method: "DELETE" })).status,
         ).toBe(200);
       };
+      const withdraw = evidenceWriteLock
+        ? async () => {
+            expect(
+              (
+                await bobChat.request(permission, {
+                  ...post({ allowed: false }),
+                  method: "PUT",
+                })
+              ).status,
+            ).toBe(200);
+          }
+        : revokeShare;
+      let authorizationLocked = false;
       const newerIds = Array.from({ length: 20 }, () => crypto.randomUUID());
       if (selectionChanged) {
         const [original] = await database
@@ -4048,6 +4069,71 @@ async function exercisePublishedSkill(mode: string) {
             threadId: run.threadId,
           })),
         );
+      } else if (writeLock) {
+        await database.transaction(async (tx) => {
+          await tx
+            .select({ id: directChatRuns.id })
+            .from(directChatRuns)
+            .where(
+              and(
+                eq(directChatRuns.threadId, run.threadId),
+                eq(directChatRuns.id, runId),
+              ),
+            )
+            .for("update");
+          // The result has returned and the mounted runtime is trying to write
+          // it. Probe the withdrawal lock while the write waits on the Run row.
+          respond.resolve();
+          const deadline = Date.now() + 5000;
+          for (;;) {
+            await tx.execute(sql`select pg_stat_clear_snapshot()`);
+            const [waiting] = await tx.execute(sql`
+              select pid from pg_stat_activity
+              where pg_backend_pid() = any(pg_blocking_pids(pid))
+                and query like 'update "direct_chat_runs"%'
+            `);
+            if (waiting) break;
+            if (Date.now() >= deadline)
+              throw new Error(
+                "The output write did not reach the held Run row.",
+              );
+            await Bun.sleep(10);
+          }
+          authorizationLocked = await database
+            .transaction(async (probe) => {
+              if (evidenceWriteLock) {
+                await probe
+                  .select({ id: channels.id })
+                  .from(channels)
+                  .where(eq(channels.id, source.id))
+                  .for("update", { noWait: true });
+              } else {
+                await probe
+                  .select({ id: directChatSkillShares.proposalId })
+                  .from(directChatSkillShares)
+                  .where(
+                    and(
+                      eq(directChatSkillShares.proposalId, id),
+                      eq(directChatSkillShares.recipientId, bob.id),
+                    ),
+                  )
+                  .for("update", { noWait: true });
+              }
+              return false;
+            })
+            .catch((error: unknown) => {
+              const cause = error instanceof Error ? error.cause : undefined;
+              if (
+                cause &&
+                typeof cause === "object" &&
+                "errno" in cause &&
+                cause.errno === "55P03"
+              )
+                return true;
+              throw error;
+            });
+          if (!authorizationLocked) await withdraw();
+        });
       } else if (!late) {
         await revokeShare();
       }
@@ -4061,6 +4147,23 @@ async function exercisePublishedSkill(mode: string) {
           `${thread}/runs/${runId}/reconcile?agentId=${bot.id}`,
           post({}),
         );
+      if (writeLock) {
+        const answer = native ? "Offline answer." : "Withheld managed answer.";
+        // If withdrawal slipped through, the pending write must never expose
+        // the answer. On the fixed path publication wins and withdrawal follows.
+        if (!authorizationLocked) expect(live).not.toContain(answer);
+        expect(authorizationLocked).toBe(true);
+        expect(live).toContain(answer);
+        expect((await (await history()).json()).runs).toContainEqual(
+          expect.objectContaining({ id: runId, status: "completed" }),
+        );
+        await withdraw();
+        expect((await bobChat.request(detail)).status).toBe(404);
+        const repeated = await chat.request(`${route}/run`, request);
+        expect(await repeated.text()).toContain(answer);
+        expect(dispatches).toBe(1);
+        return;
+      }
       if (selectionChanged) {
         expect(live).toContain("Offline answer.");
         expect(live).not.toContain("context_revoked");
@@ -4190,6 +4293,7 @@ async function exercisePublishedSkill(mode: string) {
     } finally {
       respond.resolve();
       await control.stop(true);
+      if (writeLock) await runtimeDatabase.$client.close();
     }
     if (mode === "late-deleted") return;
     expect(
