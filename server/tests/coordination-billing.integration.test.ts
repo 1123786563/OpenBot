@@ -635,7 +635,7 @@ test("a recorded Task and Run dispatch parallel coordination through durable anc
 
     await ledger.confirmBudget(identity, taskBudget, bound * 2n);
     await taskStore.resolve(actorId, opened.id);
-    await database.update(workItems).set({ runAt: new Date() }).where(forActor);
+    await database.update(workItems).set({ runAt: sql`now()` }).where(forActor);
     const cancelled = await worker.sweep();
     expect(cancelled.skipped.map(({ reason }) => reason)).toEqual([
       "This step cannot run under its current billing authorization or confirmed price.",
@@ -673,7 +673,7 @@ test("a recorded Task and Run dispatch parallel coordination through durable anc
       await recoverBifrostEvidence(ledger, readEvidence);
       await database
         .update(workItems)
-        .set({ runAt: new Date() })
+        .set({ runAt: sql`now()` })
         .where(eq(workItems.key, pending.key));
     };
     await makeRetryable(await worker.sweep());

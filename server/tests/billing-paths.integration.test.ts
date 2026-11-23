@@ -17,6 +17,7 @@ import {
   type TestCreditLedger,
   type VerifiedBillingIdentity,
 } from "../src/billing/test-credit";
+import { dispatchTestCredit } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
   billingApplications,
@@ -1368,7 +1369,36 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
     }),
   ).toMatchObject({ state: "dispatch" });
   const held = await reservedAs(credit, identity, step("signed-held"));
-  await credit.pauseApplication(firstParty, "fixture-ops");
+  const metering = await reservedAs(credit, identity, step("signed-metering"));
+  const meteringDispatch = await dispatchTestCredit({
+    ledger: credit,
+    identity,
+    input: {
+      operationId: "signed-metering",
+      permit: metering,
+      messages: [{ role: "user", content: "Fixture request" }],
+    },
+    execute: async ({ bindGatewayRequest }) => {
+      await credit.pauseApplication(firstParty, "fixture-ops");
+      const bound = await bindGatewayRequest({
+        requestId: crypto.randomUUID(),
+        digest: "f".repeat(64),
+      });
+      if (!bound) throw new Error("Gateway request was not bound");
+      return {
+        text: "Fixture reply",
+        usage: { inputTokens: 1, outputTokens: 0 },
+      };
+    },
+  });
+  expect(meteringDispatch).toEqual({
+    state: "denied",
+    reason: "route_unavailable",
+  });
+  expect(await operationRow(accountId, "signed-metering")).toMatchObject({
+    state: "released",
+    gatewayRequestId: null,
+  });
   expect(await credit.reserve(identity, step("signed-after"))).toEqual({
     state: "denied",
     reason: "route_unavailable",

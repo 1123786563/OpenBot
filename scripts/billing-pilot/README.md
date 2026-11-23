@@ -44,9 +44,15 @@ The verified Zhipu cap result is recorded in [`docs/billing-zhipu-output-cap.md`
 
 ## Run the Credit Pack checkout fixture
 
-Use an isolated OpenBot instance and a migrated test database. On the test ledger, create Billing Accounts for the testers, publish a `credit_pack` with `upsertProduct`, and register and approve the test applications.
+Run the checkout acceptance harness from the repository root with a migrated, isolated PostgreSQL test database configured in `.env.test`.
 
-Set these variables on the OpenBot server for the WeChat test channel. Both channels use the published Credit Pack code.
+```sh
+bun test --no-env-file --env-file=.env.test server/tests/credit-pack-checkout.integration.test.ts server/tests/billing-paths.integration.test.ts
+```
+
+For an interactive checkout harness, mount both billing ledgers with an explicit `fixture` scope, create tester Billing Accounts, publish a `credit_pack` with `upsertProduct`, and register and approve the test applications. Record fixture path and channel signoffs as described in the [operator guide](../../docs/billing-paths.md). The standard API startup uses deployment scope and requires target-deployment signoff for new sales.
+
+Set these variables on the fixture-backed API for the WeChat test channel. Both channels use the published Credit Pack code.
 
 | Variable | Value |
 | --- | --- |

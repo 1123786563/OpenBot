@@ -710,8 +710,7 @@ export async function dispatchTestCredit({
             request,
             { recheckAdmission: authorizeDispatch !== undefined },
           );
-          if (!bound && authorizeDispatch)
-            throw new UnsentBifrostRequest("route_unavailable");
+          if (!bound) throw new UnsentBifrostRequest("route_unavailable");
           return bound;
         },
         messages: input.messages,

@@ -605,6 +605,26 @@ export function createTestCreditLedger(
     return (await (lock ? query.for("share") : query))[0];
   }
 
+  async function pilotAllowsDispatch(tx: Transaction, row: Operation) {
+    if (!pilot) return true;
+    const applicationId = row.applicationId ?? "openbot";
+    const path = await application(applicationId, tx, true);
+    if (path?.pausedAt) return false;
+    if (row.paidHoldMicrocredits === 0n) return true;
+    return (
+      !!path?.approvedAt &&
+      (await signedApplication(
+        tx,
+        pilot,
+        applicationId,
+        row.accountId,
+        row.route,
+        await currentRouteLimit(tx, row.route.id),
+        row.reserved,
+      ))
+    );
+  }
+
   async function authorizationRecord(
     tx: Transaction,
     row: typeof authorizations.$inferSelect,
@@ -2200,30 +2220,11 @@ export function createTestCreditLedger(
           }
           deadline = under.held.expiresAt;
         }
-        const applicationId = row.applicationId ?? "openbot";
-        const path = pilot
-          ? await application(applicationId, tx, true)
-          : undefined;
-        const active = await activeRoutes(tx, true);
-        if (pilot) {
-          if (
-            path?.pausedAt ||
-            (row.paidHoldMicrocredits > 0n &&
-              (!path?.approvedAt ||
-                !(await signedApplication(
-                  tx,
-                  pilot,
-                  applicationId,
-                  accountId,
-                  row.route,
-                  await currentRouteLimit(tx, row.route.id),
-                  row.reserved,
-                ))))
-          ) {
-            await releaseReservation(tx, row);
-            return denied("route_unavailable");
-          }
+        if (!(await pilotAllowsDispatch(tx, row))) {
+          await releaseReservation(tx, row);
+          return denied("route_unavailable");
         }
+        const active = await activeRoutes(tx, true);
         if (!(await canDispatchUnderBudget(tx, row))) {
           await releaseReservation(tx, row);
           return denied("execution_limit");
@@ -2301,15 +2302,18 @@ export function createTestCreditLedger(
         if (!(await lockAccount(tx, accountId))) return false;
         const now = await currentTime(tx);
         await applyCutoff(tx, accountId, now);
-        if (recheckAdmission) {
+        if (pilot || recheckAdmission) {
           const operationRow = await operation(accountId, id, tx);
+          if (!operationRow || !(await pilotAllowsDispatch(tx, operationRow)))
+            return false;
           if (
-            !operationRow?.budgetId ||
-            !(await canDispatchUnderBudget(tx, operationRow)) ||
-            (await suspended(tx, accountId)) ||
-            (await restoreHolds(tx, accountId)) ||
-            (await pilotReservesStoppedAt(tx, accountId)) ||
-            !routeEligible(await activeRoutes(tx, true), operationRow.route)
+            recheckAdmission &&
+            (!operationRow.budgetId ||
+              !(await canDispatchUnderBudget(tx, operationRow)) ||
+              (await suspended(tx, accountId)) ||
+              (await restoreHolds(tx, accountId)) ||
+              (await pilotReservesStoppedAt(tx, accountId)) ||
+              !routeEligible(await activeRoutes(tx, true), operationRow.route))
           )
             return false;
         }

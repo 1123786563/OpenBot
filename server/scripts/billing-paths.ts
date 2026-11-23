@@ -49,7 +49,7 @@ const usage =
   "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | signoff list|record --file | channel pause|resume <channel> --evidence [--by] | provider-cost [set --microcredits --by] [--route <id>] | closure stop|reconcile --account <id> | pending [--account] | close <order id> --by | confirm-test-refund <order id> --returned-cents | dispute status <order id> | dispute open|confirm-reversal|reconcile <order id> --by --reference | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
 
 export type BillingPaths = PilotClosureLedgers & {
-  signoffs: ReturnType<typeof createPilotSignoffs>;
+  signoffs?: ReturnType<typeof createPilotSignoffs>;
   credit: Pick<
     TestCreditLedger,
     | "applications"
@@ -144,6 +144,7 @@ export async function run(
       return ledgers.credit.resumeApplication(id("application id"));
     case "signoff": {
       if (action) throw new TypeError(usage);
+      if (!ledgers.signoffs) throw new Error("Pilot signoffs are unavailable.");
       if (target === "list") return ledgers.signoffs.list();
       if (target === "record")
         return ledgers.signoffs.record(
@@ -153,6 +154,7 @@ export async function run(
     }
     case "channel": {
       if (target !== "pause" && target !== "resume") throw new TypeError(usage);
+      if (!ledgers.signoffs) throw new Error("Pilot signoffs are unavailable.");
       return ledgers.signoffs.setChannelPause(
         named(action, "payment channel"),
         need(flags, "evidence"),
