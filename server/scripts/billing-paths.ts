@@ -7,6 +7,7 @@
  *   … approve <id> --by <who>        an application takes reservations once approved
  *   … pause <id> --by <who>          its path takes no new reservation; the rest settles
  *   … resume <id>
+ *   … provider-cost [set --microcredits <amount> --by <who>]
  *   … pending [--account <id>]       the orders still awaiting a channel result
  *   … close <order id> --by <who>    the channel says nobody paid
  *   … restore begin --by <who>       new charges and grants pause, account by account
@@ -25,7 +26,7 @@ import {
 import { createDatabase } from "../src/db/client";
 
 const usage =
-  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | pending [--account] | close <order id> --by | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
+  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | provider-cost [set --microcredits --by] | pending [--account] | close <order id> --by | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
 
 export type BillingPaths = {
   credit: Pick<
@@ -35,6 +36,8 @@ export type BillingPaths = {
     | "approveApplication"
     | "pauseApplication"
     | "resumeApplication"
+    | "pilotProviderCost"
+    | "setPilotProviderCostLimit"
   >;
   paid: Pick<
     PaidCreditLedger,
@@ -53,8 +56,15 @@ function parse(args: string[]) {
   const flags: Record<string, string> = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg?.startsWith("--")) flags[arg.slice(2)] = args[index + 1] ?? "";
-    else if (arg) words.push(arg);
+    if (arg?.startsWith("--")) {
+      const value = args[index + 1];
+      if (value && !value.startsWith("--")) {
+        flags[arg.slice(2)] = value;
+        index += 1;
+      } else {
+        flags[arg.slice(2)] = "";
+      }
+    } else if (arg) words.push(arg);
   }
   return { words, flags };
 }
@@ -105,6 +115,17 @@ export async function run(
       return ledgers.credit.pauseApplication(id("application id"), by());
     case "resume":
       return ledgers.credit.resumeApplication(id("application id"));
+    case "provider-cost": {
+      if (!target) return ledgers.credit.pilotProviderCost();
+      if (target !== "set" || action) throw new TypeError(usage);
+      const amount = need(flags, "microcredits");
+      if (!/^\d+$/.test(amount))
+        throw new TypeError("--microcredits must be a nonnegative integer.");
+      return ledgers.credit.setPilotProviderCostLimit({
+        limitMicrocredits: BigInt(amount),
+        by: by(),
+      });
+    }
     case "pending":
       return ledgers.paid.pendingOrders(flags.account);
     case "close":

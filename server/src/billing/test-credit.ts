@@ -54,13 +54,21 @@ export type ChildBudgetBinding = {
 type Budget = typeof budgets.$inferSelect;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
-/**
- * Pilot provider-cost ceiling bookkeeping (#106). A reservation on a capped
- * path holds a share at the route's maximum charge; the share stays held while
- * the provider result is unknown — even after the user reservation is released
- * — and is replaced by the verified cost or booked at the bound when the
- * reconciliation window closes without evidence.
- */
+// The catalog only accepts route IDs beginning with a lowercase letter or digit.
+const sharedPilotCostScope = "@pilot";
+
+function sharedPilotLimitReached(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (
+    "errno" in error &&
+    error.errno === "23514" &&
+    "constraint" in error &&
+    error.constraint === "shared_pilot_provider_cost_limit"
+  )
+    return true;
+  return sharedPilotLimitReached(error.cause);
+}
+
 async function providerCostOutstanding(tx: Transaction, path: string) {
   const [row] = await tx
     .select({
@@ -660,6 +668,52 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     return { refusal: undefined, held };
   }
 
+  async function setCostLimit(input: {
+    path: string;
+    limitMicrocredits: bigint;
+    by: string;
+  }) {
+    if (input.limitMicrocredits < 0n || !input.by.trim())
+      throw new RangeError("Invalid provider cost limit");
+    return database.transaction(async (tx) => {
+      await tx.execute(
+        input.path === sharedPilotCostScope
+          ? sql`select lock_pilot_provider_cost()`
+          : sql`select pg_advisory_xact_lock(hashtext(${input.path}))`,
+      );
+
+      const [existing] = await tx
+        .select()
+        .from(pilotProviderCostLimits)
+        .where(eq(pilotProviderCostLimits.path, input.path));
+      const updatedAt = await currentTime(tx);
+      await tx
+        .insert(pilotProviderCostLimits)
+        .values({
+          path: input.path,
+          limitMicrocredits: input.limitMicrocredits,
+          updatedBy: input.by,
+          updatedAt,
+        })
+        .onConflictDoUpdate({
+          target: pilotProviderCostLimits.path,
+          set: {
+            limitMicrocredits: input.limitMicrocredits,
+            updatedBy: input.by,
+            updatedAt,
+          },
+        });
+      await tx.insert(pilotProviderCostLimitEvents).values({
+        path: input.path,
+        fromLimitMicrocredits: existing?.limitMicrocredits ?? null,
+        toLimitMicrocredits: input.limitMicrocredits,
+        by: input.by,
+        at: updatedAt,
+      });
+      return { previous: existing?.limitMicrocredits ?? null };
+    });
+  }
+
   return {
     async sweepCutoffs(limit = cutoffBatchSize) {
       if (!Number.isInteger(limit) || limit < 1 || limit > cutoffBatchSize) {
@@ -1078,7 +1132,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       },
       { embedding = false } = {},
     ) {
-      return database.transaction(async (tx) => {
+      const reservation = database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
         if (
@@ -1347,18 +1401,16 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               ? pause("execution_limit")
               : denied("execution_limit");
         }
-        // The pilot-wide provider-cost ceiling is acquired in the same
-        // transaction as the user reservation: both hold or neither does.
-        const costLimit = (
-          await tx
-            .select()
-            .from(pilotProviderCostLimits)
-            .where(eq(pilotProviderCostLimits.path, route.id))
-        )[0];
+        // The route cap has its own scope. Read it after acquiring the
+        // same lock used by route-cap edits.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${route.id}))`,
+        );
+        const [costLimit] = await tx
+          .select()
+          .from(pilotProviderCostLimits)
+          .where(eq(pilotProviderCostLimits.path, route.id));
         if (costLimit) {
-          await tx.execute(
-            sql`select pg_advisory_xact_lock(hashtext(${route.id}))`,
-          );
           const outstanding = await providerCostOutstanding(tx, route.id);
           if (outstanding + reserved > costLimit.limitMicrocredits)
             return denied("route_unavailable");
@@ -1463,6 +1515,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           permit: row.permit,
           operation: operationReceipt(row),
         } as const;
+      });
+      return reservation.catch((error: unknown) => {
+        if (sharedPilotLimitReached(error)) return denied("route_unavailable");
+        throw error;
       });
     },
 
@@ -2215,45 +2271,48 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     },
     settleRecorded,
 
-    /** Sets (or replaces) a pilot-wide provider-cost ceiling for one path. */
+    /** Sets or replaces a provider-cost ceiling for one route. */
     async setProviderCostLimit(input: {
       path: string;
       limitMicrocredits: bigint;
       by: string;
     }) {
-      if (input.limitMicrocredits < 0n)
-        throw new RangeError("Invalid provider cost limit");
-      return database.transaction(async (tx) => {
-        const [existing] = await tx
-          .select()
-          .from(pilotProviderCostLimits)
-          .where(eq(pilotProviderCostLimits.path, input.path));
-        const updatedAt = await currentTime(tx);
-        await tx
-          .insert(pilotProviderCostLimits)
-          .values({
-            path: input.path,
-            limitMicrocredits: input.limitMicrocredits,
-            updatedBy: input.by,
-            updatedAt,
-          })
-          .onConflictDoUpdate({
-            target: pilotProviderCostLimits.path,
-            set: {
-              limitMicrocredits: input.limitMicrocredits,
-              updatedBy: input.by,
-              updatedAt,
-            },
-          });
-        await tx.insert(pilotProviderCostLimitEvents).values({
-          path: input.path,
-          fromLimitMicrocredits: existing?.limitMicrocredits ?? null,
-          toLimitMicrocredits: input.limitMicrocredits,
-          by: input.by,
-          at: updatedAt,
-        });
-        return { previous: existing?.limitMicrocredits ?? null };
-      });
+      if (input.path === sharedPilotCostScope)
+        throw new RangeError("A route ID is required");
+      return setCostLimit(input);
+    },
+
+    setPilotProviderCostLimit(input: {
+      limitMicrocredits: bigint;
+      by: string;
+    }) {
+      return setCostLimit({ ...input, path: sharedPilotCostScope });
+    },
+
+    async pilotProviderCost() {
+      const [row] = await database.execute<{
+        limit: string | null;
+        updated_by: string | null;
+        outstanding: string;
+        operations: string;
+      }>(sql`
+        select ${pilotProviderCostLimits.limitMicrocredits}::text as limit,
+               ${pilotProviderCostLimits.updatedBy} as updated_by,
+               exposure.outstanding, exposure.operations
+        from pilot_provider_cost_exposure exposure
+        left join ${pilotProviderCostLimits} on ${pilotProviderCostLimits.path} = ${sharedPilotCostScope}
+      `);
+      if (!row) throw new Error("Pilot provider cost exposure is unavailable");
+      return {
+        limitMicrocredits: row.limit === null ? null : BigInt(row.limit),
+        updatedBy: row.updated_by,
+        operations: row.operations,
+        outstandingMicrocredits: row.outstanding,
+        remainingMicrocredits:
+          row.limit === null
+            ? null
+            : (BigInt(row.limit) - BigInt(row.outstanding)).toString(),
+      };
     },
 
     /** Ceiling and share composition for one path; null limit means uncapped. */
