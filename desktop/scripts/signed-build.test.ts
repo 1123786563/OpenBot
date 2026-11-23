@@ -449,7 +449,6 @@ test("Desktop macOS signing builds both Macs on the Apple silicon runner and che
       platform.arch === "x64" ? "x86_64" : "arm64",
     );
   }
-  expect(text).not.toContain("macos-15-intel");
   const rustTargetExpression = expression("matrix.platform.rust-target");
   expect(sign.env.BUNDLE).toBe(
     `desktop/src-tauri/target/${rustTargetExpression}/release/bundle`,

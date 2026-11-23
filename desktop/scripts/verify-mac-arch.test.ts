@@ -3,7 +3,7 @@
  * architecture. The Intel installer is built on the Apple silicon runner, so this check is what
  * stands between an Intel app with an Apple silicon binary in it and every Intel Mac.
  *
- * Needs a Mac (`cc -arch`, `lipo`); elsewhere it skips. Desktop macOS signing runs it on macos-15.
+ * Needs a Mac (`cc -arch`, `lipo`); elsewhere it skips. The macOS updater regressions run it in CI.
  */
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
