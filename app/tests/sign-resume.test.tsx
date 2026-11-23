@@ -13,6 +13,7 @@ import {
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { authKeys } from "@/lib/auth/queries";
+import { pinLocale } from "./i18n";
 import { appReturnPath, resumeUrlFor } from "@/lib/auth/resume";
 
 /*
@@ -55,8 +56,9 @@ beforeAll(() => {
     window as unknown as { happyDOM: { setURL(url: string): void } }
   ).happyDOM.setURL("http://localhost:3010/");
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
 });
 afterAll(() => {
   // Module mocks are process-wide in bun: hand the real client back to whatever runs next.
@@ -191,6 +193,27 @@ function renderSignScreen(
     user: userEvent.setup({ document: view.container.ownerDocument }),
   };
 }
+
+test("the sign page translates its heading, title and provider action in place", async () => {
+  const { view } = renderSignScreen({
+    providers: ["google"],
+    sso: false,
+    ssoRequired: false,
+  });
+  expect(
+    await view.findByRole("heading", { name: "Sign in to OpenBot" }),
+  ).toBeTruthy();
+  await pinLocale("zh-CN");
+  expect(view.getByRole("heading", { name: "登录 OpenBot" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "使用 Google 继续" })).toBeTruthy();
+  // The tab reads like every other page's, which PageShell titles: "<page> · OpenBot".
+  expect(document.title).toBe("登录 · OpenBot");
+  await pinLocale("en");
+  expect(
+    view.getByRole("button", { name: "Continue with Google" }),
+  ).toBeTruthy();
+  expect(document.title).toBe("Sign in · OpenBot");
+});
 
 /** Where a press on this screen has to send the browser back to, with `?flow_id=h1` carried in. */
 const RESUME_URL = "/api/plugins/arcade/verify?flow_id=h1";

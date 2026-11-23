@@ -4,13 +4,14 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ProviderLogo } from "@/components/auth/provider-logo";
 import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import {
   providerName,
   signInWith,
@@ -96,6 +97,11 @@ export const Route = createFileRoute("/sign")({
 });
 
 function SignScreen() {
+  const { t } = useTranslation();
+  const title = t("sign.title", "Sign in");
+  useEffect(() => {
+    document.title = `${title} · ${appConfig.brand.productName}`;
+  }, [title]);
   const {
     flow_id: flowId,
     openfuse_request: openFuseRequest,
@@ -191,7 +197,9 @@ function SignScreen() {
           <span className="flex-1 text-center">
             {opening === provider
               ? `Opening ${providerName(provider)}…`
-              : `Continue with ${providerName(provider)}`}
+              : t("sign.provider.continue", "Continue with {provider}", {
+                  provider: providerName(provider),
+                })}
           </span>
           {/* Balances the mark so the label sits in the middle of the button. */}
           <span aria-hidden="true" className="size-[18px]" />
@@ -240,7 +248,9 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          Sign in to {appConfig.brand.productName}
+          {t("sign.heading", "Sign in to {product}", {
+            product: appConfig.brand.productName,
+          })}
         </motion.h1>
         <motion.div
           className="mt-8 w-full"

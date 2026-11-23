@@ -73,5 +73,8 @@
   "relativeTime.now": "刚刚",
   "settings.language.browser": "跟随浏览器",
   "settings.language.description": "选择 OpenBot 界面文字使用的语言。",
-  "settings.language.title": "语言"
+  "settings.language.title": "语言",
+  "sign.heading": "登录 {product}",
+  "sign.provider.continue": "使用 {provider} 继续",
+  "sign.title": "登录"
 }
