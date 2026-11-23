@@ -156,9 +156,7 @@ export function PersonalCloud({
 }: {
   request?: (action: CloudAction) => Promise<CloudView>;
   showLocal?: () => Promise<void>;
-  recover?: (
-    ...args: Parameters<typeof recoverWork>
-  ) => Promise<WorkInterruption["recovery"] | void>;
+  recover?: typeof recoverWork;
   workspaceAction?: typeof workspaceRequest;
   botRuns?: typeof cloudBotRuns;
 }) {

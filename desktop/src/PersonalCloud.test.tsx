@@ -287,6 +287,7 @@ test("restored access shows stopped background work, outcomes and per-item recov
         request={async () => status}
         recover={async (key, action, acknowledged) => {
           confirmedActions.push([key, action, acknowledged]);
+          return null;
         }}
         workspaceAction={async (action) => {
           actions.push(action);
