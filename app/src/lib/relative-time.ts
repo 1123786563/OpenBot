@@ -57,7 +57,7 @@ const SHORT_UNITS = [
 
 /**
  * The sidebar's compact timestamp: "now", "5m", "3h", "2d", "6w" in English, spelled out in the
- * interface language elsewhere ("3分钟前").
+ * interface language elsewhere ("3 分钟前").
  *
  * Rounded down, so a unit never shows its own upper bound ("60m"). A time slightly ahead of this
  * clock, from a server whose clock runs fast, reads as "now" rather than a negative number.
@@ -72,7 +72,10 @@ export function relativeTimeShort(iso: string, now: Date = new Date()): string {
     SHORT_UNITS[SHORT_UNITS.length - 1];
   const count = Math.floor(elapsed / scale.divisor);
   // Only English has these compact suffixes; other languages spell the unit out, which Intl knows.
-  return i18n.language === "en"
-    ? `${count}${scale.suffix}`
-    : formatRelativeTime(-count, scale.unit);
+  if (i18n.language === "en") return `${count}${scale.suffix}`;
+  // CLDR writes "3分钟前"; Chinese copy sets the numeral apart with a space ("3 分钟前").
+  return formatRelativeTime(-count, scale.unit).replace(
+    /^\d+/,
+    (digits) => `${digits} `,
+  );
 }

@@ -159,13 +159,13 @@ test("choosing a language redraws the conversation times where they stand", asyn
 
   await pinLocale("zh-CN");
 
-  expect(within(row).getByText("3分钟前")).toBeTruthy();
+  expect(within(row).getByText("3 分钟前")).toBeTruthy();
   expect(within(row).queryByText("3m")).toBeNull();
 
   await pinLocale("en");
 
   expect(within(row).getByText("3m")).toBeTruthy();
-  expect(within(row).queryByText("3分钟前")).toBeNull();
+  expect(within(row).queryByText("3 分钟前")).toBeNull();
   // Redrawn, not rebuilt: it is still the row that was mounted first.
   expect(view.getByRole("link", { name: /Quarterly planning/ })).toBe(row);
   // The instant on record is the one the server sent; only its wording moved.
