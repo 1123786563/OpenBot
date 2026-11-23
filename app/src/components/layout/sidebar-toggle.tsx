@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useOptionalSidebar } from "@/components/ui/sidebar";
+import { useTranslation } from "@/i18n";
 import {
   Tooltip,
   TooltipContent,
@@ -72,13 +73,14 @@ export function useSidebarToggleVisible(): boolean {
 export function SidebarToggle({ className }: { className?: string }) {
   const sidebar = useOptionalSidebar();
   const visible = useSidebarToggleVisible();
+  const { t } = useTranslation();
   if (!sidebar || !visible) return null;
   const { isMobile, open, openMobile, toggleSidebar } = sidebar;
 
   // The label says what the click will do, not what is on screen.
   const label = (isMobile ? openMobile : open)
-    ? "Hide sidebar"
-    : "Show sidebar";
+    ? t("nav.hideSidebar", "Hide sidebar")
+    : t("nav.showSidebar", "Show sidebar");
 
   return (
     <Tooltip>

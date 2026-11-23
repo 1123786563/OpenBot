@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { toast } from "@/components/ui/toast";
+import { useTranslation } from "@/i18n";
 import { browserStateQueryOptions } from "@/lib/browser/queries";
 import type { RecorderStore } from "@/lib/recorder/bridge";
 import { elapsed, RecordingMark, useSecondsSince } from "./recording";
@@ -57,6 +58,7 @@ export function noteStoreTabOpened(store: RecorderStore): void {
 
 /** A link to the Teach a Bot page. */
 function BrowserPageLink({ activity }: { activity?: RecorderActivity }) {
+  const { t } = useTranslation();
   const recording = useRecordingLabel(activity);
   return (
     <SidebarMenuButton
@@ -68,7 +70,7 @@ function BrowserPageLink({ activity }: { activity?: RecorderActivity }) {
           activeProps={{ className: "bg-foreground/5" }}
         />
       )}
-      tooltip={recordingTooltip(recording)}
+      tooltip={recordingTooltip(recording, t("nav.teachBot", TEACH_A_BOT))}
     >
       <BrowserLabel>
         {recording ? <RecordingDot {...recording} /> : null}
@@ -79,12 +81,13 @@ function BrowserPageLink({ activity }: { activity?: RecorderActivity }) {
 
 /** The icon and the name every item in this part of the sidebar has, and what goes at the end of the row. */
 function BrowserLabel({ children }: { children?: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <>
       <div className="size-[28px] flex items-center justify-center">
         <IconChalkboardTeacher />
       </div>
-      <span className="text-sm">{TEACH_A_BOT}</span>
+      <span className="text-sm">{t("nav.teachBot", TEACH_A_BOT)}</span>
       {children}
     </>
   );
@@ -100,22 +103,36 @@ type RecordingLabel = { label: string; live: boolean };
 function useRecordingLabel(
   activity: RecorderActivity | undefined,
 ): RecordingLabel | null {
+  const { t } = useTranslation();
   const phase = activity?.phase ?? "idle";
   const seconds = useSecondsSince(
     phase === "recording" ? activity?.startedAt : undefined,
   );
   if (!activity || phase === "idle") return null;
-  const named = activity.title ? `Recording: ${activity.title}` : "Recording";
+  // The person's own recording title stays as they wrote it; only OpenBot's words around it translate.
+  const named = activity.title
+    ? t("nav.recording.named", "Recording: {title}", {
+        title: activity.title,
+      })
+    : t("nav.recording", "Recording");
   const progress =
     phase === "starting"
-      ? "starting"
+      ? t("nav.recording.starting", "starting")
       : phase === "stopping"
-        ? "stopping"
+        ? t("nav.recording.stopping", "stopping")
         : activity.startedAt === undefined
           ? null
           : elapsed(seconds);
   return {
-    label: progress ? `${named}, ${progress}` : named,
+    label:
+      progress === null
+        ? named
+        : activity.title
+          ? t("nav.recording.namedProgress", "Recording: {title}, {progress}", {
+              title: activity.title,
+              progress,
+            })
+          : t("nav.recording.progress", "Recording, {progress}", { progress }),
     live: phase === "recording",
   };
 }
@@ -125,9 +142,9 @@ function useRecordingLabel(
  * hidden while nothing records, so the link is never remounted (and never loses the keyboard's focus) as a recording
  * starts and stops.
  */
-function recordingTooltip(recording: RecordingLabel | null) {
+function recordingTooltip(recording: RecordingLabel | null, link: string) {
   return {
-    children: recording?.label ?? TEACH_A_BOT,
+    children: recording?.label ?? link,
     hidden: recording === null,
   };
 }

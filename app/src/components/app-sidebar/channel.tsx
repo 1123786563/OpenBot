@@ -15,6 +15,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { useTranslation } from "@/i18n";
 import { setChannelPinnedMutationOptions } from "@/lib/channels/mutations";
 import type { MessageListEmphasis } from "@/lib/settings/message-list";
 import { useTypedReveal } from "@/lib/typed-reveal";
@@ -58,6 +59,7 @@ export const Channel = memo(function Channel({
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   // Whether this row's channel is the one on screen, as a boolean, so navigating between
   // channels re-renders the two rows whose answer changed rather than the whole roster.
   const isOpen = useParams({
@@ -67,7 +69,8 @@ export const Channel = memo(function Channel({
   });
   /* Types in only on arrival; an already-named row draws it outright. */
   const revealed = useTypedReveal(summary);
-  const threadTitle = revealed.text || untitled || "New conversation";
+  const threadTitle =
+    revealed.text || untitled || t("nav.newConversation", "New conversation");
   const setPinned = useMutation(setChannelPinnedMutationOptions(queryClient));
   const [confirming, setConfirming] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -102,7 +105,11 @@ export const Channel = memo(function Channel({
             <ChannelItemContent
               participantIds={participantIds}
               name={name}
-              title={summary || untitled || "New conversation"}
+              title={
+                summary ||
+                untitled ||
+                t("nav.newConversation", "New conversation")
+              }
               displayedTitle={threadTitle}
               lastMessageAt={lastMessageAt}
               emphasis={emphasis}
@@ -124,12 +131,14 @@ export const Channel = memo(function Channel({
             }}
           >
             {pinned ? <IconPinnedOff /> : <IconPin />}
-            {pinned ? "Unpin conversation" : "Pin conversation"}
+            {pinned
+              ? t("nav.unpinConversation", "Unpin conversation")
+              : t("nav.pinConversation", "Pin conversation")}
           </ContextMenuItem>
           {canRename ? (
             <ContextMenuItem onClick={() => setRenaming(true)}>
               <IconPencil />
-              Rename conversation…
+              {t("nav.renameConversation", "Rename conversation…")}
             </ContextMenuItem>
           ) : null}
           <ContextMenuItem
@@ -137,7 +146,7 @@ export const Channel = memo(function Channel({
             onClick={() => setConfirming(true)}
           >
             <IconTrash />
-            Delete conversation…
+            {t("nav.deleteConversation", "Delete conversation…")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
