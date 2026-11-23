@@ -227,6 +227,7 @@ test("a description fills the rule, shows its reading and compile result, replay
   fireEvent.click(view.getByRole("button", { name: "Add rule" }));
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0]).toEqual({
+    expected: { mode: "enforce", deny: [], allow: ["true"] },
     mode: "enforce",
     deny: [SOCIAL.rule],
     allow: ["true"],
@@ -264,10 +265,16 @@ test("editing the written rule by hand is allowed and called out", async () => {
       "You've changed the rule since it was written. The check and the reading above are for the written rule, not your edit.",
     ),
   ).toBeTruthy();
-  expect(
-    (view.getByRole("button", { name: "Add rule" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(false);
+  const add = view.getByRole("button", { name: "Add rule" });
+  expect(add.hasAttribute("disabled")).toBe(true);
+  await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+
+  await user.type(
+    view.getByLabelText("Describe the rule"),
+    " and do not post status updates",
+  );
+  await view.findByText(/Your description changed/);
+  expect(add.hasAttribute("disabled")).toBe(true);
 });
 
 test("What it stops is filled from the reading when empty, and what the admin typed there is kept", async () => {

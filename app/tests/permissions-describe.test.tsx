@@ -327,6 +327,51 @@ test("removing a change is called out and shows who the rest would change", asyn
   expect(
     sent.filter((call) => call.path.endsWith("/preview")).at(-1)?.body.changes,
   ).toHaveLength(3);
+
+  expect(view.getByRole("button", { name: "Undo" })).toBeTruthy();
+  fireEvent.change(view.getByLabelText("Describe the change"), {
+    target: { value: `${TEXT} for new requests` },
+  });
+  fireEvent.click(view.getByRole("button", { name: "Write changes" }));
+  await view.findByRole("button", { name: "Remove change 4" });
+  expect(view.queryByRole("button", { name: "Undo" })).toBeNull();
+});
+
+test("a failed preview preserves the draft and a changed description blocks submission", async () => {
+  const fetchWithPreview = global.fetch;
+  let failed = false;
+  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!failed && String(input).endsWith("/preview")) {
+      failed = true;
+      return Response.json({ error: "Preview unavailable." }, { status: 503 });
+    }
+    return fetchWithPreview(input, init);
+  }) as typeof fetch;
+
+  const { view } = open();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await describeChange(view);
+  expect(await view.findByText("Preview unavailable.")).toBeTruthy();
+  const description = view.getByLabelText(
+    "Describe the change",
+  ) as HTMLTextAreaElement;
+  const save = view.getByRole("button", {
+    name: "Save changes",
+  }) as HTMLButtonElement;
+  expect(description.value).toBe(TEXT);
+  expect(view.getByRole("button", { name: "Remove change 1" })).toBeTruthy();
+  expect(save.disabled).toBe(true);
+  await user.click(view.getByRole("button", { name: "Retry preview" }));
+  await waitFor(() => expect(save.disabled).toBe(false));
+
+  await user.type(description, " for new requests");
+  expect(view.getByText(/Your description changed/)).toBeTruthy();
+  expect(save.disabled).toBe(true);
+  fireEvent.submit(save.form as HTMLFormElement);
+  expect(sent.some((entry) => entry.path.endsWith("/batch"))).toBe(false);
+  await user.click(view.getByRole("button", { name: "Write changes" }));
+  await waitFor(() => expect(save.disabled).toBe(false));
+  expect(view.queryByText(/Your description changed/)).toBeNull();
 });
 
 test("each saved switch reads on Audit as which permission, for whom, and what it was set to", () => {

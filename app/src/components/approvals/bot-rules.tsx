@@ -7,6 +7,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { Separator } from "@/components/ui/separator";
 import {
   approvalInboxOptions,
@@ -30,8 +31,7 @@ export function BotApprovalRules({ agentId }: { agentId: string }) {
     updateApprovalRuleMutationOptions(queryClient),
   );
   const revoke = useMutation(revokeApprovalRuleMutationOptions(queryClient));
-  const error = inbox.error ?? changeRule.error ?? revoke.error;
-  if (inbox.isPending && !error) return null;
+  const error = changeRule.error ?? revoke.error;
   const rulesOff = inbox.data?.team?.customRulesEnabled === false;
   // Rules naming this Bot, including a pattern that covers it; rules for every Bot are in Settings.
   const mine = (inbox.data?.rules ?? []).filter(
@@ -40,7 +40,7 @@ export function BotApprovalRules({ agentId }: { agentId: string }) {
   const team = (inbox.data?.teamRules ?? []).filter(
     (rule) => rule.botId === "*" || rule.botId === agentId,
   );
-  const canAdd = Boolean(inbox.data?.preferences) && !rulesOff;
+  const canAdd = Boolean(inbox.data?.preferences) && !rulesOff && !inbox.error;
   const saved = team.length + mine.length;
 
   return (
@@ -68,10 +68,19 @@ export function BotApprovalRules({ agentId }: { agentId: string }) {
           {error.message}
         </p>
       ) : null}
-      {saved === 0 ? (
+      {inbox.isPending ? (
+        <ReadStatus kind="loading" message="Loading approval rules…" />
+      ) : inbox.error ? (
+        <ReadError
+          message="Couldn’t load approval rules"
+          retry={() => inbox.refetch()}
+          retryBelow
+          retrying={inbox.isFetching}
+        />
+      ) : saved === 0 ? (
         <PageEmpty icon={IconChecklist} title="No rules for this Bot" />
       ) : null}
-      {saved > 0 || canAdd ? (
+      {!inbox.error && (saved > 0 || canAdd) ? (
         <PageRows>
           {team.map((rule, index) => (
             <Fragment key={rule.id}>

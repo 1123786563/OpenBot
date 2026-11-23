@@ -1,5 +1,5 @@
 import { HStack } from "@astryxdesign/core/HStack";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +27,10 @@ export function DescribeField({
   placeholder,
   action,
   write,
+  text,
+  onTextChange,
+  onWritingChange,
+  disabled,
 }: {
   id: string;
   label: string;
@@ -35,22 +39,32 @@ export function DescribeField({
   /** The button: "Write rule". It reads "Writing…" while the model answers. */
   action: string;
   write: (text: string) => Promise<string | null>;
+  text?: string;
+  onTextChange?: (text: string) => void;
+  onWritingChange?: (writing: boolean) => void;
+  disabled?: boolean;
 }) {
-  const [text, setText] = useState("");
+  const [localText, setLocalText] = useState("");
   const [writing, setWriting] = useState(false);
+  const writingRef = useRef(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const described = text.trim();
+  const value = text ?? localText;
+  const described = value.trim();
 
   const ask = async () => {
-    if (!described || writing) return;
+    if (!described || writingRef.current || disabled) return;
+    writingRef.current = true;
     setProblem(null);
     setWriting(true);
+    onWritingChange?.(true);
     try {
       setProblem(await write(described));
     } catch (thrown) {
       setProblem((thrown as Error).message);
     } finally {
+      writingRef.current = false;
       setWriting(false);
+      onWritingChange?.(false);
     }
   };
 
@@ -62,7 +76,11 @@ export function DescribeField({
         className="min-h-10"
         id={id}
         maxLength={1000}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          const next = event.target.value;
+          if (text === undefined) setLocalText(next);
+          onTextChange?.(next);
+        }}
         onKeyDown={(event) => {
           // Enter writes the rule. It must never reach the form around it, whose Enter saves.
           if (event.key !== "Enter" || event.shiftKey || isComposing(event))
@@ -72,12 +90,13 @@ export function DescribeField({
           void ask();
         }}
         placeholder={placeholder}
+        readOnly={disabled || (writing && onWritingChange !== undefined)}
         rows={2}
-        value={text}
+        value={value}
       />
       <HStack>
         <Button
-          disabled={!described || writing}
+          disabled={!described || writing || disabled}
           onClick={() => void ask()}
           size="sm"
           type="button"
@@ -105,16 +124,28 @@ export function DescribeField({
  */
 export function DescribeRule({
   onWritten,
+  text,
+  onTextChange,
+  onWritingChange,
+  disabled,
 }: {
   onWritten: (written: WrittenRule) => void;
+  text?: string;
+  onTextChange?: (text: string) => void;
+  onWritingChange?: (writing: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <DescribeField
       action="Write rule"
       description="Say in a sentence what no Bot may do, and your model writes the rule. A second reading that never sees your words says what the rule does."
+      disabled={disabled}
       id="rule-description-english"
       label="Describe the rule"
+      onTextChange={onTextChange}
+      onWritingChange={onWritingChange}
       placeholder="Bots may not visit social media sites"
+      text={text}
       write={async (described) => {
         const translation = await translatePolicyRule(described);
         if (translation.effect === "allow")

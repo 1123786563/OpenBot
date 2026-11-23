@@ -1,3 +1,5 @@
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -91,19 +93,25 @@ export function PageHeader({
   title: string;
 }) {
   return (
-    <header className="flex flex-col gap-2" data-slot="page-header">
-      {eyebrow}
-      <div className="flex flex-row items-center justify-between gap-4">
-        <h1
-          className="font-semibold text-2xl tracking-tight"
-          data-slot="page-title"
-        >
-          {title}
-        </h1>
-        {action}
-      </div>
+    <header
+      className="grid items-start gap-x-4 gap-y-2"
+      style={{
+        gridTemplateColumns: action ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
+      }}
+      data-slot="page-header"
+    >
+      {eyebrow ? (
+        <VStack style={{ gridColumn: "1 / -1" }}>{eyebrow}</VStack>
+      ) : null}
+      <h1
+        className="break-words font-heading font-semibold text-2xl tracking-tight"
+        data-slot="page-title"
+      >
+        {title}
+      </h1>
+      {action}
       {description ? (
-        <p className="text-pretty text-muted-foreground text-sm leading-relaxed">
+        <p className="col-span-full text-pretty text-muted-foreground text-sm leading-relaxed">
           {description}
         </p>
       ) : null}
@@ -123,23 +131,38 @@ export function PageSection({
   children,
   className,
   description,
+  headingRef,
+  id,
   title,
 }: {
   action?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
   description?: React.ReactNode;
+  headingRef?: React.Ref<HTMLHeadingElement>;
+  /** Where a screen sends the person to this section by name. */
+  id?: string;
   title?: string;
 }) {
   return (
-    <section className={cn("mt-12", className)}>
+    <section className={cn("mt-12", className)} id={id}>
       {title ? (
         <div className="flex min-h-8 flex-row items-center justify-between gap-4">
           {/*
            * Close to body size and lighter than the page title, so the sections read as parts of
            * the page rather than as a second row of titles competing with it.
            */}
-          <h2 className="font-semibold text-base">{title}</h2>
+          <h2
+            className={cn(
+              "font-semibold text-base",
+              headingRef && "scroll-mt-4",
+            )}
+            ref={headingRef}
+            style={{ textWrap: "balance" }}
+            tabIndex={headingRef ? -1 : undefined}
+          >
+            {title}
+          </h2>
           {action}
         </div>
       ) : null}
@@ -221,6 +244,25 @@ export function PageCard({
         <div className="mt-6 flex justify-end gap-2">{footer}</div>
       ) : null}
     </div>
+  );
+}
+
+export function InlineEmpty({
+  children,
+  title,
+}: {
+  children: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <VStack gap={1} paddingBlock={3}>
+      <Text as="p" size="sm" weight="semibold">
+        {title}
+      </Text>
+      <Text as="p" color="secondary" size="sm">
+        {children}
+      </Text>
+    </VStack>
   );
 }
 

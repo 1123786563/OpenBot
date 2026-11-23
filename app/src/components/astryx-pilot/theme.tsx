@@ -1,3 +1,5 @@
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import type { CSSProperties, ReactNode } from "react";
 import logo from "@/assets/openbot-logo.png";
 import { appConfig } from "@/lib/generated/application-config";
@@ -49,9 +51,20 @@ export function AstryxSurface({
 export function AstryxBrand() {
   const brandLogo = import.meta.env.VITE_OPENBOT_ASTRYX_BRAND_LOGO || logo;
   return (
-    <span className="astryx-brand">
-      <img alt="" height={20} src={brandLogo} width={20} />
-      <span>{appConfig.brand.productName}</span>
-    </span>
+    <HStack align="center" gap={2} style={{ minWidth: 0 }}>
+      <img
+        alt=""
+        src={brandLogo}
+        style={{
+          blockSize: "var(--spacing-5)",
+          inlineSize: "var(--spacing-5)",
+          objectFit: "contain",
+          flexShrink: 0,
+        }}
+      />
+      <Text type="label" maxLines={1} weight="semibold">
+        {appConfig.brand.productName}
+      </Text>
+    </HStack>
   );
 }

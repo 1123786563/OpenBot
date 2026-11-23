@@ -130,9 +130,20 @@ export function LearningSharing() {
   const personal = capabilities.data?.edition === "personal";
   if (sharing.error) {
     return (
-      <p className="mt-6 text-destructive text-sm" role="alert">
-        {sharing.error.message}
-      </p>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <p className="text-destructive text-sm" role="alert">
+          Couldn't load your Learning settings.
+        </p>
+        <Button
+          disabled={sharing.isFetching}
+          onClick={() => void sharing.refetch()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {sharing.isFetching ? "Retrying…" : "Retry"}
+        </Button>
+      </div>
     );
   }
   const data = sharing.data;

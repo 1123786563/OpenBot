@@ -34,7 +34,7 @@ function RoutinesPage() {
         >
           View Bot tasks
         </Link>
-        <RoutinesList />
+        <RoutinesList hasCreateAction />
       </PageShell>
     </AstryxSurface>
   );

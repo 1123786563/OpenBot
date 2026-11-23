@@ -28,6 +28,7 @@ import { newId } from "../../lib/new-id";
 
 export function ConversationView({
   messages,
+  pendingMessageId,
   threadId,
   busy = false,
   notice,
@@ -53,6 +54,7 @@ export function ConversationView({
   routine,
 }: {
   messages: readonly Message[];
+  pendingMessageId?: string;
   threadId?: string;
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
@@ -464,6 +466,7 @@ export function ConversationView({
           commandLabels={skillLabels(commands ?? [])}
           {...(orbs && intro ? { intro } : {})}
           messages={messages}
+          pendingMessageId={pendingMessageId}
           onRemoveQueued={(id) => {
             apply({ id, type: "remove" });
           }}

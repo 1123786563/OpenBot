@@ -22,6 +22,8 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -37,6 +39,11 @@ import {
   mediaTypeOf,
   shouldClaimPaste,
 } from "@/lib/channels/attachments";
+import {
+  draftSegments,
+  readComposeDraft,
+  writeComposeDraft,
+} from "@/lib/channels/compose-draft";
 import { newId } from "@/lib/new-id";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/button";
@@ -182,6 +189,7 @@ export type ComposerProps = {
    * say what is missing. Unlike `disabled`, it does not stop anybody writing.
    */
   onSendHeld?: () => void;
+  heldSendLabel?: string;
   /**
    * A turn is in flight. It gates sending, not writing: a channel is `pending` while it is still
    * connecting and restoring its history, and the composer is on screen throughout.
@@ -224,6 +232,9 @@ export type ComposerProps = {
    */
   stoppable?: boolean;
   initialValue?: string;
+  draftStorageKey?: string;
+  onDraftChange?: (segments: Segment[]) => void;
+  restoredDraftMessage?: string;
   /**
    * Files a caller's queue left behind, and WHY, reported so they read as a refusal rather than
    * vanishing.
@@ -357,20 +368,65 @@ export function Composer({
   onStop,
   disabled = false,
   onSendHeld,
+  heldSendLabel,
   pending = false,
   autoFocus = false,
   channelId,
   stoppable,
   initialValue,
+  draftStorageKey,
+  onDraftChange,
+  restoredDraftMessage,
   droppedAttachments,
   // Nothing parked is the right answer for every caller without a queue, which is most of them.
   queuedAttachmentCount = 0,
   routine,
 }: ComposerProps) {
-  const [value, setValue] = useState<Segment[]>(
-    initialValue ? [{ type: "text", text: initialValue }] : [],
+  const [savedDraft] = useState(() =>
+    readComposeDraft(draftStorageKey, draftSegments),
   );
+  const [value, setValue] = useState<Segment[]>(
+    () => savedDraft ?? (initialValue ? [text(initialValue)] : []),
+  );
+  const draftStatusId = useId();
+  const [draftSaveFailed, setDraftSaveFailed] = useState(false);
+  const showsRestoredDraft =
+    savedDraft &&
+    !isSegmentsEmpty(savedDraft) &&
+    !(
+      savedDraft.length === 1 &&
+      savedDraft[0]?.type === "text" &&
+      savedDraft[0].text === initialValue
+    ) &&
+    !isSegmentsEmpty(value);
+  const showsDraftStatus = draftSaveFailed || showsRestoredDraft;
+  const draftStatus = showsDraftStatus ? (
+    <p
+      className="mb-2 text-sm text-foreground/75"
+      id={draftStatusId}
+      role="status"
+    >
+      {showsRestoredDraft && restoredDraftMessage ? (
+        <>{restoredDraftMessage} </>
+      ) : null}
+      {draftSaveFailed
+        ? "Your draft is temporary. Copy your message before closing or refreshing this tab."
+        : !restoredDraftMessage &&
+          "Draft restored. Your unsent message is saved in this tab."}
+    </p>
+  ) : null;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  useLayoutEffect(() => {
+    onDraftChange?.(value);
+  }, [onDraftChange, value]);
+  useLayoutEffect(() => {
+    if (!draftStorageKey || isSubmitting) return;
+    const saved = writeComposeDraft(
+      draftStorageKey,
+      value.length ? value : undefined,
+    );
+    setDraftSaveFailed(!saved && !isSegmentsEmpty(value));
+  }, [draftStorageKey, isSubmitting, value]);
   const submitInFlight = useRef(false);
   const promptAreaRef = useRef<PromptAreaHandle>(null);
   /**
@@ -1437,12 +1493,16 @@ export function Composer({
    * the two it is about to do. "Send" on a button that will not send for another minute is a small
    * lie told to exactly the people who cannot see the queue it lands in.
    */
-  const sendLabel = parking ? "Queue message" : "Send message";
+  const heldActionLabel = onSendHeld && heldSendLabel;
+  const sendLabel =
+    heldActionLabel || (parking ? "Queue message" : "Send message");
   const callAction =
     draft.isEmpty && draft.attachments.length === 0 ? voiceCall : undefined;
   const actionClassName = cn(
     "rounded-full p-0",
     compact ? "size-8 self-end" : "size-7",
+    draftStorageKey &&
+      "max-md:min-h-11 max-md:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11",
   );
   const primaryAction = canStop ? (
     <Button
@@ -1477,13 +1537,14 @@ export function Composer({
   ) : (
     <Button
       aria-label={sendLabel}
-      className={actionClassName}
+      className={heldActionLabel ? "min-h-11 self-end" : actionClassName}
       data-slot="composer-send"
       disabled={!canSend}
-      size="icon"
+      size={heldActionLabel ? "sm" : "icon"}
       type="submit"
+      variant={heldActionLabel ? "secondary" : "default"}
     >
-      <IconArrowUp className="size-3.5" />
+      {heldActionLabel || <IconArrowUp className="size-3.5" />}
     </Button>
   );
 
@@ -1583,6 +1644,7 @@ export function Composer({
         <RejectedFiles onDismiss={dismissRejections} rejected={rejected} />
         {tooManyStagedNotice}
         <LiveDictationNotice dictation={dictation} />
+        {draftStatus}
         <form
           aria-busy={isBusy}
           data-slot="composer"
@@ -1614,6 +1676,7 @@ export function Composer({
              */}
             <div className="min-w-0" data-slot="composer-input">
               <PromptArea
+                aria-describedby={showsDraftStatus ? draftStatusId : undefined}
                 aria-label="Message"
                 className={cn(
                   "w-full border-0 bg-transparent p-0 text-sm shadow-none",
@@ -1647,18 +1710,7 @@ export function Composer({
                   >
                     <IconPlus className="size-5" />
                   </Button>
-                ) : (
-                  <Button
-                    aria-label="More message options unavailable"
-                    className="disabled:opacity-100"
-                    disabled
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <IconPlus className="size-5" />
-                  </Button>
-                )}
+                ) : null}
                 {routine ? <RoutineComposerButton {...routine} /> : null}
                 {modelPicker}
               </div>
@@ -1696,6 +1748,7 @@ export function Composer({
        * greeting and the tasks move up to make room, and the box holds still.
        */}
       <LiveDictationNotice dictation={dictation} />
+      {draftStatus}
       <form
         aria-busy={isBusy}
         className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -1717,6 +1770,7 @@ export function Composer({
             />
             <div data-slot="composer-input">
               <PromptArea
+                aria-describedby={showsDraftStatus ? draftStatusId : undefined}
                 aria-label="Message"
                 autoGrow
                 className={cn(

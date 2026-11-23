@@ -1,5 +1,12 @@
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { VStack } from "@astryxdesign/core/VStack";
+import {
+  AnimatePresence,
+  MotionConfig,
+  motion,
+  useIsPresent,
+  useReducedMotion,
+} from "motion/react";
+import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { OnboardingFrame, StepTitle } from "./onboarding-frame";
 
 /**
@@ -68,32 +75,63 @@ const variants = {
   exit: (direction: number) => ({ x: -24 * direction, opacity: 0 }),
 };
 
-/** A pane that crossfades as the step changes, keyed on the step so the old one can leave. */
-function Pane({
-  stepId,
-  direction,
-  children,
-  attribute,
-}: {
+type PaneProps = {
   stepId: string | undefined;
   direction: number;
   children: ReactNode;
   attribute: "data-step" | "data-step-demo";
-}) {
+};
+
+function AnimatedPane({
+  stepId,
+  direction,
+  children,
+  attribute,
+  ref,
+}: PaneProps & { ref?: Ref<HTMLDivElement> }) {
+  const present = useIsPresent();
   return (
-    <AnimatePresence custom={direction} initial={false} mode="popLayout">
-      <motion.div
-        animate="active"
+    <motion.div
+      animate="active"
+      className="w-full min-w-0"
+      custom={direction}
+      exit="exit"
+      hidden={!present && attribute === "data-step"}
+      inert={!present}
+      initial="initial"
+      ref={ref}
+      variants={variants}
+      {...{ [attribute]: stepId }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** The new step enters immediately while the previous illustration fades. */
+function Pane({ stepId, direction, children, attribute }: PaneProps) {
+  const reduceMotion = useReducedMotion();
+  if (reduceMotion) {
+    return (
+      <VStack
         className="w-full min-w-0"
-        custom={direction}
-        exit="exit"
-        initial="initial"
         key={stepId}
-        variants={variants}
         {...{ [attribute]: stepId }}
       >
         {children}
-      </motion.div>
+      </VStack>
+    );
+  }
+  return (
+    <AnimatePresence custom={direction} initial={false} mode="popLayout">
+      <AnimatedPane
+        attribute={attribute}
+        direction={direction}
+        key={stepId}
+        stepId={stepId}
+      >
+        {children}
+      </AnimatedPane>
     </AnimatePresence>
   );
 }
@@ -115,7 +153,7 @@ function Pane({
  * FOCUS FOLLOWS THE STEP. A change of step replaces the heading, the picture and the buttons, so
  * the element that had focus either vanished or now means something else. Focus moves to the new
  * step's heading, which a screen reader then reads, and the first draw leaves focus alone. Motion
- * respects the reader's reduced-motion setting: the movement becomes a fade.
+ * respects the reader's reduced-motion setting.
  */
 export function OnboardingWizard({
   steps,
@@ -135,7 +173,7 @@ export function OnboardingWizard({
 }) {
   const [own, setOwn] = useState(() => initialStepId ?? steps[0]?.id ?? "");
   const current = heldStepId ?? own;
-  const container = useRef<HTMLDivElement>(null);
+  const container = useRef<HTMLElement>(null);
 
   // A step that left the list (the server's answer changed) falls back to the first, never to nothing.
   const found = steps.findIndex((step) => step.id === current);
@@ -200,7 +238,7 @@ export function OnboardingWizard({
     const demo = frame?.querySelector<HTMLElement>("[data-onboarding-demo]");
     if (demo) demo.scrollTop = 0;
     const heading = frame?.querySelector<HTMLElement>(
-      `[data-step="${stepId}"] h1`,
+      `[data-step="${stepId}"]:not([inert]) h1`,
     );
     if (!heading) return;
     // Focusable by script only, so it is not a stop when tabbing through the page.
@@ -213,7 +251,11 @@ export function OnboardingWizard({
       reducedMotion="user"
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="contents" ref={container}>
+      {/* popLayout needs a positioned ancestor to keep exiting illustrations inside the clip. */}
+      <VStack
+        className="relative w-full min-w-0 overflow-x-clip"
+        ref={container}
+      >
         <OnboardingFrame
           demo={
             step?.demo ? (
@@ -280,7 +322,7 @@ export function OnboardingWizard({
           }
           titles={steps.map((candidate) => candidate.title)}
         />
-      </div>
+      </VStack>
     </MotionConfig>
   );
 }

@@ -31,6 +31,10 @@ export function NewRoutineButton({ agentId }: { agentId?: string }) {
       icon={<IconPlus aria-hidden />}
       label="New routine"
       size="sm"
+      style={{
+        minBlockSize: "var(--spacing-11, 2.75rem)",
+        paddingInline: "calc(var(--spacing) * 3)",
+      }}
       variant="primary"
     />
   );

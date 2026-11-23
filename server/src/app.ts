@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
-import { users } from "./db/schema";
-import { createCorsairBotWrites } from "./plugins/corsair/bot-write";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import type { WhatIfVocabulary } from "@openbot/shared/what-if";
+import { eq } from "drizzle-orm";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -99,6 +97,7 @@ import {
 } from "./credentials";
 import type { Database } from "./db/client";
 import { withoutStatement } from "./db/query-failure";
+import { users } from "./db/schema";
 import {
   createDeliveryRoutes,
   createDeliveryWebhookRoutes,
@@ -141,17 +140,18 @@ import { MAX_PAGE, type PeopleStore } from "./people/store";
 import type { BrokerProvider } from "./plugins/access";
 import type { AccountModeSwitch } from "./plugins/account-mode";
 import type { ComposioBroker } from "./plugins/broker";
+import { createCorsairBotWrites } from "./plugins/corsair/bot-write";
+import {
+  type CorsairCloudClient,
+  createCorsairCloudRoutes,
+} from "./plugins/corsair/cloud";
 import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
 import { createCorsairEventOperationRoutes } from "./plugins/corsair/event-operation-routes";
 import type { CorsairEventOperations } from "./plugins/corsair/event-operations";
 import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
-import { createCorsairReadinessRoutes } from "./plugins/corsair/readiness";
-import {
-  createCorsairCloudRoutes,
-  type CorsairCloudClient,
-} from "./plugins/corsair/cloud";
-import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createCorsairIntegrationsRoutes } from "./plugins/corsair/integrations-routes";
+import { createCorsairReadinessRoutes } from "./plugins/corsair/readiness";
+import { createGithubPilotRoutes } from "./plugins/corsair/routes";
 import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
 import { createSharedSlackPilot } from "./plugins/corsair/slack/shared-routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
@@ -192,8 +192,8 @@ import type { ModelCompleter } from "./routing/model";
 import { createRoutingRoutes } from "./routing/routes";
 import { createCoworkerRoutingService } from "./routing/service";
 import type { SelfHostBanner } from "./self-host-banner";
-import { createSkillMarketRoutes } from "./skill-market/routes";
 import { createSetupRoutes, type SetupSources } from "./setup/checklist";
+import { createSkillMarketRoutes } from "./skill-market/routes";
 import { createTaskRoutes } from "./tasks/routes";
 import type { TaskRunner } from "./tasks/runner";
 import type { TaskStore } from "./tasks/store";
@@ -641,6 +641,7 @@ export function createApp(
     context.json({
       mode: config.runtime.mode,
       durableHistory: config.runtime.durableHistory,
+      directMessageReplay: config.runtime.mode === "openbot",
       /*
        * Whether a Bot may answer with an interface it wrote itself.
        *
@@ -1460,16 +1461,34 @@ export function createApp(
       );
     }
 
-    const body = await context.req.json().catch(() => null);
+    const body: unknown = await context.req.json().catch(() => null);
     const input = credentialInput(body, context.var.actor.id);
     if (!input) {
       return context.json({ error: "Credential input is invalid." }, 400);
     }
 
-    return context.json(
-      { credential: await credentialService.create(input) },
-      201,
-    );
+    const createOnly =
+      body && typeof body === "object" && "createOnly" in body
+        ? body.createOnly
+        : undefined;
+    if (createOnly !== undefined && createOnly !== true) {
+      return context.json({ error: "Credential input is invalid." }, 400);
+    }
+    try {
+      return context.json(
+        {
+          credential: await credentialService.create(
+            createOnly ? { ...input, createOnly: true } : input,
+          ),
+        },
+        201,
+      );
+    } catch (error) {
+      if (error instanceof CredentialRefusedError) {
+        return context.json({ error: error.message }, error.status);
+      }
+      throw error;
+    }
   });
   app.post(
     "/api/admin/credentials/:credentialId/rotate",

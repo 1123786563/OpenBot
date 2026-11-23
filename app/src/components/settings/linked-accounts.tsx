@@ -6,6 +6,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,6 +39,9 @@ import {
   linkedAccountsQueryOptions,
 } from "@/lib/identity/queries";
 import { queryClient } from "@/query-client";
+
+/** A lapsed link is a warning, not metadata: the amber pair carries AA contrast in both themes. */
+const TURNS_WARN = "text-amber-700 dark:text-amber-400";
 
 export function linkedAccountDescription(account: LinkedAccount): string {
   if (account.status === "needs_reconnect") {
@@ -233,7 +237,14 @@ export function LinkedAccountSection({
             >
               {index > 0 ? <Separator /> : null}
               {entry.kind === "linked" ? (
-                <LinkedAccountRow account={entry.account} />
+                <LinkedAccountRow
+                  account={entry.account}
+                  reconnect={
+                    entry.account.status === "needs_reconnect"
+                      ? connect[entry.account.provider as LinkableProvider]
+                      : undefined
+                  }
+                />
               ) : (
                 <AvailableAccountRow
                   provider={entry.provider}
@@ -247,15 +258,36 @@ export function LinkedAccountSection({
         </PageRows>
       ) : null}
       {state.error ? (
-        <p className="mt-2 text-destructive text-sm" role="alert">
-          Couldn't load your account: {state.error}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load your account.
+          </p>
+          <Button
+            disabled={links.isFetching}
+            onClick={() => void links.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {links.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : null}
       {state.providersError ? (
-        <p className="mt-2 text-destructive text-sm" role="alert">
-          Couldn't check whether you can link this account:{" "}
-          {state.providersError}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't check whether you can link this account.
+          </p>
+          <Button
+            disabled={providers.isFetching}
+            onClick={() => void providers.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {providers.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : null}
       {issueCode.error ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
@@ -361,11 +393,25 @@ function AvailableAccountRow({
 
 /**
  * One linked account with its own disconnect, so a second click elsewhere neither re-enables this
- * row mid-request nor overwrites its error.
+ * row mid-request nor overwrites its error. A lapse (`needs_reconnect`) also carries the way back:
+ * the same connect flow that linked it, so the page never announces a problem it cannot fix.
  */
-function LinkedAccountRow({ account }: { account: LinkedAccount }) {
+function LinkedAccountRow({
+  account,
+  reconnect,
+}: {
+  account: LinkedAccount;
+  reconnect?: { pending: boolean; start: () => void };
+}) {
   const unlink = useMutation(unlinkMutationOptions(queryClient));
+  /*
+   * Disconnecting removes OpenBot's recognition of this person at the vendor, which every Bot's
+   * GitHub and Slack abilities lean on, so it asks first — the same guard the smaller per-repo
+   * disconnect already keeps.
+   */
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const Icon = providerIcon(account.provider);
+  const lapsed = account.status === "needs_reconnect";
   return (
     <>
       <Item size="sm">
@@ -374,15 +420,41 @@ function LinkedAccountRow({ account }: { account: LinkedAccount }) {
         </ItemMedia>
         <ItemContent>
           <ItemTitle>{account.title}</ItemTitle>
-          <ItemDescription>{linkedAccountDescription(account)}</ItemDescription>
+          <ItemDescription className={lapsed ? TURNS_WARN : undefined}>
+            {linkedAccountDescription(account)}
+          </ItemDescription>
         </ItemContent>
         <ItemActions>
+          {lapsed && reconnect ? (
+            <Button
+              aria-label={`Reconnect ${account.title}`}
+              size="sm"
+              type="button"
+              disabled={reconnect.pending}
+              onClick={reconnect.start}
+            >
+              Reconnect
+            </Button>
+          ) : null}
           <Button
             aria-label={`Disconnect ${account.title}`}
             size="sm"
             variant="outline"
             disabled={unlink.isPending}
-            onClick={() => unlink.mutate(account.id)}
+            onClick={(event) =>
+              requestConfirmation({
+                title: `Disconnect ${account.title}?`,
+                description: `OpenBot stops recognising you at ${account.title}${account.handle ? ` as @${account.handle}` : ""}, and anything that relied on it stops working until you link again.`,
+                confirmLabel: "Disconnect",
+                pendingLabel: "Disconnecting…",
+                failureMessage: `Couldn't disconnect ${account.title}. Try again.`,
+                variant: "destructive",
+                trigger: event.currentTarget,
+                run: async () => {
+                  await unlink.mutateAsync(account.id);
+                },
+              })
+            }
           >
             Disconnect
           </Button>
@@ -393,6 +465,7 @@ function LinkedAccountRow({ account }: { account: LinkedAccount }) {
           Couldn't disconnect {account.title}: {unlink.error.message}
         </p>
       ) : null}
+      {confirmation}
     </>
   );
 }

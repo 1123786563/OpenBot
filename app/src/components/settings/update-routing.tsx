@@ -1,14 +1,14 @@
 import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
 import { IconRoute } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Item,
   ItemContent,
@@ -18,6 +18,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setUpdateRoutingMutationOptions } from "@/lib/bot-lifecycle/mutations";
 import {
@@ -67,6 +68,9 @@ const TRANSPORTS: { id: UpdateTransport; label: string }[] = [
   { id: "sms", label: "SMS" },
 ];
 
+/** Placeholder rows while the routing loads: the four kinds, claiming nothing. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
+
 /**
  * Which channels each kind of update may use, for every one of the person's Bots at once. How much
  * a given Bot sends is that Bot's own Notifications setting, on its page.
@@ -74,7 +78,16 @@ const TRANSPORTS: { id: UpdateTransport; label: string }[] = [
 export function UpdateRoutingSection() {
   const routing = useQuery(updateRoutingQueryOptions());
   const reach = useQuery(deliveryQueryOptions());
-  const save = useMutation(setUpdateRoutingMutationOptions(queryClient));
+  const save = useMutation({
+    ...setUpdateRoutingMutationOptions(queryClient),
+    /*
+     * A switch that silently springs back is a tap that "didn't take": the revert is right (the
+     * server refused), and this line under the switches says so instead of nothing at all.
+     */
+    onError: () => setSaveFailed(true),
+    onMutate: () => setSaveFailed(false),
+  });
+  const [saveFailed, setSaveFailed] = useState(false);
   /*
    * Who can turn a channel on: an admin, or the one person running OpenBot themselves (the same rule as Settings,
    * Setup). They get the way to; anyone else is told it's their admin's to do.
@@ -117,10 +130,44 @@ export function UpdateRoutingSection() {
       }
       title="Where updates go"
     >
-      {routing.isPending || reach.isPending ? null : routing.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load where your updates go. Reload the page.
-        </p>
+      {routing.isPending || reach.isPending ? (
+        <div
+          aria-busy="true"
+          aria-label="Loading where updates go"
+          role="status"
+        >
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <Skeleton className="size-full" />
+                  </ItemMedia>
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-36" />
+                    <Skeleton className="h-3 w-64" />
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </div>
+      ) : routing.error ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load where your updates go.
+          </p>
+          <Button
+            disabled={routing.isFetching}
+            onClick={() => void routing.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {routing.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : shown.length === 0 ? (
         <PageEmpty
           action={
@@ -182,6 +229,16 @@ export function UpdateRoutingSection() {
                               : selected,
                         });
                       };
+                      /*
+                       * A channel switched on whose newest delivery failed is a promise the page
+                       * breaks silently: the switch says SMS, nothing arrives. The reason (the
+                       * delivery's own error) is on the hint's tooltip.
+                       */
+                      const latest = reach.data?.deliveries.find(
+                        (delivery) => delivery.transport === id,
+                      );
+                      const notGettingThrough =
+                        checked && latest?.state === "failed";
                       return (
                         <div
                           className="flex items-center gap-2 text-sm"
@@ -198,6 +255,14 @@ export function UpdateRoutingSection() {
                           <span className="leading-tight whitespace-nowrap">
                             {label}
                           </span>
+                          {notGettingThrough ? (
+                            <span
+                              className="leading-tight text-amber-700 text-xs dark:text-amber-400"
+                              title={latest.error ?? undefined}
+                            >
+                              Recent deliveries are failing.
+                            </span>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -208,6 +273,31 @@ export function UpdateRoutingSection() {
           })}
         </PageRows>
       )}
+      {saveFailed ? (
+        <p className="mt-4 text-destructive text-sm" role="alert">
+          Couldn't save that. The switches show what the server last saved.
+        </p>
+      ) : null}
+      {/*
+       * The channels read failing costs the switches their setup state, not the page its
+       * preferences, so it is said beside them rather than instead of them.
+       */}
+      {!routing.isPending && !reach.isPending && reach.error ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't check which channels are set up.
+          </p>
+          <Button
+            disabled={reach.isFetching}
+            onClick={() => void reach.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {reach.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      ) : null}
     </PageSection>
   );
 }

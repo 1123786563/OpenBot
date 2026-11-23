@@ -1,8 +1,17 @@
+import { Button } from "@astryxdesign/core/Button";
 import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import {
+  type MouseEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Streamdown } from "streamdown";
+import { z } from "zod";
 import {
   QuestionNotice,
   type WaitingQuestion,
@@ -21,6 +30,12 @@ import {
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
+  composeDraftKey,
+  readComposeDraft,
+  writeComposeDraft,
+} from "@/lib/channels/compose-draft";
+import {
+  awaitingFirstReply,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
@@ -40,6 +55,23 @@ import {
 } from "./conversation-status";
 import { TeamBotConsentCard } from "./team-bot-consent";
 
+const groupSubmission = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("message"),
+    id: z.string(),
+    text: z.string(),
+    agentId: z.string().nullable(),
+  }),
+  z.object({
+    kind: z.literal("answer"),
+    id: z.string(),
+    text: z.string(),
+    agentId: z.string().nullable(),
+  }),
+]);
+
+let activityReturn: { entry: string; messageId: string } | undefined;
+
 /**
  * One conversation with several Bots, read from the server's shared transcript.
  *
@@ -53,20 +85,36 @@ import { TeamBotConsentCard } from "./team-bot-consent";
  * unless they address another Bot. The server puts the answer in the transcript and runs the Bot
  * that asked on it (`approvals/questions.ts`).
  */
-export function GroupChat({ channelId }: { channelId: string }) {
+export function GroupChat({
+  channelId,
+  historyEntry,
+}: {
+  channelId: string;
+  historyEntry?: string;
+}) {
+  const [returningFromActivity] = useState(() =>
+    activityReturn?.entry === historyEntry ? activityReturn : undefined,
+  );
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
+  const draftEntry = `group:${encodeURIComponent(channelId)}`;
+  const draftKey = composeDraftKey(me?.id, draftEntry, "message");
+  const submissionKey = composeDraftKey(me?.id, draftEntry, "submission");
   const send = useMutation(
     sendGroupMessageMutationOptions(queryClient, channelId),
   );
-  const pendingMessage = useRef<{
-    id: string;
-    text: string;
-    agentId: string | null;
-  } | null>(null);
+  const pendingSubmission = useRef<z.infer<typeof groupSubmission> | undefined>(
+    undefined,
+  );
   const bots = group.data?.bots ?? [];
   const names = new Map(bots.map((bot) => [bot.id, bot.name]));
+  const people = new Map(
+    group.data?.people.map((person) => [
+      person.userId,
+      person.name ?? person.email,
+    ]),
+  );
   const messages = group.data?.messages ?? [];
   const working = messages.some(
     (message) => message.status === "running" || message.status === "queued",
@@ -80,8 +128,8 @@ export function GroupChat({ channelId }: { channelId: string }) {
     (bot) => bot.id === askerId,
   );
   const answer = useMutation(answerPersonQuestionMutationOptions(queryClient));
-  const answerTo = async (text: string, asked: WaitingQuestion) => {
-    await answer.mutateAsync({ id: asked.id, response: text });
+  const answerTo = async (text: string, questionId: string) => {
+    await answer.mutateAsync({ id: questionId, response: text });
     // The answer is in the transcript now, and the Bot's turn on it is queued.
     await queryClient.invalidateQueries({
       queryKey: groupKeys.detail(channelId),
@@ -108,11 +156,17 @@ export function GroupChat({ channelId }: { channelId: string }) {
    * And it followed every new line unconditionally, pulling somebody reading an earlier answer back
    * down each time a Bot spoke; `atBottom` is where the reader was at their last scroll.
    */
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLElement | null>(null);
+  const restoredActivityFocus = useRef<HTMLElement | null>(null);
   const atBottom = useRef(true);
   // Once per mount, which is once per channel: the route keys `GroupChat` on its channel id.
   const landed = useRef(false);
   const newest = messages.at(-1);
+  const awaitingReply =
+    newest?.agentId === null && bots.length > 0 && !question;
+  // Reading dataUpdatedAt keeps this status current even if a poll returns the same transcript.
+  const checkingForReply =
+    awaitingReply && group.dataUpdatedAt > 0 && awaitingFirstReply(newest);
   const newestIsMine = newest !== undefined && newest.ownerUserId === me?.id;
   const lastKey = `${messages.length}:${newest?.status ?? ""}`;
   useLayoutEffect(() => {
@@ -131,6 +185,24 @@ export function GroupChat({ channelId }: { channelId: string }) {
     }
   }, [lastKey, newestIsMine]);
 
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!returningFromActivity || !group.data || !viewport) return;
+    if (activityReturn === returningFromActivity) activityReturn = undefined;
+    if (
+      restoredActivityFocus.current?.isConnected ||
+      document.activeElement !== document.body
+    )
+      return;
+    const link = viewport.querySelector<HTMLElement>(
+      `[data-reply-activity="${CSS.escape(returningFromActivity.messageId)}"]`,
+    );
+    const target = link ?? viewport;
+    target.focus();
+    restoredActivityFocus.current = target;
+    atBottom.current = isNearBottom(viewport);
+  }, [group.data, returningFromActivity]);
+
   if (group.isPending)
     return <ConversationLoading label="Opening group conversation…" />;
   if (!group.data) {
@@ -138,8 +210,9 @@ export function GroupChat({ channelId }: { channelId: string }) {
       <Stack padding={5}>
         <ConversationReadError
           title="Couldn't open this group conversation."
-          description="Try again to load messages and participants."
+          description="The messages and participant list are unavailable."
           retry={() => void group.refetch()}
+          retryBelow
           retrying={group.isFetching}
         />
       </Stack>
@@ -153,26 +226,24 @@ export function GroupChat({ channelId }: { channelId: string }) {
           title="Couldn't update group messages."
           description="You can still read the messages already loaded."
           retry={() => void group.refetch()}
+          retryBelow
           retrying={group.isFetching}
         />
       )}
-      <div
+      <section
+        aria-label="Group messages"
         className="min-h-0 flex-1 overflow-y-auto"
         onScroll={(event) => {
           atBottom.current = isNearBottom(event.currentTarget);
         }}
         ref={viewportRef}
+        style={{ paddingInline: "var(--spacing-4, 1rem)" }}
+        tabIndex={-1}
       >
         <div
           className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-6"
           data-transcript-column
         >
-          {messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Say something to {bots.map((bot) => bot.name).join(" and ")}.
-              Every Bot answers in turn; start with @Name to ask just one.
-            </p>
-          ) : null}
           {messages.map((message) => (
             <GroupLine
               key={message.id}
@@ -182,7 +253,7 @@ export function GroupChat({ channelId }: { channelId: string }) {
                   ? (names.get(message.agentId) ?? "A Bot no longer here")
                   : message.ownerUserId === me?.id
                     ? "You"
-                    : "A teammate"
+                    : (people.get(message.ownerUserId) ?? "A teammate")
               }
               answeredBy={
                 message.answeredBy
@@ -190,20 +261,67 @@ export function GroupChat({ channelId }: { channelId: string }) {
                   : undefined
               }
               mine={message.ownerUserId === me?.id}
+              available={message.agentId !== null && names.has(message.agentId)}
+              rememberActivityLink={(event) => {
+                if (
+                  historyEntry &&
+                  event.button === 0 &&
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  !event.shiftKey &&
+                  !event.altKey
+                ) {
+                  activityReturn = {
+                    entry: historyEntry,
+                    messageId: message.id,
+                  };
+                }
+              }}
             />
           ))}
+          {awaitingReply && (
+            <Stack align="start" gap={1}>
+              <Text as="p" type="supporting" role="status">
+                {checkingForReply
+                  ? "Message sent. No Bot reply yet."
+                  : "No Bot reply received. Automatic refresh has stopped."}
+              </Text>
+              {!checkingForReply && !group.isError && (
+                <Button
+                  className="conversation-recovery-action"
+                  label="Refresh messages"
+                  variant="ghost"
+                  size="lg"
+                  isLoading={group.isFetching}
+                  clickAction={async (event) => {
+                    const button = event.currentTarget;
+                    const restoreFocus = document.activeElement === button;
+                    await group.refetch();
+                    if (!restoreFocus) return;
+                    requestAnimationFrame(() => {
+                      if (
+                        !button.isConnected &&
+                        document.activeElement === document.body
+                      )
+                        viewportRef.current?.focus({ preventScroll: true });
+                    });
+                  }}
+                />
+              )}
+            </Stack>
+          )}
         </div>
-      </div>
+      </section>
       {/* The same column and the same compact composer as a conversation with one Bot. */}
       <div className="mx-auto w-full max-w-2xl shrink-0 pb-4">
         {send.error ? (
-          <p className="pb-2 text-sm text-destructive" role="alert">
+          <p className="px-4 pb-2 text-sm text-destructive" role="alert">
             Couldn't confirm your message was sent. Your draft is still here.
             Send it again to retry.
           </p>
         ) : null}
         {answer.error ? (
-          <p className="pb-2 text-sm text-destructive" role="alert">
+          <p className="px-4 pb-2 text-sm text-destructive" role="alert">
             Couldn't confirm your answer. Check whether the question is still
             waiting before replying again.
           </p>
@@ -219,34 +337,71 @@ export function GroupChat({ channelId }: { channelId: string }) {
               botName={
                 (askerId && names.get(askerId)) || asker?.name || "A Bot"
               }
-              onAnswered={(text) => answerTo(text, question)}
+              onAnswered={(text) => answerTo(text, question.id)}
               question={question}
             />
           </div>
+        ) : null}
+        {!question ? (
+          <Stack
+            style={{
+              paddingInline: "var(--spacing-4)",
+              paddingBlockEnd: "var(--spacing-2)",
+            }}
+          >
+            <Text as="p" type="supporting">
+              {bots.length === 0
+                ? "No Bots are available to reply."
+                : bots.length === 1
+                  ? `Replies come from ${bots[0]?.name}.`
+                  : "All Bots reply in order. Type @ to ask one Bot."}
+            </Text>
+          </Stack>
         ) : null}
         <Composer
           agents={toAgentOptions(bots)}
           className="relative mt-auto w-full"
           commands={[]}
           compact
+          draftStorageKey={draftKey}
           disabled={bots.length === 0}
+          key={draftKey}
           pending={send.isPending || answer.isPending || working}
-          autoFocus
+          autoFocus={!returningFromActivity}
           onSubmit={async (draft) => {
             if (!draft.text) return;
-            if (question && (!draft.agentId || draft.agentId === askerId)) {
-              await answerTo(draft.text, question);
-              return;
-            }
-            const previous = pendingMessage.current;
-            const message =
+            const previous = submissionKey
+              ? readComposeDraft(submissionKey, groupSubmission)
+              : pendingSubmission.current;
+            const matching =
               previous?.text === draft.text &&
-              previous.agentId === draft.agentId
-                ? previous
-                : { id: newId(), text: draft.text, agentId: draft.agentId };
-            pendingMessage.current = message;
-            await send.mutateAsync(message);
-            pendingMessage.current = null;
+              previous.agentId === draft.agentId;
+            const submission: z.infer<typeof groupSubmission> = matching
+              ? previous
+              : question && (!draft.agentId || draft.agentId === askerId)
+                ? {
+                    kind: "answer",
+                    id: question.id,
+                    text: draft.text,
+                    agentId: draft.agentId,
+                  }
+                : {
+                    kind: "message",
+                    id: newId(),
+                    text: draft.text,
+                    agentId: draft.agentId,
+                  };
+            pendingSubmission.current = submission;
+            writeComposeDraft(submissionKey, submission);
+            if (submission.kind === "answer") {
+              await answerTo(submission.text, submission.id);
+            } else {
+              const { id, text, agentId } = submission;
+              await send.mutateAsync({ id, text, agentId });
+            }
+            writeComposeDraft(draftKey);
+            writeComposeDraft(submissionKey);
+            pendingSubmission.current = undefined;
           }}
         />
       </div>
@@ -271,11 +426,15 @@ function GroupLine({
   name,
   answeredBy,
   mine,
+  available,
+  rememberActivityLink,
 }: {
   message: GroupMessage;
   name: string;
   answeredBy?: string;
   mine: boolean;
+  available: boolean;
+  rememberActivityLink: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   if (message.agentId === null)
     return (
@@ -310,7 +469,7 @@ function GroupLine({
             className="tool-line-running text-sm text-muted-foreground"
             role="status"
           >
-            Thinking
+            {message.status === "queued" ? "Waiting to reply" : "Thinking"}
           </p>
         ) : message.status === "waiting" ? (
           <p className="text-sm text-muted-foreground">
@@ -338,9 +497,39 @@ function GroupLine({
             </p>
           )
         ) : message.status === "failed" ? (
-          <p className="text-sm text-destructive" role="alert">
-            {message.text || "This Bot couldn't answer."}
-          </p>
+          <Stack gap={1}>
+            <Text
+              as="p"
+              role="status"
+              style={{ color: "var(--color-text-error)" }}
+              weight="semibold"
+            >
+              {name} couldn’t finish replying.
+            </Text>
+            {message.text && (
+              <Text as="p" type="supporting" wordBreak="break-word">
+                {message.text}
+              </Text>
+            )}
+            <Text as="p" type="supporting">
+              {!available
+                ? "Choose an available Bot to continue."
+                : mine
+                  ? "If the request involved taking an action, check whether it went through before asking again."
+                  : "If an action was requested, ask the teammate who sent the message to check the outcome before trying again."}
+            </Text>
+            {mine && available && (
+              <Link
+                className="recovery-link"
+                data-reply-activity={message.id}
+                onClick={rememberActivityLink}
+                params={{ agentId: message.agentId }}
+                to="/bots/$agentId/activity"
+              >
+                View {name} activity
+              </Link>
+            )}
+          </Stack>
         ) : (
           <Bubble
             align="start"

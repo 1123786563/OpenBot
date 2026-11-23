@@ -21,6 +21,10 @@ export class ClientError extends Error {
   }
 }
 
+export function canKeepCachedRead(error: Error | null): boolean {
+  return !(error instanceof ClientError) || error.status >= 500;
+}
+
 export type ClientOptions = {
   /** Absent means GET. */
   method?: string;

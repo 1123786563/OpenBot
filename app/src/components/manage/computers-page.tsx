@@ -1,9 +1,5 @@
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
-import {
-  IconAlertTriangle,
-  IconBolt,
-  IconDeviceDesktop,
-} from "@tabler/icons-react";
+import { IconBolt, IconDeviceDesktop } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -19,6 +15,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import {
   Dialog,
@@ -113,22 +110,10 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
 
   const computers = fleet.data?.computers ?? null;
   const isolation = fleet.data?.isolation ?? null;
-  /*
-   * A list that could not be read. A refused stop, reset or update is said beside the buttons
-   * instead, because the top of this page is a long scroll away from them.
-   */
-  const problem = fleet.error
-    ? "Couldn't load the computers. Reload the page."
-    : null;
-  const hostProblem = hostAccess.error
-    ? hostAccess.error.message
-    : requestGrant.error
-      ? requestGrant.error.message
-      : revokeGrant.error
-        ? revokeGrant.error.message
-        : stopHostAccess.error
-          ? stopHostAccess.error.message
-          : null;
+  const hostWriteError =
+    requestGrant.error ?? revokeGrant.error ?? stopHostAccess.error;
+  const hostReadFailed = hostAccess.isError || agents.isError;
+  const hostLoading = hostAccess.isPending || agents.isPending;
 
   const run = (
     computer: ComputerProfile,
@@ -173,7 +158,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
     return computer.botId ? nameFor(computer.botId) : computer.computer;
   };
 
-  /** What a row carries, said once before its state. */
+  /** Which profiles and files a computer holds. */
   const scopeOf = (computer: ComputerProfile): string => {
     if (isOwnBrowser(computer)) return "Their own browser for Teach a Bot";
     if (computer.kind === "person") {
@@ -211,61 +196,6 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
       }
       title={personal ? "Computer" : "Computers"}
     >
-      {problem ? (
-        <p
-          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
-          role="alert"
-        >
-          {problem}
-        </p>
-      ) : null}
-
-      {personal ? null : isolation === "shared" ? (
-        <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-          <span className="font-medium">
-            Every person's Bots run on one computer.
-          </span>{" "}
-          Each person keeps their own browser profile and folder for each Bot,
-          so logins aren't shared. A command one Bot runs can still read
-          another's files. Set <code>COMPUTER_SUPERVISOR_URL</code> to give each
-          person a computer of their own.
-        </p>
-      ) : isolation === "per-person" ? (
-        <p className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
-          Each person has their own computer, and every Bot they use runs on it,
-          public Bots made by other people included. Each Bot keeps its own
-          browser profile and folder there, but a command one Bot runs can reach
-          anything else on that person's computer. An isolated Bot has a
-          computer of its own.
-        </p>
-      ) : null}
-
-      <HostFoldersSection
-        connected={hostAccess.data?.connected ?? false}
-        desktop={hostAccess.data?.desktop !== false}
-        grants={hostAccess.data?.grants ?? []}
-        botIds={(agents.data ?? []).map((agent) => agent.id)}
-        loading={hostAccess.isPending || agents.isPending}
-        nameFor={nameFor}
-        onGrant={(botId) => requestGrant.mutate({ botId })}
-        onRevoke={(grantId) => revokeGrant.mutate({ grantId })}
-        onStop={() => stopHostAccess.mutate()}
-        pending={hostAccess.data?.pending ?? []}
-        personal={personal}
-        problem={hostProblem}
-        requestingBotId={
-          requestGrant.isPending
-            ? (requestGrant.variables?.botId ?? null)
-            : null
-        }
-        revokingGrantId={
-          revokeGrant.isPending
-            ? (revokeGrant.variables?.grantId ?? null)
-            : null
-        }
-        stopping={stopHostAccess.isPending}
-      />
-
       <PageSection
         title={
           personal ? "Your Bots' browsers" : "Computers in this deployment"
@@ -279,9 +209,28 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
             {setState.error.message}
           </p>
         ) : null}
-        {computers === null && problem ? (
-          <PageEmpty icon={IconAlertTriangle} title="Couldn't load the list" />
-        ) : computers === null ? null : computers.length === 0 ? (
+        {fleet.isError ? (
+          <ReadError
+            description={
+              computers?.length
+                ? "Showing device information from the last successful check."
+                : undefined
+            }
+            message={
+              computers?.length
+                ? "Couldn't refresh device status."
+                : "Couldn't load the device list."
+            }
+            retry={fleet.refetch}
+            retryBelow
+            retrying={fleet.isFetching}
+          />
+        ) : fleet.isPending ? (
+          <ReadStatus kind="loading" message="Loading devices…" />
+        ) : null}
+        {computers === null ||
+        (fleet.isError && computers.length === 0) ? null : computers.length ===
+          0 ? (
           <PageEmpty
             icon={IconDeviceDesktop}
             title={personal ? "No browsers yet" : "No computers yet"}
@@ -295,26 +244,37 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
             {computers.map((computer, index) => (
               <StaggerItem index={index} key={rowId(computer)}>
                 <Item size="sm">
-                  <ItemContent>
-                    <ItemTitle title={computer.computer}>
+                  <ItemContent className="min-w-0 basis-full sm:basis-auto">
+                    <ItemTitle
+                      className="line-clamp-none block wrap-anywhere"
+                      title={computer.computer}
+                    >
                       {titleOf(computer)}
                     </ItemTitle>
-                    <ItemDescription>
-                      {personal ? null : `${scopeOf(computer)} · `}
+                    <ItemDescription className="line-clamp-none text-sm">
                       {stateOf(computer)}
-                      {personal
-                        ? null
-                        : ` · ${
-                            computer.egress === undefined
-                              ? "Egress not reported"
-                              : computer.egress === null
-                                ? "Leaves directly"
-                                : `Leaves through ${computer.egress}`
-                          }`}
-                      {computer.updateAvailable ? " · Update available" : ""}
                     </ItemDescription>
+                    {personal ? null : (
+                      <>
+                        <ItemDescription className="line-clamp-none text-sm">
+                          {scopeOf(computer)}
+                        </ItemDescription>
+                        <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
+                          {computer.egress === undefined
+                            ? "Network route not reported"
+                            : computer.egress === null
+                              ? "Connects directly"
+                              : `Leaves through ${computer.egress}`}
+                        </ItemDescription>
+                      </>
+                    )}
+                    {computer.updateAvailable ? (
+                      <ItemDescription className="text-sm">
+                        Update available
+                      </ItemDescription>
+                    ) : null}
                   </ItemContent>
-                  <ItemActions>
+                  <ItemActions className="max-w-full flex-wrap">
                     {computer.updateAvailable ? (
                       <DeviceAction
                         disabled={busy === rowId(computer)}
@@ -362,6 +322,72 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
           </PageRows>
         )}
       </PageSection>
+
+      {personal ? null : isolation === "shared" ? (
+        <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          <span className="font-medium">
+            Every person's Bots run on one computer.
+          </span>{" "}
+          Each person keeps their own browser profile and folder for each Bot,
+          so logins aren't shared. A command one Bot runs can still read
+          another's files. Set <code>COMPUTER_SUPERVISOR_URL</code> to give each
+          person a computer of their own.
+        </p>
+      ) : isolation === "per-person" ? (
+        <p className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
+          Each person has their own computer, and every Bot they use runs on it,
+          public Bots made by other people included. Each Bot keeps its own
+          browser profile and folder there, but a command one Bot runs can reach
+          anything else on that person's computer. An isolated Bot has a
+          computer of its own.
+        </p>
+      ) : null}
+
+      <HostFoldersSection
+        connected={hostAccess.data?.connected ?? false}
+        desktop={hostAccess.data?.desktop !== false}
+        grants={hostAccess.data?.grants ?? []}
+        botIds={(agents.data ?? []).map((agent) => agent.id)}
+        loading={hostLoading}
+        nameFor={nameFor}
+        onGrant={(botId) => requestGrant.mutate({ botId })}
+        onRevoke={(grantId) => revokeGrant.mutate({ grantId })}
+        onStop={() => stopHostAccess.mutate()}
+        pending={hostAccess.data?.pending ?? []}
+        personal={personal}
+        problem={hostWriteError?.message ?? null}
+        readStatus={
+          hostReadFailed ? (
+            <ReadError
+              message="Couldn't check folder access."
+              description={
+                hostAccess.data
+                  ? "Some folder or Bot details may be out of date."
+                  : undefined
+              }
+              retry={() =>
+                Promise.all([hostAccess.refetch(), agents.refetch()])
+              }
+              retryBelow
+              retrying={hostAccess.isFetching || agents.isFetching}
+            />
+          ) : hostLoading ? (
+            <ReadStatus kind="loading" message="Checking folder access…" />
+          ) : null
+        }
+        readingUnavailable={hostReadFailed}
+        requestingBotId={
+          requestGrant.isPending
+            ? (requestGrant.variables?.botId ?? null)
+            : null
+        }
+        revokingGrantId={
+          revokeGrant.isPending
+            ? (revokeGrant.variables?.grantId ?? null)
+            : null
+        }
+        stopping={stopHostAccess.isPending}
+      />
 
       {/*
        * A DIALOG RATHER THAN AN INLINE CONFIRM. Resetting signs a Bot out of everything it has ever
@@ -519,6 +545,8 @@ type HostFoldersSectionProps = {
    */
   personal: boolean;
   problem: string | null;
+  readStatus: ReactNode;
+  readingUnavailable: boolean;
   requestingBotId: string | null;
   revokingGrantId: string | null;
   stopping: boolean;
@@ -537,6 +565,8 @@ function HostFoldersSection({
   pending,
   personal,
   problem,
+  readStatus,
+  readingUnavailable,
   requestingBotId,
   revokingGrantId,
   stopping,
@@ -556,6 +586,7 @@ function HostFoldersSection({
       description="Choose folders a Bot can read on this computer. The desktop app asks before each edit or command. Access ends when you stop OpenBot."
       title="Folders on this computer"
     >
+      {readStatus}
       {problem ? (
         <p
           className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
@@ -565,7 +596,7 @@ function HostFoldersSection({
         </p>
       ) : null}
 
-      {desktop && !connected && !loading ? (
+      {desktop && !connected && !loading && !readingUnavailable ? (
         <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
           The desktop app is offline. Open it to approve folders or run
           commands.
@@ -578,17 +609,21 @@ function HostFoldersSection({
           let Bots read folders on this computer.
         </PageEmpty>
       ) : botIds.length === 0 ? (
-        <PageEmpty icon={IconBolt} title="No Bots yet">
-          Create one, then choose its folders.
-        </PageEmpty>
+        readingUnavailable ? null : (
+          <PageEmpty icon={IconBolt} title="No Bots yet">
+            Create one, then choose its folders.
+          </PageEmpty>
+        )
       ) : (
         <PageRows>
           {botIds.map((botId, index) => (
             <StaggerItem index={index} key={botId}>
               <Item size="sm">
-                <ItemContent>
-                  <ItemTitle>{nameFor(botId)}</ItemTitle>
-                  <ItemDescription>
+                <ItemContent className="min-w-0 basis-full">
+                  <ItemTitle className="line-clamp-none block wrap-anywhere">
+                    {nameFor(botId)}
+                  </ItemTitle>
+                  <ItemDescription className="line-clamp-none text-sm">
                     {summaryFor(botId, grants, pending)}
                   </ItemDescription>
                   <FolderGrantList
@@ -671,14 +706,16 @@ function FolderGrantList({
           className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2"
           key={grant.id}
         >
-          <div className="min-w-0">
-            <p className="truncate font-medium text-sm">{grant.displayName}</p>
-            <p className="text-muted-foreground text-xs">
+          <ItemContent className="min-w-0">
+            <p className="wrap-anywhere font-medium text-sm">
+              {grant.displayName}
+            </p>
+            <p className="wrap-anywhere text-muted-foreground text-sm">
               {personal
                 ? "Read-only"
                 : `Approved by ${ownerLabel(grant)} · Read-only`}
             </p>
-          </div>
+          </ItemContent>
           <DeviceAction
             disabled={revokingGrantId === grant.id}
             onClick={() => onRevoke(grant.id)}
@@ -691,7 +728,7 @@ function FolderGrantList({
       ))}
       {botPending.map((request) => (
         <div
-          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+          className="wrap-anywhere rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
           key={request.operationId}
         >
           {pendingSentence(request, personal)}

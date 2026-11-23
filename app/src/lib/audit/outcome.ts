@@ -1,6 +1,7 @@
 /**
  * Whether a row in the trail is something this deployment turned away, something that was allowed
- * and then did not happen, or something that went through.
+ * and then did not happen, something that went through, or an approval event without an allow
+ * or block verdict.
  *
  * THE TWO PLACES THAT DECIDE THIS HAVE TO BE ONE PLACE. The audit page asks the question twice: once
  * to colour and label a row, and once to build the `eventType` list behind the `Blocked` and
@@ -114,7 +115,11 @@ export {
   oneRowPerAction,
 } from "@openbot/shared/activity-rows";
 
-export type AuditOutcome = "refused" | "did-not-happen" | "allowed";
+export type AuditOutcome =
+  | "refused"
+  | "did-not-happen"
+  | "allowed"
+  | "no-verdict";
 
 const REFUSED = new Set<string>(REFUSED_EVENT_TYPES);
 const DID_NOT_HAPPEN = new Set<string>(DID_NOT_HAPPEN_EVENT_TYPES);
@@ -126,7 +131,8 @@ type Row = { eventType: string; payload?: Record<string, unknown> };
  *
  * Mostly its type. The two approval rows are the exception, because one type covers every answer:
  * `approval.person_decided` is a person allowing or denying, and `approval.evaluated` is the gate
- * allowing, asking or refusing. Read by type alone, a denial was drawn as "Allowed". They stay out of
+ * allowing, asking, handing off or refusing. Only an explicit allow decision counts as allowed.
+ * Both types stay out of
  * the Blocked view, whose list is by type; the action a denial stopped is there as its own row.
  */
 export function outcomeOf(row: string | Row): AuditOutcome {
@@ -143,14 +149,26 @@ export function outcomeOf(row: string | Row): AuditOutcome {
     if (payload.outcome === "failed" || payload.outcome === "stopped")
       return "did-not-happen";
   }
-  if (eventType === "approval.person_decided" && payload?.decision === "deny")
-    return "refused";
-  if (
-    eventType === "approval.evaluated" &&
-    (payload?.outcome as { behaviour?: unknown } | undefined)?.behaviour ===
-      "deny"
-  )
-    return "refused";
+  if (eventType === "approval.person_decided") {
+    switch (payload?.decision) {
+      case "deny":
+        return "refused";
+      case "allow_once":
+      case "allow_conversation":
+      case "allow_always":
+        return "allowed";
+      default:
+        return "no-verdict";
+    }
+  }
+  if (eventType === "approval.evaluated") {
+    const gate = payload?.outcome;
+    if (gate && typeof gate === "object" && "behaviour" in gate) {
+      if (gate.behaviour === "deny") return "refused";
+      if (gate.behaviour === "allow") return "allowed";
+    }
+  }
+  if (eventType.startsWith("approval.")) return "no-verdict";
   return "allowed";
 }
 

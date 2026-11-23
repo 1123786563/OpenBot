@@ -400,7 +400,12 @@ function RouteComponent() {
         brokered: brokeredAccountsListedOn(listed),
         connected,
         links: links.data ?? [],
-        providers: providers.data,
+        /*
+         * A failed links read must not offer GitHub and Slack as connectable: with no list, a
+         * connected account is indistinguishable from none, and a Connect tile over one invites a
+         * redundant link. Omitted, the section's own alert ("so they aren't listed") is then true.
+         */
+        providers: links.isError ? undefined : providers.data,
         corsair,
       })
     : connectionRows({
@@ -409,7 +414,7 @@ function RouteComponent() {
         shared: sharedAccountsListedOn(listed),
         connected,
         links: links.data ?? [],
-        providers: providers.data,
+        providers: links.isError ? undefined : providers.data,
         corsair,
       });
   const matching = rows.filter((row) =>
@@ -919,7 +924,8 @@ function ConnectionStateLabel({
   if (state === "team") {
     /*
      * The same shape as "Connected" above — mark, then word — so every tile in the grid answers
-     * "what state is this in?" the same way; a bare phrase read as a subtitle, not a state.
+     * "what state is this in?" the same way. Kept to two words: a longer label squeezed the tile's
+     * description column until its sentence clipped mid-word.
      */
     return (
       <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -927,7 +933,7 @@ function ConnectionStateLabel({
           aria-hidden="true"
           className="size-3.5 text-emerald-600 dark:text-emerald-400"
         />
-        Connected · team account
+        Team account
       </span>
     );
   }

@@ -3,9 +3,9 @@ import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import { appConfig } from "@/lib/generated/application-config";
+import { DemoStage } from "../demo-stage";
 import { LaptopIllustration } from "../laptop-illustration";
 import { OrganizationFlow } from "../organization-flow";
-import { DemoStage } from "../demo-stage";
 
 /** Every framework the New Bot wizard offers by name; "an agent you already run" is the sentence. */
 export const FRAMEWORKS = WEB_HARNESSES.filter(
@@ -60,21 +60,21 @@ function Panel({ panel }: { panel: (typeof PANELS)[number] }) {
 /**
  * Running it yourself: on this computer, with the agents you already have, and for your
  * organization. The three local-evaluation slides as one picture that turns through them.
- * With reduced motion the three sit one above the other.
+ * Reduced motion holds the local setup illustration.
  */
 export function SelfHostDemo() {
   return (
     <DemoStage
       beats={PANELS.length}
       beatMs={3200}
-      className="flex min-h-[22rem] flex-col justify-center gap-10 px-4 py-8 sm:px-6"
+      className="flex min-h-64 flex-col justify-center px-4 py-6 sm:px-6 lg:min-h-88 lg:py-8"
       kind="self-host"
       label={`${PRODUCT} on a laptop; frameworks that work as Bots: ${FRAMEWORKS.map((harness) => harness.name).join(", ")}; and your organization signing in with Google, Microsoft or Okta`}
-      rest={-1}
+      rest={0}
     >
       {({ beat, reduced }) =>
         reduced ? (
-          PANELS.map((panel) => <Panel key={panel.id} panel={panel} />)
+          <Panel panel={PANELS[0]} />
         ) : (
           <AnimatePresence initial={false} mode="wait">
             <motion.div

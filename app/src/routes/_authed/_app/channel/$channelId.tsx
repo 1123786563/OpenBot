@@ -141,7 +141,7 @@ function RouteComponent() {
                 size={22}
               />
             </motion.div>
-            <motion.span
+            <motion.h1
               animate={
                 prefersReducedMotion
                   ? { opacity: 1 }
@@ -159,8 +159,8 @@ function RouteComponent() {
                 ease: EASE_OUT,
               }}
             >
-              {channel.data?.name ?? "Channel"}
-            </motion.span>
+              {channel.data?.name ?? "Conversation"}
+            </motion.h1>
           </div>
           <div className="flex flex-row gap-1.5">
             <ComputerChatControls
@@ -247,6 +247,7 @@ function ChannelBody({
     />
   );
 }
+
 import { Stack } from "@astryxdesign/core/Stack";
 import {
   ConversationLoading,

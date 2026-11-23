@@ -13,6 +13,7 @@ import {
   type ReplayRow,
   ReplayRows,
 } from "@/components/boundaries/dry-run-changes";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -80,11 +81,13 @@ export function RuleRowsEditor({
   rules,
   problems,
   onChange,
+  onRemove,
 }: {
   rules: ApprovalRuleInput[];
   /** From the check of the rules as they stand, which runs as they are edited. */
   problems: RuleRowProblem[];
   onChange: (rules: ApprovalRuleInput[]) => void;
+  onRemove: (index: number, rule: ApprovalRuleInput) => void;
 }) {
   const bots = useQuery(agentListQueryOptions());
   const set = (index: number, change: Partial<ApprovalRuleInput>) =>
@@ -117,9 +120,7 @@ export function RuleRowsEditor({
                   </FieldLegend>
                   <Button
                     aria-label={`Remove rule ${row}`}
-                    onClick={() =>
-                      onChange(rules.filter((_, at) => at !== index))
-                    }
+                    onClick={() => onRemove(index, rule)}
                     size="icon-sm"
                     type="button"
                     variant="ghost"
@@ -328,19 +329,32 @@ function replayRowOf(change: BacktestChange): ReplayRow {
 export function RulesBacktest({
   preview,
   asksMore,
+  settling,
 }: {
   preview: UseQueryResult<ApprovalRulesPreview>;
   /** Whether a rule asks or hands off, which can reach actions the trail never recorded. */
   asksMore: boolean;
+  settling: boolean;
 }) {
-  if (preview.isPending) return null;
   return (
     <Field aria-labelledby="rules-backtest" aria-live="polite">
       <FieldLabel id="rules-backtest">On recent activity</FieldLabel>
-      {preview.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {preview.error.message}
-        </p>
+      {settling ? (
+        <ReadStatus kind="loading" message="Checking the current rules…" />
+      ) : preview.error ? (
+        <ReadError
+          message={preview.error.message}
+          retry={() => preview.refetch()}
+          retryLabel="Retry preview"
+          retrying={preview.isFetching}
+        />
+      ) : preview.fetchStatus === "paused" ? (
+        <ReadStatus
+          kind="loading"
+          message="Waiting for a connection to check the rules…"
+        />
+      ) : preview.isFetching || !preview.data ? (
+        <ReadStatus kind="loading" message="Checking the current rules…" />
       ) : preview.data.report.scanned === 0 ? (
         <FieldDescription>
           No checked actions to test against yet. You'll see what these rules

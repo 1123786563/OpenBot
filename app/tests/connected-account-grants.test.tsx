@@ -596,8 +596,10 @@ test("a Shared app landing from a consent names the action and marks its row", a
   });
   const view = renderScreen("?action=Gmail.ListEmails");
 
-  const notice = await view.findByRole("status");
-  expect(notice.textContent).toBe("You just authorized Gmail.ListEmails.");
+  // Waited by text, not by role: the page's loading placeholders are empty statuses too, and a
+  // bare role query can resolve against one of those before this notice exists.
+  const notice = await view.findByText("You just authorized Gmail.ListEmails.");
+  expect(notice.getAttribute("role")).toBe("status");
   expect(notice.getAttribute("data-landed-action")).toBe("Gmail.ListEmails");
 
   // And the row itself is the marked one, with no search typed to find it by.

@@ -1,4 +1,6 @@
 import type { ActivityMessage, Message } from "@ag-ui/core";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import type { Attachment } from "@copilotkit/react-core/v2";
 import {
   useCopilotKit,
@@ -160,6 +162,7 @@ type ChatTranscriptProps = {
    */
   intro?: React.ReactNode;
   messages: ReadonlyArray<Readonly<Message>>;
+  pendingMessageId?: string;
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -2157,6 +2160,7 @@ export function ChatTranscript({
   commandLabels = "",
   intro,
   messages,
+  pendingMessageId,
   onRemoveQueued,
   queued = EMPTY_QUEUE,
   restoring = false,
@@ -2585,6 +2589,13 @@ export function ChatTranscript({
         {...groupProps}
         className={rowClassName}
       >
+        {item.id === pendingMessageId ? (
+          <Stack align="end">
+            <Text as="p" size="sm" color="secondary">
+              Saved here · Delivery unconfirmed
+            </Text>
+          </Stack>
+        ) : null}
         <TranscriptMessage
           threadId={threadId}
           messageId={item.id}
@@ -2607,6 +2618,15 @@ export function ChatTranscript({
         {...groupProps}
         className={rowClassName}
       >
+        {pendingMessageId &&
+        item.id === `${pendingMessageId}:attachments` &&
+        !items.some((message) => message.id === pendingMessageId) ? (
+          <Stack align="end">
+            <Text as="p" size="sm" color="secondary">
+              Saved here · Delivery unconfirmed
+            </Text>
+          </Stack>
+        ) : null}
         <TranscriptAttachments
           attachments={item.attachments}
           groupSize={groupSize}

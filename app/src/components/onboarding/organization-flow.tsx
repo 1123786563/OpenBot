@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import {
   IconBrandGoogle,
   IconBrandWindows,
@@ -76,9 +77,9 @@ function outbound(x: number) {
 function Pill({ node, x, y }: { node: Node; x: number; y: number }) {
   const Icon = node.icon;
   return (
-    <div
+    <HStack
       className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-card py-1 pr-2.5 pl-1 text-xs shadow-xs"
-      style={{ left: x, top: y }}
+      style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
     >
       <span
         className={`flex size-5 items-center justify-center rounded-full ${node.tone}`}
@@ -86,7 +87,7 @@ function Pill({ node, x, y }: { node: Node; x: number; y: number }) {
         <Icon aria-hidden className="size-3" stroke={2} />
       </span>
       {node.label}
-    </div>
+    </HStack>
   );
 }
 
@@ -102,10 +103,15 @@ export function OrganizationFlow() {
   const reduceMotion = useReducedMotion();
   const paths = [...COLUMNS.map(inbound), ...COLUMNS.map(outbound)];
   return (
-    <div className="relative mx-auto" style={{ width: WIDTH, height: HEIGHT }}>
+    <HStack
+      className="relative mx-auto"
+      maxWidth={WIDTH}
+      style={{ aspectRatio: WIDTH / HEIGHT }}
+      width="100%"
+    >
       <svg
         aria-hidden
-        className="absolute inset-0 text-border"
+        className="absolute inset-0 h-full w-full text-border"
         fill="none"
         height={HEIGHT}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
@@ -137,12 +143,12 @@ export function OrganizationFlow() {
         <Pill key={node.label} node={node} x={COLUMNS[index] ?? 0} y={TOP_Y} />
       ))}
 
-      <div
+      <HStack
         className="absolute flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card shadow-xs"
-        style={{ left: HUB.x, top: HUB.y }}
+        style={{ left: "50%", top: "50%" }}
       >
         <AgentOrb size="28px" />
-      </div>
+      </HStack>
 
       {OUTCOMES.map((node, index) => (
         <Pill
@@ -152,6 +158,6 @@ export function OrganizationFlow() {
           y={BOTTOM_Y}
         />
       ))}
-    </div>
+    </HStack>
   );
 }

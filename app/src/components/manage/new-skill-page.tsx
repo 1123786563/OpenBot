@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { SkillFields } from "@/components/skills/skill-fields";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
@@ -23,6 +24,9 @@ export function NewSkillPage() {
   const saveSkill = useMutation(saveSkillMutationOptions(queryClient));
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+
+  const leave = paths.skills();
 
   return (
     <CapabilityPage
@@ -37,9 +41,26 @@ export function NewSkillPage() {
       <SkillFields
         sections={{
           flush: true,
-          cancel: (
+          /* A draft with anything in it is worth one question before Cancel throws it away. */
+          cancel: ({ dirty }) => (
             <Button
-              render={(props) => <Link {...props} {...paths.skills()} />}
+              onClick={(event) => {
+                if (!dirty) return;
+                event.preventDefault();
+                requestConfirmation({
+                  title: "Leave without saving?",
+                  description:
+                    "What you have written in this skill is discarded.",
+                  confirmLabel: "Leave",
+                  pendingLabel: "Leaving…",
+                  failureMessage: "Couldn't leave this page. Try again.",
+                  trigger: event.currentTarget,
+                  run: async () => {
+                    await navigate(leave);
+                  },
+                });
+              }}
+              render={(props) => <Link {...props} {...leave} />}
               variant="outline"
             >
               Cancel
@@ -55,6 +76,7 @@ export function NewSkillPage() {
         }}
         submitLabel="Save skill"
       />
+      {confirmation}
     </CapabilityPage>
   );
 }

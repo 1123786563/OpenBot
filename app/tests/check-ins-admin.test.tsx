@@ -181,7 +181,9 @@ test("each Bot shows how often people started what it raised, and its breakdown 
     (await view.findByRole("button", { name: /General Assistant/ }))
       .textContent,
   ).toContain("No answers yet");
-  expect(view.getByText("2.2 items in each, on average")).toBeTruthy();
+  expect(
+    view.getByText("Each one carries an average of 2.2 items."),
+  ).toBeTruthy();
 
   fireEvent.click(row);
   const dialog = await view.findByRole("dialog");

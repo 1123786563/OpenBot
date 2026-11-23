@@ -1,10 +1,18 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { Divider } from "@astryxdesign/core/Divider";
+import { Heading } from "@astryxdesign/core/Heading";
 import { Stack } from "@astryxdesign/core/Stack";
-import { CopilotChat } from "@copilotkit/react-core/v2";
+import {
+  CopilotChat,
+  CopilotChatInput,
+  type CopilotChatInputProps,
+} from "@copilotkit/react-core/v2";
 import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { createContext, useContext, useLayoutEffect, useRef } from "react";
+import { z } from "zod";
 import { ConversationApprovals } from "@/components/approvals/inline-approval";
 import {
   ConversationLoading,
@@ -21,6 +29,12 @@ import {
   agentKeys,
   agentListQueryOptions,
 } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
+import {
+  composeDraftKey,
+  readComposeDraft,
+  writeComposeDraft,
+} from "@/lib/channels/compose-draft";
 import { tryClient } from "@/lib/client";
 import { useOpenComputerOnRequest } from "@/lib/computers/panel-view";
 import { useActiveBot } from "@/lib/copilot/active-bot";
@@ -28,6 +42,50 @@ import { useBotActivity } from "@/lib/copilot/bot-activity";
 import { useBotThread } from "@/lib/copilot/bot-thread";
 import { useStoppedTurn } from "@/lib/copilot/stopped-turn";
 import { searchTextEntry } from "@/lib/search-text";
+
+const QuickDraftKey = createContext<string | undefined>(undefined);
+const quickDraftText = z.string();
+
+function QuickChatInput({ value, onChange, ...input }: CopilotChatInputProps) {
+  const key = useContext(QuickDraftKey);
+  const draft = useRef<{ key: string; restoring?: string } | undefined>(
+    undefined,
+  );
+  useLayoutEffect(() => {
+    if (!key || !onChange) return;
+    if (draft.current?.key !== key) {
+      const saved = value ? undefined : readComposeDraft(key, quickDraftText);
+      draft.current = { key, restoring: saved };
+      if (saved) {
+        onChange(saved);
+        return;
+      }
+    }
+    if (draft.current.restoring) {
+      if (value !== draft.current.restoring) return;
+      draft.current.restoring = undefined;
+    }
+    writeComposeDraft(key, value || undefined);
+  }, [key, onChange, value]);
+
+  return (
+    <CopilotChatInput
+      {...input}
+      addMenuButton={{ className: "quick-chat-touch-target" }}
+      cancelTranscribeButton={{ className: "quick-chat-touch-target" }}
+      finishTranscribeButton={{ className: "quick-chat-touch-target" }}
+      onChange={onChange}
+      sendButton={{ className: "quick-chat-touch-target" }}
+      startTranscribeButton={{ className: "quick-chat-touch-target" }}
+      textArea={{
+        "aria-label": "Message",
+        className: "quick-chat-message",
+        placeholder: "Describe what you want to get done…",
+      }}
+      value={value}
+    />
+  );
+}
 
 export const Route = createFileRoute("/_authed/_app/bot")({
   component: RouteComponent,
@@ -168,6 +226,12 @@ function RouteComponent() {
 }
 
 function BotChat({ agentId, name }: { agentId: string; name: string }) {
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const draftKey = composeDraftKey(
+    user?.id,
+    `quick:${encodeURIComponent(agentId)}`,
+    "message",
+  );
   // Tool calls here act on this Bot's own computer.
   useActiveBot(agentId);
   /*
@@ -213,53 +277,53 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
       waiting={threadId ? <ConversationApprovals threadId={threadId} /> : null}
       detail={<ComputerViewPanel agentId={agentId} name={name} />}
     >
-      <div className="flex h-full min-h-0 flex-col">
+      <Stack height="100%" minHeight={0}>
         <SidebarToggleBar />
-        <header className="border-b px-6 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {/*
-             * The Bot this screen is actually showing. A name written into the markup is wrong on
-             * every deployment whose package did not happen to use it, which is the same defect the
-             * route default above was fixed for: this screen called whichever Bot you opened
-             * "Browser Bot", including the one named something else two lines of state away.
-             */}
-            <h1 className="text-lg font-semibold">{name}</h1>
-            {/*
-             * Labelled rather than the bare icon button the sidebar uses for its own "start
-             * something new" control: that one opens an empty screen, but this one throws away
-             * whatever conversation is currently on screen, and a click with that consequence
-             * deserves a word, not just a glyph.
-             */}
-            <div className="flex flex-wrap items-start gap-2">
-              <ComputerChatControls
-                computerId={agentId}
-                open={watch === true}
-                onOpenChange={showComputer}
-              />
-              <AstryxButton
-                icon={<IconPlus />}
-                isLoading={starting}
-                isDisabled={!threadId}
-                label="New chat"
-                onClick={startNew}
-                size="sm"
-                variant="ghost"
-              />
-            </div>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Ask it to open a page and watch it work.
-          </p>
-        </header>
-        {/*
-         * Both banners render as plain siblings in this fixed order, never one nested inside the
-         * other, so either can appear alone or both together without the layout jumping around
-         * depending on which conditions are true.
-         */}
+        <Stack
+          align="center"
+          as="header"
+          direction="horizontal"
+          gap={3}
+          justify="between"
+          style={{
+            paddingBlock: "var(--spacing-3)",
+            paddingInline: "var(--spacing-4)",
+          }}
+          wrap="wrap"
+        >
+          <Heading level={1} wordBreak="break-word">
+            {name}
+          </Heading>
+          <Stack
+            align="center"
+            className="quick-chat-actions"
+            direction="horizontal"
+            gap={2}
+            wrap="wrap"
+          >
+            <ComputerChatControls
+              computerId={agentId}
+              open={watch === true}
+              onOpenChange={showComputer}
+            />
+            <AstryxButton
+              icon={<IconPlus />}
+              isLoading={starting}
+              isDisabled={!threadId}
+              label="Start fresh"
+              onClick={startNew}
+              size="md"
+              variant="secondary"
+            />
+          </Stack>
+        </Stack>
+        <Divider />
         {history === "unavailable" ? (
           <ConversationReadError
             title="Couldn't check your earlier messages."
-            description="You're still in the same conversation."
+            description="This conversation is still open. You can check whether earlier messages are available."
+            retryLabel="Check history"
+            retryBelow
             retry={retryHistory}
             retrying={checkingHistory}
           />
@@ -274,9 +338,10 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
         )}
         {startFailed && (
           <ConversationReadError
-            title="Couldn't start a new chat."
+            title="Couldn't start a new conversation."
             description="Your current conversation is still open."
             retry={startNew}
+            retryBelow
             retrying={starting}
           />
         )}
@@ -289,15 +354,14 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
          * transcript has been scrolled to, and that it survives the next release of the chat.
          */}
         {stopped ? (
-          <p
-            className="border-b bg-destructive/10 px-6 py-2 text-destructive text-sm"
-            data-testid="bot-chat-stopped"
+          <Banner
             role="alert"
-          >
-            {stopped}
-          </p>
+            status="error"
+            title="The Bot stopped before replying."
+            description={stopped}
+          />
         ) : null}
-        <div className="min-h-0 flex-1">
+        <Stack minHeight={0} style={{ flex: 1 }}>
           {/*
            * Keyed on the thread as well as the agent. Switching agents was already handled by
            * `agentId`, but `startNew` changes only the thread while the agent stays put, and the
@@ -308,17 +372,20 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
            * under a composer that silently posts to the new one.
            */}
           {threadId ? (
-            <CopilotChat
-              agentId={agentId}
-              messageView={{ assistantMessage: TelemetryAssistantMessage }}
-              key={`${agentId}:${threadId}`}
-              threadId={threadId}
-            />
+            <QuickDraftKey.Provider value={draftKey}>
+              <CopilotChat
+                agentId={agentId}
+                input={QuickChatInput}
+                messageView={{ assistantMessage: TelemetryAssistantMessage }}
+                key={`${agentId}:${threadId}`}
+                threadId={threadId}
+              />
+            </QuickDraftKey.Provider>
           ) : (
             <ConversationLoading label="Opening conversation…" />
           )}
-        </div>
-      </div>
+        </Stack>
+      </Stack>
     </DetailPanel>
   );
 }

@@ -1,9 +1,11 @@
+import { Button } from "@astryxdesign/core/Button";
+import { HStack } from "@astryxdesign/core/HStack";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
-import AgentOrb from "@/components/agents/orb/agent-orb";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   canSend,
@@ -12,24 +14,21 @@ import {
   toFieldChange,
 } from "@/components/channels/compose-state";
 import {
+  Composer,
   type ComposerDraft,
   toAgentOptions,
 } from "@/components/channels/composer";
 import { ModelPicker } from "@/components/channels/composer/model-picker";
-import { ConversationSurface } from "@/components/channels/conversation-surface";
-import { ConversationView } from "@/components/channels/conversation-view";
-import { SidebarToggle } from "@/components/layout/sidebar-toggle";
+import { ReadStatus } from "@/components/layout/read-status";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
 import {
   Combobox,
   ComboboxChip,
   ComboboxChips,
   ComboboxChipsInput,
-  ComboboxContent,
   ComboboxEmpty,
   ComboboxItem,
   ComboboxList,
-  useComboboxAnchor,
 } from "@/components/ui/combobox";
 import {
   type AgentProfile,
@@ -37,7 +36,13 @@ import {
   agentQueryOptions,
 } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import {
+  composeDraftKey,
+  readComposeDraft,
+  writeComposeDraft,
+} from "@/lib/channels/compose-draft";
 import { useSubmitConversationStart } from "@/lib/channels/start";
+import { ClientError } from "@/lib/client";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
 import { useDraftModel } from "@/lib/models/run-model";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
@@ -51,6 +56,7 @@ import { newId } from "../../../../lib/new-id";
  */
 /** What `GET /api/agents/:id` answers for a Bot this person cannot see. */
 const AGENT_NOT_FOUND = "Couldn't find that Bot.";
+const recipientIds = z.array(z.string());
 
 export const Route = createFileRoute("/_authed/_app/channel/new")({
   /*
@@ -92,7 +98,7 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
         to: "/channel/new",
       });
     }
-    return { composition };
+    return { composition, copiedFromHome: location.state.copiedFromHome };
   },
   component: RouteComponent,
 });
@@ -101,6 +107,7 @@ declare module "@tanstack/react-router" {
   interface HistoryState {
     /** Set by `/channel/new` on its own navigations: which new conversation they belong to. */
     newConversation?: string;
+    copiedFromHome?: true;
   }
 }
 
@@ -110,28 +117,62 @@ function ownedBy(composition: string) {
 }
 
 function RouteComponent() {
-  const { composition } = Route.useRouteContext();
-  return <NewConversation composition={composition} key={composition} />;
+  const { composition, copiedFromHome } = Route.useRouteContext();
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const owner = user?.id;
+  return (
+    <NewConversation
+      composition={composition}
+      copiedFromHome={copiedFromHome}
+      owner={owner}
+      key={JSON.stringify([owner, composition])}
+    />
+  );
 }
 
-function NewConversation({ composition }: { composition: string }) {
-  const { agent } = Route.useSearch();
+function NewConversation({
+  composition,
+  copiedFromHome,
+  owner,
+}: {
+  composition: string;
+  copiedFromHome: true | undefined;
+  owner: string | undefined;
+}) {
+  const historyState = { ...ownedBy(composition), copiedFromHome };
+  const { agent: urlAgent } = Route.useSearch();
+  const messageKey = composeDraftKey(owner, composition, "message");
+  const recipientsKey = composeDraftKey(owner, composition, "recipients");
+  const modelKey = composeDraftKey(owner, composition, "model");
+  const [savedRecipients] = useState(() =>
+    readComposeDraft(recipientsKey, recipientIds),
+  );
+  const [picked, setPicked] = useState<AgentProfile[] | null>(null);
+  const agent =
+    picked === null && savedRecipients ? savedRecipients[0] : urlAgent;
+  const chooseRecipients = (next: AgentProfile[]) => {
+    setPicked(next);
+    writeComposeDraft(
+      recipientsKey,
+      next.map(({ id }) => id),
+    );
+  };
   const queryClient = useQueryClient();
   const [creatingBot, setCreatingBot] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<boolean | undefined>(undefined);
+  const [recipientFilter, setRecipientFilter] = useState("");
+  const [focusMessageAfterPick, setFocusMessageAfterPick] = useState(false);
   const navigate = Route.useNavigate();
-  const { data: user } = useQuery(currentUserQueryOptions());
-  const { submit: submitStart, error: saveError } = useSubmitConversationStart(
-    user?.id,
-  );
-  const { data: profiles, isError: rosterError } = useQuery(
-    agentListQueryOptions(),
-  );
+  const { submit: submitStart, error: saveError } =
+    useSubmitConversationStart(owner);
+  const roster = useQuery(agentListQueryOptions());
+  const profiles = roster.data;
 
   const [error, setError] = useState<string | null>(null);
   /** Enter or Send was pressed with nobody in To:. Said until a Bot is chosen. */
   const [askedForBot, setAskedForBot] = useState(false);
   const pickerInput = useRef<HTMLInputElement>(null);
+  const newBotButton = useRef<HTMLButtonElement>(null);
 
   // Stale or private `?agent=` values are ignored because the roster is permission-filtered.
   const listed = profiles?.find((profile) => profile.id === agent);
@@ -139,16 +180,17 @@ function NewConversation({ composition }: { composition: string }) {
    * Hidden coworkers are omitted from the roster but may still be valid recipients from a profile
    * link, so fetch the URL-selected coworker when it is absent from the visible list.
    */
+  const detail = useQuery({
+    ...agentQueryOptions(agent ?? ""),
+    enabled: Boolean(agent) && profiles !== undefined && !listed,
+    retry: false,
+  });
   const {
     data: fetched,
     isError: detailError,
     error: detailFailure,
     isPending: detailPending,
-  } = useQuery({
-    ...agentQueryOptions(agent ?? ""),
-    enabled: Boolean(agent) && profiles !== undefined && !listed,
-    retry: false,
-  });
+  } = detail;
   /*
    * The URL names a recipient up front (a Bot's own Message link). Without one, To: starts empty
    * with the Bot menu open, in either edition and however many Bots there are: + is a question,
@@ -165,28 +207,59 @@ function NewConversation({ composition }: { composition: string }) {
   const waitingForUrlAgent =
     needsUrlAgentDetail && detailPending && !detailError;
   const urlAgentDetailFailed = needsUrlAgentDetail && detailError && !fetched;
-  const loadError =
-    rosterError && profiles === undefined
-      ? "Couldn't load your Bots. Reload the page."
-      : urlAgentDetailFailed
-        ? /*
-           * The server's 404 sentence (agents/routes.ts `mapStoreError`) means this person cannot see
-           * the Bot: a shared Team Bot link lands here once it is unpublished or undescribed. Any
-           * other failure is a load that can be retried, and says so.
-           */
-          detailFailure?.message === AGENT_NOT_FOUND
-          ? "This Bot isn't available to you. It may be unpublished or not shared with you."
-          : "Couldn't load that Bot. Reload the page."
-        : null;
-  /** Bots picked in the To: field, in the order they will answer; the URL's Bot until one is picked. */
-  const [picked, setPicked] = useState<AgentProfile[] | null>(null);
-  const selected = picked ?? (chosen ? [chosen] : []);
-  const anchor = useComboboxAnchor();
+  const rosterFailed = roster.isError && profiles === undefined;
+  const rosterDenied =
+    rosterFailed &&
+    roster.error instanceof ClientError &&
+    roster.error.status === 403;
+  const recipientUnavailable =
+    urlAgentDetailFailed &&
+    (detailFailure?.message === AGENT_NOT_FOUND ||
+      (detailFailure instanceof ClientError &&
+        [403, 404].includes(detailFailure.status)));
+  const loadError = rosterDenied
+    ? "You don’t have access to the Bots in this workspace. Ask a workspace administrator for access."
+    : rosterFailed
+      ? "Couldn’t load your Bots."
+      : recipientUnavailable
+        ? "This Bot isn’t available to you. Choose another Bot to continue."
+        : urlAgentDetailFailed
+          ? "Couldn’t load that Bot."
+          : null;
+  const loading = roster.isPending || waitingForUrlAgent;
+  const restored = savedRecipients?.flatMap((id) => {
+    const profile =
+      id === chosen?.id ? chosen : profiles?.find((bot) => bot.id === id);
+    return profile ? [profile] : [];
+  });
+  const selected = picked ?? restored ?? (chosen ? [chosen] : []);
+  const availableRecipients =
+    profiles?.filter(
+      (profile) => !selected.some(({ id }) => id === profile.id),
+    ) ?? [];
+  const missingSavedRecipient =
+    !loading &&
+    !loadError &&
+    picked === null &&
+    savedRecipients !== undefined &&
+    selected.length < savedRecipients.length;
   const recipients: Recipient[] = selected.map((profile) => ({
     id: profile.id,
     name: profile.name,
   }));
   const group = startsGroup(recipients);
+  const missingRecipient = askedForBot && recipients.length === 0;
+  const emptyRoster =
+    profiles?.length === 0 && selected.length === 0 && !loading && !loadError;
+  const pickerVisible =
+    Boolean(profiles) &&
+    !emptyRoster &&
+    !loading &&
+    !loadError &&
+    (pickerOpen ?? !chosen);
+  useEffect(() => {
+    if (pickerVisible && selected.length === 0) pickerInput.current?.focus();
+  }, [pickerVisible, selected.length]);
   /*
    * A model can be picked before the first message when the conversation is with one Bot that runs
    * on OpenBot's own model. The pick is saved with the conversation, before the message runs.
@@ -197,15 +270,25 @@ function NewConversation({ composition }: { composition: string }) {
     ...modelCatalogueQueryOptions(),
     enabled: pickable,
   });
-  const draftModel = useDraftModel(pickable ? models.data : undefined);
+  const draftModel = useDraftModel(
+    pickable ? models.data : undefined,
+    modelKey,
+  );
   // A group's first message goes to all of its Bots, so no one Bot's commands are offered.
   const skillCommands = useSkillCommands(
     group ? "" : (recipients[0]?.id ?? ""),
   );
 
-  const submit = async (draft: ComposerDraft) => {
+  const submit = async (draft: ComposerDraft, fromComposer = false) => {
     const recipient = recipients[0];
-    if (!recipient || !canSend(recipients, draft.text)) return;
+    if (
+      loading ||
+      loadError ||
+      missingSavedRecipient ||
+      !recipient ||
+      !canSend(recipients, draft.text)
+    )
+      return;
     setError(null);
     await submitStart(
       draft,
@@ -217,26 +300,70 @@ function NewConversation({ composition }: { composition: string }) {
           }
         : { kind: "direct", agentId: recipient.id },
       group ? null : draftModel.requested,
+      fromComposer
+        ? () => {
+            writeComposeDraft(messageKey);
+            writeComposeDraft(recipientsKey);
+            writeComposeDraft(modelKey);
+          }
+        : undefined,
     );
   };
 
-  if (profiles === undefined && !rosterError) return null;
-
   return (
-    <ConversationSurface>
-      <div
-        className="sticky top-0 flex min-h-12 shrink-0 flex-row items-center border-b border-border px-2"
-        data-slot="conversation-header"
-      >
-        <SidebarToggle className="mr-1" />
-        <span className="text-sm text-muted-foreground">To:</span>
+    <VStack
+      gap={4}
+      maxWidth="48rem"
+      width="100%"
+      style={{
+        marginInline: "auto",
+        paddingInline: "var(--spacing-4)",
+        paddingBlockStart: "var(--spacing-4)",
+        paddingBlockEnd: "var(--spacing-6)",
+      }}
+    >
+      <h1 className="text-2xl font-semibold tracking-tight">
+        New conversation
+      </h1>
+      <VStack gap={2} data-slot="conversation-header">
+        <HStack align="center" justify="between">
+          <label
+            className="text-sm font-medium"
+            htmlFor="conversation-recipients"
+          >
+            To
+          </label>
+          {profiles && !loading && !loadError ? (
+            <Button
+              label="New Bot"
+              size="sm"
+              variant="ghost"
+              className="max-md:min-h-11 pointer-coarse:min-h-11"
+              ref={newBotButton}
+              onClick={() => {
+                setPickerOpen(false);
+                setCreatingBot(true);
+              }}
+            />
+          ) : null}
+        </HStack>
         <Combobox
           // Do not auto-open when a recipient is already chosen; the field is already answered.
-          open={pickerOpen ?? (!chosen && !loadError && !waitingForUrlAgent)}
-          onOpenChange={setPickerOpen}
+          open={pickerVisible}
+          disabled={!profiles || emptyRoster || loading || Boolean(loadError)}
+          onOpenChange={(open, details) => {
+            if (!open && details.reason === "item-press") {
+              details.cancel();
+              return;
+            }
+            setPickerOpen(open);
+          }}
+          inputValue={recipientFilter}
+          onInputValueChange={setRecipientFilter}
           autoHighlight
+          inline={pickerVisible}
           multiple
-          items={profiles ?? []}
+          items={availableRecipients}
           isItemEqualToValue={(item: AgentProfile, value: AgentProfile) =>
             item.id === value.id
           }
@@ -244,103 +371,186 @@ function NewConversation({ composition }: { composition: string }) {
           itemToStringValue={(item: AgentProfile) => item.id}
           onValueChange={(next: AgentProfile[], details) => {
             const kept = toFieldChange(selected, next, details.reason);
-            setPicked(kept);
+            chooseRecipients(kept);
             setAskedForBot(false);
+            if (details.reason === "item-press") {
+              setPickerOpen(!askedForBot);
+              setFocusMessageAfterPick(askedForBot);
+              setRecipientFilter("");
+              if (!askedForBot) pickerInput.current?.focus();
+            }
             // The first Bot stays in the URL so a reload keeps the conversation's recipient; the
-            // rest of a group lives in the page. Not a separate navigation history entry.
+            // group order is restored from the current tab's draft.
             void navigate({
               replace: true,
               search: kept[0] ? { agent: kept[0].id } : {},
-              state: ownedBy(composition),
+              state: historyState,
             });
           }}
           value={selected}
         >
-          <ComboboxChips
-            ref={anchor}
-            className="min-w-0 flex-1 border-none bg-transparent! focus-within:ring-0 dark:bg-transparent!"
-            data-conversation-recipients=""
-          >
+          <ComboboxChips className="min-h-10">
             {selected.map((profile) => (
               <ComboboxChip
-                className="gap-1.5 pl-1"
+                className="h-auto min-h-7 max-w-full min-w-0 justify-start gap-1.5 pl-1 whitespace-normal"
                 key={profile.id}
                 removeLabel={`Remove ${profile.name}`}
               >
                 <ChannelAvatar participantIds={[profile.id]} size={16} />
-                {profile.name}
+                <strong className="min-w-0 break-all font-medium">
+                  {profile.name}
+                </strong>
               </ComboboxChip>
             ))}
             <ComboboxChipsInput
-              aria-label="Recipients"
+              id="conversation-recipients"
               ref={pickerInput}
-              // The popup opening is not enough on its own: typing filters through this input, so
-              // the caret starts here whenever the recipient question is still open. A recipient
-              // already chosen means the composer takes focus instead.
-              autoFocus={!chosen}
-              placeholder={
-                selected.length
-                  ? "Add another Bot for a group…"
-                  : "Choose a Bot…"
-              }
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && pickerVisible) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPickerOpen(false);
+                }
+              }}
+              className="placeholder:text-foreground/75"
+              placeholder={selected.length ? "Add Bot" : "Choose a Bot…"}
             />
           </ComboboxChips>
-          {/* Allow max-w to constrain the popup even though its anchor is full-width. */}
-          <ComboboxContent
-            {...astryxScope}
-            anchor={anchor}
-            className="flex min-w-0 max-w-lg flex-col data-[astryx-pilot]:min-w-0! data-[astryx-pilot]:max-w-[min(32rem,var(--available-width))]!"
-            sideOffset={12}
-          >
-            <div className="shrink-0 border-b p-1">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => {
-                  setPickerOpen(false);
-                  setCreatingBot(true);
-                }}
-              >
-                <AgentOrb size="24px" state="idle" />
-                <span className="font-medium">New Bot</span>
-                <span className="text-muted-foreground">Create a new Bot</span>
-              </button>
-            </div>
-            <ComboboxEmpty>No Bots found.</ComboboxEmpty>
-            <ComboboxList className="min-h-0">
-              {(item: AgentProfile) => (
-                <ComboboxItem key={item.id} value={item} className="h-10">
-                  <ChannelAvatar participantIds={[item.id]} size={24} />
-                  {item.name}
-                  <span className="truncate text-muted-foreground ml-1">
-                    {item.title}
-                  </span>
-                </ComboboxItem>
-              )}
-            </ComboboxList>
-          </ComboboxContent>
+          {pickerVisible ? (
+            <VStack
+              style={{
+                border: "thin solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                minWidth: 0,
+              }}
+            >
+              {missingRecipient ? (
+                <HStack paddingInline={3} paddingBlock={2}>
+                  <p className="text-sm" role="status">
+                    Choose a Bot first.
+                  </p>
+                </HStack>
+              ) : null}
+              <ComboboxList style={{ maxHeight: "calc(6 * var(--spacing-8))" }}>
+                {(item: AgentProfile) => (
+                  <ComboboxItem key={item.id} value={item} className="min-h-10">
+                    <ChannelAvatar participantIds={[item.id]} size={24} />
+                    <VStack gap={0} style={{ minWidth: 0 }}>
+                      <strong className="truncate font-medium">
+                        {item.name}
+                      </strong>
+                      {item.title ? (
+                        <small className="truncate text-sm text-muted-foreground">
+                          {item.title}
+                        </small>
+                      ) : null}
+                    </VStack>
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+              <ComboboxEmpty style={{ display: "block", padding: 0 }}>
+                <p style={{ paddingBlock: "var(--spacing-2)" }}>
+                  {availableRecipients.length === 0
+                    ? "All available Bots are already in To."
+                    : "No Bots match your search."}
+                </p>
+              </ComboboxEmpty>
+            </VStack>
+          ) : null}
         </Combobox>
-      </div>
+        {loading ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {waitingForUrlAgent
+              ? "Loading the selected Bot…"
+              : "Loading your Bots…"}
+          </p>
+        ) : null}
+        {loadError ? (
+          <VStack gap={2} align="start">
+            {rosterDenied || recipientUnavailable ? (
+              <p className="text-sm text-destructive" role="alert">
+                {loadError}
+              </p>
+            ) : (
+              <ReadStatus
+                kind="error"
+                message={loadError}
+                retry={() =>
+                  rosterFailed ? roster.refetch() : detail.refetch()
+                }
+              />
+            )}
+            {urlAgentDetailFailed && (
+              <Button
+                label="Choose another Bot"
+                size="sm"
+                onClick={() => {
+                  chooseRecipients([]);
+                  setPickerOpen(true);
+                  void navigate({
+                    replace: true,
+                    search: {},
+                    state: historyState,
+                  }).then(() => pickerInput.current?.focus());
+                }}
+              />
+            )}
+          </VStack>
+        ) : missingSavedRecipient ? (
+          <VStack gap={2}>
+            <p className="text-sm" role="alert">
+              A Bot in your draft is no longer available. Review the recipients
+              before sending.
+            </p>
+            <Button
+              label="Review recipients"
+              size="sm"
+              onClick={() => {
+                chooseRecipients(selected);
+                setPickerOpen(true);
+                void navigate({
+                  replace: true,
+                  search: selected[0] ? { agent: selected[0].id } : {},
+                  state: historyState,
+                }).then(() => pickerInput.current?.focus());
+              }}
+            />
+          </VStack>
+        ) : emptyRoster ? (
+          <p className="text-sm text-muted-foreground">
+            No Bots are available. Create a Bot to send your message.
+          </p>
+        ) : group ? (
+          <p className="text-sm text-muted-foreground">
+            Bots reply in the order you add them.
+          </p>
+        ) : !loading &&
+          !copiedFromHome &&
+          !missingRecipient &&
+          recipients.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Choose a Bot to send your message.
+          </p>
+        ) : null}
+      </VStack>
       <NewBotSheet
+        finalFocus={() =>
+          emptyRoster ? newBotButton.current : pickerInput.current
+        }
         open={creatingBot}
-        returnFocus={() => pickerInput.current}
         onClose={() => setCreatingBot(false)}
         onCreated={(agentId) => {
           setCreatingBot(false);
           void queryClient
             .fetchQuery(agentQueryOptions(agentId))
             .then((profile) => {
-              setPicked((current) => {
-                const existing = current ?? selected;
-                return existing.some((bot) => bot.id === profile.id)
-                  ? existing
-                  : [...existing, profile];
-              });
+              if (!selected.some((bot) => bot.id === profile.id))
+                chooseRecipients([...selected, profile]);
               if (selected.length === 0)
                 void navigate({
                   replace: true,
                   search: { agent: agentId },
-                  state: ownedBy(composition),
+                  state: historyState,
                 });
             })
             .catch(() => {
@@ -350,49 +560,76 @@ function NewConversation({ composition }: { composition: string }) {
             });
         }}
       />
-      <ConversationView
-        /*
-         * `@` offers the Bots in To:. The conversation does not exist until the first message is
-         * sent, so the people it is with are the ones picked here, and a first message can address
-         * one of them as every later one can.
-         */
-        agents={toAgentOptions(selected)}
-        // Choosing a coworker answers the "To:" field, so the message is what remains: the caret
-        // lands in the composer the moment a recipient exists, whether picked here or in the URL.
-        // Not before: an empty To: keeps the caret, even though the composer below takes words.
-        autoFocus={recipients.length > 0}
-        // Commands must be loaded before the first channel message is sent.
-        commands={skillCommands}
-        modelPicker={
-          <ModelPicker
-            catalogue={pickable ? models.data : undefined}
-            onChange={draftModel.choose}
-            value={draftModel.value}
-          />
-        }
-        disabled={Boolean(loadError) || waitingForUrlAgent}
-        /*
-         * WRITING FIRST IS FINE; SENDING WAITS FOR A BOT. The composer used to be disabled until To:
-         * had somebody in it, and a disabled composer is a dead end: it took a paste but no typing,
-         * no caret, and an Enter that went nowhere with nothing said. Now it takes words as home's
-         * does, and Enter or Send with nobody chosen opens To: and says why. The words stay put, and
-         * the caret comes back to them once a Bot is picked.
-         */
-        {...(recipients.length === 0
-          ? {
-              onSendHeld: () => {
-                setAskedForBot(true);
-                setPickerOpen(true);
-                pickerInput.current?.focus();
-              },
+      <section
+        aria-labelledby="new-message-heading"
+        data-slot="composer-column"
+        onFocus={(event) => {
+          if (event.target.isContentEditable) setPickerOpen(false);
+        }}
+      >
+        <VStack gap={2}>
+          <h2 id="new-message-heading" className="text-sm font-medium">
+            Message
+          </h2>
+          {error || saveError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error ?? saveError}
+            </p>
+          ) : missingRecipient && !pickerVisible && !emptyRoster ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Choose a Bot first.
+            </p>
+          ) : null}
+          {pickable && models.isError && !models.data ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Model choices couldn’t load. This conversation will use the
+              default model.
+            </p>
+          ) : null}
+          <Composer
+            draftStorageKey={messageKey}
+            restoredDraftMessage={
+              copiedFromHome
+                ? "Original draft kept on Home. Review who will receive this copy in To."
+                : undefined
             }
-          : {})}
-        messages={[]}
-        starterSuggestions={
-          !group ? (
+            agents={toAgentOptions(selected)}
+            autoFocus={
+              recipients.length > 0 &&
+              (picked === null || focusMessageAfterPick)
+            }
+            commands={skillCommands}
+            compact
+            modelPicker={
+              <ModelPicker
+                catalogue={pickable ? models.data : undefined}
+                onChange={draftModel.choose}
+                value={draftModel.value}
+              />
+            }
+            disabled={Boolean(loadError) || loading || missingSavedRecipient}
+            {...(recipients.length === 0
+              ? {
+                  heldSendLabel: emptyRoster
+                    ? "Create a Bot first"
+                    : "Choose a Bot to send",
+                  onSendHeld: () => {
+                    if (emptyRoster) {
+                      newBotButton.current?.focus();
+                      return;
+                    }
+                    setAskedForBot(true);
+                    setPickerOpen(true);
+                    pickerInput.current?.focus();
+                  },
+                }
+              : {})}
+            onSubmit={(draft) => submit(draft, true)}
+          />
+          {!group && recipients.length > 0 ? (
             <StarterSuggestions
               agentId={recipients[0]?.id}
-              disabled={Boolean(loadError) || waitingForUrlAgent}
+              disabled={Boolean(loadError) || loading || missingSavedRecipient}
               onSelect={(text) =>
                 submit({
                   text,
@@ -403,24 +640,9 @@ function NewConversation({ composition }: { composition: string }) {
                 })
               }
             />
-          ) : undefined
-        }
-        notice={
-          loadError || error || saveError ? (
-            <p className="px-3.5 pb-2 text-sm text-destructive" role="alert">
-              {loadError ?? error ?? saveError}
-            </p>
-          ) : askedForBot && recipients.length === 0 ? (
-            <p
-              className="px-3.5 pb-2 text-sm text-muted-foreground"
-              role="status"
-            >
-              Choose a Bot first.
-            </p>
-          ) : null
-        }
-        onSubmit={submit}
-      />
-    </ConversationSurface>
+          ) : null}
+        </VStack>
+      </section>
+    </VStack>
   );
 }

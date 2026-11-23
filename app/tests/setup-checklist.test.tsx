@@ -187,10 +187,10 @@ test("a required gap is red, an optional one amber, and Ready green", async () =
     "text-destructive",
   );
   expect(rowOf(view, "chat").getByText("Needs setup").className).toContain(
-    "text-amber-600",
+    "text-amber-700",
   );
   expect(rowOf(view, "apps").getByText("Ready").className).toContain(
-    "text-emerald-600",
+    "text-emerald-700",
   );
 });
 

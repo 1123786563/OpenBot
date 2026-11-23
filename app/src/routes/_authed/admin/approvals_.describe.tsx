@@ -1,6 +1,7 @@
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { HStack } from "@astryxdesign/core/Stack";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import {
   RuleRowsEditor,
   RulesBacktest,
@@ -9,8 +10,9 @@ import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { DescribeField } from "@/components/boundaries/describe-rule";
 import { ReadingStatus } from "@/components/boundaries/rule-reading";
 import { PageCard } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
-import { FieldGroup } from "@/components/ui/field";
+import { FieldGroup, FieldSet } from "@/components/ui/field";
 import { saveTeamRulesMutationOptions } from "@/lib/approval-rules/mutations";
 import { approvalRulesBacktestQueryOptions } from "@/lib/approval-rules/queries";
 import {
@@ -53,6 +55,24 @@ function DescribeTeamRulesPage() {
   const save = useMutation(saveTeamRulesMutationOptions(queryClient));
   const [written, setWritten] = useState<WrittenRules | null>(null);
   const [rules, setRules] = useState<ApprovalRuleInput[]>([]);
+  /* The last removed rule, so one removal is one step from undone. */
+  const [removed, setRemoved] = useState<{
+    index: number;
+    rule: ApprovalRuleInput;
+  } | null>(null);
+  const [description, setDescription] = useState("");
+  const [writing, setWriting] = useState(false);
+  const submitting = useRef(false);
+  const hasDraft = description.trim() !== "" || written !== null;
+  useBlocker({
+    enableBeforeUnload: hasDraft,
+    shouldBlockFn: ({ current, next }) =>
+      hasDraft &&
+      current.pathname !== next.pathname &&
+      !window.confirm("Leave without saving your approval rules?"),
+  });
+  const descriptionChanged =
+    written !== null && written.text !== description.trim();
 
   /* The rules as they stood a moment ago, debounced as Add rule's preview is. */
   const [settled, setSettled] = useState<ApprovalRuleInput[]>([]);
@@ -63,28 +83,37 @@ function DescribeTeamRulesPage() {
 
   const preview = useQuery({
     ...approvalRulesBacktestQueryOptions(settled),
-    enabled: settled.length > 0,
-    // The last answer stays up while the next loads, so the list does not blink between edits.
-    placeholderData: keepPreviousData,
+    enabled: !descriptionChanged && settled.length > 0,
   });
-  /* The check of the rules on screen now, and not of the ones before an edit still being replayed. */
+  const settling = !same(settled, rules);
   const current =
-    preview.data && !preview.isPlaceholderData && same(settled, rules)
+    preview.isSuccess && preview.fetchStatus === "idle" && !settling
       ? preview.data
       : null;
-  const ready = Boolean(current?.check.ok) && rules.length > 0;
+  const ready =
+    written !== null &&
+    !descriptionChanged &&
+    !writing &&
+    !save.isPending &&
+    Boolean(current?.check.ok) &&
+    rules.length > 0;
   const edited = written !== null && !same(rules, written.rules);
 
   const add = () => {
-    if (!ready) return;
+    if (!ready || !written || submitting.current) return;
+    submitting.current = true;
     save.mutate(
       {
         rules,
-        ...(written
-          ? { authoring: { source: "english" as const, text: written.text } }
-          : {}),
+        authoring: { source: "english", text: written.text },
       },
-      { onSuccess: () => void navigate({ to: "/admin/approvals" }) },
+      {
+        onSuccess: () =>
+          void navigate({ to: "/admin/approvals", ignoreBlocker: true }),
+        onSettled: () => {
+          submitting.current = false;
+        },
+      },
     );
   };
 
@@ -110,7 +139,7 @@ function DescribeTeamRulesPage() {
               >
                 Cancel
               </Button>
-              <Button disabled={!ready || save.isPending} type="submit">
+              <Button disabled={!ready} type="submit">
                 {save.isPending ? "Saving…" : "Save rules"}
               </Button>
             </>
@@ -119,18 +148,29 @@ function DescribeTeamRulesPage() {
           <FieldGroup>
             <DescribeField
               action="Write rules"
+              disabled={save.isPending}
               description="Say in a sentence what Bots should do, and your model writes rules from this OpenBot's apps and Bots. A second reading that never sees your words says what the rules do."
               id="team-rules-english"
               label="Describe the rules"
+              onTextChange={setDescription}
+              onWritingChange={setWriting}
               placeholder="Ask before any Bot sends email from Gmail"
+              text={description}
               write={async (described) => {
                 const translation = await translateApprovalRules(described);
                 save.reset();
                 setWritten({ ...translation, text: described });
                 setRules(translation.rules);
+                setRemoved(null);
                 return null;
               }}
             />
+            {descriptionChanged ? (
+              <ReadStatus
+                kind="loading"
+                message="Your description changed. Choose Write rules to update the draft before saving."
+              />
+            ) : null}
             {written ? (
               <ReadingStatus
                 check={written.check}
@@ -152,23 +192,59 @@ function DescribeTeamRulesPage() {
               />
             ) : null}
             {written && (rules.length > 0 || written.rules.length > 0) ? (
-              <RuleRowsEditor
-                onChange={setRules}
-                problems={
-                  current && !current.check.ok ? current.check.problems : []
-                }
-                rules={rules}
-              />
+              <FieldSet
+                disabled={writing || save.isPending || descriptionChanged}
+              >
+                <RuleRowsEditor
+                  onChange={(next) => {
+                    setRemoved(null);
+                    setRules(next);
+                  }}
+                  onRemove={(index, rule) => {
+                    setRemoved({ index, rule });
+                    setRules(rules.filter((_, at) => at !== index));
+                  }}
+                  problems={
+                    current && !current.check.ok ? current.check.problems : []
+                  }
+                  rules={rules}
+                />
+              </FieldSet>
             ) : null}
-            {current &&
+            {removed ? (
+              <HStack gap={3} vAlign="center" wrap="wrap">
+                <p className="text-muted-foreground text-sm" role="status">
+                  Removed one rule.
+                </p>
+                <Button
+                  disabled={writing || save.isPending || descriptionChanged}
+                  onClick={() => {
+                    setRules([
+                      ...rules.slice(0, removed.index),
+                      removed.rule,
+                      ...rules.slice(removed.index),
+                    ]);
+                    setRemoved(null);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Undo
+                </Button>
+              </HStack>
+            ) : null}
+            {!descriptionChanged &&
+            current &&
             !current.check.ok &&
             current.check.problems.length === 0 ? (
               <p className="text-destructive text-sm">{current.check.error}</p>
             ) : null}
-            {rules.length > 0 && settled.length > 0 ? (
+            {!descriptionChanged && rules.length > 0 ? (
               <RulesBacktest
                 asksMore={rules.some((rule) => rule.behaviour !== "allow")}
                 preview={preview}
+                settling={settling}
               />
             ) : null}
           </FieldGroup>
