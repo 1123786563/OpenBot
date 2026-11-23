@@ -249,6 +249,16 @@ export function DirectChatLearning({
   if (!recording && !fromSettings && (!data || status.error)) return null;
   const working = inProgress(data?.latest);
   const last = data?.lastResult;
+  const proposals = data?.proposals.filter(
+    (proposal) =>
+      !recording ||
+      proposal.evidence.some(
+        (item) =>
+          "source" in item &&
+          item.source.kind === "recording" &&
+          item.source.id === recording.id,
+      ),
+  );
 
   const panel = (
     <>
@@ -290,10 +300,16 @@ export function DirectChatLearning({
               <p>The Learning model is unavailable.</p>
             )}
             {working && data.latest && (
-              <p>{analysisText(data.latest, Boolean(recording))}</p>
+              <p>
+                {recording && "Current conversation analysis · "}
+                {analysisText(data.latest, Boolean(recording))}
+              </p>
             )}
             {last && (
-              <p>Last result · {analysisText(last, Boolean(recording))}</p>
+              <p>
+                {recording ? "Last conversation result · " : "Last result · "}
+                {analysisText(last, Boolean(recording))}
+              </p>
             )}
           </VStack>
           {!recording && data.schedule && (
@@ -399,7 +415,7 @@ export function DirectChatLearning({
               )}
             </>
           )}
-          {data.proposals.map((proposal) => (
+          {proposals?.map((proposal) => (
             <article
               key={proposal.id}
               className="space-y-2 rounded-md border p-3 text-sm"

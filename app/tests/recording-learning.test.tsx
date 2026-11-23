@@ -17,7 +17,38 @@ test("a saved Recording starts Learning in the chosen Conversation using only th
     autoApprove: true,
     latest: null,
     lastResult: null,
-    proposals: [],
+    proposals: [
+      {
+        id: "chat-proposal",
+        state: "pending_review",
+        review: null,
+        title: "Earlier chat proposal",
+        instructions: "This is not based on the recording.",
+        evidence: [
+          {
+            runId: "earlier-run",
+            userMessageId: "question",
+            assistantMessageId: "answer",
+            prompt: "How should I start?",
+            reply: "Check the order.",
+          },
+        ],
+      },
+      {
+        id: "recording-proposal",
+        state: "pending_review",
+        review: null,
+        title: "Recording proposal",
+        instructions: "Use the shipment checklist.",
+        evidence: [
+          {
+            source: { kind: "recording", id },
+            title: "Pack a shipment",
+            excerpt: "Open the packing list.",
+          },
+        ],
+      },
+    ],
   };
   const starts: unknown[] = [];
   const transport = spyOn(globalThis, "fetch").mockImplementation(
@@ -86,6 +117,11 @@ test("a saved Recording starts Learning in the chosen Conversation using only th
       await view.findByRole("button", { name: /Shipping Bot.*Ship orders/ }),
     );
     expect(await view.findByText(/uses Test Credits/)).toBeTruthy();
+    expect(view.getByText("Recording proposal")).toBeTruthy();
+    expect(view.queryByText("Earlier chat proposal")).toBeNull();
+    expect(
+      view.getAllByRole("button", { name: "Approve for this conversation" }),
+    ).toHaveLength(1);
     expect(starts).toEqual([]);
     fireEvent.click(await view.findByRole("button", { name: "Learn now" }));
     await waitFor(() =>
