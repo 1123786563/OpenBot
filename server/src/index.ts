@@ -105,6 +105,7 @@ import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
+import { reconcilePilotClosure } from "./billing/pilot-closure";
 import { createTestCreditLedger } from "./billing/test-credit";
 import { loadTestCreditRuntimeAuthentication } from "./billing/test-credit-runtime-auth";
 import { loadWeKnoraBilling } from "./billing/weknora-config";
@@ -1895,6 +1896,16 @@ const backgroundModel =
         execute: directChatTestCredit.execute,
       })
     : undefined;
+const paidCreditLedger = createPaidCreditLedger(database);
+const creditPackTestChannel = loadCreditPackTestChannel(process.env);
+const alipayCreditPackTestChannel = loadCreditPackTestChannel(
+  process.env,
+  "alipay",
+);
+const closureChannels = [
+  creditPackTestChannel,
+  alipayCreditPackTestChannel,
+].filter((channel) => channel !== undefined);
 const testCreditCutoffSweep = repeatAfterEach(async () => {
   try {
     await testCreditLedger.sweepCutoffs();
@@ -1902,6 +1913,25 @@ const testCreditCutoffSweep = repeatAfterEach(async () => {
     console.error(
       JSON.stringify({
         type: "test-credit-cutoff-sweep-error",
+        error: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+  }
+}, 60_000);
+
+const pilotClosureSweep = repeatAfterEach(async () => {
+  try {
+    for (const { accountId } of await paidCreditLedger.closedPilotAccounts()) {
+      await reconcilePilotClosure(
+        accountId,
+        { credit: testCreditLedger, paid: paidCreditLedger },
+        closureChannels,
+      );
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        type: "pilot-closure-sweep-error",
         error: error instanceof Error ? error.name : "UnknownError",
       }),
     );
@@ -3967,12 +3997,9 @@ const app = createApp(
             execute: directChatTestCredit.execute,
           }
         : undefined,
-    paidLedger: createPaidCreditLedger(database),
-    creditPackTestChannel: loadCreditPackTestChannel(process.env),
-    alipayCreditPackTestChannel: loadCreditPackTestChannel(
-      process.env,
-      "alipay",
-    ),
+    paidLedger: paidCreditLedger,
+    creditPackTestChannel,
+    alipayCreditPackTestChannel,
     casdoorIdentityOf: casdoorBillingIdentity,
     weknora: weknoraBilling,
     testCreditConversations: directChatTestCredit !== undefined,
@@ -4017,6 +4044,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     groupSweep.stop();
     recorderExpirySweep.stop();
     testCreditCutoffSweep.stop();
+    pilotClosureSweep.stop();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);
     for (const sweep of deliverySweeps) sweep.stop();

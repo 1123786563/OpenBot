@@ -73,7 +73,7 @@ const isDispute = or(
   eq(paidRefunds.reason, "channel_dispute"),
 );
 
-const disputeUsageFields = {
+const orderUsageFields = {
   used: sql<string>`(select coalesce(sum(source.consumed_microcredits), 0)::text
     from paid_entitlements source where source.order_id = paid_orders.id)`,
   total: sql<string>`(select coalesce(sum(source.credits_microcredits), 0)::text
@@ -90,7 +90,7 @@ const disputeFields = {
   evidence: paidRefunds.dispute,
   reconciledUsage: paidRefunds.usedMicrocredits,
   reconciledCents: paidRefunds.manualReviewCents,
-  ...disputeUsageFields,
+  ...orderUsageFields,
 };
 
 function usedShareCents(priceCents: number, used: string, total: string) {
@@ -279,11 +279,7 @@ export function createPaidCreditLedger(
         "ledger_restoring",
         "The ledger is being restored; new orders are paused.",
       );
-    const [closure] = await tx
-      .select({ salesStoppedAt: paidPilotClosure.salesStoppedAt })
-      .from(paidPilotClosure)
-      .where(eq(paidPilotClosure.id, "pilot"));
-    if (closure?.salesStoppedAt)
+    if ((await pilotClosure(tx, accountId))?.salesStoppedAt)
       throw new PaidLedgerError(
         "pilot_closed",
         "Pilot sales are stopped; no new orders.",
@@ -842,9 +838,7 @@ export function createPaidCreditLedger(
           owed,
           reason,
           now(),
-          order.testMerchant && reason !== "pilot_closure"
-            ? automaticFixtureRefund
-            : "channel",
+          order.testMerchant ? automaticFixtureRefund : "channel",
         );
         return {
           order: owed,
@@ -878,14 +872,8 @@ export function createPaidCreditLedger(
       // A payment confirmed at or after the pilot's reserve cutoff never
       // grants: it refunds in full through its own channel (#109 截止时及
       // 之后原路全退且不授予权益; notifications may arrive late).
-      const [closure] = await tx
-        .select({ reservesStoppedAt: paidPilotClosure.reservesStoppedAt })
-        .from(paidPilotClosure)
-        .where(eq(paidPilotClosure.id, "pilot"));
-      if (
-        closure?.reservesStoppedAt &&
-        input.paidAt >= closure.reservesStoppedAt
-      )
+      const cutoff = await pilotReservesStoppedAt(tx, order.accountId);
+      if (cutoff && input.paidAt >= cutoff)
         return refundPayment("pilot_closure");
 
       const attemptId = order.checkoutAttemptId ?? order.id;
@@ -1309,7 +1297,7 @@ export function createPaidCreditLedger(
           "Confirm the payment reversal first.",
         );
       const [usage] = await tx
-        .select(disputeUsageFields)
+        .select(orderUsageFields)
         .from(paidOrders)
         .where(eq(paidOrders.id, order.id));
       if (usage.hasHold)
@@ -1415,6 +1403,7 @@ export function createPaidCreditLedger(
         existing &&
         (existing.state === "confirmed" ||
           existing.dispute ||
+          existing.reason === "pilot_closure" ||
           fixtureRefundActors.includes(existing.openedBy))
       )
         return existing;
@@ -1642,7 +1631,12 @@ export function createPaidCreditLedger(
           "not_verified",
           "No refund has been requested for this order.",
         );
-      if (refund.dispute || fixtureRefundActors.includes(refund.openedBy))
+      if (
+        refund.dispute ||
+        fixtureRefundActors.includes(refund.openedBy) ||
+        refund.state === "awaiting_settlement" ||
+        (refund.reason === "pilot_closure" && refund.state === "manual_review")
+      )
         return refund;
       return settleRefundWithin(tx, refund, succeeded);
     });
@@ -1723,6 +1717,14 @@ export function createPaidCreditLedger(
           usedMicrocredits: used > 0n ? used : null,
           manualReviewCents,
         })
+        .where(eq(paidRefunds.id, refund.id))
+        .returning();
+      return row;
+    }
+    if (refund.reason === "pilot_closure") {
+      const [row] = await tx
+        .update(paidRefunds)
+        .set({ state: "manual_owed" })
         .where(eq(paidRefunds.id, refund.id))
         .returning();
       return row;
@@ -2113,79 +2115,141 @@ export function createPaidCreditLedger(
    * continue.
    */
   async function setPilotClosure(input: {
+    accountId?: string;
     stopSales: boolean;
     stopReserves: boolean;
   }) {
-    const at = now();
-    const [row] = await database
-      .insert(paidPilotClosure)
-      .values({
-        id: "pilot",
-        salesStoppedAt: input.stopSales ? at : null,
-        reservesStoppedAt: input.stopReserves ? at : null,
-        updatedAt: at,
-      })
-      .onConflictDoUpdate({
-        target: paidPilotClosure.id,
-        set: {
+    return database.transaction(async (tx) => {
+      if (input.accountId && !(await lockAccount(tx, input.accountId)))
+        throw new PaidLedgerError(
+          "order_unknown",
+          "Billing Account unavailable.",
+        );
+      const at = now();
+      const [row] = await tx
+        .insert(paidPilotClosure)
+        .values({
+          id: input.accountId ?? "pilot",
           salesStoppedAt: input.stopSales ? at : null,
           reservesStoppedAt: input.stopReserves ? at : null,
           updatedAt: at,
-        },
-      })
-      .returning();
-    return row;
+        })
+        .onConflictDoUpdate({
+          target: paidPilotClosure.id,
+          set: {
+            salesStoppedAt: input.stopSales
+              ? sql`coalesce(${paidPilotClosure.salesStoppedAt}, excluded.sales_stopped_at)`
+              : null,
+            reservesStoppedAt: input.stopReserves
+              ? sql`coalesce(${paidPilotClosure.reservesStoppedAt}, excluded.reserves_stopped_at)`
+              : null,
+            updatedAt: at,
+          },
+        })
+        .returning();
+      return row;
+    });
   }
 
-  /**
-   * Wind-down disposition (#109): verified orders whose sources no longer
-   * fund a live reservation refund now — in full when nothing was consumed,
-   * with the used part booked to manual reconciliation otherwise (#104).
-   * Orders still funding held reservations wait for their settlement or
-   * release, and a rerun after that picks them up.
-   */
-  async function closePilotOrders(accountId?: string) {
-    const held = await database
-      .select({ entitlementId: paidCreditAllocations.entitlementId })
-      .from(paidCreditAllocations)
-      .where(eq(paidCreditAllocations.state, "held"));
-    const heldIds = new Set(
-      held.flatMap(({ entitlementId }) =>
-        entitlementId === null ? [] : [entitlementId],
-      ),
-    );
+  async function closureCutoff(accountId: string) {
+    return pilotReservesStoppedAt(database, accountId);
+  }
+
+  async function closedPilotAccounts() {
+    return database
+      .select({ accountId: testCreditAccounts.id })
+      .from(paidPilotClosure)
+      .innerJoin(
+        testCreditAccounts,
+        sql`${testCreditAccounts.id}::text = ${paidPilotClosure.id}`,
+      )
+      .where(isNotNull(paidPilotClosure.reservesStoppedAt));
+  }
+
+  /** Recheck one order under the same account lock as reservations and settlement. */
+  async function advanceClosureOrder(accountId: string, orderId: string) {
+    return database.transaction(async (tx) => {
+      await lockAccount(tx, accountId);
+      if (!(await pilotReservesStoppedAt(tx, accountId))) return;
+      if (await restoreHolds(tx, accountId)) return;
+      const order = await lockRefundOrder(tx, orderId);
+      if (order.accountId !== accountId || order.state !== "verified") return;
+      const existing = await findRefund(tx, orderId);
+      if (
+        existing &&
+        (existing.dispute ||
+          (existing.state !== "awaiting_settlement" &&
+            existing.state !== "failed"))
+      )
+        return existing;
+
+      const sources = await tx
+        .select({ id: paidEntitlements.id })
+        .from(paidEntitlements)
+        .where(eq(paidEntitlements.orderId, orderId))
+        .for("update");
+      if (!sources.length) return;
+      const [usage] = await tx
+        .select(orderUsageFields)
+        .from(paidOrders)
+        .where(eq(paidOrders.id, orderId));
+      const used = BigInt(usage.used);
+      // A channel that definitively rejected this refund ID cannot be retried
+      // under a new ID without operator reconciliation.
+      const hadFailed =
+        existing?.state === "failed" || existing?.confirmedAt != null;
+      const state = usage.hasHold
+        ? "awaiting_settlement"
+        : used > 0n
+          ? "manual_review"
+          : hadFailed
+            ? "manual_owed"
+            : "requested";
+      if (existing && existing.state === state) return existing;
+      const refund =
+        existing ??
+        (await recordRefundWithin(
+          tx,
+          order,
+          "pilot_closure",
+          now(),
+          order.testMerchant ? automaticFixtureRefund : "operator",
+          state,
+        ));
+      if (state === "awaiting_settlement" && !existing) return refund;
+      if (state !== "awaiting_settlement") await freezeForRefund(tx, orderId);
+      const [updated] = await tx
+        .update(paidRefunds)
+        .set({
+          state,
+          reason: "pilot_closure",
+          openedBy: order.testMerchant ? automaticFixtureRefund : "operator",
+          // Preserve failed channel evidence while waiting on newer holds.
+          confirmedAt:
+            state === "awaiting_settlement" ? existing?.confirmedAt : null,
+          usedMicrocredits: used > 0n ? used : null,
+          manualReviewCents:
+            used > 0n
+              ? usedShareCents(order.priceCents, usage.used, usage.total)
+              : null,
+        })
+        .where(eq(paidRefunds.id, refund.id))
+        .returning();
+      return updated;
+    });
+  }
+
+  async function closePilotOrders(accountId: string) {
     const orders = await database
       .select({ id: paidOrders.id })
       .from(paidOrders)
       .where(
-        accountId
-          ? and(
-              eq(paidOrders.state, "verified"),
-              eq(paidOrders.accountId, accountId),
-            )
-          : eq(paidOrders.state, "verified"),
+        and(
+          eq(paidOrders.accountId, accountId),
+          eq(paidOrders.state, "verified"),
+        ),
       );
-    let refunded = 0;
-    let waiting = 0;
-    for (const order of orders) {
-      const grants = await database
-        .select({ id: paidEntitlements.id })
-        .from(paidEntitlements)
-        .where(eq(paidEntitlements.orderId, order.id));
-      if (grants.length === 0) continue;
-      if (grants.some(({ id }) => heldIds.has(id))) {
-        waiting += 1;
-        continue;
-      }
-      const refund = await requestRefund(order.id, "pilot_closure", "operator");
-      if (refund.openedBy === customerRefund) {
-        waiting += 1;
-        continue;
-      }
-      await confirmRefund(order.id, true);
-      refunded += 1;
-    }
-    return { refunded, waiting };
+    for (const order of orders) await advanceClosureOrder(accountId, order.id);
   }
 
   // ── Consumption ordering (#101 AC3) ─────────────────────────────────────
@@ -2535,6 +2599,9 @@ export function createPaidCreditLedger(
     suspendAccount,
     setPilotClosure,
     closePilotOrders,
+    closureCutoff,
+    closedPilotAccounts,
+    advanceClosureOrder,
     pendingOrders,
     closeOrder,
     paidPaths,
@@ -2815,10 +2882,26 @@ export async function restoreHolds(tx: PaidTx, accountId: string) {
  * reservations of either Credit type stop at this instant; dispatched work
  * keeps settling under its original reservation.
  */
-export async function pilotReservesStoppedAt(tx: PaidTx) {
-  const [row] = await tx
-    .select({ stoppedAt: paidPilotClosure.reservesStoppedAt })
+async function pilotClosure(tx: Database | PaidTx, accountId: string) {
+  const [cutoffs] = await tx
+    .select({
+      salesStoppedAt:
+        sql<Date | null>`min(${paidPilotClosure.salesStoppedAt})`.mapWith(
+          paidPilotClosure.salesStoppedAt,
+        ),
+      reservesStoppedAt:
+        sql<Date | null>`min(${paidPilotClosure.reservesStoppedAt})`.mapWith(
+          paidPilotClosure.reservesStoppedAt,
+        ),
+    })
     .from(paidPilotClosure)
-    .where(eq(paidPilotClosure.id, "pilot"));
-  return row?.stoppedAt ?? null;
+    .where(inArray(paidPilotClosure.id, ["pilot", accountId]));
+  return cutoffs;
+}
+
+export async function pilotReservesStoppedAt(
+  tx: Database | PaidTx,
+  accountId: string,
+) {
+  return (await pilotClosure(tx, accountId))?.reservesStoppedAt ?? null;
 }

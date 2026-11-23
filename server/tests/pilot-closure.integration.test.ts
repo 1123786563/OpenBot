@@ -339,43 +339,58 @@ test("closure disposition refunds free orders now and waits for held ones", asyn
     chargeMicrocredits: 10n,
   });
 
-  const first = await paidLedger.closePilotOrders(accountId);
-  expect(first).toMatchObject({ refunded: 2, waiting: 1 });
-  // The free order returned everything; the partial one kept its consumed
-  // record and booked the used part to manual reconciliation (9 900 ×
-  // 10 / 30).
-  const refundRows = await paidLedger.refunds(accountId);
-  const freeRefund = refundRows.find(({ orderId }) => orderId === free.id);
-  const partialRefund = refundRows.find(
-    ({ orderId }) => orderId === partial.id,
+  const previouslyFailed = await boughtPack(
+    accountId,
+    10n,
+    `ali-disp-failed-${run}`,
+    new Date(paidAt.getTime() + 180_000),
   );
-  expect(freeRefund).toMatchObject({
-    state: "confirmed",
+  const failedRefund = await paidLedger.requestRefund(previouslyFailed.id);
+  await paidLedger.confirmRefund(previouslyFailed.id, false);
+  await paidLedger.setPilotClosure({ stopSales: true, stopReserves: true });
+  await paidLedger.closePilotOrders(accountId);
+  const refundRows = await paidLedger.refunds(accountId);
+  expect(refundRows.find(({ orderId }) => orderId === free.id)).toMatchObject({
+    state: "requested",
     usedMicrocredits: null,
     manualReviewCents: null,
   });
-  expect(partialRefund).toMatchObject({
-    state: "confirmed",
+  expect(
+    refundRows.find(({ orderId }) => orderId === partial.id),
+  ).toMatchObject({
+    state: "manual_review",
     usedMicrocredits: 10n,
     manualReviewCents: 3_300,
   });
+  expect(
+    refundRows.find(({ orderId }) => orderId === previouslyFailed.id),
+  ).toMatchObject({ id: failedRefund.id, state: "manual_owed" });
+  const waitingRefund = refundRows.find(
+    ({ orderId }) => orderId === waiting.id,
+  );
+  expect(waitingRefund).toMatchObject({ state: "awaiting_settlement" });
   const view = await paidLedger.entitlements(accountId);
   expect(view.find(({ orderId }) => orderId === free.id)?.effective).toBe(
-    "revoked",
+    "frozen",
   );
   expect(view.find(({ orderId }) => orderId === waiting.id)?.effective).toBe(
     "active",
   );
 
-  // Once the hold releases, a rerun picks the waiting order up.
   await paidLedger.releaseAllocation(accountId, "close-hold");
-  const second = await paidLedger.closePilotOrders(accountId);
-  expect(second).toMatchObject({ refunded: 1, waiting: 0 });
+  await paidLedger.closePilotOrders(accountId);
+  expect(
+    (await paidLedger.refunds(accountId)).find(
+      ({ orderId }) => orderId === waiting.id,
+    ),
+  ).toMatchObject({ id: waitingRefund?.id, state: "requested" });
+  await paidLedger.confirmRefund(waiting.id, true);
   expect(
     (await paidLedger.entitlements(accountId)).find(
       ({ orderId }) => orderId === waiting.id,
     )?.effective,
   ).toBe("revoked");
+  await paidLedger.setPilotClosure({ stopSales: false, stopReserves: false });
 });
 
 test("the paid entry funds from paid sources only, under a paid budget", async () => {

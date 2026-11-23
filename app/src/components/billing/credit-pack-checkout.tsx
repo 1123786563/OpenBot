@@ -68,6 +68,8 @@ const states = {
 };
 
 const refundStatuses = (channel: Channel) => ({
+  awaiting_settlement:
+    "Waiting for usage to settle before reviewing your refund.",
   requested: `Waiting for ${channel} refund processing.`,
   processing: `${channel} is processing your refund.`,
   manual_review: "Your refund is under manual review.",
@@ -97,6 +99,7 @@ const orderSchema = pack.extend({
       amountCents: z.number().int().positive(),
       reason: z.string().optional(),
       state: z.enum([
+        "awaiting_settlement",
         "requested",
         "processing",
         "manual_review",
@@ -208,9 +211,15 @@ function OrderRow({
           <PaymentDisputeDetails dispute={order.dispute} />
         ) : order.refund ? (
           <>
-            <Text>
-              Refund amount CN¥{(order.refund.amountCents / 100).toFixed(2)}
-            </Text>
+            {order.refund.state !== "awaiting_settlement" &&
+            !(
+              order.refund.reason === "pilot_closure" &&
+              order.refund.state === "manual_review"
+            ) ? (
+              <Text>
+                Refund amount CN¥{(order.refund.amountCents / 100).toFixed(2)}
+              </Text>
+            ) : null}
             <Text role="status">
               {order.creditsFrozen ? "Credits frozen. " : ""}
               {refundStatuses(channel)[order.refund.state]}

@@ -8,6 +8,8 @@
  *   … pause <id> --by <who>          its path takes no new reservation; the rest settles
  *   … resume <id>
  *   … provider-cost [set --microcredits <amount> --by <who>]
+ *   … closure stop --account <id>   permanently stop an account with no remaining paid path
+ *   … closure reconcile --account <id>  repeat channel queries and recheck held orders
  *   … pending [--account <id>]       the orders still awaiting a channel result
  *   … close <order id> --by <who>    the channel says nobody paid
  *   … confirm-test-refund <order id> --returned-cents <amount>
@@ -22,9 +24,17 @@
  */
 import { z } from "zod";
 import {
+  type CreditPackTestChannel,
+  loadCreditPackTestChannel,
+} from "../src/billing/credit-pack-test-channel";
+import {
   createPaidCreditLedger,
   type PaidCreditLedger,
 } from "../src/billing/paid-ledger";
+import {
+  type PilotClosureLedgers,
+  reconcilePilotClosure,
+} from "../src/billing/pilot-closure";
 import {
   createTestCreditLedger,
   type TestCreditLedger,
@@ -32,9 +42,9 @@ import {
 import { createDatabase } from "../src/db/client";
 
 const usage =
-  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | provider-cost [set --microcredits --by] | pending [--account] | close <order id> --by | confirm-test-refund <order id> --returned-cents | dispute status <order id> | dispute open|confirm-reversal|reconcile <order id> --by --reference | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
+  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | provider-cost [set --microcredits --by] | closure stop|reconcile --account <id> | pending [--account] | close <order id> --by | confirm-test-refund <order id> --returned-cents | dispute status <order id> | dispute open|confirm-reversal|reconcile <order id> --by --reference | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
 
-export type BillingPaths = {
+export type BillingPaths = PilotClosureLedgers & {
   credit: Pick<
     TestCreditLedger,
     | "applications"
@@ -49,7 +59,7 @@ export type BillingPaths = {
     PaidCreditLedger,
     | "handleDispute"
     | "disputeStatus"
-    | "pendingOrders"
+    | "setPilotClosure"
     | "closeOrder"
     | "confirmTestPackManualRefund"
     | "beginRestore"
@@ -88,6 +98,7 @@ function need(flags: Record<string, string>, name: string) {
 export async function run(
   args: string[],
   ledgers: BillingPaths,
+  channels: CreditPackTestChannel[] = [],
 ): Promise<unknown> {
   const { words, flags } = parse(args);
   // The first word names a command, and `restore` names a second one after
@@ -134,6 +145,20 @@ export async function run(
         limitMicrocredits: BigInt(amount),
         by: by(),
       });
+    }
+    case "closure": {
+      if ((target !== "stop" && target !== "reconcile") || action)
+        throw new TypeError(usage);
+      const accountId = z.uuid().parse(need(flags, "account"));
+      if (target === "stop")
+        await ledgers.paid.setPilotClosure({
+          accountId,
+          stopSales: true,
+          stopReserves: true,
+        });
+      const result = await reconcilePilotClosure(accountId, ledgers, channels);
+      if (!result) throw new Error("This account has no closure cutoff.");
+      return result;
     }
     case "pending":
       return ledgers.paid.pendingOrders(flags.account);
@@ -192,12 +217,24 @@ export async function run(
 if (import.meta.main) {
   const database = createDatabase(process.env.DATABASE_URL ?? "");
   try {
+    const args = process.argv.slice(2);
+    const channels =
+      args[0] === "closure"
+        ? [
+            loadCreditPackTestChannel(process.env),
+            loadCreditPackTestChannel(process.env, "alipay"),
+          ].filter((channel) => channel !== undefined)
+        : [];
     console.log(
       JSON.stringify(
-        await run(process.argv.slice(2), {
-          credit: createTestCreditLedger(database),
-          paid: createPaidCreditLedger(database),
-        }),
+        await run(
+          args,
+          {
+            credit: createTestCreditLedger(database),
+            paid: createPaidCreditLedger(database),
+          },
+          channels,
+        ),
         (_key, value: unknown) =>
           typeof value === "bigint" ? value.toString() : value,
         2,

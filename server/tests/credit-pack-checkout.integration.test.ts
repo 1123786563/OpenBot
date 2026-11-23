@@ -27,6 +27,7 @@ import {
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
+  paidPilotClosure,
   paidProducts,
   paidRefunds,
   testCreditAccounts,
@@ -176,6 +177,9 @@ afterAll(async () => {
     alipayFixture.stop(true),
     billingServer.stop(true),
   ]);
+  await database
+    .delete(paidPilotClosure)
+    .where(inArray(paidPilotClosure.id, accountIds));
   await database
     .delete(paidCreditAllocations)
     .where(inArray(paidCreditAllocations.accountId, accountIds));
@@ -1900,3 +1904,284 @@ test("a switch reconciles an already paid order and the runnable fixture closes 
     api = previous;
   }
 });
+
+test("scoped pilot closure reconciles each order through its original channel", async () => {
+  await approvePaths();
+  const subject = crypto.randomUUID();
+  fixtureSubjects.add(subject);
+  const [{ id: accountId }] = await database
+    .insert(testCreditAccounts)
+    .values({ issuer, subject })
+    .returning();
+  accountIds.push(accountId);
+  const [unaffected] = accountIds;
+  const route = "checkout-pilot-closure";
+  const restoreCatalog = await installFixtureCatalog(route, 10);
+  const entered = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  api = mount(
+    fixture.url.origin,
+    [accountId, unaffected],
+    alipayFixture.url.origin,
+    async () => {
+      entered.resolve();
+      await finish.promise;
+      return { text: "completed", usage: { inputTokens: 3, outputTokens: 0 } };
+    },
+  );
+  const alipayOrders = "/paid/credit-pack/alipay/orders";
+  async function place(path = orders, buyer = subject) {
+    const { product } = await (
+      await call(path.replace("/orders", ""), buyer)
+    ).json();
+    const orderId = crypto.randomUUID();
+    expect(
+      (await call(path, buyer, { orderId, version: product.version })).status,
+    ).toBe(201);
+    return {
+      orderId,
+      amountCents: product.priceCents,
+      merchantId: "fixture-merchant",
+      currency: "CNY",
+    };
+  }
+  async function notify(
+    order: Awaited<ReturnType<typeof place>>,
+    date: Date,
+    alipay = false,
+  ) {
+    const payment = {
+      ...order,
+      state: "paid",
+      channelOrderRef: order.orderId,
+      paidAt: date.toISOString(),
+    };
+    expect(
+      (
+        await call(
+          alipay ? "/credit-pack-test/alipay/callback" : callback,
+          undefined,
+          payment,
+          alipay ? alipayToken : token,
+        )
+      ).status,
+    ).toBe(200);
+  }
+  async function operator(action: string) {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        "server/scripts/billing-paths.ts",
+        "closure",
+        action,
+        "--account",
+        accountId,
+      ],
+      {
+        env: {
+          DATABASE_URL: testDatabaseUrl(),
+          OPENBOT_CREDIT_PACK_TEST_ORIGIN: fixture.url.origin,
+          OPENBOT_CREDIT_PACK_TEST_TOKEN: token,
+          OPENBOT_CREDIT_PACK_TEST_ACCOUNT_IDS: accountId,
+          OPENBOT_CREDIT_PACK_TEST_PRODUCT: code,
+          OPENBOT_CREDIT_PACK_TEST_APPLICATION_IDS: openbotApp,
+          OPENBOT_CREDIT_PACK_TEST_MERCHANT: "fixture-merchant",
+          OPENBOT_CREDIT_PACK_ALIPAY_TEST_ORIGIN: alipayFixture.url.origin,
+          OPENBOT_CREDIT_PACK_ALIPAY_TEST_TOKEN: alipayToken,
+          OPENBOT_CREDIT_PACK_ALIPAY_TEST_ACCOUNT_IDS: accountId,
+          OPENBOT_CREDIT_PACK_ALIPAY_TEST_APPLICATION_IDS: openbotApp,
+          OPENBOT_CREDIT_PACK_ALIPAY_TEST_MERCHANT: "fixture-merchant",
+        },
+        stderr: "pipe",
+        stdout: "pipe",
+      },
+    );
+    const [status, stderr, stdout] = await Promise.all([
+      child.exited,
+      new Response(child.stderr).text(),
+      new Response(child.stdout).text(),
+    ]);
+    expect(stderr).toBe("");
+    expect(status).toBe(0);
+    return JSON.parse(stdout);
+  }
+  async function status(id: string, path = orders) {
+    const rows = await (await call(path, subject)).json();
+    return rows.find((row: { id: string }) => row.id === id);
+  }
+  let dispatched: Promise<Response> | undefined;
+  try {
+    const held = await place();
+    const free = await place(alipayOrders);
+    const lateBefore = await place();
+    const exact = await place(alipayOrders);
+    const after = await place();
+    await notify(held, new Date(Date.now() - 120_000));
+    await notify(free, new Date(Date.now() - 60_000), true);
+    closeResults.set(lateBefore.orderId, { ...lateBefore, state: "failed" });
+    const quote = await ledger.quote();
+    const operationId = crypto.randomUUID();
+    const reserve = async (id: string) =>
+      (
+        await call("/v1/reserve", subject, {
+          operationId: id,
+          route,
+          priceVersion: quote?.priceVersion,
+          creditType: "paid",
+        })
+      ).json();
+    const queuedId = crypto.randomUUID();
+    const queued = await reserve(queuedId);
+    expect(queued.state).toBe("reserved");
+    const hold = await reserve(operationId);
+    expect(hold.state).toBe("reserved");
+    dispatched = call("/v1/dispatch", subject, {
+      operationId,
+      permit: hold.permit,
+      messages: [{ role: "user", content: "fixture" }],
+    });
+    await Promise.race([
+      entered.promise,
+      dispatched.then(async (response) => {
+        throw new Error(
+          `Dispatch did not enter executor: ${await response.clone().text()}`,
+        );
+      }),
+    ]);
+    const { cutoff } = await operator("stop");
+    expect(cutoff).toBeString();
+    expect(
+      await (await call("/paid/credit-pack", subject)).json(),
+    ).toMatchObject({ available: false });
+    expect(await reserve(crypto.randomUUID())).toMatchObject({
+      reason: "pilot_closed",
+    });
+    const queuedResult = await call("/v1/dispatch", subject, {
+      operationId: queuedId,
+      permit: queued.permit,
+      messages: [{ role: "user", content: "never sent" }],
+    });
+    expect(await queuedResult.json()).toMatchObject({
+      state: "existing",
+      operation: { state: "released" },
+    });
+    await place(orders, alice);
+    for (const order of [lateBefore, exact, after]) {
+      expect(switchCalls).toContain(`query:${order.orderId}`);
+      expect(switchCalls).toContain(`close:${order.orderId}`);
+    }
+    expect(await status(lateBefore.orderId)).toMatchObject({ state: "failed" });
+    expect(await status(after.orderId)).toMatchObject({ state: "pending" });
+    expect(await status(held.orderId)).toMatchObject({
+      refund: { state: "awaiting_settlement" },
+    });
+    const freeOrder = await status(free.orderId, alipayOrders);
+    expect(freeOrder).toMatchObject({
+      refund: { state: "processing" },
+      creditsFrozen: true,
+    });
+    expect(refundChannels.get(freeOrder.refund.id)).toBe(alipayToken);
+
+    const repeated = await operator("stop");
+    expect(repeated.cutoff).toBe(cutoff);
+    expect(repeated.pendingOrders).toContain(after.orderId);
+    expect(
+      switchCalls.filter((event) => event === `query:${after.orderId}`),
+    ).toHaveLength(2);
+    const boundary = new Date(cutoff).getTime();
+    await notify(lateBefore, new Date(boundary - 1));
+    await notify(exact, new Date(boundary), true);
+    payments.set(after.orderId, {
+      ...after,
+      state: "paid",
+      channelOrderRef: after.orderId,
+      paidAt: new Date(boundary + 1).toISOString(),
+    });
+    await operator("reconcile");
+    await notify(after, new Date(boundary + 1));
+    const beforeOrder = await status(lateBefore.orderId);
+    expect(beforeOrder).toMatchObject({
+      entitlementId: expect.any(String),
+      refund: { state: "processing" },
+    });
+    for (const [order, path, credential] of [
+      [exact, alipayOrders, alipayToken],
+      [after, orders, token],
+    ] as const) {
+      const view = await status(order.orderId, path);
+      expect(view).toMatchObject({
+        entitlementId: null,
+        refund: { state: "processing", amountCents: order.amountCents },
+      });
+      expect(refundChannels.get(view.refund.id)).toBe(credential);
+    }
+    const exactTerms = refundStarts.get(
+      (await status(exact.orderId, alipayOrders)).refund.id,
+    );
+    expect(
+      (
+        await call(
+          "/credit-pack-test/alipay/refund-callback",
+          undefined,
+          {
+            ...exactTerms,
+            state: "failed",
+          },
+          alipayToken,
+        )
+      ).status,
+    ).toBe(200);
+    expect(await status(exact.orderId, alipayOrders)).toMatchObject({
+      state: "refund_pending",
+      entitlementId: null,
+      refund: { state: "manual_owed" },
+    });
+    const freeTerms = refundStarts.get(freeOrder.refund.id);
+    expect(
+      (
+        await call(
+          "/credit-pack-test/alipay/refund-callback",
+          undefined,
+          { ...freeTerms, state: "confirmed" },
+          alipayToken,
+        )
+      ).status,
+    ).toBe(200);
+    expect(await status(free.orderId, alipayOrders)).toMatchObject({
+      state: "refunded",
+      refund: { state: "confirmed" },
+    });
+
+    finish.resolve();
+    expect(await (await dispatched).json()).toMatchObject({
+      state: "completed",
+      operation: { state: "settled", chargedMicrocredits: "3" },
+    });
+    await operator("reconcile");
+    const reviewed = await status(held.orderId);
+    expect(reviewed).toMatchObject({
+      creditsFrozen: true,
+      refund: { state: "manual_review" },
+    });
+    expect(refundStarts.has(reviewed.refund.id)).toBe(false);
+    expect(await (await call("/paid/balance", subject)).json()).toMatchObject({
+      availableMicrocredits: "0",
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "3",
+    });
+    expect(await (await call("/paid/bill", subject)).json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId,
+          orderId: held.orderId,
+          amountMicrocredits: "3",
+        }),
+      ]),
+    );
+  } finally {
+    finish.resolve();
+    await dispatched?.catch(() => undefined);
+    await restoreCatalog();
+  }
+}, 20_000);

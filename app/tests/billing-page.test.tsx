@@ -1012,3 +1012,58 @@ test("a pending monthly order can switch to Alipay and continue from the replace
     ).getAttribute("href"),
   ).toBe("http://127.0.0.1:9179/checkout");
 });
+
+test("closed checkout shows usage settlement, manual review and channel confirmation", async () => {
+  const path = "/api/billing/paid/credit-pack";
+  const pack = {
+    priceCents: 2500,
+    creditsMicrocredits: "25000000",
+    productVersion: 3,
+    entitlementId: "fixture-entitlement",
+  };
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(input) === path)
+        return Response.json({
+          available: false,
+          product: null,
+          blockedReason: "Pilot sales are stopped; no new orders.",
+          pausedApplications: [],
+        });
+      if (String(input) === `${path}/orders`)
+        return Response.json(
+          (["awaiting_settlement", "manual_review", "processing"] as const).map(
+            (state) => ({
+              ...pack,
+              id: crypto.randomUUID(),
+              creditsFrozen: state !== "awaiting_settlement",
+              state:
+                state === "awaiting_settlement" ? "verified" : "refund_pending",
+              refund: {
+                id: crypto.randomUUID(),
+                reason: "pilot_closure",
+                amountCents: pack.priceCents,
+                state,
+              },
+            }),
+          ),
+        );
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = renderCredits(answered());
+  expect(
+    await view.findByText(
+      "Waiting for usage to settle before reviewing your refund.",
+    ),
+  ).toBeTruthy();
+  expect(
+    view.getByText("Credits frozen. Your refund is under manual review."),
+  ).toBeTruthy();
+  expect(
+    view.getByText("Credits frozen. WeChat is processing your refund."),
+  ).toBeTruthy();
+  expect(view.getAllByText("Refund amount CN¥25.00")).toHaveLength(1);
+});

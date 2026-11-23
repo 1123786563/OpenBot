@@ -8,46 +8,17 @@ import {
 import { type PaidCreditLedger, PaidLedgerError } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 
-const orderInput = z.strictObject({
-  orderId: z.uuid(),
-  version: z.number().int().positive(),
-});
-
-const subscriptionOrderInput = orderInput.extend({
-  productCode: z.string().min(1).optional(),
-});
-
-export function createCreditPackCheckout({
-  channel,
-  otherChannel,
-  ledger,
-  paid,
-}: {
-  channel: CreditPackTestChannel;
-  otherChannel?: CreditPackTestChannel;
-  ledger: TestCreditLedger;
-  paid: PaidCreditLedger;
-}) {
-  const { merchant, kind } = channel;
-  const channelScope = { merchant, channel: kind };
-  const suffix = kind === "alipay" ? "/alipay" : "";
-  const callbackPath = `/credit-pack-test${suffix}`;
-  const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
-  function notFound(context: Context) {
-    return context.json({ error: "Test checkout unavailable." }, 404);
-  }
-
-  api.onError((error, context) => {
-    if (error instanceof PaidLedgerError && error.code === "order_unknown")
-      return notFound(context);
-    if (error instanceof PaidLedgerError && error.code !== "ledger_restoring")
-      return context.json({ code: error.code, error: error.message }, 409);
-    return context.json(
-      { error: "Test checkout is temporarily unavailable. Try again." },
-      503,
-    );
-  });
-
+export function createCreditPackReconciliation(
+  paid: Pick<
+    PaidCreditLedger,
+    | "advanceClosureOrder"
+    | "verifyOrder"
+    | "closeTestPackOrder"
+    | "testPackRefundDispatch"
+    | "applyTestPackRefundResult"
+  >,
+  channel: CreditPackTestChannel,
+) {
   async function verify(
     result: z.infer<typeof testPaymentResult>,
     id: string,
@@ -75,20 +46,10 @@ export function createCreditPackCheckout({
       channel: paymentChannel.kind,
       testChannel: true,
     });
-    if (outcome.refunded) await refreshRefund(id, false, paymentChannel);
+    if (outcome.claimed)
+      await paid.advanceClosureOrder(outcome.order.accountId, id);
+    await refreshRefund(id, false, paymentChannel);
   }
-
-  api.post(`${callbackPath}/callback`, async (context) => {
-    if (!channel.authenticates(context.req.raw))
-      return context.json({ error: "Verified channel required." }, 401);
-    const result = testPaymentResult.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!result.success)
-      return context.json({ error: "Invalid payment result." }, 400);
-    await verify(result.data, result.data.orderId);
-    return context.json({ accepted: true });
-  });
 
   async function verifyRefund(
     result: z.infer<typeof testRefundResult>,
@@ -110,6 +71,108 @@ export function createCreditPackCheckout({
       channelOrderRef: `fixture:${paymentChannel.merchant}:${result.channelOrderRef}`,
     });
   }
+
+  async function refreshRefund(
+    orderId: string,
+    query: boolean,
+    paymentChannel = channel,
+  ) {
+    const fixtureRef = `fixture:${paymentChannel.merchant}:`;
+    const refund = await paid.testPackRefundDispatch({
+      channel: paymentChannel.kind,
+      merchant: paymentChannel.merchant,
+      orderId,
+    });
+    if (!refund?.channelOrderRef.startsWith(fixtureRef)) return false;
+    if (refund.state === "requested") {
+      const result = await paymentChannel.startRefund({
+        refundId: refund.id,
+        orderId,
+        merchantId: paymentChannel.merchant,
+        currency: "CNY",
+        amountCents: refund.amountCents,
+        channelOrderRef: refund.channelOrderRef.slice(fixtureRef.length),
+      });
+      if (result.state !== "unknown")
+        await verifyRefund(result, refund, paymentChannel);
+    } else if (query && refund.state === "processing") {
+      const result = await paymentChannel.queryRefund(refund.id);
+      if (result.state !== "unknown")
+        await verifyRefund(result, refund, paymentChannel);
+    }
+    return true;
+  }
+
+  async function reconcileOrder(
+    id: string,
+    closeIfUnknown: boolean,
+    paymentChannel = channel,
+  ) {
+    const observed = await paymentChannel.query(id);
+    const result =
+      observed.state === "unknown" && closeIfUnknown
+        ? await paymentChannel.close(id)
+        : observed;
+    if (result.state !== "unknown") await verify(result, id, paymentChannel);
+    return result.state;
+  }
+
+  return { verify, verifyRefund, refreshRefund, reconcileOrder };
+}
+
+const orderInput = z.strictObject({
+  orderId: z.uuid(),
+  version: z.number().int().positive(),
+});
+
+const subscriptionOrderInput = orderInput.extend({
+  productCode: z.string().min(1).optional(),
+});
+
+export function createCreditPackCheckout({
+  channel,
+  otherChannel,
+  ledger,
+  paid,
+}: {
+  channel: CreditPackTestChannel;
+  otherChannel?: CreditPackTestChannel;
+  ledger: TestCreditLedger;
+  paid: PaidCreditLedger;
+}) {
+  const { merchant, kind } = channel;
+  const { verify, verifyRefund, refreshRefund, reconcileOrder } =
+    createCreditPackReconciliation(paid, channel);
+  const channelScope = { merchant, channel: kind };
+  const suffix = kind === "alipay" ? "/alipay" : "";
+  const callbackPath = `/credit-pack-test${suffix}`;
+  const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
+  function notFound(context: Context) {
+    return context.json({ error: "Test checkout unavailable." }, 404);
+  }
+
+  api.onError((error, context) => {
+    if (error instanceof PaidLedgerError && error.code === "order_unknown")
+      return notFound(context);
+    if (error instanceof PaidLedgerError && error.code !== "ledger_restoring")
+      return context.json({ code: error.code, error: error.message }, 409);
+    return context.json(
+      { error: "Test checkout is temporarily unavailable. Try again." },
+      503,
+    );
+  });
+
+  api.post(`${callbackPath}/callback`, async (context) => {
+    if (!channel.authenticates(context.req.raw))
+      return context.json({ error: "Verified channel required." }, 401);
+    const result = testPaymentResult.safeParse(
+      await context.req.json().catch(() => undefined),
+    );
+    if (!result.success)
+      return context.json({ error: "Invalid payment result." }, 400);
+    await verify(result.data, result.data.orderId);
+    return context.json({ accepted: true });
+  });
 
   api.post(`${callbackPath}/refund-callback`, async (context) => {
     if (!channel.authenticates(context.req.raw))
@@ -177,36 +240,6 @@ export function createCreditPackCheckout({
     });
   });
 
-  async function refreshRefund(
-    orderId: string,
-    query: boolean,
-    paymentChannel = channel,
-  ) {
-    const fixtureRef = `fixture:${paymentChannel.merchant}:`;
-    const refund = await paid.testPackRefundDispatch({
-      channel: paymentChannel.kind,
-      merchant: paymentChannel.merchant,
-      orderId,
-    });
-    if (!refund?.channelOrderRef.startsWith(fixtureRef)) return;
-    if (refund.state === "requested") {
-      const result = await paymentChannel.startRefund({
-        refundId: refund.id,
-        orderId,
-        merchantId: paymentChannel.merchant,
-        currency: "CNY",
-        amountCents: refund.amountCents,
-        channelOrderRef: refund.channelOrderRef.slice(fixtureRef.length),
-      });
-      if (result.state !== "unknown")
-        await verifyRefund(result, refund, paymentChannel);
-    } else if (query && refund.state === "processing") {
-      const result = await paymentChannel.queryRefund(refund.id);
-      if (result.state !== "unknown")
-        await verifyRefund(result, refund, paymentChannel);
-    }
-  }
-
   const checkouts: { path: string; productKind?: "subscription" }[] = [
     { path },
     { path: subscriptionPath, productKind: "subscription" },
@@ -272,13 +305,7 @@ export function createCreditPackCheckout({
         source: { channel: otherChannel.kind, merchant: otherChannel.merchant },
         target: { ...channelScope, applicationIds: channel.applicationIds },
         reconcile: async (id) => {
-          const observed = await otherChannel.query(id);
-          const result =
-            observed.state === "unknown"
-              ? await otherChannel.close(id)
-              : observed;
-          if (result.state !== "unknown")
-            await verify(result, id, otherChannel);
+          await reconcileOrder(id, true, otherChannel);
         },
       });
       return context.json(
@@ -312,8 +339,11 @@ export function createCreditPackCheckout({
       if (!order) return notFound(context);
       if (order.state !== "pending" && order.state !== "failed")
         return context.json(order);
-      const result = await channel.query(order.id);
-      if (result.state !== "unknown") await verify(result, order.id);
+      await reconcileOrder(
+        order.id,
+        order.state === "pending" &&
+          Boolean(await paid.closureCutoff(accountId)),
+      );
       const [updated] = await paid.testPackOrders(orderScope);
       return context.json(updated);
     });
@@ -350,6 +380,7 @@ export function createCreditPackCheckout({
       const orderScope = { ...scope, accountId, id: id.data };
       const [order] = await paid.testPackOrders(orderScope);
       if (!order) return notFound(context);
+      await paid.advanceClosureOrder(accountId, order.id);
       await refreshRefund(order.id, true);
       const [updated] = await paid.testPackOrders(orderScope);
       return context.json(updated);

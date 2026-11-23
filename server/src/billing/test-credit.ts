@@ -716,6 +716,23 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
   }
 
   return {
+    async releaseClosedReservations(accountId: string) {
+      await database.transaction(async (tx) => {
+        if (!(await lockAccount(tx, accountId))) return;
+        if (!(await pilotReservesStoppedAt(tx, accountId))) return;
+        const reserved = await tx
+          .select()
+          .from(operations)
+          .where(
+            and(
+              eq(operations.accountId, accountId),
+              eq(operations.state, "reserved"),
+            ),
+          );
+        for (const row of reserved) await releaseReservation(tx, row);
+      });
+    },
+
     async sweepCutoffs(limit = cutoffBatchSize) {
       if (!Number.isInteger(limit) || limit < 1 || limit > cutoffBatchSize) {
         throw new RangeError("Invalid Test Credit cutoff batch size");
@@ -1292,7 +1309,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           return denied("not_authorized");
         // Pilot wind-down (#107 trial end, #109): no new reservations of
         // either Credit type. Dispatched work above keeps its replay.
-        if (await pilotReservesStoppedAt(tx)) return denied("pilot_closed");
+        if (await pilotReservesStoppedAt(tx, accountId))
+          return denied("pilot_closed");
         if (await suspended(tx, accountId)) return denied("not_authorized");
         // While a restore from backup holds the account, no step is charged
         // (#108 恢复阶段暂停新增收费步骤).
@@ -2043,6 +2061,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             operation: operationReceipt(row, await eligibleEvidence(tx, row)),
           } as const;
         const filter = operationFilter(row.accountId, row.id);
+        if (await pilotReservesStoppedAt(tx, accountId)) {
+          await releaseReservation(tx, row);
+          return denied("pilot_closed");
+        }
         // Suspension and a restore reach reservations made before them: none
         // may run, while what already dispatched settles (#103, #108).
         if (
@@ -2169,7 +2191,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             !(await canDispatchUnderBudget(tx, operationRow)) ||
             (await suspended(tx, accountId)) ||
             (await restoreHolds(tx, accountId)) ||
-            (await pilotReservesStoppedAt(tx)) ||
+            (await pilotReservesStoppedAt(tx, accountId)) ||
             !routeEligible(await activeRoutes(tx, true), operationRow.route)
           )
             return false;

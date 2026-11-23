@@ -224,6 +224,7 @@ export const paidCreditAllocations = pgTable(
 );
 
 export const paidRefundStates = [
+  "awaiting_settlement",
   "requested",
   "processing",
   "manual_review",
@@ -328,7 +329,7 @@ export const paidCorrections = pgTable(
   ],
 );
 
-// The pilot's wind-down switch (#107 trial end, #109 shutdown): one row.
+// The pilot's wind-down switch (#107 trial end, #109 shutdown): the pilot row or an account ID.
 // While sales are stopped no new orders; while reserves are stopped no new
 // reservations — dispatched work keeps settling, and payments confirmed at
 // or after the cutoff refund in full without granting.
