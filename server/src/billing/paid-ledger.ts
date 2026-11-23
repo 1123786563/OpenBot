@@ -391,7 +391,7 @@ export function createPaidCreditLedger(
             ? "The offer changed. Review the current Subscription Plan before placing an order."
             : "The offer changed. Review the current Credit Pack before placing an order.",
         );
-      if (product.kind === "subscription") {
+      if (testPack?.kind === "subscription") {
         await lockAccount(tx, input.accountId);
         const concurrent = await replay();
         if (concurrent) return { ...concurrent, replayed: true };
