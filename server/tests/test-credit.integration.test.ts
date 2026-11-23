@@ -327,9 +327,10 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     gatewayRevision: "a",
     meteringRevision: "a",
     countInputTokens: async (_route, messages) => {
-      if (messages[0]?.content === "withdraw-while-metering")
-        await duringMetering?.();
-      return messages[0]?.content === "oversized" ? 4 : 1;
+      const first = messages[0];
+      const prompt = first?.role === "user" ? first.content : undefined;
+      if (prompt === "withdraw-while-metering") await duringMetering?.();
+      return prompt === "oversized" ? 4 : 1;
     },
   });
   const api = createTestCreditRoutes({
@@ -353,7 +354,8 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     async execute(input) {
       lastOperationId = input.operationId;
       lastDispatchAccountId = input.accountId;
-      switch (input.messages[0]?.content) {
+      const first = input.messages[0];
+      switch (first?.role === "user" ? first.content : undefined) {
         case "zero":
           return {
             outcome: "zero_cost",

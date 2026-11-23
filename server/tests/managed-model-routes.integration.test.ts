@@ -93,7 +93,7 @@ const api = createTestCreditRoutes({
       : undefined,
   execute: async ({ messages }) => {
     const first = messages[0];
-    if (!first) throw new Error("no message to answer");
+    if (first?.role !== "user") throw new Error("no user message to answer");
     dispatched.push(first.content);
     return {
       text: `Answer to: ${first.content}`,

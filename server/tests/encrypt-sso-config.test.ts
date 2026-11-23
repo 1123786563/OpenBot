@@ -32,7 +32,7 @@ function fakeAdapter() {
       stored.push(data.update as Record<string, unknown>);
       return data.update;
     },
-    findOne: async () => nextRead,
+    findOne: async (_query: { model: string }) => nextRead,
     findMany: async () => (nextRead ? [nextRead] : []),
   };
 
