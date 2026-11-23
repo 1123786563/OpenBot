@@ -12,6 +12,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Sql, TransactionSql } from "postgres";
+import { reconcileBillingPilotMigrations } from "./billing-pilot-migrations";
 import { reconcileCorsairPilotMigrations } from "./corsair-pilot-migrations";
 import {
   type AppliedMigration,
@@ -122,11 +123,18 @@ export async function applyMigrations(
   await client.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK}, 0))`;
 
-    const applied = await reconcileCorsairPilotMigrations(
+    const corsair = await reconcileCorsairPilotMigrations(
       tx,
       migrationsFolder,
       folder,
       await appliedMigrations(tx, journal),
+      journal,
+    );
+    const applied = await reconcileBillingPilotMigrations(
+      tx,
+      migrationsFolder,
+      folder,
+      corsair,
       journal,
     );
     const outOfReach = migrationsOutOfReach(folder, applied);
