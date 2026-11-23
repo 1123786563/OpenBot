@@ -112,13 +112,11 @@ export function budgetedAgent(
               step,
               messages,
               authorize: authorizeRun,
-              coordinationTools: tools.map(
-                ({ name, description, parameters }) => ({
-                  name,
-                  description,
-                  parameters: providerSafeSchema(z.toJSONSchema(parameters)),
-                }),
-              ),
+              coordinationTools: tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: providerSafeSchema(z.toJSONSchema(tool.parameters)),
+              })),
             });
             let text = result.text;
             if (

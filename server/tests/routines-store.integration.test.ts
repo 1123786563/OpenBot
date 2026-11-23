@@ -1522,6 +1522,7 @@ describe("the runner's read of one firing", () => {
       enabled: true,
       instruction: "Post the standup summary.",
       budgetId: null,
+      status: null,
     });
   });
 
@@ -1554,6 +1555,7 @@ describe("the sweep's by-id read of a routine before firing", () => {
     expect(await store.routineForFiring(routine.id)).toEqual({
       id: routine.id,
       enabled: true,
+      budgetId: null,
     });
   });
 
@@ -1564,6 +1566,7 @@ describe("the sweep's by-id read of a routine before firing", () => {
     expect(await store.routineForFiring(routine.id)).toEqual({
       id: routine.id,
       enabled: false,
+      budgetId: null,
     });
   });
 
