@@ -58,6 +58,7 @@ import {
 } from "./auth/guards";
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
+import type { CreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import type { PaidCreditLedger } from "./billing/paid-ledger";
 import type {
   TestCreditLedger,
@@ -636,6 +637,7 @@ export function createApp(
       budgetId: string,
     ) => Promise<boolean>;
     paidLedger: PaidCreditLedger;
+    creditPackTestChannel?: CreditPackTestChannel;
     /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
     identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
     casdoorIdentityOf?: (
@@ -974,7 +976,10 @@ export function createApp(
       createTestCreditRoutes({
         ledger: billing.testLedger,
         weknoraRouteId: billing.weknora?.routeId,
-        paid: { ledger: billing.paidLedger },
+        paid: {
+          ledger: billing.paidLedger,
+          creditPackTestChannel: billing.creditPackTestChannel,
+        },
         authenticate: async (request, intent) => {
           if (intent === "execution") return undefined;
           if (billing.casdoorIdentityOf) {

@@ -65,6 +65,9 @@ export const paidOrders = pgTable(
     // Locked at creation: a later price change never rewrites a placed order.
     productVersion: integer("product_version").notNull(),
     priceCents: integer("price_cents").notNull(),
+    lockedKind: text("locked_kind", { enum: ["subscription", "credit_pack"] }),
+    lockedMicrocredits: bigint("locked_microcredits", { mode: "bigint" }),
+    testMerchant: text("test_merchant"),
     channel: text({ enum: ["wechat", "alipay"] }).notNull(),
     // The channel's own order reference, unique per channel once verified, so
     // replayed callbacks can never grant twice.

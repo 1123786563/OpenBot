@@ -13,6 +13,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, useId, useRef, useState } from "react";
 import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
+import { CreditPackCheckout } from "@/components/billing/credit-pack-checkout";
 import {
   PageEmpty,
   PageRows,
@@ -217,7 +218,7 @@ function PaidCreditsSection() {
         </p>
       ) : empty ? (
         <PageEmpty icon={IconCoins} title="No paid credits yet">
-          Buy a plan or a Credit Pack to give your Bots more to spend.
+          Paid credits appear here after payment is confirmed.
         </PageEmpty>
       ) : (
         <PageRows>
@@ -245,7 +246,7 @@ function PaidCreditsSection() {
           {sources.data.map((source) => (
             <Fragment key={source.entitlementId}>
               <Separator />
-              <Item size="sm">
+              <Item id={`paid-source-${source.entitlementId}`} size="sm">
                 <ItemMedia variant="icon">
                   <IconCoins />
                 </ItemMedia>
@@ -1125,6 +1126,7 @@ function CreditsPage() {
           }
         />
         <TestCreditsSection />
+        <CreditPackCheckout />
         <PaidCreditsSection />
         <RateSection />
         <BudgetsSection />

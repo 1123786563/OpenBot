@@ -44,6 +44,7 @@ export class PaidLedgerError extends Error {
   constructor(
     readonly code:
       | "product_unavailable"
+      | "order_conflict"
       | "order_unknown"
       | "verification_mismatch"
       | "not_verified"
@@ -94,22 +95,12 @@ export function createPaidCreditLedger(
     creditsMicrocredits: bigint;
   }) {
     return database.transaction(async (tx) => {
-      const [existing] = await tx
-        .select()
-        .from(paidProducts)
-        .where(eq(paidProducts.code, input.code));
-      // A price or amount change republishes the product as a new version;
-      // placed orders keep the version they locked.
-      const changed =
-        existing &&
-        (existing.priceCents !== input.priceCents ||
-          existing.creditsMicrocredits !== input.creditsMicrocredits);
       const [row] = await tx
         .insert(paidProducts)
         .values({
           code: input.code,
           kind: input.kind,
-          version: existing ? existing.version + (changed ? 1 : 0) : 1,
+          version: 1,
           priceCents: input.priceCents,
           creditsMicrocredits: input.creditsMicrocredits,
           active: true,
@@ -118,7 +109,10 @@ export function createPaidCreditLedger(
         .onConflictDoUpdate({
           target: paidProducts.code,
           set: {
-            version: existing ? existing.version + (changed ? 1 : 0) : 1,
+            version: sql`${paidProducts.version} + CASE WHEN
+              ${paidProducts.priceCents} <> excluded."priceCents"
+              OR ${paidProducts.creditsMicrocredits} <> excluded.credits_microcredits
+              THEN 1 ELSE 0 END`,
             priceCents: input.priceCents,
             creditsMicrocredits: input.creditsMicrocredits,
             active: true,
@@ -130,72 +124,195 @@ export function createPaidCreditLedger(
     });
   }
 
+  async function checkSales(
+    tx: Transaction,
+    accountId: string,
+    testApplicationIds?: string[],
+    paths?: Awaited<ReturnType<typeof readPaidPaths>>,
+  ) {
+    const [account] = await tx
+      .select({ suspendedAt: testCreditAccounts.suspendedAt })
+      .from(testCreditAccounts)
+      .where(eq(testCreditAccounts.id, accountId));
+    if (!account)
+      throw new PaidLedgerError(
+        "order_unknown",
+        "Billing Account unavailable.",
+      );
+    if (account.suspendedAt)
+      throw new PaidLedgerError(
+        "account_suspended",
+        "The account is suspended; purchases are paused.",
+      );
+    if (await restoreHolds(tx, accountId))
+      throw new PaidLedgerError(
+        "ledger_restoring",
+        "The ledger is being restored; new orders are paused.",
+      );
+    const [closure] = await tx
+      .select({ salesStoppedAt: paidPilotClosure.salesStoppedAt })
+      .from(paidPilotClosure)
+      .where(eq(paidPilotClosure.id, "pilot"));
+    if (closure?.salesStoppedAt)
+      throw new PaidLedgerError(
+        "pilot_closed",
+        "Pilot sales are stopped; no new orders.",
+      );
+    const availablePaths =
+      paths ?? (await readPaidPaths(tx, testApplicationIds));
+    if (
+      (testApplicationIds || availablePaths.length > 0) &&
+      availablePaths.every(({ pausedAt }) => pausedAt !== null)
+    )
+      throw new PaidLedgerError(
+        "no_paid_path",
+        "No paid application path is available.",
+      );
+    if (testApplicationIds) await spendableSources(tx, accountId, now());
+  }
+
+  async function readProduct(tx: Transaction, code: string) {
+    const [product] = await tx
+      .select()
+      .from(paidProducts)
+      .where(eq(paidProducts.code, code));
+    return product?.active ? product : undefined;
+  }
+
+  async function creditPackOffer(
+    accountId: string,
+    code: string,
+    applicationIds: string[],
+  ) {
+    return database.transaction(async (tx) => {
+      const product = await readProduct(tx, code);
+      const paths = await readPaidPaths(tx, applicationIds);
+      let blockedReason: string | null =
+        product?.kind === "credit_pack"
+          ? null
+          : "The test Credit Pack is unavailable.";
+      try {
+        await checkSales(tx, accountId, applicationIds, paths);
+      } catch (error) {
+        if (!(error instanceof PaidLedgerError)) throw error;
+        blockedReason = error.message;
+      }
+      return {
+        product:
+          product?.kind === "credit_pack"
+            ? {
+                version: product.version,
+                priceCents: product.priceCents,
+                creditsMicrocredits: product.creditsMicrocredits.toString(),
+                currency: "CNY" as const,
+              }
+            : null,
+        available: blockedReason === null,
+        blockedReason,
+        pausedApplications: paths
+          .filter(({ pausedAt }) => pausedAt !== null)
+          .map(({ name }) => name),
+      };
+    });
+  }
+
   async function createOrder(input: {
     accountId: string;
     productCode: string;
     channel: "wechat" | "alipay";
+    testPack?: {
+      id: string;
+      merchant: string;
+      version: number;
+      applicationIds: string[];
+    };
   }) {
+    const { testPack } = input;
     return database.transaction(async (tx) => {
-      const [product] = await tx
-        .select()
-        .from(paidProducts)
-        .where(eq(paidProducts.code, input.productCode));
-      if (!product?.active)
+      const replay = async () => {
+        if (!testPack) return undefined;
+        const [existing] = await tx
+          .select()
+          .from(paidOrders)
+          .where(eq(paidOrders.id, testPack.id));
+        if (!existing) return undefined;
+        if (
+          existing.accountId !== input.accountId ||
+          existing.testMerchant !== testPack.merchant ||
+          existing.productCode !== input.productCode ||
+          existing.productVersion !== testPack.version
+        )
+          throw new PaidLedgerError(
+            "order_conflict",
+            "This order identifier is unavailable.",
+          );
+        return existing;
+      };
+      const existing = await replay();
+      if (existing) return { ...existing, replayed: true };
+      const product = await readProduct(tx, input.productCode);
+      if (
+        !product ||
+        (testPack &&
+          (product.kind !== "credit_pack" ||
+            product.version !== testPack.version))
+      )
         throw new PaidLedgerError(
           "product_unavailable",
-          "The product is not available for purchase.",
+          "The offer changed. Review the current Credit Pack before placing an order.",
         );
-      // 停用期间收费入口维持暂停 (#103): a suspended account cannot start a
-      // new purchase. Pilot wind-down stops sales for everyone (#109).
-      const [account] = await tx
-        .select({ suspendedAt: testCreditAccounts.suspendedAt })
-        .from(testCreditAccounts)
-        .where(eq(testCreditAccounts.id, input.accountId));
-      if (account?.suspendedAt)
-        throw new PaidLedgerError(
-          "account_suspended",
-          "The account is suspended; purchases are paused.",
-        );
-      // A restore from backup pauses new orders too, until the account has
-      // been reconciled and resumed (#108).
-      if (await restoreHolds(tx, input.accountId))
-        throw new PaidLedgerError(
-          "ledger_restoring",
-          "The ledger is being restored; new orders are paused.",
-        );
-      const [closure] = await tx
-        .select({ salesStoppedAt: paidPilotClosure.salesStoppedAt })
-        .from(paidPilotClosure)
-        .where(eq(paidPilotClosure.id, "pilot"));
-      if (closure?.salesStoppedAt)
-        throw new PaidLedgerError(
-          "pilot_closed",
-          "Pilot sales are stopped; no new orders.",
-        );
-      // Paid credits are only worth buying while some application path can
-      // spend them. One paused path leaves the others open (#99 账户没有可用
-      // 付费路径时，新下单被阻止).
-      const paths = await tx
-        .select({ pausedAt: billingApplications.pausedAt })
-        .from(billingApplications)
-        .where(paidPathFilter);
-      if (paths.length > 0 && paths.every(({ pausedAt }) => pausedAt !== null))
-        throw new PaidLedgerError(
-          "no_paid_path",
-          "Every paid path is paused; no new orders.",
-        );
+      await checkSales(tx, input.accountId, testPack?.applicationIds);
       const [order] = await tx
         .insert(paidOrders)
         .values({
+          id: testPack?.id,
           accountId: input.accountId,
           productCode: product.code,
           productVersion: product.version,
           priceCents: product.priceCents,
+          lockedKind: product.kind,
+          lockedMicrocredits: product.creditsMicrocredits,
+          testMerchant: testPack?.merchant,
           channel: input.channel,
         })
+        .onConflictDoNothing({ target: paidOrders.id })
         .returning();
-      return order;
+      if (order) return { ...order, replayed: false };
+      const concurrent = await replay();
+      if (concurrent) return { ...concurrent, replayed: true };
+      throw new PaidLedgerError(
+        "order_conflict",
+        "This order identifier is unavailable.",
+      );
     });
+  }
+
+  async function testPackOrders(input: {
+    merchant: string;
+    accountId: string;
+    id?: string;
+  }) {
+    return database
+      .select({
+        id: paidOrders.id,
+        productVersion: paidOrders.productVersion,
+        priceCents: paidOrders.priceCents,
+        creditsMicrocredits: sql<string>`${paidOrders.lockedMicrocredits}::text`,
+        state: paidOrders.state,
+        createdAt: paidOrders.createdAt,
+        verifiedAt: paidOrders.verifiedAt,
+        entitlementId: paidEntitlements.id,
+      })
+      .from(paidOrders)
+      .leftJoin(paidEntitlements, eq(paidEntitlements.orderId, paidOrders.id))
+      .where(
+        and(
+          eq(paidOrders.testMerchant, input.merchant),
+          eq(paidOrders.accountId, input.accountId),
+          input.id ? eq(paidOrders.id, input.id) : undefined,
+        ),
+      )
+      .orderBy(desc(paidOrders.createdAt), paidOrders.id);
   }
 
   async function activeSubscription(accountId: string) {
@@ -224,6 +341,7 @@ export function createPaidCreditLedger(
     // What the channel says it paid to: its merchant and currency.
     merchantId?: string;
     currency?: string;
+    testChannel?: true;
   }) {
     const result = await database.transaction(async (tx) => {
       const [order] = await tx
@@ -232,6 +350,19 @@ export function createPaidCreditLedger(
         .where(eq(paidOrders.id, input.orderId))
         .for("update");
       if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
+      if (Boolean(order.testMerchant) !== Boolean(input.testChannel))
+        throw new PaidLedgerError("order_unknown", "Unknown order.");
+      if (
+        order.channel !== input.channel ||
+        order.priceCents !== input.amountCents ||
+        !paysTheRightMerchant(input) ||
+        (order.testMerchant !== null &&
+          (input.merchantId !== order.testMerchant || input.currency !== "CNY"))
+      )
+        throw new PaidLedgerError(
+          "verification_mismatch",
+          "The channel result does not match the placed order.",
+        );
       if (
         order.state === "verified" ||
         order.state === "refund_pending" ||
@@ -260,18 +391,11 @@ export function createPaidCreditLedger(
       // than the placed order's own channel and amount, merchant or currency
       // is refused and changes nothing. The order stays as it was, so a
       // forged or misrouted callback cannot spoil the payment it imitates.
-      if (
-        (order.state !== "pending" && order.state !== "failed") ||
-        order.channel !== input.channel ||
-        order.priceCents !== input.amountCents ||
-        !paysTheRightMerchant(input)
-      )
-        return {
-          order,
-          replayed: false as const,
-          claimed: false as const,
-          mismatch: true as const,
-        };
+      if (order.state !== "pending" && order.state !== "failed")
+        throw new PaidLedgerError(
+          "verification_mismatch",
+          "The channel result does not match the placed order.",
+        );
       // Until the account is reconciled after a restore, nothing is granted
       // (#108 恢复阶段暂停…发放); the channel retries.
       if (await restoreHolds(tx, order.accountId))
@@ -346,10 +470,14 @@ export function createPaidCreditLedger(
         };
       }
 
-      const [product] = await tx
-        .select()
-        .from(paidProducts)
-        .where(eq(paidProducts.code, order.productCode));
+      // Legacy orders predate snapshots and retain their original lookup behavior.
+      const [product] =
+        order.lockedKind === null || order.lockedMicrocredits === null
+          ? await tx
+              .select()
+              .from(paidProducts)
+              .where(eq(paidProducts.code, order.productCode))
+          : [];
       const [latest] = await tx
         .select()
         .from(paidEntitlements)
@@ -365,7 +493,8 @@ export function createPaidCreditLedger(
 
       let period: BillingPeriod | undefined;
       let state: "granted" | "future" = "granted";
-      if (product?.kind === "subscription") {
+      const kind = order.lockedKind ?? product?.kind;
+      if (kind === "subscription") {
         if (latest) {
           // Advance purchase: effective exactly when the current period ends.
           period = advancePurchasePeriod({
@@ -389,11 +518,12 @@ export function createPaidCreditLedger(
             .values({
               accountId: order.accountId,
               orderId: order.id,
-              kind: product?.kind ?? "credit_pack",
+              kind: kind ?? "credit_pack",
               periodStart: period?.start,
               periodEnd: period?.end,
               anchorDay: period?.anchorDay,
-              creditsMicrocredits: product?.creditsMicrocredits ?? 0n,
+              creditsMicrocredits:
+                order.lockedMicrocredits ?? product?.creditsMicrocredits ?? 0n,
               state,
               arrivedAt: input.paidAt,
             })
@@ -448,11 +578,6 @@ export function createPaidCreditLedger(
         throw error;
       }
     });
-    if ("mismatch" in result && result.mismatch)
-      throw new PaidLedgerError(
-        "verification_mismatch",
-        "The channel result does not match the placed order.",
-      );
     return result;
   }
 
@@ -492,15 +617,29 @@ export function createPaidCreditLedger(
   }
 
   /** The application paths paid credits can be spent on, and which are paused. */
-  async function paidPaths() {
-    return database
+  function paidPaths() {
+    return readPaidPaths(database);
+  }
+
+  function readPaidPaths(
+    connection: Database | Transaction,
+    applicationIds?: string[],
+  ) {
+    return connection
       .select({
         id: billingApplications.id,
         name: billingApplications.name,
         pausedAt: billingApplications.pausedAt,
       })
       .from(billingApplications)
-      .where(paidPathFilter)
+      .where(
+        and(
+          paidPathFilter,
+          applicationIds
+            ? inArray(billingApplications.id, applicationIds)
+            : undefined,
+        ),
+      )
       .orderBy(billingApplications.name);
   }
 
@@ -1165,6 +1304,7 @@ export function createPaidCreditLedger(
       return sources
         .map(({ entitlement, remaining }) => ({
           entitlementId: entitlement.id,
+          orderId: entitlement.orderId,
           kind: entitlement.kind,
           arrivedAt: entitlement.arrivedAt,
           remainingMicrocredits: remaining.toString(),
@@ -1366,6 +1506,8 @@ export function createPaidCreditLedger(
   return {
     upsertProduct,
     createOrder,
+    creditPackOffer,
+    testPackOrders,
     verifyOrder,
     entitlements,
     freezeEntitlements,

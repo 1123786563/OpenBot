@@ -6,6 +6,8 @@ import {
   type CoordinationToolSpec,
   coordinationCalls,
 } from "./coordination-model-call";
+import { createCreditPackCheckout } from "./credit-pack-checkout";
+import type { CreditPackTestChannel } from "./credit-pack-test-channel";
 import type { PaidCreditLedger } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
@@ -81,7 +83,10 @@ type Dependencies = {
   execute?: TestCreditExecutor;
   weknoraRouteId?: string;
   // The paid ledger's read views (#107): absent, `/paid/*` answers 503.
-  paid?: { ledger: PaidCreditLedger };
+  paid?: {
+    ledger: PaidCreditLedger;
+    creditPackTestChannel?: CreditPackTestChannel;
+  };
   // Whether the caller holds an application's own credential (#111). Absent,
   // a call that names an application answers 503.
   authenticateApplication?(
@@ -146,6 +151,16 @@ export function createTestCreditRoutes({
   api.use("/applications", authorize("account"));
   api.use("/authorizations", authorize("account"));
   api.use("/authorizations/*", authorize("account"));
+  if (paid?.creditPackTestChannel)
+    api.route(
+      "/",
+      createCreditPackCheckout({
+        channel: paid.creditPackTestChannel,
+        ledger,
+        paid: paid.ledger,
+      }),
+    );
+
   api.onError((_error, context) =>
     context.json({ error: "Test Credit service unavailable." }, 503),
   );

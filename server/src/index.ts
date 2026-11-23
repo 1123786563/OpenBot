@@ -101,6 +101,7 @@ import {
 } from "./billing/auxiliary-model";
 import { createBackgroundModel } from "./billing/background-model";
 import { budgetedTurn } from "./billing/background-model-turn";
+import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
@@ -3955,6 +3956,7 @@ const app = createApp(
   {
     testLedger: testCreditLedger,
     paidLedger: createPaidCreditLedger(database),
+    creditPackTestChannel: loadCreditPackTestChannel(process.env),
     casdoorIdentityOf: casdoorBillingIdentity,
     weknora: weknoraBilling,
     testCreditConversations: directChatTestCredit !== undefined,

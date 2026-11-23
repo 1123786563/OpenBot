@@ -51,6 +51,8 @@ beforeEach(() => {
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const path = String(input).split("?")[0];
+      if (path === "/api/billing/paid/credit-pack")
+        return new Response(null, { status: 404 });
       if (init?.method === "POST") {
         // A revoke sends no body.
         const body = init.body ? JSON.parse(String(init.body)) : undefined;
@@ -600,4 +602,66 @@ test("a paused WeKnora upload asks the owner to confirm a higher Test Credit lim
       },
     },
   ]);
+});
+
+test("test Credit Pack checkout shows the CNY offer and verifies the original order on demand", async () => {
+  const checkout = "/api/billing/paid/credit-pack";
+  const id = "4a06fd08-73e4-472c-824e-4077bed08946";
+  let placed = false;
+  let verified = false;
+  const order = () => ({
+    id,
+    priceCents: 2500,
+    creditsMicrocredits: "25000000",
+    productVersion: 3,
+    state: verified ? "verified" : "pending",
+    entitlementId: verified ? "ent-1" : null,
+  });
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const path = String(input);
+      if (path === checkout)
+        return Response.json({
+          product: {
+            version: 3,
+            priceCents: 2500,
+            creditsMicrocredits: "25000000",
+            currency: "CNY",
+          },
+          available: true,
+          blockedReason: null,
+          pausedApplications: ["Fixture app"],
+        });
+      if (path === `${checkout}/orders` && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toMatchObject({ version: 3 });
+        placed = true;
+        return Response.json({ id, state: "pending" }, { status: 201 });
+      }
+      if (path === `${checkout}/orders`)
+        return Response.json(placed ? [order()] : []);
+      if (path === `${checkout}/orders/${id}/checkout`)
+        return Response.json({ checkoutUrl: "http://127.0.0.1:9199/checkout" });
+      if (path === `${checkout}/orders/${id}/verify`) {
+        verified = true;
+        return Response.json(order());
+      }
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const user = userEvent.setup({ document });
+  const view = renderCredits(answered());
+  expect(await view.findByText("CN¥25.00 · 25 credits")).toBeTruthy();
+  expect(view.getByText("Paused application paths: Fixture app")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Place test order" }));
+  expect(await view.findByText("Awaiting payment confirmation")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Prepare test checkout" }));
+  expect(
+    (
+      await view.findByRole("link", { name: /Open test checkout/ })
+    ).getAttribute("href"),
+  ).toBe("http://127.0.0.1:9199/checkout");
+  await user.click(view.getByRole("button", { name: "Check payment" }));
+  expect(await view.findByText("Credits added")).toBeTruthy();
 });
