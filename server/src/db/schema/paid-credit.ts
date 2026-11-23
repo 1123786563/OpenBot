@@ -198,7 +198,14 @@ export const paidCreditAllocations = pgTable(
   ],
 );
 
-export const paidRefundStates = ["requested", "confirmed", "failed"] as const;
+export const paidRefundStates = [
+  "requested",
+  "processing",
+  "manual_review",
+  "manual_owed",
+  "confirmed",
+  "failed",
+] as const;
 
 // One original-route refund per order (#102/#103): the money always goes
 // back through the channel that took it, in the order's own currency

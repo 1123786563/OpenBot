@@ -609,12 +609,28 @@ test("test Credit Pack checkout shows the CNY offer and verifies the original or
   const id = "4a06fd08-73e4-472c-824e-4077bed08946";
   let placed = false;
   let verified = false;
+  let refundState: "processing" | "confirmed" | undefined;
   const order = () => ({
     id,
     priceCents: 2500,
     creditsMicrocredits: "25000000",
     productVersion: 3,
-    state: verified ? "verified" : "pending",
+    state:
+      refundState === "confirmed"
+        ? "refunded"
+        : refundState
+          ? "refund_pending"
+          : verified
+            ? "verified"
+            : "pending",
+    creditsFrozen: refundState === "processing",
+    refund: refundState
+      ? {
+          id: "41d62691-95ee-4618-a356-2fd4c03db34d",
+          state: refundState,
+          amountCents: 2500,
+        }
+      : null,
     entitlementId: verified ? "ent-1" : null,
   });
   const fallback = global.fetch;
@@ -646,6 +662,20 @@ test("test Credit Pack checkout shows the CNY offer and verifies the original or
         verified = true;
         return Response.json(order());
       }
+      if (
+        path === `${checkout}/orders/${id}/refund` &&
+        init?.method === "POST"
+      ) {
+        refundState = "processing";
+        return Response.json(order());
+      }
+      if (
+        path === `${checkout}/orders/${id}/refund/verify` &&
+        init?.method === "POST"
+      ) {
+        refundState = "confirmed";
+        return Response.json(order());
+      }
       return fallback(input, init);
     },
     { preconnect: originalFetch.preconnect },
@@ -664,4 +694,19 @@ test("test Credit Pack checkout shows the CNY offer and verifies the original or
   ).toBe("http://127.0.0.1:9199/checkout");
   await user.click(view.getByRole("button", { name: "Check payment" }));
   expect(await view.findByText("Credits added")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Request refund" }));
+  expect(
+    view.getByRole("dialog", { name: "Request WeChat refund" }),
+  ).toBeTruthy();
+  expect(refundState).toBeUndefined();
+  await user.click(
+    view.getByRole("button", { name: "Confirm refund request" }),
+  );
+  expect(
+    await view.findByText("Credits frozen. WeChat is processing your refund."),
+  ).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Check refund status" }));
+  expect(
+    await view.findByText("Refund confirmed. Funds returned."),
+  ).toBeTruthy();
 });

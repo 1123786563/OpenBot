@@ -1,9 +1,10 @@
 import { Button } from "@astryxdesign/core/Button";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Link } from "@astryxdesign/core/Link";
-import { HStack } from "@astryxdesign/core/Stack";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useRef } from "react";
+import { Fragment, useRef, useState } from "react";
 import { z } from "zod";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
@@ -48,6 +49,15 @@ const states = {
   refunded: "Refunded",
 };
 
+const refundStatuses = {
+  requested: "Waiting for WeChat refund processing.",
+  processing: "WeChat is processing your refund.",
+  manual_review: "Your refund is under manual review.",
+  manual_owed: "WeChat could not return the funds. A manual refund is pending.",
+  confirmed: "Refund confirmed. Funds returned.",
+  failed: "The refund failed. Any credits frozen for it are available again.",
+};
+
 const orderSchema = pack.extend({
   id: z.uuid(),
   state: z.enum([
@@ -58,6 +68,21 @@ const orderSchema = pack.extend({
     "refunded",
   ]),
   entitlementId: z.string().nullable(),
+  creditsFrozen: z.boolean().optional(),
+  refund: z
+    .object({
+      id: z.uuid(),
+      amountCents: z.number().int().positive(),
+      state: z.enum([
+        "requested",
+        "processing",
+        "manual_review",
+        "manual_owed",
+        "confirmed",
+        "failed",
+      ]),
+    })
+    .nullish(),
 });
 type Order = z.infer<typeof orderSchema>;
 
@@ -73,6 +98,7 @@ function packText({
 
 function OrderRow({ order }: { order: Order }) {
   const queryClient = useQueryClient();
+  const [confirmRefund, setConfirmRefund] = useState(false);
   const sources = useQuery(paidSourcesQueryOptions());
   const source = sources.data?.find(
     ({ entitlementId }) => entitlementId === order.entitlementId,
@@ -91,25 +117,45 @@ function OrderRow({ order }: { order: Order }) {
       return url;
     },
   });
+  const refreshCredits = () =>
+    Promise.all(
+      [ordersKey, billingKeys.paidBalance, billingKeys.paidSources].map(
+        (queryKey) => queryClient.invalidateQueries({ queryKey }),
+      ),
+    );
   const verify = useMutation({
     mutationFn: async (): Promise<Order> =>
       orderSchema.parse(
         await (await client(`${orderPath}/verify`, { method: "POST" })).json(),
       ),
-    onSuccess: async () => {
-      await Promise.all(
-        [ordersKey, billingKeys.paidBalance, billingKeys.paidSources].map(
-          (queryKey) => queryClient.invalidateQueries({ queryKey }),
-        ),
-      );
-    },
+    onSuccess: refreshCredits,
+  });
+  const refundAction = useMutation({
+    mutationFn: (action: "request" | "verify") =>
+      client(`${orderPath}/refund${action === "verify" ? "/verify" : ""}`, {
+        method: "POST",
+      }),
+    onSuccess: () => setConfirmRefund(false),
+    onSettled: refreshCredits,
   });
   return (
     <Item>
       <ItemContent>
         <ItemTitle>{packText(order)}</ItemTitle>
         <ItemDescription>Order {order.id}</ItemDescription>
-        <Text role="status">{states[order.state]}</Text>
+        {order.refund ? (
+          <>
+            <Text>
+              Refund amount CN¥{(order.refund.amountCents / 100).toFixed(2)}
+            </Text>
+            <Text role="status">
+              {order.creditsFrozen ? "Credits frozen. " : ""}
+              {refundStatuses[order.refund.state]}
+            </Text>
+          </>
+        ) : (
+          <Text role="status">{states[order.state]}</Text>
+        )}
         {source ? (
           <Link href={`#paid-source-${source.entitlementId}`}>
             View paid credit source
@@ -135,6 +181,24 @@ function OrderRow({ order }: { order: Order }) {
               onClick={() => verify.mutate()}
             />
           )}
+          {order.state === "verified" && !order.refund && (
+            <Button
+              label="Request refund"
+              onClick={() => {
+                refundAction.reset();
+                setConfirmRefund(true);
+              }}
+            />
+          )}
+          {order.refund &&
+            order.refund.state !== "confirmed" &&
+            order.refund.state !== "failed" && (
+              <Button
+                label="Check refund status"
+                isLoading={refundAction.isPending}
+                onClick={() => refundAction.mutate("verify")}
+              />
+            )}
         </HStack>
         {verify.data?.state === "pending" && order.state === "pending" ? (
           <Text role="status">
@@ -143,6 +207,44 @@ function OrderRow({ order }: { order: Order }) {
         ) : null}
         {checkout.error || verify.error ? (
           <Text role="alert">{(checkout.error ?? verify.error)?.message}</Text>
+        ) : null}
+        {refundAction.error && (!confirmRefund || order.refund) ? (
+          <Text role="alert">{refundAction.error.message}</Text>
+        ) : null}
+        {confirmRefund && !order.refund ? (
+          <Dialog
+            isOpen
+            purpose="form"
+            onOpenChange={(open) => {
+              if (!open && !refundAction.isPending) setConfirmRefund(false);
+            }}
+          >
+            <VStack gap={3}>
+              <DialogHeader title="Request WeChat refund" />
+              <Text>
+                Request CN¥{(order.priceCents / 100).toFixed(2)} back through
+                the WeChat test channel. If eligible, this order’s credits will
+                be frozen while the refund is processed. Used credits require
+                manual review.
+              </Text>
+              {refundAction.error ? (
+                <Text role="alert">{refundAction.error.message}</Text>
+              ) : null}
+              <HStack justify="end" gap={2} wrap="wrap">
+                <Button
+                  label="Cancel"
+                  isDisabled={refundAction.isPending}
+                  onClick={() => setConfirmRefund(false)}
+                />
+                <Button
+                  label="Confirm refund request"
+                  variant="primary"
+                  isLoading={refundAction.isPending}
+                  onClick={() => refundAction.mutate("request")}
+                />
+              </HStack>
+            </VStack>
+          </Dialog>
         ) : null}
       </ItemContent>
     </Item>

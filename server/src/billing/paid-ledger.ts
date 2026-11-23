@@ -20,7 +20,11 @@ import {
   firstBillingPeriod,
 } from "./billing-period";
 
+import type { CreditPackTestRefundResult } from "./credit-pack-test-channel";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
+
+const customerRefund = "customer";
+type Refund = typeof paidRefunds.$inferSelect;
 
 const paidPathFilter = and(
   isNotNull(billingApplications.approvedAt),
@@ -48,6 +52,7 @@ export class PaidLedgerError extends Error {
       | "order_unknown"
       | "verification_mismatch"
       | "not_verified"
+      | "refund_held"
       | "account_suspended"
       | "pilot_closed"
       | "no_paid_path"
@@ -302,9 +307,17 @@ export function createPaidCreditLedger(
         createdAt: paidOrders.createdAt,
         verifiedAt: paidOrders.verifiedAt,
         entitlementId: paidEntitlements.id,
+        creditsFrozen: sql<boolean>`coalesce(${paidEntitlements.state} = 'frozen', false)`,
+        refund: {
+          id: paidRefunds.id,
+          state: paidRefunds.state,
+          amountCents: paidRefunds.amountCents,
+          confirmedAt: paidRefunds.confirmedAt,
+        },
       })
       .from(paidOrders)
       .leftJoin(paidEntitlements, eq(paidEntitlements.orderId, paidOrders.id))
+      .leftJoin(paidRefunds, eq(paidRefunds.orderId, paidOrders.id))
       .where(
         and(
           eq(paidOrders.testMerchant, input.merchant),
@@ -729,6 +742,8 @@ export function createPaidCreditLedger(
     reason: string,
     at: Date,
     by = "channel",
+    state: Refund["state"] = "requested",
+    amountCents = order.priceCents,
   ) {
     const [row] = await tx
       .insert(paidRefunds)
@@ -736,7 +751,8 @@ export function createPaidCreditLedger(
         orderId: order.id,
         accountId: order.accountId,
         channel: order.channel,
-        amountCents: order.priceCents,
+        amountCents,
+        state,
         reason,
         openedBy: by,
         requestedAt: at,
@@ -745,59 +761,236 @@ export function createPaidCreditLedger(
       .onConflictDoUpdate({
         target: paidRefunds.orderId,
         set: { state: "requested", reason, openedBy: by, requestedAt: at },
-        setWhere: sql`${paidRefunds.state} <> 'confirmed'`,
+        setWhere: sql`${paidRefunds.state} <> 'confirmed' AND ${paidRefunds.openedBy} <> ${customerRefund}`,
       })
       .returning();
     return row;
   }
 
-  /**
-   * Opens (or reopens) the original-route refund for one order and freezes
-   * what it granted. Idempotent; replays return the single refund record.
-   */
+  async function lockRefundOrder(tx: Transaction, orderId: string) {
+    const [order] = await tx
+      .select()
+      .from(paidOrders)
+      .where(eq(paidOrders.id, orderId))
+      .for("update");
+    if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
+    return order;
+  }
+
+  async function findRefund(tx: Transaction, orderId: string) {
+    const [refund] = await tx
+      .select()
+      .from(paidRefunds)
+      .where(eq(paidRefunds.orderId, orderId));
+    return refund;
+  }
+
+  async function freezeForRefund(tx: Transaction, orderId: string) {
+    await tx
+      .update(paidEntitlements)
+      .set({ state: "frozen" })
+      .where(
+        and(
+          eq(paidEntitlements.orderId, orderId),
+          inArray(paidEntitlements.state, ["granted", "future"]),
+        ),
+      );
+    await tx
+      .update(paidOrders)
+      .set({ state: "refund_pending" })
+      .where(eq(paidOrders.id, orderId));
+  }
+
+  /** Operator/channel path, retaining the existing retry behavior. */
   async function requestRefund(
     orderId: string,
     reason = "user_request",
     by = "channel",
   ) {
     return database.transaction(async (tx) => {
-      const [order] = await tx
-        .select()
-        .from(paidOrders)
-        .where(eq(paidOrders.id, orderId))
-        .for("update");
-      if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
-      if (order.state === "refunded") {
-        // The money is already back; a replayed request returns the
-        // completed record instead of refusing.
-        const [done] = await tx
-          .select()
-          .from(paidRefunds)
-          .where(eq(paidRefunds.orderId, orderId));
-        if (done?.state === "confirmed") return done;
-      }
+      const order = await lockRefundOrder(tx, orderId);
+      const existing = await findRefund(tx, orderId);
+      if (
+        existing?.state === "confirmed" ||
+        existing?.openedBy === customerRefund
+      )
+        return existing;
       if (order.state !== "verified" && order.state !== "refund_pending")
         throw new PaidLedgerError(
           "not_verified",
           "Only a verified order, or one already owed a refund, can request one.",
         );
       const refund = await recordRefundWithin(tx, order, reason, now(), by);
-      // Consumption stops while the refund is in flight.
+      await freezeForRefund(tx, order.id);
+      return refund;
+    });
+  }
+
+  /** Customer eligibility and the freeze share the allocator's source locks. */
+  async function requestTestPackRefund(input: {
+    orderId: string;
+    accountId: string;
+    merchant: string;
+    amountCents?: number;
+  }) {
+    return database.transaction(async (tx) => {
+      // Reservations lock the account before its sources. This lock also
+      // leaves foreign-key checks by the standalone allocator compatible.
       await tx
-        .update(paidEntitlements)
-        .set({ state: "frozen" })
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.id, input.accountId))
+        .for("no key update");
+      const order = await lockRefundOrder(tx, input.orderId);
+      if (
+        order.accountId !== input.accountId ||
+        order.testMerchant !== input.merchant
+      )
+        throw new PaidLedgerError("order_unknown", "Unknown order.");
+      const existing = await findRefund(tx, order.id);
+      if (existing) return existing;
+      if (order.state !== "verified" || !order.channelOrderRef)
+        throw new PaidLedgerError(
+          "not_verified",
+          "Only a verified payment can be refunded.",
+        );
+      if (await restoreHolds(tx, order.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "Refund requests are paused during ledger recovery.",
+        );
+      const amount = input.amountCents ?? order.priceCents;
+      if (amount > order.priceCents)
+        throw new PaidLedgerError(
+          "verification_mismatch",
+          "The refund exceeds the order total.",
+        );
+      const sources = await tx
+        .select()
+        .from(paidEntitlements)
+        .where(eq(paidEntitlements.orderId, order.id))
+        .for("update");
+      if (!sources.length || sources.some(({ state }) => state !== "granted"))
+        throw new PaidLedgerError(
+          "not_verified",
+          "No refundable credits are attached to this payment.",
+        );
+      // Corrections can restore the balance without erasing the original
+      // usage. A previously used pack still requires review.
+      const [usage] = await tx
+        .select({
+          hasHold: sql<boolean>`coalesce(bool_or(${paidCreditAllocations.state} = 'held'), false)`,
+          wasUsed: sql<boolean>`coalesce(bool_or(${paidCreditAllocations.consumedMicrocredits} > 0), false)`,
+        })
+        .from(paidCreditAllocations)
         .where(
-          and(
-            eq(paidEntitlements.orderId, orderId),
-            inArray(paidEntitlements.state, ["granted", "future"]),
+          inArray(
+            paidCreditAllocations.entitlementId,
+            sources.map(({ id }) => id),
           ),
         );
-      if (order.state !== "refund_pending")
-        await tx
-          .update(paidOrders)
-          .set({ state: "refund_pending" })
-          .where(eq(paidOrders.id, orderId));
+      const wasUsed =
+        usage?.wasUsed ||
+        sources.some(({ consumedMicrocredits }) => consumedMicrocredits > 0n);
+      if (wasUsed || amount < order.priceCents)
+        return recordRefundWithin(
+          tx,
+          order,
+          wasUsed ? "used_credits" : "partial_refund",
+          now(),
+          customerRefund,
+          "manual_review",
+          amount,
+        );
+      if (usage?.hasHold)
+        throw new PaidLedgerError(
+          "refund_held",
+          "Wait for the reserved credits to settle or release, then try again.",
+        );
+      const refund = await recordRefundWithin(
+        tx,
+        order,
+        "user_request",
+        now(),
+        customerRefund,
+      );
+      await freezeForRefund(tx, order.id);
       return refund;
+    });
+  }
+
+  async function testPackRefundDispatch(orderId: string) {
+    const [row] = await database
+      .select({
+        id: paidRefunds.id,
+        state: paidRefunds.state,
+        orderId: paidOrders.id,
+        channelOrderRef: paidOrders.channelOrderRef,
+        amountCents: paidRefunds.amountCents,
+      })
+      .from(paidRefunds)
+      .innerJoin(paidOrders, eq(paidOrders.id, paidRefunds.orderId))
+      .where(
+        and(
+          eq(paidOrders.id, orderId),
+          eq(paidRefunds.openedBy, customerRefund),
+        ),
+      );
+    if (row?.channelOrderRef)
+      return { ...row, channelOrderRef: row.channelOrderRef };
+  }
+
+  async function applyTestPackRefundResult(input: CreditPackTestRefundResult) {
+    return database.transaction(async (tx) => {
+      const order = await lockRefundOrder(tx, input.orderId);
+      const refund = await findRefund(tx, order.id);
+      if (!refund || refund.openedBy !== customerRefund || !order.testMerchant)
+        throw new PaidLedgerError("order_unknown", "Unknown test refund.");
+      if (
+        refund.id !== input.refundId ||
+        order.testMerchant !== input.merchantId ||
+        order.channel !== "wechat" ||
+        order.channelOrderRef !== input.channelOrderRef ||
+        refund.amountCents !== input.amountCents
+      )
+        throw new PaidLedgerError(
+          "verification_mismatch",
+          "The result does not match this test refund.",
+        );
+      if (refund.state !== "requested" && refund.state !== "processing")
+        return refund;
+      if (await restoreHolds(tx, order.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "Refund verification is paused during ledger recovery.",
+        );
+      switch (input.state) {
+        case "confirmed":
+        case "failed":
+          return settleRefundWithin(tx, refund, input.state === "confirmed");
+        case "processing":
+        case "manual_owed":
+        case "disputed":
+        case "partial": {
+          const [updated] = await tx
+            .update(paidRefunds)
+            .set(
+              input.state === "disputed"
+                ? { state: "manual_review", reason: "channel_dispute" }
+                : input.state === "partial"
+                  ? {
+                      state: "manual_review",
+                      reason: "channel_partial_refund",
+                      manualReviewCents:
+                        refund.amountCents - input.returnedCents,
+                    }
+                  : { state: input.state },
+            )
+            .where(eq(paidRefunds.id, refund.id))
+            .returning();
+          return updated;
+        }
+      }
     });
   }
 
@@ -808,89 +1001,101 @@ export function createPaidCreditLedger(
    */
   async function confirmRefund(orderId: string, succeeded: boolean) {
     return database.transaction(async (tx) => {
-      const [refund] = await tx
-        .select()
-        .from(paidRefunds)
-        .where(eq(paidRefunds.orderId, orderId))
-        .for("update");
+      await lockRefundOrder(tx, orderId);
+      const refund = await findRefund(tx, orderId);
       if (!refund)
         throw new PaidLedgerError(
           "not_verified",
           "No refund has been requested for this order.",
         );
-      if (refund.state === "confirmed") return refund;
-      if (succeeded) {
-        await tx
-          .update(paidEntitlements)
-          .set({ state: "revoked" })
-          .where(eq(paidEntitlements.orderId, orderId));
-        await tx
-          .update(paidOrders)
-          .set({ state: "refunded" })
-          .where(eq(paidOrders.id, orderId));
-        // Only the remaining credits return through the channel. What the
-        // order already funded cannot be pulled back from settled usage, so
-        // its RMB share enters manual reconciliation (#104 人工对账).
-        const granted = await tx
-          .select({
-            consumed: paidEntitlements.consumedMicrocredits,
-            credits: paidEntitlements.creditsMicrocredits,
-          })
-          .from(paidEntitlements)
-          .where(eq(paidEntitlements.orderId, orderId));
-        const used = granted.reduce((sum, row) => sum + row.consumed, 0n);
-        const credits = granted.reduce((sum, row) => sum + row.credits, 0n);
-        const manualReviewCents =
-          used > 0n && credits > 0n
-            ? Number(
-                (BigInt(refund.amountCents) * used + credits / 2n) / credits,
-              )
-            : null;
-        const [row] = await tx
-          .update(paidRefunds)
-          .set({
-            state: "confirmed",
-            confirmedAt: now(),
-            usedMicrocredits: used > 0n ? used : null,
-            manualReviewCents,
-          })
-          .where(eq(paidRefunds.id, refund.id))
-          .returning();
-        return row;
+      if (refund.openedBy === customerRefund) {
+        // Manual confirmation is a trusted operator action after reconciling
+        // the original payment. A manual review has no automatic payout.
+        if (refund.state !== "manual_owed" || !succeeded) return refund;
+        if (await restoreHolds(tx, refund.accountId))
+          throw new PaidLedgerError(
+            "ledger_restoring",
+            "Refund verification is paused during ledger recovery.",
+          );
+        return settleRefundWithin(tx, refund, true);
       }
-      // A failed refund restores the grant. shortcut: a frozen future claim
-      // comes back as granted (still not spendable before its period), so a
-      // concurrent re-claim of that future slot is not re-checked here.
+      return settleRefundWithin(tx, refund, succeeded);
+    });
+  }
+
+  async function settleRefundWithin(
+    tx: Transaction,
+    refund: Refund,
+    succeeded: boolean,
+  ) {
+    const { orderId } = refund;
+    if (refund.state === "confirmed") return refund;
+    if (succeeded) {
       await tx
         .update(paidEntitlements)
-        .set({ state: "granted" })
-        .where(
-          and(
-            eq(paidEntitlements.orderId, orderId),
-            eq(paidEntitlements.state, "frozen"),
-          ),
-        );
-      const [restored] = await tx
-        .select({ id: paidEntitlements.id })
-        .from(paidEntitlements)
-        .where(eq(paidEntitlements.orderId, orderId))
-        .limit(1);
+        .set({ state: "revoked" })
+        .where(eq(paidEntitlements.orderId, orderId));
       await tx
         .update(paidOrders)
-        .set({ state: restored ? "verified" : "refund_pending" })
-        .where(
-          and(
-            eq(paidOrders.id, orderId),
-            eq(paidOrders.state, "refund_pending"),
-          ),
-        );
+        .set({ state: "refunded" })
+        .where(eq(paidOrders.id, orderId));
+      // Only the remaining credits return through the channel. What the
+      // order already funded cannot be pulled back from settled usage, so
+      // its RMB share enters manual reconciliation (#104 人工对账).
+      const granted = await tx
+        .select({
+          consumed: paidEntitlements.consumedMicrocredits,
+          credits: paidEntitlements.creditsMicrocredits,
+        })
+        .from(paidEntitlements)
+        .where(eq(paidEntitlements.orderId, orderId));
+      const used = granted.reduce((sum, row) => sum + row.consumed, 0n);
+      const credits = granted.reduce((sum, row) => sum + row.credits, 0n);
+      const manualReviewCents =
+        used > 0n && credits > 0n
+          ? Number((BigInt(refund.amountCents) * used + credits / 2n) / credits)
+          : null;
       const [row] = await tx
         .update(paidRefunds)
-        .set({ state: "failed", confirmedAt: now() })
+        .set({
+          state: "confirmed",
+          confirmedAt: now(),
+          usedMicrocredits: used > 0n ? used : null,
+          manualReviewCents,
+        })
         .where(eq(paidRefunds.id, refund.id))
         .returning();
       return row;
-    });
+    }
+    // A failed refund restores the grant. shortcut: a frozen future claim
+    // comes back as granted (still not spendable before its period), so a
+    // concurrent re-claim of that future slot is not re-checked here.
+    await tx
+      .update(paidEntitlements)
+      .set({ state: "granted" })
+      .where(
+        and(
+          eq(paidEntitlements.orderId, orderId),
+          eq(paidEntitlements.state, "frozen"),
+        ),
+      );
+    const [restored] = await tx
+      .select({ id: paidEntitlements.id })
+      .from(paidEntitlements)
+      .where(eq(paidEntitlements.orderId, orderId))
+      .limit(1);
+    await tx
+      .update(paidOrders)
+      .set({ state: restored ? "verified" : "refund_pending" })
+      .where(
+        and(eq(paidOrders.id, orderId), eq(paidOrders.state, "refund_pending")),
+      );
+    const [row] = await tx
+      .update(paidRefunds)
+      .set({ state: "failed", confirmedAt: now() })
+      .where(eq(paidRefunds.id, refund.id))
+      .returning();
+    return row;
   }
 
   /** Refunds of one account, newest first — 逐单可查 (#103). */
@@ -1240,7 +1445,11 @@ export function createPaidCreditLedger(
         waiting += 1;
         continue;
       }
-      await requestRefund(order.id, "pilot_closure", "operator");
+      const refund = await requestRefund(order.id, "pilot_closure", "operator");
+      if (refund.openedBy === customerRefund) {
+        waiting += 1;
+        continue;
+      }
       await confirmRefund(order.id, true);
       refunded += 1;
     }
@@ -1513,6 +1722,9 @@ export function createPaidCreditLedger(
     freezeEntitlements,
     revokeEntitlements,
     requestRefund,
+    requestTestPackRefund,
+    testPackRefundDispatch,
+    applyTestPackRefundResult,
     confirmRefund,
     refunds,
     correctOvercharge,

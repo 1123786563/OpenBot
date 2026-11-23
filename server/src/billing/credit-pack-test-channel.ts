@@ -16,6 +16,40 @@ const channelResult = z.discriminatedUnion("state", [
   paidTestPayment,
 ]);
 
+export const testRefundTerms = z.object({
+  refundId: z.uuid(),
+  orderId: z.uuid(),
+  merchantId: z.string().min(1).max(120),
+  currency: z.literal("CNY"),
+  amountCents: z.number().int().positive(),
+  channelOrderRef: z.string().min(1).max(128),
+});
+
+export const testRefundResult = z.discriminatedUnion("state", [
+  testRefundTerms.extend({
+    // "failed" is definitive: no funds were returned and none remain owed.
+    state: z.enum([
+      "processing",
+      "confirmed",
+      "failed",
+      "manual_owed",
+      "disputed",
+    ]),
+  }),
+  testRefundTerms
+    .extend({
+      state: z.literal("partial"),
+      returnedCents: z.number().int().positive(),
+    })
+    .refine(({ returnedCents, amountCents }) => returnedCents < amountCents),
+]);
+export type CreditPackTestRefundResult = z.infer<typeof testRefundResult>;
+
+const refundQueryResult = z.union([
+  z.object({ state: z.literal("unknown") }),
+  testRefundResult,
+]);
+
 const configSchema = z.object({
   origin: z.url().refine((value) => {
     const url = new URL(value);
@@ -55,9 +89,13 @@ export function loadCreditPackTestChannel(
   const digest = (value: string) => createHash("sha256").update(value).digest();
   const expected = digest(authorization);
   const accounts = new Set(config.accounts);
-  async function request(id: string, options?: RequestInit) {
+  async function request(
+    route: "orders" | "refunds",
+    id: string,
+    options?: RequestInit,
+  ) {
     const response = await fetch(
-      `${config.origin}/orders/${encodeURIComponent(id)}`,
+      `${config.origin}/${route}/${encodeURIComponent(id)}`,
       {
         ...options,
         headers: { authorization, "content-type": "application/json" },
@@ -79,7 +117,7 @@ export function loadCreditPackTestChannel(
         expected,
       ),
     async checkout(order: { id: string; priceCents: number }) {
-      const payload = await request(order.id, {
+      const payload = await request("orders", order.id, {
         method: "PUT",
         body: JSON.stringify({
           orderId: order.id,
@@ -99,8 +137,19 @@ export function loadCreditPackTestChannel(
         throw new Error("Invalid test checkout URL.");
       return url.href;
     },
+    async startRefund(refund: z.infer<typeof testRefundTerms>) {
+      return testRefundResult.parse(
+        await request("refunds", refund.refundId, {
+          method: "PUT",
+          body: JSON.stringify(refund),
+        }),
+      );
+    },
+    async queryRefund(id: string) {
+      return refundQueryResult.parse(await request("refunds", id));
+    },
     async query(id: string) {
-      return channelResult.parse(await request(id));
+      return channelResult.parse(await request("orders", id));
     },
   };
 }
