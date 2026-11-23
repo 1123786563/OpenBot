@@ -5,10 +5,11 @@ import type {
 } from "@openbot/shared/openbot-browser";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
 import { PageEmpty } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { openBrowserMutationOptions } from "@/lib/browser/mutations";
 import { browserStateQueryOptions } from "@/lib/browser/queries";
 import { recorderKeys } from "@/lib/recorder/queries";
@@ -57,6 +58,14 @@ function TeachHeading() {
  * (the tabs, a recording's actions) changes in the browser rather than here.
  */
 export function BrowserPage() {
+  return (
+    <section aria-label={TITLE} className="contents">
+      <BrowserContent />
+    </section>
+  );
+}
+
+function BrowserContent() {
   const state = useQuery(browserStateQueryOptions({ poll: true }));
   // A recording that stops, here or in the browser, is a new row or a final state in the list beneath.
   const phase = state.data?.recorder?.phase;
@@ -76,35 +85,42 @@ export function BrowserPage() {
     if (was && !waiting)
       queryClient.invalidateQueries({ queryKey: recorderKeys.recordings() });
   }, [waiting]);
-  // Nothing while the browser's state is first read, which is quick: until it is, the page can't know whether its
-  // browser opens in the page or as a window on the desktop, so any frame drawn now could be for nothing.
-  if (state.isPending) return null;
+  if (state.isPending && state.errorUpdateCount === 0) {
+    return (
+      <DevicePage title={TITLE} description={DESCRIPTION}>
+        <ReadStatus kind="loading" message="Checking your browser…" />
+      </DevicePage>
+    );
+  }
   // Branched on the data rather than the error: a poll that fails after the page has opened keeps the browser on
   // screen, where tearing it down would open it all over again.
   if (state.data === undefined) {
     return (
-      <DevicePage title={TITLE}>
-        <div className="mt-6 flex flex-col items-start gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load your browser. {state.error?.message}
-          </p>
-          <DeviceAction
-            disabled={state.isFetching}
-            onClick={() => void state.refetch()}
-            size="sm"
-            variant="outline"
-          >
-            Try again
-          </DeviceAction>
-        </div>
+      <DevicePage title={TITLE} description={DESCRIPTION}>
+        <ReadError
+          message="Couldn't load your browser."
+          retry={state.refetch}
+          retryBelow
+          retrying={state.isFetching}
+        />
         <YourRecordings action={<LearnedLink />} />
       </DevicePage>
     );
   }
+  const statusNotice = state.isRefetchError ? (
+    <ReadError
+      description="The last known browser and recording status is shown below."
+      message="Couldn't refresh browser status."
+      retry={state.refetch}
+      retryBelow
+      retrying={state.isFetching}
+    />
+  ) : null;
   if (!state.data.available) {
     // Why, where the server can say: its Bots share one computer, say, which is no place for a browser of the person's.
     return (
       <DevicePage title={TITLE}>
+        {statusNotice}
         <PageEmpty>
           {state.data.note ??
             "OpenBot isn't set up to run a browser for you. Ask an admin."}
@@ -113,14 +129,20 @@ export function BrowserPage() {
       </DevicePage>
     );
   }
-  return <OpenedBrowser state={state.data} />;
+  return <OpenedBrowser state={state.data} statusNotice={statusNotice} />;
 }
 
 /**
  * Shows the browser the way the server says it shows. A window on the person's desktop (`native`) opens when they press
  * Open, so arriving here opens nothing. A browser in the page is the page itself, so it opens once on arrival.
  */
-function OpenedBrowser({ state }: { state: BrowserApiState }) {
+function OpenedBrowser({
+  state,
+  statusNotice,
+}: {
+  state: BrowserApiState;
+  statusNotice: ReactNode;
+}) {
   const native = state.shows === "native";
   // The Recorder's "See it on Teach a Bot" link (`?recordings`) is to the list, so it opens no browser on arrival.
   const recordingsOnly = "recordings" in useSearch({ strict: false });
@@ -137,7 +159,14 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
   }, [mutate, native, recordingsOnly]);
 
   // A window on the person's desktop opens with Start recording, from the page itself.
-  if (native) return <NativeBrowser state={state} />;
+  if (native)
+    return <NativeBrowser state={state} statusNotice={statusNotice} />;
+  const heading = (
+    <>
+      <TeachHeading />
+      {statusNotice}
+    </>
+  );
   const opened: BrowserOpenResponse | RealBrowserOpenResponse | undefined =
     reopen.data ?? open.data;
   if (!opened) {
@@ -147,7 +176,7 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
       // Opening: the page as it will be, its browser saying it is opening (`OpeningBrowser`), or why it has not.
       return (
         <OpeningBrowser
-          heading={<TeachHeading />}
+          heading={heading}
           onRetry={open.error ? () => open.mutate() : undefined}
           problem={said}
         >
@@ -161,6 +190,7 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
     // The Recorder's link to the list opens no browser on arrival: the list, and Open browser to open one.
     return (
       <DevicePage title={TITLE} description={DESCRIPTION}>
+        {statusNotice}
         {recordingsOnly && !said ? (
           <div className="mt-6">
             <DeviceAction
@@ -183,7 +213,7 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
                 size="sm"
                 variant="outline"
               >
-                Try again
+                Retry
               </DeviceAction>
             ) : null}
           </div>
@@ -202,7 +232,7 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
     return (
       <ScreenBrowser
         computerId={opened.computerId}
-        heading={<TeachHeading />}
+        heading={heading}
         state={state}
         reopen={() => reopen.mutate()}
         reopening={reopen.isPending}
@@ -216,7 +246,7 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
     );
   }
   // Only an older server says nothing of where its browser shows, and it may answer with a window after all.
-  return <NativeBrowser state={state} />;
+  return <NativeBrowser state={state} statusNotice={statusNotice} />;
 }
 
 /**
@@ -225,9 +255,16 @@ function OpenedBrowser({ state }: { state: BrowserApiState }) {
  * the browser already recording. They stop in the browser, from the Recorder's mark at the top of each page, which asks
  * whether to save the recording, or here with Stop, which saves it.
  */
-function NativeBrowser({ state }: { state: BrowserApiState }) {
+function NativeBrowser({
+  state,
+  statusNotice,
+}: {
+  state: BrowserApiState;
+  statusNotice: ReactNode;
+}) {
   return (
     <DevicePage title={TITLE}>
+      {statusNotice}
       <TeachSteps state={state} />
       <YourRecordings
         action={<LearnedLink />}

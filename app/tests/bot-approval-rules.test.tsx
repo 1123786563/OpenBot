@@ -109,6 +109,30 @@ test("only this Bot's own rules can be changed, and the team rules that reach it
   expect(view.queryByText("Any action in your folders")).toBeNull();
 });
 
+test("unavailable rules show a retry instead of an empty list", async () => {
+  serving();
+  const served = global.fetch;
+  let failRead = true;
+  global.fetch = Object.assign(
+    async (...args: Parameters<typeof fetch>) => {
+      if (String(args[0]) === "/api/approvals" && failRead) {
+        return new Response(null, { status: 503 });
+      }
+      return served(...args);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = draw();
+  expect(await view.findByText("Couldn’t load approval rules")).toBeTruthy();
+  expect(view.queryByText("No rules for this Bot")).toBeNull();
+
+  failRead = false;
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Retry" }));
+  expect(await view.findByText("Share on Drive")).toBeTruthy();
+  expect(view.queryByText("Couldn’t load approval rules")).toBeNull();
+});
+
 test("a rule added here is for this Bot, with no Bot to type", async () => {
   serving();
   const view = draw();

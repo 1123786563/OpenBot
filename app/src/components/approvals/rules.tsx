@@ -8,6 +8,7 @@ import {
 import { type UseMutationResult, useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { governanceOverlay } from "@/components/astryx-pilot/governance";
+import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -253,6 +254,8 @@ export function RuleForm({
   label,
   save,
   botField = true,
+  canSave = true,
+  refreshSettings,
   forBot,
 }: {
   label: string;
@@ -260,6 +263,8 @@ export function RuleForm({
   save: UseMutationResult<unknown, Error, ApprovalRuleInput>;
   /** Off where the rule applies to every Bot, so there is no Bot to name. */
   botField?: boolean;
+  canSave?: boolean;
+  refreshSettings?: () => Promise<unknown>;
   /** The Bot every rule from this form is for, already known from the page it is on. */
   forBot?: string;
 }) {
@@ -274,6 +279,7 @@ export function RuleForm({
   };
   // Opening starts clean: the last attempt's failure belongs to the draft it was about.
   const show = () => {
+    if (!canSave || save.isPending) return;
     save.reset();
     setOpen(true);
   };
@@ -281,6 +287,7 @@ export function RuleForm({
     <Field>
       <FieldLabel htmlFor={`${id}-${key}`}>{title}</FieldLabel>
       <Input
+        disabled={save.isPending}
         id={`${id}-${key}`}
         onChange={(event) => {
           // Read before the updater runs: React restores a controlled input's DOM value first.
@@ -294,7 +301,16 @@ export function RuleForm({
   );
   return (
     <>
-      <Item render={<button onClick={show} type="button" />} size="sm">
+      <Item
+        render={
+          <button
+            disabled={!canSave || save.isPending}
+            onClick={show}
+            type="button"
+          />
+        }
+        size="sm"
+      >
         <ItemMedia variant="icon">
           <IconPlus />
         </ItemMedia>
@@ -308,7 +324,17 @@ export function RuleForm({
           <IconChevronRight className="size-4 text-muted-foreground" />
         </ItemActions>
       </Item>
-      <Dialog onOpenChange={(next) => (next ? show() : close())} open={open}>
+      <Dialog
+        onOpenChange={(next, event) => {
+          if (save.isPending) {
+            event.cancel();
+            return;
+          }
+          if (next) show();
+          else close();
+        }}
+        open={open}
+      >
         <DialogContent {...governanceOverlay}>
           <DialogHeader>
             <DialogTitle>{label}</DialogTitle>
@@ -325,6 +351,7 @@ export function RuleForm({
               id={id}
               onSubmit={(event) => {
                 event.preventDefault();
+                if (!canSave || save.isPending || !rule.toolRef.trim()) return;
                 // A failed save keeps the dialog and the draft, so the person can correct it.
                 save.mutate(rule, { onSuccess: close });
               }}
@@ -341,6 +368,7 @@ export function RuleForm({
                 <Field>
                   <FieldLabel htmlFor={`${id}-behaviour`}>Behaviour</FieldLabel>
                   <LabelSelect
+                    disabled={save.isPending}
                     id={`${id}-behaviour`}
                     labels={BEHAVIOUR_LABELS}
                     onChange={(behaviour) =>
@@ -356,18 +384,30 @@ export function RuleForm({
                 {save.error.message}
               </p>
             ) : null}
+            {!canSave && !save.isPending && refreshSettings ? (
+              <ReadError
+                message="Reload your approval settings before saving this rule."
+                description="Your draft will stay here."
+                retry={refreshSettings}
+              />
+            ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
-            <Button onClick={close} size="sm" variant="outline">
+            <Button
+              disabled={save.isPending}
+              onClick={close}
+              size="sm"
+              variant="outline"
+            >
               Cancel
             </Button>
             <Button
-              disabled={save.isPending || !rule.toolRef.trim()}
+              disabled={!canSave || save.isPending || !rule.toolRef.trim()}
               form={id}
               size="sm"
               type="submit"
             >
-              Save rule
+              {save.isPending ? "Saving…" : "Save rule"}
             </Button>
           </DialogFooter>
         </DialogContent>

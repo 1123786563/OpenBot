@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 import { pluginKeys } from "@/lib/plugins/queries";
 import {
+  BifrostReviewControl,
+  type BifrostReviewPreview,
   MarketVersionAdministration,
   MarketVersionControl,
   type MarketVersionIdentity,
@@ -30,17 +32,16 @@ type Skill = {
   latestVersion: string;
 };
 
-type VersionPreview = Skill &
-  MarketVersionIdentity & {
-    publisher: string | null;
-    disableReason?: string;
-    instructions: string;
-    runtimeRequirements: string | null;
-    reasons: string[];
-    installable: boolean;
-    command?: string;
-    canAssignCommand?: boolean;
-  };
+type VersionPreview = (MarketVersionIdentity | BifrostReviewPreview) & {
+  publisher: string | null;
+  disableReason?: string;
+  instructions: string;
+  runtimeRequirements: string | null;
+  reasons: string[];
+  installable: boolean;
+  command?: string;
+  canAssignCommand?: boolean;
+};
 
 async function load<T>(path: string, signal: AbortSignal): Promise<T> {
   return (await client(`/api/skill-market${path}`, { signal })).json();
@@ -214,6 +215,20 @@ function MarketPreview({
     retry: false,
   });
   const versions = new Set([version, ...(detail.data?.versions ?? [])]);
+  const bifrost =
+    preview.data && "registry" in preview.data ? preview.data : undefined;
+  const emergencyVersion = bifrost
+    ? bifrost.registrySkillId !== undefined && bifrost.versionId !== undefined
+      ? {
+          ...skill,
+          ...bifrost,
+          registrySkillId: bifrost.registrySkillId,
+          versionId: bifrost.versionId,
+        }
+      : undefined
+    : preview.data && !("registry" in preview.data)
+      ? preview.data
+      : undefined;
   return (
     <section id={id} aria-labelledby={`${id}-heading`}>
       <Section variant="muted" padding={3}>
@@ -260,7 +275,8 @@ function MarketPreview({
                   </dt>
                   <dd>
                     <Text type="supporting" wordBreak="break-word">
-                      {preview.data.source} · {skill.namespace}/{skill.slug}
+                      {bifrost ? "Bifrost" : preview.data.source} ·{" "}
+                      {skill.namespace}/{skill.slug}
                     </Text>
                   </dd>
                 </VStack>
@@ -310,21 +326,29 @@ function MarketPreview({
                   </>
                 )}
               </VStack>
-              {isAdmin && (
+              {isAdmin && emergencyVersion && (
                 <MarketVersionControl
                   key={versionPath}
-                  version={preview.data}
+                  version={emergencyVersion}
                   disableReason={preview.data.disableReason ?? null}
                 />
               )}
+              <MarketDownload
+                key={`download:${versionPath}`}
+                path={versionPath}
+                filename={`${skill.slug}-${version}.zip`}
+                version={version}
+              />
               {preview.data.canAssignCommand && (
                 <MarketCommandAssignment path={path} />
               )}
               {preview.data.installable &&
                 preview.data.command &&
                 (installed ? (
-                  preview.data.source === installed.skill.registry &&
-                  preview.data.command === installed.skill.command ? (
+                  preview.data.command === installed.skill.command &&
+                  (preview.data.source === installed.skill.registry ||
+                    (installed.skill.catalogSlug &&
+                      preview.data.source === "bifrost")) ? (
                     <MarketSwitch
                       key={versionPath}
                       installed={installed}
@@ -355,11 +379,54 @@ function MarketPreview({
                   width="100%"
                 />
               </VStack>
+              {isAdmin && bifrost && (
+                <BifrostReviewControl
+                  key={`review:${versionPath}`}
+                  value={bifrost}
+                  versionPath={versionPath}
+                />
+              )}
             </>
           )}
         </VStack>
       </Section>
     </section>
+  );
+}
+
+function MarketDownload({
+  path,
+  filename,
+  version,
+}: {
+  path: string;
+  filename: string;
+  version: string;
+}) {
+  const download = useMutation({
+    mutationFn: async () => {
+      const response = await client(`/api/skill-market${path}/download`, {
+        fallback: "Couldn't download the skill package.",
+      });
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    },
+  });
+
+  return (
+    <VStack gap={1} align="start">
+      <Button
+        label={`Download ${version} ZIP`}
+        size="sm"
+        isLoading={download.isPending}
+        onClick={() => download.mutate()}
+      />
+      {download.isError && <p role="alert">{download.error.message}</p>}
+    </VStack>
   );
 }
 
@@ -438,6 +505,7 @@ type InstalledSkill = {
   namespace: string;
   slug: string;
   registry: string;
+  catalogSlug?: string | null;
   title: string;
   version: string;
   versionId: number;
@@ -526,7 +594,10 @@ function BotMarketInstallations({
     mutationFn: (skill: InstalledSkill) =>
       client(`/api/skill-market${path}/${encodeURIComponent(skill.command)}`, {
         method: "DELETE",
-        body: { expectedVersionId: skill.versionId },
+        body: {
+          expectedVersionId: skill.versionId,
+          expectedRegistry: skill.registry,
+        },
         fallback: "Couldn't uninstall this skill.",
       }),
     onSettled: () => refreshBotSkills(queryClient, agentId),
@@ -601,7 +672,15 @@ function BotMarketInstallations({
           key={selected.command}
           id={id}
           installed={{ agentId, skill: selected }}
-          skill={selected}
+          skill={
+            selected.catalogSlug
+              ? {
+                  ...selected,
+                  namespace: "bifrost",
+                  slug: selected.catalogSlug,
+                }
+              : selected
+          }
           version={version}
           selectVersion={selectVersion}
         />
@@ -624,7 +703,7 @@ function MarketSwitch({
     mutationFn: (expectedVersionId: number) =>
       client(`/api/skill-market${versionPath}/switch`, {
         method: "POST",
-        body: { agentId, expectedVersionId },
+        body: { agentId, expectedVersionId, expectedRegistry: skill.registry },
         fallback: "Couldn't change the installed version.",
       }),
     onSettled: () => refreshBotSkills(queryClient, agentId),
@@ -634,7 +713,7 @@ function MarketSwitch({
       <Button
         size="sm"
         variant="primary"
-        isDisabled={version === skill.version}
+        isDisabled={version === skill.version && !skill.catalogSlug}
         isLoading={changeVersion.isPending}
         onClick={() => changeVersion.mutate(skill.versionId)}
         label={changeVersion.isPending ? "Switching…" : `Switch to ${version}`}

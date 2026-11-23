@@ -1,3 +1,4 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconArrowsExchange,
   type IconBell,
@@ -13,11 +14,8 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
-import {
-  PageEmpty,
-  PageRows,
-  PageSection,
-} from "@/components/layout/page-shell";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -183,9 +181,14 @@ function ActivitySection({
   title: string;
 }) {
   return (
-    <PageSection title={title}>
+    <PageSection
+      className={items.length === 0 ? "mt-6" : undefined}
+      title={title}
+    >
       {items.length === 0 ? (
-        <PageEmpty icon={IconHistory}>{empty}</PageEmpty>
+        <Text as="p" color="secondary" size="sm">
+          {empty}
+        </Text>
       ) : (
         <PageRows>
           {items.map((item, index) => (
@@ -327,13 +330,16 @@ export function activitySummary(activity: BotActivity): string {
 /** In progress, Scheduled and Completed, read from the ledgers the work already lives in. */
 export function BotActivitySections({ agentId }: { agentId: string }) {
   const activity = useQuery(botActivityQueryOptions(agentId));
-  if (activity.isPending) return null;
+  if (activity.isPending)
+    return <ReadStatus kind="loading" message="Loading Bot activity…" />;
   if (activity.error)
     return (
       <PageSection title="Activity">
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load this Bot's activity. Reload the page.
-        </p>
+        <ReadStatus
+          kind="error"
+          message="Couldn’t load this Bot’s activity"
+          retry={activity.refetch}
+        />
       </PageSection>
     );
   return (

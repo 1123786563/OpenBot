@@ -1,12 +1,19 @@
+import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useRef, useState } from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageCard } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -24,11 +31,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ClientError } from "@/lib/client";
 import {
   type CredentialFormValues,
   credentialFormSchema,
 } from "@/lib/credentials/form";
-import { createCredentialMutationOptions } from "@/lib/credentials/mutations";
+import { saveCredentialMutationOptions } from "@/lib/credentials/mutations";
 import {
   type CredentialStatus,
   credentialListQueryOptions,
@@ -51,7 +59,6 @@ function CredentialInput({
   | "name"
   | "onBlur"
   | "onChange"
-  | "placeholder"
 > & {
   label: string;
   description?: string;
@@ -66,6 +73,7 @@ function CredentialInput({
       htmlName={name}
       label={label}
       onChange={(_, event) => onChange?.(event)}
+      size="lg"
       status={props["aria-invalid"] ? { type: "error" } : undefined}
       type={type}
       value={value}
@@ -91,9 +99,13 @@ export function NewCredentialPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const credentials = useQuery(credentialListQueryOptions());
-  const createCredential = useMutation(
-    createCredentialMutationOptions(queryClient),
+  const saveCredential = useMutation(
+    saveCredentialMutationOptions(queryClient),
   );
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const submitButton = useRef<HTMLButtonElement>(null);
+  const [saveError, setSaveError] = useState("");
+  const canCheckReplacement = credentials.isSuccess && !credentials.isFetching;
   const defaultValues: CredentialFormValues = {
     kind: "model",
     provider: "",
@@ -104,10 +116,64 @@ export function NewCredentialPage() {
     defaultValues,
     validators: { onSubmit: credentialFormSchema },
     onSubmit: async ({ value }) => {
+      if (!canCheckReplacement) return;
+      const input = credentialFormSchema.parse(value);
+      const previous = liveCredentialFor(credentials.data, input);
+      setSaveError("");
+
+      if (previous) {
+        requestConfirmation({
+          title: `Replace ${previous.keyId} for ${previous.provider}?`,
+          description: `This saves the new secret for ${paths.deploymentName} and permanently revokes the current one. Apps or models using the old secret may stop working.`,
+          confirmLabel: "Replace credential",
+          pendingLabel: "Replacing credential…",
+          failureMessage:
+            "Couldn't replace the credential. Your entries are still here.",
+          trigger: submitButton.current ?? undefined,
+          refresh: () => credentials.refetch(),
+          run: async () => {
+            try {
+              await saveCredential.mutateAsync({
+                ...input,
+                metadata: {},
+                previousCredentialId: previous.id,
+              });
+            } catch (error) {
+              if (
+                error instanceof ClientError &&
+                [404, 409].includes(error.status)
+              ) {
+                throw new ActionUnavailable(
+                  "The active credential changed. Close this dialog and review the replacement again.",
+                );
+              }
+              throw error;
+            }
+            await navigate(paths.credentials());
+          },
+        });
+        return;
+      }
+
       try {
-        await createCredential.mutateAsync({ ...value, metadata: {} });
-      } catch {
-        // The mutation renders a safe error below. Don't navigate away from the form.
+        await saveCredential.mutateAsync({
+          ...input,
+          metadata: {},
+          previousCredentialId: null,
+        });
+      } catch (error) {
+        if (error instanceof ClientError && error.status === 409) {
+          setSaveError(
+            "An active credential now exists for this key. Review it before replacing it.",
+          );
+          await credentials.refetch();
+        } else if (error instanceof ClientError && error.status === 403) {
+          setSaveError("You no longer have permission to save credentials.");
+        } else {
+          setSaveError(
+            "Couldn't save the credential. Your entries are still here. Try again.",
+          );
+        }
         return;
       }
       await navigate(paths.credentials());
@@ -121,6 +187,7 @@ export function NewCredentialPage() {
       title="Add credential"
     >
       <form
+        data-credential-form=""
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -137,197 +204,200 @@ export function NewCredentialPage() {
                 Cancel
               </Button>
               <form.Subscribe
-                selector={(state) => [state.canSubmit, state.isSubmitting]}
+                selector={(state) => ({
+                  values: state.values,
+                  canSubmit: state.canSubmit,
+                  isSubmitting: state.isSubmitting,
+                })}
               >
-                {([canSubmit, isSubmitting]) => (
+                {({ values, canSubmit, isSubmitting }) => (
                   <DeviceAction
                     disabled={
-                      !canSubmit || isSubmitting || createCredential.isPending
+                      !canCheckReplacement ||
+                      !canSubmit ||
+                      isSubmitting ||
+                      saveCredential.isPending
                     }
+                    ref={submitButton}
                     type="submit"
                   >
-                    {isSubmitting || createCredential.isPending
+                    {isSubmitting || saveCredential.isPending
                       ? "Saving…"
-                      : "Save credential"}
+                      : liveCredentialFor(credentials.data, values)
+                        ? "Review replacement"
+                        : "Save credential"}
                   </DeviceAction>
                 )}
               </form.Subscribe>
             </>
           }
         >
-          <FieldGroup>
-            <form.Field name="kind">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Type</FieldLabel>
-                    <FieldDescription>
-                      A model provider's key, or one a connector signs in with.
-                    </FieldDescription>
-                    <Select
-                      items={KIND_LABEL}
-                      onValueChange={(value) =>
-                        field.handleChange(value as "model" | "connector")
-                      }
-                      value={field.state.value}
-                    >
-                      <SelectTrigger
+          <VStack gap={4}>
+            {credentials.isError ? (
+              <ReadError
+                description="Your entries are kept. Check for an existing credential before saving."
+                message="Couldn't check existing credentials."
+                retry={() => credentials.refetch()}
+                retryBelow
+                retrying={credentials.isFetching}
+              />
+            ) : !canCheckReplacement && !saveCredential.isPending ? (
+              <ReadStatus
+                kind="loading"
+                message="Checking for existing credentials…"
+              />
+            ) : null}
+            <FieldGroup>
+              <form.Field name="kind">
+                {(field) => {
+                  const isInvalid =
+                    field.state.meta.isTouched && !field.state.meta.isValid;
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <FieldLabel htmlFor={field.name}>Type</FieldLabel>
+                      <FieldDescription>
+                        A model provider's key, or one a connector signs in
+                        with.
+                      </FieldDescription>
+                      <Select
+                        items={KIND_LABEL}
+                        onValueChange={(value) => {
+                          if (value === "model" || value === "connector")
+                            field.handleChange(value);
+                        }}
+                        value={field.state.value}
+                      >
+                        <SelectTrigger
+                          aria-describedby={
+                            isInvalid ? `${field.name}-error` : undefined
+                          }
+                          aria-invalid={isInvalid}
+                          className="w-full"
+                          id={field.name}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent {...astryxScope}>
+                          <SelectGroup>
+                            <SelectItem value="model">Model</SelectItem>
+                            <SelectItem value="connector">Connector</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {isInvalid ? (
+                        <FieldError
+                          id={`${field.name}-error`}
+                          errors={field.state.meta.errors}
+                        />
+                      ) : null}
+                    </Field>
+                  );
+                }}
+              </form.Field>
+              <form.Field name="provider">
+                {(field) => {
+                  const isInvalid =
+                    field.state.meta.isTouched && !field.state.meta.isValid;
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <CredentialInput
+                        label="Provider"
                         aria-describedby={
                           isInvalid ? `${field.name}-error` : undefined
                         }
                         aria-invalid={isInvalid}
-                        className="w-full"
                         id={field.name}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent {...astryxScope}>
-                        <SelectGroup>
-                          <SelectItem value="model">Model</SelectItem>
-                          <SelectItem value="connector">Connector</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    {isInvalid ? (
-                      <FieldError
-                        id={`${field.name}-error`}
-                        errors={field.state.meta.errors}
+                        name={field.name}
+                        onBlur={field.handleBlur}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
+                        description="For example, openai."
+                        value={field.state.value}
                       />
-                    ) : null}
-                  </Field>
-                );
-              }}
-            </form.Field>
-            <form.Field name="provider">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <CredentialInput
-                      label="Provider"
-                      aria-describedby={
-                        isInvalid ? `${field.name}-error` : undefined
-                      }
-                      aria-invalid={isInvalid}
-                      id={field.name}
-                      name={field.name}
-                      onBlur={field.handleBlur}
-                      onChange={(event) =>
-                        field.handleChange(event.target.value)
-                      }
-                      placeholder="OpenAI"
-                      value={field.state.value}
-                    />
-                    {isInvalid ? (
-                      <FieldError
-                        id={`${field.name}-error`}
-                        errors={field.state.meta.errors}
+                      {isInvalid ? (
+                        <FieldError
+                          id={`${field.name}-error`}
+                          errors={field.state.meta.errors}
+                        />
+                      ) : null}
+                    </Field>
+                  );
+                }}
+              </form.Field>
+              <form.Field name="keyId">
+                {(field) => {
+                  const isInvalid =
+                    field.state.meta.isTouched && !field.state.meta.isValid;
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <CredentialInput
+                        label="Key ID"
+                        description="Identifies the key for this provider. For example, production."
+                        aria-describedby={
+                          isInvalid ? `${field.name}-error` : undefined
+                        }
+                        aria-invalid={isInvalid}
+                        id={field.name}
+                        name={field.name}
+                        onBlur={field.handleBlur}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
+                        value={field.state.value}
                       />
-                    ) : null}
-                  </Field>
-                );
-              }}
-            </form.Field>
-            <form.Field name="keyId">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <CredentialInput
-                      label="Key ID"
-                      description="Tells this key apart from others for the same provider."
-                      aria-describedby={
-                        isInvalid ? `${field.name}-error` : undefined
-                      }
-                      aria-invalid={isInvalid}
-                      id={field.name}
-                      name={field.name}
-                      onBlur={field.handleBlur}
-                      onChange={(event) =>
-                        field.handleChange(event.target.value)
-                      }
-                      placeholder="production"
-                      value={field.state.value}
-                    />
-                    {isInvalid ? (
-                      <FieldError
-                        id={`${field.name}-error`}
-                        errors={field.state.meta.errors}
+                      {isInvalid ? (
+                        <FieldError
+                          id={`${field.name}-error`}
+                          errors={field.state.meta.errors}
+                        />
+                      ) : null}
+                    </Field>
+                  );
+                }}
+              </form.Field>
+              <form.Field name="plaintext">
+                {(field) => {
+                  const isInvalid =
+                    field.state.meta.isTouched && !field.state.meta.isValid;
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <CredentialInput
+                        label="Secret"
+                        aria-describedby={
+                          isInvalid ? `${field.name}-error` : undefined
+                        }
+                        aria-invalid={isInvalid}
+                        autoComplete="off"
+                        id={field.name}
+                        name={field.name}
+                        onBlur={field.handleBlur}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
+                        type="password"
+                        value={field.state.value}
                       />
-                    ) : null}
-                  </Field>
-                );
-              }}
-            </form.Field>
-            <form.Field name="plaintext">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <CredentialInput
-                      label="Secret"
-                      aria-describedby={
-                        isInvalid ? `${field.name}-error` : undefined
-                      }
-                      aria-invalid={isInvalid}
-                      autoComplete="off"
-                      id={field.name}
-                      name={field.name}
-                      onBlur={field.handleBlur}
-                      onChange={(event) =>
-                        field.handleChange(event.target.value)
-                      }
-                      type="password"
-                      value={field.state.value}
-                    />
-                    {isInvalid ? (
-                      <FieldError
-                        id={`${field.name}-error`}
-                        errors={field.state.meta.errors}
-                      />
-                    ) : null}
-                  </Field>
-                );
-              }}
-            </form.Field>
-          </FieldGroup>
-          {/*
-           * Said before the write, not after it.
-           *
-           * A key holds one live credential, so saving onto a key that already has one is a
-           * replacement: the old credential is revoked in the same transaction. The page calls this
-           * Add and has no rotate control, so without this line an administrator retires the
-           * credential an MCP server or an agent is currently authenticating with, and nothing on
-           * screen mentions it until something stops working.
-           */}
-          <form.Subscribe
-            selector={(state) => [
-              state.values.kind,
-              state.values.provider,
-              state.values.keyId,
-            ]}
-          >
-            {([kind, provider, keyId]) =>
-              liveCredentialFor(credentials.data, kind, provider, keyId) ? (
-                <p className="mt-5 text-amber-600 text-sm dark:text-amber-500">
-                  This key already has an active credential. Saving replaces it
-                  and revokes the old one.
-                </p>
-              ) : null
-            }
-          </form.Subscribe>
-          {createCredential.error ? (
-            <p className="mt-5 text-destructive text-sm" role="alert">
-              Couldn't save the credential. Try again.
-            </p>
-          ) : null}
+                      {isInvalid ? (
+                        <FieldError
+                          id={`${field.name}-error`}
+                          errors={field.state.meta.errors}
+                        />
+                      ) : null}
+                    </Field>
+                  );
+                }}
+              </form.Field>
+            </FieldGroup>
+            {saveError ? (
+              <Text as="p" role="alert">
+                {saveError}
+              </Text>
+            ) : null}
+          </VStack>
         </PageCard>
       </form>
+      {confirmation}
     </DevicePage>
   );
 }
@@ -340,16 +410,19 @@ export function NewCredentialPage() {
  */
 function liveCredentialFor(
   credentials: CredentialStatus[] | undefined,
-  kind: unknown,
-  provider: unknown,
-  keyId: unknown,
+  {
+    kind,
+    provider,
+    keyId,
+  }: Pick<CredentialFormValues, "kind" | "provider" | "keyId">,
 ): CredentialStatus | undefined {
-  if (!provider || !keyId) return undefined;
+  const providerKey = provider.trim();
+  const credentialKey = keyId.trim();
   return credentials?.find(
     (credential) =>
       credential.revokedAt === null &&
       credential.kind === kind &&
-      credential.provider === provider &&
-      credential.keyId === keyId,
+      credential.provider === providerKey &&
+      credential.keyId === credentialKey,
   );
 }

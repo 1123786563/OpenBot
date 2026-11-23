@@ -13,6 +13,7 @@ import { Fragment, useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageEmpty, PageRows } from "@/components/layout/page-shell";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -83,6 +84,7 @@ export function ProviderSection() {
   return (
     <ControlsSection
       description="Built-in Bots and the framework picked at setup run on models from this provider."
+      readErrorMessage={false}
       title="Connected"
     >
       {() => {
@@ -170,6 +172,7 @@ export function ModelChoiceSection() {
           ? `People can pick any model your provider lists, and its thinking level, in each conversation. Bots run on ${data.default} until somebody picks another.`
           : `People pick among the models you allow below, and their thinking level, in each conversation. Until you allow one, every conversation runs on ${data.default}.`;
       }}
+      readErrorMessage={false}
       title="In conversations"
     >
       {({ data }) => {
@@ -234,13 +237,19 @@ export function allowedSummary(models: readonly string[]): string {
 
 /** Admin, Providers: the allowlist every Bot's model is checked against. */
 export function ModelAllowlistSection() {
+  /*
+   * Turning the guard off lets every model through, the remote Bots' own included, so that
+   * direction asks; turning it on only narrows and stays immediate.
+   */
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const [open, setOpen] = useState(false);
   return (
     <ControlsSection
       description="The models people may pick in each conversation. With Only allowed models on, a Bot on any other model is refused before it runs, and a remote Bot's own model is checked too."
+      readErrorMessage={false}
       title="Allowed models"
     >
-      {({ data, setSetting, saving }) => {
+      {({ data, setSetting, setSettingAsync, saving }) => {
         const { modelAllowlist } = data.settings;
         return (
           <>
@@ -262,12 +271,31 @@ export function ModelAllowlistSection() {
                     aria-label="Only allowed models"
                     checked={modelAllowlist.enabled}
                     disabled={saving}
-                    onCheckedChange={(enabled) =>
-                      setSetting("modelAllowlist", {
-                        ...modelAllowlist,
-                        enabled,
-                      })
-                    }
+                    onCheckedChange={(enabled) => {
+                      if (enabled) {
+                        setSetting("modelAllowlist", {
+                          ...modelAllowlist,
+                          enabled,
+                        });
+                        return;
+                      }
+                      requestConfirmation({
+                        title: "Turn Only allowed models off?",
+                        description:
+                          "Bots could then run on any model the provider lists, and on a remote Bot's own model.",
+                        confirmLabel: "Turn off",
+                        pendingLabel: "Turning off…",
+                        failureMessage:
+                          "Couldn't turn the guard off. Try again.",
+                        variant: "destructive",
+                        run: async () => {
+                          await setSettingAsync("modelAllowlist", {
+                            ...modelAllowlist,
+                            enabled: false,
+                          });
+                        },
+                      });
+                    }}
                   />
                 </ItemActions>
               </Item>
@@ -297,11 +325,15 @@ export function ModelAllowlistSection() {
                 initial={modelAllowlist.models}
                 onClose={() => setOpen(false)}
                 onSave={(models) =>
-                  setSetting("modelAllowlist", { ...modelAllowlist, models })
+                  setSettingAsync("modelAllowlist", {
+                    ...modelAllowlist,
+                    models,
+                  })
                 }
                 open
               />
             ) : null}
+            {confirmation}
           </>
         );
       }}
@@ -329,9 +361,12 @@ export function AllowedModelsDialog({
   initial: readonly string[];
   /** The deployment's model, as `provider/model`. */
   builtInModel: string | null;
-  onSave: (models: string[]) => void;
+  /** Resolves when the allowlist is saved; rejects when the write failed. */
+  onSave: (models: string[]) => Promise<void>;
   onClose: () => void;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const available = useQuery({
     ...availableModelsQueryOptions(),
     enabled: open,
@@ -464,6 +499,8 @@ export function AllowedModelsDialog({
               if (!otherValid) return;
               toggle(otherName, true);
               setOther("");
+              // A row just added must be on screen: an active search would filter it straight out.
+              setSearch("");
             }}
           >
             <Input
@@ -488,6 +525,11 @@ export function AllowedModelsDialog({
               models on, a built-in Bot on it is refused unless you allow it.
             </p>
           ) : null}
+          {saveError ? (
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't save the allowed models. Try again.
+            </p>
+          ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
           <DeploymentButton
@@ -499,14 +541,24 @@ export function AllowedModelsDialog({
             Cancel
           </DeploymentButton>
           <DeploymentButton
+            disabled={saving}
             onClick={() => {
-              onSave(selected);
-              onClose();
+              /*
+               * The dialog stays open until the write answers: closing on the press showed the
+               * summary unchanged and the failure only as a quiet alert behind the dialog, which
+               * read as a save that silently did nothing.
+               */
+              setSaving(true);
+              setSaveError(false);
+              onSave(selected)
+                .then(onClose)
+                .catch(() => setSaveError(true))
+                .finally(() => setSaving(false));
             }}
             size="sm"
             type="button"
           >
-            Save
+            {saving ? "Saving…" : "Save"}
           </DeploymentButton>
         </DialogFooter>
       </DialogContent>
@@ -527,6 +579,7 @@ export function ModelUsageSection({ team }: { team: boolean }) {
           ? "Runs on each model in the last 30 days, including runs the allowlist refused."
           : "Runs on each model in the last 30 days."
       }
+      readErrorMessage={false}
       title="Usage"
     >
       {() =>

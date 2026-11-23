@@ -1,3 +1,4 @@
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Button } from "@astryxdesign/core/Button";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -6,6 +7,7 @@ import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 
@@ -174,6 +176,117 @@ export function MarketVersionControl({
       )}
       {update.isError && <p role="alert">{update.error.message}</p>}
       {update.isPending && <p role="status">Updating version availability…</p>}
+    </VStack>
+  );
+}
+
+export type BifrostReviewPreview = {
+  registry: "bifrost";
+  source: string;
+  version: string;
+  packageIdentity: {
+    namespace: "bifrost";
+    slug: string;
+    version: string;
+    skillId: string;
+    versionId: string;
+    fingerprint: string;
+  };
+  registrySkillId?: number;
+  versionId?: number;
+  reviewStatus: "unreviewed" | "approved" | "withdrawn" | "mismatched";
+  reviewedFingerprint?: string;
+  reviewable: boolean;
+};
+
+export function BifrostReviewControl({
+  value,
+  versionPath,
+}: {
+  value: BifrostReviewPreview;
+  versionPath: string;
+}) {
+  const queryClient = useQueryClient();
+  const [confirmWithdrawal, setConfirmWithdrawal] = useState(false);
+  const { packageIdentity, reviewStatus, reviewedFingerprint, reviewable } =
+    value;
+  const update = useMutation({
+    mutationFn: (method: "PUT" | "DELETE") =>
+      client(`/api/skill-market${versionPath}/review`, {
+        method,
+        body: {
+          ...packageIdentity,
+          fingerprint:
+            method === "DELETE"
+              ? reviewedFingerprint
+              : packageIdentity.fingerprint,
+        },
+        fallback: "Couldn't update this version's review.",
+      }),
+    onSuccess: async () => {
+      setConfirmWithdrawal(false);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: marketVersionQueryKey(
+            marketSkillPath(packageIdentity),
+            value.version,
+          ),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["skill-market", "version-disablements"],
+        }),
+      ]);
+    },
+  });
+  return (
+    <VStack gap={2} align="start">
+      <Text type="label">Package fingerprint</Text>
+      <Text as="p" wordBreak="break-word">
+        {packageIdentity.fingerprint}
+      </Text>
+      {reviewable && reviewStatus === "unreviewed" && (
+        <>
+          <Text as="p">
+            Approve only after verifying that these instructions can run without
+            scripts, supporting files, or a dedicated runtime.
+          </Text>
+          <Button
+            size="sm"
+            label="Approve exact package"
+            isLoading={update.isPending}
+            onClick={() => update.mutate("PUT")}
+          />
+        </>
+      )}
+      {reviewedFingerprint &&
+        (reviewStatus === "approved" || reviewStatus === "mismatched") && (
+          <Button
+            size="sm"
+            label="Withdraw approval"
+            isDisabled={update.isPending}
+            onClick={() => {
+              update.reset();
+              setConfirmWithdrawal(true);
+            }}
+          />
+        )}
+      <AlertDialog
+        isOpen={confirmWithdrawal}
+        onOpenChange={(open) => {
+          if (!update.isPending) setConfirmWithdrawal(open);
+        }}
+        title={`Withdraw version ${value.version}?`}
+        description={
+          update.error?.message ??
+          "This version will become unavailable for new installations and switches. Existing installations will continue to run."
+        }
+        actionLabel="Withdraw version"
+        isActionLoading={update.isPending}
+        onAction={() => update.mutate("DELETE")}
+      />
+      {!confirmWithdrawal && update.isError && (
+        <p role="alert">{update.error.message}</p>
+      )}
     </VStack>
   );
 }

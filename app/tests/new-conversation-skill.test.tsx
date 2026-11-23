@@ -17,6 +17,7 @@ import userEvent from "@testing-library/user-event";
 import { IDBFactory } from "fake-indexeddb";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { authKeys } from "@/lib/auth/queries";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import { queryClient } from "@/query-client";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
@@ -42,6 +43,12 @@ import { settleReactWork } from "./settle-react-work";
 
 const NativeResponse = globalThis.Response;
 const BOT = "tally-bot";
+const userProfile = {
+  id: "skill-tester",
+  email: "skill-tester@example.test",
+  onboarding: null,
+  role: "user",
+};
 const INSTRUCTION =
   "Reply as a tally card. The first line must be exactly TALLY CARD KITTIWAKE-9.";
 
@@ -78,7 +85,7 @@ const channel: AgentChannel = {
 /** The run inputs that actually left the browser, in order. */
 let runs: RunAgentInput[] = [];
 let originalFetch: typeof fetch;
-let originalIndexedDb: IDBFactory;
+let originalIndexedDB: PropertyDescriptor | undefined;
 
 function sse(events: unknown[]) {
   return new NativeResponse(
@@ -89,6 +96,11 @@ function sse(events: unknown[]) {
 
 beforeAll(() => {
   GlobalRegistrator.register({ url: "http://localhost/" });
+  originalIndexedDB = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  Object.defineProperty(globalThis, "indexedDB", {
+    configurable: true,
+    value: new IDBFactory(),
+  });
   /*
    * The `/` menu opens at the caret: prompt-area measures the caret's range and draws no menu for
    * a range with no box. happy-dom lays nothing out, so every range measures empty; a browser's
@@ -98,8 +110,6 @@ beforeAll(() => {
   Range.prototype.getBoundingClientRect = () =>
     ({ ...caret, right: 9, bottom: 24, toJSON: () => caret }) as DOMRect;
   originalFetch = globalThis.fetch;
-  originalIndexedDb = globalThis.indexedDB;
-  globalThis.indexedDB = new IDBFactory();
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = new URL(
@@ -113,14 +123,7 @@ beforeAll(() => {
       const method =
         init?.method ?? (input instanceof Request ? input.method : "GET");
       if (url.pathname === "/api/me")
-        return NativeResponse.json({
-          user: {
-            id: "person",
-            name: "Sam",
-            email: "sam@example.com",
-            role: "user",
-          },
-        });
+        return NativeResponse.json({ user: userProfile });
       if (url.pathname === "/api/channels" && method === "POST")
         return NativeResponse.json({ channel }, { status: 201 });
       if (url.pathname === "/api/route")
@@ -189,15 +192,17 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   queryClient.clear();
+  localStorage.clear();
+  sessionStorage.clear();
   runs = [];
 });
 
 afterAll(async () => {
   await settleReactWork();
   globalThis.fetch = originalFetch;
-  if (originalIndexedDb === undefined)
-    Reflect.deleteProperty(globalThis, "indexedDB");
-  else globalThis.indexedDB = originalIndexedDb;
+  if (originalIndexedDB)
+    Object.defineProperty(globalThis, "indexedDB", originalIndexedDB);
+  else Reflect.deleteProperty(globalThis, "indexedDB");
   GlobalRegistrator.unregister();
 });
 
@@ -235,15 +240,17 @@ const channelRoute = createRoute({
   component: ChannelScreen,
 });
 const startRouteOptions = {
-  id: "/start/$startId",
   path: "/start/$startId",
   getParentRoute: () => appRoute,
   component: StartRoute.options.component,
 };
-const testStartRoute = StartRoute.update(startRouteOptions);
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
-    appRoute.addChildren([testStartRoute, testChannelNewRoute, channelRoute]),
+    appRoute.addChildren([
+      testChannelNewRoute,
+      StartRoute.update(startRouteOptions),
+      channelRoute,
+    ]),
   ]),
 ]);
 
@@ -255,6 +262,7 @@ function textOf(message: Message): string {
 
 test("the first message of a new conversation carries its skill, as the next one would", async () => {
   queryClient.setQueryData(agentKeys.list(false), [bot]);
+  queryClient.setQueryData(authKeys.currentUser(), userProfile);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({
@@ -280,6 +288,9 @@ test("the first message of a new conversation carries its skill, as the next one
   await user.keyboard(" Count the north store room.");
   await user.keyboard("{Enter}");
 
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe(`/channel/${channel.id}`),
+  );
   await waitFor(() => expect(runs.length).toBeGreaterThan(0), {
     timeout: 5000,
   });

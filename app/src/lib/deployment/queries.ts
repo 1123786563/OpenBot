@@ -38,6 +38,7 @@ export type DeploymentCapabilities = {
    * need of it under Settings. A server from before the switch reads as `team`.
    */
   edition: "team" | "personal";
+  directMessageReplay?: boolean;
   skillMarket?: boolean;
   transcription?: boolean;
   voice?: boolean;
@@ -79,6 +80,7 @@ export function deploymentCapabilitiesQueryOptions() {
         selfHostBanner?: boolean;
         localEvaluation?: boolean;
         edition?: string;
+        directMessageReplay?: boolean;
         skillMarket?: boolean;
         transcription?: boolean;
         voice?: boolean;
@@ -89,6 +91,7 @@ export function deploymentCapabilitiesQueryOptions() {
         selfHostBanner: body.selfHostBanner === true,
         localEvaluation: body.localEvaluation === true,
         edition: body.edition === "personal" ? "personal" : "team",
+        directMessageReplay: body.directMessageReplay === true,
         skillMarket: body.skillMarket === true,
         transcription: body.transcription === true,
         voice: body.voice === true,

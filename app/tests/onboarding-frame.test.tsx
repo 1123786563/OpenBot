@@ -54,7 +54,7 @@ const progress = (view: ReturnType<typeof render>) =>
   view.getByRole("progressbar", { name: "Onboarding progress" });
 
 const dashes = (view: ReturnType<typeof render>) =>
-  Array.from(progress(view).querySelectorAll("span"));
+  Array.from(progress(view).querySelectorAll("div[aria-hidden] > span"));
 
 const footer = (view: ReturnType<typeof render>) => {
   const found = view.container.querySelector("footer");
@@ -109,6 +109,7 @@ test("the first step has no Back, and the dashes say step 1", () => {
   expect(phoneBack(view)).toBeNull();
   expect(desktopBack(view)).toBeNull();
   expect(progress(view).getAttribute("aria-valuetext")).toBe("Step 1 of 3");
+  expect(progress(view).textContent).toBe("Step 1 of 3");
   expect(dashes(view)).toHaveLength(3);
   expect(dashes(view).map((dash) => dash.hasAttribute("data-current"))).toEqual(
     [true, false, false],

@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
-import { type CSSProperties, useId, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
 import { ORB_GLOW_REACH } from "@/components/agents/orb/agent-orb";
 import { DemoOrb } from "@/components/onboarding/demo-orb";
-import { useSaveProfileName } from "@/components/settings/profile";
 import { Input } from "@/components/ui/input";
+import { updateProfileNameMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { StepIntro } from "./onboarding-frame";
 import type { OnboardingStep } from "./onboarding-wizard";
@@ -15,27 +15,43 @@ import type { OnboardingStep } from "./onboarding-wizard";
  * frame's primary submits it (`primaryForm`), so Back sits beside Get started here as it does
  * beside Continue everywhere else, and Enter in the field submits as it would in any form.
  *
- * THREE STATES ON THE WAY OUT. Get started; Saving… while the name and then the completion are
- * saved; then, while the orb plays its finish (`finished`), All set, green with a check, which is
- * what has happened. Nothing can be submitted twice: the field is disabled from the first press,
- * and a press during the finish does nothing. A save or a completion that fails is said under the
- * field, and the button reads Get started again.
+ * The button distinguishes saving the name from completing setup. A name error appears under the
+ * field, and the route presents completion recovery by the footer.
  */
 export function useNameStep({
   finish,
   finished,
+  completing = false,
+  retry = false,
 }: {
   /** Saves completion and plays the finish. Resolves when the app is about to open. */
   finish: () => Promise<void>;
   /** The orb is playing its finish. */
   finished: boolean;
+  completing?: boolean;
+  retry?: boolean;
 }): OnboardingStep {
   const formId = useId();
   const fieldId = useId();
   const { data: user } = useQuery(currentUserQueryOptions());
   const [draft, setDraft] = useState<string | null>(null);
   const name = draft ?? (user?.needsName ? "" : (user?.name ?? ""));
-  const save = useSaveProfileName(finish);
+  const queryClient = useQueryClient();
+  const save = useMutation({
+    ...updateProfileNameMutationOptions(queryClient),
+    networkMode: "always",
+  });
+  const submitting = useRef(false);
+  const field = useRef<HTMLInputElement>(null);
+  const pending = save.isPending || completing;
+  useEffect(() => {
+    if (document.activeElement !== document.body) return;
+    if (save.isError) field.current?.focus();
+    if (retry) {
+      const primary = field.current?.form?.elements.namedItem("finish-setup");
+      if (primary instanceof HTMLButtonElement) primary.focus();
+    }
+  }, [save.isError, retry]);
 
   return {
     id: "name",
@@ -46,10 +62,21 @@ export function useNameStep({
           <form
             className="flex w-full flex-col gap-3"
             id={formId}
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault();
-              if (name.trim() && !save.isPending && !finished)
-                save.mutate(name.trim());
+              const submitted = name.trim();
+              if (!submitted || submitting.current || finished) return;
+              submitting.current = true;
+              try {
+                if (user?.needsName || user?.name !== submitted) {
+                  await save.mutateAsync(submitted);
+                }
+                await finish();
+              } catch {
+                // The mutation exposes the name error and the route exposes completion errors.
+              } finally {
+                submitting.current = false;
+              }
             }}
           >
             <label className="text-left" htmlFor={fieldId}>
@@ -57,13 +84,15 @@ export function useNameStep({
             </label>
             <Input
               autoComplete="name"
-              disabled={save.isPending || finished}
+              className="h-11"
+              readOnly={pending || finished}
               id={fieldId}
               maxLength={100}
               onChange={(event) => {
                 setDraft(event.target.value);
                 save.reset();
               }}
+              ref={field}
               required
               value={name}
             />
@@ -75,7 +104,7 @@ export function useNameStep({
           </form>
         }
       >
-        <p>You can change your name later in Settings.</p>
+        <p>Change your name later in Settings → General → About you.</p>
       </StepIntro>
     ),
     demo: () => <NameOrb finished={finished} size={128} />,
@@ -83,11 +112,15 @@ export function useNameStep({
     primaryForm: formId,
     primaryLabel: finished
       ? "All set"
-      : save.isPending
-        ? "Saving…"
-        : "Get started",
+      : completing
+        ? "Finishing…"
+        : save.isPending
+          ? "Saving…"
+          : retry
+            ? "Retry setup"
+            : "Get started",
     primaryDone: finished,
-    primaryDisabled: !finished && (!name.trim() || save.isPending),
+    primaryDisabled: !finished && (!name.trim() || pending),
   };
 }
 

@@ -273,6 +273,43 @@ test("an edit after the rules were written is called out, checked as it stands, 
   );
 });
 
+test("a failed preview preserves the draft and a changed description blocks submission", async () => {
+  const fetchWithPreview = global.fetch;
+  let failed = false;
+  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!failed && String(input).endsWith("/backtest")) {
+      failed = true;
+      return Response.json({ error: "Preview unavailable." }, { status: 503 });
+    }
+    return fetchWithPreview(input, init);
+  }) as typeof fetch;
+
+  const { view } = open();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await describeRules(view, TEXT);
+  expect(await view.findByText("Preview unavailable.")).toBeTruthy();
+  const description = view.getByLabelText(
+    "Describe the rules",
+  ) as HTMLTextAreaElement;
+  const save = view.getByRole("button", {
+    name: "Save rules",
+  }) as HTMLButtonElement;
+  expect(description.value).toBe(TEXT);
+  expect(view.getByLabelText("Tool or app")).toBeTruthy();
+  expect(save.disabled).toBe(true);
+  await user.click(view.getByRole("button", { name: "Retry preview" }));
+  await waitFor(() => expect(save.disabled).toBe(false));
+
+  await user.type(description, " for new requests");
+  expect(view.getByText(/Your description changed/)).toBeTruthy();
+  expect(save.disabled).toBe(true);
+  fireEvent.submit(save.form as HTMLFormElement);
+  expect(sent.some((entry) => entry.path.endsWith("/batch"))).toBe(false);
+  await user.click(view.getByRole("button", { name: "Write rules" }));
+  await waitFor(() => expect(save.disabled).toBe(false));
+  expect(view.queryByText(/Your description changed/)).toBeNull();
+});
+
 test("the headline counts what changed and never what a safety requirement decided", () => {
   expect(backtestHeadline(REPORT)).toBe(
     "Would have changed 4 decisions: removes 4 asks, of which 1 a person had denied; adds 0 asks.",

@@ -1,9 +1,6 @@
-import {
-  createRootRouteWithContext,
-  Navigate,
-  Outlet,
-} from "@tanstack/react-router";
+import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { MissingPage } from "@/components/layout/route-recovery";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,12 +10,7 @@ import "@fontsource-variable/inter/wght.css";
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootComponent,
-  /*
-   * An address this build does not know goes home rather than to a dead end. Home sits behind the
-   * auth gate, so the guard decides what that means: /sign for a visitor, /onboarding for somebody
-   * who has not finished it, the app for everyone else.
-   */
-  notFoundComponent: () => <Navigate replace to="/" />,
+  notFoundComponent: () => <MissingPage standalone />,
 });
 
 /**

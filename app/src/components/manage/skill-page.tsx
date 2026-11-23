@@ -63,16 +63,52 @@ export function SkillPage({ slug }: { slug: string }) {
   /* The ones this person has hidden, so a grant one of them holds still has its switch here. */
   const { data: hiddenAgents } = useQuery(agentListQueryOptions(true));
   const [error, setError] = useState<string | null>(null);
+  const [draftDirty, setDraftDirty] = useState(false);
   const { requestConfirmation, confirmation } = useActionConfirmation();
+  /* The Back trail out of an edited skill asks first, as Cancel does on the New skill page. */
+  const leave = () => navigate(paths.skills());
+  const guardLeave = (event: {
+    preventDefault: () => void;
+    currentTarget: HTMLElement;
+  }) => {
+    if (!draftDirty) return;
+    event.preventDefault();
+    requestConfirmation({
+      title: "Leave without saving?",
+      description: "Your edits to this skill are discarded.",
+      confirmLabel: "Leave",
+      pendingLabel: "Leaving…",
+      failureMessage: "Couldn't leave this page. Try again.",
+      trigger: event.currentTarget,
+      run: async () => {
+        await leave();
+      },
+    });
+  };
 
   const setGrant = useMutation({
     ...setPluginGrantMutationOptions(queryClient),
-    onError: (thrown: Error) => setError(thrown.message),
+    onError: () =>
+      setError("Couldn't change which Bots offer this skill. Try again."),
   });
   const saveSkill = useMutation(saveSkillMutationOptions(queryClient));
   const removeSkill = useMutation(removeSkillMutationOptions(queryClient));
 
-  const back = { label: "Skills", linkProps: paths.skills() };
+  /** "weekly-digest" -> "Weekly digest": the page's own name while the read is out. */
+  const fallbackTitle = (key: string) =>
+    key
+      .split("-")
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+
+  const back = {
+    label: "Skills",
+    linkProps: {
+      ...paths.skills(),
+      onClick: guardLeave,
+    },
+  };
   const skill = plugins.data?.skills.find(
     (candidate) => candidate.slug === slug,
   );
@@ -80,7 +116,7 @@ export function SkillPage({ slug }: { slug: string }) {
   /* Placeholder rows while the fetch is open, so no sentence asserts anything mid-read. */
   if (plugins.isPending) {
     return (
-      <PageShell backButton={back} title="Skill">
+      <PageShell backButton={back} title={fallbackTitle(slug)}>
         <div aria-busy="true" aria-label="Loading" role="status">
           <PageRows>
             {LOADING_ROWS.map((key, index) => (
@@ -103,7 +139,7 @@ export function SkillPage({ slug }: { slug: string }) {
   /* A list that could not be read is not a missing skill: `isPending` goes false on a failure too. */
   if (!plugins.data) {
     return (
-      <PageShell backButton={back} title="Skill">
+      <PageShell backButton={back} title={fallbackTitle(slug)}>
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-destructive text-sm" role="alert">
             Couldn't load this skill.
@@ -124,7 +160,7 @@ export function SkillPage({ slug }: { slug: string }) {
 
   if (!skill) {
     return (
-      <PageShell backButton={back} title="Skill">
+      <PageShell backButton={back} title={fallbackTitle(slug)}>
         <PageEmpty icon={IconFileOff} title="Skill not found">
           It may have been deleted. Go back to Skills to see the ones there are.
         </PageEmpty>
@@ -224,10 +260,14 @@ export function SkillPage({ slug }: { slug: string }) {
           tools: skill.tools ?? [],
         }}
         error={saveSkill.error}
+        onDirtyChange={setDraftDirty}
         // Remounted after a save, so the form starts again from what the server now holds.
         key={`${skill.title}\u0000${skill.summary}\u0000${skill.instructions}`}
         onSubmit={async (values) => {
           await saveSkill.mutateAsync({ ...values, global: true });
+          /* The saved values are on their way back through the cache, but the guard at the
+             top must stop believing there are unsaved edits the moment they are saved. */
+          setDraftDirty(false);
           toast.add({ title: "Skill saved", type: "success" });
         }}
         slugLocked

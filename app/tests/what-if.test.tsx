@@ -18,12 +18,12 @@ import { settleReactWork } from "./settle-react-work";
 import answers from "./what-if.fixture.json";
 
 /**
- * Admin > What would happen, and Audit's "Why?".
+ * Admin > Test a policy, and Audit's "Why?".
  *
  * The page through its real data functions, with `fetch` answering as the server answered for the
  * same OpenBot (`what-if.fixture.json`, captured through the functions the routes call). A question
  * becomes chips; Check draws each control in order, with the one that decides marked and the ones a
- * real action never reaches faded. On Audit, a row a control decided carries "Why?", which explains it
+ * real action never reaches marked. On Audit, a row a control decided carries "Why?", which explains it
  * from the row alone.
  */
 
@@ -142,7 +142,7 @@ test("a question becomes chips, and Check shows every control in order with the 
   ).toBe(true);
 
   await user.type(view.getByLabelText("Ask what would happen"), QUESTION);
-  await user.click(view.getByRole("button", { name: "Ask" }));
+  await user.keyboard("{Enter}");
 
   await waitFor(() =>
     expect(
@@ -162,9 +162,8 @@ test("a question becomes chips, and Check shows every control in order with the 
   expect(asked.find((call) => call.path.endsWith("/ask"))?.body).toEqual({
     question: QUESTION,
   });
-
   await user.click(view.getByRole("button", { name: "Check" }));
-  await view.findByText("What happens");
+  await view.findByRole("heading", { name: "What happens" });
   // The confirmed action is what is checked, with the question it came from.
   expect(asked.find((call) => call.path.endsWith("/check"))?.body).toEqual({
     action: answers.checked.action,
@@ -182,16 +181,23 @@ test("a question becomes chips, and Check shows every control in order with the 
   ]);
   const boundaries = rows[3] as HTMLElement;
   expect(boundaries.getAttribute("data-decides")).toBe("true");
-  expect(within(boundaries).getByText("Refuses")).toBeTruthy();
+  expect(within(boundaries).getByText("Blocks")).toBeTruthy();
   expect(boundaries.textContent).toContain(
     "Rule: No email when nobody is watching",
   );
   // The safety floor would ask, but a refused action never reaches it.
   expect(rows[4]?.getAttribute("data-unreached")).toBe("true");
   expect(rows[4]?.textContent).toContain("Not reached");
+  expect(rows[4]?.textContent).not.toContain("Asks first");
+  const bypassedCheck = view.getByRole("button", {
+    name: "If Safety requirements were reached",
+  });
+  expect(bypassedCheck.getAttribute("aria-expanded")).toBe("false");
+  await user.click(bypassedCheck);
+  expect(bypassedCheck.getAttribute("aria-expanded")).toBe("true");
   expect(
     view.container.querySelector("[data-what-if-headline]")?.textContent,
-  ).toContain("Refused");
+  ).toContain("Blocked");
 
   // Changing a chip makes the answer stale, so it goes.
   await user.click(
@@ -209,11 +215,52 @@ test("a question becomes chips, and Check shows every control in order with the 
   );
 });
 
-test("an Audit row a control decided carries Why?, which explains it from the row with today's settings", async () => {
+test("editing the action while a check runs discards the previous action's result", async () => {
   const asked = serve({
-    "/api/admin/audit-events": { events: [answers.event] },
-    [`/api/admin/what-if/explain/${answers.event.id}`]: answers.explained,
+    "/api/admin/what-if/vocabulary": answers.vocabulary,
+    "/api/admin/what-if/ask": {
+      understood: "yes",
+      action: answers.checked.action,
+    },
   });
+  const fetchFixture = globalThis.fetch;
+  const pending = Promise.withResolvers<Response>();
+  globalThis.fetch = Object.assign(
+    (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith("/api/admin/what-if/check")
+        ? pending.promise
+        : fetchFixture(input, init),
+    { preconnect: fetchFixture.preconnect },
+  );
+  const view = renderWhatIf();
+  const user = userEvent.setup({ document });
+  await user.type(
+    await view.findByLabelText("Ask what would happen"),
+    QUESTION,
+  );
+  await user.click(view.getByRole("button", { name: "Ask" }));
+  await waitFor(() =>
+    expect(asked.some((request) => request.path.endsWith("/ask"))).toBe(true),
+  );
+  await user.click(await view.findByRole("button", { name: "Check" }));
+  await view.findByRole("button", { name: "Checking…" });
+  const initiator = view.container.querySelector(
+    '[data-what-if-chip="initiator"]',
+  );
+  if (!(initiator instanceof HTMLElement))
+    throw new Error("Missing initiator chip");
+  await user.click(within(initiator).getByRole("button"));
+  await user.click(
+    await view.findByRole("menuitemradio", { name: "A person chatting" }),
+  );
+  pending.resolve(Response.json(answers.checked));
+  await view.findByRole("button", { name: "Check" });
+  expect(view.queryByText("What happens")).toBeNull();
+});
+
+test("an Audit row a control decided carries Why?, which explains it from the row with today's settings", async () => {
+  const trail = { "/api/admin/audit-events": { events: [answers.event] } };
+  serve(trail);
   const router = createRouter({
     routeTree: createRootRoute({ component: () => <AuditPage ask /> }),
     history: createMemoryHistory({ initialEntries: ["/"] }),
@@ -229,7 +276,16 @@ test("an Audit row a control decided carries Why?, which explains it from the ro
   await user.click(why);
 
   const dialog = await view.findByRole("dialog");
-  await within(dialog).findByText("Why did this happen?");
+  const contents = within(dialog);
+  await contents.findByRole("alert");
+  const asked = serve({
+    ...trail,
+    [`/api/admin/what-if/explain/${answers.event.id}`]: answers.explained,
+  });
+  await user.click(contents.getByRole("button", { name: "Try again" }));
+  await contents.findByRole("heading", { name: "Recorded decision" });
+  await contents.findByRole("heading", { name: "With current policy" });
+  expect(contents.getAllByText("Blocked", { exact: true })).toHaveLength(2);
   await waitFor(() =>
     expect(dialog.querySelector("[data-why-recorded]")?.textContent).toContain(
       'Refused by the boundary "No email when nobody is watching".',
@@ -242,7 +298,7 @@ test("an Audit row a control decided carries Why?, which explains it from the ro
   ).toBe("true");
   // The same answer then and now, so nothing says a setting changed.
   expect(dialog.textContent).not.toContain(
-    "Today's settings decide this differently",
+    "The current evaluation differs from the recorded decision.",
   );
   expect(
     asked.some(

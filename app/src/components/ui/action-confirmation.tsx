@@ -91,9 +91,13 @@ export function useActionConfirmation() {
     requestConfirmation,
     confirmation: (
       <>
-        <p ref={status} role="status" tabIndex={-1}>
-          {notice}
-        </p>
+        {/* Only once there is something to say: an ever-present empty status line answers
+            screen-reader and test queries for "the status" before the real notice exists. */}
+        {notice ? (
+          <p ref={status} role="status" tabIndex={-1}>
+            {notice}
+          </p>
+        ) : null}
         <Dialog
           disablePointerDismissal
           open={state !== null}
@@ -136,6 +140,7 @@ export function useActionConfirmation() {
             <DialogFooter className="flex-wrap">
               <Button
                 ref={cancelButton}
+                className="confirmation-action"
                 isDisabled={pending}
                 label={unavailable ? "Close" : "Cancel"}
                 onClick={close}
@@ -143,6 +148,7 @@ export function useActionConfirmation() {
               />
               {action && !unavailable && (
                 <Button
+                  className="confirmation-action"
                   isLoading={pending}
                   label={
                     pending

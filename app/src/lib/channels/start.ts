@@ -1,8 +1,10 @@
+import type { Attachment } from "@copilotkit/react-core/v2";
 import { MutationObserver, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import type { ComposerDraft } from "@/components/channels/composer";
-import { stashFirstMessage } from "@/components/channels/transcript-messages";
+import type { StoredThread } from "@/lib/copilot/thread-messages";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
   createGroupMutationOptions,
   groupQueryOptions,
@@ -16,9 +18,11 @@ import {
   deleteChannelMutationOptions,
 } from "./mutations";
 import {
+  claimFirstSend,
   finishPendingStart,
   pendingAttachmentRefs,
   readPendingStart,
+  restorePendingAttachments,
   type StartRecipient,
   type StartRecord,
   savePendingStart,
@@ -52,65 +56,6 @@ export async function startWithChosen(input: {
   await input.start(input.agentId, input.text);
 }
 
-/**
- * Start a group from a just-submitted first message: create it with the Bots in the order they were
- * picked, give it the message, then open it. Pure so the order can be tested; nothing is sent or
- * opened when the group could not be made.
- *
- * A group exists to hold that first message, so one whose message did not send is discarded rather
- * than left in everybody's roster as an empty conversation. The send's own error is what the caller
- * sees (the composer keeps the draft for another try); a failed discard is swallowed, because the
- * person's problem is the message, and an empty group is the lesser leftover.
- */
-export async function startGroupWith(input: {
-  agentIds: string[];
-  text: string;
-  create: (agentIds: string[]) => Promise<{ id: string }>;
-  send: (channelId: string, text: string) => Promise<void>;
-  discard: (channelId: string) => Promise<void>;
-  open: (channelId: string) => Promise<void>;
-}): Promise<void> {
-  const group = await input.create(input.agentIds);
-  try {
-    await input.send(group.id, input.text);
-  } catch (error) {
-    await input.discard(group.id).catch(() => undefined);
-    throw error;
-  }
-  await input.open(group.id);
-}
-
-/**
- * Create a conversation, save the model and thinking effort picked for it, then open it with its
- * first message.
- *
- * The pick is saved before the conversation opens, because opening it is what sends the first
- * message, and that message must not run on a model or effort other than the one picked. A pick
- * that cannot be saved discards the conversation, which exists only to hold that message, and the
- * save's own error is what the caller sees, so the composer keeps the draft. Pure so the order can
- * be tested.
- */
-export async function startWithModel(input: {
-  /** Null, or both halves null, when everything is the default and nothing needs saving. */
-  pick: ConversationModel | null;
-  create: () => Promise<{ id: string }>;
-  save: (channelId: string, pick: ConversationModel) => Promise<unknown>;
-  discard: (channelId: string) => Promise<void>;
-  open: (channelId: string) => Promise<void>;
-}): Promise<void> {
-  const channel = await input.create();
-  const { pick } = input;
-  if (pick && (pick.model !== null || pick.effort !== null)) {
-    try {
-      await input.save(channel.id, pick);
-    } catch (error) {
-      await input.discard(channel.id).catch(() => undefined);
-      throw error;
-    }
-  }
-  await input.open(channel.id);
-}
-
 /** Persist before leaving the composer so even an interrupted navigation is recoverable. */
 export function useSubmitConversationStart(owner: string | undefined) {
   const navigate = useNavigate();
@@ -120,6 +65,7 @@ export function useSubmitConversationStart(owner: string | undefined) {
     draft: ComposerDraft,
     recipient: StartRecipient,
     model: ConversationModel | null = null,
+    onSaved?: () => void,
   ) => {
     if (!owner || submitting.current) return;
     submitting.current = true;
@@ -138,6 +84,7 @@ export function useSubmitConversationStart(owner: string | undefined) {
           model,
         },
       });
+      onSaved?.();
 
       const open = () =>
         navigate({ to: "/start/$startId", params: { startId: id } });
@@ -243,7 +190,6 @@ export function resumeConversationStart(
           : { phase: "ready", channelId: channel.id };
       save({ state: "pending", draft, progress });
       queryClient.setQueryData(channelKeys.detail(channel.id), channel);
-      if (!group) stashFirstMessage(channel.id, draft.text);
     }
     const channelId = progress.channelId;
     if (!group) return { state: "pending", draft, progress };
@@ -279,4 +225,156 @@ export function resumeConversationStart(
       : work())().finally(() => startsInProgress.delete(key));
   startsInProgress.set(key, run);
   return run;
+}
+
+export type FirstMessageRecovery = {
+  action: "retry" | "check" | "resend";
+  message: string;
+};
+
+export function discardDirectFirstMessage(
+  owner: string,
+  id: string,
+  channelId: string,
+) {
+  finishPendingStart(owner, id, channelId, false);
+}
+
+/** Continue a direct start once its live Thread can send the first message. */
+export async function resumeDirectFirstMessage({
+  queryClient,
+  owner,
+  id,
+  channelId,
+  resend,
+  isCurrent,
+  readHistory,
+  onDelivered,
+  send,
+}: {
+  queryClient: QueryClient;
+  owner: string;
+  id: string;
+  channelId: string;
+  resend: boolean;
+  isCurrent: () => boolean;
+  readHistory: () => Promise<StoredThread>;
+  onDelivered: (history: StoredThread) => void;
+  send: (
+    text: string,
+    attachments: Attachment[],
+    beforeSend: () => Promise<void>,
+  ) => Promise<void>;
+}): Promise<"finished" | "inactive" | FirstMessageRecovery> {
+  if (!isCurrent()) return "inactive";
+  const start = readPendingStart(owner, id);
+  if (!start || start.state === "finished") return "finished";
+  if (
+    start.draft.recipient.kind !== "direct" ||
+    start.progress.phase === "creating" ||
+    start.progress.channelId !== channelId
+  )
+    return "inactive";
+
+  const verify = async (): Promise<
+    "finished" | "inactive" | FirstMessageRecovery
+  > => {
+    const history = await readHistory();
+    if (!isCurrent()) return "inactive";
+    if (
+      history.availability === "ready" &&
+      history.messages.some(
+        (message) => message.id === id && message.role === "user",
+      )
+    ) {
+      onDelivered(history);
+      finishPendingStart(owner, id, channelId, false);
+      return "finished";
+    }
+    const historyChecked =
+      history.availability === "ready" && history.unreadable === 0;
+    const canResend =
+      historyChecked &&
+      start.draft.attachments.length === 0 &&
+      start.draft.text.trim().length > 0 &&
+      (await queryClient
+        .fetchQuery({
+          ...deploymentCapabilitiesQueryOptions(),
+          staleTime: 0,
+          retry: false,
+        })
+        .then((capabilities) => capabilities.directMessageReplay === true)
+        .catch(() => false));
+    if (!isCurrent()) return "inactive";
+    return {
+      action: canResend ? "resend" : "check",
+      message: canResend
+        ? "Your message is saved here. It hasn’t appeared in the Thread. Resending keeps a single copy."
+        : historyChecked
+          ? "Your message is saved here. It hasn’t appeared in the Thread yet."
+          : "Your message is saved here. We couldn’t check the full Thread for delivery.",
+    };
+  };
+
+  const replaying = start.progress.phase === "submitted";
+  if (replaying) {
+    const result = await verify();
+    if (!resend || typeof result === "string" || result.action !== "resend")
+      return result;
+  }
+  let submitted = replaying;
+  try {
+    await send(
+      start.draft.text,
+      restorePendingAttachments(start.draft),
+      async () => {
+        if (!isCurrent()) throw new Error("The conversation was closed.");
+        const latest = readPendingStart(owner, id);
+        if (
+          latest?.state === "pending" &&
+          latest.progress.phase !== "creating" &&
+          latest.progress.channelId === channelId &&
+          (replaying
+            ? latest.progress.phase === "submitted"
+            : latest.progress.phase === "ready")
+        ) {
+          if (replaying) return;
+          const claimed = await claimFirstSend(owner, id);
+          submitted = true;
+          const beforeSend = readPendingStart(owner, id);
+          if (
+            beforeSend?.state === "pending" &&
+            beforeSend.progress.phase === "ready" &&
+            beforeSend.progress.channelId === channelId
+          ) {
+            savePendingStart(owner, id, {
+              ...beforeSend,
+              progress: { phase: "submitted", channelId },
+            });
+          }
+          if (
+            claimed &&
+            beforeSend?.state === "pending" &&
+            beforeSend.progress.phase !== "creating" &&
+            beforeSend.progress.channelId === channelId &&
+            isCurrent()
+          )
+            return;
+        }
+        submitted = true;
+        throw new Error("The message is already being checked.");
+      },
+    );
+    finishPendingStart(owner, id, channelId, false);
+    return "finished";
+  } catch {
+    if (!isCurrent()) return "inactive";
+    const latest = readPendingStart(owner, id);
+    if (latest?.state === "finished") return "finished";
+    if (submitted || latest?.progress.phase === "submitted") return verify();
+    return {
+      action: "retry",
+      message: "Your message is saved here. Try again to send it.",
+    };
+  }
 }

@@ -16,6 +16,7 @@ import userEvent from "@testing-library/user-event";
 import { IDBFactory } from "fake-indexeddb";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import * as pendingStarts from "@/lib/channels/pending-start";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import type { ConversationModel, ModelCatalogue } from "@/lib/models/queries";
 import { queryClient } from "@/query-client";
@@ -32,8 +33,8 @@ import { settleReactWork } from "./settle-react-work";
  * would see it.
  *
  * Everything below the HTTP boundary is real: the route, its composer and picker, the start
- * sequence, the hand-over to `ChannelChat` and the run request. Only `fetch` is a fixture, and its
- * model endpoints answer and refuse as `GET`/`PUT /api/channels/:id/model` and `GET /api/models` do.
+ * sequence, the hand-over to `ChannelChat` and the run request. The fixture supplies HTTP responses
+ * and substitutes for the browser's IndexedDB send claim.
  */
 
 const NativeResponse = globalThis.Response;
@@ -96,9 +97,16 @@ const catalogue: ModelCatalogue = {
 
 /** Every model-related request and run, in the order they left the browser. */
 let trail: string[] = [];
+let sentMessages: unknown[] = [];
+let directMessageReplay = false;
+let storedMessages: unknown[] = [];
+let historyAvailable = true;
 let saved: ConversationModel = { model: null, effort: null };
 let originalFetch: typeof fetch;
-let originalIndexedDb: IDBFactory;
+let originalIndexedDB: PropertyDescriptor | undefined;
+let loseCreateResponse = false;
+let createRequests: unknown[] = [];
+let pendingRun: Promise<void> | undefined;
 
 function sse(events: unknown[]) {
   return new NativeResponse(
@@ -109,9 +117,12 @@ function sse(events: unknown[]) {
 
 beforeAll(() => {
   GlobalRegistrator.register({ url: "http://localhost/" });
+  originalIndexedDB = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  Object.defineProperty(globalThis, "indexedDB", {
+    configurable: true,
+    value: new IDBFactory(),
+  });
   originalFetch = globalThis.fetch;
-  originalIndexedDb = globalThis.indexedDB;
-  globalThis.indexedDB = new IDBFactory();
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = new URL(
@@ -124,20 +135,27 @@ beforeAll(() => {
       );
       const method =
         init?.method ?? (input instanceof Request ? input.method : "GET");
-      if (url.pathname === "/api/me")
-        return NativeResponse.json({
-          user: {
-            id: "person",
-            name: "Sam",
-            email: "sam@example.com",
-            role: "user",
-          },
-        });
       if (url.pathname === "/api/channels" && method === "POST") {
         trail.push("create");
+        createRequests.push(JSON.parse(String(init?.body)));
+        if (loseCreateResponse) {
+          loseCreateResponse = false;
+          throw new TypeError("Response lost");
+        }
         return NativeResponse.json({ channel }, { status: 201 });
       }
       if (url.pathname === "/api/models") return NativeResponse.json(catalogue);
+      if (url.pathname === "/api/capabilities")
+        return NativeResponse.json({ directMessageReplay });
+      if (url.pathname === "/api/me")
+        return NativeResponse.json({
+          user: {
+            id: "model-tester",
+            email: "model@example.test",
+            role: "user",
+            onboarding: null,
+          },
+        });
       if (url.pathname === `/api/channels/${channel.id}/model`) {
         if (method === "PUT") {
           const pick = JSON.parse(String(init?.body)) as ConversationModel;
@@ -191,6 +209,8 @@ beforeAll(() => {
           input instanceof Request ? input : new Request(url, init);
         const body = RunAgentInputSchema.parse(await request.json());
         trail.push("run");
+        sentMessages.push(body.messages.at(-1));
+        await pendingRun;
         return sse([
           { type: "RUN_STARTED", threadId: body.threadId, runId: body.runId },
           { type: "RUN_FINISHED", threadId: body.threadId, runId: body.runId },
@@ -201,7 +221,10 @@ beforeAll(() => {
           ? NativeResponse.json({ channel })
           : new NativeResponse(null, { status: 204 });
       if (/\/threads\/[^/]+(\/messages)?$/.test(url.pathname))
-        return NativeResponse.json({ messages: [] });
+        return NativeResponse.json(
+          historyAvailable ? { messages: storedMessages } : {},
+          { status: historyAvailable ? 200 : 503 },
+        );
       throw new Error(`Unexpected fixture request: ${method} ${url.pathname}`);
     },
     {
@@ -216,15 +239,23 @@ afterEach(() => {
   cleanup();
   queryClient.clear();
   trail = [];
+  createRequests = [];
+  loseCreateResponse = false;
+  pendingRun = undefined;
+  sentMessages = [];
+  directMessageReplay = false;
+  storedMessages = [];
+  historyAvailable = true;
+  localStorage.clear();
   saved = { model: null, effort: null };
 });
 
 afterAll(async () => {
   await settleReactWork();
+  if (originalIndexedDB)
+    Object.defineProperty(globalThis, "indexedDB", originalIndexedDB);
+  else Reflect.deleteProperty(globalThis, "indexedDB");
   globalThis.fetch = originalFetch;
-  if (originalIndexedDb === undefined)
-    Reflect.deleteProperty(globalThis, "indexedDB");
-  else globalThis.indexedDB = originalIndexedDb;
   GlobalRegistrator.unregister();
 });
 
@@ -266,33 +297,133 @@ const startRouteOptions = {
   getParentRoute: () => appRoute,
   component: StartRoute.options.component,
 };
-const testStartRoute = StartRoute.update(startRouteOptions);
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
-    appRoute.addChildren([testStartRoute, testChannelNewRoute, channelRoute]),
+    appRoute.addChildren([
+      testChannelNewRoute,
+      StartRoute.update(startRouteOptions),
+      channelRoute,
+    ]),
   ]),
 ]);
 
-test("a model and effort picked before the first message are both saved before it runs", async () => {
-  queryClient.setQueryData(agentKeys.list(false), [bot]);
+function renderAt(path: string) {
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({
-      initialEntries: [`/channel/new?agent=${BOT}`],
-    }),
+    history: createMemoryHistory({ initialEntries: [path] }),
   });
-  const view = render(
-    <QueryClientProvider client={queryClient}>
-      <CopilotKitProvider runtimeUrl="http://localhost/api/copilotkit">
-        <RouterProvider router={router} />
-      </CopilotKitProvider>
-    </QueryClientProvider>,
+  return Object.assign(
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CopilotKitProvider runtimeUrl="http://localhost/api/copilotkit">
+          <RouterProvider router={router} />
+        </CopilotKitProvider>
+      </QueryClientProvider>,
+    ),
+    { router },
   );
+}
+
+test("two open conversations sharing a saved first message dispatch it once", async () => {
+  const message = {
+    id: crypto.randomUUID(),
+    role: "user",
+    content: "Send this once across tabs.",
+  };
+  const run = Promise.withResolvers<void>();
+  pendingRun = run.promise;
+  pendingStarts.savePendingStart("model-tester", message.id, {
+    state: "pending",
+    draft: {
+      text: message.content,
+      commandIds: [],
+      attachments: [],
+      recipient: { kind: "direct", agentId: BOT },
+      model: null,
+    },
+    progress: { phase: "ready", channelId: channel.id },
+  });
+  renderAt(`/channel/${channel.id}`);
+  const other = renderAt(`/channel/${channel.id}`);
+  try {
+    // The first run is still open when the other view checks for delivery.
+    await other.findByRole(
+      "button",
+      { name: "Check again" },
+      { timeout: 8000 },
+    );
+    expect(sentMessages).toEqual([message]);
+  } finally {
+    run.resolve();
+  }
+  await waitFor(() =>
+    expect(
+      pendingStarts.readPendingStart("model-tester", message.id)?.state,
+    ).toBe("finished"),
+  );
+  expect(sentMessages).toEqual([message]);
+});
+
+for (const scenario of [
+  "resend",
+  "already delivered",
+  "check only",
+  "history offline",
+] as const) {
+  test(`an interrupted first send resolves through the Thread: ${scenario}`, async () => {
+    directMessageReplay = scenario !== "check only";
+    const message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: "Recover my first message.",
+    };
+    pendingStarts.savePendingStart("model-tester", message.id, {
+      state: "pending",
+      draft: {
+        text: message.content,
+        commandIds: [],
+        attachments: [],
+        recipient: { kind: "direct", agentId: BOT },
+        model: null,
+      },
+      progress: { phase: "submitted", channelId: channel.id },
+    });
+    const view = renderAt(`/channel/${channel.id}`);
+    const button = await view.findByRole("button", {
+      name: scenario === "check only" ? "Check again" : "Resend message",
+    });
+    expect(sentMessages).toEqual([]);
+    if (scenario === "already delivered") storedMessages = [message];
+    if (scenario === "history offline") historyAvailable = false;
+    await userEvent.setup({ document }).click(button);
+
+    if (scenario === "check only" || scenario === "history offline") {
+      const checkAgain = await view.findByRole("button", {
+        name: "Check again",
+      });
+      expect(checkAgain).toBe(button);
+      expect(document.activeElement).toBe(checkAgain);
+      expect(
+        pendingStarts.readPendingStart("model-tester", message.id)?.state,
+      ).toBe("pending");
+    } else {
+      await waitFor(() =>
+        expect(
+          pendingStarts.readPendingStart("model-tester", message.id)?.state,
+        ).toBe("finished"),
+      );
+    }
+    expect(sentMessages).toEqual(scenario === "resend" ? [message] : []);
+  });
+}
+
+test("a model and effort picked before the first message survive reload and are saved before it runs", async () => {
+  queryClient.setQueryData(agentKeys.list(false), [bot]);
+  loseCreateResponse = true;
+  const view = renderAt(`/channel/new?agent=${BOT}`);
   const user = userEvent.setup({ document });
 
-  expect(
-    await view.findByRole("combobox", { name: "Recipients" }),
-  ).toBeTruthy();
+  expect(await view.findByRole("combobox", { name: "To" })).toBeTruthy();
 
   // OpenBot's own model, at its own default effort, until the person picks.
   await user.click(
@@ -328,8 +459,25 @@ test("a model and effort picked before the first message are both saved before i
   await user.click(editor);
   await user.keyboard("Summarise the quarter.{Enter}");
 
+  await view.findByText("Couldn't continue the conversation.");
+  const startPath = view.router.state.location.pathname;
+  const startId = startPath.slice("/start/".length);
+  expect(startPath).toStartWith("/start/");
+  view.unmount();
+  const reloaded = renderAt(startPath);
   await waitFor(() => expect(trail).toContain("run"), { timeout: 5000 });
-  expect(trail.slice(0, 3)).toEqual([
+  expect(reloaded.router.state.location.pathname).toBe(
+    `/channel/${channel.id}`,
+  );
+  expect(createRequests).toEqual([
+    { agentIds: [BOT], requestId: startId },
+    { agentIds: [BOT], requestId: startId },
+  ]);
+  expect(sentMessages).toEqual([
+    { id: startId, role: "user", content: "Summarise the quarter." },
+  ]);
+  expect(trail.slice(0, 4)).toEqual([
+    "create",
     "create",
     "save gpt-6.1-terra xhigh",
     "run",

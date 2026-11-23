@@ -1,20 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  createFileRoute,
-  Link,
-  Navigate,
-  redirect,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotActivitySections } from "@/components/bot-profile/activity";
+import { BotScopeSelect } from "@/components/bots/bot-scope-select";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
+import { MissingPage } from "@/components/layout/route-recovery";
 import { BotNeedsYou } from "@/components/needs-you/board";
-import { resolveChosenBot, useChosenBotId } from "@/lib/agents/chosen-bot";
+import {
+  chooseBot,
+  resolveChosenBot,
+  useChosenBotId,
+} from "@/lib/agents/chosen-bot";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { searchTextEntry } from "@/lib/search-text";
 
 export const Route = createFileRoute("/_authed/_app/s/$screen")({
-  beforeLoad: ({ params }) => {
+  validateSearch: (search: Record<string, unknown>): { agent?: string } =>
+    searchTextEntry("agent", search.agent),
+  beforeLoad: ({ params, search }) => {
     if (params.screen === "routines")
       throw redirect({ to: "/routines", replace: true });
     if (params.screen === "tasks")
@@ -23,12 +28,12 @@ export const Route = createFileRoute("/_authed/_app/s/$screen")({
       throw redirect({ to: "/capabilities/memory", replace: true });
     }
     if (params.screen === "ideas") {
-      throw redirect({ to: "/ideas", replace: true });
+      throw redirect({ to: "/ideas", search, replace: true });
     }
     if (params.screen === "goals") {
       throw redirect({
         to: "/responsibilities",
-        search: { view: "goals" },
+        search: { ...search, view: "goals" },
         replace: true,
       });
     }
@@ -38,18 +43,19 @@ export const Route = createFileRoute("/_authed/_app/s/$screen")({
 
 function RouteComponent() {
   const { screen } = Route.useParams();
-  return screen === "activity" ? (
-    <ActivityOverview />
-  ) : (
-    <Navigate replace to="/" />
-  );
+  return screen === "activity" ? <ActivityOverview /> : <MissingPage />;
 }
 
 function ActivityOverview() {
+  const { agent } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const roster = useQuery(agentListQueryOptions());
   const user = useQuery(currentUserQueryOptions());
   const chosenId = useChosenBotId(user.data?.id);
-  const bot = resolveChosenBot(roster.data, chosenId);
+  const available = roster.data?.filter((bot) => !bot.hidden) ?? [];
+  const bot = agent
+    ? available.find(({ id }) => id === agent)
+    : resolveChosenBot(available, chosenId);
 
   return (
     <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -57,22 +63,31 @@ function ActivityOverview() {
         title="Activity"
         description={bot ? `Review activity for ${bot.name}.` : undefined}
       >
-        {roster.isPending || user.isPending ? null : roster.isError ||
-          user.isError ? (
-          <p className="text-destructive" role="alert">
-            Couldn't load Activity. Reload the page to try again.
-          </p>
-        ) : bot ? (
+        {roster.isPending || user.isPending ? (
+          <ReadStatus kind="loading" message="Loading Activity…" />
+        ) : roster.isError || user.isError ? (
+          <ReadStatus
+            kind="error"
+            message="Couldn’t load Activity"
+            retry={() => Promise.all([roster.refetch(), user.refetch()])}
+          />
+        ) : available.length > 0 ? (
           <>
-            <Link
-              className="underline underline-offset-4"
-              params={{ agentId: bot.id }}
-              to="/bots/$agentId"
-            >
-              View {bot.name}
-            </Link>
-            <BotNeedsYou agentId={bot.id} />
-            <BotActivitySections agentId={bot.id} />
+            <BotScopeSelect
+              bots={available}
+              onChange={(id) => {
+                if (user.data) chooseBot(user.data.id, id);
+                void navigate({ search: { agent: id }, replace: true });
+              }}
+              value={bot?.id ?? ""}
+            />
+            {bot ? (
+              <ActivityForBot bot={bot} key={bot.id} />
+            ) : (
+              <PageEmpty title="This Bot is unavailable">
+                Choose another Bot to see its activity.
+              </PageEmpty>
+            )}
           </>
         ) : (
           <PageEmpty title="No Bots yet">
@@ -83,5 +98,21 @@ function ActivityOverview() {
         )}
       </PageShell>
     </AstryxSurface>
+  );
+}
+
+function ActivityForBot({ bot }: { bot: { id: string; name: string } }) {
+  return (
+    <>
+      <Link
+        className="mt-4 text-sm underline underline-offset-4"
+        params={{ agentId: bot.id }}
+        to="/bots/$agentId"
+      >
+        View {bot.name}
+      </Link>
+      <BotNeedsYou agentId={bot.id} />
+      <BotActivitySections agentId={bot.id} />
+    </>
   );
 }

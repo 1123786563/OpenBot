@@ -20,6 +20,7 @@ import {
   ReplayRows,
 } from "@/components/boundaries/dry-run-changes";
 import { PageRows } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
@@ -240,14 +241,30 @@ export function PermissionsPreview({
 }: {
   preview: UseQueryResult<CapabilityPreview>;
 }) {
-  if (preview.isPending) return null;
   if (preview.error)
     return (
       <Field>
         <FieldLabel>Who it changes</FieldLabel>
-        <p className="text-destructive text-sm" role="alert">
-          {preview.error.message}
-        </p>
+        <ReadError
+          message={preview.error.message}
+          retry={() => preview.refetch()}
+          retryLabel="Retry preview"
+          retrying={preview.isFetching}
+        />
+      </Field>
+    );
+  if (preview.fetchStatus !== "idle" || !preview.data)
+    return (
+      <Field>
+        <FieldLabel>Who it changes</FieldLabel>
+        <ReadStatus
+          kind="loading"
+          message={
+            preview.fetchStatus === "paused"
+              ? "Waiting for a connection to check the changes…"
+              : "Checking who the current changes affect…"
+          }
+        />
       </Field>
     );
   const data = preview.data;

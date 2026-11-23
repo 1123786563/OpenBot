@@ -231,8 +231,7 @@ test.each([
   ["Bots", "link", /^Bots/, "/bots"],
   ["Connections", "link", /^Connections/, "/connections"],
   ["Teach a Bot", "link", /^Teach a Bot/, "/browser"],
-  // A link drawn as a button: it still goes somewhere.
-  ["New conversation", "link", /^New conversation$/, "/channel/new"],
+  ["New conversation", "button", /^New conversation$/, "/channel/new"],
 ] as const)(
   "picking %s in the narrow sheet closes it and opens the page",
   async (_label, role, name, path) => {
@@ -302,7 +301,7 @@ test("navigation can be opened, dismissed, and followed with the keyboard", asyn
   await waitFor(() => expect(document.activeElement).toBe(toggle));
   await app.user.keyboard("{Enter}");
   const nav = within(
-    await app.view.findByRole("navigation", { name: "Main navigation" }),
+    await app.view.findByRole("navigation", { name: "Workspace" }),
   );
   nav.getByRole("link", { name: "Bots" }).focus();
   await app.user.keyboard("{Enter}");
@@ -313,7 +312,7 @@ test("navigation can be opened, dismissed, and followed with the keyboard", asyn
   });
   await app.user.keyboard("{Enter}");
   const current = within(
-    await app.view.findByRole("navigation", { name: "Main navigation" }),
+    await app.view.findByRole("navigation", { name: "Workspace" }),
   );
   expect(
     current
@@ -329,7 +328,7 @@ test("an initial Bots deep link is active in desktop navigation", async () => {
     const app = renderNarrowApp("/bots");
     await app.view.findByRole("heading", { name: "/bots" });
     const navigation = within(
-      await app.view.findByRole("navigation", { name: "Main navigation" }),
+      await app.view.findByRole("navigation", { name: "Workspace" }),
     );
     expect(
       navigation
@@ -384,7 +383,7 @@ test("Goals opens Responsibilities from narrow navigation", async () => {
     await app.view.findByRole("button", { name: "Open navigation" }),
   );
   const navigation = within(
-    await app.view.findByRole("navigation", { name: "Main navigation" }),
+    await app.view.findByRole("navigation", { name: "Workspace" }),
   );
   await app.user.click(navigation.getByRole("link", { name: "Goals" }));
   await app.view.findByRole("heading", { name: "/responsibilities" });

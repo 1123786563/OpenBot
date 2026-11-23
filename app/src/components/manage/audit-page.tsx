@@ -14,7 +14,7 @@ import {
   useInfiniteQuery,
   useQuery,
 } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { AskTheTrail, AuditAnswerNote } from "@/components/audit/ask-the-trail";
 import type { AuditEvent } from "@/components/audit/audit-cells";
 import {
@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { explainable, WhyButton } from "@/components/what-if/why-button";
 import { useBotNames } from "@/lib/agents/bot-names";
+import type { AuditAnswer, AuditFilterLabels } from "@/lib/audit/ask";
 import {
   CALLS_RECORDED_AS_CHANGES,
   COMPUTER_ACTION_EVENT_TYPES,
@@ -38,7 +39,6 @@ import {
   oneRowPerAction,
   REFUSED_EVENT_TYPES,
 } from "@/lib/audit/outcome";
-import type { AuditAnswer, AuditFilterLabels } from "@/lib/audit/ask";
 import {
   auditEventsQueryOptions,
   auditExportUrl,
@@ -207,10 +207,13 @@ export function AuditPage({
   const asked = ask ? withFilters(view, chips) : withBot(view, bot);
   const search = edition === "personal" ? withoutOpenBotWorking(asked) : asked;
   const [query, setQuery] = useState("");
+  const hasTextSearch = query.trim().length > 0;
+  const exportScopeId = useId();
+  const showExportScope = hasTextSearch || !ask;
   // A page at a time, newest first; "Show older events" under the last row asks for the next.
   /*
-   * The rows already shown stay while the next filters' rows load, so the toolbar and the chip menu
-   * open in it are not taken down and drawn again on every tick. Only the first load draws nothing.
+   * Keep the toolbar mounted while loading a different filter. Only show rows for the active
+   * filters so a previous result cannot be mistaken for the new view.
    */
   const events = useInfiniteQuery({
     ...auditEventsQueryOptions(search),
@@ -222,7 +225,11 @@ export function AuditPage({
     enabled: edition === "personal",
   }).data?.skills;
   const rows = withSkillTitles(
-    oneRowPerAction(events.data?.pages.flatMap((page) => page.events) ?? []),
+    oneRowPerAction(
+      events.isPlaceholderData
+        ? []
+        : (events.data?.pages.flatMap((page) => page.events) ?? []),
+    ),
     skills,
   );
   const nameFor = useBotNames();
@@ -231,7 +238,7 @@ export function AuditPage({
   const [exportCapped, setExportCapped] = useState<number | null>(null);
 
   /*
-   * The same filtered query as the table, downloaded as a file. The server walks every
+   * Export uses the server-side view and filters. The server walks every
    * matching page up to its cap, so this stays a single request no matter how many pages
    * the filter matches; the filename carries the day it was pulled.
    */
@@ -270,8 +277,8 @@ export function AuditPage({
   return (
     /*
      * THE ONE FULL-WIDTH PAGE IN ADMIN, and the one that keeps a table. The page is the window's
-     * height; the title stays put and the rows scroll inside the log. With recording controls
-     * below it, the log is bounded so the page can scroll down to those controls too.
+     * height; the title stays put and the rows scroll inside the log on wider screens. On phones,
+     * Audit rows and recording controls scroll together so wrapped controls cannot crowd out the log.
      */
     <PageShell
       action={action}
@@ -279,11 +286,12 @@ export function AuditPage({
       title={paths.auditLabel}
       width="full"
     >
-      {/* With admin settings below the log, the page scrolls and the log keeps its own bounded
-          viewport. Without settings, the table fills the panel as before. */}
+      {/* On wider screens the log has its own viewport above the admin settings. */}
       <div className={children ? "min-h-0 flex-1 overflow-y-auto" : "contents"}>
         <div
-          className={children ? "flex h-[60vh] min-h-80 flex-col" : "contents"}
+          className={
+            children ? "flex flex-col sm:h-[60vh] sm:min-h-80" : "contents"
+          }
         >
           {/*
            * Above the table rather than in its toolbar: a question being typed and its answer outlast
@@ -311,164 +319,191 @@ export function AuditPage({
               ) : null}
             </div>
           ) : null}
-          {events.isPending ? null : events.isError &&
-            !events.isFetchNextPageError ? (
-            <p className="px-4 text-destructive text-sm" role="alert">
-              Couldn't load these events. Reload the page.
-            </p>
-          ) : (
-            <AuditTable
-              deploymentName={paths.deploymentName}
-              events={rows}
-              footer={
-                events.hasNextPage ? (
-                  <div className="flex flex-col items-center gap-2 py-3">
-                    {events.isFetchNextPageError ? (
-                      <p className="text-destructive text-sm" role="alert">
-                        Couldn't load older events. Try again.
-                      </p>
-                    ) : null}
+          <AuditTable
+            deploymentName={paths.deploymentName}
+            events={rows}
+            footer={
+              events.hasNextPage ? (
+                <div className="flex flex-col items-center gap-2 py-3">
+                  {events.isFetchNextPageError ? (
+                    <p className="text-destructive text-sm" role="alert">
+                      Couldn't load older events. Try again.
+                    </p>
+                  ) : null}
+                  <Button
+                    className="max-sm:min-h-11"
+                    disabled={events.isFetchingNextPage}
+                    onClick={() => events.fetchNextPage()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {events.isFetchingNextPage
+                      ? "Loading…"
+                      : "Show older events"}
+                  </Button>
+                </div>
+              ) : null
+            }
+            moreToLoad={events.hasNextPage}
+            nameFor={nameFor}
+            query={query}
+            storedNames={edition !== "personal"}
+            {...(ask ? { rowAction: whyFor } : {})}
+            toolbar={({ count, filters }) => (
+              <div className="flex shrink-0 flex-col gap-3 border-border border-b px-4 pb-3">
+                {/*
+                 * The saved views are one control with one answer, so they are drawn as a segmented
+                 * group: the pressed one is filled, the rest sit flat inside the same outline.
+                 */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground text-xs">View</span>
+                  <fieldset
+                    aria-label="View"
+                    className="inline-flex min-w-0 flex-wrap items-center gap-0.5 rounded-lg border border-border p-0.5"
+                  >
+                    {FILTERS.map((filter) => {
+                      const active = view === filter.search;
+                      return (
+                        <Button
+                          aria-pressed={active}
+                          className={cn(
+                            "h-6 px-2 font-normal max-sm:min-h-11",
+                            active
+                              ? "bg-muted text-foreground"
+                              : "text-muted-foreground",
+                          )}
+                          key={filter.label}
+                          onClick={() => setView(filter.search)}
+                          size="xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <filter.icon />
+                          {filter.label}
+                        </Button>
+                      );
+                    })}
+                  </fieldset>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative w-64 max-w-full">
+                    <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      aria-label="Search events"
+                      className="h-8 pl-8 max-sm:min-h-11"
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search events…"
+                      type="search"
+                      value={query}
+                    />
+                  </div>
+                  {/* Beside the other filters, on the row that wraps: it narrows what is asked for. */}
+                  {bot && !ask ? (
                     <Button
-                      disabled={events.isFetchingNextPage}
-                      onClick={() => events.fetchNextPage()}
+                      aria-label={`Show every Bot, not only ${nameFor(bot)}`}
+                      className="max-sm:min-h-11"
+                      onClick={onClearBot}
                       size="sm"
                       variant="outline"
                     >
-                      {events.isFetchingNextPage
-                        ? "Loading…"
-                        : "Show older events"}
+                      Only {nameFor(bot)}
+                      <IconX />
                     </Button>
-                  </div>
-                ) : null
-              }
-              moreToLoad={events.hasNextPage}
-              nameFor={nameFor}
-              query={query}
-              storedNames={edition !== "personal"}
-              {...(ask ? { rowAction: whyFor } : {})}
-              toolbar={({ count, filters }) => (
-                <div className="flex shrink-0 flex-col gap-3 border-border border-b px-4 pb-3">
+                  ) : null}
                   {/*
-                   * The saved views are one control with one answer, so they are drawn as a segmented
-                   * group: the pressed one is filled, the rest sit flat inside the same outline.
+                   * Admin's one set of filters: the answer's chips and Add filter, asked of the
+                   * server. Anywhere else, the buttons that narrow the rows already loaded.
                    */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-muted-foreground text-xs">View</span>
-                    <fieldset
-                      aria-label="View"
-                      className="inline-flex items-center gap-0.5 rounded-lg border border-border p-0.5"
-                    >
-                      {FILTERS.map((filter) => {
-                        const active = view === filter.search;
-                        return (
-                          <Button
-                            aria-pressed={active}
-                            className={cn(
-                              "h-6 px-2 font-normal",
-                              active
-                                ? "bg-muted text-foreground"
-                                : "text-muted-foreground",
-                            )}
-                            key={filter.label}
-                            onClick={() => setView(filter.search)}
-                            size="xs"
-                            type="button"
-                            variant="ghost"
-                          >
-                            <filter.icon />
-                            {filter.label}
-                          </Button>
-                        );
-                      })}
-                    </fieldset>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="relative w-64">
-                      <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        aria-label="Search events"
-                        className="h-8 pl-8"
-                        onChange={(event) => setQuery(event.target.value)}
-                        placeholder="Search events…"
-                        type="search"
-                        value={query}
-                      />
-                    </div>
-                    {/* Beside the other filters, on the row that wraps: it narrows what is asked for. */}
-                    {bot && !ask ? (
-                      <Button
-                        aria-label={`Show every Bot, not only ${nameFor(bot)}`}
-                        onClick={onClearBot}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Only {nameFor(bot)}
-                        <IconX />
-                      </Button>
-                    ) : null}
-                    {/*
-                     * Admin's one set of filters: the answer's chips and Add filter, asked of the
-                     * server. Anywhere else, the buttons that narrow the rows already loaded.
-                     */}
-                    {ask ? (
-                      <AuditFilterChips
-                        filters={chips}
-                        labels={answer?.labels ?? NO_LABELS}
-                        nameFor={nameFor}
-                        onChange={setChips}
-                        onOpen={() => setVocabularyWanted(true)}
-                        vocabulary={vocabulary}
-                      />
-                    ) : (
-                      filters
-                    )}
+                  {ask ? (
+                    <AuditFilterChips
+                      filters={chips}
+                      labels={answer?.labels ?? NO_LABELS}
+                      nameFor={nameFor}
+                      onChange={setChips}
+                      onOpen={() => setVocabularyWanted(true)}
+                      vocabulary={vocabulary}
+                    />
+                  ) : (
+                    filters
+                  )}
+                  {events.data && !events.isPlaceholderData ? (
                     <span
                       className="ml-1 text-muted-foreground text-xs tabular-nums"
                       data-audit-count
                     >
                       {count}
                     </span>
-                    <div className="ml-auto flex items-center gap-2">
-                      <Button
-                        onClick={() => events.refetch()}
-                        size="sm"
-                        variant="outline"
-                      >
-                        <IconRefresh />
-                        Refresh
-                      </Button>
-                      <Button
-                        disabled={exporting}
-                        onClick={exportCsv}
-                        size="sm"
-                        variant="outline"
-                      >
-                        <IconDownload />
-                        {exporting ? "Exporting…" : "Export CSV"}
-                      </Button>
-                    </div>
+                  ) : null}
+                  <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+                    <Button
+                      aria-disabled={events.isFetching}
+                      className="max-sm:min-h-11"
+                      onClick={() => {
+                        if (!events.isFetching) void events.refetch();
+                      }}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <IconRefresh />
+                      {events.isFetching ? "Loading events…" : "Refresh"}
+                    </Button>
+                    <Button
+                      className="max-sm:min-h-11"
+                      aria-describedby={
+                        showExportScope ? exportScopeId : undefined
+                      }
+                      disabled={exporting}
+                      onClick={exportCsv}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <IconDownload />
+                      {exporting
+                        ? "Exporting…"
+                        : hasTextSearch
+                          ? "Export CSV without search"
+                          : "Export CSV"}
+                    </Button>
                   </div>
-                  {exportError ? (
-                    <p className="text-destructive text-sm" role="alert">
-                      {exportError}
-                    </p>
-                  ) : null}
-                  {exportCapped ? (
-                    <p className="text-muted-foreground text-sm" role="status">
-                      The file has the newest {exportCapped.toLocaleString()}{" "}
-                      events, not all of them. Narrow the filter or dates to
-                      export the rest.
-                    </p>
-                  ) : null}
-                  {rows.length === 0 ? (
-                    <PageEmpty icon={IconSearch} title="No matches">
-                      No events match this filter yet.
-                    </PageEmpty>
-                  ) : null}
                 </div>
-              )}
-            />
-          )}
+                {showExportScope ? (
+                  <p
+                    className="text-muted-foreground text-sm"
+                    id={exportScopeId}
+                  >
+                    {ask
+                      ? "CSV includes events matching the selected view and filters, including older events. Text search applies only to loaded rows."
+                      : "CSV includes events in the selected view and Bot scope, including older events. Table filters and text search apply only to loaded rows."}
+                  </p>
+                ) : null}
+                {exportError ? (
+                  <p className="text-destructive text-sm" role="alert">
+                    {exportError}
+                  </p>
+                ) : null}
+                {exportCapped ? (
+                  <p className="text-muted-foreground text-sm" role="status">
+                    The file has the newest {exportCapped.toLocaleString()}{" "}
+                    events, not all of them. Narrow the filter or dates to
+                    export the rest.
+                  </p>
+                ) : null}
+                {events.isError && !events.isFetchNextPageError ? (
+                  <p className="text-destructive text-sm" role="alert">
+                    {events.data
+                      ? "Couldn't refresh these events. The last loaded events are still shown. Select Refresh to try again."
+                      : "Couldn't load these events. Select Refresh to try again."}
+                  </p>
+                ) : events.isSuccess &&
+                  !events.isPlaceholderData &&
+                  rows.length === 0 ? (
+                  <PageEmpty icon={IconSearch} title="No matches">
+                    No events match this filter yet.
+                  </PageEmpty>
+                ) : null}
+              </div>
+            )}
+          />
         </div>
         {children ? <div className="px-4 pb-16">{children}</div> : null}
       </div>

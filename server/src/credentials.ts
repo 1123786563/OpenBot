@@ -62,7 +62,7 @@ export type CredentialExecutor =
 
 export type CredentialStore = {
   create: (
-    value: CredentialStoreValue,
+    value: CredentialStoreValue & { createOnly?: true },
     executor?: CredentialExecutor,
   ) => Promise<StoredCredential>;
   /**
@@ -285,13 +285,23 @@ export function createCredentialStore(
   CredentialStatusReader &
   ModelCredentialSecretReader {
   return {
-    create: async (value, executor = database) => {
-      const [credential] = await executor
-        .insert(credentials)
-        .values(value)
-        .returning({ id: credentials.id, revokedAt: credentials.revokedAt });
+    create: async ({ createOnly, ...value }, executor = database) => {
+      const insert = executor.insert(credentials).values(value);
+      const [credential] = await (createOnly
+        ? insert.onConflictDoNothing({
+            target: [credentials.kind, credentials.provider, credentials.keyId],
+            where: isNull(credentials.revokedAt),
+          })
+        : insert
+      ).returning({ id: credentials.id, revokedAt: credentials.revokedAt });
 
       if (!credential) {
+        if (createOnly) {
+          throw new CredentialRefusedError(
+            "An active credential already exists for this key.",
+            409,
+          );
+        }
         throw new Error("Credential could not be stored");
       }
       return credential;
@@ -508,7 +518,9 @@ export type CredentialInput = {
 };
 
 export type CredentialAdminService = CredentialStatusReader & {
-  create: (input: CredentialInput) => Promise<CredentialStatus>;
+  create: (
+    input: CredentialInput & { createOnly?: true },
+  ) => Promise<CredentialStatus>;
   rotate: (
     input: CredentialInput & { previousCredentialId: string },
   ) => Promise<CredentialStatus>;
@@ -523,7 +535,7 @@ export type CredentialAdminService = CredentialStatusReader & {
 
 async function persistCredential(
   service: CredentialService,
-  input: CredentialInput,
+  input: CredentialInput & { createOnly?: true },
 ): Promise<CredentialStatus> {
   const stored = await service.store.create({
     kind: input.kind,
@@ -531,6 +543,7 @@ async function persistCredential(
     keyId: input.keyId,
     metadata: input.metadata,
     encryptedValue: await encryptSecret(service.encryptionKey, input.plaintext),
+    ...(input.createOnly ? { createOnly: true } : {}),
   });
 
   return {
@@ -559,13 +572,15 @@ async function persistCredential(
  */
 export async function createCredential(
   service: CredentialService,
-  input: CredentialInput,
+  input: CredentialInput & { createOnly?: true },
 ): Promise<CredentialStatus> {
-  const existing = await service.store.findLiveByKey({
-    kind: input.kind,
-    provider: input.provider,
-    keyId: input.keyId,
-  });
+  const existing = input.createOnly
+    ? null
+    : await service.store.findLiveByKey({
+        kind: input.kind,
+        provider: input.provider,
+        keyId: input.keyId,
+      });
   if (existing) {
     return rotateCredential(service, {
       ...input,

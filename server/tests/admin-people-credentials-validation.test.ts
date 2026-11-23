@@ -104,6 +104,7 @@ describe("POST /api/admin/credentials input", () => {
     ["an empty keyId", { ...good, keyId: "" }],
     ["a whitespace keyId", { ...good, keyId: "  " }],
     ["an array metadata", { ...good, metadata: [] }],
+    ["an invalid create-only flag", { ...good, createOnly: "true" }],
   ])("refuses %s with 400 and never reaches the vault", async (_n, body) => {
     const { app, calls } = appWith({});
     const response = await app.request(
@@ -130,6 +131,29 @@ describe("POST /api/admin/credentials input", () => {
     );
     expect(response.status).toBe(201);
     expect(calls.credentials[0]).toMatchObject({ provider: "acme" });
+  });
+
+  test("returns a conflict when a create-only save would replace an active credential", async () => {
+    const { app, calls } = appWith({
+      credentialCreate: async () => {
+        throw new CredentialRefusedError(
+          "An active credential already exists for this key.",
+          409,
+        );
+      },
+    });
+    const response = await app.request(
+      "http://openbot.test/api/admin/credentials",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...good, createOnly: true }),
+      },
+    );
+    expect(response.status).toBe(409);
+    expect(calls.credentials).toEqual([
+      { ...good, actorUserId: ADMIN.id, createOnly: true },
+    ]);
   });
 });
 

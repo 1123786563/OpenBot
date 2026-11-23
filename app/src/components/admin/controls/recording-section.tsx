@@ -1,6 +1,7 @@
 import { IconChartBar, IconTerminal2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { PageEmpty, PageRows } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   Item,
   ItemActions,
@@ -30,7 +31,7 @@ export function RecordingSection() {
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>Action Recording</ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none text-sm">
                   {data.settings.actionRecording
                     ? `Shell commands Bots run are recorded with secrets removed, and kept ${data.actionRecordRetentionDays} days.`
                     : "Off. Commands show in Audit only."}
@@ -54,7 +55,7 @@ export function RecordingSection() {
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>OpenTelemetry export</ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none text-sm">
                   {data.otel.configured
                     ? "Configured for OTLP/HTTP."
                     : "Requires a deployment ID, an OTLP endpoint, and export enabled on the server."}
@@ -76,12 +77,16 @@ export function RecordingSection() {
 
 function RecordedActions() {
   const actions = useQuery(actionRecordsQueryOptions());
-  if (actions.isPending) return null;
+  if (actions.isPending)
+    return <ReadStatus kind="loading" message="Loading recorded actions…" />;
   if (actions.error)
     return (
-      <p className="mt-4 text-destructive text-sm" role="alert">
-        Couldn't load recorded actions. Reload the page.
-      </p>
+      <ReadError
+        message="Couldn't load recorded actions."
+        retry={actions.refetch}
+        retryBelow
+        retrying={actions.isFetching}
+      />
     );
   if (actions.data.length === 0)
     return <PageEmpty icon={IconTerminal2} title="No commands recorded yet" />;

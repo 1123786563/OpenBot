@@ -102,7 +102,9 @@ test("a failed plugins read renders an alert and never asks for the directory", 
   const view = renderPicker();
 
   const alert = await view.findByRole("alert");
-  expect(alert.textContent).toContain("Couldn't load the plugin settings");
+  expect(alert.textContent).toContain("Couldn't load the app directory");
+  // The failure keeps the page's frame: its way back to the list stays on screen.
+  expect(view.getByRole("button", { name: "Plugins" })).toBeTruthy();
   expect(view.queryByLabelText("Search apps")).toBeNull();
   expect(requested).toContain("/api/plugins");
   expect(requested).not.toContain("/api/plugins/composio/apps");

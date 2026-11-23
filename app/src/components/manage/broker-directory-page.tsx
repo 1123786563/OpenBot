@@ -1,11 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Navigate } from "@tanstack/react-router";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import { BrokerDirectory } from "@/components/plugins/broker-directory";
+import { Button } from "@/components/ui/button";
 import {
   type BrokerDirectory as Broker,
   useManagePaths,
 } from "@/lib/manage-paths";
-import { directoryRouteDecision } from "@/lib/plugins/provider-vocabulary";
+import {
+  directoryDescriptions,
+  directoryRouteDecision,
+  providerVocabulary,
+} from "@/lib/plugins/provider-vocabulary";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
 
 /**
@@ -33,10 +39,35 @@ export function BrokerDirectoryPage({ provider }: { provider: Broker }) {
    * not drawn: it would fire a request against a provider nobody has confirmed.
    */
   if (plugins.isError) {
+    /*
+     * The directory's own frame, so the failure keeps the page's title and its way back. A bare
+     * alert here left the only exit the browser's back button, and on the phone there was no exit
+     * within the app at all.
+     */
     return (
-      <p className="m-4 text-destructive text-sm" role="alert">
-        Couldn't load the plugin settings. Reload the page.
-      </p>
+      <ConnectionPage
+        backButton={{
+          label: paths.pluginsLabel,
+          linkProps: paths.plugins(),
+        }}
+        description={directoryDescriptions(paths.edition).page}
+        title={providerVocabulary(provider).directoryLabel}
+      >
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load the app directory.
+          </p>
+          <Button
+            disabled={plugins.isFetching}
+            onClick={() => void plugins.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {plugins.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      </ConnectionPage>
     );
   }
   const decision = directoryRouteDecision(provider, plugins.data);

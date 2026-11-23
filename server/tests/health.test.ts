@@ -42,6 +42,7 @@ describe("runtime capabilities", () => {
     await expect(response.json()).resolves.toEqual({
       mode: "intelligence",
       durableHistory: true,
+      directMessageReplay: false,
       // Default-on. The browser reads this to decide whether to offer the tool that generates an
       // interface, so it has to be here and not only in the runtime.
       generativeUi: true,
@@ -76,6 +77,7 @@ describe("runtime capabilities", () => {
     expect(Object.keys(parsed)).toEqual([
       "mode",
       "durableHistory",
+      "directMessageReplay",
       "generativeUi",
       "selfHostBanner",
       "localEvaluation",
@@ -89,6 +91,26 @@ describe("runtime capabilities", () => {
     ]);
     // The provider list is names, never the clients and secrets behind them.
     expect(body).not.toContain("google-client-secret");
+  });
+
+  test("advertises first-message replay when OpenBot owns direct chat", async () => {
+    const direct = createApp(
+      loadConfig(
+        testEnvironment({
+          INTELLIGENCE_API_URL: undefined,
+          INTELLIGENCE_GATEWAY_WS_URL: undefined,
+          CPK_INTELLIGENCE_API_KEY: undefined,
+          INTELLIGENCE_API_KEY: undefined,
+          COPILOTKIT_LICENSE_TOKEN: undefined,
+        }),
+      ),
+    );
+    const response = await direct.request("/api/capabilities");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      mode: "openbot",
+      directMessageReplay: true,
+    });
   });
 
   /*

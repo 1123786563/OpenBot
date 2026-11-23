@@ -6,6 +6,8 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { copyText } from "@/components/settings/linked-accounts";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,7 +47,20 @@ export function GithubSources() {
   const bindings = useQuery(githubBindingsQueryOptions());
   const remove = useMutation(removeGithubBindingMutationOptions(queryClient));
   const [adding, setAdding] = useState(false);
-  const error = bindings.error ?? remove.error;
+  /** One Copy acknowledgment shared by the rows: the last address copied says "Copied". */
+  const [copied, setCopied] = useState(false);
+  /*
+   * Disconnecting deletes the binding, and the webhook left in GitHub then points at an address
+   * nothing answers, so it asks first rather than firing on the row's click.
+   */
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  /*
+   * The section's two failure kinds are said separately: the list that could not be read gets its
+   * own sentence and its own Retry, and a failed disconnect keeps the mutation's message on the
+   * row it was pressed on.
+   */
+  const readFailed = bindings.error !== null;
+  const error = readFailed ? null : remove.error;
   return (
     <PageSection
       action={
@@ -54,9 +69,25 @@ export function GithubSources() {
           Add a repository
         </Button>
       }
-      description="Add a repository here, then add a webhook in GitHub with the address below and the same secret. Its events, like issues.opened, can then start work on a goal."
+      description="Add a repository here, then add a webhook in GitHub with the address below and the secret you chose here. Its events, like issues.opened, can then start work on a goal."
       title="Repositories"
     >
+      {readFailed ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load your repositories.
+          </p>
+          <Button
+            disabled={bindings.isFetching}
+            onClick={() => void bindings.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {bindings.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      ) : null}
       {error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {error.message}
@@ -87,14 +118,47 @@ export function GithubSources() {
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>{binding.repository}</ItemTitle>
-                  <ItemDescription className="line-clamp-none break-all font-mono text-xs">
-                    {window.location.origin}/api/events/github/{binding.id}
+                  <ItemDescription className="line-clamp-none">
+                    {/* `break-all`: a webhook address wraps somewhere, or it pushes the row wide. */}
+                    <span className="break-all font-mono text-xs">
+                      {window.location.origin}/api/events/github/{binding.id}
+                    </span>
+                    <Button
+                      className="ms-2 h-6 px-2"
+                      onClick={async () => {
+                        setCopied(
+                          await copyText(
+                            `${window.location.origin}/api/events/github/${binding.id}`,
+                            navigator.clipboard,
+                          ),
+                        );
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      {copied ? "Copied" : "Copy"}
+                    </Button>
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <Button
                     disabled={remove.isPending}
-                    onClick={() => remove.mutate(binding.id)}
+                    onClick={(event) =>
+                      requestConfirmation({
+                        title: `Disconnect ${binding.repository}?`,
+                        description:
+                          "Its events can no longer start work. Remove the webhook in GitHub too, or GitHub keeps delivering to an address nothing answers.",
+                        confirmLabel: "Disconnect",
+                        pendingLabel: "Disconnecting…",
+                        failureMessage: `Couldn't disconnect ${binding.repository}. Try again.`,
+                        variant: "destructive",
+                        trigger: event.currentTarget,
+                        run: async () => {
+                          await remove.mutateAsync(binding.id);
+                        },
+                      })
+                    }
                     size="sm"
                     variant="outline"
                   >
@@ -107,6 +171,7 @@ export function GithubSources() {
         </PageRows>
       )}
       {adding ? <AddRepositoryDialog onClose={() => setAdding(false)} /> : null}
+      {confirmation}
     </PageSection>
   );
 }

@@ -52,11 +52,13 @@ function draw(node: ReactNode) {
   );
 }
 
-test("a registered phone is listed and can be removed", async () => {
+test("a registered phone is listed and can be removed after confirming", async () => {
   serving();
   const view = draw(<NativeDevices />);
   expect(await view.findByText("iOS")).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Remove" }));
+  // Removal asks first: the phone stops receiving push, so the loss is named before it happens.
+  fireEvent.click(await view.findByRole("button", { name: "Remove device" }));
   await waitFor(() =>
     expect(requests).toContain("DELETE /api/delivery/devices/d1"),
   );

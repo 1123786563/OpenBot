@@ -19,6 +19,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { authKeys } from "@/lib/auth/queries";
 import {
   type DeploymentCapabilities,
   deploymentKeys,
@@ -73,6 +74,7 @@ const CREATED = agent({ id: "created-bot", name: "Research Bot" });
 /** Every write that left the browser, as `METHOD /path body`. */
 let sent: { method: string; path: string; body: unknown }[] = [];
 let originalFetch: typeof fetch;
+let loseGroupSendResponse = false;
 let originalRect: typeof Range.prototype.getBoundingClientRect;
 
 beforeAll(() => {
@@ -141,17 +143,17 @@ beforeAll(() => {
         { status: 201 },
       );
     }
-    if (url.pathname === "/api/groups/group-1" && method === "POST")
-      return new NativeResponse(null, { status: 202 });
-    if (url.pathname === "/api/me")
-      return NativeResponse.json({
-        user: {
-          id: "person",
-          name: "Sam",
-          email: "sam@example.com",
-          role: "user",
-        },
-      });
+    if (url.pathname === "/api/groups/group-1") {
+      if (method === "GET")
+        return NativeResponse.json({ bots: [], people: [], messages: [] });
+      if (method === "POST") {
+        if (loseGroupSendResponse) {
+          loseGroupSendResponse = false;
+          throw new TypeError("Response lost");
+        }
+        return new NativeResponse(null, { status: 202 });
+      }
+    }
     if (url.pathname === "/api/channels" && method === "POST")
       return NativeResponse.json(
         {
@@ -173,6 +175,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   sent = [];
+  loseGroupSendResponse = false;
+  localStorage.clear();
 });
 
 afterAll(async () => {
@@ -220,12 +224,11 @@ const startRouteOptions = {
   getParentRoute: () => appRoute,
   component: StartRoute.options.component,
 };
-const testStartRoute = StartRoute.update(startRouteOptions);
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
     appRoute.addChildren([
-      testStartRoute,
       testChannelNewRoute,
+      StartRoute.update(startRouteOptions),
       groupRoute,
       channelRoute,
     ]),
@@ -233,13 +236,19 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 /** The personal edition. A new conversation starts with nobody in To:, so each test picks its Bots. */
-function renderNewConversation(agents: AgentProfile[]) {
+function renderNewConversation(agents: AgentProfile[], path = "/channel/new") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
     },
   });
   queryClient.setQueryData(agentKeys.list(false), agents);
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "new-group-tester",
+    email: "new-group@example.test",
+    role: "user",
+    onboarding: null,
+  });
   queryClient.setQueryData(deploymentKeys.capabilities(), {
     generativeUi: true,
     selfHostBanner: false,
@@ -248,7 +257,7 @@ function renderNewConversation(agents: AgentProfile[]) {
   } satisfies DeploymentCapabilities);
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: ["/channel/new"] }),
+    history: createMemoryHistory({ initialEntries: [path] }),
   });
   return Object.assign(
     render(
@@ -412,12 +421,7 @@ test("creating a Bot in To: keeps the draft and starts the conversation only on 
   await user.keyboard(message);
   expect(sent).toEqual([]);
 
-  const to = view.getByRole("combobox");
-  await user.click(to);
-  await user.keyboard("{ArrowDown}");
-  await user.click(
-    await view.findByRole("button", { name: /New Bot Create a new Bot/ }),
-  );
+  await user.click(await view.findByRole("button", { name: "New Bot" }));
   const sheet = within(await view.findByRole("dialog", { name: "New Bot" }));
   await user.type(sheet.getByLabelText("Name"), CREATED.name);
   await user.click(await sheet.findByRole("button", { name: "Create Bot" }));
@@ -459,6 +463,47 @@ test("creating a Bot in To: keeps the draft and starts the conversation only on 
       method: "POST",
       path: "/api/groups/group-1",
       body: expect.objectContaining({ agentId: null, text: message }),
+    },
+  ]);
+});
+
+test("a group first message reuses its ID after a lost response and reload", async () => {
+  loseGroupSendResponse = true;
+  const bots = [CLAUDE, ASSISTANT];
+  const view = renderNewConversation(bots);
+  await addToTo(view, CLAUDE.name);
+  await addToTo(view, ASSISTANT.name);
+  const message = "Recover the group’s first message.";
+  const user = userEvent.setup({ document });
+  await user.type(
+    await view.findByRole("textbox", { name: "Message" }),
+    message,
+  );
+  await user.keyboard("{Enter}");
+  await view.findByText("Couldn't continue the conversation.");
+  const startPath = view.router.state.location.pathname;
+  const startId = startPath.slice("/start/".length);
+  expect(startPath).toStartWith("/start/");
+  view.unmount();
+
+  const reloaded = renderNewConversation(bots, startPath);
+  await reloaded.findByText("The group");
+  expect(reloaded.router.state.location.pathname).toBe("/group/group-1");
+  expect(sent.filter(({ path }) => path.startsWith("/api/groups"))).toEqual([
+    {
+      method: "POST",
+      path: "/api/groups",
+      body: { agentIds: bots.map(({ id }) => id), requestId: startId },
+    },
+    {
+      method: "POST",
+      path: "/api/groups/group-1",
+      body: { id: startId, text: message, agentId: null },
+    },
+    {
+      method: "POST",
+      path: "/api/groups/group-1",
+      body: { id: startId, text: message, agentId: null },
     },
   ]);
 });

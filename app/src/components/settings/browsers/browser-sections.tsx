@@ -11,9 +11,8 @@ import { ThisBrowser } from "@/components/settings/browsers/this-browser";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 
 /**
- * What the Recorder collects, first, so the person reads it before they connect a browser (the Recorder's own setup page
- * says the same, from the same sentences); then this browser's Recorder, then every browser connected as you, the row
- * of this browser's own copy marked.
+ * Current connections come first. The Recorder disclosure precedes the control for connecting
+ * this browser, and the list marks this browser's own copy when it is connected.
  *
  * Where a recording goes is said for the edition: an organization's OpenBot in the team edition, the person's own
  * Learning space in the personal one, which has no organization.
@@ -23,6 +22,7 @@ export function BrowserSections() {
   const edition = useQuery(deploymentCapabilitiesQueryOptions()).data?.edition;
   return (
     <>
+      <ConnectedBrowsers thisInstallId={thisInstallId} />
       <PageSection
         title={RECORDER_DISCLOSURE_TITLE}
         description={recorderDisclosureFor(edition)}
@@ -30,7 +30,6 @@ export function BrowserSections() {
         <RecorderCollectsRows />
       </PageSection>
       <ThisBrowser onInstallId={setThisInstallId} />
-      <ConnectedBrowsers thisInstallId={thisInstallId} />
     </>
   );
 }

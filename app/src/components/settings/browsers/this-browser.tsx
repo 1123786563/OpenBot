@@ -1,8 +1,9 @@
 import { IconBrowser } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { noteStoreTabOpened } from "@/components/browser/browser-nav-item";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Item,
@@ -55,6 +56,9 @@ export function ThisBrowser({
   onInstallId?: (installId: string | undefined) => void;
 } = {}) {
   const [attempt, setAttempt] = useState<Attempt>({ state: "idle" });
+  const connectButton = useRef<HTMLButtonElement>(null);
+  const connectionStatus = useRef<HTMLParagraphElement>(null);
+  const returnFocus = useRef(false);
   // The install id a trusted OpenBot's connect answer carried: a copy only reports its own once connected.
   const [connectedAs, setConnectedAs] = useState<string | undefined>();
   const awaiting = attempt.state === "awaiting";
@@ -136,8 +140,30 @@ export function ThisBrowser({
       setAttempt({ state: wait.data });
   }, [awaiting, wait.data]);
 
+  useEffect(() => {
+    if (connected && !connections.isError && connectionStatus.current) {
+      if (returnFocus.current && document.activeElement === document.body) {
+        connectionStatus.current.focus();
+      }
+      returnFocus.current = false;
+      return;
+    }
+    if (
+      attempt.state !== "cancelled" &&
+      attempt.state !== "closed" &&
+      attempt.state !== "expired" &&
+      attempt.state !== "failed"
+    )
+      return;
+    if (returnFocus.current && document.activeElement === document.body) {
+      connectButton.current?.focus();
+    }
+    returnFocus.current = false;
+  }, [attempt.state, connected, connections.isError]);
+
   async function connect() {
     if (!detected) return;
+    returnFocus.current = document.activeElement === connectButton.current;
     setAttempt({ state: "sending" });
     try {
       const { code } = await mintRecorderConnectCode();
@@ -171,26 +197,34 @@ export function ThisBrowser({
 
   return (
     <PageSection title="This browser">
-      {connections.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't check whether this browser is connected. Reload the page.
+      {connections.isError ? (
+        <p className="text-muted-foreground text-sm">
+          Check Connected browsers to refresh this browser’s connection status.
         </p>
-      ) : detected === undefined ? null : (
+      ) : detected === undefined ? (
+        <ReadStatus kind="loading" message="Checking for OpenBot Recorder…" />
+      ) : (
         <PageRows>
           <Item size="sm">
             <ItemMedia variant="icon">
               <IconBrowser />
             </ItemMedia>
-            <ItemContent>
+            <ItemContent className="min-w-0">
               <ItemTitle>OpenBot Recorder</ItemTitle>
-              <ItemDescription>
+              <ItemDescription
+                aria-live="polite"
+                className="line-clamp-none text-sm leading-relaxed"
+                ref={connectionStatus}
+                tabIndex={connected ? -1 : undefined}
+              >
                 {describe(detected, connected, attempt)}
               </ItemDescription>
             </ItemContent>
             {detected && !connected ? (
-              <ItemActions>
+              <ItemActions className="basis-full sm:basis-auto">
                 <Button
-                  size="sm"
+                  className="min-h-12"
+                  ref={connectButton}
                   disabled={attempt.state === "sending" || awaiting}
                   onClick={() => void connect()}
                 >
@@ -217,10 +251,10 @@ function AddRecorder() {
   const here = recorderStorePageHere();
   if (!here) return null;
   return (
-    <ItemActions>
+    <ItemActions className="basis-full sm:basis-auto">
       {/* An anchor, not Button: Base UI gives a rendered anchor role="button", and this is a link. */}
       <a
-        className={buttonVariants({ size: "sm" })}
+        className={buttonVariants({ className: "min-h-12" })}
         href={here.page}
         onClick={() => noteStoreTabOpened(here.store)}
         rel="noopener noreferrer"
@@ -240,6 +274,8 @@ function describe(
   if (!detected) return "The OpenBot Recorder isn't installed in this browser.";
   if (connected) return "Connected";
   switch (attempt.state) {
+    case "sending":
+      return "Starting the connection…";
     case "awaiting":
       return "Confirm in the OpenBot Recorder tab that opened.";
     case "expired":

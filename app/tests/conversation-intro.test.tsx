@@ -30,9 +30,9 @@ const expenseReview = {
 
 test("shows the Bot's name, what it does, and that it is private", () => {
   const view = draw(<ConversationIntro agent={expenseReview} />);
-  expect(view.getByRole("heading", { level: 1 }).textContent).toBe(
-    "Expense Review",
-  );
+  expect(
+    view.getByRole("heading", { name: "Expense Review", level: 2 }).textContent,
+  ).toBe("Expense Review");
   view.getByText(
     "Finance Operations · Reads every expense claim against the travel policy.",
   );

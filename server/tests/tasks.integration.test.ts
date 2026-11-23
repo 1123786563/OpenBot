@@ -25,7 +25,10 @@ import {
 import { waitForReplyInTranscript } from "../src/approvals/reply-in-transcript";
 import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
 import { createApprovalRoutes } from "../src/approvals/routes";
-import { createApprovalService } from "../src/approvals/service";
+import {
+  createApprovalService,
+  OUTCOME_UNKNOWN,
+} from "../src/approvals/service";
 import { createApprovalStore } from "../src/approvals/store";
 import { currentApprovalContext } from "../src/approvals/types";
 import { PERSON_INITIATOR } from "../src/audit";
@@ -43,6 +46,8 @@ import {
   channels,
   proactiveSettings,
   proactiveSuggestions,
+  routineRuns,
+  routines,
   users,
   workItems,
 } from "../src/db/schema";
@@ -54,7 +59,7 @@ import { createTaskRunner } from "../src/tasks/runner";
 import { PROACTIVE_TASK_KIND } from "../src/tasks/state";
 import { createTaskStore } from "../src/tasks/store";
 import { createTaskTurn } from "../src/tasks/turn";
-import { createWorkQueue } from "../src/work/queue";
+import { createWorkQueue, DEFAULT_MAX_ATTEMPTS } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
@@ -1110,6 +1115,85 @@ async function waitingOnApproval(replyText: string) {
 }
 
 describe("carried on after the person decides", () => {
+  for (const exhaustsRetries of [false, true]) {
+    test(`a saved Approval result is delivered without repeating its action ${exhaustsRetries ? "on the final attempt" : "on a later attempt"}`, async () => {
+      const replyText = "I sent your reply to Sam.";
+      const { owner, task, request } = await waitingOnApproval(replyText);
+      const before = sent.length;
+      let attempts = 0;
+      const resume = resumeTick({
+        approvalContinuationRunner: (input) => {
+          if (++attempts === 1)
+            throw new Error("The Bot runner is temporarily unavailable.");
+          return runTurn(input);
+        },
+      });
+      await approvalService.decide(owner.id, request.id, "allow_once");
+      const item = and(
+        eq(workItems.kind, "approval.resume"),
+        eq(workItems.key, request.id),
+      );
+      if (exhaustsRetries)
+        await database
+          .update(workItems)
+          .set({ attempts: DEFAULT_MAX_ATTEMPTS - 1 })
+          .where(item);
+
+      await resume();
+
+      if (!exhaustsRetries) {
+        const saved = await approvalStore.get(owner.id, request.id);
+        expect(saved.status).toBe("consumed");
+        expect(saved.result?.content).toBeTruthy();
+        expect(sent.length).toBe(before + 1);
+        await database
+          .update(workItems)
+          .set({ runAt: new Date(0) })
+          .where(item);
+        await resume();
+      }
+      expect((await approvalStore.get(owner.id, request.id)).status).toBe(
+        "completed",
+      );
+      const [work] = await database
+        .select({ finishedAt: workItems.finishedAt })
+        .from(workItems)
+        .where(item);
+      expect(work?.finishedAt).toBeInstanceOf(Date);
+      expect(sent.length).toBe(before + 1);
+      expect(await conversation(task.channelId)).toMatchObject({
+        lastMessage: replyText,
+      });
+    });
+  }
+
+  test("an Approval consumed without a result reports the unknown outcome without running the action", async () => {
+    const replyText = "I cannot confirm the previous send.";
+    const { owner, task, request } = await waitingOnApproval(replyText);
+    const before = sent.length;
+    await approvalService.decide(owner.id, request.id, "allow_once");
+    expect(
+      await approvalStore.consume(
+        owner.id,
+        request.id,
+        request.action.actionDigest,
+      ),
+    ).toBe(true);
+
+    await resumeApproval();
+
+    const completed = await approvalStore.get(owner.id, request.id);
+    expect(completed.status).toBe("completed");
+    expect(completed.result).toEqual({
+      content: OUTCOME_UNKNOWN,
+      error: OUTCOME_UNKNOWN,
+    });
+    expect(sent.length).toBe(before);
+    expect(await conversation(task.channelId)).toMatchObject({
+      lastMessage: replyText,
+    });
+  });
+
   /*
    * Found on the Mac: after Allow once, the turn that carried the conversation on reached a second
    * action that needed the person. Its request was opened and left pending, the conversation never
@@ -1130,6 +1214,22 @@ describe("carried on after the person decides", () => {
             "call-second",
           )
         : reply(input, "I sent both replies.");
+    const routineId = randomUUID();
+    await database.insert(routines).values({
+      id: routineId,
+      ownerUserId: owner.id,
+      agentId: request.action.botId,
+      channelId: task.channelId,
+      instruction: "Send both replies",
+      cron: "0 9 * * *",
+      nextRunAt: new Date(),
+    });
+    await database.insert(routineRuns).values({
+      id: routineId,
+      routineId,
+      status: "waiting",
+      waiting: { kind: "approval", approvalId: request.id },
+    });
     const before = sent.length;
 
     await approvalService.decide(owner.id, request.id, "allow_once");
@@ -1163,6 +1263,14 @@ describe("carried on after the person decides", () => {
     expect(waiting).toHaveLength(1);
     expect(waiting[0]?.action.threadId).toBe(threadId);
     expect(waiting[0]?.action.toolCallId).toBe("call-second");
+    const [routineRun] = await database
+      .select()
+      .from(routineRuns)
+      .where(eq(routineRuns.id, routineId));
+    expect(routineRun).toMatchObject({
+      status: "waiting",
+      waiting: { kind: "approval", approvalId: waiting[0]?.id },
+    });
     expect(await conversation(task.channelId)).toMatchObject({
       lastMessage: "This action is waiting for your approval.",
     });
@@ -1201,16 +1309,19 @@ describe("carried on after the person decides", () => {
       holdsWhole = said === whole;
       return [{ role: "assistant", content: said }];
     };
-    const told: boolean[] = [];
+    const told: string[] = [];
     const resume = resumeTick({
       channelStore: {
         ...channelStore,
         recordActivity: (
           ...args: Parameters<typeof channelStore.recordActivity>
         ) => {
-          told.push(holdsWhole);
+          told.push(`activity:${holdsWhole}`);
           return channelStore.recordActivity(...args);
         },
+      },
+      notify: async () => {
+        told.push(`notification:${holdsWhole}`);
       },
       transcriptHolds: waitForReplyInTranscript({
         read: transcript,
@@ -1228,7 +1339,7 @@ describe("carried on after the person decides", () => {
     }
 
     // Told once, and only after the read that a refreshing conversation makes holds all of it.
-    expect(told).toEqual([true]);
+    expect(told).toEqual(["activity:true", "notification:true"]);
     expect(await conversation(task.channelId)).toMatchObject({
       lastMessage: whole,
     });

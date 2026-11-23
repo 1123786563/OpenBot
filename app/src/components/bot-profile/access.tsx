@@ -5,7 +5,11 @@ import {
   IconPlug,
   IconPlus,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import { HandoffPanel } from "@/components/agents/handoff-panel";
@@ -14,6 +18,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   AppAccessAction,
   appAccessSentence,
@@ -103,11 +108,22 @@ export function AccessSections({ agent }: { agent: AgentProfile }) {
   // Every Bot has every connected app in the personal edition, so there is no switch per app here.
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const apps = useQuery(botAppsQueryOptions(agent.id));
   return (
     <>
-      {agent.mine && !personal ? <YourApps agent={agent} /> : null}
+      {apps.error ? (
+        <ReadError
+          message="Couldn’t check whether each app is ready for you"
+          retry={() => apps.refetch()}
+          retryBelow
+          retrying={apps.isFetching}
+        />
+      ) : null}
+      {agent.mine && !personal && !apps.error ? (
+        <YourApps agent={agent} held={apps} />
+      ) : null}
       {agent.mine ? <YourSkills agentId={agent.id} /> : null}
-      <Granted agentId={agent.id} mine={agent.mine} />
+      <Granted agentId={agent.id} apps={apps} mine={agent.mine} />
       {/* Every Bot can ask every other in the personal edition, so there is no switch per Bot. */}
       {personal ? null : <HandoffPanel agentId={agent.id} />}
     </>
@@ -126,14 +142,18 @@ export function AccessSections({ agent }: { agent: AgentProfile }) {
  * AN APP AN ADMIN GAVE THIS BOT is drawn switched on and locked. Taking it away is the admin's, and
  * the server would refuse it.
  */
-function YourApps({ agent }: { agent: AgentProfile }) {
+function YourApps({
+  agent,
+  held,
+}: {
+  agent: AgentProfile;
+  held: UseQueryResult<AppAccess[]>;
+}) {
   const giveable = useQuery(giveableAppsQueryOptions());
-  const held = useQuery(botAppsQueryOptions(agent.id));
   const give = useMutation(giveBotAppMutationOptions(queryClient));
   const takeBack = useMutation(takeBackBotAppMutationOptions(queryClient));
   const error = give.error ?? takeBack.error;
   const busy = give.isPending || takeBack.isPending;
-  if (giveable.isPending || held.isPending) return null;
   const states = new Map((held.data ?? []).map((app) => [app.key, app]));
   /*
    * What you could give, and then anything you already gave that no longer is — an account you
@@ -162,10 +182,15 @@ function YourApps({ agent }: { agent: AgentProfile }) {
           {error.message}
         </p>
       ) : null}
-      {giveable.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load your apps. Reload the page.
-        </p>
+      {giveable.isPending || held.isPending ? (
+        <ReadStatus kind="loading" message="Loading your apps…" />
+      ) : giveable.error ? (
+        <ReadError
+          message="Couldn’t load your apps"
+          retry={() => giveable.refetch()}
+          retryBelow
+          retrying={giveable.isFetching}
+        />
       ) : rows.length === 0 ? (
         <PageEmpty
           action={
@@ -262,10 +287,15 @@ function YourSkills({ agentId }: { agentId: string }) {
           {grant.error.message}
         </p>
       ) : null}
-      {page.isPending || held.isPending ? null : page.error || held.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load your skills. Reload the page.
-        </p>
+      {page.isPending || held.isPending ? (
+        <ReadStatus kind="loading" message="Loading your skills…" />
+      ) : page.error || held.error ? (
+        <ReadError
+          message="Couldn’t load your skills"
+          retry={() => Promise.all([page.refetch(), held.refetch()])}
+          retryBelow
+          retrying={page.isFetching || held.isFetching}
+        />
       ) : skills.length === 0 ? (
         <PageEmpty
           action={
@@ -336,19 +366,33 @@ function YourSkills({ agentId }: { agentId: string }) {
  * whoever is asking, exactly as the connections read does, so this cannot become a list of who has
  * connected what.
  */
-function Granted({ agentId, mine }: { agentId: string; mine: boolean }) {
+function Granted({
+  agentId,
+  apps,
+  mine,
+}: {
+  agentId: string;
+  apps: UseQueryResult<AppAccess[]>;
+  mine: boolean;
+}) {
   const me = useQuery(currentUserQueryOptions()).data;
   const edition =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition ?? "team";
   const plugins = useQuery(agentPluginsQueryOptions(agentId));
-  const apps = useQuery(botAppsQueryOptions(agentId));
   // Both, so no row is drawn without its state and then redrawn with one a moment later.
-  if (plugins.isPending || apps.isPending) return null;
+  if (plugins.isPending || apps.isPending) {
+    return (
+      <ReadStatus kind="loading" message="Loading what this Bot can use…" />
+    );
+  }
   if (!plugins.data) {
     return (
-      <p className="mt-6 text-destructive text-sm" role="alert">
-        Couldn't load what this Bot can use. Reload the page.
-      </p>
+      <ReadError
+        message="Couldn’t load what this Bot can use"
+        retry={() => plugins.refetch()}
+        retryBelow
+        retrying={plugins.isFetching}
+      />
     );
   }
   const admin = me?.role === "admin";
@@ -368,18 +412,13 @@ function Granted({ agentId, mine }: { agentId: string; mine: boolean }) {
       description="Review this Bot’s available apps and skills, and check which apps are ready to use. The Bot cannot use apps or skills outside this list."
       title="What it can use"
     >
-      {apps.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't check whether each app is ready for you. Reload the page.
-        </p>
-      ) : null}
-      {count === 0 ? (
+      {count === 0 && !apps.error ? (
         <PageEmpty icon={IconApps} title="No apps yet">
           {mine
             ? "Turn one on under Your apps, or ask an admin. Until then this Bot can only talk with you."
             : "An admin has to add them. Until then this Bot can only talk with you."}
         </PageEmpty>
-      ) : (
+      ) : count > 0 ? (
         <PageRows>
           {states.map((app, index) => {
             const labels = tools.get(app.key) ?? [];
@@ -464,7 +503,7 @@ function Granted({ agentId, mine }: { agentId: string; mine: boolean }) {
             </Fragment>
           ))}
         </PageRows>
-      )}
+      ) : null}
     </PageSection>
   );
 }

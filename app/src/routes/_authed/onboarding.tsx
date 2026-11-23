@@ -1,3 +1,6 @@
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
@@ -20,7 +23,6 @@ import {
   type OnboardingStep,
   OnboardingWizard,
 } from "@/components/onboarding/onboarding-wizard";
-import { Button } from "@/components/ui/button";
 import { currentUserQueryOptions, needsOnboarding } from "@/lib/auth/queries";
 import { appReturnPath } from "@/lib/auth/resume";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -63,7 +65,10 @@ function stepForNumber(step: number | undefined): StepId | null {
  * The step somebody was last on. Kept in the history entry Continue pushed (`onboardingFrom`), so
  * Back after a reload still pops the entry instead of adding a second one for the same step.
  */
-type OnboardingEntry = { onboardingFrom?: unknown };
+type OnboardingEntry = {
+  onboardingFrom?: unknown;
+  onboardingNameSaved?: unknown;
+};
 
 export const Route = createFileRoute("/_authed/onboarding")({
   /*
@@ -120,29 +125,26 @@ function welcomeStep(computer: boolean): OnboardingStep {
     intro: () => (
       <StepIntro
         after={
-          <section
+          <VStack
             aria-labelledby="onboarding-permissions"
-            className="flex flex-col gap-3 text-left"
+            as="section"
+            className="text-left"
+            gap={2}
           >
-            <div className="flex flex-col gap-1">
-              <h2
-                className="text-lg font-semibold text-pretty"
-                id="onboarding-permissions"
-              >
-                Choose when Bots ask
-              </h2>
-              <p className="text-pretty text-muted-foreground">
-                {ALWAYS_ASKS_SHORT}
-              </p>
-            </div>
+            <h2 className="text-base font-semibold" id="onboarding-permissions">
+              Approval preferences
+            </h2>
+            <p className="text-sm text-pretty text-muted-foreground">
+              {ALWAYS_ASKS_SHORT}
+            </p>
             <AskFirstSwitch />
             <p className="text-sm text-pretty text-muted-foreground">
-              You can change this anytime in Settings.
+              Change this anytime in Settings → Approvals.
             </p>
-          </section>
+          </VStack>
         }
       >
-        <p>Give work to Bots in plain words. They tell you when it's done.</p>
+        <p>Finish setup to give a Bot your first task in plain words.</p>
       </StepIntro>
     ),
     demo: () => <IntroReel computer={computer} />,
@@ -155,17 +157,13 @@ function welcomeStep(computer: boolean): OnboardingStep {
  * already have OpenBot.
  *
  * WHAT IT IS COMES BEFORE ASKING FOR A CALL. The step opens on what OpenBot for Business adds, beside
- * the picture of running OpenBot yourself (on this computer, with the agents you already have, for
- * your organization), with Book a demo and Not now. Somebody who has never heard of it has no reason
- * to book anything until they know what they would be booking.
+ * the picture of running OpenBot yourself. The explanation gives people enough context to decide
+ * whether they want a demo.
  *
- * BOOK A DEMO OPENS THE CALENDAR IN THE STEP, in the picture's place, to book a demo or a call to
- * scope a proof of concept. Until a call is booked the only way on is Not now: a Continue beside it
- * read as going on with the booking. Once the calendar says a call is booked, Not now becomes
- * Continue, in the same place.
+ * Booking is optional. Keep the way through setup in the footer, and put the booking action
+ * with its explanation. The calendar opens in the picture's place.
  *
- * A calendar that can't load (offline, blocked, silent) puts the picture back, with Book a call, which
- * opens the OpenBot for Business page in a new tab (on the Desktop, in the person's browser).
+ * When the calendar fails, Book a call opens the business page in a new tab.
  */
 function useBookDemoStep(): OnboardingStep {
   const [calendar, setCalendar] = React.useState(false);
@@ -177,52 +175,48 @@ function useBookDemoStep(): OnboardingStep {
     id: "selfhost",
     title: "OpenBot for Business",
     intro: () => (
-      <StepIntro>
+      <StepIntro
+        after={
+          <Button
+            className="min-h-11 rounded-lg! border! border-border! px-4! focus-visible:outline-2! focus-visible:outline-offset-2! focus-visible:outline-ring!"
+            label={failed ? "Book a call" : "Book a demo"}
+            onClick={() => {
+              if (failed)
+                window.open(BUSINESS_URL, "_blank", "noopener,noreferrer");
+              else setCalendar(true);
+            }}
+            variant="secondary"
+          />
+        }
+      >
         <p>
-          Bring {PRODUCT} to your whole team, on your own servers. Everyone
-          signs in with their work account and shares Bots in Slack and
-          Microsoft Teams. Admins get the controls and audit trail your company
-          needs.
+          Bring {PRODUCT} to your team on your own servers, with work accounts,
+          shared Bots, and an audit trail. You can book a demo or continue
+          setup.
         </p>
+        {failed && (
+          <p role="status">
+            The calendar couldn’t load. Book a call opens it in a new tab.
+          </p>
+        )}
       </StepIntro>
     ),
     demo: () => <SelfHostDemo />,
-    primaryLabel: "Book a demo",
-    onPrimary: () => setCalendar(true),
-    secondary: { label: "Not now" },
+    primaryLabel: "Continue setup",
   };
-  if (!calendar) return value;
-  if (failed) {
-    return {
-      ...value,
-      // A new tab, so booking doesn't cost the place in onboarding, and then on to the next step.
-      primaryLabel: "Book a call",
-      onPrimary: (next) => {
-        window.open(BUSINESS_URL, "_blank", "noopener,noreferrer");
-        next();
-      },
-      notice: (
-        <p
-          className="text-sm text-center text-muted-foreground lg:text-left"
-          role="status"
-        >
-          Couldn't load the calendar. Book a call opens it in your browser.
-        </p>
-      ),
-    };
-  }
+  if (!calendar || failed) return value;
   return {
     ...value,
     intro: () => (
       <StepIntro>
-        <p>Pick a time to see a demo or scope a proof of concept with us.</p>
+        <p>
+          {booked
+            ? "Your demo is booked. You can continue setup."
+            : "Pick a time for a demo or continue setup without booking."}
+        </p>
       </StepIntro>
     ),
     demo: () => <BookingCalendar onBooked={book} onFailed={fail} />,
-    primaryLabel: undefined,
-    onPrimary: undefined,
-    primaryHidden: !booked,
-    secondary: booked ? undefined : { label: "Not now" },
   };
 }
 
@@ -230,10 +224,18 @@ function RouteComponent() {
   const navigate = useNavigate();
   const router = useRouter();
   const location = useLocation();
+  const entry = location.state as OnboardingEntry;
   const search = Route.useSearch();
-  const complete = useMutation(completeOnboardingMutationOptions(queryClient));
-  const advance = useMutation(advanceOnboardingMutationOptions(queryClient));
   const me = useQuery(currentUserQueryOptions());
+  const complete = useMutation({
+    ...completeOnboardingMutationOptions(queryClient),
+    networkMode: "always",
+  });
+  const advance = useMutation({
+    ...advanceOnboardingMutationOptions(queryClient),
+    networkMode: "always",
+    scope: { id: `onboarding:${me.data?.id}` },
+  });
 
   /*
    * OpenBot for Business is for somebody evaluating OpenBot locally, never for an organization's people: the
@@ -255,23 +257,21 @@ function RouteComponent() {
   } = useQuery(deploymentCapabilitiesQueryOptions());
 
   /*
-   * A NAME ALREADY KNOWN IS NOT ASKED FOR AGAIN. A sign-in that brought a real name leaves the name
-   * step out, and the last step left gets the person in instead.
-   *
-   * DECIDED ONCE, ON ARRIVAL. Saving the name on the name step makes it known, and deciding again
-   * then would drop the step from under its own finish, back to Welcome. `beforeLoad` has the user
-   * in the cache before the first render, so the first answer is the real one.
+   * A sign-in that brought a name skips the name step. If the person reached that step and
+   * saved their name before completion failed, reload lets them finish there.
    */
-  const [nameKnown] = React.useState(
+  const [askName] = React.useState(
     () =>
-      me.data?.needsName !== true &&
-      Boolean(me.data?.name) &&
-      me.data?.name !== me.data?.email,
+      me.data?.needsName === true ||
+      !me.data?.name ||
+      me.data.name === me.data.email ||
+      me.data.onboarding?.step === STEP_NUMBER.name ||
+      entry.onboardingNameSaved === true,
   );
   const ids: StepId[] = [
     "welcome",
     ...(capabilities?.localEvaluation ? (["selfhost"] as const) : []),
-    ...(nameKnown ? [] : (["name"] as const)),
+    ...(askName ? (["name"] as const) : []),
   ];
 
   /*
@@ -298,22 +298,16 @@ function RouteComponent() {
   }, [navigate, current, asked, search.step, search.returnTo]);
 
   // Saved wherever the person goes, by Continue, Back or the browser.
-  const savedStep = me.data?.onboarding?.step;
-  const { mutate: save } = advance;
+  const onboarding = me.data?.onboarding;
+  const { mutate: save, variables: requestedStep } = advance;
+  const stepNumber = STEP_NUMBER[current];
   React.useEffect(() => {
-    if (savedStep === undefined || savedStep === STEP_NUMBER[current]) return;
-    // OpenBot for Business waits for the answer that says whether this person has one.
+    if (!onboarding || onboarding.completedAt !== null) return;
     if (current === "selfhost" && !capabilities) return;
-    /*
-     * A save that fails is tried again on the next move, since the saved step still differs. It is
-     * said in the console rather than on the step: the person is where they meant to be, and only a
-     * reload would show the place was not kept.
-     */
-    save(STEP_NUMBER[current], {
-      onError: (error) =>
-        console.warn("Your place in onboarding was not saved.", error),
-    });
-  }, [current, savedStep, save, capabilities]);
+    // Save Back as well as forward moves while a preceding request is still in flight.
+    if (stepNumber === (requestedStep ?? onboarding.step)) return;
+    save(stepNumber);
+  }, [current, onboarding, requestedStep, save, capabilities, stepNumber]);
 
   /*
    * CONTINUE PUSHES, AND BACK RETURNS THROUGH HISTORY WHEN IT CAN. Continue adds an entry carrying
@@ -321,7 +315,7 @@ function RouteComponent() {
    * when it was pushed from the step behind, and otherwise (arriving by a link, say) replaces this
    * entry with the step behind, so history never holds the same step twice in a row.
    */
-  const cameFrom = (location.state as OnboardingEntry).onboardingFrom;
+  const cameFrom = entry.onboardingFrom;
   const move = (to: string, way: "forward" | "back") => {
     if (!isStepId(to)) return;
     if (way === "back" && cameFrom === to) {
@@ -346,8 +340,26 @@ function RouteComponent() {
   const reduced = useReducedMotion() === true;
   const [finished, setFinished] = React.useState(false);
   const [leaving, setLeaving] = React.useState(false);
+  const finishing = React.useRef(false);
   const finish = async () => {
-    await complete.mutateAsync(undefined);
+    if (finishing.current) return;
+    finishing.current = true;
+    try {
+      // Keep the name step on reload even if its progress write could not reach the server.
+      if (current === "name" && onboarding?.step !== STEP_NUMBER.name) {
+        const active = router.state.location;
+        if (active.href === location.href) {
+          router.history.replace(active.href, {
+            ...active.state,
+            onboardingNameSaved: true,
+          });
+        }
+      }
+      await complete.mutateAsync(undefined);
+    } catch {
+      finishing.current = false;
+      return;
+    }
     setFinished(true);
     await new Promise((resolve) =>
       setTimeout(resolve, reduced ? 150 : FINISH_MS),
@@ -360,14 +372,19 @@ function RouteComponent() {
     const timer = setTimeout(
       () => {
         if (search.returnTo) window.location.replace(search.returnTo);
-        else void navigate({ to: "/" });
+        else void navigate({ to: "/", replace: true });
       },
       reduced ? 0 : 300,
     );
     return () => clearTimeout(timer);
   }, [leaving, navigate, reduced, search.returnTo]);
 
-  const name = useNameStep({ finish, finished });
+  const name = useNameStep({
+    finish,
+    finished,
+    completing: complete.isPending,
+    retry: complete.isError,
+  });
   const selfhost = useBookDemoStep();
   /*
    * The checklist says whether there is a Bot computer, and the intro shows one only where there
@@ -378,65 +395,79 @@ function RouteComponent() {
     checklist?.rows.find((row) => row.id === "computer")?.status ===
     "needs_setup";
 
-  const capabilitiesFailed =
-    capabilitiesError && !capabilities ? (
-      <div className="flex flex-col items-center gap-1 lg:items-start">
-        <p
-          className="text-sm text-center text-destructive lg:text-left"
-          role="alert"
-        >
-          Couldn't load your setup. Try again to continue.
-        </p>
-        <Button
-          disabled={loadingCapabilities}
-          onClick={() => retryCapabilities()}
-          size="sm"
-          variant="ghost"
-        >
-          Try again
-        </Button>
-      </div>
+  const lastId = ids[ids.length - 1];
+  const progressFailed =
+    advance.isError && advance.variables === stepNumber && !finished;
+  const notice =
+    askingCapabilities && current === "welcome" ? (
+      <p className="text-sm text-muted-foreground" role="status">
+        Checking which setup steps you need…
+      </p>
+    ) : capabilitiesError && !capabilities ? (
+      <Banner
+        endContent={
+          <Button
+            className="min-h-11"
+            isLoading={loadingCapabilities}
+            label="Try again"
+            onClick={() => void retryCapabilities()}
+            size="sm"
+            variant="secondary"
+          />
+        }
+        role="alert"
+        status="error"
+        title="Couldn’t load your setup"
+      />
+    ) : complete.isError && current === lastId ? (
+      <Banner
+        description="Use Retry setup to finish and open your workspace."
+        role="alert"
+        status="error"
+        title="Couldn’t finish setup"
+      />
+    ) : progressFailed ? (
+      <Banner
+        description="You can keep going. Reopening this address returns you to this step."
+        endContent={
+          <Button
+            className="min-h-11"
+            label="Retry save"
+            onClick={() => save(stepNumber)}
+            size="sm"
+            variant="secondary"
+          />
+        }
+        role="alert"
+        status="warning"
+        title="Couldn’t save your place"
+      />
     ) : undefined;
-  const finishFailed = complete.error ? (
-    <p
-      className="text-sm text-center text-destructive lg:text-left"
-      role="alert"
-    >
-      Couldn't finish setting up. Try again.
-    </p>
-  ) : undefined;
 
   const byId: Record<StepId, OnboardingStep> = {
     welcome: {
       ...welcomeStep(!computerMissing),
       primaryDisabled: !capabilities,
-      notice: capabilitiesFailed,
     },
     selfhost,
     name,
   };
-  /*
-   * Without the name step, the last step's buttons finish onboarding where they would have moved
-   * on: Get started on Welcome, and Book a demo, Continue (once booked), Book a call or Not now on
-   * OpenBot for Business.
-   */
-  const lastId = ids[ids.length - 1];
+  // The name form saves any changes before completing. The other last steps can finish directly.
   const steps: OnboardingStep[] = ids.map((id) => {
     const step = byId[id];
     if (id !== lastId || id === "name") return step;
-    const out = () => void finish().catch(() => undefined);
     return {
       ...step,
-      primaryLabel: finished ? "All set" : (step.primaryLabel ?? "Get started"),
+      primaryLabel: finished
+        ? "All set"
+        : complete.isPending
+          ? "Finishing…"
+          : complete.isError
+            ? "Retry setup"
+            : "Get started",
       primaryDone: finished,
       primaryPending: complete.isPending,
-      // A step's own primary decides whether it moves on: Book a call does, so it finishes;
-      // Book a demo opens the calendar in the step and stays.
-      onPrimary: step.onPrimary ? () => step.onPrimary?.(out) : out,
-      secondary: step.secondary
-        ? { label: step.secondary.label, onClick: out }
-        : undefined,
-      notice: step.notice ?? finishFailed,
+      onPrimary: () => void finish(),
     };
   });
 
@@ -458,6 +489,7 @@ function RouteComponent() {
       >
         {waiting ? null : (
           <OnboardingWizard
+            notice={notice}
             onMove={(to, way) => move(to, way)}
             stepId={current}
             steps={steps}

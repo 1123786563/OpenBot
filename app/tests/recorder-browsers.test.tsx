@@ -684,16 +684,22 @@ test("in the team edition Settings, Browsers still says a recording goes to your
   );
 });
 
-test("when the connections cannot be loaded This browser says it cannot tell, and is not empty", async () => {
+test("a failed Recorder connections read has one retry and recovers in place", async () => {
   connectionsFail = true;
-  const view = draw();
-  await view.findByText(
-    "Couldn't check whether this browser is connected. Reload the page.",
-    {},
+  const view = draw(<BrowserSections />);
+  const retry = await view.findByRole(
+    "button",
+    { name: "Retry" },
     { timeout: 4000 },
   );
-  expect(view.getByRole("alert")).toBeTruthy();
-  expect(view.queryByRole("button")).toBeNull();
+  expect(view.getByRole("alert").textContent).toContain(
+    "Couldn't check your connected browsers.",
+  );
+  expect(view.queryByText("No browsers connected yet.")).toBeNull();
+  connectionsFail = false;
+  fireEvent.click(retry);
+  await view.findByText("No browsers connected yet.");
+  expect(view.queryByRole("alert")).toBeNull();
 });
 
 test("a connect request nobody confirms expires after five minutes and stops polling", async () => {

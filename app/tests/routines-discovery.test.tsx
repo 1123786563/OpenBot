@@ -7,14 +7,26 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type * as React from "react";
 
 import { RoutineComposerButton } from "@/components/routines/new-routine-button";
 import { RoutinesConnectionPage } from "@/components/routines/routines-connection-page";
 import { RoutinesList } from "@/components/routines/routines-list";
 import { cronFrom, scheduleSentence } from "@/lib/routines/form";
-import type { RoutineRecord, RoutinesPage } from "@/lib/routines/queries";
+import {
+  type RoutineRecord,
+  type RoutineRunRecord,
+  type RoutinesPage,
+  routineRunsQueryOptions,
+  routinesQueryOptions,
+} from "@/lib/routines/queries";
 import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
 
@@ -193,4 +205,126 @@ test("keyboard users can locate the results controlled by a routine's History bu
       .id,
   ).toBe(region?.id ?? "");
   expect(history.getAttribute("aria-expanded")).toBe("true");
+});
+
+test("a transient refresh failure keeps the last loaded routines and runs", async () => {
+  const task = routine({});
+  const page = { routines: [task], sweep: SWEEP };
+  const runs: RoutineRunRecord[] = [
+    {
+      id: "run-1",
+      status: "succeeded",
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      error: null,
+      source: "schedule",
+    },
+  ];
+  const view = draw(<RoutinesList />, page);
+  const fallback = global.fetch;
+  let status = 200;
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.startsWith("/api/routines") && status !== 200) {
+        return Response.json({ error: "Read failed" }, { status });
+      }
+      if (path.endsWith("/runs")) return Response.json({ runs });
+      return fallback(input, init);
+    },
+    { preconnect: fallback.preconnect },
+  );
+  fireEvent.click(await view.findByRole("button", { name: /Run history/ }));
+  await view.findByText("Succeeded");
+
+  const list = { ...routinesQueryOptions(), retry: false };
+  const history = { ...routineRunsQueryOptions(task.id), retry: false };
+  status = 503;
+  await Promise.allSettled([
+    queryClient.fetchQuery(list),
+    queryClient.fetchQuery(history),
+  ]);
+  await view.findByText("Showing the last loaded routines.");
+  await view.findByText("Showing the last loaded runs.");
+  expect(view.getByText("Morning leads")).toBeTruthy();
+  expect(view.getByText("Succeeded")).toBeTruthy();
+
+  status = 403;
+  await queryClient.fetchQuery(list).catch(() => undefined);
+  await view.findByText("Couldn’t load Routines");
+  expect(view.queryByText("Morning leads")).toBeNull();
+  expect(view.queryByText("No routines yet")).toBeNull();
+});
+
+test("overlapping routine writes keep feedback on the routine being changed", async () => {
+  const view = draw(<RoutinesList />, {
+    routines: [
+      routine({}),
+      routine({ id: "routine-2", title: "Evening leads" }),
+    ],
+    sweep: SWEEP,
+  });
+  let morningResponse = Promise.withResolvers<Response>();
+  const eveningResponse = Promise.withResolvers<Response>();
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    (input: RequestInfo | URL, init?: RequestInit) => {
+      switch (String(input)) {
+        case "/api/routines/routine-1/enabled":
+          return morningResponse.promise;
+        case "/api/routines/routine-2/enabled":
+          return eveningResponse.promise;
+        default:
+          return fallback(input, init);
+      }
+    },
+    { preconnect: fallback.preconnect },
+  );
+  const morning = await view.findByRole("switch", {
+    name: "Enable Morning leads",
+  });
+  const evening = view.getByRole("switch", { name: "Enable Evening leads" });
+  if (
+    !(morning instanceof HTMLInputElement) ||
+    !(evening instanceof HTMLInputElement)
+  )
+    throw new Error("Missing routine switches");
+  const isBlocked = (control: HTMLInputElement) =>
+    control.disabled || control.getAttribute("aria-disabled") === "true";
+  try {
+    fireEvent.click(morning);
+    await waitFor(() => expect(isBlocked(morning)).toBe(true));
+    fireEvent.click(evening);
+    await waitFor(() => expect(isBlocked(evening)).toBe(true));
+    expect(isBlocked(morning)).toBe(true);
+
+    eveningResponse.resolve(Response.json({ ok: true }));
+    morningResponse.resolve(
+      Response.json({ error: "Write unavailable" }, { status: 503 }),
+    );
+    const alert = await view.findByText(
+      "Couldn’t update Morning leads. Try the switch again.",
+    );
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(morning.checked).toBe(true);
+    expect(isBlocked(morning)).toBe(false);
+
+    morningResponse = Promise.withResolvers<Response>();
+    fireEvent.click(morning);
+    await waitFor(() => expect(isBlocked(morning)).toBe(true));
+    morningResponse.resolve(
+      Response.json(
+        { error: "You no longer manage this routine." },
+        { status: 403 },
+      ),
+    );
+    expect(
+      await view.findByText(
+        "Couldn’t update Morning leads. You no longer manage this routine.",
+      ),
+    ).toBeTruthy();
+  } finally {
+    morningResponse.resolve(Response.json({ ok: true }));
+    eveningResponse.resolve(Response.json({ ok: true }));
+  }
 });

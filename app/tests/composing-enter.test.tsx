@@ -14,7 +14,13 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType, ReactNode } from "react";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
@@ -82,10 +88,15 @@ beforeEach(() => {
       const method = init?.method ?? "GET";
       const body =
         typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-      if (method !== "GET") writes.push({ request: `${method} ${path}`, body });
+      // The dry-run probe decides nothing; only writes a screen could save are recorded.
+      if (method !== "GET" && path !== "/api/computers/policy-dry-run")
+        writes.push({ request: `${method} ${path}`, body });
       const json = (value: unknown) => Response.json(value);
       if (path === "/api/computers/policy") {
         return json({ policy: method === "PUT" ? body : POLICY });
+      }
+      if (path === "/api/computers/policy-dry-run") {
+        return json({ report: { changes: [] } });
       }
       if (path === "/api/agents/capabilities") {
         return json({ capabilities: { builtInAvailable: true } });
@@ -213,8 +224,11 @@ test("a boundary rule is not added by the Enter that confirms a composed charact
   await settle();
   expect(writes).toEqual([]);
 
+  // Add rule waits on the rule's preview; let it answer, then press.
+  const addRule = view.getByRole("button", { name: "Add rule" });
+  await waitFor(() => expect(addRule.hasAttribute("disabled")).toBe(false));
   await act(async () => {
-    fireEvent.click(view.getByRole("button", { name: "Add rule" }));
+    fireEvent.click(addRule);
   });
   await settle();
   expect(writes).toEqual([
@@ -222,6 +236,7 @@ test("a boundary rule is not added by the Enter that confirms a composed charact
       request: "PUT /api/computers/policy",
       body: {
         ...POLICY,
+        expected: POLICY,
         deny: [rule],
         labels: { [rule]: { name: "送信しない", description: "" } },
       },
