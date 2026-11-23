@@ -3,15 +3,15 @@ import {
   type MarketSkillSnapshot,
   marketSkillSnapshotSchema,
 } from "@openbot/toolkit/continuation";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, exists, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
   bifrostMarketReviews,
   skillMarketVersionDisablements as disablements,
+  skillMarketEquivalences,
   skillMarketInstallations,
   skillMarketRuns,
-  skillMarketSources,
 } from "../db/schema";
 import {
   bifrostNamespace,
@@ -20,6 +20,13 @@ import {
   exactVersion,
   skillHubOrigin,
 } from "./config";
+
+import {
+  equivalentVersionKeys,
+  equivalentVersions,
+  lockMarketEquivalences,
+  type MarketVersionKey,
+} from "./equivalences";
 
 const versionIdentityFields = z.object({
   registrySkillId: z.number().int().min(1).max(2147483647),
@@ -45,10 +52,6 @@ export const disableMarketVersion = z.union([
 ]);
 
 export type MarketVersionIdentity = z.infer<typeof marketVersionIdentity>;
-type MarketVersionKey = Pick<
-  MarketVersionIdentity,
-  "source" | "registrySkillId" | "versionId"
->;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function versionKey(version: MarketVersionKey) {
@@ -71,11 +74,41 @@ export async function marketVersionDisableReason(
   database: Pick<Database, "select">,
   version: MarketVersionKey,
 ) {
+  const [key] =
+    version.source === bifrostNamespace
+      ? await equivalentVersionKeys(database, version)
+      : [version];
   const [disabled] = await database
     .select({ reason: disablements.reason })
     .from(disablements)
-    .where(matchesVersion(version));
+    .where(matchesVersion(key));
   return disabled?.reason ?? null;
+}
+
+export function installedMarketDisablement(database: Pick<Database, "select">) {
+  const install = skillMarketInstallations;
+  const legacy = skillMarketEquivalences;
+  return or(
+    and(
+      eq(disablements.source, install.registry),
+      eq(disablements.registrySkillId, install.registrySkillId),
+      eq(disablements.versionId, install.versionId),
+    ),
+    and(
+      eq(install.registry, bifrostNamespace),
+      exists(
+        equivalentVersions(database).where(
+          and(
+            eq(bifrostMarketReviews.skillId, install.registrySkillId),
+            eq(bifrostMarketReviews.id, install.versionId),
+            eq(legacy.source, disablements.source),
+            eq(legacy.registrySkillId, disablements.registrySkillId),
+            eq(legacy.versionId, disablements.versionId),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 // The transaction lock also covers the absence of a registry row.
@@ -83,8 +116,10 @@ async function lockVersion(
   transaction: Transaction,
   version: MarketVersionKey,
 ) {
+  await lockMarketEquivalences(transaction, "read");
+  const [canonical] = await equivalentVersionKeys(transaction, version);
   await transaction.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${`skill-market-version:${versionKey(version)}`}, 0))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${`skill-market-version:${versionKey(canonical)}`}, 0))`,
   );
 }
 
@@ -347,18 +382,14 @@ export function marketVersionMethods(database: Database) {
     async marketVersionsForAdministration() {
       const installed = await database
         .selectDistinct({
-          source: skillMarketSources.registry,
-          namespace: skillMarketSources.namespace,
-          slug: skillMarketSources.slug,
+          source: skillMarketInstallations.registry,
+          namespace: skillMarketInstallations.namespace,
+          slug: skillMarketInstallations.slug,
           registrySkillId: skillMarketInstallations.registrySkillId,
           versionId: skillMarketInstallations.versionId,
           version: skillMarketInstallations.version,
         })
-        .from(skillMarketInstallations)
-        .innerJoin(
-          skillMarketSources,
-          eq(skillMarketSources.command, skillMarketInstallations.command),
-        );
+        .from(skillMarketInstallations);
       const reviewed = await database
         .select({
           source: sql<string>`${bifrostNamespace}::text`,
@@ -398,8 +429,13 @@ export function marketVersionMethods(database: Database) {
             reason: null,
           });
       }
-      for (const version of disabled)
+      for (const version of disabled) {
         versions.set(versionKey(version), version);
+        for (const key of await equivalentVersionKeys(database, version)) {
+          const equivalent = versions.get(versionKey(key));
+          if (equivalent) equivalent.reason = version.reason;
+        }
+      }
       return [...versions.values()];
     },
 
@@ -409,34 +445,53 @@ export function marketVersionMethods(database: Database) {
     ) {
       await database.transaction(async (transaction) => {
         await lockVersion(transaction, version);
-        if (reason === null) {
-          await transaction.delete(disablements).where(matchesVersion(version));
-        } else {
-          await transaction
-            .insert(disablements)
-            .values({ ...version, reason })
-            .onConflictDoUpdate({
-              target: [
-                disablements.source,
-                disablements.registrySkillId,
-                disablements.versionId,
-              ],
-              set: { reason },
-            });
-          // A run stays paused even if the version is restored before it next wakes up.
-          await transaction
-            .update(skillMarketRuns)
-            .set({ pauseReason: pausedVersionMessage(version.version, reason) })
-            .where(
-              and(
-                eq(skillMarketRuns.source, version.source),
-                eq(skillMarketRuns.registrySkillId, version.registrySkillId),
-                eq(skillMarketRuns.versionId, version.versionId),
-                isNull(skillMarketRuns.pauseReason),
-              ),
-            );
-        }
+        await applyMarketVersionDisablement(transaction, version, reason);
       });
     },
   };
+}
+
+export async function applyMarketVersionDisablement(
+  transaction: Transaction,
+  version: MarketVersionIdentity,
+  reason: string | null,
+) {
+  const keys = await equivalentVersionKeys(transaction, version);
+  if (reason === null) {
+    await transaction
+      .delete(disablements)
+      .where(or(...keys.map(matchesVersion)));
+    return;
+  }
+  await transaction.delete(disablements).where(or(...keys.map(matchesVersion)));
+  const [canonical] = keys;
+  await transaction
+    .insert(disablements)
+    .values({ ...version, ...canonical, reason })
+    .onConflictDoUpdate({
+      target: [
+        disablements.source,
+        disablements.registrySkillId,
+        disablements.versionId,
+      ],
+      set: { reason },
+    });
+  // Close the dispatch boundary for both identities. Restoring never clears a saved run pause.
+  await transaction
+    .update(skillMarketRuns)
+    .set({ pauseReason: pausedVersionMessage(version.version, reason) })
+    .where(
+      and(
+        isNull(skillMarketRuns.pauseReason),
+        or(
+          ...keys.map((key) =>
+            and(
+              eq(skillMarketRuns.source, key.source),
+              eq(skillMarketRuns.registrySkillId, key.registrySkillId),
+              eq(skillMarketRuns.versionId, key.versionId),
+            ),
+          ),
+        ),
+      ),
+    );
 }

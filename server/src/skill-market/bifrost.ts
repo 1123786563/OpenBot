@@ -277,8 +277,21 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
     },
 
     async commandSource(namespace: string, slug: string) {
-      const skill = await scopedSummary(namespace, slug);
-      return { source: bifrostNamespace, namespace, slug, title: skill.title };
+      checkScope(namespace, slug);
+      const [row] = await sql`
+        select name, skill_id from openbot_skill_market.catalog where name = ${slug}
+      `;
+      if (!row) throw new CatalogEntryUnavailable();
+      const skill = z
+        .object({ name: bifrostSlug, skill_id: z.uuid() })
+        .parse(row);
+      return {
+        source: bifrostNamespace,
+        namespace,
+        slug,
+        title: skill.name,
+        skillId: skill.skill_id,
+      };
     },
 
     async preview(namespace: string, slug: string, version: string) {

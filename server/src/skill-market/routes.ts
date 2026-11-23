@@ -22,6 +22,7 @@ import { type marketSkillMethods, slashCommand } from "./installations";
 const installBody = z.strictObject({ agentId: z.string().trim().min(1) });
 const expectedVersion = z.strictObject({
   expectedVersionId: z.number().int().positive(),
+  expectedRegistry: z.string().max(2048).optional(),
 });
 const switchBody = installBody.extend(expectedVersion.shape);
 const forbidden = "You cannot manage skills on this Bot.";
@@ -130,8 +131,12 @@ export function createSkillMarketRoutes(
         .length
     )
       return context.json({ error: forbidden }, 403);
+    const installed = await installations.listMarketInstallations(agentId);
     return context.json({
-      installations: await installations.listMarketInstallations(agentId),
+      installations: installed.map(({ catalogSlug, ...snapshot }) => ({
+        ...snapshot,
+        ...(bifrost && catalogSlug ? { catalogSlug } : {}),
+      })),
     });
   });
 
@@ -148,6 +153,7 @@ export function createSkillMarketRoutes(
       agentId,
       command,
       body.data.expectedVersionId,
+      body.data.expectedRegistry,
     );
     switch (result) {
       case "forbidden":
@@ -273,7 +279,11 @@ export function createSkillMarketRoutes(
         operation === "switch"
           ? switchBody.safeParse(input)
           : installBody
-              .transform((data) => ({ ...data, expectedVersionId: undefined }))
+              .transform((data) => ({
+                ...data,
+                expectedVersionId: undefined,
+                expectedRegistry: undefined,
+              }))
               .safeParse(input);
       if (!body.success)
         return context.json(
@@ -285,7 +295,7 @@ export function createSkillMarketRoutes(
           },
           400,
         );
-      const { agentId, expectedVersionId } = body.data;
+      const { agentId, expectedVersionId, expectedRegistry } = body.data;
       const { actor } = context.var;
       if (!(await installations.marketInstallTargets(actor, agentId)).length) {
         return context.json({ error: forbidden }, 403);
@@ -332,6 +342,7 @@ export function createSkillMarketRoutes(
         agentId,
         qualified,
         expectedVersionId,
+        expectedRegistry,
       );
       switch (result.kind) {
         case "forbidden":

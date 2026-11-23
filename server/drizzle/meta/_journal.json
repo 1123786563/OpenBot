@@ -687,6 +687,13 @@
       "when": 1795410635032,
       "tag": "0097_bifrost_market_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795410947095,
+      "tag": "0098_skill_market_equivalences",
+      "breakpoints": true
     }
   ]
 }

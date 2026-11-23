@@ -88,6 +88,33 @@ report records the following for each source version.
   failure and the `source` or `target` stage. Top-level configuration or
   inventory failures produce `ready: false` and `error`.
 
+## Record the verified receipt in OpenBot
+
+Apply OpenBot database migration `0098_skill_market_equivalences`. Keep
+publishing and installation writes paused while you record the final receipt.
+Use the same snapshot ID, SkillHub origin and namespace, Bifrost registry ID,
+and Bifrost reader URL as the verification run. Set `DATABASE_URL` to the
+OpenBot database for the cutover.
+
+```sh
+bun --no-env-file --env-file=/private/operator/cutover.env server/scripts/apply-skill-market-receipt.ts verify.json
+```
+
+The command re-reads every verified Bifrost package by exact version. It
+checks the UUIDs, coordinates, fingerprint, and complete file manifest before
+it records any equivalence. A successful first run prints `applied`. A retry
+with the same receipt prints `already-applied`. Keep writes paused if the
+command exits with an error.
+
+The OpenBot database retains the receipt, including historical and withdrawn
+entries. Existing installations keep their original instructions and source
+identities until a Bot manager explicitly switches versions. Verify that the
+Bifrost version picker uses the reserved command and that approved target
+versions are available to switch to. OpenBot reviews for Bifrost are still
+required. An emergency disablement applies to both identities of an equivalent
+version. Restoring either identity allows new invocations. Previously paused
+runs retain their pause.
+
 ## Bifrost v2.6.0 limits
 
 Bifrost's management API rejects version numbers below the numeric core of

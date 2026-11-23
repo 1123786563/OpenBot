@@ -20,6 +20,7 @@ import {
   frontendApprovalSnapshot,
   observeApprovalAgent,
 } from "../../app/src/lib/copilot/approval-context";
+import { applySkillMarketReceipt } from "../scripts/skill-migration/receipt";
 import { packageManifest } from "../scripts/skill-migration/source";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { mintRunAssertion } from "../src/agents/callback-token";
@@ -57,6 +58,8 @@ import {
   responsibilityRuns,
   routineRuns,
   routines,
+  skillMarketEquivalences,
+  skillMarketMigrationReceipts,
   skillMarketSources,
   skills,
   users,
@@ -70,6 +73,7 @@ import { createResponsibilityRoutes } from "../src/responsibilities/routes";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createRoutineRoutes } from "../src/routines/routes";
 import { createRoutineStore } from "../src/routines/store";
+import { createBifrostMarket } from "../src/skill-market/bifrost";
 import { encodeImportedSkillDocument } from "../src/skill-market/imported-document";
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
 import { createWorkQueue } from "../src/work/queue";
@@ -113,7 +117,19 @@ const bot = `shared-${suite}`;
 const anotherBot = `another-${suite}`;
 const emptyBot = `empty-${suite}`;
 const spareBot = `spare-${suite}`;
-const fingerprint = `sha256:${"a".repeat(64)}`;
+const legacyFirstBytes = Buffer.from(
+  `---\nname: ${slug}\ndescription: Exact notes\n---\nSummarize in three bullets.`,
+);
+const legacyManifest = packageManifest(
+  new Map([["SKILL.md", legacyFirstBytes]]),
+);
+const { fingerprint } = legacyManifest;
+const legacySecondBytes = Buffer.from(
+  `---\nname: ${slug}\ndescription: Exact notes\n---\nProduce an outline.`,
+);
+const secondManifest = packageManifest(
+  new Map([["SKILL.md", legacySecondBytes]]),
+);
 let secondVersionCompatible = false;
 let state: "published" | "newer" | "offline" | "withdrawn" = "published";
 
@@ -245,7 +261,7 @@ const routes = createSkillMarketRoutes(
         slug,
         version: "2.0.0",
         versionId: 4,
-        fingerprint,
+        fingerprint: secondManifest.fingerprint,
         reviewTaskId: 3,
         reviewerId: "reviewer",
       },
@@ -292,7 +308,7 @@ const routes = createSkillMarketRoutes(
         slug: entry,
         version: version.version,
         versionId: version.id,
-        fingerprint,
+        fingerprint: version === v2 ? secondManifest.fingerprint : fingerprint,
       };
     } else if (pathname.endsWith("/files")) {
       data = [{ filePath: "SKILL.md" }];
@@ -433,6 +449,517 @@ test("a Bot invokes the installed version after a new release, outage and withdr
   expect((await install(emptyBot)).status).toBe(404);
   expect(await slash(emptyBot)).toBeUndefined();
   expect(await slash(bot)).toContain("Summarize in three bullets.");
+});
+
+async function cutoverApprovalFixture() {
+  const model = new LLMock();
+  const previous = process.env.OPENAI_BASE_URL;
+  process.env.OPENAI_BASE_URL = await model.start();
+  model.onMessage(/.*/, {
+    toolCalls: [
+      { name: "reset_workspace", arguments: '{"workspace":"notes"}' },
+    ],
+  });
+  const relay = await serveMcp("reset_workspace");
+  const service = createApprovalService(approvals, undefined, undefined, {
+    marketPause: store.marketRunPauseReason,
+  });
+  const decision = createApprovalRoutes(service, requireUser);
+  const pendingIds: string[] = [];
+  const execute = (botId: string) =>
+    mcpStore.callTool({
+      botId,
+      actorId: member,
+      ref: protectedTool,
+      args: { workspace: "notes" },
+    });
+  return {
+    dispatched: relay.dispatched,
+    async open(botId: string, version: string) {
+      const available = await buildAgents(
+        [
+          {
+            id: botId,
+            name: botId,
+            type: "built_in",
+            systemPrompt: "Notes assistant",
+          },
+        ],
+        { provider: "openai", defaultModel: "gpt-5.5" },
+        "fixture",
+        undefined,
+        async () => [
+          {
+            name: "reset_workspace",
+            ref: protectedTool,
+            description: "Reset a workspace",
+            parameters: z.object({ workspace: z.string() }),
+            execute: async () => (await execute(botId)).text,
+          },
+        ],
+        undefined,
+        undefined,
+        undefined,
+        {
+          loadSkills: (id) => grantedSkills({ store, botId: id }),
+          choose: async () => null,
+          registerMarketRun: (scope, identity, snapshot) =>
+            store.registerMarketRun(
+              { ...scope, actorId: member },
+              identity,
+              undefined,
+              snapshot,
+            ),
+        },
+      );
+      const agent = available[botId].clone();
+      agent.threadId = `cutover-${suite}-${version}`;
+      agent.setMessages([
+        { id: "question", role: "user", content: `/${slug} notes` },
+      ]);
+      await agent.runAgent();
+      const pending = (await approvals.list(member)).find(
+        (row) => row.action.threadId === agent.threadId,
+      );
+      expect(pending?.status).toBe("pending");
+      if (!pending) throw new Error("The Bot did not open an approval");
+      pendingIds.push(pending.id);
+      return pending;
+    },
+    async approve(id: string) {
+      expect(
+        (
+          await decision.request(`/${id}/decision`, {
+            method: "POST",
+            headers: { "x-user": member, "content-type": "application/json" },
+            body: JSON.stringify({ decision: "allow_once" }),
+          })
+        ).status,
+      ).toBe(200);
+    },
+    async resume(id: string, botId: string) {
+      const outcomes: unknown[] = [];
+      await service.resume(member, id, {
+        validate: (action) =>
+          service.validateReentry(action, () => execute(botId)),
+        execute: async () => (await execute(botId)).text,
+        continue: async (outcome) => {
+          outcomes.push(outcome);
+        },
+      });
+      return outcomes;
+    },
+    async close() {
+      if (previous === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previous;
+      if (pendingIds.length)
+        await database
+          .delete(workItems)
+          .where(
+            and(
+              eq(workItems.kind, "approval.resume"),
+              inArray(workItems.key, pendingIds),
+            ),
+          );
+      await Promise.all([relay.stop(), model.stop()]);
+    },
+  };
+}
+
+test("a verified Bifrost successor upgrades a SkillHub installation under its original command", async () => {
+  const reader = postgres(testDatabaseUrl(), { max: 1 });
+  const market = createSkillMarketRoutes(
+    requireUser,
+    { kind: "bifrost", namespace: "bifrost", databaseUrl: testDatabaseUrl() },
+    undefined,
+    store,
+  );
+  const request = (path: string, method: string, body?: unknown) =>
+    market.request(path, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const skillId = randomUUID();
+  const firstId = randomUUID();
+  const secondId = randomUUID();
+  const target = `/bifrost/${slug}/versions`;
+  const first = encodeImportedSkillDocument(legacyFirstBytes, slug);
+  const second = encodeImportedSkillDocument(legacySecondBytes, slug);
+  const exactReader = createBifrostMarket({
+    kind: "bifrost",
+    namespace: "bifrost",
+    databaseUrl: testDatabaseUrl(),
+  });
+  const scope = {
+    snapshotId: suite,
+    source: { source: "http://skillhub:8080", namespace: "catalog" },
+    target: { registryId: suite, namespace: "bifrost" as const },
+  };
+  const original = {
+    ...scope.source,
+    slug,
+    registrySkillId: 2,
+    versionId: 3,
+    version: "1.0.0",
+    fingerprint,
+  };
+  const originalSecond = {
+    ...original,
+    versionId: 4,
+    version: "2.0.0",
+    fingerprint: secondManifest.fingerprint,
+  };
+  const archived = {
+    status: "withdrawn",
+    source: { ...original, versionId: 8, version: "0.9.0" },
+    target: null,
+    package: legacyManifest,
+    provenance: {
+      status: "YANKED",
+      ownerId: owner,
+      createdBy: owner,
+      publishedAt: new Date(0).toISOString(),
+      yankedAt: new Date(1).toISOString(),
+      yankReason: "Superseded",
+      reviews: [],
+      confirmation: null,
+    },
+  };
+  const receipt = {
+    ...scope,
+    schemaVersion: 1,
+    mode: "verify",
+    ready: true,
+    entries: [
+      {
+        status: "verified",
+        source: original,
+        target: {
+          ...scope.target,
+          slug,
+          version: "1.0.0",
+          skillId,
+          versionId: firstId,
+          fingerprint,
+        },
+        package: legacyManifest,
+        provenance: {
+          status: "PUBLISHED",
+          ownerId: owner,
+          createdBy: owner,
+          publishedAt: new Date(0).toISOString(),
+          yankedAt: null,
+          yankReason: null,
+          reviews: [],
+          confirmation: null,
+        },
+      },
+      {
+        status: "verified",
+        source: originalSecond,
+        target: {
+          ...scope.target,
+          slug,
+          version: "2.0.0",
+          skillId,
+          versionId: secondId,
+          fingerprint: originalSecond.fingerprint,
+        },
+        package: secondManifest,
+        provenance: {
+          status: "PUBLISHED",
+          ownerId: owner,
+          createdBy: owner,
+          publishedAt: new Date(0).toISOString(),
+          yankedAt: null,
+          yankReason: null,
+          reviews: [],
+          confirmation: null,
+        },
+      },
+      archived,
+    ],
+  };
+  const approvalsAtCutover = await cutoverApprovalFixture();
+  await reader`create schema openbot_skill_market`;
+  try {
+    await reader`create table openbot_skill_market.catalog (
+      name text, description text, latest_version text, skill_id uuid
+    )`;
+    await reader`create table openbot_skill_market.versions (
+      id uuid primary key, skill_id uuid, name text, version text,
+      skill_md_body text, frontmatter_snapshot jsonb, created_at timestamptz default now()
+    )`;
+    await reader`create table openbot_skill_market.files (
+      skill_version_id uuid, path text, source_type text, file_size_bytes integer, data bytea
+    )`;
+    await reader`insert into openbot_skill_market.catalog values
+      (${slug}, 'Notes', '2.0.0', ${skillId})`;
+    await reader`insert into openbot_skill_market.versions
+      (id, skill_id, name, version, skill_md_body, frontmatter_snapshot)
+      values (${firstId}, ${skillId}, ${slug}, '1.0.0', ${first.body}, ${reader.json(first.snapshot)}),
+             (${secondId}, ${skillId}, ${slug}, '2.0.0',  ${second.body}, ${reader.json(second.snapshot)})`;
+
+    expect((await install(spareBot)).status).toBe(201);
+    expect(await slash(spareBot)).toContain("Summarize in three bullets.");
+    const originalSnapshot = (await store.listForAgent(spareBot)).skills.find(
+      (skill) => skill.slug === slug,
+    );
+    expect(originalSnapshot?.marketVersion?.identity).toEqual(original);
+    expect([200, 201]).toContain((await install(bot)).status);
+    secondVersionCompatible = true;
+    expect((await install(emptyBot, "2.0.0")).status).toBe(201);
+    await store.grant("mcp", protectedTool, emptyBot, "admin@example.test");
+    const enabledApproval = await approvalsAtCutover.open(bot, "1.0.0");
+    const blockedApproval = await approvalsAtCutover.open(emptyBot, "2.0.0");
+    expect(
+      (
+        await changeDisablement(
+          "PUT",
+          "admin",
+          "Legacy emergency stop",
+          originalSecond,
+        )
+      ).status,
+    ).toBe(204);
+    state = "offline";
+    const entry = receipt.entries[0];
+    await expect(
+      applySkillMarketReceipt(database, exactReader, scope, {
+        ...receipt,
+        entries: [
+          { ...entry, target: { ...entry.target, versionId: secondId } },
+        ],
+      }),
+    ).rejects.toThrow("no longer matches");
+    await expect(
+      applySkillMarketReceipt(database, exactReader, scope, {
+        ...receipt,
+        entries: [
+          {
+            ...entry,
+            package: {
+              ...legacyManifest,
+              files: [{ ...legacyManifest.files[0], size: 1 }],
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow("no longer matches");
+    expect(
+      await applySkillMarketReceipt(database, exactReader, scope, receipt),
+    ).toBe("applied");
+    expect(
+      await applySkillMarketReceipt(database, exactReader, scope, receipt),
+    ).toBe("already-applied");
+    const [savedReceipt] = await database
+      .select()
+      .from(skillMarketMigrationReceipts)
+      .where(eq(skillMarketMigrationReceipts.registryId, suite));
+    expect(savedReceipt.evidence).toMatchObject({
+      entries: [receipt.entries[0], receipt.entries[1], archived],
+    });
+
+    expect(
+      (await store.listForAgent(spareBot)).skills.find(
+        (skill) => skill.slug === slug,
+      ),
+    ).toEqual(originalSnapshot);
+    expect(await slash(spareBot)).toContain("Summarize in three bullets.");
+    expect(
+      await (await request(`/bots/${spareBot}/installations`, "GET")).json(),
+    ).toMatchObject({
+      installations: [
+        {
+          command: slug,
+          registry: original.source,
+          namespace: original.namespace,
+          catalogSlug: slug,
+          versionId: 3,
+        },
+      ],
+    });
+
+    expect(
+      (await approvals.get(member, enabledApproval.id))?.action.continuation
+        ?.marketSkill,
+    ).toMatchObject({
+      market: original,
+      instructions: "Summarize in three bullets.",
+    });
+    expect(
+      (await approvals.get(member, blockedApproval.id))?.action.continuation
+        ?.marketSkill,
+    ).toMatchObject({
+      market: originalSecond,
+      instructions: "Produce an outline.",
+    });
+    await approvalsAtCutover.approve(enabledApproval.id);
+    expect(await approvalsAtCutover.resume(enabledApproval.id, bot)).toEqual([
+      expect.objectContaining({ result: { content: "done" } }),
+    ]);
+    expect(approvalsAtCutover.dispatched()).toBe(1);
+
+    expect(
+      (
+        await request(`/bifrost/${slug}/command`, "POST", {
+          command: `other-${slug}`,
+        })
+      ).status,
+    ).toBe(409);
+    await reader`update openbot_skill_market.versions set id = ${randomUUID()} where id = ${firstId}`;
+    const changed = await (await request(`${target}/1.0.0`, "GET")).json();
+    expect(
+      (await request(`${target}/1.0.0/review`, "PUT", changed.packageIdentity))
+        .status,
+    ).toBe(409);
+    await reader`update openbot_skill_market.versions set id = ${firstId} where version = '1.0.0'`;
+
+    const firstPreview = await (await request(`${target}/1.0.0`, "GET")).json();
+    expect(firstPreview.installable).toBe(false);
+    expect(
+      (
+        await request(
+          `${target}/1.0.0/review`,
+          "PUT",
+          firstPreview.packageIdentity,
+        )
+      ).status,
+    ).toBe(204);
+    const reviewed = await (await request(`${target}/1.0.0`, "GET")).json();
+    const equivalent = {
+      source: "bifrost",
+      namespace: "bifrost",
+      slug,
+      version: "1.0.0",
+      registrySkillId: reviewed.registrySkillId,
+      versionId: reviewed.versionId,
+    };
+    expect(
+      (
+        await request("/version-disablements", "PUT", {
+          ...equivalent,
+          reason: "Emergency stop",
+        })
+      ).status,
+    ).toBe(204);
+    expect(
+      (await store.listForAgent(spareBot)).skills.find(
+        (skill) => skill.slug === slug,
+      )?.marketVersion?.disableReason,
+    ).toBe("Emergency stop");
+    expect(
+      (await request(`${target}/1.0.0/install`, "POST", { agentId: emptyBot }))
+        .status,
+    ).toBe(422);
+    expect(
+      (await request("/version-disablements", "DELETE", original)).status,
+    ).toBe(204);
+    expect(await slash(spareBot)).toContain("Summarize in three bullets.");
+
+    const preview = await request(`${target}/2.0.0`, "GET");
+    const { packageIdentity } = await preview.json();
+    expect(
+      (await request(`${target}/2.0.0/review`, "PUT", packageIdentity)).status,
+    ).toBe(204);
+    const successor = await (await request(`${target}/2.0.0`, "GET")).json();
+    expect(successor.disableReason).toBe("Legacy emergency stop");
+    const equivalentSecond = {
+      ...equivalent,
+      version: "2.0.0",
+      registrySkillId: successor.registrySkillId,
+      versionId: successor.versionId,
+    };
+    expect(await slash(emptyBot)).toBeUndefined();
+    await approvalsAtCutover.approve(blockedApproval.id);
+    expect(
+      (await request("/version-disablements", "DELETE", equivalentSecond))
+        .status,
+    ).toBe(204);
+    expect(await slash(emptyBot)).toContain("Produce an outline.");
+    expect(
+      await approvalsAtCutover.resume(blockedApproval.id, emptyBot),
+    ).toEqual([
+      expect.objectContaining({
+        pauseReason: expect.stringContaining("Legacy emergency stop"),
+      }),
+    ]);
+    expect(approvalsAtCutover.dispatched()).toBe(1);
+    expect(
+      (
+        await request(`${target}/2.0.0/switch`, "POST", {
+          agentId: spareBot,
+          expectedVersionId: 3,
+        })
+      ).status,
+    ).toBe(200);
+    expect(await slash(spareBot)).toContain("Produce an outline.");
+    expect(
+      (await store.listForAgent(spareBot)).skills.find(
+        (skill) => skill.slug === slug,
+      )?.marketVersion?.identity,
+    ).toMatchObject(equivalentSecond);
+    expect(
+      (
+        await request(`/bots/${spareBot}/installations/${slug}`, "DELETE", {
+          expectedVersionId: equivalentSecond.versionId,
+          expectedRegistry: original.source,
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await changeDisablement(
+          "PUT",
+          "admin",
+          "Second emergency stop",
+          originalSecond,
+        )
+      ).status,
+    ).toBe(204);
+    expect(await slash(spareBot)).toBeUndefined();
+    expect(
+      (await request("/version-disablements", "DELETE", equivalentSecond))
+        .status,
+    ).toBe(204);
+    expect(await slash(spareBot)).toContain("Produce an outline.");
+  } finally {
+    await approvalsAtCutover.close();
+    await store.uninstallMarketSkill(
+      { id: "admin", role: "admin", email: "admin@example.test" },
+      emptyBot,
+      slug,
+      4,
+    );
+    await store.revoke("mcp", protectedTool, emptyBot, "admin@example.test");
+    await request("/version-disablements", "DELETE", originalSecond);
+    const items = await store.listMarketInstallations(spareBot);
+    for (const item of items) {
+      await store.uninstallMarketSkill(
+        { id: "admin", role: "admin", email: "admin@example.test" },
+        spareBot,
+        item.command,
+        item.versionId,
+      );
+    }
+    await request("/version-disablements", "DELETE", original);
+    await database
+      .delete(skillMarketEquivalences)
+      .where(eq(skillMarketEquivalences.registryId, suite));
+    await database
+      .delete(skillMarketMigrationReceipts)
+      .where(eq(skillMarketMigrationReceipts.registryId, suite));
+    await database
+      .delete(bifrostMarketReviews)
+      .where(inArray(bifrostMarketReviews.versionUuid, [firstId, secondId]));
+    await database
+      .delete(bifrostMarketSkills)
+      .where(eq(bifrostMarketSkills.skillUuid, skillId));
+    await exactReader.close();
+    await reader`drop schema openbot_skill_market cascade`;
+    await reader.end();
+  }
 });
 
 test("Bifrost review qualifies only the exact package the administrator previewed", async () => {

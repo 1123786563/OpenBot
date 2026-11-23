@@ -345,8 +345,10 @@ function MarketPreview({
               {preview.data.installable &&
                 preview.data.command &&
                 (installed ? (
-                  preview.data.source === installed.skill.registry &&
-                  preview.data.command === installed.skill.command ? (
+                  preview.data.command === installed.skill.command &&
+                  (preview.data.source === installed.skill.registry ||
+                    (installed.skill.catalogSlug &&
+                      preview.data.source === "bifrost")) ? (
                     <MarketSwitch
                       key={versionPath}
                       installed={installed}
@@ -503,6 +505,7 @@ type InstalledSkill = {
   namespace: string;
   slug: string;
   registry: string;
+  catalogSlug?: string | null;
   title: string;
   version: string;
   versionId: number;
@@ -591,7 +594,10 @@ function BotMarketInstallations({
     mutationFn: (skill: InstalledSkill) =>
       client(`/api/skill-market${path}/${encodeURIComponent(skill.command)}`, {
         method: "DELETE",
-        body: { expectedVersionId: skill.versionId },
+        body: {
+          expectedVersionId: skill.versionId,
+          expectedRegistry: skill.registry,
+        },
         fallback: "Couldn't uninstall this skill.",
       }),
     onSettled: () => refreshBotSkills(queryClient, agentId),
@@ -666,7 +672,15 @@ function BotMarketInstallations({
           key={selected.command}
           id={id}
           installed={{ agentId, skill: selected }}
-          skill={selected}
+          skill={
+            selected.catalogSlug
+              ? {
+                  ...selected,
+                  namespace: "bifrost",
+                  slug: selected.catalogSlug,
+                }
+              : selected
+          }
           version={version}
           selectVersion={selectVersion}
         />
@@ -689,7 +703,7 @@ function MarketSwitch({
     mutationFn: (expectedVersionId: number) =>
       client(`/api/skill-market${versionPath}/switch`, {
         method: "POST",
-        body: { agentId, expectedVersionId },
+        body: { agentId, expectedVersionId, expectedRegistry: skill.registry },
         fallback: "Couldn't change the installed version.",
       }),
     onSettled: () => refreshBotSkills(queryClient, agentId),
@@ -699,7 +713,7 @@ function MarketSwitch({
       <Button
         size="sm"
         variant="primary"
-        isDisabled={version === skill.version}
+        isDisabled={version === skill.version && !skill.catalogSlug}
         isLoading={changeVersion.isPending}
         onClick={() => changeVersion.mutate(skill.versionId)}
         label={changeVersion.isPending ? "Switching…" : `Switch to ${version}`}

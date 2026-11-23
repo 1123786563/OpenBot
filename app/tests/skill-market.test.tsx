@@ -250,13 +250,16 @@ test("manages a Bot's saved installation even when the catalog is offline", asyn
   await view.findByText("Installed version 1.0.0");
   fireEvent.click(view.getByRole("button", { name: "Uninstall Summarize" }));
   await view.findByText("This Bot has no installed market skills.");
-  expect(removals).toEqual([{ expectedVersionId: 3 }]);
+  expect(removals).toEqual([
+    { expectedVersionId: 3, expectedRegistry: "https://registry.example" },
+  ]);
 });
 
-test("uses the published version picker to upgrade and roll back a single Bot", async () => {
+test("uses the Bifrost picker to upgrade a migrated command and roll back a single Bot", async () => {
   const snapshot = {
     command: "summarize",
     namespace: "catalog",
+    catalogSlug: "summarize",
     slug: "summarize",
     registry: "https://registry.example",
     title: "Summarize",
@@ -264,7 +267,7 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
     versionId: 3,
   };
   const changes: unknown[] = [];
-  const source = "/api/skill-market/catalog/summarize";
+  const source = "/api/skill-market/bifrost/summarize";
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const { pathname } = new URL(String(input), "http://localhost");
@@ -287,7 +290,7 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
           return Response.json({
             ...snapshot,
             version: pathname.endsWith("1.0.0") ? "1.0.0" : "2.0.0",
-            source: snapshot.registry,
+            source: "bifrost",
             installable: true,
             instructions: "Summarize the notes.",
           });
@@ -296,7 +299,9 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
           expect(init?.method).toBe("POST");
           changes.push(JSON.parse(String(init?.body)));
           snapshot.version = pathname.includes("/1.0.0/") ? "1.0.0" : "2.0.0";
-          snapshot.versionId = snapshot.version === "1.0.0" ? 3 : 4;
+          snapshot.versionId = snapshot.version === "1.0.0" ? 103 : 104;
+          snapshot.registry = "bifrost";
+          snapshot.namespace = "bifrost";
           return Response.json({
             command: snapshot.command,
             version: snapshot.version,
@@ -324,8 +329,12 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
   fireEvent.click(await view.findByRole("button", { name: "Switch to 1.0.0" }));
   await view.findByText("Installed version 1.0.0");
   expect(changes).toEqual([
-    { agentId: "managed", expectedVersionId: 3 },
-    { agentId: "managed", expectedVersionId: 4 },
+    {
+      agentId: "managed",
+      expectedVersionId: 3,
+      expectedRegistry: "https://registry.example",
+    },
+    { agentId: "managed", expectedVersionId: 104, expectedRegistry: "bifrost" },
   ]);
 });
 

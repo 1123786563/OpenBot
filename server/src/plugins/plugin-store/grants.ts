@@ -6,11 +6,11 @@ import {
   pluginGrants,
   SKILL_MARKET_RESERVATION,
   skillMarketInstallations,
-  skillMarketSources,
   skillMarketVersionDisablements,
   skills,
   vendorNameOf,
 } from "../../db/schema";
+import { installedMarketDisablement } from "../../skill-market/disablements";
 import { catalogueEntry, classifyTool } from "../catalogue";
 import {
   corsairBrokerInputSchema,
@@ -362,9 +362,9 @@ export function grantMethods(context: StoreContext) {
           summary: skillMarketInstallations.summary,
           instructions: skillMarketInstallations.instructions,
           identity: {
-            source: skillMarketSources.registry,
-            namespace: skillMarketSources.namespace,
-            slug: skillMarketSources.slug,
+            source: skillMarketInstallations.registry,
+            namespace: skillMarketInstallations.namespace,
+            slug: skillMarketInstallations.slug,
             registrySkillId: skillMarketInstallations.registrySkillId,
             versionId: skillMarketInstallations.versionId,
             version: skillMarketInstallations.version,
@@ -373,26 +373,9 @@ export function grantMethods(context: StoreContext) {
           disableReason: skillMarketVersionDisablements.reason,
         })
         .from(skillMarketInstallations)
-        .innerJoin(
-          skillMarketSources,
-          eq(skillMarketSources.command, skillMarketInstallations.command),
-        )
         .leftJoin(
           skillMarketVersionDisablements,
-          and(
-            eq(
-              skillMarketVersionDisablements.source,
-              skillMarketSources.registry,
-            ),
-            eq(
-              skillMarketVersionDisablements.registrySkillId,
-              skillMarketInstallations.registrySkillId,
-            ),
-            eq(
-              skillMarketVersionDisablements.versionId,
-              skillMarketInstallations.versionId,
-            ),
-          ),
+          installedMarketDisablement(database),
         )
         .where(eq(skillMarketInstallations.agentId, agentId));
 
