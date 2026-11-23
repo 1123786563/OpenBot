@@ -386,3 +386,15 @@ test("pagination speaks the interface language without leaving the page", async 
   );
   expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
 });
+
+test("an untitled conversation keeps its fallback name in both languages", async () => {
+  const view = renderSidebar();
+  const row = await view.findByRole("link", { name: /Recent conversation/ });
+  const fallback = within(row).getByText("New conversation");
+  await act(() => setLocalePreference("zh-CN"));
+  expect(within(row).getByText("新对话")).toBe(fallback);
+  // The Bot's name beside it is not OpenBot's words, so it stays as it is.
+  expect(within(row).getByText("Recent conversation")).toBeTruthy();
+  await act(() => setLocalePreference("en"));
+  expect(within(row).getByText("New conversation")).toBe(fallback);
+});

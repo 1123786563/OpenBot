@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
+import { setLocalePreference } from "@/i18n";
 import { ChannelItemContent } from "@/components/app-sidebar/channel-item-content";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { settleReactWork } from "./settle-react-work";
@@ -47,4 +48,13 @@ test("once the Bot is done, the conversation shows its time again", () => {
   const view = row(false);
   expect(view.getByText("2m")).toBeTruthy();
   expect(view.queryByText("Working")).toBeNull();
+});
+
+test("the working note follows the interface language on the same row", async () => {
+  const view = row(true);
+  const working = view.getByText("Working");
+  await act(() => setLocalePreference("zh-CN"));
+  expect(view.getByText("处理中")).toBe(working);
+  await act(() => setLocalePreference("en"));
+  expect(view.getByText("Working")).toBe(working);
 });
