@@ -64,7 +64,10 @@ import type {
   TestCreditLedger,
   VerifiedBillingIdentity,
 } from "./billing/test-credit";
-import { createTestCreditRoutes } from "./billing/test-credit-routes";
+import {
+  createTestCreditRoutes,
+  type TestCreditExecutor,
+} from "./billing/test-credit-routes";
 import {
   createWeKnoraRoutes,
   type WeKnoraRuntime,
@@ -630,6 +633,12 @@ export function createApp(
    */
   billing?: {
     testLedger: TestCreditLedger;
+    runtime?: {
+      authenticate(
+        request: Request,
+      ): Promise<VerifiedBillingIdentity | undefined>;
+      execute: TestCreditExecutor;
+    };
     weknora?: WeKnoraRuntime;
     testCreditConversations?: boolean;
     canStartBackgroundBudget?: (
@@ -975,13 +984,15 @@ export function createApp(
       "/api/billing",
       createTestCreditRoutes({
         ledger: billing.testLedger,
+        execute: billing.runtime?.execute,
         weknoraRouteId: billing.weknora?.routeId,
         paid: {
           ledger: billing.paidLedger,
           creditPackTestChannel: billing.creditPackTestChannel,
         },
         authenticate: async (request, intent) => {
-          if (intent === "execution") return undefined;
+          if (intent === "execution")
+            return billing.runtime?.authenticate(request);
           if (billing.casdoorIdentityOf) {
             const session = await auth?.api.getSession({
               headers: request.headers,

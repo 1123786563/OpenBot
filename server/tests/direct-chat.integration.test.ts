@@ -6,7 +6,7 @@ import {
   EventType,
   type RunAgentInput,
 } from "@ag-ui/client";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
@@ -38,6 +38,8 @@ import { loadDirectChatTestCredit } from "../src/billing/direct-chat-test-credit
 import { createDirectChatCreditRecovery } from "../src/billing/direct-chat-test-credit-recovery";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import type { TestCreditExecutor } from "../src/billing/test-credit-routes";
+import { loadTestCreditRuntimeAuthentication } from "../src/billing/test-credit-runtime-auth";
 import {
   createChannelRoutes,
   createChannelStore,
@@ -60,6 +62,7 @@ import {
   userRoles,
   users,
 } from "../src/db/schema";
+import { createManagedModel, operationId } from "../src/managed-model";
 import { createRequestActor } from "../src/request-actor";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -128,6 +131,12 @@ function web(
   managed?: {
     testCredit: DirectChatTestCreditDependencies;
     auth: ReturnType<typeof createAuth>;
+    runtime?: {
+      authenticate: NonNullable<
+        ReturnType<typeof loadTestCreditRuntimeAuthentication>
+      >;
+      execute: TestCreditExecutor;
+    };
   },
 ) {
   const store = createAgentProfileStore(db, endpoint);
@@ -181,6 +190,7 @@ function web(
     args[10] = channelStore;
     args[createApp.length - 1] = {
       testLedger: managed.testCredit.ledger,
+      runtime: managed.runtime,
       paidLedger: createPaidCreditLedger(db),
       casdoorIdentityOf: createCasdoorBillingIdentity(
         db,
@@ -620,6 +630,8 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
   const providerId = "trial-casdoor";
   const route = "conversation-fixture";
   const batchId = crypto.randomUUID();
+  const runtimeBatch = crypto.randomUUID();
+  const retryBatch = crypto.randomUUID();
   let now = Date.now();
   const ledger = createTestCreditLedger(database, () => new Date(now));
   const aliceIdentity = { issuer, subject: crypto.randomUUID() };
@@ -836,6 +848,27 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     if (!readEvidence) throw new Error("Reader settings missing.");
     if (!settings) throw new Error("Fixture settings missing.");
     const testCredit = { ledger, ...settings };
+    const aliceToken = crypto.randomUUID();
+    const bobToken = crypto.randomUUID();
+    const wrongSubjectToken = crypto.randomUUID();
+    const authenticate = loadTestCreditRuntimeAuthentication(
+      JSON.stringify([
+        {
+          personId: alice.id,
+          subject: aliceIdentity.subject,
+          token: aliceToken,
+        },
+        { personId: bob.id, subject: bobIdentity.subject, token: bobToken },
+        {
+          personId: alice.id,
+          subject: bobIdentity.subject,
+          token: wrongSubjectToken,
+        },
+      ]),
+      createCasdoorBillingIdentity(database, settings.casdoor),
+    );
+    if (!authenticate) throw new Error("Fixture runtime credentials missing.");
+    const runtime = { authenticate, execute: settings.execute };
     const opened = await Promise.all(
       [alice, alice, bob].map(async (actor) => {
         const bot = await profiles.create(actor, {
@@ -853,7 +886,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
             throw new Error("Unexpected legacy dispatch.");
           },
           deployment,
-          { auth, testCredit },
+          { auth, testCredit, runtime },
         );
         const headers = sessionHeaders.get(actor.id);
         if (!headers) throw new Error("Fixture session missing.");
@@ -1528,6 +1561,136 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       "fixture-b/alternate",
     ]);
 
+    // The Conversation session and the Worker bearer both resolve to Alice's
+    // ledger account. Fund one maximum reservation and race the two entry points.
+    await saveCatalog(catalog);
+    await ledger.enroll({
+      identity: aliceIdentity,
+      batchId: runtimeBatch,
+      amount: 1n,
+    });
+    await ledger.claim(aliceIdentity, runtimeBatch);
+    const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+    const runtimePath = "/api/billing/v1/";
+    expect(
+      (
+        await first.app.request(`${runtimePath}quote`, {
+          headers: bearer(wrongSubjectToken),
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await first.app.request("/api/billing/balance", {
+          headers: bearer(aliceToken),
+        })
+      ).status,
+    ).toBe(401);
+    const runtimeQuote = await first.app.request(`${runtimePath}quote`, {
+      headers: bearer(aliceToken),
+    });
+    expect(runtimeQuote.status).toBe(200);
+    expect(await runtimeQuote.json()).toMatchObject(confirmed);
+
+    let dropDispatch = false;
+    const relay = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const response = await first.app.fetch(request);
+        if (
+          dropDispatch &&
+          new URL(request.url).pathname === `${runtimePath}dispatch`
+        ) {
+          dropDispatch = false;
+          await response.body?.cancel();
+          return new Response(null, { status: 502 });
+        }
+        return response;
+      },
+    });
+    try {
+      const worker = createManagedModel({
+        url: new URL("/api/billing/", relay.url),
+        executionHeaders: async () => bearer(aliceToken),
+      });
+      const job = {
+        scope: {
+          source: "learning" as const,
+          personId: alice.id,
+          conversationId: crypto.randomUUID(),
+          runId: crypto.randomUUID(),
+          botId: crypto.randomUUID(),
+        },
+        step: "direct-chat-proposal",
+        ...confirmed,
+        messages: [
+          { role: "user" as const, content: "Worker fixture prompt." },
+        ],
+      };
+      const beforeRace = operationIds.length;
+      const [conversation, workerResult] = await Promise.all([
+        sendForRace(),
+        worker.complete(job),
+      ]);
+      async function sendForRace() {
+        return (await first.run("runtime-balance-race", confirmed)).text();
+      }
+      expect(
+        [
+          conversation.includes("Fixture answer."),
+          workerResult.state === "completed",
+        ].filter(Boolean),
+      ).toHaveLength(1);
+      expect(
+        [
+          conversation.includes("insufficient_credits"),
+          workerResult.state === "insufficient_credits",
+        ].filter(Boolean),
+      ).toHaveLength(1);
+      expect(operationIds).toHaveLength(beforeRace + 1);
+      expect(await ledger.balance(aliceIdentity)).toMatchObject({
+        availableMicrocredits: "1",
+        reservedMicrocredits: "0",
+        chargedMicrocredits: "2",
+      });
+
+      await ledger.enroll({
+        identity: aliceIdentity,
+        batchId: retryBatch,
+        amount: 1n,
+      });
+      await ledger.claim(aliceIdentity, retryBatch);
+      const lost = {
+        ...job,
+        scope: { ...job.scope, runId: crypto.randomUUID() },
+      };
+      dropDispatch = true;
+      expect(await worker.complete(lost)).toEqual({ state: "reconciling" });
+      expect(await worker.reconcile(lost)).toBe("settled");
+      expect(await worker.complete(lost)).toEqual({ state: "settled" });
+      expect(operationIds).toHaveLength(beforeRace + 2);
+      expect(
+        await ledger.receipt(aliceIdentity, operationId(lost)),
+      ).toMatchObject({
+        state: "settled",
+        chargedMicrocredits: "1",
+        resultText: "Fixture answer.",
+      });
+      expect(await ledger.balance(aliceIdentity)).toMatchObject({
+        availableMicrocredits: "1",
+        chargedMicrocredits: "3",
+        reservedMicrocredits: "0",
+      });
+      const response = await first.app.request(`${runtimePath}reconcile`, {
+        ...post({ operationId: operationId(lost) }),
+        headers: { ...post({}).headers, ...bearer(bobToken) },
+      });
+      expect(await response.json()).toEqual({ state: "absent" });
+    } finally {
+      await relay.stop(true);
+    }
+
     await database
       .delete(testCreditEnrollments)
       .where(eq(testCreditEnrollments.batchId, freshBatch));
@@ -1565,7 +1728,9 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     }
     await database
       .delete(testCreditBatches)
-      .where(eq(testCreditBatches.id, batchId));
+      .where(
+        inArray(testCreditBatches.id, [batchId, runtimeBatch, retryBatch]),
+      );
     if (previousCatalog)
       await database
         .update(enterpriseSettings)

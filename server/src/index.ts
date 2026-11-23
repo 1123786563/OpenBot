@@ -106,6 +106,7 @@ import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit"
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
 import { createTestCreditLedger } from "./billing/test-credit";
+import { loadTestCreditRuntimeAuthentication } from "./billing/test-credit-runtime-auth";
 import { loadWeKnoraBilling } from "./billing/weknora-config";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
@@ -699,6 +700,10 @@ if (
 const casdoorBillingIdentity = billingCasdoor
   ? createCasdoorBillingIdentity(database, billingCasdoor)
   : undefined;
+const authenticateTestCreditRuntime = loadTestCreditRuntimeAuthentication(
+  process.env.TEST_CREDIT_RUNTIME_BINDINGS,
+  directChatTestCredit ? casdoorBillingIdentity : undefined,
+);
 const { resolveRequestActor, identifyUser, identifyActor } = createRequestActor(
   {
     singleUser: config.singleUser,
@@ -3955,6 +3960,13 @@ const app = createApp(
   // A person's bill: Test Credit balance, the paid side, and budgets (#107).
   {
     testLedger: testCreditLedger,
+    runtime:
+      authenticateTestCreditRuntime && directChatTestCredit
+        ? {
+            authenticate: authenticateTestCreditRuntime,
+            execute: directChatTestCredit.execute,
+          }
+        : undefined,
     paidLedger: createPaidCreditLedger(database),
     creditPackTestChannel: loadCreditPackTestChannel(process.env),
     casdoorIdentityOf: casdoorBillingIdentity,

@@ -16,6 +16,8 @@ Register Casdoor as an OIDC provider in the OpenBot deployment and provision the
 
 The API also needs `TEST_CREDIT_BIFROST_URL` for Chat Completions and `TEST_CREDIT_INPUT_METER_URL` for the request meter. Configure their scoped credentials in `TEST_CREDIT_BIFROST_TOKEN` and `TEST_CREDIT_INPUT_METER_TOKEN`. Use the publication's `TEST_CREDIT_GATEWAY_REVISION`, `TEST_CREDIT_GATEWAY_IMAGE_DIGEST`, and `TEST_CREDIT_METERING_REVISION`. Match these to the route verification report before enabling the pilot. The executor checks the meter's proof against the exact request bytes and sends `max_completion_tokens` with the published limit.
 
+For an OpenBot runtime that calls Billing over HTTP, set `TEST_CREDIT_RUNTIME_BINDINGS` on the Billing API only. Supply a secret JSON array of `{ "personId": "...", "subject": "...", "token": "..." }` entries. Use the persisted Person ID in Billing's database, that Person's verified Casdoor subject, and a distinct random bearer of at least 32 characters. Keep the API's configured issuer and provider ID matched to the account link. Point the caller at the private TLS endpoint ending in `/api/billing/` and provision the matching Person-to-token map on the caller. The bearer only grants access to the execution routes. Every request rechecks the verified account link before reading or changing the ledger.
+
 ## Auxiliary model calls
 
 The Web Conversation pilot uses the published default chat route for the auxiliary calls below. Verify that its input and output caps fit both the prompts and replies before enabling either feature. The eight-token output cap in the first pilot matrix is unsuitable for these structured replies.
