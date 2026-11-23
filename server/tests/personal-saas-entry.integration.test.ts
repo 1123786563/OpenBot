@@ -754,6 +754,9 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
   const requests: { operationId: string | null; input: unknown }[] = [];
   const meterStarted = Promise.withResolvers<void>();
   const releaseMeter = Promise.withResolvers<void>();
+  const webMeterStarted = Promise.withResolvers<void>();
+  const releaseWebMeter = Promise.withResolvers<void>();
+  let stopFirstWebRun = true;
   const meteredRequests = new Map<string | null, string>();
   const gateway = Bun.serve({
     hostname: "127.0.0.1",
@@ -769,6 +772,14 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         if (input.messages[0]?.content === "Stop while metering") {
           meterStarted.resolve();
           await releaseMeter.promise;
+        }
+        if (
+          stopFirstWebRun &&
+          input.messages[0]?.content === "Run this from the Web workspace"
+        ) {
+          stopFirstWebRun = false;
+          webMeterStarted.resolve();
+          await releaseWebMeter.promise;
         }
         expect(requestId).toBeTruthy();
         meteredRequests.set(requestId, body);
@@ -967,6 +978,26 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       testCredit: { state: "released", dispatchedAt: null },
     });
     expect(requests).toEqual([]);
+    const recoverManaged = (
+      key: string,
+      headers: Record<string, string>,
+      body: {
+        acknowledged?: boolean;
+        quote?: { route: string; priceVersion: string };
+      },
+    ) =>
+      send(`/api/workspace/recovery/${key}`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ action: "retry", ...body }),
+      });
+    const unacknowledged = await recoverManaged(stoppedId, native, {
+      quote: { route, priceVersion },
+    });
+    expect(unacknowledged.status).toBe(409);
+    expect(await unacknowledged.json()).toEqual({
+      error: "external_outcome_acknowledgement_required",
+    });
 
     expect(await Promise.all([app.sweepBotWork(), app.sweepBotWork()])).toEqual(
       [true, true],
@@ -1021,6 +1052,14 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       error: "insufficient_credits",
     });
     expect(requests).toHaveLength(1);
+    const unfundedRetry = await recoverManaged(stoppedId, native, {
+      acknowledged: true,
+      quote: { route, priceVersion },
+    });
+    expect(unfundedRetry.status).toBe(402);
+    expect(await unfundedRetry.json()).toEqual({
+      error: "insufficient_credits",
+    });
     const history = await send("/api/workspace/conversations", {
       headers: native,
     });
@@ -1047,6 +1086,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       "__Host-openbot-personal=",
     );
     await enter(browserCookie);
+    const browserNative = await nativeSessionHeaders("desktop", browserOwner);
     const browserHeaders = { cookie: browserCookie };
     const workspaceMarkup = await (
       await send("/workspace", { headers: browserHeaders })
@@ -1091,8 +1131,106 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     if (!runPath) throw new Error("Missing Web Bot run status page");
     const queued = await send(runPath, { headers: browserHeaders });
     expect(await queued.text()).toContain("Your Bot run is queued.");
+    const originalRunId = runPath.split("/").at(-1);
+    if (!originalRunId) throw new Error("Missing original run ID");
+    const stoppingWebRun = app.sweepBotWork();
+    try {
+      await Promise.race([
+        webMeterStarted.promise,
+        stoppingWebRun.then(() => {
+          throw new Error("Web run did not reach the meter");
+        }),
+      ]);
+      expect(
+        (
+          await send(`/api/workspace/bot-runs/${originalRunId}/stop`, {
+            method: "POST",
+            headers: browserNative,
+          })
+        ).status,
+      ).toBe(202);
+    } finally {
+      releaseWebMeter.resolve();
+      await stoppingWebRun;
+    }
+    const recoveryPath = `/api/workspace/recovery/${originalRunId}`;
+    const republished = publish(published, ["pilot"], "pilot", "fixture");
+    await saveCatalog(republished.catalog);
+    const freshPriceVersion = republished.release.id;
+    const stoppedMarkup = await (
+      await send("/workspace", { headers: browserHeaders })
+    ).text();
+    expect(stoppedMarkup).toContain("Retry with Test Credits");
+    expect(stoppedMarkup).toContain("Maximum reservation for the new run");
+    expect(stoppedMarkup).toContain(freshPriceVersion);
+    expect(
+      (
+        await recoverManaged(originalRunId, native, {
+          quote: { route, priceVersion },
+        })
+      ).status,
+    ).toBe(404);
+    const missingQuote = await recoverManaged(originalRunId, browserNative, {
+      acknowledged: true,
+    });
+    expect(missingQuote.status).toBe(400);
+    const outdated = await recoverManaged(originalRunId, browserNative, {
+      acknowledged: true,
+      quote: { route, priceVersion },
+    });
+    expect(outdated.status).toBe(409);
+    expect(await outdated.json()).toEqual({
+      error: "test_credit_quote_changed",
+    });
+    expect(await app.sweepBotWork()).toBe(false);
+    const retry = () =>
+      send(recoveryPath, {
+        method: "POST",
+        headers: { ...browserHeaders, origin, accept: "text/html" },
+        body: new URLSearchParams({
+          action: "retry",
+          acknowledged: "true",
+          route,
+          priceVersion: freshPriceVersion,
+        }),
+      });
+    const [retried, replayedRetry] = await Promise.all([retry(), retry()]);
+    expect(retried.status).toBe(303);
+    const retryPath = retried.headers.get("location");
+    if (!retryPath) throw new Error("Missing retry status page");
+    const retryRunId = retryPath.split("/").at(-1);
+    if (!retryRunId) throw new Error("Missing retry run ID");
+    expect(retryPath).not.toBe(runPath);
+    expect(replayedRetry.headers.get("location")).toBe(retryPath);
     expect(await app.sweepBotWork()).toBe(true);
-    const completed = await send(runPath, { headers: browserHeaders });
+    expect(await app.sweepBotWork()).toBe(false);
+    expect(requests[1]?.operationId).toBe(retryRunId);
+    expect(
+      await (
+        await send(`/api/workspace/bot-runs/${originalRunId}`, {
+          headers: browserNative,
+        })
+      ).json(),
+    ).toMatchObject({
+      state: "stopped",
+      recovery: { action: "retry", key: retryRunId },
+      testCredit: { state: "released", dispatchedAt: null },
+    });
+    expect(
+      await (
+        await send(`/api/workspace/bot-runs/${retryRunId}`, {
+          headers: browserNative,
+        })
+      ).json(),
+    ).toMatchObject({
+      state: "completed",
+      testCredit: {
+        state: "settled",
+        priceVersion: freshPriceVersion,
+        rerunOfOperationId: null,
+      },
+    });
+    const completed = await send(retryPath, { headers: browserHeaders });
     const receiptMarkup = await completed.text();
     expect(receiptMarkup).toContain("Managed response");
     expect(receiptMarkup).toContain("Test Credit receipt");
@@ -1103,6 +1241,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     expect(browserReplay.headers.get("location")).toBe(runPath);
     const newForm = new URLSearchParams(formData);
     newForm.set("requestId", crypto.randomUUID());
+    newForm.set("priceVersion", freshPriceVersion);
     const browserExhausted = await submitForm(newForm);
     expect(browserExhausted.status).toBe(402);
     expect(await browserExhausted.text()).toContain("Not enough Test Credits");
@@ -1133,6 +1272,14 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       error: "bot_execution_unavailable",
     });
     expect((await submitForm()).status).toBe(503);
+    expect(
+      (
+        await recoverManaged(stoppedId, native, {
+          acknowledged: true,
+          quote: { route, priceVersion },
+        })
+      ).status,
+    ).toBe(503);
   } finally {
     app = prior;
     gateway.stop(true);
@@ -1142,7 +1289,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         .delete(enterpriseSettings)
         .where(eq(enterpriseSettings.key, pilotCatalogKey));
   }
-}, 30_000);
+}, 180_000);
 
 test("Web, Desktop, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {

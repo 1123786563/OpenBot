@@ -287,6 +287,7 @@ test("restored access shows stopped background work, outcomes and per-item recov
         request={async () => status}
         recover={async (key, action, acknowledged) => {
           confirmedActions.push([key, action, acknowledged]);
+          return null;
         }}
         workspaceAction={async (action) => {
           actions.push(action);
@@ -391,7 +392,33 @@ test("an authorized owner can submit a managed text run and read its settled cha
             },
           },
           conversations: [],
+          recovery:
+            attempts === 3
+              ? [
+                  {
+                    key: "old-run",
+                    instruction: "Retry this instruction",
+                    reasonMessage: "The workspace was paused.",
+                    outcomeUnknown: true,
+                    output: "Partial answer",
+                    managed: true,
+                    recovery: null,
+                  },
+                ]
+              : [],
         })}
+        recover={async (key, action, acknowledged, quote) => {
+          expect([key, action, acknowledged]).toEqual([
+            "old-run",
+            "retry",
+            true,
+          ]);
+          expect(quote).toEqual({
+            route: "pilot",
+            priceVersion: updatedVersion,
+          });
+          return { action: "retry", key: "retry-1" };
+        }}
         botRuns={{
           start: async ({
             workspaceId,
@@ -431,10 +458,11 @@ test("an authorized owner can submit a managed text run and read its settled cha
             return { runId: "run-1" };
           },
           status: async (runId) => {
-            expect(runId).toBe("run-1");
+            expect(["run-1", "retry-1"]).toContain(runId);
             return {
               state: "completed",
-              output: "Managed answer",
+              output:
+                runId === "run-1" ? "Managed answer" : "Fresh managed answer",
               testCredit: {
                 model: "Pilot model",
                 state: "settled",
@@ -480,6 +508,15 @@ test("an authorized owner can submit a managed text run and read its settled cha
     window.dispatchEvent(new Event("focus"));
   });
   await screen.findByText("Managed answer");
+  await user.click(
+    await screen.findByRole("checkbox", {
+      name: "I checked the external actions.",
+    }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Retry with Test Credits" }),
+  );
+  await screen.findByText("Fresh managed answer");
 });
 
 test("focus while offline cannot reopen protected content", async () => {

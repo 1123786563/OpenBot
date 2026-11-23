@@ -32,6 +32,10 @@ export const botWorkInput = assistantTarget.extend({
 });
 export const queuedBotWorkInput = botWorkInput.extend({
   testCredit: botRunCreditQuote.optional(),
+  rerunOfOperationId: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]{1,128}$/)
+    .optional(),
 });
 
 const workspaceFileTools = [
@@ -48,6 +52,7 @@ const workspaceFilePolicy: ActionPolicy = {
 export const recoveryInput = z.strictObject({
   action: z.enum(["cancel", "retry"]),
   acknowledged: z.boolean().default(false),
+  quote: botRunCreditQuote.optional(),
 });
 
 export function personalBotWork(
@@ -64,12 +69,13 @@ export function personalBotWork(
       await queue.reconcilePersonalWork(PERSONAL_BOT_WORK, accountId);
       return (await queue.interrupted(PERSONAL_BOT_WORK, accountId)).flatMap(
         (row) => {
-          const request = botWorkInput.safeParse(row.payload);
+          const request = queuedBotWorkInput.safeParse(row.payload);
           if (!row.interruption || !request.success) return [];
           return [
             {
               key: row.key,
               instruction: request.data.instruction,
+              managed: Boolean(request.data.testCredit),
               output: row.output,
               ...row.interruption,
               recovery: row.recovery,
@@ -204,6 +210,7 @@ export function personalBotWork(
             operationId: item.key,
             instruction: work.instruction,
             quote: work.testCredit,
+            rerunOfOperationId: work.rerunOfOperationId,
             checkExecution,
             signal: controller.signal,
           }).finally(() => {
