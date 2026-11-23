@@ -20,6 +20,7 @@ import type {
   AutomationResource,
   ClosedWorkspace,
   PausedWorkspace,
+  TestCreditQuoteRef,
   WorkspaceAction,
 } from "./personal-saas-contract";
 
@@ -210,8 +211,26 @@ export function PersonalSaasHome() {
     key: string,
     action: "cancel" | "retry",
     acknowledged = false,
+    quote?: TestCreditQuoteRef,
   ) {
-    updateWorkspace(() => recoverPersonalWork(key, action, acknowledged));
+    const current = generation.current;
+    const workspaceId = workspace?.id;
+    updateWorkspace(async () => {
+      const recovery = await recoverPersonalWork(
+        key,
+        action,
+        acknowledged,
+        quote,
+      );
+      if (
+        quote &&
+        workspaceId &&
+        current === generation.current &&
+        recovery.action === "retry" &&
+        recovery.key
+      )
+        lastRun.current = { workspaceId, id: recovery.key };
+    });
   }
 
   function showHistory(resource: AutomationResource, id: string) {
@@ -245,16 +264,27 @@ export function PersonalSaasHome() {
       : null;
   const stoppedWork = workspace
     ? [
-        ...workspace.recovery.map(({ instruction, ...item }) => ({
-          ...item,
-          label: instruction,
-          summary: undefined,
-          canRetry: workspace.recoveryCanRetry,
-          retryText: item.outcomeUnknown ? "Retry as a new run" : "Requeue",
-          retryResult: "Queued as a new run",
-        })),
+        ...workspace.recovery.map(({ instruction, managed, ...item }) => {
+          const quote = managed ? workspace.testCredits?.quote : undefined;
+          return {
+            ...item,
+            quote,
+            label: instruction,
+            summary: undefined,
+            canRetry: managed ? Boolean(quote) : workspace.recoveryCanRetry,
+            retryText: quote
+              ? item.outcomeUnknown
+                ? "Retry with Test Credits"
+                : "Requeue with Test Credits"
+              : item.outcomeUnknown
+                ? "Retry as a new run"
+                : "Requeue",
+            retryResult: "Queued as a new run",
+          };
+        }),
         ...workspace.interruptedBackgroundWork.map((item) => ({
           ...item,
+          quote: undefined,
           canRetry: item.recoveryCanRetry,
           retryText: "Start fresh work",
           retryResult: "Started as fresh work",
@@ -525,13 +555,28 @@ export function PersonalSaasHome() {
                 </Text>
               ) : (
                 <>
+                  {item.quote && (
+                    <Text>
+                      {item.quote.model} costs{" "}
+                      {item.quote.price.inputPerMillion} microcredits per
+                      million input tokens and{" "}
+                      {item.quote.price.outputPerMillion} microcredits per
+                      million output tokens. Maximum reservation for the new
+                      run: {item.quote.maxChargeMicrocredits} microcredits.{" "}
+                      {item.quote.usageDisclosure}
+                    </Text>
+                  )}
                   {item.canRetry && (
                     <Button
                       title={item.retryText}
                       disabled={busy}
                       onPress={() => {
+                        const quote = item.quote && {
+                          route: item.quote.route,
+                          priceVersion: item.quote.priceVersion,
+                        };
                         if (!item.outcomeUnknown)
-                          return resolve(item.key, "retry");
+                          return resolve(item.key, "retry", false, quote);
                         Alert.alert(
                           "Check external actions",
                           "Confirm you checked the external actions before retrying.",
@@ -539,7 +584,8 @@ export function PersonalSaasHome() {
                             { text: "Back", style: "cancel" },
                             {
                               text: "I checked",
-                              onPress: () => resolve(item.key, "retry", true),
+                              onPress: () =>
+                                resolve(item.key, "retry", true, quote),
                             },
                           ],
                         );

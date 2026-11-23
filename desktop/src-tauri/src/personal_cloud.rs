@@ -391,6 +391,8 @@ pub enum WorkspaceAction {
 #[serde(rename_all = "camelCase")]
 pub struct StoppedWork {
     instruction: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    managed: bool,
     #[serde(flatten)]
     interruption: WorkInterruption,
 }
@@ -409,6 +411,8 @@ struct WorkInterruption {
 #[derive(Deserialize, Serialize)]
 pub struct WorkRecovery {
     action: RecoveryAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -864,13 +868,22 @@ pub async fn personal_cloud_action<R: Runtime>(
     .map_err(str::to_owned)
 }
 
+#[derive(Serialize)]
+struct RecoveryRequest<'a> {
+    action: RecoveryAction,
+    acknowledged: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quote: Option<&'a TestCreditQuoteRef>,
+}
+
 #[tauri::command]
 pub async fn personal_cloud_recover<R: Runtime>(
     window: WebviewWindow<R>,
     key: String,
     action: RecoveryAction,
     acknowledged: bool,
-) -> Result<(), String> {
+    quote: Option<TestCreditQuoteRef>,
+) -> Result<WorkRecovery, String> {
     require_cloud_window(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -888,16 +901,28 @@ pub async fn personal_cloud_recover<R: Runtime>(
             .http
             .post(url)
             .bearer_auth(token)
-            .json(&serde_json::json!({ "action": action, "acknowledged": acknowledged }))
+            .json(&RecoveryRequest {
+                action,
+                acknowledged,
+                quote: quote.as_ref(),
+            })
             .send()
             .map_err(|_| NETWORK_ERROR)?;
+        if quote.is_some() && reply.status() == StatusCode::CONFLICT {
+            return Err(
+                "Refresh your workspace and review the current Test Credit price before retrying.",
+            );
+        }
+        if reply.status() == StatusCode::PAYMENT_REQUIRED {
+            return Err("Not enough Test Credits to reserve this Bot run.");
+        }
         if reply.status() == StatusCode::TOO_MANY_REQUESTS {
             return Err("Your workspace has reached its Bot run limit.");
         }
         if !reply.status().is_success() {
             return Err(NETWORK_ERROR);
         }
-        Ok(())
+        reply.json().map_err(|_| NETWORK_ERROR)
     })
     .await
     .map_err(|_| NETWORK_ERROR)?
@@ -966,7 +991,7 @@ pub async fn personal_cloud_workspace<R: Runtime>(
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TestCreditQuoteRef {
+pub struct TestCreditQuoteRef {
     route: String,
     price_version: String,
 }

@@ -14,7 +14,9 @@ import {
   personalConversationHistory,
   personalSaasCallbackUrl,
   personalWorkspace,
+  type TestCreditQuoteRef,
   type WorkspaceAction,
+  workRecovery,
   workspaceAccessMs,
 } from "./personal-saas-contract";
 
@@ -197,6 +199,7 @@ export async function recoverPersonalWork(
   key: string,
   action: "cancel" | "retry",
   acknowledged = false,
+  quote?: TestCreditQuoteRef,
 ) {
   const token = await SecureStore.getItemAsync(sessionKey, keyOptions);
   if (!token)
@@ -209,17 +212,26 @@ export async function recoverPersonalWork(
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ action, acknowledged }),
+      body: JSON.stringify({ action, acknowledged, quote }),
     },
   );
   if (reply.status === 429)
     throw new PersonalSaasActionError(
       "Your workspace has reached its Bot run limit.",
     );
+  if (reply.status === 402)
+    throw new PersonalSaasActionError(
+      "Not enough Test Credits to reserve this Bot run.",
+    );
+  if (reply.status === 409 && quote)
+    throw new PersonalSaasActionError(
+      "Refresh your workspace and review the current Test Credit price before retrying.",
+    );
   if (!reply.ok)
     throw new PersonalSaasActionError(
       "Could not update stopped work. Try again.",
     );
+  return workRecovery.parse(await reply.json());
 }
 
 async function workspaceRequest(

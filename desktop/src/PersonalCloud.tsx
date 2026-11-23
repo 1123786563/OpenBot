@@ -15,7 +15,7 @@ type WorkInterruption = {
   outcomeUnknown: boolean;
   output: string | null;
   recordedAt?: number | null;
-  recovery: { action: "retry" | "cancel" } | null;
+  recovery: { action: "retry" | "cancel"; key?: string } | null;
 };
 
 type AutomationResource = "routines" | "bindings";
@@ -74,7 +74,10 @@ export type CloudView =
           | null;
       } | null;
       recoveryCanRetry?: boolean;
-      recovery?: (WorkInterruption & { instruction: string })[];
+      recovery?: (WorkInterruption & {
+        instruction: string;
+        managed?: boolean;
+      })[];
       interruptedBackgroundWork?: (WorkInterruption & {
         label: string;
         summary: string | null;
@@ -121,7 +124,14 @@ const recoverWork = (
   key: string,
   action: "cancel" | "retry",
   acknowledged: boolean,
-) => invoke<void>("personal_cloud_recover", { key, action, acknowledged });
+  quote?: TestCreditQuoteRef,
+) =>
+  invoke<WorkInterruption["recovery"]>("personal_cloud_recover", {
+    key,
+    action,
+    acknowledged,
+    quote,
+  });
 const workspaceRequest = (action: WorkspaceAction) =>
   invoke<{ runs: AutomationRun[] } | null>("personal_cloud_workspace", {
     action,
@@ -146,7 +156,9 @@ export function PersonalCloud({
 }: {
   request?: (action: CloudAction) => Promise<CloudView>;
   showLocal?: () => Promise<void>;
-  recover?: typeof recoverWork;
+  recover?: (
+    ...args: Parameters<typeof recoverWork>
+  ) => Promise<WorkInterruption["recovery"] | void>;
   workspaceAction?: typeof workspaceRequest;
   botRuns?: typeof cloudBotRuns;
 }) {
@@ -338,7 +350,10 @@ export function PersonalCloud({
       if (current === generation.current) {
         if (
           error === "Your workspace has reached its Bot run limit." ||
-          error === "Your workspace has reached its resource limit."
+          error === "Your workspace has reached its resource limit." ||
+          error === "Not enough Test Credits to reserve this Bot run." ||
+          error ===
+            "Refresh your workspace and review the current Test Credit price before retrying."
         )
           setFailure(error);
         else withdraw(message);
@@ -378,11 +393,21 @@ export function PersonalCloud({
     key: string,
     action: "cancel" | "retry",
     acknowledged: boolean,
+    quote?: TestCreditQuoteRef,
   ) {
-    void manageWorkspace(
-      () => recover(key, action, acknowledged),
-      "Could not update stopped work. Try again.",
-    );
+    const workspaceId = workspace?.id;
+    void manageWorkspace(async () => {
+      const current = generation.current;
+      const recovery = await recover(key, action, acknowledged, quote);
+      if (
+        quote &&
+        workspaceId &&
+        current === generation.current &&
+        recovery?.action === "retry" &&
+        recovery.key
+      )
+        lastRun.current = { workspaceId, id: recovery.key };
+    }, "Could not update stopped work. Try again.");
   }
 
   const workspace = view?.kind === "workspace" ? view : null;
@@ -391,16 +416,29 @@ export function PersonalCloud({
       ? lastRun.current.id
       : null;
   const stoppedWork = [
-    ...(workspace?.recovery ?? []).map(({ instruction, ...item }) => ({
-      ...item,
-      label: instruction,
-      summary: null,
-      canRetry: workspace?.recoveryCanRetry,
-      retryText: item.outcomeUnknown ? "Retry as a new run" : "Requeue",
-      retryResult: "Queued as a new run",
-    })),
+    ...(workspace?.recovery ?? []).map(({ instruction, managed, ...item }) => {
+      const quote = managed
+        ? (workspace?.testCredits?.quote ?? undefined)
+        : undefined;
+      return {
+        ...item,
+        quote,
+        label: instruction,
+        summary: null,
+        canRetry: managed ? Boolean(quote) : workspace?.recoveryCanRetry,
+        retryText: quote
+          ? item.outcomeUnknown
+            ? "Retry with Test Credits"
+            : "Requeue with Test Credits"
+          : item.outcomeUnknown
+            ? "Retry as a new run"
+            : "Requeue",
+        retryResult: "Queued as a new run",
+      };
+    }),
     ...(workspace?.interruptedBackgroundWork ?? []).map((item) => ({
       ...item,
+      quote: undefined,
       canRetry: item.recoveryCanRetry,
       retryText: "Start fresh work",
       retryResult: "Started as fresh work",
@@ -649,10 +687,26 @@ export function PersonalCloud({
                               const checked = new FormData(
                                 event.currentTarget,
                               ).has("acknowledged");
+                              const quote = item.quote && {
+                                route: item.quote.route,
+                                priceVersion: item.quote.priceVersion,
+                              };
                               if (item.canRetry)
-                                resolve(item.key, "retry", checked);
+                                resolve(item.key, "retry", checked, quote);
                             }}
                           >
+                            {item.quote && (
+                              <p>
+                                {item.quote.model} costs{" "}
+                                {item.quote.price.inputPerMillion} microcredits
+                                per million input tokens and{" "}
+                                {item.quote.price.outputPerMillion} microcredits
+                                per million output tokens. Maximum reservation
+                                for the new run:{" "}
+                                {item.quote.maxChargeMicrocredits} microcredits.{" "}
+                                {item.quote.usageDisclosure}
+                              </p>
+                            )}
                             {item.canRetry && (
                               <>
                                 {item.outcomeUnknown && (

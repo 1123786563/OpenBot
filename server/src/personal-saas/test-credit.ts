@@ -21,6 +21,7 @@ export function personalTestCreditExecution(
   return async ({
     accountId,
     operationId,
+    rerunOfOperationId,
     instruction,
     quote,
     checkExecution,
@@ -28,6 +29,7 @@ export function personalTestCreditExecution(
   }: {
     accountId: string;
     operationId: string;
+    rerunOfOperationId?: string;
     instruction: string;
     quote: z.infer<typeof botRunCreditQuote>;
     checkExecution(): Promise<void>;
@@ -43,8 +45,13 @@ export function personalTestCreditExecution(
     if (!identity) return;
 
     await checkExecution();
+    const priorOperation = rerunOfOperationId
+      ? await ledger.receipt(identity, rerunOfOperationId)
+      : undefined;
+    if (rerunOfOperationId) await checkExecution();
     const reservation = await ledger.reserve(identity, {
       operationId,
+      ...(priorOperation ? { rerunOfOperationId } : {}),
       ...quote,
     });
     if (reservation.state === "denied" || !reservation.permit) return;

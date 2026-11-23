@@ -191,8 +191,19 @@ reservation if another run has already reserved the available credit. Existing
 history and workspace resource management remain available.
 
 With managed Test Credit execution enabled, the deployment's headless Bot runner
-is disabled. Managed Computer runs, unattended model execution and manual
-execution retries of stopped billed work require a separate billing integration.
+is disabled. Managed Computer runs and unattended model execution require a
+separate billing integration.
+
+In Stopped work, review the current quote before requeuing or retrying a managed
+text run. The new run has its own reservation and receipt. If the old run had
+a ledger operation, the new receipt links to it. Confirm that you checked any
+external actions whose outcome is unknown. A stopped run keeps its original
+input, output and receipt.
+
+API clients send `action: "retry"` and the displayed `quote` with its `route`
+and `priceVersion` to `POST /api/workspace/recovery/{key}`. Include
+`acknowledged: true` after checking unknown outcomes. Repeated recovery
+requests return the original recovery decision and its new run ID.
 
 ### WeKnora text ingestion with Test Credits
 
