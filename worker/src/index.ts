@@ -17,6 +17,10 @@
  * tries again on the next tick. So every phase below gets its own try/catch, and nothing here ever
  * lets a phase's error reach the top and take the process down.
  */
+import {
+  loadBifrostEvidenceReader,
+  recoverBifrostEvidence,
+} from "../../server/src/billing/bifrost-evidence";
 import { directChatCasdoorProvider } from "../../server/src/billing/direct-chat-test-credit-config";
 import { createDirectChatCreditRecovery } from "../../server/src/billing/direct-chat-test-credit-recovery";
 import { createTestCreditLedger } from "../../server/src/billing/test-credit";
@@ -61,13 +65,11 @@ const { workerSharedSecret, serverInternalUrl, databaseUrl, owner } =
 
 const database = createDatabase(databaseUrl);
 const casdoor = directChatCasdoorProvider(process.env);
+const testCreditLedger = createTestCreditLedger(database);
+const readBifrostEvidence = casdoor && loadBifrostEvidenceReader(process.env);
 const recoverBilledConversations =
   casdoor &&
-  createDirectChatCreditRecovery(
-    database,
-    createTestCreditLedger(database),
-    casdoor,
-  );
+  createDirectChatCreditRecovery(database, testCreditLedger, casdoor);
 const queue = createWorkQueue(database);
 const routineStore = createRoutineStore(database);
 writeRuntimeLog("worker_started");
@@ -149,6 +151,14 @@ async function runOneTick(): Promise<void> {
     writeRuntimeLog("routine_sweep_failed", {
       duration_ms: performance.now() - startedAt,
     });
+  }
+
+  if (readBifrostEvidence) {
+    try {
+      await recoverBifrostEvidence(testCreditLedger, readBifrostEvidence);
+    } catch {
+      writeRuntimeLog("bifrost_evidence_recovery_failed");
+    }
   }
 
   if (recoverBilledConversations) {

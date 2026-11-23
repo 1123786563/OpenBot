@@ -518,6 +518,10 @@ export type TestCreditExecutor = (input: {
   route: ReleasedBifrostRoute;
   messages: z.infer<typeof messages>;
   recheckRoute(): Promise<boolean>;
+  bindGatewayRequest(request: {
+    requestId: string;
+    digest: string;
+  }): Promise<boolean>;
 }) => Promise<unknown>;
 
 export async function dispatchTestCredit({
@@ -545,15 +549,15 @@ export async function dispatchTestCredit({
         operationId: input.operationId,
         route: admission.route,
         recheckRoute: () => ledger.routeStillEligible(admission.route),
+        bindGatewayRequest: (request) =>
+          ledger.bindGatewayRequest(
+            admission.accountId,
+            input.operationId,
+            request,
+          ),
         messages: input.messages,
       }),
     );
-    if ("text" in completed)
-      await ledger.recordResult(
-        admission.accountId,
-        input.operationId,
-        completed.text,
-      );
     const recorded = await ledger.recordEvidence(
       admission.accountId,
       input.operationId,
@@ -562,6 +566,7 @@ export async function dispatchTestCredit({
         outcome: completed.outcome ?? "completed",
         inputTokens: BigInt(completed.usage.inputTokens),
         outputTokens: BigInt(completed.usage.outputTokens),
+        resultText: "text" in completed ? completed.text : undefined,
       },
     );
     const receipt =

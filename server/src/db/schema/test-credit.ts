@@ -234,6 +234,11 @@ export const testCreditOperations = pgTable(
     // against (#111). Null for a first-party step.
     authorizationId: text("authorization_id"),
     resultText: text("result_text"),
+    gatewayRequestId: uuid("gateway_request_id").unique(),
+    gatewayRequestDigest: text("gateway_request_digest"),
+    gatewayEvidenceCheckAt: timestamp("gateway_evidence_check_at", {
+      withTimezone: true,
+    }),
   },
   (table) => [
     primaryKey({ columns: [table.accountId, table.id] }),
@@ -245,6 +250,9 @@ export const testCreditOperations = pgTable(
     index("test_credit_operations_due_cutoff_idx")
       .on(table.dispatchedAt, table.accountId, table.id)
       .where(sql`${table.state} = 'pending' AND ${table.cutoffHold} IS NULL`),
+    index("test_credit_operations_gateway_evidence_idx")
+      .on(table.gatewayEvidenceCheckAt)
+      .where(sql`${table.gatewayEvidenceCheckAt} IS NOT NULL`),
     foreignKey({
       name: "test_credit_budget_fk",
       columns: [table.accountId, table.budgetId],

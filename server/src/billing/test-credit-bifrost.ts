@@ -11,6 +11,21 @@ type Route = Pick<
   | "maxInputTokens"
   | "maxOutputTokens"
 >;
+export function bifrostRouteProof(route: ReleasedBifrostRoute) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        route.revision,
+        route.provider,
+        route.model,
+        route.gatewayRevision,
+        route.meteringRevision,
+        route.verification.report.gatewayImageDigest,
+      ]),
+    )
+    .digest("hex");
+}
+
 type Messages = readonly {
   role: "system" | "user" | "assistant";
   content: string;
@@ -77,11 +92,18 @@ export function createBifrostCreditExecutor({
     messages,
     operationId,
     recheckRoute,
+    bindGatewayRequest,
+    routeProof,
   }: {
     route: Route;
     messages: Messages;
     operationId?: string;
     recheckRoute?: () => Promise<boolean>;
+    bindGatewayRequest?: (request: {
+      requestId: string;
+      digest: string;
+    }) => Promise<boolean>;
+    routeProof?: string;
   }) => {
     if (
       route.gatewayRevision !== gatewayRevision ||
@@ -126,6 +148,13 @@ export function createBifrostCreditExecutor({
       headers.set("x-openbot-operation-id", operationId);
       headers.set("x-bf-lh-openbot-operation-id", operationId);
     }
+    if (routeProof) headers.set("x-bf-lh-openbot-route-proof", routeProof);
+    if (
+      bindGatewayRequest &&
+      !(await bindGatewayRequest({ requestId, digest }))
+    )
+      throw new Error("Test Credit gateway dispatch binding unavailable.");
+
     const response = await fetch(url, {
       method: "POST",
       redirect: "error",

@@ -26,6 +26,11 @@ import {
   createRoleRepository,
 } from "../src/auth/guards";
 import {
+  createBifrostLogProxy,
+  loadBifrostEvidenceReader,
+  recoverBifrostEvidence,
+} from "../src/billing/bifrost-evidence";
+import {
   createCasdoorBillingIdentity,
   type DirectChatTestCreditDependencies,
 } from "../src/billing/direct-chat-test-credit";
@@ -672,6 +677,11 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
   >();
   let gatewayOutcome: "answer" | "unknown" | "partial" = "answer";
   let invalidProof = false;
+  let lostRequest:
+    | { id: string; metadata: Record<string, string | null> }
+    | undefined;
+  let storedLog: object | undefined;
+  let evidenceReads = 0;
   const meter = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -705,9 +715,34 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
+      if (request.method === "GET") {
+        expect(request.headers.get("authorization")).toBeNull();
+        if (new URL(request.url).pathname !== `/api/logs/${lostRequest?.id}`)
+          return new Response(null, { status: 404 });
+        evidenceReads++;
+        return storedLog
+          ? Response.json(storedLog)
+          : new Response(null, { status: 404 });
+      }
       const operationId = request.headers.get("x-openbot-operation-id");
       if (!operationId) return new Response(null, { status: 400 });
       const body = await request.text();
+      if (gatewayOutcome === "unknown") {
+        const id = request.headers.get("x-request-id");
+        if (!id) throw new Error("Missing gateway request ID.");
+        lostRequest = {
+          id,
+          metadata: {
+            "openbot-operation-id": operationId,
+            "openbot-request-sha256": request.headers.get(
+              "x-bf-lh-openbot-request-sha256",
+            ),
+            "openbot-route-proof": request.headers.get(
+              "x-bf-lh-openbot-route-proof",
+            ),
+          },
+        };
+      }
       expect(request.headers.get("authorization")).toBe(
         "Bearer fixture-gateway",
       );
@@ -742,6 +777,14 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       });
     },
   });
+  const proxy = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: createBifrostLogProxy({
+      BIFROST_LOG_PROXY_UPSTREAM_ORIGIN: gateway.url.origin,
+      TEST_CREDIT_BIFROST_LOG_TOKEN: "fixture-reader",
+    }),
+  });
   const bots: string[] = [];
   const conversations: string[] = [];
   const [previousCatalog] = await database
@@ -774,18 +817,23 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     ]);
     for (const identity of [aliceIdentity, bobIdentity])
       await ledger.enroll({ identity, batchId, amount: 2n });
-    const settings = loadDirectChatTestCredit({
+    const environment = {
       OPENBOT_TEST_CREDIT_CONVERSATIONS: "enabled",
       TEST_CREDIT_CASDOOR_ISSUER: issuer,
       TEST_CREDIT_CASDOOR_PROVIDER_ID: providerId,
       TEST_CREDIT_BIFROST_URL: gateway.url.href,
+      TEST_CREDIT_BIFROST_LOG_ORIGIN: proxy.url.origin,
+      TEST_CREDIT_BIFROST_LOG_TOKEN: "fixture-reader",
       TEST_CREDIT_BIFROST_TOKEN: "fixture-gateway",
       TEST_CREDIT_GATEWAY_REVISION: "fixture-gateway",
       TEST_CREDIT_GATEWAY_IMAGE_DIGEST: `sha256:${"d".repeat(64)}`,
       TEST_CREDIT_INPUT_METER_URL: meter.url.href,
       TEST_CREDIT_INPUT_METER_TOKEN: "fixture-meter",
       TEST_CREDIT_METERING_REVISION: "fixture-meter",
-    });
+    };
+    const settings = loadDirectChatTestCredit(environment);
+    const readEvidence = loadBifrostEvidenceReader(environment);
+    if (!readEvidence) throw new Error("Reader settings missing.");
     if (!settings) throw new Error("Fixture settings missing.");
     const testCredit = { ledger, ...settings };
     const opened = await Promise.all(
@@ -1057,15 +1105,40 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
 
     const bobAccount = await ledger.accountOf(bobIdentity);
     if (!bobAccount) throw new Error("Fixture Billing Account missing.");
-    // A durable gateway observation arrives, then a replacement Worker resumes the same operation.
-    await ledger.recordResult(bobAccount, unknown, "Recovered fixture result.");
-    await ledger.recordEvidence(bobAccount, unknown, {
-      evidenceId: "fixture-recovered",
-      outcome: "completed",
-      inputTokens: 100n,
-      outputTokens: 100n,
+    if (!lostRequest) throw new Error("Missing lost gateway request.");
+    storedLog = {
+      id: lostRequest.id,
+      metadata: lostRequest.metadata,
+      object: "chat_completion",
+      provider: "fixture",
+      model: "text",
+      status: "success",
+      stop_reason: "stop",
+      stream: false,
+      parent_request_id: null,
+      number_of_retries: 0,
+      fallback_index: 0,
+      token_usage: { prompt_tokens: 3, completion_tokens: 3, total_tokens: 6 },
+      output_message: {
+        role: "assistant",
+        content: "Recovered fixture result.",
+      },
+    };
+    const goodLog = storedLog;
+    now += 90_000;
+    storedLog = { ...storedLog, model: "other-model" };
+    await recoverBifrostEvidence(ledger, readEvidence);
+    expect(await ledger.receipt(bobIdentity, unknown)).toMatchObject({
+      state: "pending",
     });
-    await Promise.all([recover(), recover()]);
+    now += 300_000;
+    storedLog = goodLog;
+    await Promise.all([
+      recoverBifrostEvidence(ledger, readEvidence),
+      recoverBifrostEvidence(ledger, readEvidence),
+    ]);
+    await recover();
+    expect(evidenceReads).toBe(2);
     expect(operationIds).toHaveLength(2);
     expect(await (await other.history()).text()).toContain(
       "Recovered fixture result.",
@@ -1420,6 +1493,41 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       "fixture-b/alternate",
     ]);
 
+    const late = await other.run("late-gateway-log", confirmed);
+    expect(await late.text()).toContain('"state":"pending"');
+    const lateOperation = operationIds.at(-1);
+    if (!lateOperation || !lostRequest)
+      throw new Error("Missing late gateway request.");
+    const lateLog = {
+      ...goodLog,
+      id: lostRequest.id,
+      metadata: lostRequest.metadata,
+    };
+    await expect(
+      Promise.resolve(
+        database
+          .update(testCreditOperations)
+          .set({ gatewayRequestId: lostRequest.id })
+          .where(eq(testCreditOperations.id, unknown)),
+      ),
+    ).rejects.toThrow("Failed query");
+    now += day;
+    storedLog = lateLog;
+    const balanceAtCutoff = await ledger.balance(bobIdentity);
+    await recoverBifrostEvidence(ledger, readEvidence);
+    await recoverBifrostEvidence(ledger, readEvidence);
+    expect(await receiptOf(lateOperation)).toMatchObject({
+      state: "released",
+      outcome: "unknown",
+      chargedMicrocredits: null,
+      releasedMicrocredits: "2",
+    });
+    expect(await ledger.reconciliationCost(bobAccount, lateOperation)).toBe(
+      "2",
+    );
+    expect(await ledger.balance(bobIdentity)).toEqual(balanceAtCutoff);
+    expect(operationIds).toHaveLength(8);
+
     await database
       .delete(testCreditEnrollments)
       .where(eq(testCreditEnrollments.batchId, freshBatch));
@@ -1427,6 +1535,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       .delete(testCreditBatches)
       .where(eq(testCreditBatches.id, freshBatch));
   } finally {
+    await proxy.stop(true);
     await gateway.stop(true);
     await meter.stop(true);
     for (const id of conversations)

@@ -99,6 +99,10 @@ type Evidence = Pick<
 >;
 const reconciliationMilliseconds = 24 * 60 * 60_000;
 const cutoffBatchSize = 100;
+const evidenceReadBatchSize = 16;
+const evidenceRetryMilliseconds = 5 * 60_000;
+const evidenceRetentionMilliseconds = 7 * reconciliationMilliseconds;
+const gatewayTimeoutMilliseconds = 90_000;
 const reservationMilliseconds = 5 * 60_000;
 const tokenUnit = 1_000_000n;
 const identityFilter = ({ issuer, subject }: VerifiedBillingIdentity) =>
@@ -1690,6 +1694,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               operationFilter(accountId, id),
               eq(operations.state, "pending"),
               isNull(operations.eligibleEvidenceId),
+              isNull(operations.gatewayRequestId),
             ),
           )
           .returning({ id: operations.id });
@@ -1705,10 +1710,91 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             await currentTime(tx),
           );
         }
-        if (row)
+        if (unsent.length > 0 && row)
           await resolveProviderCostHold(tx, row.route.id, accountId, id, {
             state: "released",
           });
+      });
+    },
+
+    async bindGatewayRequest(
+      accountId: string,
+      id: string,
+      { requestId, digest }: { requestId: string; digest: string },
+    ) {
+      return database.transaction(async (tx) => {
+        if (!(await lockAccount(tx, accountId))) return false;
+        const now = await currentTime(tx);
+        await applyCutoff(tx, accountId, now);
+        const [bound] = await tx
+          .update(operations)
+          .set({
+            gatewayRequestId: requestId,
+            gatewayRequestDigest: digest,
+            gatewayEvidenceCheckAt: new Date(
+              now.getTime() + gatewayTimeoutMilliseconds,
+            ),
+          })
+          .where(
+            and(
+              operationFilter(accountId, id),
+              eq(operations.state, "pending"),
+              isNull(operations.cutoffHold),
+              isNull(operations.eligibleEvidenceId),
+              isNull(operations.gatewayRequestId),
+            ),
+          )
+          .returning({ id: operations.id });
+        return bound !== undefined;
+      });
+    },
+
+    async claimGatewayEvidenceChecks() {
+      return database.transaction(async (tx) => {
+        const now = await currentTime(tx);
+        const candidates = await tx
+          .select({
+            accountId: operations.accountId,
+            operationId: operations.id,
+            route: operations.route,
+            requestId: operations.gatewayRequestId,
+            digest: operations.gatewayRequestDigest,
+            dispatchedAt: operations.dispatchedAt,
+          })
+          .from(operations)
+          .where(lte(operations.gatewayEvidenceCheckAt, now))
+          .orderBy(
+            operations.gatewayEvidenceCheckAt,
+            operations.accountId,
+            operations.id,
+          )
+          .limit(evidenceReadBatchSize)
+          .for("update", { skipLocked: true });
+
+        const checks = [];
+        for (const {
+          requestId,
+          digest,
+          dispatchedAt,
+          ...candidate
+        } of candidates) {
+          const valid =
+            requestId &&
+            digest &&
+            dispatchedAt &&
+            dispatchedAt.getTime() + evidenceRetentionMilliseconds >
+              now.getTime();
+          await tx
+            .update(operations)
+            .set({
+              gatewayEvidenceCheckAt: valid
+                ? new Date(now.getTime() + evidenceRetryMilliseconds)
+                : null,
+            })
+            .where(operationFilter(candidate.accountId, candidate.operationId));
+          if (valid) checks.push({ ...candidate, requestId, digest });
+        }
+        return checks;
       });
     },
 
@@ -1836,7 +1922,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
   async function recordEvidence(
     accountId: string,
     id: string,
-    verified: Evidence,
+    verified: Evidence & { gatewayRequestId?: string; resultText?: string },
   ) {
     return database.transaction(async (tx) => {
       if (!(await lockAccount(tx, accountId))) return undefined;
@@ -1844,7 +1930,27 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       await applyCutoff(tx, accountId, now);
       const row = await operation(accountId, id, tx);
       if (!row?.dispatchedAt) return undefined;
-      const { evidenceId, outcome, inputTokens, outputTokens } = verified;
+      const {
+        evidenceId,
+        outcome,
+        inputTokens,
+        outputTokens,
+        gatewayRequestId,
+        resultText,
+      } = verified;
+      if (
+        gatewayRequestId &&
+        (row.gatewayRequestId !== gatewayRequestId ||
+          row.eligibleEvidenceId !== null ||
+          row.gatewayEvidenceCheckAt === null)
+      )
+        return undefined;
+      if (
+        resultText !== undefined &&
+        row.resultText !== null &&
+        row.resultText !== resultText
+      )
+        throw new Error("Test Credit result differs on replay");
       const maxBigint = 9_223_372_036_854_775_807n;
       if (
         !evidenceId ||
@@ -1873,7 +1979,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           throw new Error("Test Credit evidence differs on replay");
       } else {
         await tx.insert(evidence).values({
-          ...verified,
+          evidenceId,
+          outcome,
+          inputTokens,
+          outputTokens,
           accountId,
           operationId: id,
           cost,
@@ -1886,11 +1995,21 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         ) {
           await tx
             .update(operations)
-            .set({ eligibleEvidenceId: evidenceId })
+            .set({
+              eligibleEvidenceId: evidenceId,
+              gatewayEvidenceCheckAt: null,
+              ...(resultText === undefined ? {} : { resultText }),
+            })
             .where(operationFilter(accountId, id));
           row.eligibleEvidenceId = evidenceId;
+          if (resultText !== undefined) row.resultText = resultText;
         }
       }
+      if (row.eligibleEvidenceId === null && gatewayRequestId)
+        await tx
+          .update(operations)
+          .set({ gatewayEvidenceCheckAt: null })
+          .where(operationFilter(accountId, id));
       const eligible = await eligibleEvidence(tx, row);
       // Verified usage replaces the provider-cost share even when it arrives
       // after a cutoff already booked the bound.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CasdoorBillingProvider } from "./direct-chat-test-credit";
 import {
+  bifrostRouteProof,
   createBifrostCreditExecutor,
   UnsentBifrostRequest,
 } from "./test-credit-bifrost";
@@ -117,7 +118,7 @@ export function loadDirectChatTestCredit(
         config.TEST_CREDIT_GATEWAY_IMAGE_DIGEST
       )
         throw new UnsentBifrostRequest("route_unavailable");
-      return execute(input);
+      return execute({ ...input, routeProof: bifrostRouteProof(input.route) });
     },
   };
 }
