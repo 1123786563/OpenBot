@@ -594,12 +594,15 @@ test("a refused company sign-in keeps the server's words and guides in the inter
 
   await pinLocale("zh-CN");
   await user.type(view.getByPlaceholderText("you@company.com"), "ada@corp.cn");
+  // The server's sentence is a value inside a translated one, so it carries the characters an
+  // escaping formatter, or a second pass of the parser, would change.
+  const said = "Tom & Jerry's domain isn't registered (100%)";
   domainSignInSpy = async () => {
-    throw new Error("Domain not registered");
+    throw new Error(said);
   };
   await user.click(view.getByRole("button", { name: "使用公司账号继续" }));
   expect((await view.findByRole("alert")).textContent).toBe(
-    "Domain not registered 请检查你的公司邮箱后重试。如果问题仍然存在，请联系你的 OpenBot 管理员。",
+    `${said} 请检查你的公司邮箱后重试。如果问题仍然存在，请联系你的 OpenBot 管理员。`,
   );
 
   domainSignInSpy = async () => {
