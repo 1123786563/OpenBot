@@ -14,6 +14,7 @@ import { SelfHostBanner } from "@/components/layout/self-host-banner";
 import { authKeys } from "@/lib/auth/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { userPreferencesQueryOptions } from "@/lib/settings/message-list";
+import { pinLocale } from "./i18n";
 
 const originalFetch = globalThis.fetch;
 const clients: QueryClient[] = [];
@@ -41,8 +42,10 @@ beforeEach(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // The language tests share one translation instance with every other file in the run.
+  await pinLocale("en");
   for (const client of clients) client.clear();
   clients.length = 0;
   globalThis.fetch = originalFetch;
@@ -108,6 +111,29 @@ test("offers self-hosting with a link to book an OpenBot for Business call", () 
   expect(link.getAttribute("href")).toBe("https://open.bot/business");
   expect(link.getAttribute("target")).toBe("_blank");
   expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+});
+
+test("speaks the interface language and switches at once, and closing it still saves", async () => {
+  const { view } = setup();
+  const dismiss = view.getByRole("button", { name: "Dismiss" });
+  const link = view.getByRole("link", { name: "Book a call" });
+
+  await pinLocale("zh-CN");
+
+  expect(
+    view.getByRole("complementary", { name: "自托管 OpenBot" }).textContent,
+  ).toContain("为你的组织自托管 OpenBot。");
+  expect(view.getByRole("link", { name: "预约通话" })).toBe(link);
+  expect(link.getAttribute("href")).toBe("https://open.bot/business");
+  expect(view.getByRole("button", { name: "关闭" })).toBe(dismiss);
+  expect(view.queryByRole("complementary", banner)).toBeNull();
+
+  fireEvent.click(dismiss);
+  await waitFor(() => expect(view.queryByRole("complementary")).toBeNull());
+  await waitFor(() => expect(requests.length).toBe(1));
+  expect(requests[0]?.body).toBe(
+    JSON.stringify({ selfHostBannerDismissed: true }),
+  );
 });
 
 test("stays hidden for somebody who closed it", () => {
