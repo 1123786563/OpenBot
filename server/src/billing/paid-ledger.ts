@@ -20,7 +20,10 @@ import {
   firstBillingPeriod,
 } from "./billing-period";
 
-import type { CreditPackTestRefundResult } from "./credit-pack-test-channel";
+import type {
+  CreditPackChannel,
+  CreditPackTestRefundResult,
+} from "./credit-pack-test-channel";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 const customerRefund = "customer";
@@ -244,6 +247,7 @@ export function createPaidCreditLedger(
         if (
           existing.accountId !== input.accountId ||
           existing.testMerchant !== testPack.merchant ||
+          existing.channel !== input.channel ||
           existing.productCode !== input.productCode ||
           existing.productVersion !== testPack.version
         )
@@ -294,6 +298,7 @@ export function createPaidCreditLedger(
 
   async function testPackOrders(input: {
     merchant: string;
+    channel: CreditPackChannel;
     accountId: string;
     id?: string;
   }) {
@@ -321,6 +326,7 @@ export function createPaidCreditLedger(
       .where(
         and(
           eq(paidOrders.testMerchant, input.merchant),
+          eq(paidOrders.channel, input.channel),
           eq(paidOrders.accountId, input.accountId),
           input.id ? eq(paidOrders.id, input.id) : undefined,
         ),
@@ -629,6 +635,33 @@ export function createPaidCreditLedger(
     )[0];
   }
 
+  async function closeTestPackOrder(input: {
+    id: string;
+    channel: CreditPackChannel;
+    merchant: string;
+    currency: string;
+    amountCents: number;
+  }) {
+    // Order terms are immutable. closeOrder only changes pending orders, so a
+    // concurrent or earlier successful verification always wins.
+    const [order] = await database
+      .select()
+      .from(paidOrders)
+      .where(eq(paidOrders.id, input.id));
+    if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
+    if (
+      input.currency !== "CNY" ||
+      order.testMerchant !== input.merchant ||
+      order.channel !== input.channel ||
+      order.priceCents !== input.amountCents
+    )
+      throw new PaidLedgerError(
+        "verification_mismatch",
+        "The channel result does not match the placed order.",
+      );
+    await closeOrder(order.id, `fixture:${input.merchant}`);
+  }
+
   /** The application paths paid credits can be spent on, and which are paused. */
   function paidPaths() {
     return readPaidPaths(database);
@@ -831,6 +864,7 @@ export function createPaidCreditLedger(
     orderId: string;
     accountId: string;
     merchant: string;
+    channel: CreditPackChannel;
     amountCents?: number;
   }) {
     return database.transaction(async (tx) => {
@@ -844,7 +878,8 @@ export function createPaidCreditLedger(
       const order = await lockRefundOrder(tx, input.orderId);
       if (
         order.accountId !== input.accountId ||
-        order.testMerchant !== input.merchant
+        order.testMerchant !== input.merchant ||
+        order.channel !== input.channel
       )
         throw new PaidLedgerError("order_unknown", "Unknown order.");
       const existing = await findRefund(tx, order.id);
@@ -919,7 +954,11 @@ export function createPaidCreditLedger(
     });
   }
 
-  async function testPackRefundDispatch(orderId: string) {
+  async function testPackRefundDispatch(input: {
+    orderId: string;
+    merchant: string;
+    channel: CreditPackChannel;
+  }) {
     const [row] = await database
       .select({
         id: paidRefunds.id,
@@ -932,7 +971,9 @@ export function createPaidCreditLedger(
       .innerJoin(paidOrders, eq(paidOrders.id, paidRefunds.orderId))
       .where(
         and(
-          eq(paidOrders.id, orderId),
+          eq(paidOrders.id, input.orderId),
+          eq(paidOrders.testMerchant, input.merchant),
+          eq(paidOrders.channel, input.channel),
           eq(paidRefunds.openedBy, customerRefund),
         ),
       );
@@ -940,7 +981,9 @@ export function createPaidCreditLedger(
       return { ...row, channelOrderRef: row.channelOrderRef };
   }
 
-  async function applyTestPackRefundResult(input: CreditPackTestRefundResult) {
+  async function applyTestPackRefundResult(
+    input: CreditPackTestRefundResult & { channel: CreditPackChannel },
+  ) {
     return database.transaction(async (tx) => {
       const order = await lockRefundOrder(tx, input.orderId);
       const refund = await findRefund(tx, order.id);
@@ -949,7 +992,7 @@ export function createPaidCreditLedger(
       if (
         refund.id !== input.refundId ||
         order.testMerchant !== input.merchantId ||
-        order.channel !== "wechat" ||
+        order.channel !== input.channel ||
         order.channelOrderRef !== input.channelOrderRef ||
         refund.amountCents !== input.amountCents
       )
@@ -1737,6 +1780,7 @@ export function createPaidCreditLedger(
     createOrder,
     creditPackOffer,
     testPackOrders,
+    closeTestPackOrder,
     verifyOrder,
     entitlements,
     freezeEntitlements,

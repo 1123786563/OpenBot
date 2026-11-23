@@ -3969,6 +3969,10 @@ const app = createApp(
         : undefined,
     paidLedger: createPaidCreditLedger(database),
     creditPackTestChannel: loadCreditPackTestChannel(process.env),
+    alipayCreditPackTestChannel: loadCreditPackTestChannel(
+      process.env,
+      "alipay",
+    ),
     casdoorIdentityOf: casdoorBillingIdentity,
     weknora: weknoraBilling,
     testCreditConversations: directChatTestCredit !== undefined,

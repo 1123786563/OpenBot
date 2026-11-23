@@ -2,7 +2,7 @@ import { type Context, Hono } from "hono";
 import { z } from "zod";
 import {
   type CreditPackTestChannel,
-  paidTestPayment,
+  testPaymentResult,
   testRefundResult,
 } from "./credit-pack-test-channel";
 import { type PaidCreditLedger, PaidLedgerError } from "./paid-ledger";
@@ -22,7 +22,11 @@ export function createCreditPackCheckout({
   ledger: TestCreditLedger;
   paid: PaidCreditLedger;
 }) {
-  const { merchant } = channel;
+  const { merchant, kind } = channel;
+  const channelScope = { merchant, channel: kind };
+  const fixtureRef = `fixture:${merchant}:`;
+  const suffix = kind === "alipay" ? "/alipay" : "";
+  const callbackPath = `/credit-pack-test${suffix}`;
   const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
   function notFound(context: Context) {
     return context.json({ error: "Test checkout unavailable." }, 404);
@@ -39,25 +43,34 @@ export function createCreditPackCheckout({
     );
   });
 
-  async function verify(result: z.infer<typeof paidTestPayment>, id: string) {
+  async function verify(result: z.infer<typeof testPaymentResult>, id: string) {
     if (result.orderId !== id || result.merchantId !== merchant)
       throw new PaidLedgerError(
         "verification_mismatch",
         "The payment does not match this test order.",
       );
+    if (result.state === "failed") {
+      await paid.closeTestPackOrder({
+        ...channelScope,
+        id,
+        currency: result.currency,
+        amountCents: result.amountCents,
+      });
+      return;
+    }
     await paid.verifyOrder({
       ...result,
-      channelOrderRef: `fixture:${merchant}:${result.channelOrderRef}`,
+      channelOrderRef: fixtureRef + result.channelOrderRef,
       paidAt: new Date(result.paidAt),
-      channel: "wechat",
+      channel: kind,
       testChannel: true,
     });
   }
 
-  api.post("/credit-pack-test/callback", async (context) => {
+  api.post(`${callbackPath}/callback`, async (context) => {
     if (!channel.authenticates(context.req.raw))
       return context.json({ error: "Verified channel required." }, 401);
-    const result = paidTestPayment.safeParse(
+    const result = testPaymentResult.safeParse(
       await context.req.json().catch(() => undefined),
     );
     if (!result.success)
@@ -66,7 +79,6 @@ export function createCreditPackCheckout({
     return context.json({ accepted: true });
   });
 
-  const fixtureRef = `fixture:${merchant}:`;
   async function verifyRefund(
     result: z.infer<typeof testRefundResult>,
     expected: { orderId: string; id: string },
@@ -82,11 +94,12 @@ export function createCreditPackCheckout({
       );
     await paid.applyTestPackRefundResult({
       ...result,
+      channel: kind,
       channelOrderRef: fixtureRef + result.channelOrderRef,
     });
   }
 
-  api.post("/credit-pack-test/refund-callback", async (context) => {
+  api.post(`${callbackPath}/refund-callback`, async (context) => {
     if (!channel.authenticates(context.req.raw))
       return context.json({ error: "Verified channel required." }, 401);
     const result = testRefundResult.safeParse(
@@ -101,12 +114,12 @@ export function createCreditPackCheckout({
     return context.json({ accepted: true });
   });
 
-  const path = "/paid/credit-pack";
+  const path = `/paid/credit-pack${suffix}`;
   api.get(path, async (context) => {
     const accountId = await ledger.accountOf(context.var.identity);
     if (!accountId) return notFound(context);
     if (!channel.allows(accountId)) {
-      if (!(await paid.testPackOrders({ merchant, accountId })).length)
+      if (!(await paid.testPackOrders({ ...channelScope, accountId })).length)
         return notFound(context);
       return context.json({
         available: false,
@@ -127,7 +140,9 @@ export function createCreditPackCheckout({
   api.get(`${path}/orders`, async (context) => {
     const accountId = await ledger.accountOf(context.var.identity);
     return context.json(
-      accountId ? await paid.testPackOrders({ merchant, accountId }) : [],
+      accountId
+        ? await paid.testPackOrders({ ...channelScope, accountId })
+        : [],
     );
   });
 
@@ -142,7 +157,7 @@ export function createCreditPackCheckout({
     const order = await paid.createOrder({
       accountId,
       productCode: channel.productCode,
-      channel: "wechat",
+      channel: kind,
       testPack: {
         id: input.data.orderId,
         merchant,
@@ -161,7 +176,7 @@ export function createCreditPackCheckout({
     const accountId = await ledger.accountOf(context.var.identity);
     if (!id.success || !accountId) return notFound(context);
     const [order] = await paid.testPackOrders({
-      merchant,
+      ...channelScope,
       accountId,
       id: id.data,
     });
@@ -175,19 +190,22 @@ export function createCreditPackCheckout({
     const id = z.uuid().safeParse(context.req.param("id"));
     const accountId = await ledger.accountOf(context.var.identity);
     if (!id.success || !accountId) return notFound(context);
-    const scope = { merchant, accountId, id: id.data };
+    const scope = { ...channelScope, accountId, id: id.data };
     const [order] = await paid.testPackOrders(scope);
     if (!order) return notFound(context);
     if (order.state !== "pending" && order.state !== "failed")
       return context.json(order);
     const result = await channel.query(order.id);
-    if (result.state === "paid") await verify(result, order.id);
+    if (result.state !== "unknown") await verify(result, order.id);
     const [updated] = await paid.testPackOrders(scope);
     return context.json(updated);
   });
 
   async function refreshRefund(orderId: string, query: boolean) {
-    const refund = await paid.testPackRefundDispatch(orderId);
+    const refund = await paid.testPackRefundDispatch({
+      ...channelScope,
+      orderId,
+    });
     if (!refund?.channelOrderRef.startsWith(fixtureRef)) return;
     if (refund.state === "requested") {
       const result = await channel.startRefund({
@@ -198,7 +216,7 @@ export function createCreditPackCheckout({
         amountCents: refund.amountCents,
         channelOrderRef: refund.channelOrderRef.slice(fixtureRef.length),
       });
-      await verifyRefund(result, refund);
+      if (result.state !== "unknown") await verifyRefund(result, refund);
     } else if (query && refund.state === "processing") {
       const result = await channel.queryRefund(refund.id);
       if (result.state !== "unknown") await verifyRefund(result, refund);
@@ -218,12 +236,12 @@ export function createCreditPackCheckout({
     await paid.requestTestPackRefund({
       orderId: id.data,
       accountId,
-      merchant,
+      ...channelScope,
       ...input.data,
     });
     await refreshRefund(id.data, false);
     const [order] = await paid.testPackOrders({
-      merchant,
+      ...channelScope,
       accountId,
       id: id.data,
     });
@@ -234,7 +252,7 @@ export function createCreditPackCheckout({
     const id = z.uuid().safeParse(context.req.param("id"));
     const accountId = await ledger.accountOf(context.var.identity);
     if (!id.success || !accountId) return notFound(context);
-    const scope = { merchant, accountId, id: id.data };
+    const scope = { ...channelScope, accountId, id: id.data };
     const [order] = await paid.testPackOrders(scope);
     if (!order) return notFound(context);
     await refreshRefund(order.id, true);

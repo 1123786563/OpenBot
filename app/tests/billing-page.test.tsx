@@ -51,7 +51,12 @@ beforeEach(() => {
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const path = String(input).split("?")[0];
-      if (path === "/api/billing/paid/credit-pack")
+      if (
+        [
+          "/api/billing/paid/credit-pack",
+          "/api/billing/paid/credit-pack/alipay",
+        ].includes(path)
+      )
         return new Response(null, { status: 404 });
       if (init?.method === "POST") {
         // A revoke sends no body.
@@ -604,8 +609,20 @@ test("a paused WeKnora upload asks the owner to confirm a higher Test Credit lim
   ]);
 });
 
-test("test Credit Pack checkout shows the CNY offer and verifies the original order on demand", async () => {
-  const checkout = "/api/billing/paid/credit-pack";
+for (const [name, suffix, placeOrder] of [
+  ["WeChat", "", "Place test order"],
+  ["Alipay", "/alipay", "Place Alipay test order"],
+]) {
+  test(`${name} test Credit Pack checkout verifies payment and refunds through its own channel`, () =>
+    verifyCreditPackCheckout(name, suffix, placeOrder));
+}
+
+async function verifyCreditPackCheckout(
+  name: string,
+  suffix: string,
+  placeOrder: string,
+) {
+  const checkout = `/api/billing/paid/credit-pack${suffix}`;
   const id = "4a06fd08-73e4-472c-824e-4077bed08946";
   let placed = false;
   let verified = false;
@@ -657,7 +674,9 @@ test("test Credit Pack checkout shows the CNY offer and verifies the original or
       if (path === `${checkout}/orders`)
         return Response.json(placed ? [order()] : []);
       if (path === `${checkout}/orders/${id}/checkout`)
-        return Response.json({ checkoutUrl: "http://127.0.0.1:9199/checkout" });
+        return Response.json({
+          checkoutUrl: "http://127.0.0.1:9199/checkout",
+        });
       if (path === `${checkout}/orders/${id}/verify`) {
         verified = true;
         return Response.json(order());
@@ -684,7 +703,7 @@ test("test Credit Pack checkout shows the CNY offer and verifies the original or
   const view = renderCredits(answered());
   expect(await view.findByText("CN¥25.00 · 25 credits")).toBeTruthy();
   expect(view.getByText("Paused application paths: Fixture app")).toBeTruthy();
-  await user.click(view.getByRole("button", { name: "Place test order" }));
+  await user.click(view.getByRole("button", { name: placeOrder }));
   expect(await view.findByText("Awaiting payment confirmation")).toBeTruthy();
   await user.click(view.getByRole("button", { name: "Prepare test checkout" }));
   expect(
@@ -696,17 +715,17 @@ test("test Credit Pack checkout shows the CNY offer and verifies the original or
   expect(await view.findByText("Credits added")).toBeTruthy();
   await user.click(view.getByRole("button", { name: "Request refund" }));
   expect(
-    view.getByRole("dialog", { name: "Request WeChat refund" }),
+    view.getByRole("dialog", { name: `Request ${name} refund` }),
   ).toBeTruthy();
   expect(refundState).toBeUndefined();
   await user.click(
     view.getByRole("button", { name: "Confirm refund request" }),
   );
   expect(
-    await view.findByText("Credits frozen. WeChat is processing your refund."),
+    await view.findByText(`Credits frozen. ${name} is processing your refund.`),
   ).toBeTruthy();
   await user.click(view.getByRole("button", { name: "Check refund status" }));
   expect(
     await view.findByText("Refund confirmed. Funds returned."),
   ).toBeTruthy();
-});
+}

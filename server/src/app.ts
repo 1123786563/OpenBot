@@ -647,6 +647,7 @@ export function createApp(
     ) => Promise<boolean>;
     paidLedger: PaidCreditLedger;
     creditPackTestChannel?: CreditPackTestChannel;
+    alipayCreditPackTestChannel?: CreditPackTestChannel;
     /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
     identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
     casdoorIdentityOf?: (
@@ -989,6 +990,7 @@ export function createApp(
         paid: {
           ledger: billing.paidLedger,
           creditPackTestChannel: billing.creditPackTestChannel,
+          alipayCreditPackTestChannel: billing.alipayCreditPackTestChannel,
         },
         authenticate: async (request, intent) => {
           if (intent === "execution")

@@ -86,6 +86,7 @@ type Dependencies = {
   paid?: {
     ledger: PaidCreditLedger;
     creditPackTestChannel?: CreditPackTestChannel;
+    alipayCreditPackTestChannel?: CreditPackTestChannel;
   };
   // Whether the caller holds an application's own credential (#111). Absent,
   // a call that names an application answers 503.
@@ -151,15 +152,18 @@ export function createTestCreditRoutes({
   api.use("/applications", authorize("account"));
   api.use("/authorizations", authorize("account"));
   api.use("/authorizations/*", authorize("account"));
-  if (paid?.creditPackTestChannel)
-    api.route(
-      "/",
-      createCreditPackCheckout({
-        channel: paid.creditPackTestChannel,
-        ledger,
-        paid: paid.ledger,
-      }),
-    );
+  if (paid) {
+    for (const channel of [
+      paid.creditPackTestChannel,
+      paid.alipayCreditPackTestChannel,
+    ]) {
+      if (channel)
+        api.route(
+          "/",
+          createCreditPackCheckout({ channel, ledger, paid: paid.ledger }),
+        );
+    }
+  }
 
   api.onError((_error, context) =>
     context.json({ error: "Test Credit service unavailable." }, 503),

@@ -1,19 +1,30 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-export const paidTestPayment = z.object({
-  state: z.literal("paid"),
+const paymentTerms = z.object({
   orderId: z.uuid(),
   merchantId: z.string().min(1).max(120),
   currency: z.string().length(3),
   amountCents: z.number().int().positive(),
+});
+
+export const paidTestPayment = paymentTerms.extend({
+  state: z.literal("paid"),
   channelOrderRef: z.string().min(1).max(128),
   paidAt: z.iso.datetime({ offset: true }),
 });
 
+const failedTestPayment = paymentTerms.extend({ state: z.literal("failed") });
+
+export const testPaymentResult = z.discriminatedUnion("state", [
+  paidTestPayment,
+  failedTestPayment,
+]);
+
 const channelResult = z.discriminatedUnion("state", [
   z.object({ state: z.literal("unknown") }),
   paidTestPayment,
+  failedTestPayment,
 ]);
 
 export const testRefundTerms = z.object({
@@ -66,12 +77,31 @@ const configSchema = z.object({
   merchant: z.string().regex(/^fixture-[A-Za-z0-9_-]{1,112}$/),
 });
 
-/** A loopback fixture protocol for the WeChat test harness. */
+export type CreditPackChannel = "wechat" | "alipay";
+
+const settingsPrefix = {
+  wechat: "OPENBOT_CREDIT_PACK_TEST",
+  alipay: "OPENBOT_CREDIT_PACK_ALIPAY_TEST",
+} satisfies Record<CreditPackChannel, string>;
+
+/** Loopback fixtures with separate credentials for each payment channel. */
 export function loadCreditPackTestChannel(
   environment: Record<string, string | undefined>,
+  kind: CreditPackChannel = "wechat",
 ) {
-  const origin = environment.OPENBOT_CREDIT_PACK_TEST_ORIGIN;
+  const prefix = settingsPrefix[kind];
+  const origin = environment[`${prefix}_ORIGIN`];
   if (!origin) return undefined;
+  if (
+    kind === "alipay" &&
+    environment.OPENBOT_CREDIT_PACK_TEST_ORIGIN &&
+    (origin === environment.OPENBOT_CREDIT_PACK_TEST_ORIGIN ||
+      environment[`${prefix}_TOKEN`] ===
+        environment.OPENBOT_CREDIT_PACK_TEST_TOKEN)
+  )
+    throw new Error(
+      "Alipay and WeChat fixtures require separate origins and tokens.",
+    );
   const list = (value?: string) =>
     value
       ?.split(",")
@@ -79,11 +109,11 @@ export function loadCreditPackTestChannel(
       .filter(Boolean) ?? [];
   const config = configSchema.parse({
     origin,
-    token: environment.OPENBOT_CREDIT_PACK_TEST_TOKEN,
-    accounts: list(environment.OPENBOT_CREDIT_PACK_TEST_ACCOUNT_IDS),
-    applicationIds: list(environment.OPENBOT_CREDIT_PACK_TEST_APPLICATION_IDS),
+    token: environment[`${prefix}_TOKEN`],
+    accounts: list(environment[`${prefix}_ACCOUNT_IDS`]),
+    applicationIds: list(environment[`${prefix}_APPLICATION_IDS`]),
     productCode: environment.OPENBOT_CREDIT_PACK_TEST_PRODUCT,
-    merchant: environment.OPENBOT_CREDIT_PACK_TEST_MERCHANT,
+    merchant: environment[`${prefix}_MERCHANT`],
   });
   const authorization = `Bearer ${config.token}`;
   const digest = (value: string) => createHash("sha256").update(value).digest();
@@ -107,6 +137,7 @@ export function loadCreditPackTestChannel(
     return response.json();
   }
   return {
+    kind,
     merchant: config.merchant,
     productCode: config.productCode,
     applicationIds: config.applicationIds,
@@ -138,7 +169,7 @@ export function loadCreditPackTestChannel(
       return url.href;
     },
     async startRefund(refund: z.infer<typeof testRefundTerms>) {
-      return testRefundResult.parse(
+      return refundQueryResult.parse(
         await request("refunds", refund.refundId, {
           method: "PUT",
           body: JSON.stringify(refund),

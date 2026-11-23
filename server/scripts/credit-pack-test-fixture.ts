@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  type CreditPackChannel,
   type paidTestPayment,
   type testRefundResult,
   testRefundTerms,
@@ -20,14 +21,17 @@ export function startCreditPackFixture({
   port,
   notify,
   notifyRefund,
+  channel = "wechat",
 }: {
   token: string;
   port: number;
+  channel?: CreditPackChannel;
   notify: (payment: Payment) => Promise<Response>;
   notifyRefund?: (refund: Refund) => Promise<Response>;
 }) {
   if (!/^[A-Za-z0-9_-]{24,256}$/.test(token))
     throw new Error("Set a dedicated fixture token of at least 24 characters.");
+  const name = channel === "alipay" ? "Alipay" : "WeChat";
   const orders = new Map<
     string,
     {
@@ -120,7 +124,7 @@ export function startCreditPackFixture({
           return new Response(
             `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>WeChat test checkout</title><h1>WeChat test checkout</h1>
+<title>${name} test checkout</title><h1>${name} test checkout</h1>
 <p>Simulated payment of CN¥${(order.terms.amountCents / 100).toFixed(2)}.</p>
 <form method="post"><button>Confirm simulated payment</button></form></html>`,
             {
@@ -156,7 +160,13 @@ export function startCreditPackFixture({
 }
 
 if (import.meta.main) {
-  const token = process.env.OPENBOT_CREDIT_PACK_TEST_TOKEN ?? "";
+  const channel = z
+    .enum(["wechat", "alipay"])
+    .parse(process.env.OPENBOT_CREDIT_PACK_FIXTURE_CHANNEL ?? "wechat");
+  const token =
+    (channel === "alipay"
+      ? process.env.OPENBOT_CREDIT_PACK_ALIPAY_TEST_TOKEN
+      : process.env.OPENBOT_CREDIT_PACK_TEST_TOKEN) ?? "";
   const callback = new URL(
     process.env.OPENBOT_CREDIT_PACK_FIXTURE_CALLBACK ?? "",
   );
@@ -181,12 +191,13 @@ if (import.meta.main) {
     });
   }
   const fixture = startCreditPackFixture({
+    channel,
     token,
     port: Number(process.env.OPENBOT_CREDIT_PACK_FIXTURE_PORT ?? "9199"),
     notify: (payment) => send(callback, payment),
     notifyRefund: (refund) => send(refundCallback, refund),
   });
   process.stdout.write(
-    `WeChat test fixture listening at ${fixture.url.origin}\n`,
+    `${channel === "alipay" ? "Alipay" : "WeChat"} test fixture listening at ${fixture.url.origin}\n`,
   );
 }

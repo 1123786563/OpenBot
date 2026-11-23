@@ -46,7 +46,7 @@ The verified Zhipu cap result is recorded in [`docs/billing-zhipu-output-cap.md`
 
 Use an isolated OpenBot instance and a migrated test database. On the test ledger, create Billing Accounts for the testers, publish a `credit_pack` with `upsertProduct`, and register and approve the test applications.
 
-Set these variables on the OpenBot server.
+Set these variables on the OpenBot server for the WeChat test channel. Both channels use the published Credit Pack code.
 
 | Variable | Value |
 | --- | --- |
@@ -60,6 +60,8 @@ Set these variables on the OpenBot server.
 Give the fixture the same token. Set `OPENBOT_CREDIT_PACK_FIXTURE_CALLBACK` to `http://127.0.0.1:<OpenBot port>/api/billing/credit-pack-test/callback`. Run `bun --no-env-file server/scripts/credit-pack-test-fixture.ts` from the worktree root.
 
 Sign in to OpenBot as an eligible tester and open **Credits → Test Credit Pack**. Place an order, prepare checkout, open the checkout link, and confirm the simulated payment. Return to Credits and select **Check payment** if the order is still pending. The order links to its paid credit source while the source has spendable credits.
+
+To enable Alipay, set `OPENBOT_CREDIT_PACK_ALIPAY_TEST_ORIGIN`, `OPENBOT_CREDIT_PACK_ALIPAY_TEST_TOKEN`, `OPENBOT_CREDIT_PACK_ALIPAY_TEST_MERCHANT`, `OPENBOT_CREDIT_PACK_ALIPAY_TEST_APPLICATION_IDS` and `OPENBOT_CREDIT_PACK_ALIPAY_TEST_ACCOUNT_IDS` on the server. Use a separate origin and token from WeChat. The Alipay fixture process uses the Alipay token, `OPENBOT_CREDIT_PACK_FIXTURE_CHANNEL=alipay`, a distinct `OPENBOT_CREDIT_PACK_FIXTURE_PORT`, and the callback URL `http://127.0.0.1:<OpenBot port>/api/billing/credit-pack-test/alipay/callback`. Run the same fixture script and select **Credits → Alipay Test Credit Pack**. After payment, use **Request refund** to return funds through that order's channel. Use **Check refund status** for an unresolved refund.
 
 The fixture holds payment records in memory. Keep it running through reconciliation. To stop new orders while retaining existing orders and callbacks, clear the account allowlist and restart OpenBot with the same fixture origin and merchant.
 

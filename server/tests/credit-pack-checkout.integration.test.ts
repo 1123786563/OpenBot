@@ -11,6 +11,7 @@ import {
   verify,
 } from "../src/admin/bifrost-catalog";
 import {
+  type CreditPackChannel,
   type CreditPackTestRefundResult,
   loadCreditPackTestChannel,
   testRefundTerms,
@@ -39,6 +40,7 @@ const ledger = createTestCreditLedger(database);
 const paid = createPaidCreditLedger(database);
 const code = "fixture-credit-pack";
 const token = "fixture-credit-pack-token-for-local-test";
+const alipayToken = "fixture-alipay-token-for-local-test";
 const issuer = "credit-pack-fixture";
 const alice = crypto.randomUUID();
 const bob = crypto.randomUUID();
@@ -53,30 +55,36 @@ const starts = new Map<string, unknown>();
 let onQuery: (() => Promise<void>) | undefined;
 const openbotApp = `checkout-openbot-${alice}`;
 const secondApp = `checkout-second-${alice}`;
-const fixture = Bun.serve({
-  hostname: "127.0.0.1",
-  port: 0,
-  async fetch(request, server): Promise<Response> {
-    if (request.headers.get("authorization") !== `Bearer ${token}`)
-      return new Response(null, { status: 401 });
-    const [, route, id = ""] = new URL(request.url).pathname.split("/");
-    if (route === "refunds") {
-      if (refundUnavailable) return new Response(null, { status: 503 });
-      if (request.method !== "PUT") return Response.json({ state: "unknown" });
-      const terms = testRefundTerms.parse(await request.json());
-      refundStarts.set(id, terms);
-      return Response.json({ ...terms, state: "processing" });
-    }
-    if (request.method === "PUT") {
-      starts.set(id, await request.json());
-      return Response.json({
-        checkoutUrl: `${server.url.origin}/checkout/${id}`,
-      });
-    }
-    await onQuery?.();
-    return Response.json(payments.get(id) ?? { state: "unknown" });
-  },
-});
+function startControlledFixture(credential: string) {
+  return Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request, server): Promise<Response> {
+      if (request.headers.get("authorization") !== `Bearer ${credential}`)
+        return new Response(null, { status: 401 });
+      const [, route, id = ""] = new URL(request.url).pathname.split("/");
+      if (route === "refunds") {
+        if (refundUnavailable) return new Response(null, { status: 503 });
+        if (request.method !== "PUT")
+          return Response.json({ state: "unknown" });
+        const terms = testRefundTerms.parse(await request.json());
+        refundStarts.set(id, terms);
+        return Response.json({ ...terms, state: "processing" });
+      }
+      if (request.method === "PUT") {
+        starts.set(id, await request.json());
+        return Response.json({
+          checkoutUrl: `${server.url.origin}/checkout/${id}`,
+        });
+      }
+      await onQuery?.();
+      return Response.json(payments.get(id) ?? { state: "unknown" });
+    },
+  });
+}
+
+const fixture = startControlledFixture(token);
+const alipayFixture = startControlledFixture(alipayToken);
 
 let api: Hono;
 const billingServer = Bun.serve({
@@ -95,21 +103,37 @@ beforeAll(async () => {
   await publish(2_500, 25_000_000n);
 });
 
-function mount(origin: string, eligible = accountIds.slice(0, 2)) {
+function mount(
+  origin: string,
+  eligible = accountIds.slice(0, 2),
+  alipayOrigin?: string,
+) {
   const app = new Hono();
-  const channel = loadCreditPackTestChannel({
+  const env = {
     OPENBOT_CREDIT_PACK_TEST_ORIGIN: origin,
     OPENBOT_CREDIT_PACK_TEST_TOKEN: token,
     OPENBOT_CREDIT_PACK_TEST_ACCOUNT_IDS: eligible.join(","),
     OPENBOT_CREDIT_PACK_TEST_PRODUCT: code,
     OPENBOT_CREDIT_PACK_TEST_APPLICATION_IDS: [openbotApp, secondApp].join(","),
     OPENBOT_CREDIT_PACK_TEST_MERCHANT: "fixture-merchant",
-  });
+    OPENBOT_CREDIT_PACK_ALIPAY_TEST_ORIGIN: alipayOrigin,
+    OPENBOT_CREDIT_PACK_ALIPAY_TEST_TOKEN: alipayToken,
+    OPENBOT_CREDIT_PACK_ALIPAY_TEST_ACCOUNT_IDS: eligible.join(","),
+    OPENBOT_CREDIT_PACK_ALIPAY_TEST_APPLICATION_IDS: [
+      openbotApp,
+      secondApp,
+    ].join(","),
+    OPENBOT_CREDIT_PACK_ALIPAY_TEST_MERCHANT: "fixture-merchant",
+  };
   app.route(
     "/api/billing",
     createTestCreditRoutes({
       ledger,
-      paid: { ledger: paid, creditPackTestChannel: channel },
+      paid: {
+        ledger: paid,
+        creditPackTestChannel: loadCreditPackTestChannel(env),
+        alipayCreditPackTestChannel: loadCreditPackTestChannel(env, "alipay"),
+      },
       authenticate: async (request) => {
         const subject = request.headers.get("x-fixture-subject");
         return subject && fixtureSubjects.has(subject)
@@ -122,7 +146,11 @@ function mount(origin: string, eligible = accountIds.slice(0, 2)) {
 }
 
 afterAll(async () => {
-  await Promise.all([fixture.stop(true), billingServer.stop(true)]);
+  await Promise.all([
+    fixture.stop(true),
+    alipayFixture.stop(true),
+    billingServer.stop(true),
+  ]);
   await database
     .delete(paidCreditAllocations)
     .where(inArray(paidCreditAllocations.accountId, accountIds));
@@ -165,14 +193,18 @@ function call(
   path: string,
   subject?: string,
   body?: object,
-  channelAuth = false,
+  channelAuth: boolean | string = false,
 ) {
   return fetch(new URL(`/api/billing${path}`, billingServer.url), {
     method: body ? "POST" : "GET",
     headers: {
       ...(subject ? { "x-fixture-subject": subject } : {}),
       ...(body ? { "content-type": "application/json" } : {}),
-      ...(channelAuth ? { authorization: `Bearer ${token}` } : {}),
+      ...(channelAuth
+        ? {
+            authorization: `Bearer ${typeof channelAuth === "string" ? channelAuth : token}`,
+          }
+        : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -471,7 +503,7 @@ test("the runnable fixture records a user confirmation and the order is recovera
   }
 });
 
-async function verifiedPack() {
+async function verifiedPack(channel: CreditPackChannel = "wechat") {
   await approvePaths();
   const subject = crypto.randomUUID();
   fixtureSubjects.add(subject);
@@ -480,12 +512,24 @@ async function verifiedPack() {
     .values({ issuer, subject })
     .returning();
   accountIds.push(accountId);
-  api = mount(fixture.url.origin, [accountId]);
-  const { product } = await (await call("/paid/credit-pack", subject)).json();
+  const isAlipay = channel === "alipay";
+  const suffix = isAlipay ? "/alipay" : "";
+  const offer = `/paid/credit-pack${suffix}`;
+  const orderList = `${offer}/orders`;
+  const channelAuth = isAlipay ? alipayToken : token;
+  const paymentCallback = `/credit-pack-test${suffix}/callback`;
+  const refundCallback = `/credit-pack-test${suffix}/refund-callback`;
+  api = mount(
+    fixture.url.origin,
+    [accountId],
+    isAlipay ? alipayFixture.url.origin : undefined,
+  );
+  const { product } = await (await call(offer, subject)).json();
   const orderId = crypto.randomUUID();
-  const path = `${orders}/${orderId}`;
+  const path = `${orderList}/${orderId}`;
   expect(
-    (await call(orders, subject, { orderId, version: product.version })).status,
+    (await call(orderList, subject, { orderId, version: product.version }))
+      .status,
   ).toBe(201);
   const payment = {
     orderId,
@@ -496,14 +540,18 @@ async function verifiedPack() {
     channelOrderRef: crypto.randomUUID(),
     paidAt: new Date().toISOString(),
   };
-  expect((await call(callback, undefined, payment, true)).status).toBe(200);
+  expect(
+    (await call(paymentCallback, undefined, payment, channelAuth)).status,
+  ).toBe(200);
   return {
     accountId,
     orderId,
     subject,
+    refundResult: (result: object) =>
+      call(refundCallback, undefined, result, channelAuth),
     refund: (body = {}) => call(`${path}/refund`, subject, body),
     verifyRefund: () => call(`${path}/refund/verify`, subject, {}),
-    status: async () => (await (await call(orders, subject)).json())[0],
+    status: async () => (await (await call(orderList, subject)).json())[0],
     balance: async () => (await call("/paid/balance", subject)).json(),
   };
 }
@@ -611,8 +659,15 @@ test("a concurrent reservation and refund can never both claim the same source",
   }
 });
 
-test("an uncertain send keeps the same frozen refund until verification or definitive failure", async () => {
-  const pack = await verifiedPack();
+for (const channel of ["wechat", "alipay"] as const) {
+  test(`${channel}: uncertainty keeps the refund frozen until definitive failure`, () =>
+    expectUncertainRefund(channel));
+  test(`${channel}: owed funds keep the original refund frozen until operator confirmation`, () =>
+    expectManualRefund(channel));
+}
+
+async function expectUncertainRefund(channel: CreditPackChannel) {
+  const pack = await verifiedPack(channel);
   // Freeze commits before the loopback channel is contacted.
   refundUnavailable = true;
   try {
@@ -628,19 +683,16 @@ test("an uncertain send keeps the same frozen refund until verification or defin
   });
   const terms = refundStarts.get(pending.id);
   expect(terms).toBeDefined();
+  expect(await (await pack.verifyRefund()).json()).toMatchObject({
+    state: "refund_pending",
+    creditsFrozen: true,
+    refund: { id: pending.id, state: "processing" },
+  });
+  expect((await pack.refundResult({ ...terms, state: "failed" })).status).toBe(
+    200,
+  );
   expect(
-    (await call(refundCallback, undefined, { ...terms, state: "failed" }, true))
-      .status,
-  ).toBe(200);
-  expect(
-    (
-      await call(
-        refundCallback,
-        undefined,
-        { ...terms, state: "processing" },
-        true,
-      )
-    ).status,
+    (await pack.refundResult({ ...terms, state: "processing" })).status,
   ).toBe(200);
   expect(await (await pack.refund()).json()).toMatchObject({
     state: "verified",
@@ -649,26 +701,18 @@ test("an uncertain send keeps the same frozen refund until verification or defin
   expect(await pack.balance()).toMatchObject({
     availableMicrocredits: "35000000",
   });
-});
+}
 
-test("owed funds keep the original refund frozen until an operator confirms the return", async () => {
-  const pack = await verifiedPack();
+async function expectManualRefund(channel: CreditPackChannel) {
+  const pack = await verifiedPack(channel);
   const { refund } = await (await pack.refund()).json();
   const terms = refundStarts.get(refund.id);
   expect(
-    (
-      await call(
-        refundCallback,
-        undefined,
-        { ...terms, state: "manual_owed" },
-        true,
-      )
-    ).status,
+    (await pack.refundResult({ ...terms, state: "manual_owed" })).status,
   ).toBe(200);
-  expect(
-    (await call(refundCallback, undefined, { ...terms, state: "failed" }, true))
-      .status,
-  ).toBe(200);
+  expect((await pack.refundResult({ ...terms, state: "failed" })).status).toBe(
+    200,
+  );
   expect(await (await pack.refund()).json()).toMatchObject({
     id: pack.orderId,
     state: "refund_pending",
@@ -698,7 +742,7 @@ test("owed funds keep the original refund frozen until an operator confirms the 
     refund: { id: refund.id, amountCents: 3500, state: "confirmed" },
   });
   expect(await pack.balance()).toMatchObject({ availableMicrocredits: "0" });
-});
+}
 
 test("used credits and a customer partial refund request go to review without an automatic payout", async () => {
   const used = await verifiedPack();
@@ -776,3 +820,210 @@ for (const state of ["disputed", "partial"]) {
     expect(await pack.balance()).toMatchObject({ availableMicrocredits: "0" });
   });
 }
+
+test("Alipay checkout reconciles missed callbacks and refunds only through the original channel", async () => {
+  await approvePaths();
+  const previous = api;
+  const prefix = "/paid/credit-pack/alipay";
+  const alipayCallback = "/credit-pack-test/alipay/callback";
+  const alipayRefund = "/credit-pack-test/alipay/refund-callback";
+  let payment: object | undefined;
+  let refund: CreditPackTestRefundResult | undefined;
+  const checkoutFixture = startCreditPackFixture({
+    port: 0,
+    token: alipayToken,
+    channel: "alipay",
+    notify: async (result) => {
+      payment = result;
+      return new Response(null, { status: 503 });
+    },
+    notifyRefund: async (result) => {
+      refund = result;
+      return new Response(null, { status: 503 });
+    },
+  });
+  api = mount(fixture.url.origin, [accountIds[0]], checkoutFixture.url.origin);
+  try {
+    const offer = await call(prefix, alice);
+    expect(offer.status).toBe(200);
+    expect((await call(prefix, outsider)).status).toBe(404);
+    const { product } = await offer.json();
+    const input = { orderId: crypto.randomUUID(), version: product.version };
+    const orderPath = `${prefix}/orders/${input.orderId}`;
+    const balance = async () =>
+      (await (await call("/paid/balance", alice)).json()).availableMicrocredits;
+    const before = BigInt(await balance());
+    expect((await call(`${prefix}/orders`, alice, input)).status).toBe(201);
+    expect((await call(orders, alice, input)).status).toBe(409);
+    expect(await (await call(orders, alice)).json()).not.toContainEqual(
+      expect.objectContaining({ id: input.orderId }),
+    );
+    expect(
+      (await call(`${orders}/${input.orderId}/checkout`, alice, {})).status,
+    ).toBe(404);
+    const { checkoutUrl } = await (
+      await call(`${orderPath}/checkout`, alice, {})
+    ).json();
+    expect(await (await fetch(checkoutUrl)).text()).toContain(
+      "Alipay test checkout",
+    );
+    expect(
+      await (await call(`${orderPath}/verify`, alice, {})).json(),
+    ).toMatchObject({ state: "pending" });
+    const failed = {
+      ...input,
+      state: "failed",
+      merchantId: "fixture-merchant",
+      currency: "CNY",
+      amountCents: product.priceCents,
+    };
+    expect((await call(callback, undefined, failed, true)).status).toBe(409);
+    expect(
+      (
+        await call(
+          alipayCallback,
+          undefined,
+          { ...failed, amountCents: 1 },
+          alipayToken,
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (await call(alipayCallback, undefined, failed, alipayToken)).status,
+    ).toBe(200);
+    expect(
+      await (await call(`${orderPath}/verify`, alice, {})).json(),
+    ).toMatchObject({ state: "failed" });
+    expect(
+      await (await fetch(checkoutUrl, { method: "POST" })).text(),
+    ).toContain("Check payment");
+    expect(payment).toBeDefined();
+    expect((await call(alipayCallback, undefined, payment, true)).status).toBe(
+      401,
+    );
+    expect((await call(callback, undefined, payment, true)).status).toBe(409);
+    for (const [fields, status] of [
+      [{ merchantId: "fixture-wrong" }, 409],
+      [{ amountCents: 1 }, 409],
+      [{ currency: "USD" }, 409],
+      [{ orderId: crypto.randomUUID() }, 404],
+    ] satisfies [object, number][]) {
+      expect(
+        (
+          await call(
+            alipayCallback,
+            undefined,
+            { ...payment, ...fields },
+            alipayToken,
+          )
+        ).status,
+      ).toBe(status);
+    }
+    expect(await balance()).toBe(before.toString());
+    expect(
+      await (await call(`${orderPath}/verify`, alice, {})).json(),
+    ).toMatchObject({ state: "verified" });
+    expect(
+      (await call(alipayCallback, undefined, payment, alipayToken)).status,
+    ).toBe(200);
+    expect(
+      (await call(alipayCallback, undefined, failed, alipayToken)).status,
+    ).toBe(200);
+    expect(await balance()).toBe(
+      (before + BigInt(product.creditsMicrocredits)).toString(),
+    );
+    expect(
+      (await call(`${orders}/${input.orderId}/refund`, alice, {})).status,
+    ).toBe(404);
+    const requested = await (
+      await call(`${orderPath}/refund`, alice, {})
+    ).json();
+    expect(requested).toMatchObject({
+      state: "refund_pending",
+      creditsFrozen: true,
+      refund: { state: "processing" },
+    });
+    expect(await balance()).toBe(before.toString());
+    // The fixture has settled funds, but its callback has not reached the ledger.
+    const funds = await fetch(
+      new URL(`/refunds/${requested.refund.id}`, checkoutFixture.url),
+      {
+        headers: { authorization: `Bearer ${alipayToken}` },
+      },
+    );
+    expect(await funds.json()).toMatchObject({
+      state: "confirmed",
+      amountCents: product.priceCents,
+    });
+    expect(refund).toBeDefined();
+    expect((await call(refundCallback, undefined, refund, true)).status).toBe(
+      409,
+    );
+    expect((await call(alipayRefund, undefined, refund, true)).status).toBe(
+      401,
+    );
+    for (const [fields, status] of [
+      [{ amountCents: 1 }, 409],
+      [{ currency: "USD" }, 400],
+      [{ merchantId: "fixture-wrong" }, 409],
+      [{ orderId: crypto.randomUUID() }, 404],
+      [{ refundId: crypto.randomUUID() }, 409],
+      [{ channelOrderRef: "wrong-reference" }, 409],
+    ] satisfies [object, number][]) {
+      expect(
+        (
+          await call(
+            alipayRefund,
+            undefined,
+            { ...refund, ...fields },
+            alipayToken,
+          )
+        ).status,
+      ).toBe(status);
+    }
+    expect(await (await call(`${prefix}/orders`, alice)).json()).toContainEqual(
+      expect.objectContaining({
+        id: input.orderId,
+        state: "refund_pending",
+        creditsFrozen: true,
+        refund: expect.objectContaining({
+          id: requested.refund.id,
+          state: "processing",
+        }),
+      }),
+    );
+    expect(
+      await (await call(`${orderPath}/refund/verify`, alice, {})).json(),
+    ).toMatchObject({
+      state: "refunded",
+      creditsFrozen: false,
+      refund: { id: requested.refund.id, state: "confirmed" },
+    });
+    expect(
+      (await call(alipayRefund, undefined, refund, alipayToken)).status,
+    ).toBe(200);
+    expect(
+      (
+        await call(
+          alipayRefund,
+          undefined,
+          { ...refund, state: "processing" },
+          alipayToken,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call(alipayCallback, undefined, payment, alipayToken)).status,
+    ).toBe(200);
+    expect(
+      await (await call(`${orderPath}/refund/verify`, alice, {})).json(),
+    ).toMatchObject({
+      state: "refunded",
+      refund: { id: requested.refund.id, state: "confirmed" },
+    });
+    expect(await balance()).toBe(before.toString());
+  } finally {
+    api = previous;
+    await checkoutFixture.stop(true);
+  }
+});

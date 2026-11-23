@@ -21,9 +21,17 @@ import {
 } from "@/lib/billing/queries";
 import { ClientError, client } from "@/lib/client";
 
-const path = "/api/billing/paid/credit-pack";
-const offerKey = [...billingKeys.all, "credit-pack-offer"];
-const ordersKey = [...billingKeys.all, "credit-pack-orders"];
+const channels = {
+  WeChat: "/api/billing/paid/credit-pack",
+  Alipay: "/api/billing/paid/credit-pack/alipay",
+};
+type Channel = keyof typeof channels;
+
+const orderListKey = (channel: Channel) => [
+  ...billingKeys.all,
+  "credit-pack-orders",
+  channel,
+];
 
 const pack = z.object({
   priceCents: z.number().int().positive(),
@@ -49,14 +57,14 @@ const states = {
   refunded: "Refunded",
 };
 
-const refundStatuses = {
-  requested: "Waiting for WeChat refund processing.",
-  processing: "WeChat is processing your refund.",
+const refundStatuses = (channel: Channel) => ({
+  requested: `Waiting for ${channel} refund processing.`,
+  processing: `${channel} is processing your refund.`,
   manual_review: "Your refund is under manual review.",
-  manual_owed: "WeChat could not return the funds. A manual refund is pending.",
+  manual_owed: `${channel} could not return the funds. A manual refund is pending.`,
   confirmed: "Refund confirmed. Funds returned.",
   failed: "The refund failed. Any credits frozen for it are available again.",
-};
+});
 
 const orderSchema = pack.extend({
   id: z.uuid(),
@@ -96,14 +104,14 @@ function packText({
   return `CN¥${(priceCents / 100).toFixed(2)} · ${creditsText(creditsMicrocredits)} credits`;
 }
 
-function OrderRow({ order }: { order: Order }) {
+function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
   const queryClient = useQueryClient();
   const [confirmRefund, setConfirmRefund] = useState(false);
   const sources = useQuery(paidSourcesQueryOptions());
   const source = sources.data?.find(
     ({ entitlementId }) => entitlementId === order.entitlementId,
   );
-  const orderPath = `${path}/orders/${encodeURIComponent(order.id)}`;
+  const orderPath = `${channels[channel]}/orders/${encodeURIComponent(order.id)}`;
   const checkout = useMutation({
     mutationFn: async () => {
       const url = z.url().parse(
@@ -119,9 +127,11 @@ function OrderRow({ order }: { order: Order }) {
   });
   const refreshCredits = () =>
     Promise.all(
-      [ordersKey, billingKeys.paidBalance, billingKeys.paidSources].map(
-        (queryKey) => queryClient.invalidateQueries({ queryKey }),
-      ),
+      [
+        orderListKey(channel),
+        billingKeys.paidBalance,
+        billingKeys.paidSources,
+      ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
     );
   const verify = useMutation({
     mutationFn: async (): Promise<Order> =>
@@ -150,7 +160,7 @@ function OrderRow({ order }: { order: Order }) {
             </Text>
             <Text role="status">
               {order.creditsFrozen ? "Credits frozen. " : ""}
-              {refundStatuses[order.refund.state]}
+              {refundStatuses(channel)[order.refund.state]}
             </Text>
           </>
         ) : (
@@ -220,12 +230,12 @@ function OrderRow({ order }: { order: Order }) {
             }}
           >
             <VStack gap={3}>
-              <DialogHeader title="Request WeChat refund" />
+              <DialogHeader title={`Request ${channel} refund`} />
               <Text>
                 Request CN¥{(order.priceCents / 100).toFixed(2)} back through
-                the WeChat test channel. If eligible, this order’s credits will
-                be frozen while the refund is processed. Used credits require
-                manual review.
+                the {channel} test channel. If eligible, this order’s credits
+                will be frozen while the refund is processed. Used credits
+                require manual review.
               </Text>
               {refundAction.error ? (
                 <Text role="alert">{refundAction.error.message}</Text>
@@ -252,6 +262,18 @@ function OrderRow({ order }: { order: Order }) {
 }
 
 export function CreditPackCheckout() {
+  return (
+    <>
+      <ChannelCheckout channel="WeChat" />
+      <ChannelCheckout channel="Alipay" />
+    </>
+  );
+}
+
+function ChannelCheckout({ channel }: { channel: Channel }) {
+  const path = channels[channel];
+  const offerKey = [...billingKeys.all, "credit-pack-offer", channel];
+  const ordersKey = orderListKey(channel);
   const queryClient = useQueryClient();
   const offer = useQuery({
     queryKey: offerKey,
@@ -294,8 +316,10 @@ export function CreditPackCheckout() {
   const product = offer.data?.product;
   return (
     <PageSection
-      description="WeChat test channel. Orders use simulated payments and add long-lived paid credits."
-      title="Test Credit Pack"
+      description={`${channel} test channel. Orders use simulated payments and add long-lived paid credits.`}
+      title={
+        channel === "WeChat" ? "Test Credit Pack" : "Alipay Test Credit Pack"
+      }
     >
       <PageRows>
         <Item>
@@ -324,7 +348,11 @@ export function CreditPackCheckout() {
               <HStack>
                 <Button
                   isDisabled={place.isPending}
-                  label="Place test order"
+                  label={
+                    channel === "WeChat"
+                      ? "Place test order"
+                      : "Place Alipay test order"
+                  }
                   onClick={() => place.mutate(product.version)}
                 />
               </HStack>
@@ -347,7 +375,7 @@ export function CreditPackCheckout() {
         {orders.data?.map((order) => (
           <Fragment key={order.id}>
             <Separator />
-            <OrderRow order={order} />
+            <OrderRow order={order} channel={channel} />
           </Fragment>
         ))}
       </PageRows>
