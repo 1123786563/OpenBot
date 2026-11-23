@@ -175,6 +175,25 @@ describe("the General page speaks the interface language", () => {
       view.getByText("在 OpenBot 的任何地方开始一个新对话。"),
     ).toBeTruthy();
   });
+
+  test("in Chinese the name row and its dialog read in Chinese, with Ada unchanged", async () => {
+    await pinLocale("zh-CN");
+    const view = drawPage();
+    const row = view.getByRole("button", { name: /^姓名/ });
+    expect(row.textContent).toContain("Ada");
+    await userEvent.setup({ document }).click(row);
+    const dialog = await view.findByRole("dialog");
+    expect(within(dialog).getByText("你的名字")).toBeTruthy();
+    expect(
+      (within(dialog).getByLabelText("姓名") as HTMLInputElement).value,
+    ).toBe("Ada");
+    expect(
+      within(dialog).getByRole("button", { name: "保存名字" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText("选择 OpenBot 为你显示的名字。"),
+    ).toBeTruthy();
+  });
 });
 
 /*

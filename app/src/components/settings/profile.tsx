@@ -19,6 +19,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { useTranslation } from "@/i18n";
 import { updateProfileNameMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { queryClient } from "@/query-client";
@@ -52,6 +53,7 @@ export function ProfileNameForm({
   const [draft, setDraft] = useState<string | null>(null);
   const name = draft ?? initialName;
   const save = useSaveProfileName(onSaved);
+  const { t } = useTranslation();
   return (
     <form
       className="flex w-full flex-col gap-3"
@@ -60,7 +62,7 @@ export function ProfileNameForm({
         if (name.trim() && !save.isPending) save.mutate(name.trim());
       }}
     >
-      <label htmlFor={id}>Name</label>
+      <label htmlFor={id}>{t("settings.name", "Name")}</label>
       <Input
         id={id}
         autoComplete="name"
@@ -80,7 +82,7 @@ export function ProfileNameForm({
       )}
       {save.isSuccess && (
         <p role="status" className="text-sm text-muted-foreground">
-          Your name has been saved.
+          {t("settings.name.saved", "Your name has been saved.")}
         </p>
       )}
       <Button
@@ -88,7 +90,9 @@ export function ProfileNameForm({
         className="self-end"
         disabled={!name.trim() || save.isPending}
       >
-        {save.isPending ? "Saving…" : "Save name"}
+        {save.isPending
+          ? t("settings.name.saving", "Saving…")
+          : t("settings.name.save", "Save name")}
       </Button>
     </form>
   );
@@ -101,6 +105,7 @@ export function ProfileNameForm({
 export function NameRow() {
   const { data: user } = useQuery(currentUserQueryOptions());
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
   const name = user && !user.needsName ? (user.name ?? "") : "";
   return (
     <>
@@ -112,8 +117,10 @@ export function NameRow() {
           <IconUserCircle />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle>Name</ItemTitle>
-          <ItemDescription>{name || "Not set yet."}</ItemDescription>
+          <ItemTitle>{t("settings.name", "Name")}</ItemTitle>
+          <ItemDescription>
+            {name || t("settings.name.notSet", "Not set yet.")}
+          </ItemDescription>
         </ItemContent>
         <ItemActions>
           <IconChevronRight className="size-4 text-muted-foreground" />
@@ -122,9 +129,12 @@ export function NameRow() {
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Your name</DialogTitle>
+            <DialogTitle>{t("settings.name.dialogTitle", "Your name")}</DialogTitle>
             <DialogDescription>
-              Choose the name OpenBot shows for you.
+              {t(
+                "settings.name.description",
+                "Choose the name OpenBot shows for you.",
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
