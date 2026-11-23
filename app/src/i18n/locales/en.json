@@ -1,4 +1,5 @@
 {
+  "frame.close": "Close",
   "frame.openWorkspace": "Open workspace",
   "frame.pageLoadFailed": "This page couldn’t load",
   "frame.pageLoadFailedDescription": "Try loading this page again, or return to your workspace to keep working.",

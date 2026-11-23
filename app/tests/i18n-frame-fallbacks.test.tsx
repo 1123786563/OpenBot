@@ -7,13 +7,14 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   MissingPage,
   RouteLoadError,
 } from "@/components/layout/route-recovery";
 import { ReadError } from "@/components/layout/read-status";
+import { Toaster, toast } from "@/components/ui/toast";
 import { client } from "@/lib/client";
 import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
@@ -198,4 +199,27 @@ test("the failed-load screen speaks the interface language, and its retry still 
 
   await view.findByText("The page loaded.");
   expect(view.queryByRole("button", { name: "重试" })).toBeNull();
+});
+
+test("a toast's close button speaks the interface language", async () => {
+  render(<Toaster />);
+  const user = userEvent.setup({ document });
+  const shown = () => within(document.body);
+  act(() => toast.add({ title: "Signing out did not finish.", type: "error" }));
+  // Until the toast is hovered or holds focus, Base UI keeps its close button out of the tree.
+  const before = shown().getByLabelText("Close") as HTMLButtonElement;
+  act(() => before.focus());
+  shown().getByRole("button", { name: "Close" });
+
+  await pinLocale("zh-CN");
+
+  expect(shown().getByRole("button", { name: "关闭" })).toBe(before);
+  expect(shown().queryByRole("button", { name: "Close" })).toBeNull();
+  expect(shown().getByText("Signing out did not finish.")).toBeTruthy();
+
+  await user.click(before);
+
+  await waitFor(() =>
+    expect(document.querySelector("[data-slot=toast-close]")).toBeNull(),
+  );
 });
