@@ -1,8 +1,5 @@
 import { type BaseEvent, EventType, type Message } from "@ag-ui/client";
-import {
-  CONTEXT_REVOKED,
-  CONTEXT_REVOKED_MESSAGE,
-} from "@openbot/toolkit/run-context";
+import { CONTEXT_REVOKED_MESSAGE } from "@openbot/toolkit/run-context";
 import { and, asc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import type { ProfileReadExecutor } from "../agents/profile-store";
 import type { Database } from "../db/client";
@@ -290,13 +287,10 @@ export async function readDirectChatReplay(
     .orderBy(asc(directChatRunEvents.cursor))
     .limit(128);
   const hasGap = events.some((row, index) => row.cursor !== cursor + index + 1);
-  // A verified result can amend a failed Run after its terminal event was recorded.
-  const recovered =
-    run.status === "failed" &&
-    run.externalOutcome === "executed" &&
-    run.stopReason !== CONTEXT_REVOKED;
+  // Settlement can amend both the transcript and stop reason after the terminal event.
+  const settled = run.status === "failed" && run.externalOutcome === "executed";
   if (
-    !recovered &&
+    !settled &&
     !hasGap &&
     (events.length || (cursor === run.eventCursor && run.status === "running"))
   ) {

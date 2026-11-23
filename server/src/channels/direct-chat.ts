@@ -21,6 +21,7 @@ import {
   CONTEXT_REVOKED_MESSAGE,
   createRunContext,
   type RunContextVersion,
+  runContextVersion,
   trackRunContext,
   verifyRunContext,
   withRunContext,
@@ -71,6 +72,7 @@ import { currentEdition } from "../edition";
 import {
   createDirectChatLearning,
   LearningEvidenceUnavailable,
+  lockLearningSettings,
 } from "../learning/direct-chat";
 import { setSharedLearningPermission } from "../learning/evidence";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
@@ -93,6 +95,11 @@ import {
   stopDirectChatRun,
   stoppedRunEvent,
 } from "./direct-chat-replay";
+
+type RunTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+const dispatchedVersions = z.array(
+  runContextVersion.extend({ kind: z.literal("learned_skill") }),
+);
 
 const id = z.string().min(1).max(256);
 const runBody = z.object({
@@ -958,11 +965,80 @@ export function createDirectChatRoutes(deps: {
     };
   }
 
-  function recoveredManagedReply(id: string, text: string) {
-    return {
-      assistantMessageId: sql`case when ${directChatRuns.stopReason} is distinct from ${CONTEXT_REVOKED} then ${id} else ${directChatRuns.assistantMessageId} end`,
-      reply: sql`case when ${directChatRuns.stopReason} is distinct from ${CONTEXT_REVOKED} then ${text} else ${directChatRuns.reply} end`,
-    };
+  async function loadedSkillsCurrent(
+    tx: RunTransaction,
+    scope: DirectChatLearningScope,
+    versions: RunContextVersion[],
+  ) {
+    if (!versions.length) return true;
+    const current = await learning.guidanceForIds(
+      tx,
+      scope,
+      skillPolicy,
+      versions.map(({ id }) => id),
+    );
+    return versionsMatch(learnedSkillVersions(current), versions);
+  }
+
+  async function learnedSkillVersionsCurrent(
+    actor: AgentActor,
+    threadId: string,
+    agentId: string,
+    versions: RunContextVersion[],
+    scopeBot = agentId,
+  ) {
+    if (!versions.length) return true;
+    return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
+      return (
+        Boolean(await threadFor(tx, actor, threadId, scopeBot, true)) &&
+        loadedSkillsCurrent(
+          tx,
+          learningScope(threadId, agentId, actor.id),
+          versions,
+        )
+      );
+    });
+  }
+
+  async function settleManagedReceipt(
+    tx: RunTransaction,
+    key: RunKey,
+    scope: DirectChatLearningScope,
+    evidence: Extract<
+      Awaited<ReturnType<ManagedModel["reconcileOutcome"]>>,
+      { outcome: "executed" | "not_dispatched" }
+    >,
+    answerId: () => string,
+  ) {
+    const pending = and(
+      matchingRun(key),
+      eq(directChatRuns.externalOutcome, "unknown"),
+      isNull(directChatRuns.waitingApprovalId),
+    );
+    const [run] = await tx.select().from(directChatRuns).where(pending);
+    if (!run) return;
+
+    // Older dispatches have no dependency record. Their receipts can still settle.
+    const versions = dispatchedVersions.safeParse(run.dispatchedSkillVersions);
+    const canPublish =
+      evidence.outcome === "executed" &&
+      run.stopReason !== CONTEXT_REVOKED &&
+      versions.success &&
+      (await loadedSkillsCurrent(tx, scope, versions.data));
+    await tx
+      .update(directChatRuns)
+      .set({
+        externalOutcome: evidence.outcome,
+        ...(evidence.outcome === "executed" &&
+          (canPublish
+            ? {
+                assistantMessageId: run.assistantMessageId ?? answerId(),
+                reply: evidence.text,
+              }
+            : { stopReason: run.stopReason ?? CONTEXT_REVOKED })),
+      })
+      .where(pending);
   }
 
   routes.post("/threads/:threadId/runs/:runId/reconcile", async (context) => {
@@ -1021,29 +1097,20 @@ export function createDirectChatRoutes(deps: {
     if (!currentActor || currentActor.id !== actor.id)
       return context.json(absent, 404);
     return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
       if (!(await runThreadFor(tx, currentActor, key.threadId, agentId, true)))
         return context.json(absent, 404);
       if (
         evidence?.outcome === "executed" ||
         evidence?.outcome === "not_dispatched"
       ) {
-        await tx
-          .update(directChatRuns)
-          .set({
-            externalOutcome: evidence.outcome,
-            ...(evidence.outcome === "executed" &&
-              recoveredManagedReply(
-                run.assistantMessageId ?? crypto.randomUUID(),
-                evidence.text,
-              )),
-          })
-          .where(
-            and(
-              matchingRun(key),
-              eq(directChatRuns.externalOutcome, "unknown"),
-              isNull(directChatRuns.waitingApprovalId),
-            ),
-          );
+        await settleManagedReceipt(
+          tx,
+          key,
+          learningScope(key.threadId, agentId, actor.id),
+          evidence,
+          () => crypto.randomUUID(),
+        );
       }
       const [current] = await tx
         .select()
@@ -1758,29 +1825,21 @@ export function createDirectChatRoutes(deps: {
             (await authorize())?.id === actor.id
           ) {
             await database.transaction(async (tx) => {
+              await lockLearningSettings(tx);
               if (
                 !(await runThreadFor(tx, actor, key.threadId, scopeBot, true))
               )
                 return;
-              await tx
-                .update(directChatRuns)
-                .set({
-                  externalOutcome: evidence.outcome,
-                  ...(evidence.outcome === "executed" &&
-                    recoveredManagedReply(
-                      input.source === "handoff"
-                        ? answerMessageId(input.agentId, key.runId)
-                        : crypto.randomUUID(),
-                      evidence.text,
-                    )),
-                })
-                .where(
-                  and(
-                    matchingRun(key),
-                    eq(directChatRuns.externalOutcome, "unknown"),
-                    isNull(directChatRuns.waitingApprovalId),
-                  ),
-                );
+              await settleManagedReceipt(
+                tx,
+                key,
+                learningScope(key.threadId, input.agentId, actor.id),
+                evidence,
+                () =>
+                  input.source === "handoff"
+                    ? answerMessageId(input.agentId, key.runId)
+                    : crypto.randomUUID(),
+              );
             });
             continue;
           }
@@ -1929,10 +1988,11 @@ export function createDirectChatRoutes(deps: {
       return false;
     };
     if (!(await shouldContinue())) return;
+    const dispatchTime = new Date();
     const [dispatched] = await database
       .update(directChatRuns)
       .set({
-        dispatchedAt: new Date(),
+        dispatchedAt: dispatchTime,
         waitingApprovalId: null,
         ...(!background && continuation && { externalOutcome: null }),
         ...((trial || (background && !background.literalAnswer)) &&
@@ -1973,10 +2033,16 @@ export function createDirectChatRoutes(deps: {
     async function learnedContextIsCurrent() {
       if (learnedContextRevoked) return false;
       if (!learnedVersions?.length) return true;
-      const current = await currentGuidance().catch(() => null);
+      const currentActor = await authorize();
       if (
-        current === null ||
-        !versionsMatch(learnedSkillVersions(current), learnedVersions)
+        currentActor?.id !== operation.scope.personId ||
+        !(await learnedSkillVersionsCurrent(
+          currentActor,
+          threadId,
+          agentId,
+          learnedVersions,
+          scopeBot,
+        ).catch(() => false))
       ) {
         learnedContextRevoked = true;
         runContext.revoked = true;
@@ -2058,12 +2124,26 @@ export function createDirectChatRoutes(deps: {
           ...operation,
           route: trial.route,
           messages: conversation,
+          beforeRecovery: shouldContinue,
           beforeDispatch: async () => {
             if (!(await shouldContinue())) return false;
-            if (!usesLearningGuidance) return conversation;
-            const current = await currentGuidance();
+            const current = usesLearningGuidance ? await currentGuidance() : [];
             if (!current) return false;
-            learnedVersions ??= learnedSkillVersions(current);
+            const versions = learnedSkillVersions(current);
+            const [recorded] = await database
+              .update(directChatRuns)
+              .set({ dispatchedSkillVersions: versions })
+              .where(
+                and(
+                  matchingRun(key),
+                  eq(directChatRuns.status, "running"),
+                  eq(directChatRuns.dispatchedAt, dispatchTime),
+                  isNull(directChatRuns.dispatchedSkillVersions),
+                ),
+              )
+              .returning({ id: directChatRuns.id });
+            if (!recorded) return false;
+            learnedVersions = versions;
             const instructions = learningInstructions(current);
             return instructions
               ? [{ role: "system", content: instructions }, ...conversation]
@@ -2071,7 +2151,10 @@ export function createDirectChatRoutes(deps: {
           },
         });
         if (!(await shouldContinue())) return;
-        if (!(await learnedContextIsCurrent())) {
+        if (
+          (result.state === "completed" && learnedVersions === undefined) ||
+          !(await learnedContextIsCurrent())
+        ) {
           await stopRevokedContext(
             result.state === "completed" ? "executed" : undefined,
           );
@@ -2312,23 +2395,7 @@ export function createDirectChatRoutes(deps: {
 
   return {
     routes,
-    async learnedSkillVersionsCurrent(
-      actor: AgentActor,
-      threadId: string,
-      agentId: string,
-      versions: RunContextVersion[],
-    ) {
-      if (!versions.length) return true;
-      const current = await learning.guidance(
-        learningScope(threadId, agentId, actor.id),
-        (tx) => threadFor(tx, actor, threadId, agentId, true),
-        skillPolicy,
-      );
-      return (
-        current !== null &&
-        versionsMatch(learnedSkillVersions(current), versions)
-      );
-    },
+    learnedSkillVersionsCurrent,
     runBackground,
     backgroundApproval,
     learningConversations,

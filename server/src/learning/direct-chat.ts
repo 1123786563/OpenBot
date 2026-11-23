@@ -73,7 +73,7 @@ const dispatchDeadlineMs = 120_000;
 const reconcileIntervalMs = 10_000;
 
 // The settings writer takes the matching exclusive lock before cancelling active analyses.
-async function lockLearningSettings(tx: Pick<Database, "execute">) {
+export async function lockLearningSettings(tx: Pick<Database, "execute">) {
   await tx.execute(
     sql`select pg_advisory_xact_lock_shared(hashtextextended('openbot:learning-settings', 0))`,
   );
@@ -1463,50 +1463,75 @@ export function createDirectChatLearning(
       await lockLearningSettings(tx);
       await lockPersonLearning(tx, scope);
       if (!(await authorize(tx))) return null;
-      if (!(await learningEnabled(tx, scope.botId))) return [];
-      const candidates = await tx
-        .select({ analysis: analyses, review: reviews.review })
-        .from(analyses)
-        .innerJoin(reviews, eq(reviews.proposalId, analyses.id))
-        .where(
-          and(
-            inScope(scope),
-            eq(analyses.state, "proposed"),
-            sql`${reviews.review}->>'decision' = 'approve'`,
-          ),
-        )
-        .orderBy(desc(analyses.startedAt), desc(analyses.id))
-        .limit(20);
-      const skills = [];
-      for (const { analysis, review } of candidates) {
-        if (
-          analysis.proposal &&
-          sameScope(review.scope, scope) &&
-          (await verifiedEvidence(tx, scope, analysis))
-        )
-          skills.push({ id: analysis.id, ...analysis.proposal });
-      }
-      const shared = await publishedRows(
-        tx,
-        scope.personId,
+      return readGuidance(tx, scope, policy);
+    });
+  }
+
+  async function readGuidance(
+    tx: Transaction,
+    scope: Scope,
+    policy: SharingPolicy,
+    ids?: string[],
+  ) {
+    if (!(await learningEnabled(tx, scope.botId))) return [];
+    const candidates = await tx
+      .select({ analysis: analyses, review: reviews.review })
+      .from(analyses)
+      .innerJoin(reviews, eq(reviews.proposalId, analyses.id))
+      .where(
         and(
-          eq(shares.recipientId, scope.personId),
-          eq(shares.threadId, scope.threadId),
-          eq(analyses.botId, scope.botId),
+          inScope(scope),
+          ids && inArray(analyses.id, ids),
+          eq(analyses.state, "proposed"),
+          sql`${reviews.review}->>'decision' = 'approve'`,
         ),
       )
-        .orderBy(desc(analyses.startedAt), desc(analyses.id))
-        .limit(20);
-      for (const row of shared) {
-        if (skills.length >= 20) break;
-        const skill = await readPublished(tx, row, policy);
-        if (skill && (await recipientMayUse(tx, row, scope, policy))) {
-          const { id, title, instructions } = skill;
-          skills.push({ id, title, instructions });
+      .orderBy(desc(analyses.startedAt), desc(analyses.id))
+      .limit(ids?.length ?? 20);
+    const skills = [];
+    for (const { analysis, review } of candidates) {
+      if (
+        analysis.proposal &&
+        sameScope(review.scope, scope) &&
+        (await verifiedEvidence(tx, scope, analysis))
+      )
+        skills.push({ id: analysis.id, ...analysis.proposal });
+    }
+    const shared = await publishedRows(
+      tx,
+      scope.personId,
+      and(
+        ids && inArray(analyses.id, ids),
+        eq(shares.recipientId, scope.personId),
+        eq(shares.threadId, scope.threadId),
+        eq(analyses.botId, scope.botId),
+      ),
+    )
+      .orderBy(desc(analyses.startedAt), desc(analyses.id))
+      .limit(ids?.length ?? 20);
+    for (const row of shared) {
+      if (!ids && skills.length >= 20) break;
+      const skill = await readPublished(tx, row, policy);
+      if (skill && (await recipientMayUse(tx, row, scope, policy))) {
+        if (ids) {
+          const [grant] = await tx
+            .select({ id: shares.proposalId })
+            .from(shares)
+            .where(
+              and(
+                eq(shares.proposalId, skill.id),
+                eq(shares.recipientId, scope.personId),
+                eq(shares.threadId, scope.threadId),
+              ),
+            )
+            .for("share");
+          if (!grant) continue;
         }
+        const { id, title, instructions } = skill;
+        skills.push({ id, title, instructions });
       }
-      return skills;
-    });
+    }
+    return skills;
   }
 
   return {
@@ -1526,5 +1551,16 @@ export function createDirectChatLearning(
     adminDecide,
     setAutoApproval,
     guidance,
+    guidanceForIds(
+      tx: Transaction,
+      scope: Scope,
+      policy: SharingPolicy,
+      ids: string[],
+    ) {
+      const validIds = ids.filter((id) => z.uuid().safeParse(id).success);
+      return validIds.length
+        ? readGuidance(tx, scope, policy, validIds)
+        : Promise.resolve([]);
+    },
   };
 }

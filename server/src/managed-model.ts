@@ -188,6 +188,7 @@ export function createManagedModel({
         route: string;
         messages: readonly ModelMessage[];
         beforeDispatch?: BeforeDispatch;
+        beforeRecovery?: () => Promise<boolean>;
       },
     ): Promise<ManagedModelResult> {
       const token = credentialsByPerson.get(input.scope.personId);
@@ -223,7 +224,10 @@ export function createManagedModel({
       }
       if (admission.state === "denied") return { state: admission.reason };
       if (!admission.permit)
-        return recoverCompletion(input, input.beforeDispatch);
+        return recoverCompletion(
+          input,
+          input.beforeRecovery ?? input.beforeDispatch,
+        );
 
       try {
         const prepared = await input.beforeDispatch?.();
@@ -246,7 +250,10 @@ export function createManagedModel({
         );
         if (result.state === "denied") return { state: result.reason };
         if (result.state === "existing")
-          return await recoverCompletion(input, input.beforeDispatch);
+          return await recoverCompletion(
+            input,
+            input.beforeRecovery ?? input.beforeDispatch,
+          );
         return result;
       } catch {
         return { state: "reconciling" };

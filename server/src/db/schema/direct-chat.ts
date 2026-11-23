@@ -1,4 +1,5 @@
 import type { BaseEvent } from "@ag-ui/client";
+import type { RunContextVersion } from "@openbot/toolkit/run-context";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -41,6 +42,9 @@ export const directChatRuns = pgTable(
       .$type<"running" | "completed" | "failed">()
       .notNull(),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    dispatchedSkillVersions: jsonb("dispatched_skill_versions").$type<
+      RunContextVersion[]
+    >(),
     externalOutcome: text("external_outcome").$type<
       "dispatching" | "unknown" | "executed" | "not_dispatched"
     >(),
