@@ -43,7 +43,11 @@ let domainSignInSpy: DomainSignInSpy = async () => {};
  * drives the real functions through their injectable starter. The two together cover the handoff.
  */
 mock.module("@/lib/auth/client", () => ({
-  providerName: () => "Google",
+  /*
+   * Display names come from the real table: a button that says Google for every id would make
+   * "Microsoft/Okta keep their names" a test of the mock, not of the screen.
+   */
+  providerName: realAuthClient.providerName,
   signInWith: (...args: Parameters<SignInSpy>) => signInSpy(...args),
   signInWithEmailDomain: (...args: Parameters<DomainSignInSpy>) =>
     domainSignInSpy(...args),
@@ -632,4 +636,26 @@ test("a failed read of the sign-in options speaks the interface language", async
   } finally {
     window.fetch = realFetch;
   }
+});
+
+test("every provider keeps its own name, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: ["google", "microsoft", "okta"],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  expect(view.getByRole("button", { name: "使用 Google 继续" })).toBeTruthy();
+  expect(
+    view.getByRole("button", { name: "使用 Microsoft 继续" }),
+  ).toBeTruthy();
+  expect(view.getByRole("button", { name: "使用 Okta 继续" })).toBeTruthy();
+
+  await pinLocale("en");
+  expect(
+    view.getByRole("button", { name: "Continue with Microsoft" }),
+  ).toBeTruthy();
+  expect(view.getByRole("button", { name: "Continue with Okta" })).toBeTruthy();
 });
