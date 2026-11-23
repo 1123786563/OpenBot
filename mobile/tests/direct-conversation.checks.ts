@@ -85,6 +85,47 @@ test("replay resumes at the last delivered position and reads an expired-cursor 
   );
 });
 
+test("an aborted Run cannot change the next Run's replay cursor", async () => {
+  const resumes: { runId: string; cursor: number }[] = [];
+  const client = directConversation(
+    async (path, request) => {
+      assert.equal(path, "/api/copilotkit/agent/bot/resume");
+      const { runId, cursor } = JSON.parse(String(request?.body));
+      resumes.push({ runId, cursor });
+      const eventId = runId === "old-run" ? 20 : 3;
+      return new Response(
+        `id: ${eventId}\ndata: {"type":"TEXT_MESSAGE_CONTENT"}\n\n`,
+      );
+    },
+    { threadId, agentId },
+  );
+  const refreshing = Promise.withResolvers<void>();
+  const finishRefresh = Promise.withResolvers<void>();
+  const previous = new AbortController();
+  const next = new AbortController();
+  const oldFollow = client.follow(
+    "old-run",
+    async () => {
+      refreshing.resolve();
+      await finishRefresh.promise;
+    },
+    previous.signal,
+  );
+
+  await refreshing.promise;
+  previous.abort();
+  await client.follow("new-run", async () => {}, next.signal);
+  finishRefresh.resolve();
+  await oldFollow;
+  await client.follow("new-run", async () => {}, next.signal);
+
+  assert.deepEqual(resumes, [
+    { runId: "old-run", cursor: 0 },
+    { runId: "new-run", cursor: 0 },
+    { runId: "new-run", cursor: 3 },
+  ]);
+});
+
 test("only the current Run's approvals appear and access loss rejects Run control", async () => {
   let authorized = true;
   const approval = {
