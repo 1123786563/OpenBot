@@ -6129,6 +6129,7 @@ test("closure rolls back partial acceptance, fences queued dispatch, and cuts of
         claimedBy: workItems.claimedBy,
         interruption: workItems.interruption,
         storedReason: sql<string>`${workItems.interruption}->>'reason'`,
+        endedAt: sql<number>`(${workItems.interruption}->>'endedAt')::double precision`,
       })
       .from(workItems)
       .where(eq(workItems.key, runId));
@@ -6141,12 +6142,10 @@ test("closure rolls back partial acceptance, fences queued dispatch, and cuts of
         endedAt: expect.any(Number),
       },
     });
-    expect(stopped.interruption?.endedAt).toBeGreaterThanOrEqual(
+    expect(stopped.endedAt).toBeGreaterThanOrEqual(
       closure.acceptedAt.getTime(),
     );
-    expect(stopped.interruption?.endedAt).toBeLessThan(
-      closure.deadline.getTime(),
-    );
+    expect(stopped.endedAt).toBeLessThan(closure.deadline.getTime());
   } finally {
     clearInterval(supervisorSweep);
     computerProcess?.kill();
