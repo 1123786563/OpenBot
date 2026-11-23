@@ -4,17 +4,18 @@ import { stringify } from "yaml";
 import { z } from "zod";
 import { CatalogEntryUnavailable } from "./catalog";
 import { type BifrostMarketConfig, exactVersion } from "./config";
+import { decodeImportedSkillDocument } from "./imported-document";
 
-const slugSchema = z
+export const bifrostSkillName = z
   .string()
   .max(64)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const pageSize = 20;
-const maxFiles = 256;
-const maxPackageBytes = 32 * 1024 * 1024;
+export const maxFiles = 256;
+export const maxPackageBytes = 32 * 1024 * 1024;
 
 const summaryRow = z.object({
-  name: slugSchema,
+  name: bifrostSkillName,
   description: z.string(),
   latest_version: exactVersion,
 });
@@ -70,7 +71,10 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
   }
 
   function checkScope(namespace: string, slug: string) {
-    if (namespace !== config.namespace || !slugSchema.safeParse(slug).success)
+    if (
+      namespace !== config.namespace ||
+      !bifrostSkillName.safeParse(slug).success
+    )
       throw new CatalogEntryUnavailable();
   }
 
@@ -86,8 +90,80 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
     `;
     if (!rows.length) throw new CatalogEntryUnavailable();
     const selected = versionRow.safeParse(rows[0]);
-    if (!selected.success) throw new IncompleteBifrostPackage();
+    if (rows.length !== 1 || !selected.success)
+      throw new IncompleteBifrostPackage();
     return selected.data;
+  }
+
+  async function readExactPackage(
+    namespace: string,
+    slug: string,
+    version: string,
+  ) {
+    checkScope(namespace, slug);
+    if (!exactVersion.safeParse(version).success)
+      throw new CatalogEntryUnavailable();
+    return sql.begin(
+      "isolation level repeatable read read only",
+      async (transaction) => {
+        const selected = await findVersion(transaction, slug, version);
+        let original: Buffer | undefined;
+        try {
+          original = decodeImportedSkillDocument(
+            slug,
+            selected.skill_md_body,
+            selected.frontmatter_snapshot,
+          );
+        } catch {
+          throw new IncompleteBifrostPackage();
+        }
+        const main =
+          original ??
+          renderSkillDocument(
+            slug,
+            selected.frontmatter_snapshot,
+            selected.skill_md_body,
+          );
+        const rows = await transaction`
+          select path, source_type, least(file_size_bytes, ${maxPackageBytes + 1})::integer as size
+          from openbot_skill_market.files
+          where skill_version_id = ${selected.id}
+          limit ${maxFiles + 1}
+        `;
+        const manifest = z.array(fileRow).safeParse(rows);
+        if (
+          !manifest.success ||
+          rows.length > maxFiles ||
+          manifest.data.reduce(
+            (total, file) => total + file.size,
+            main.length,
+          ) > maxPackageBytes
+        )
+          throw new IncompleteBifrostPackage();
+
+        checkArchivePaths(manifest.data.map(({ path }) => path));
+        const blobs = await transaction`
+          select path, data
+          from openbot_skill_market.files
+          where skill_version_id = ${selected.id}
+            and octet_length(data) = file_size_bytes
+        `;
+        const contents = z.array(storedFile).safeParse(blobs);
+        if (!contents.success || contents.data.length !== manifest.data.length)
+          throw new IncompleteBifrostPackage();
+        const byPath = new Map(
+          contents.data.map(({ path, data }) => [path, data]),
+        );
+        const entries = new Map<string, Uint8Array>([["SKILL.md", main]]);
+        for (const file of manifest.data) {
+          const data = byPath.get(file.path);
+          if (!data || data.byteLength !== file.size)
+            throw new IncompleteBifrostPackage();
+          entries.set(file.path, data);
+        }
+        return { versionId: selected.id, files: entries };
+      },
+    );
   }
 
   return {
@@ -152,74 +228,32 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
       };
     },
 
+    readExactPackage,
+    close: () => sql.end(),
+
     async download(namespace: string, slug: string, version: string) {
-      checkScope(namespace, slug);
-      if (!exactVersion.safeParse(version).success)
-        throw new CatalogEntryUnavailable();
-      const files = await sql.begin(
-        "isolation level repeatable read read only",
-        async (transaction) => {
-          const selected = await findVersion(transaction, slug, version);
-          const frontmatter = stringify(
-            { name: slug, ...selected.frontmatter_snapshot },
-            {
-              lineWidth: 0,
-              defaultStringType: "QUOTE_DOUBLE",
-              defaultKeyType: "PLAIN",
-            },
-          );
-          const main = Buffer.from(
-            `---\n${frontmatter}---\n${selected.skill_md_body}`,
-          );
-          const rows = await transaction`
-          select path, source_type, least(file_size_bytes, ${maxPackageBytes + 1})::integer as size
-          from openbot_skill_market.files
-          where skill_version_id = ${selected.id}
-          limit ${maxFiles + 1}
-        `;
-          const manifest = z.array(fileRow).safeParse(rows);
-          if (
-            !manifest.success ||
-            rows.length > maxFiles ||
-            manifest.data.reduce(
-              (total, file) => total + file.size,
-              main.length,
-            ) > maxPackageBytes
-          )
-            throw new IncompleteBifrostPackage();
-
-          checkArchivePaths(manifest.data.map(({ path }) => path));
-          const blobs = await transaction`
-          select path, data
-          from openbot_skill_market.files
-          where skill_version_id = ${selected.id}
-            and octet_length(data) = file_size_bytes
-        `;
-          const contents = z.array(storedFile).safeParse(blobs);
-          if (
-            !contents.success ||
-            contents.data.length !== manifest.data.length
-          )
-            throw new IncompleteBifrostPackage();
-          const byPath = new Map(
-            contents.data.map(({ path, data }) => [path, data]),
-          );
-          const entries = new Map<string, Uint8Array>([["SKILL.md", main]]);
-          for (const file of manifest.data) {
-            const data = byPath.get(file.path);
-            if (!data || data.byteLength !== file.size)
-              throw new IncompleteBifrostPackage();
-            entries.set(file.path, data);
-          }
-          return entries;
-        },
-      );
-
+      const { files } = await readExactPackage(namespace, slug, version);
       return new Response(archive(files), {
         headers: { "Content-Type": "application/zip" },
       });
     },
   };
+}
+
+function renderSkillDocument(
+  slug: string,
+  snapshot: z.infer<typeof versionRow>["frontmatter_snapshot"],
+  body: string,
+) {
+  const frontmatter = stringify(
+    { name: slug, ...snapshot },
+    {
+      lineWidth: 0,
+      defaultStringType: "QUOTE_DOUBLE",
+      defaultKeyType: "PLAIN",
+    },
+  );
+  return Buffer.from(`---\n${frontmatter}---\n${body}`);
 }
 
 function archive(files: Map<string, Uint8Array>) {
@@ -237,7 +271,7 @@ function archive(files: Map<string, Uint8Array>) {
   return Buffer.concat(chunks);
 }
 
-function checkArchivePaths(paths: string[]) {
+export function checkArchivePaths(paths: string[]) {
   const files = new Set(["skill.md"]);
   const directories = new Set<string>();
   for (const path of paths) {

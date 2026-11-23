@@ -81,7 +81,7 @@ start_gateway "$image" restored_upgrade "$temp/restore.json"
 docker exec "$project-fixture" python /fixture.py models
 docker exec "$project-fixture" python /fixture.py skills
 
-if [[ "${1:-}" == "--skill-market" ]]; then
+if [[ "${1:-}" == "--skill-market" || "${1:-}" == "--skill-migration" ]]; then
   market_rehearsal=1
   repository=$(cd "$directory/../../.." && pwd)
   docker exec "$project-fixture" python /fixture.py seed-market
@@ -105,6 +105,11 @@ SQL
   docker run --rm --network "$project" -v "$repository:/work:ro" -w /work \
     -e BIFROST_SKILL_MARKET_DATABASE_URL=postgres://openbot_skill_reader:fixture-market-reader@db/restored_upgrade \
     oven/bun:1.4.3-alpine bun --no-env-file server/tests/support/bifrost-market-rehearsal.ts
+  if [[ "${1:-}" == "--skill-migration" ]]; then
+    docker exec "$project-db" createdb -U bifrost skillhub_fixture
+    docker run --rm --network "$project" -v "$repository:/work:ro" -w /work \
+      oven/bun:1.4.3-alpine bun --no-env-file server/tests/support/bifrost-migration-rehearsal.ts
+  fi
   docker exec "$project-fixture" python /fixture.py market-pointer
 
   mkdir -p "$temp/edge/private"

@@ -51,3 +51,6 @@ bash deploy/middleware/bifrost/rehearsal/verify.sh --skill-market
 The rehearsal exercises exact-version downloads, the database reader grants,
 native route privacy, and direct and routed inference. All services use a
 private Docker network and synthetic data.
+
+For a SkillHub cutover, follow the [catalog migration and verification
+runbook](skill-market-migration.md).

@@ -9,7 +9,7 @@ export const exactVersion = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}$/);
 
-const confirmation = z.object({
+export const skillHubConfirmation = z.object({
   slug: catalogSegment,
   version: exactVersion,
   versionId: z.number().int().positive(),
@@ -22,7 +22,7 @@ export type SkillMarketConfig = {
   baseUrl: string;
   namespace: string;
   token: string;
-  confirmations: Record<string, z.infer<typeof confirmation>>;
+  confirmations: Record<string, z.infer<typeof skillHubConfirmation>>;
 };
 
 export function skillHubOrigin(value: string): string | undefined {
@@ -99,7 +99,7 @@ function loadSkillHubConfig(
 
   try {
     const confirmed = z
-      .array(confirmation)
+      .array(skillHubConfirmation)
       .parse(JSON.parse(rawConfirmations || "[]"));
     const confirmations = Object.fromEntries(
       confirmed.map((entry) => [entry.versionId, entry]),

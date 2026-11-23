@@ -5,7 +5,7 @@ CREATE SCHEMA IF NOT EXISTS openbot_skill_market;
 REVOKE ALL ON SCHEMA openbot_skill_market FROM PUBLIC;
 
 CREATE OR REPLACE VIEW openbot_skill_market.catalog AS
-SELECT name, description, latest_version
+SELECT name, description, latest_version, id AS skill_id
 FROM public.skills;
 
 CREATE OR REPLACE VIEW openbot_skill_market.versions AS
