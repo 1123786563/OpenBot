@@ -1,53 +1,100 @@
 import { expect, test } from "bun:test";
-import { createAgentSandboxProvider } from "../src/personal-saas/agent-sandbox-provider";
+import { createFlashSandboxApi } from "../src/personal-saas/flash-sandbox-api";
 
 const binding = {
   workspaceId: "fd677bcd-825f-4c30-b540-5b930d97f98a",
   generation: "cbc5bf2c-038a-4687-b956-388f9b3f620c",
   epoch: 4,
 };
+const metadata = {
+  openbotWorkspace: binding.workspaceId,
+  openbotGeneration: binding.generation,
+  openbotEpoch: String(binding.epoch),
+};
+const sandboxId = "sandbox-fixture";
+const template = "template-fixture";
+const domain = "cn-hangzhou.sandbox.aliyuncs.com";
+const fixture = {
+  sandboxID: sandboxId,
+  templateID: template,
+  envdVersion: "0.4.0",
+  envdAccessToken: "fixture-envd",
+  trafficAccessToken: "fixture-traffic",
+  domain,
+};
 
-test("Agent Sandbox preserves the absolute lease and requires generation-bound exit evidence", async () => {
-  const lease = { epoch: 4, issuedAt: 1_001, expiresAt: 16_001 };
-  let observation: Response;
-  const provider = createAgentSandboxProvider({
-    url: "https://sandbox-authority.example",
-    token: "fixture-token",
-    async fetch(input, init) {
-      const request = new Request(input, init);
-      expect(request.headers.get("authorization")).toBe("Bearer fixture-token");
-      expect(new URL(request.url).pathname).toBe(
-        `/v1/workspaces/${binding.workspaceId}/agent-sandboxes/${binding.generation}${request.method === "PUT" ? "/lease" : ""}`,
-      );
-      expect(new URL(request.url).searchParams.get("epoch")).toBe("4");
-      if (request.method === "POST" || request.method === "PUT") {
-        expect(await request.json()).toEqual(lease);
-        return new Response(null, {
-          status: request.method === "POST" ? 202 : 204,
+test("Flash creates a private instance once and independently verifies inventory after delete", async () => {
+  let inventory = true;
+  let inventoryHasMetadata = true;
+  let info = true;
+  const calls: string[] = [];
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url);
+      expect(request.headers.get("x-api-key")).toBe("fixture-api-key");
+      calls.push(`${request.method} ${url.pathname}`);
+      if (url.pathname === "/sandboxes" && request.method === "POST") {
+        expect(await request.json()).toMatchObject({
+          templateID: template,
+          metadata,
+          secure: true,
+          autoPause: false,
+          autoResume: { enabled: false },
+          allow_internet_access: false,
+          network: { allowPublicTraffic: false },
+          timeout: 300,
         });
+        return Response.json(fixture, { status: 201 });
       }
-      if (request.method === "DELETE")
-        return new Response(null, { status: 202 });
-      return observation;
+      if (url.pathname === `/sandboxes/${sandboxId}`) {
+        if (request.method === "DELETE")
+          return new Response(null, { status: 204 });
+        return info
+          ? Response.json({ ...fixture, metadata })
+          : Response.json({ code: 404 }, { status: 404 });
+      }
+      if (url.pathname === "/v2/sandboxes") {
+        expect(url.searchParams.get("metadata")).toContain(binding.generation);
+        expect(url.searchParams.get("state")).toBe("running,paused");
+        return Response.json(
+          inventory
+            ? [
+                {
+                  ...fixture,
+                  ...(inventoryHasMetadata && { metadata }),
+                  state: "running",
+                },
+              ]
+            : [],
+        );
+      }
+      return new Response(null, { status: 500 });
     },
   });
-  await provider.start(binding, lease);
-  await provider.renew(binding, lease);
-  await provider.destroy(binding);
-  observation = new Response(null, { status: 404 });
-  await expect(provider.inspect(binding)).rejects.toThrow();
-  observation = Response.json({
-    binding: { ...binding, generation: crypto.randomUUID() },
-    observation: { kind: "exited", exitedAt: 16_001, leaseExpiresAt: 16_001 },
-  });
-  await expect(provider.inspect(binding)).rejects.toThrow();
-  observation = Response.json({
-    binding,
-    observation: { kind: "exited", exitedAt: 16_001, leaseExpiresAt: 16_001 },
-  });
-  expect(await provider.inspect(binding)).toEqual({
-    kind: "exited",
-    exitedAt: 16_001,
-    leaseExpiresAt: 16_001,
-  });
+  try {
+    const api = createFlashSandboxApi({
+      apiKey: "fixture-api-key",
+      apiUrl: server.url.origin,
+      domain,
+      template,
+    });
+    const allocation = await api.create(binding);
+    expect(allocation.id).toBe(sandboxId);
+    expect(await api.discover(binding)).toEqual([sandboxId]);
+    await api.delete(sandboxId);
+    expect(await api.isDestroyed(binding, sandboxId)).toBe(false);
+    info = false;
+    expect(await api.isDestroyed(binding, sandboxId)).toBe(false);
+    inventoryHasMetadata = false;
+    expect(await api.isDestroyed(binding, sandboxId)).toBe(false);
+    inventory = false;
+    expect(await api.isDestroyed(binding, sandboxId)).toBe(true);
+    expect(calls.filter((call) => call.startsWith("POST"))).toEqual([
+      "POST /sandboxes",
+    ]);
+  } finally {
+    server.stop(true);
+  }
 });

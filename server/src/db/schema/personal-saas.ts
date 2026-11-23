@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   index,
   integer,
@@ -89,6 +90,17 @@ export const personalWorkspaceAgentSandboxes = pgTable(
       enum: ["starting", "active", "stopping", "stopped"],
     }).notNull(),
     cutoff: text({ enum: ["confirmed", "failed"] }),
+    flashScope: text("flash_scope"),
+    flashCreateRequested: boolean("flash_create_requested")
+      .notNull()
+      .default(false),
+    flashSandboxId: text("flash_sandbox_id"),
+    flashConnection: text("flash_connection"),
+    flashWorkRequested: boolean("flash_work_requested")
+      .notNull()
+      .default(false),
+    flashWorkerExit: jsonb("flash_worker_exit"),
+    flashDestroyedAt: bigint("flash_destroyed_at", { mode: "number" }),
   },
 );
 

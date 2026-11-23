@@ -45,6 +45,7 @@ import {
   createAccountAccess,
 } from "../src/personal-saas/account-access";
 import type { AgentSandboxObservation } from "../src/personal-saas/agent-sandbox";
+import { createAgentSandboxProvider } from "../src/personal-saas/agent-sandbox-provider";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
@@ -5042,6 +5043,207 @@ test("manual and scheduled automation share the trigger limit and retain history
   expect((await runNow()).status).toBe(202);
   await worker.sweepAutomationRoutines();
   expect(calls).toEqual([manual.routineId, manual.routineId]);
+});
+
+test("Flash keeps one workspace slot after worker exit until Alibaba confirms deletion", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const allocation = Promise.withResolvers<void>();
+  const createReceived = Promise.withResolvers<void>();
+  const domain = "cn-hangzhou.sandbox.aliyuncs.com";
+  let sandboxId = "flash-lifecycle-fixture";
+  let loseCreateResponse = false;
+  const templateID = "flash-template-fixture";
+  let creates = 0;
+  let deletes = 0;
+  let listed = true;
+  let missing = false;
+  let workerExitAvailable = false;
+  let workerCalls = 0;
+  let lease: { issuedAt: number; expiresAt: number } | undefined;
+  const bootId = crypto.randomUUID();
+  let metadata: unknown;
+  const fixture = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/sandboxes" && request.method === "POST") {
+        creates++;
+        metadata = (await request.json()).metadata;
+        createReceived.resolve();
+        await allocation.promise;
+        if (loseCreateResponse) return new Response(null, { status: 502 });
+        return Response.json(
+          {
+            sandboxID: sandboxId,
+            templateID,
+            domain,
+            envdVersion: "0.4.0",
+            envdAccessToken: "fixture-envd",
+            trafficAccessToken: "fixture-traffic",
+          },
+          { status: 201 },
+        );
+      }
+      if (path === "/v2/sandboxes")
+        return Response.json(
+          listed ? [{ sandboxID: sandboxId, templateID, metadata }] : [],
+        );
+      if (path === `/sandboxes/${sandboxId}`) {
+        if (request.method === "DELETE") {
+          deletes++;
+          return new Response(null, { status: 204 });
+        }
+        return missing
+          ? Response.json({ code: 404 }, { status: 404 })
+          : Response.json({ sandboxID: sandboxId, templateID });
+      }
+      return new Response(null, { status: 500 });
+    },
+  });
+  const options: Parameters<typeof createAgentSandboxProvider>[0] = {
+    apiUrl: fixture.url.origin,
+    apiKey: "fixture-api-key",
+    domain,
+    template: templateID,
+    encryptionKey: Buffer.alloc(32, 24).toString("base64"),
+    async invoke(runtime, request) {
+      expect(runtime.sandboxId).toBe(sandboxId);
+      expect(request.binding.workspaceId).toBe(owner.workspaceId);
+      workerCalls++;
+      if (request.action === "start" || request.action === "renew")
+        lease = request;
+      if (!lease) throw new Error("Missing initial lease");
+      const observation =
+        request.action === "stop"
+          ? workerExitAvailable
+            ? {
+                kind: "exited",
+                issuedAt: lease.issuedAt,
+                leaseExpiresAt: lease.expiresAt,
+                exitedAt: now(),
+                pid: 123,
+                bootId,
+              }
+            : { kind: "unconfirmed" }
+          : {
+              kind: "running",
+              issuedAt: lease.issuedAt,
+              leaseExpiresAt: lease.expiresAt,
+              pid: 123,
+              bootId,
+            };
+      return { binding: request.binding, observation };
+    },
+    async fetchWorker(url, init) {
+      expect(url).toBe(`https://4100-${sandboxId}.${domain}/health`);
+      expect(new Headers(init.headers).get("e2b-traffic-access-token")).toBe(
+        "fixture-traffic",
+      );
+      return new Response(null, { status: 200 });
+    },
+  };
+  const replica = (config = options) =>
+    newApp(database, {
+      agentSandbox: createAgentSandboxProvider(config, database, now),
+    });
+  function request(
+    app: ReturnType<typeof replica>,
+    action = "",
+    session = owner.session,
+  ) {
+    return app.request(`/api/workspace/computer${action}`, {
+      method: action ? "POST" : "GET",
+      headers: { origin, cookie: session },
+    });
+  }
+  clockTime = now();
+  try {
+    const first = replica();
+    const second = replica();
+    const start = request(first, "/start");
+    try {
+      await Promise.race([
+        createReceived.promise,
+        start.then((response) => {
+          throw new Error(`Expected Flash create, got ${response.status}`);
+        }),
+      ]);
+      expect((await request(second, "/start")).status).toBe(429);
+      expect(await (await request(second, "", other.session)).json()).toEqual({
+        status: "not_started",
+      });
+    } finally {
+      allocation.resolve();
+    }
+    expect((await start).status).toBe(202);
+    expect(creates).toBe(1);
+    expect(await (await request(second)).json()).toEqual({ status: "running" });
+    clockTime += 1_000;
+    await second.renewWorkspaceComputers?.();
+    expect(lease?.expiresAt).toBe(clockTime + 15_000);
+
+    expect((await request(first, "/stop")).status).toBe(202);
+    expect(deletes).toBe(0);
+    expect(await (await request(second)).json()).toEqual({
+      status: "stopping",
+    });
+
+    workerExitAvailable = true;
+    await second.renewWorkspaceComputers?.();
+    expect(deletes).toBe(1);
+    const callsWithEvidence = workerCalls;
+    expect((await request(replica(), "/start")).status).toBe(429);
+    missing = true;
+    expect(await (await request(replica())).json()).toEqual({
+      status: "stopping",
+    });
+    listed = false;
+    expect(
+      await (
+        await request(replica({ ...options, apiKey: "wrong-team" }))
+      ).json(),
+    ).toEqual({ status: "stopping" });
+    expect(await (await request(replica())).json()).toEqual({
+      status: "restart_required",
+      cutoff: "confirmed",
+    });
+    expect(workerCalls).toBe(callsWithEvidence);
+
+    // A lost create reply leaves an intent. Empty inventory cannot release
+    // it while the original request could still allocate the tagged instance.
+    clockTime += 1_000;
+    loseCreateResponse = true;
+    sandboxId = "flash-create-reply-lost";
+    missing = false;
+    expect((await request(replica(), "/start")).status).toBe(429);
+    expect(await (await request(replica())).json()).toEqual({
+      status: "stopping",
+    });
+    expect((await request(replica(), "/start")).status).toBe(429);
+    expect(creates).toBe(2);
+    expect(deletes).toBe(1);
+
+    // A later inventory lookup finds the original allocation. No worker
+    // was admitted on that path, but the instance still needs confirmation.
+    listed = true;
+    await replica().renewWorkspaceComputers?.();
+    expect(deletes).toBe(2);
+    expect(await (await request(replica())).json()).toEqual({
+      status: "stopping",
+    });
+    missing = true;
+    listed = false;
+    expect(await (await request(replica())).json()).toEqual({
+      status: "restart_required",
+      cutoff: "confirmed",
+    });
+    expect(workerCalls).toBe(callsWithEvidence);
+  } finally {
+    clockTime = undefined;
+    fixture.stop(true);
+  }
 });
 
 test("Agent Sandbox reserves one slot across replicas until process exit is proved", async () => {
