@@ -1,3 +1,4 @@
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import type {
   LearningAutoAssignState,
   LearningProposal,
@@ -40,7 +41,9 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { skillTitle } from "@/lib/learning/display";
 import {
   reviewLearningProposalMutationOptions,
@@ -243,6 +246,128 @@ function withoutReviewKeys(settings: LearningSettings): LearningSettings {
 }
 
 export function LearningPage() {
+  const deployment = useQuery({
+    ...deploymentCapabilitiesQueryOptions(),
+    retry: false,
+  });
+  if (deployment.isPending)
+    return <p role="status">Loading Learning settings…</p>;
+  return deployment.data?.mode === "openbot" ? (
+    <NativeLearningPolicy />
+  ) : (
+    <LegacyLearningPage />
+  );
+}
+
+function NativeLearningPolicy() {
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery(learningSettingsQueryOptions());
+  const agents = useQuery(agentListQueryOptions());
+  const hiddenAgents = useQuery(agentListQueryOptions(true));
+  const [draft, setDraft] = useState<LearningSettings | null>(null);
+  const settings = draft ?? settingsQuery.data;
+  const save = useMutation({
+    mutationFn: saveLearningSettings,
+    onSuccess: async (next) => {
+      queryClient.setQueryData(learningKeys.settings, next);
+      setDraft(null);
+      await queryClient.invalidateQueries({
+        queryKey: learningKeys.directChat,
+      });
+    },
+  });
+  function change(next: LearningSettings) {
+    save.reset();
+    setDraft(next);
+  }
+
+  return (
+    <PageShell title="Automatic learning">
+      <PageSection
+        title="Conversation Learning"
+        description="Control which Bots can analyze conversations and use the skills learned there. People start runs and review proposals in their own conversations."
+      >
+        {settingsQuery.isPending && (
+          <p role="status">Loading Learning settings…</p>
+        )}
+        {settingsQuery.error && (
+          <SectionReadError
+            error={settingsQuery.error}
+            fallback="Couldn't load the learning settings."
+            retrying={settingsQuery.isFetching}
+            onRetry={() => void settingsQuery.refetch()}
+          />
+        )}
+        {settings && !settingsQuery.error && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (draft) save.mutate(withoutReviewKeys(draft));
+            }}
+          >
+            <VStack gap={3}>
+              <HStack gap={2} wrap="wrap">
+                <Switch
+                  aria-label="Allow conversation Learning"
+                  checked={settings.enabled}
+                  disabled={save.isPending}
+                  onCheckedChange={(enabled) =>
+                    change({ ...settings, enabled })
+                  }
+                />
+                <p>Allow conversation Learning</p>
+              </HStack>
+              {[agents, hiddenAgents].map(
+                (query, index) =>
+                  query.error && (
+                    <SectionReadError
+                      key={index === 0 ? "visible" : "hidden"}
+                      error={query.error}
+                      fallback="Couldn't load the Bot list."
+                      retrying={query.isFetching}
+                      onRetry={() => void query.refetch()}
+                    />
+                  ),
+              )}
+              {(agents.isPending || hiddenAgents.isPending) && (
+                <p role="status">Loading Bots…</p>
+              )}
+              <PageRows>
+                {[...(agents.data ?? []), ...(hiddenAgents.data ?? [])].map(
+                  (bot) => (
+                    <HStack key={bot.id} gap={2} justify="between" wrap="wrap">
+                      <p>{bot.name}</p>
+                      <Switch
+                        aria-label={`Allow Learning for ${bot.name}`}
+                        checked={settings.agents[bot.id] !== null}
+                        disabled={save.isPending}
+                        onCheckedChange={(included) => {
+                          const mappings = { ...settings.agents };
+                          if (included) delete mappings[bot.id];
+                          else mappings[bot.id] = null;
+                          change({ ...settings, agents: mappings });
+                        }}
+                      />
+                    </HStack>
+                  ),
+                )}
+              </PageRows>
+              {save.error && <p role="alert">{save.error.message}</p>}
+              {save.isSuccess && <p role="status">Settings saved.</p>}
+              <HStack justify="end">
+                <Button disabled={!draft || save.isPending} type="submit">
+                  {save.isPending ? "Saving…" : "Save Learning settings"}
+                </Button>
+              </HStack>
+            </VStack>
+          </form>
+        )}
+      </PageSection>
+    </PageShell>
+  );
+}
+
+function LegacyLearningPage() {
   const queryClient = useQueryClient();
   const settingsQuery = useQuery(learningSettingsQueryOptions());
   const automatic = useQuery(learningAutomaticQueryOptions());

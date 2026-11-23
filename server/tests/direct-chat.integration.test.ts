@@ -8,6 +8,7 @@ import {
 } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
 import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
+import { openBotPersonalReview } from "@openbot/shared/direct-chat-learning";
 import { answerMessageId } from "@openbot/shared/handoff-markers";
 import {
   HeadlessToolSuspension,
@@ -133,6 +134,40 @@ const post = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 
+function nativeLearningSettings(
+  signedIn: AuthenticatedActor,
+  chat: ReturnType<typeof web>,
+) {
+  const args = new Array(createApp.length) as unknown as Parameters<
+    typeof createApp
+  >;
+  args[0] = { ...config, singleUser: false };
+  args[1] = {
+    handler: () => new Response(null, { status: 204 }),
+    api: {
+      getSession: async () => ({
+        user: { id: signedIn.id, email: signedIn.email, name: signedIn.id },
+      }),
+    },
+  };
+  args[2] = { rolesForUser: async () => [signedIn.role] };
+  args[6] = chat.copilotHandler;
+  args[34] = {
+    personalLearning: {
+      store: createLearningSharingStore(database),
+      approvals: createSkillApprovalStore(database),
+      skillsOf: async () => ({ unavailable: "unavailable" as const }),
+      invalidate: () => {},
+      sharingAllowed: async () => false,
+      settings: createLearningSettingsStore(database),
+      scopesFor: async () => [],
+      openbotDatabase: database,
+      conversationsFor: chat.learningConversations,
+    },
+  };
+  return createApp(...args);
+}
+
 test("the original personal Learning switch updates the preference read in OpenBot chat", async () => {
   const actor = await person();
   const bot = await profiles.create(actor, {
@@ -158,31 +193,34 @@ test("the original personal Learning switch updates the preference read in OpenB
       autoApprove: false,
     });
 
-    const args = new Array(createApp.length) as unknown as Parameters<
-      typeof createApp
-    >;
-    args[0] = { ...config, singleUser: false };
-    args[1] = {
-      handler: () => new Response(null, { status: 204 }),
-      api: {
-        getSession: async () => ({
-          user: { id: actor.id, email: actor.email, name: actor.id },
-        }),
-      },
-    } as never;
-    args[2] = { rolesForUser: async () => ["user"] };
-    const personalLearning = {
-      store: createLearningSharingStore(database),
-      approvals: createSkillApprovalStore(database),
-      skillsOf: async () => ({ unavailable: "unavailable" as const }),
-      invalidate: () => {},
-      sharingAllowed: async () => false,
-      settings: createLearningSettingsStore(database),
-      scopesFor: async () => [],
-      openbotDatabase: database,
-    };
-    args[34] = { personalLearning };
-    const settings = createApp(...args);
+    const settings = nativeLearningSettings(actor, chat);
+    const reviewPath = "/api/settings/learning/review";
+    const initialReview = await settings.request(reviewPath);
+    expect(initialReview.status).toBe(200);
+    expect(await initialReview.json()).toMatchObject({
+      mode: "openbot",
+      autoApprove: false,
+      conversations: [
+        {
+          channelId: channel.id,
+          threadId: channel.threadId,
+          botId: bot.id,
+        },
+      ],
+    });
+    const other = await person();
+    try {
+      const foreignChat = web(database, other, bot.id, async () => {
+        throw new Error("Listing conversations must not call a model.");
+      });
+      const foreign = await nativeLearningSettings(other, foreignChat).request(
+        `${reviewPath}?personId=${actor.id}&threadId=${channel.threadId}`,
+      );
+      expect(foreign.status).toBe(200);
+      expect(await foreign.json()).toMatchObject({ conversations: [] });
+    } finally {
+      await database.delete(users).where(eq(users.id, other.id));
+    }
     const refused = await settings.request(
       "/api/settings/learning/auto-approve",
       {
@@ -210,6 +248,12 @@ test("the original personal Learning switch updates the preference read in OpenB
     expect(await (await chat.request(path)).json()).toMatchObject({
       autoApprove: true,
     });
+    await profiles.setHidden(actor, bot.id, true);
+    expect(await (await settings.request(reviewPath)).json()).toMatchObject({
+      autoApprove: true,
+      conversations: [],
+    });
+    expect((await settings.request(path)).status).toBe(404);
   } finally {
     setEdition(previousEdition);
     await database.delete(users).where(eq(users.id, actor.id));
@@ -394,7 +438,9 @@ function web(
   app.route("/api/groups", createGroupRoutes(groupConversations, requireUser));
   app.route("/", copilot.handler);
   return Object.assign(app, {
+    copilotHandler: copilot.handler,
     sweepLearning: copilot.sweepLearning,
+    learningConversations: copilot.learningConversations,
     learnedSkillVersionsCurrent: copilot.learnedSkillVersionsCurrent,
     routineRunner,
     runBackground: copilot.runBackground,
@@ -3804,8 +3850,23 @@ async function exerciseLearning(scheduled: boolean) {
     expect(openedForBob.status).toBe(201);
     const { channel: bobChannel } = await openedForBob.json();
     bobChannelId = bobChannel.id;
-    const path = `/api/copilotkit/threads/${channel.threadId}/learn?agentId=${bot.id}`;
-    expect(await (await aliceLearning.request(path)).json()).toMatchObject({
+    const mountedLearning = nativeLearningSettings(alice, aliceLearning);
+    const listing = await mountedLearning.request(
+      "/api/settings/learning/review",
+    );
+    expect(listing.status).toBe(200);
+    const { conversations } = openBotPersonalReview.parse(await listing.json());
+    expect(conversations).toEqual([
+      expect.objectContaining({
+        channelId,
+        threadId: channel.threadId,
+        botId: bot.id,
+      }),
+    ]);
+    const [listed] = conversations;
+    if (!listed) throw new Error("Expected the newly opened conversation.");
+    const path = `/api/copilotkit/threads/${listed.threadId}/learn?agentId=${listed.botId}`;
+    expect(await (await mountedLearning.request(path)).json()).toMatchObject({
       schedule: {
         enabled: false,
         intervalHours: 24,
@@ -3818,7 +3879,15 @@ async function exerciseLearning(scheduled: boolean) {
       "/reflect Which lanterns?",
       "Synthetic reflection.",
     );
-    const empty = await aliceLearning.request(path, post({}));
+    expect(
+      (
+        await mountedLearning.request(path, {
+          ...post({}),
+          headers: { ...post({}).headers, "sec-fetch-site": "cross-site" },
+        })
+      ).status,
+    ).toBe(403);
+    const empty = await mountedLearning.request(path, post({}));
     expect(await empty.json()).toMatchObject({
       latest: { state: "skipped", reason: "no_evidence", evidenceCount: 0 },
     });
@@ -3843,7 +3912,7 @@ async function exerciseLearning(scheduled: boolean) {
       throw new Error(`Learning did not reach ${state}.`);
     }
     const starts = await Promise.all([
-      aliceLearning.request(path, post({})),
+      mountedLearning.request(path, post({})),
       concurrentClient.request(path, post({})),
     ]);
     expect(starts.map(({ status }) => status)).toEqual([202, 202]);
@@ -3857,7 +3926,7 @@ async function exerciseLearning(scheduled: boolean) {
     expect((await read()).latest).toEqual(first.latest);
     release.resolve();
     await waitFor("proposed");
-    expect(await (await aliceLearning.request(path)).json()).toMatchObject({
+    expect(await (await mountedLearning.request(path)).json()).toMatchObject({
       latest: { state: "proposed" },
       proposals: [
         {
@@ -3897,7 +3966,7 @@ async function exerciseLearning(scheduled: boolean) {
     expect((await bobLearning.request(reviewPath, approve)).status).toBe(404);
     expect(
       (
-        await aliceLearning.request(
+        await mountedLearning.request(
           reviewPath,
           post({
             decision: "approve",
@@ -3909,11 +3978,17 @@ async function exerciseLearning(scheduled: boolean) {
     expect((await admin.request("/settings", settings(false))).status).toBe(
       200,
     );
-    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(409);
+    expect((await mountedLearning.request(reviewPath, approve)).status).toBe(
+      409,
+    );
     expect((await admin.request("/settings", settings(true))).status).toBe(200);
-    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(200);
-    expect((await aliceLearning.request(reviewPath, approve)).status).toBe(200);
-    expect(await (await aliceLearning.request(path)).json()).toMatchObject({
+    expect((await mountedLearning.request(reviewPath, approve)).status).toBe(
+      200,
+    );
+    expect((await mountedLearning.request(reviewPath, approve)).status).toBe(
+      200,
+    );
+    expect(await (await mountedLearning.request(path)).json()).toMatchObject({
       autoApprove: false,
       proposals: [
         {
@@ -3929,7 +4004,7 @@ async function exerciseLearning(scheduled: boolean) {
     });
 
     insufficient = true;
-    expect((await aliceLearning.request(path, post({}))).status).toBe(202);
+    expect((await mountedLearning.request(path, post({}))).status).toBe(202);
     const skipped = await waitFor("skipped");
     expect(skipped.latest).toMatchObject({
       state: "skipped",
@@ -3943,14 +4018,14 @@ async function exerciseLearning(scheduled: boolean) {
     release = Promise.withResolvers<void>();
     reconciled = Promise.withResolvers<void>();
     const oldAnalysis = await (
-      await aliceLearning.request(path, post({}))
+      await mountedLearning.request(path, post({}))
     ).json();
     expect(oldAnalysis.lastResult).toEqual(skipped.latest);
     await dispatched.promise;
     expect((await admin.request("/settings", settings(false))).status).toBe(
       200,
     );
-    expect((await aliceLearning.request(path, post({}))).status).toBe(409);
+    expect((await mountedLearning.request(path, post({}))).status).toBe(409);
     expect((await admin.request("/settings", settings(true))).status).toBe(200);
     release.resolve();
     await reconciled.promise;
@@ -3961,7 +4036,7 @@ async function exerciseLearning(scheduled: boolean) {
     });
     expect(afterPause.proposals).toHaveLength(1);
     const restarted = await (
-      await aliceLearning.request(path, post({}))
+      await mountedLearning.request(path, post({}))
     ).json();
     expect(restarted.latest.id).not.toBe(oldAnalysis.latest.id);
     expect(restarted.lastResult).toEqual(afterPause.latest);
@@ -3971,7 +4046,9 @@ async function exerciseLearning(scheduled: boolean) {
       id: restarted.latest.id,
       evidence: [{ runId: "later-evidence" }],
     });
-    const repeated = await (await aliceLearning.request(path, post({}))).json();
+    const repeated = await (
+      await mountedLearning.request(path, post({}))
+    ).json();
     expect(repeated.latest).toEqual(completed.latest);
     expect(reservations).toHaveLength(4);
 

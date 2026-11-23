@@ -88,6 +88,44 @@ test("an administrator excludes a Bot and saves without losing the default or pa
   await view.findByText("Settings saved.");
 });
 
+test("OpenBot Learning policy saves without querying legacy containers", async () => {
+  let settings: LearningSettings = {
+    enabled: true,
+    defaultTarget: { containerId: "support" },
+    agents: { bot: { containerId: "sales" } },
+  };
+  const requested: string[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      requested.push(path);
+      if (path === "/api/capabilities")
+        return Response.json({ mode: "openbot" });
+      if (path === "/api/admin/learning/settings") {
+        if (init?.method === "PUT") settings = JSON.parse(String(init.body));
+        return Response.json({ settings });
+      }
+      if (path.startsWith("/api/agents")) return Response.json({ agents: [] });
+      return new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = page();
+  fireEvent.click(
+    await view.findByRole("switch", { name: "Allow conversation Learning" }),
+  );
+  fireEvent.click(view.getByRole("button", { name: "Save Learning settings" }));
+  await view.findByText("Settings saved.");
+  expect(settings).toEqual({
+    enabled: false,
+    defaultTarget: { containerId: "support" },
+    agents: { bot: { containerId: "sales" } },
+  });
+  expect(
+    requested.filter((path) => path.startsWith("/api/admin/learning/")),
+  ).toEqual(["/api/admin/learning/settings", "/api/admin/learning/settings"]);
+});
+
 test("an unavailable settings store shows an error instead of an editable empty configuration", async () => {
   global.fetch = Object.assign(
     async () =>

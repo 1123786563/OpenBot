@@ -3525,6 +3525,9 @@ export function mountCopilotRuntime(
   let backgroundApproval:
     | ReturnType<typeof createDirectChatRoutes>["backgroundApproval"]
     | undefined;
+  let learningConversations:
+    | ReturnType<typeof createDirectChatRoutes>["learningConversations"]
+    | undefined;
   let sweepLearning: (() => Promise<void>) | undefined;
   let learnedSkillVersionsCurrent:
     | ReturnType<typeof createDirectChatRoutes>["learnedSkillVersionsCurrent"]
@@ -3545,6 +3548,7 @@ export function mountCopilotRuntime(
       agentFor: (actor, botId, initiator, marketSkill) =>
         agentFor({ actor, botId, initiator, marketSkill }),
     });
+    learningConversations = directChat.learningConversations;
     runBackground = directChat.runBackground;
     backgroundApproval = directChat.backgroundApproval;
     handler.route(basePath, directChat.routes);
@@ -3560,6 +3564,7 @@ export function mountCopilotRuntime(
     runBackground,
     backgroundApproval,
     sweepLearning,
+    learningConversations,
     learnedSkillVersionsCurrent,
     learning,
     /**

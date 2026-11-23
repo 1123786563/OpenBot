@@ -1,3 +1,4 @@
+import type { OpenBotPersonalReview } from "@openbot/shared/direct-chat-learning";
 import {
   isLearnedSkillName,
   isLearningSharingMode,
@@ -19,7 +20,10 @@ import {
   type SkillApprovalStore,
   UnnamedSkillError,
 } from "./approvals";
-import { setPersonalLearningAutoApproval } from "./direct-chat";
+import {
+  readPersonalLearningAutoApproval,
+  setPersonalLearningAutoApproval,
+} from "./direct-chat";
 import type { LearningModelCalls } from "./model-endpoint";
 import {
   CANDIDATE_ID,
@@ -81,6 +85,9 @@ export type PersonalLearningRouteDeps = {
   autoApprover?: { sweep(): Promise<{ approved: number }> };
   /** OpenBot stores automatic approval per person, independently of legacy container settings. */
   openbotDatabase?: Database;
+  conversationsFor?: (
+    actor: AuthenticatedActor,
+  ) => Promise<OpenBotPersonalReview["conversations"]>;
   /** The Learning spaces this person reviews (learning/scopes.ts). */
   scopesFor: (actor: AuthenticatedActor) => Promise<LearningSource[]>;
   /** The titles of this person's own recordings by id; an id they don't own is left out. */
@@ -280,6 +287,22 @@ export function createPersonalLearningRoutes(
   };
 
   routes.get("/review", async (context) => {
+    if (deps.openbotDatabase && deps.conversationsFor) {
+      const actor = context.var.actor;
+      const [conversations, autoApprove] = await Promise.all([
+        deps.conversationsFor(actor),
+        currentEdition() === "personal"
+          ? readPersonalLearningAutoApproval(deps.openbotDatabase, actor.id)
+          : null,
+      ]);
+      const answer: OpenBotPersonalReview = {
+        mode: "openbot",
+        conversations,
+        autoApprove,
+      };
+      context.header("cache-control", "no-store");
+      return context.json(answer);
+    }
     const manage = deps.manage;
     if (!manage) {
       return context.json(

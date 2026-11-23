@@ -3763,7 +3763,10 @@ const app = createApp(
       approvals: skillApprovalStore,
       autoApprover,
       ...(config.runtime.mode === "openbot"
-        ? { openbotDatabase: database }
+        ? {
+            openbotDatabase: database,
+            conversationsFor: copilotRuntime.learningConversations,
+          }
         : {}),
       skillsOf: (userId) =>
         copilotRuntime.learning?.personalSkills(userId) ??

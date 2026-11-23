@@ -119,3 +119,19 @@ export const directChatLearning = z.object({
     }),
   ),
 });
+
+export const openBotPersonalReview = z.object({
+  mode: z.literal("openbot"),
+  autoApprove: z.boolean().nullable(),
+  conversations: z.array(
+    z.object({
+      channelId: scopeId,
+      threadId: scopeId,
+      botId: scopeId,
+      title: z.string(),
+      botName: z.string(),
+    }),
+  ),
+});
+
+export type OpenBotPersonalReview = z.infer<typeof openBotPersonalReview>;

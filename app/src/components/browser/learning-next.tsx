@@ -97,7 +97,8 @@ export function useLearningNext(stopped: Stopped) {
     startPersonalLearningRunMutationOptions(queryClient),
   );
 
-  const sources = (review.data?.sources ?? []).filter(
+  const legacy = review.data && "sources" in review.data ? review.data : null;
+  const sources = (legacy?.sources ?? []).filter(
     (source) => source.kind === "recordings",
   );
   const latest = sources
@@ -115,7 +116,7 @@ export function useLearningNext(stopped: Stopped) {
     0,
   );
   // Anything that can mean a new skill: a run moving on, a proposal arriving, one approved.
-  const revision = `${latest?.id ?? ""}:${latest?.status ?? ""}:${waitingCount}:${review.data?.approved ?? 0}`;
+  const revision = `${latest?.id ?? ""}:${latest?.status ?? ""}:${waitingCount}:${legacy?.approved ?? 0}`;
   const skills = useQuery({
     ...recordingSkillsQueryOptions(stopped.title, since, revision),
     enabled: review.isSuccess && sources.length > 0 && !off,
@@ -145,8 +146,14 @@ export function useLearningNext(stopped: Stopped) {
   if (review.error) next = { kind: "unreadable", reason: review.error.message };
   else if (learned) next = { kind: "learned", skill: learned };
   else if (proposed) next = { kind: "proposed", skill: proposed };
-  else if (review.data?.modelProblem)
-    next = { kind: "model", reason: review.data.modelProblem };
+  else if (legacy?.modelProblem)
+    next = { kind: "model", reason: legacy.modelProblem };
+  else if (review.data && "mode" in review.data)
+    next = {
+      kind: "model",
+      reason:
+        "Open Learning in a Bot conversation to select this recording as evidence.",
+    };
   else if (off) next = { kind: "off" };
   else if (running) next = { kind: "learning" };
   else if (skills.error)
@@ -181,8 +188,8 @@ export function useLearningNext(stopped: Stopped) {
   return {
     loaded: review.isSuccess || review.isError,
     next,
-    canReview: review.data?.canReview ?? false,
-    autoApprove: review.data?.autoApprove ?? null,
+    canReview: legacy?.canReview ?? false,
+    autoApprove: legacy?.autoApprove ?? null,
     /** Why Learn now didn't start, in the server's sentence. */
     learnError: learnNow.error?.message ?? null,
     learning: running,

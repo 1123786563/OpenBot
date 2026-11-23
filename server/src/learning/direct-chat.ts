@@ -144,7 +144,10 @@ function inScope(scope: Scope) {
   );
 }
 
-async function autoApproval(tx: ProfileReadExecutor, personId: string) {
+export async function readPersonalLearningAutoApproval(
+  tx: ProfileReadExecutor,
+  personId: string,
+) {
   const [row] = await tx
     .select()
     .from(preferences)
@@ -338,7 +341,7 @@ export function createDirectChatLearning(
         saved?.state === "proposed" &&
         !saved.revisesProposalId &&
         saved.evidenceSources.length === 0 &&
-        (await autoApproval(tx, scope.personId))
+        (await readPersonalLearningAutoApproval(tx, scope.personId))
       )
         await saveReview(tx, saved.id, scope, "approve", "automatic");
     });
@@ -884,7 +887,10 @@ export function createDirectChatLearning(
           enabled,
           available,
           scope,
-          autoApprove: await autoApproval(tx, scope.personId),
+          autoApprove: await readPersonalLearningAutoApproval(
+            tx,
+            scope.personId,
+          ),
           latest: latest ? summary(latest) : null,
           lastResult: lastResult ? summary(lastResult) : null,
           schedule: {

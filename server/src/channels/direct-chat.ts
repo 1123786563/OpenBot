@@ -27,6 +27,7 @@ import {
   turnMessages,
 } from "@openbot/toolkit/run-turn";
 import { and, eq, exists, isNull, ne, notExists, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
@@ -284,22 +285,23 @@ export function createDirectChatRoutes(deps: {
   const routes = new Hono();
   const workers = new Map<string, AbortController>();
 
-  async function threadFor(
+  const mapping = intelligenceChannelMappings;
+  const additionalAgents = alias(channelAgents, "additional_agents");
+
+  // Use the same membership and thread constraints for discovery and route authorization.
+  function directThreadQuery(
     executor: ProfileReadExecutor,
-    actor: AgentActor,
-    threadId: string,
-    agentId: string,
-    lock = false,
+    personId: string,
+    threadId?: string,
+    botId?: string,
   ) {
-    if (!actor.id) return null;
-    const mapping = intelligenceChannelMappings;
     const otherAgent = executor
-      .select({ id: channelAgents.agentId })
-      .from(channelAgents)
+      .select({ id: additionalAgents.agentId })
+      .from(additionalAgents)
       .where(
         and(
-          eq(channelAgents.channelId, mapping.channelId),
-          ne(channelAgents.agentId, agentId),
+          eq(additionalAgents.channelId, mapping.channelId),
+          ne(additionalAgents.agentId, channelAgents.agentId),
         ),
       );
     const otherMember = executor
@@ -308,47 +310,78 @@ export function createDirectChatRoutes(deps: {
       .where(
         and(
           eq(channelMemberships.channelId, mapping.channelId),
-          ne(channelMemberships.userId, actor.id),
+          ne(channelMemberships.userId, personId),
         ),
       );
     const group = executor
       .select({ id: groupBotThreads.channelId })
       .from(groupBotThreads)
       .where(eq(groupBotThreads.channelId, mapping.channelId));
-    const query = executor
-      .select({ channelId: mapping.channelId })
+    return executor
+      .select({
+        channelId: mapping.channelId,
+        threadId: mapping.threadId,
+        botId: channelAgents.agentId,
+        title: sql<string>`coalesce(${channels.title}, ${channels.summary}, ${channels.opening}, ${channels.name})`,
+      })
       .from(mapping)
       .innerJoin(channels, eq(channels.id, mapping.channelId))
       .innerJoin(
         channelMemberships,
         and(
           eq(channelMemberships.channelId, channels.id),
-          eq(channelMemberships.userId, actor.id),
+          eq(channelMemberships.userId, personId),
         ),
       )
-      .innerJoin(
-        channelAgents,
-        and(
-          eq(channelAgents.channelId, channels.id),
-          eq(channelAgents.agentId, agentId),
-        ),
-      )
+      .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
       .where(
         and(
-          eq(mapping.threadId, threadId),
-          eq(mapping.userId, actor.id),
+          eq(mapping.userId, personId),
+          threadId === undefined ? undefined : eq(mapping.threadId, threadId),
+          botId === undefined ? undefined : eq(channelAgents.agentId, botId),
           isNull(channels.deletedAt),
           notExists(otherAgent),
           notExists(otherMember),
           notExists(group),
         ),
       );
+  }
+
+  async function threadFor(
+    executor: ProfileReadExecutor,
+    actor: AgentActor,
+    threadId: string,
+    agentId: string,
+    lock = false,
+  ) {
+    if (!actor.id) return null;
+    const query = directThreadQuery(executor, actor.id, threadId, agentId);
     const [row] = lock
       ? await query.for("update", { of: [channels, mapping] })
       : await query;
     if (!row) return null;
     const profile = await profiles.getWithin(executor, actor, agentId);
-    return profile && !profile.deletedAt && !profile.hidden ? row : null;
+    return profile && !profile.deletedAt && !profile.hidden
+      ? { channelId: row.channelId }
+      : null;
+  }
+
+  async function learningConversations(actor: AgentActor) {
+    if (!actor.id) return [];
+    const [rows, profilesForActor] = await Promise.all([
+      directThreadQuery(database, actor.id).orderBy(
+        sql`coalesce(${channels.lastMessageAt}, ${channels.createdAt}) desc`,
+        channels.id,
+      ),
+      profiles.list(actor),
+    ]);
+    const botNames = new Map(
+      profilesForActor.map(({ id, name }) => [id, name]),
+    );
+    return rows.flatMap((row) => {
+      const botName = botNames.get(row.botId);
+      return botName === undefined ? [] : [{ ...row, botName }];
+    });
   }
 
   async function groupThreadFor(
@@ -2049,6 +2082,7 @@ export function createDirectChatRoutes(deps: {
     },
     runBackground,
     backgroundApproval,
+    learningConversations,
     sweepLearning: () =>
       learning.sweep(({ personId, threadId, botId: agentId }) => async (tx) => {
         if (deps.singleUser && personId === DEV_ACTOR.id)
