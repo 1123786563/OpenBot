@@ -1177,7 +1177,10 @@ export function createTestCreditLedger(
             ? id === saved.id && revision === saved.revision
             : id === active.defaultRoute),
       );
-      const options = active?.options.map(modelOption) ?? [];
+      const options =
+        active?.options
+          .filter(({ purpose }) => purpose === undefined)
+          .map(modelOption) ?? [];
       if (route && active?.priceVersion)
         return {
           source,

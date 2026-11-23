@@ -217,6 +217,9 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
         target: enterpriseSettings.key,
         set: { value: published },
       });
+    expect((await ledger.resolveQuote({})).options.map(({ id }) => id)).toEqual(
+      ["text"],
+    );
     await ledger.registerApplication({
       id: "weknora",
       name: "WeKnora",

@@ -77,3 +77,50 @@ and TEI routes, live self-hosted Lago). Upgrading to the ticket's
 production-grade acceptance reruns it on an approved independent deployment —
 the same open item as #89 — and repeats the account-status legs jointly with
 #69 once Workspace Suspension lands there.
+
+## Local Test Credit rerun with no live model calls
+
+The combined fixture used the two normal Conversation routes on a single
+Harness, a real local Casdoor sign-in and sign-out, and the WeKnora Go upload
+handler and worker at `822d457c5`. The retrieval store, queue, token meter, and
+the models were fixtures. The three published fixture routes were
+`joint-text`, `joint-alternate`, and `joint-fixture` for the 384-dimension
+embedding result. The Conversation model list showed only the two chat
+routes after fixing the filter.
+
+| Account | Path | Operations | Verified usage per operation | Charge |
+| --- | --- | ---: | --- | ---: |
+| Alice | OpenBot, primary then alternate | 2 | 3 input, 1 output | 6 microcredits |
+| Alice | WeKnora, after sign-out and explicit cap increase | 1 | 14 input, 0 output | 7 microcredits |
+| Bob | OpenBot, primary | 1 | 3 input, 1 output | 3 microcredits |
+
+Alice's balance moved from 1,000 to 987 and Bob's from 1,000 to 997. The
+receipts and account bills named the originating application. Bob could
+not read Alice's WeKnora receipt. Gateway evidence and account-status
+regressions ran separately from the combined fixture.
+
+After simulating an export outage, the production Lago client validated a
+fresh UTC, zero-rate subscription on local Lago CE v1.57.0
+(image `sha256:24678b61b372e5ca02f9bb4687c9aec012f8ba8a3539d28c4cbe989f131f3aed`).
+The outbox replayed four original transaction IDs; each stored event matched
+its OpenBot record, and a second flush sent zero. Lago returned 16 usage
+units at zero cents.
+
+The separate Bifrost image
+`sha256:2fe9cf9c28eee03a9392ee7d032538dc6c9be53c266c70e08fbf6a4e36523cf1`
+recovered a dropped response from its durable log with one synthetic
+upstream dispatch. Its gateway and synthetic upstream had no published host
+ports on the internal Docker network. The loopback relay was fixture-only.
+
+Local reproduction and evidence are in `/tmp/openbot-98-joint.b3WdhT`.
+Run the product regression with an isolated, migrated PostgreSQL database:
+
+```sh
+bun test --no-env-file --env-file=.env.test --timeout 90000 \
+  server/tests/{direct-chat,billing-routes,billing-paths,managed-model-routes,resume-points,lago-usage,provider-cost-limit,test-credit,weknora-work}.integration.test.ts \
+  server/tests/bifrost-catalog.test.ts
+```
+
+The approved Harness/provider routes, direct-access controls on the target
+deployment, and the real account-status and Workspace Suspension matrix
+with #69 remain pending.
