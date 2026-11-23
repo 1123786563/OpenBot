@@ -177,15 +177,12 @@ function renderSignScreen(
   },
   initialEntry = "/sign?flow_id=h1",
 ) {
+  // Retries off, so the one failed read refuses at once rather than after 7s of backing off.
   const queryClient = new QueryClient({
-    // A seeded read never retries; only the failed read does, and once is what the screen gets.
     defaultOptions: { queries: { retry: false } },
   });
-  if (options.failed) {
-    // No data: the screen renders its read-error, not a deployment with no provider.
-  } else {
-    queryClient.setQueryData(authKeys.providers(), options);
-  }
+  // Nothing seeded for a failed read: the screen shows its read-error, not a deployment with no way in.
+  if (!options.failed) queryClient.setQueryData(authKeys.providers(), options);
 
   queryClient.setQueryData(authKeys.currentUser(), null);
   const root = createRootRoute();
@@ -302,7 +299,9 @@ test("opening a provider names it, in the interface language", async () => {
   await view.findByRole("heading", { name: "Sign in to OpenBot" });
 
   await pinLocale("zh-CN");
-  let release: (() => void) | null = null;
+  // Uninitialized on purpose: `= null` would keep it narrowed to null here, where the release the
+  // executor stores is still typed as nothing.
+  let release: (() => void) | undefined;
   try {
     signInSpy = async () => {
       await new Promise<void>((resolve) => {
@@ -616,7 +615,8 @@ test("a failed read of the sign-in options speaks the interface language", async
   // The read fails for real — no server listens on the fake origin — so the screen renders from
   // the failure `beforeLoad` swallowed, not from seeded options.
   const realFetch = window.fetch;
-  window.fetch = () => Promise.reject(new TypeError("offline"));
+  const offline = () => Promise.reject(new TypeError("offline"));
+  window.fetch = Object.assign(offline, { preconnect: realFetch.preconnect });
   try {
     const { view } = renderSignScreen({
       providers: [],
