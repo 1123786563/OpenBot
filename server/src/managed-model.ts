@@ -152,6 +152,8 @@ export function createManagedModel({
               rerunOfOperationId: input.rerunOf && operationId(input.rerunOf),
               route: input.route,
               priceVersion: input.priceVersion,
+              // The bill names the app this step ran for.
+              applicationId: "openbot",
               ...(input.budget
                 ? { budgetId: input.budget.id, stepId: input.budget.stepId }
                 : {}),

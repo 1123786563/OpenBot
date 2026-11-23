@@ -21,6 +21,11 @@ const dispatch = z.discriminatedUnion("state", [
 const reconciliation = z.object({
   state: z.enum(["pending", "settled", "released", "absent"]),
 });
+// What the ledger publishes, for the Price Version a reservation pins.
+const publication = z.object({
+  route: z.string().min(1),
+  priceVersion: z.string().min(1),
+});
 
 type ModelScope = {
   source:
@@ -82,6 +87,8 @@ export function createManagedModel({
   url: URL;
   token: string;
 }) {
+  const headers = { authorization: `Bearer ${token}` };
+
   async function post(
     path: string,
     body: object,
@@ -90,16 +97,26 @@ export function createManagedModel({
     const response = await fetch(new URL(`v1/${path}`, url), {
       method: "POST",
       redirect: "error",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
+      headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
     if (!response.ok)
       throw new Error("Managed model control plane unavailable.");
     return response.json();
+  }
+
+  // The Price Version is read here, not configured, so a reservation made
+  // after a new publication pins that one and is never refused as stale.
+  async function priceVersion() {
+    const response = await fetch(new URL("v1/quote", url), {
+      redirect: "error",
+      headers,
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok)
+      throw new Error("Managed model control plane unavailable.");
+    return publication.parse(await response.json()).priceVersion;
   }
 
   async function reconcile(operation: ModelOperation) {
@@ -117,6 +134,14 @@ export function createManagedModel({
       },
     ): Promise<ManagedModelResult> {
       const id = operationId(input);
+      // Nothing has been asked of the ledger until the publication is read,
+      // so a control plane that cannot serve it leaves nothing to reconcile.
+      let price: string;
+      try {
+        price = await priceVersion();
+      } catch {
+        return { state: "unavailable" };
+      }
       let admission: z.infer<typeof reservation>;
       try {
         admission = reservation.parse(
@@ -124,11 +149,15 @@ export function createManagedModel({
             "reserve",
             {
               operationId: id,
-              application: "openbot",
-              creditType: "test",
-              scope: input.scope,
-              step: input.step,
               route: input.route,
+              priceVersion: price,
+              // The trial entry: Test Credit only (#107).
+              creditType: "test",
+              // The bill names the app this step ran for.
+              applicationId: "openbot",
+              // Nothing retries a chat turn or an auxiliary call by its
+              // operation ID, so a refusal must not wait as a resume point.
+              resumable: false,
               ...(input.budget
                 ? { budgetId: input.budget.id, stepId: input.budget.stepId }
                 : {}),

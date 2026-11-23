@@ -22,6 +22,11 @@ function controlServer(options: { dispatch?: (body: JsonBody) => Response }) {
       const path = new URL(request.url).pathname;
       const body = await request.json().catch(() => undefined);
       calls.push({ path, body });
+      if (path === "/v1/quote")
+        return Response.json({
+          route: "aux-route",
+          priceVersion: "publication-1",
+        });
       if (path === "/v1/reserve")
         return Response.json({ state: "reserved", permit: "permit-1" });
       if (path === "/v1/dispatch")
@@ -43,29 +48,40 @@ test("an auxiliary call uses one stable managed operation and explicit user budg
       model: { url: server.url, token: "token" },
       route: "aux-route",
     });
+    const billing = {
+      ...scope,
+      step: "route",
+      funding: { kind: "user", budget: { id: "budget-1", stepId: "route" } },
+    } as AuxiliaryModelBilling;
     const result = await complete("Pick a coworker", undefined, {
-      billing: {
-        ...scope,
-        step: "route",
-        funding: { kind: "user", budget: { id: "budget-1", stepId: "route" } },
-      },
+      billing,
     });
     expect(result).toBe("routed");
     expect(calls.map(({ path }) => path)).toEqual([
+      "/v1/quote",
       "/v1/reserve",
       "/v1/dispatch",
       "/v1/reconcile",
     ]);
-    expect(calls[0]?.body).toMatchObject({
+    // The ledger's reservation: the step's budget, pinned to the publication
+    // just read. Who the person is comes from the credential, never the body.
+    expect(calls[1]?.body).toEqual({
+      operationId: expect.stringMatching(/^[0-9a-f]{64}$/),
       route: "aux-route",
+      priceVersion: "publication-1",
+      creditType: "test",
+      applicationId: "openbot",
+      resumable: false,
       budgetId: "budget-1",
       stepId: "route",
-      scope,
-      step: "route",
     });
     expect(
-      (calls[1]?.body as { messages?: unknown } | undefined)?.messages,
+      (calls[2]?.body as { messages?: unknown } | undefined)?.messages,
     ).toEqual([{ role: "user", content: "Pick a coworker" }]);
+    // The same step in the same run asks as the same operation, so a retry
+    // is answered from the record instead of spending again.
+    await complete("Pick a coworker", undefined, { billing });
+    expect(calls[5]?.body).toEqual(calls[1]?.body);
   } finally {
     await server.stop(true);
   }

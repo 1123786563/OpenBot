@@ -23,6 +23,9 @@ const reserve = operation.extend({
   authorizationId: operationId.optional(),
   resourceId: z.string().min(1).max(512).optional(),
   taskId: operationId.optional(),
+  // False for a caller that will not retry this operation by its ID, so an
+  // out-of-credits refusal leaves no resume point behind.
+  resumable: z.boolean().optional(),
 });
 const messages = z
   .array(
@@ -387,6 +390,14 @@ export function createTestCreditRoutes({
           { error: "A Spending Authorization can only be raised or extended." },
           409,
         );
+  });
+
+  // The publication an execution caller pins its reservation to (#107).
+  api.get("/v1/quote", async (context) => {
+    const quote = await ledger.quote();
+    return quote
+      ? context.json(quote)
+      : context.json({ error: "Model route unavailable." }, 404);
   });
 
   // An application acts for the person who granted it the authorization it

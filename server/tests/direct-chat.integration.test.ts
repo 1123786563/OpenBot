@@ -355,11 +355,16 @@ test("Web turns share Test Credits, reconcile uncertain dispatch on replay, and 
     async fetch(request) {
       const path = new URL(request.url).pathname;
       expect(request.headers.get("authorization")).toBe("Bearer test-token");
+      if (path === "/v1/quote")
+        return Response.json({
+          route: "pilot-text-v1",
+          priceVersion: "publication-1",
+        });
       const call = await request.json();
       calls.push({ path, operationId: call.operationId });
       if (path === "/v1/reserve") {
-        expect(call.scope.personId).toBe(alice.id);
         expect(call.route).toBe("pilot-text-v1");
+        expect(call.priceVersion).toBe("publication-1");
         expect(call.creditType).toBe("test");
         if (outage) return new Response(null, { status: 503 });
         if (!available)

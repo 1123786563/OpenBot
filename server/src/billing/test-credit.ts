@@ -894,6 +894,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         authorizationId?: string;
         resourceId?: string;
         taskId?: string;
+        // False for a caller that will not retry this operation by its ID.
+        resumable?: boolean;
       },
     ) {
       return database.transaction(async (tx) => {
@@ -949,6 +951,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         const pause = async (
           reason: "insufficient_credits" | "execution_limit",
         ) => {
+          // A step nothing will retry cannot continue, so it waits nowhere.
+          if (request.resumable === false) return denied(reason);
           await tx
             .insert(resumePoints)
             .values({

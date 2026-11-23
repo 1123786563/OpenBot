@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { createManagedModel } from "../src/managed-model-trial";
 
+/**
+ * The adapter wired into OpenBot's own model calls (#32, #86): every call goes
+ * through the ledger's reservation and dispatch entry, pinned to the
+ * publication it just read, and fails closed on anything it cannot resolve.
+ */
+
 const scope = {
   source: "direct-chat" as const,
   personId: "authenticated-person",
@@ -10,13 +16,97 @@ const scope = {
 };
 const route = "pilot-text-v1";
 const messages = [{ role: "user", content: "One question" }] as const;
+// What the ledger publishes. A reservation pins its Price Version.
+const publication = { route, priceVersion: "publication-1" };
+
+test("a reservation carries what the ledger's entry accepts, and pins the current publication", async () => {
+  const calls: { path: string; body: unknown }[] = [];
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      calls.push({
+        path,
+        body: request.method === "POST" ? await request.json() : null,
+      });
+      if (path === "/v1/quote") return Response.json(publication);
+      if (path === "/v1/reserve")
+        return Response.json({ state: "reserved", permit: "pilot-permit" });
+      if (path === "/v1/dispatch")
+        return Response.json({ state: "completed", text: "Managed answer." });
+      return Response.json({ state: "settled" });
+    },
+  });
+  try {
+    const model = createManagedModel({ url: control.url, token: "test-token" });
+    expect(
+      await model.complete({
+        scope,
+        step: "direct-chat-answer",
+        route,
+        messages,
+        budget: { id: "budget-1", stepId: "answer" },
+      }),
+    ).toEqual({ state: "completed", text: "Managed answer." });
+    expect(calls.map(({ path }) => path)).toEqual([
+      "/v1/quote",
+      "/v1/reserve",
+      "/v1/dispatch",
+      "/v1/reconcile",
+    ]);
+    // The same request the #90 adapter makes: the route and the Price
+    // Version just published, the trial entry, and the app for the bill. Who
+    // the person is comes from the credential, never from the body.
+    expect(calls[1]?.body).toEqual({
+      operationId: expect.stringMatching(/^[0-9a-f]{64}$/),
+      route,
+      priceVersion: "publication-1",
+      creditType: "test",
+      applicationId: "openbot",
+      resumable: false,
+      budgetId: "budget-1",
+      stepId: "answer",
+    });
+    // Reconciliation asks about that same operation.
+    const reserved = calls[1]?.body as { operationId: string } | undefined;
+    const reconciled = calls[3]?.body as { operationId: string } | undefined;
+    expect(reconciled?.operationId).toBe(reserved?.operationId);
+  } finally {
+    await control.stop(true);
+  }
+});
+
+test("a publication the control plane cannot serve fails closed before any reservation", async () => {
+  const paths: string[] = [];
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      paths.push(new URL(request.url).pathname);
+      return new Response(null, { status: 503 });
+    },
+  });
+  try {
+    const model = createManagedModel({ url: control.url, token: "test-token" });
+    expect(
+      await model.complete({ scope, step: "answer", route, messages }),
+    ).toEqual({ state: "unavailable" });
+    // Nothing was reserved, so there is nothing to reconcile either.
+    expect(paths).toEqual(["/v1/quote"]);
+  } finally {
+    await control.stop(true);
+  }
+});
 
 test("a product model call requires a confirmed Test Credit reservation", async () => {
   const control = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
-      if (new URL(request.url).pathname === "/v1/reserve") {
+      const path = new URL(request.url).pathname;
+      if (path === "/v1/quote") return Response.json(publication);
+      if (path === "/v1/reserve") {
         return Response.json({
           state: "denied",
           reason: "insufficient_credits",
@@ -44,6 +134,7 @@ test("losing a reservation response fails closed and reconciles only the origina
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/v1/quote") return Response.json(publication);
       const { operationId } = await request.json();
       calls.push({ path, operationId });
       if (path === "/v1/reserve") return new Response(null, { status: 503 });
@@ -76,6 +167,7 @@ test.each(["settled", "released"] as const)(
       port: 0,
       async fetch(request) {
         const path = new URL(request.url).pathname;
+        if (path === "/v1/quote") return Response.json(publication);
         const { operationId } = await request.json();
         calls.push({ path, operationId });
         if (path === "/v1/reserve") {
@@ -127,6 +219,7 @@ test("a lost authorization at dispatch returns a refusal and reconciles the rese
     fetch(request) {
       const path = new URL(request.url).pathname;
       paths.push(path);
+      if (path === "/v1/quote") return Response.json(publication);
       if (path === "/v1/reserve") {
         return Response.json({ state: "reserved", permit: "trial-permit" });
       }
@@ -141,7 +234,13 @@ test("a lost authorization at dispatch returns a refusal and reconciles the rese
     expect(
       await model.complete({ scope, step: "answer", route, messages }),
     ).toEqual({ state: "not_authorized" });
-    expect(paths).toEqual(["/v1/reserve", "/v1/dispatch", "/v1/reconcile"]);
+    // Each reservation is pinned to the publication read just before it.
+    expect(paths).toEqual([
+      "/v1/quote",
+      "/v1/reserve",
+      "/v1/dispatch",
+      "/v1/reconcile",
+    ]);
   } finally {
     await control.stop(true);
   }

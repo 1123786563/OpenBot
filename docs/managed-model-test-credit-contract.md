@@ -8,11 +8,13 @@ The OpenBot runtime can send Web direct-chat text turns through a single version
 | --- | --- |
 | `OPENBOT_MANAGED_MODEL_TRIAL_URL` | HTTPS origin of the internal controlled entry point. Loopback HTTP is allowed for local contract tests. |
 | `OPENBOT_MANAGED_MODEL_TRIAL_TOKEN` | Service credential scoped to OpenBot's Test Credit trial. |
-| `OPENBOT_MANAGED_MODEL_TRIAL_ROUTE` | Published route key for one verified text model, including its Harness and Price Version. |
+| `OPENBOT_MANAGED_MODEL_TRIAL_ROUTE` | ID of a route in the ledger's current publication, for one verified text model and its Harness. The Price Version is not configured: the client reads it from `GET /v1/quote` before each reservation. |
 
 Set all three values on the OpenBot runtime deployment to enable the trial. The route applies to direct chat in that deployment. Account eligibility is checked by the controlled entry point. Chat sends server-persisted user and assistant text and returns the completed reply using the existing AG-UI stream. Other execution paths require their own integration with this client before they can use platform credentials.
 
-These settings select the service-token contract below. The billed Conversation pilot (#90) uses an execution identity bound to the persisted Conversation and an explicit Price Version. Its entry point expects a different reservation request. Use the #90 adapter when connecting that entry point.
+These settings select the contract below, which is the ledger's own reservation contract. `createTestCreditRoutes` in `server/src/billing/test-credit-routes.ts` serves it, and `server/tests/managed-model-routes.integration.test.ts` runs this client against those routes and the real ledger. The billed Conversation pilot (#90) client in `server/src/managed-model.ts` makes the same reservation and supplies the Price Version and its credentials itself.
+
+The entry point resolves the person from the credential, never from the request body: its `authenticate(request, "execution")` returns the Billing Account's verified issuer and subject. The token above is one credential for the whole runtime, so a deployment still has to give the entry point a way to tell people apart before OpenBot's own model calls can be charged to the right account.
 
 ## HTTP contract
 
@@ -20,11 +22,12 @@ OpenBot posts JSON with the configured service bearer token. Return typed busine
 
 | Endpoint | Request | Response `state` |
 | --- | --- | --- |
-| `POST /v1/reserve` | `operationId`, `application: "openbot"`, `creditType: "test"`, `scope` (`personId`, `conversationId`, `botId`, `runId`, `source`), `step`, `route` | `reserved` with an opaque `permit`, `existing` for a recorded operation, or `denied` with `reason` |
+| `GET /v1/quote` | | The current publication's Test Credit quote: `route`, `priceVersion`, `price` and `maxChargeMicrocredits`. 404 when no route is published. |
+| `POST /v1/reserve` | `operationId`, `route`, `priceVersion` from the quote, `applicationId: "openbot"`, `creditType: "test"`, `resumable: false`, and `budgetId` with `stepId` for a step under an execution budget | `reserved` with an opaque `permit`, `existing` for a recorded operation, or `denied` with `reason` |
 | `POST /v1/dispatch` | `operationId`, `permit`, `messages` (roles and text) | `completed` with `text`, `reconciling` if the supplier may have been reached, or `denied` with `reason` |
 | `POST /v1/reconcile` | `operationId` | `pending`, `settled`, `released` or `absent` |
 
-Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized` and `route_unavailable`. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
+Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized` and `route_unavailable`. The ledger also refuses a new reservation with `pilot_closed` and `unavailable`; the client reports both as `unavailable`. `resumable: false` tells the ledger that nothing retries this operation by its ID, so a refusal leaves no resume point behind: a person who was refused sends again, as a new operation. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
 
 ## Service requirements for acceptance
 
