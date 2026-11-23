@@ -945,6 +945,9 @@ export const skillMarketInstallations = pgTable(
     agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
+    registry: text("registry"),
+    namespace: text("namespace"),
+    slug: text("slug"),
     version: text("version").notNull(),
     versionId: integer("version_id").notNull(),
     registrySkillId: integer("registry_skill_id").notNull(),
@@ -956,6 +959,65 @@ export const skillMarketInstallations = pgTable(
     createdAt: createdAt(),
   },
   (table) => [primaryKey({ columns: [table.agentId, table.command] })],
+);
+
+// Keep the existing numeric version keys used by Bot installations and approval snapshots.
+export const bifrostMarketSkills = pgTable("bifrost_market_skills", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  skillUuid: uuid("skill_uuid").notNull().unique(),
+});
+
+export const bifrostMarketReviews = pgTable("bifrost_market_reviews", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  skillId: integer("skill_id")
+    .notNull()
+    .references(() => bifrostMarketSkills.id),
+  versionUuid: uuid("version_uuid").notNull().unique(),
+  slug: text("slug").notNull(),
+  version: text("version").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  reviewedBy: text("reviewed_by").notNull(),
+  reviewedAt: createdAt(),
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  withdrawnBy: text("withdrawn_by"),
+});
+
+export const skillMarketMigrationReceipts = pgTable(
+  "skill_market_migration_receipts",
+  {
+    registryId: text("registry_id").primaryKey(),
+    evidence: jsonb("evidence").notNull(),
+  },
+);
+
+export const skillMarketEquivalences = pgTable(
+  "skill_market_equivalences",
+  {
+    registryId: text("registry_id")
+      .notNull()
+      .references(() => skillMarketMigrationReceipts.registryId),
+    source: text("source").notNull(),
+    namespace: text("namespace").notNull(),
+    slug: text("slug").notNull(),
+    registrySkillId: integer("registry_skill_id").notNull(),
+    versionId: integer("version_id").notNull(),
+    targetSkillId: uuid("target_skill_id").notNull(),
+    targetVersionId: uuid("target_version_id").notNull().unique(),
+    targetSlug: text("target_slug").notNull(),
+    version: text("version").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.source, table.registrySkillId, table.versionId],
+    }),
+    index("skill_market_equivalence_target_skill_idx").on(table.targetSkillId),
+    index("skill_market_equivalence_source_skill_idx").on(
+      table.source,
+      table.namespace,
+      table.slug,
+    ),
+  ],
 );
 
 export const skillMarketVersionDisablements = pgTable(
