@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { listTools, useArcadeClient } from "../src/plugins/arcade";
+import {
+  useArcadeClient as installArcadeClient,
+  listTools,
+} from "../src/plugins/arcade";
 import { createArcadeClient } from "../src/plugins/arcade-adapter";
 import type { AccountRef } from "../src/plugins/shared-accounts";
 
@@ -69,7 +72,7 @@ afterEach(() => {
   running?.stop();
   running = null;
   serving = [];
-  useArcadeClient(null);
+  installArcadeClient(null);
   if (wasBaseURL === undefined) delete process.env.ARCADE_BASE_URL;
   else process.env.ARCADE_BASE_URL = wasBaseURL;
 });
@@ -96,7 +99,7 @@ const toolRow = (
 
 const listed = async () => {
   const { actions } = createArcadeClient("never-dialled");
-  useArcadeClient(actions);
+  installArcadeClient(actions);
   return await listTools({ url: "arcade://Gmail" });
 };
 

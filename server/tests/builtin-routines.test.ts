@@ -2,9 +2,9 @@ import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { withApprovalContext } from "@openbot/toolkit/continuation";
 import {
   callTool,
+  useRoutineTools as installRoutineTools,
   listTools,
   type RoutineTools,
-  useRoutineTools,
 } from "../src/plugins/builtin-routines";
 import { MAX_RESULT_CHARS } from "../src/plugins/mcp";
 import {
@@ -20,7 +20,7 @@ import {
  *
  * What is under test is the boundary, not the store: which method a tool name reaches, whose id the
  * call is attributed to, and what a refusal reads as. A recording stub is installed through
- * {@link useRoutineTools}, which is the only seam the module has — `transportFor` resolves a kind to
+ * {@link installRoutineTools}, which is the only seam the module has — `transportFor` resolves a kind to
  * a MODULE, so there is no constructor to pass a store to.
  *
  * The security property this file exists for is the attribution one: the owner comes from the
@@ -83,7 +83,7 @@ type Recorded =
 /** Installs a stub that records every call, and answers with the fixtures above. */
 function recordingTools(overrides: Partial<RoutineTools> = {}): Recorded[] {
   const calls: Recorded[] = [];
-  useRoutineTools({
+  installRoutineTools({
     async create(input) {
       calls.push({ method: "create", input });
       return ROUTINE;
@@ -107,7 +107,7 @@ function recordingTools(overrides: Partial<RoutineTools> = {}): Recorded[] {
 // The binding is module-level and the suite is one process, so a stub left installed here would be
 // the store some other file's test unexpectedly reaches.
 afterEach(() => {
-  useRoutineTools(null);
+  installRoutineTools(null);
 });
 
 describe("a list too long for one result", () => {
@@ -193,7 +193,7 @@ describe("the tool list", () => {
   test("needs no actor, no arguments and no store", async () => {
     // The only call site is `refreshTools`, which passes `{url, token}` and never an actor. A list
     // that refused without one would store zero tools and Routines would advertise nothing.
-    useRoutineTools(null);
+    installRoutineTools(null);
     const tools = await listTools();
     expect(tools).toHaveLength(16);
   });
@@ -456,7 +456,7 @@ describe("attribution", () => {
   });
 
   test("a deployment with no routine store refuses", async () => {
-    useRoutineTools(null);
+    installRoutineTools(null);
     const result = await callTool(CONNECTION, "list_routines", {});
 
     expect(result.isError).toBe(true);

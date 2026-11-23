@@ -21,7 +21,7 @@ import type { AppVariables } from "../src/auth/guards";
 import { applyMigrations } from "../src/db/apply-migrations";
 import { createDatabase, type Database } from "../src/db/client";
 import { brokeredConnections, mcpServers, mcpTools } from "../src/db/schema";
-import { useArcadeClient } from "../src/plugins/arcade";
+import { useArcadeClient as installArcadeClient } from "../src/plugins/arcade";
 import { createArcadeClient } from "../src/plugins/arcade-adapter";
 import { createComposioClient } from "../src/plugins/composio-adapter";
 import { selectProviderWiring } from "../src/plugins/provider-wiring";
@@ -318,7 +318,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  useArcadeClient(null);
+  installArcadeClient(null);
   for (const database of opened.splice(0)) await database.$client.close();
 });
 
@@ -371,7 +371,7 @@ async function deploymentAt(
   );
   const broker = wiring.broker;
   if (!broker) throw new Error("Arcade was not wired.");
-  useArcadeClient(wiring.install.arcade);
+  installArcadeClient(wiring.install.arcade);
   const identity =
     (await ensureSingleUserIdentity(database, {
       singleUser,

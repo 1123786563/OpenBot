@@ -2,19 +2,19 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   type ArcadeFailure,
   callTool,
+  useArcadeClient as installArcadeClient,
   isAuthorizationRequired,
   listTools,
-  useArcadeClient,
 } from "../src/plugins/arcade";
 import { MAX_RESULT_CHARS } from "../src/plugins/mcp";
 
-afterEach(() => useArcadeClient(null));
+afterEach(() => installArcadeClient(null));
 
 const connection = { url: "arcade://Gmail", actorId: "u1" };
 const URL_IN_BODY = "https://github.com/login/oauth/authorize?state=SECRET";
 
 function failing(failure: unknown) {
-  useArcadeClient({
+  installArcadeClient({
     listTools: async () => {
       throw new Error("not listing");
     },
@@ -112,7 +112,7 @@ describe("listTools failures", () => {
     const vendor = new Error(
       '403 {"name":"permission_denied","message":"LEAKME key sk-123"}',
     );
-    useArcadeClient({
+    installArcadeClient({
       listTools: async () => {
         throw vendor;
       },
@@ -133,7 +133,7 @@ describe("listTools failures", () => {
 });
 
 function answering(answer: unknown) {
-  useArcadeClient({
+  installArcadeClient({
     listTools: async () => {
       throw new Error("not listing");
     },
