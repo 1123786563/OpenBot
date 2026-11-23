@@ -186,7 +186,7 @@ test.each([
       report.stream.gateway.requestId = requestId;
       report.stream.meter.requestId = requestId;
       report.stream.upstream.gatewayRequestId = requestId;
-      const duplicate = requestId.toUpperCase();
+      const duplicate = "ABCDEF12-3456-4789-8ABC-DEF123456789";
       report.outputLimit.gateway.requestId = duplicate;
       report.outputLimit.meter.requestId = duplicate;
       report.outputLimit.upstream.gatewayRequestId = duplicate;
