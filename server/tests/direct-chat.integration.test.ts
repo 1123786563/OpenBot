@@ -4548,6 +4548,9 @@ async function exerciseLearning(scheduled: boolean) {
         state: "pending_review",
         evidence: [{ source: recording, excerpt: "click: Open packing list" }],
       });
+      await database
+        .insert(userRoles)
+        .values({ userId: bob.id, role: "admin" });
       const adminLearning = web(
         database,
         { ...bob, role: "admin" },
@@ -4650,6 +4653,20 @@ async function exerciseLearning(scheduled: boolean) {
       expect((await admin.request("/settings", settings(true))).status).toBe(
         200,
       );
+      await database
+        .delete(userRoles)
+        .where(and(eq(userRoles.userId, bob.id), eq(userRoles.role, "admin")));
+      expect(
+        (
+          await adminLearning.request(
+            adminDecision(sharedProposal.id),
+            post({ decision: "approve" }),
+          )
+        ).status,
+      ).toBe(404);
+      await database
+        .insert(userRoles)
+        .values({ userId: bob.id, role: "admin" });
       expect(
         (
           await adminLearning.request(

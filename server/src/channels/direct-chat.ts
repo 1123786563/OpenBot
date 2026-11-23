@@ -60,6 +60,7 @@ import {
   revokedAccess,
   routineRuns,
   routines,
+  userRoles,
   users,
 } from "../db/schema";
 import {
@@ -480,6 +481,16 @@ export function createDirectChatRoutes(deps: {
 
   function authorizeAdminLearning(reviewerId: string) {
     return async (tx: ProfileReadExecutor, scope: DirectChatLearningScope) => {
+      if (!(deps.singleUser && reviewerId === DEV_ACTOR.id)) {
+        const [admin] = await tx
+          .select({ role: userRoles.role })
+          .from(userRoles)
+          .where(
+            and(eq(userRoles.userId, reviewerId), eq(userRoles.role, "admin")),
+          )
+          .for("share");
+        if (!admin) return false;
+      }
       if (!(await accountIsActive(tx, scope.personId))) return false;
       if (scope.personId !== reviewerId) {
         const roles = await createRoleRepository(tx).rolesForUser(
