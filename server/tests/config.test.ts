@@ -1557,7 +1557,7 @@ test("multi-Person model trials require distinct Person credentials", () => {
     DATABASE_URL: baseEnvironment.DATABASE_URL,
     KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
     OPENBOT_ORGANIZATION_AUTH_URL: "https://auth.example.test",
-    OPENBOT_MANAGED_MODEL_TRIAL_URL: "https://managed.example.test",
+    OPENBOT_MANAGED_MODEL_TRIAL_URL: "https://managed.example.test/api/billing",
     OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "approved-v1",
   };
   expect(() =>
@@ -1573,13 +1573,13 @@ test("multi-Person model trials require distinct Person credentials", () => {
         '{"alice":"shared","bob":"shared"}',
     }),
   ).toThrow("distinct credentials");
-  expect(
-    loadConfig({
-      ...environment,
-      OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS:
-        '{"alice":"first","bob":"second"}',
-    }).managedModelTrial?.credentials,
-  ).toEqual(
+  const trial = loadConfig({
+    ...environment,
+    OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS:
+      '{"alice":"first","bob":"second"}',
+  }).managedModelTrial;
+  expect(trial?.url.href).toBe("https://managed.example.test/api/billing/");
+  expect(trial?.credentials).toEqual(
     new Map([
       ["alice", "first"],
       ["bob", "second"],

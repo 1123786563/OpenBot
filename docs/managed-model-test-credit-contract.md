@@ -6,12 +6,12 @@ The OpenBot runtime can send direct-chat text turns and voice requests delegated
 
 | Variable | Value |
 | --- | --- |
-| `OPENBOT_MANAGED_MODEL_TRIAL_URL` | HTTPS origin of the internal controlled entry point. Loopback HTTP is allowed for local contract tests. |
+| `OPENBOT_MANAGED_MODEL_TRIAL_URL` | HTTPS origin of the internal controlled entry point or its `/api/billing` endpoint. Loopback HTTP is allowed for local contract tests. |
 | `OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS` | Server-side JSON object mapping persisted OpenBot Person IDs to distinct bearer credentials issued for their Billing Accounts. |
 | `OPENBOT_MANAGED_MODEL_TRIAL_TOKEN` | Single-user deployments only. Billing must verify this bearer as the single user's execution identity. |
 | `OPENBOT_MANAGED_MODEL_TRIAL_ROUTE` | Published route key for one verified text model. The client reads the active Price Version before each reservation. |
 
-Set the URL and route with the applicable credential setting. Provision the credential mapping as a deployment secret from verified Person-to-Billing Account bindings. When rotating a Person's credential, keep it bound to the same Billing Account so retries and recovery can find the original reservation.
+Set the URL and route with the applicable credential setting. Provision the credential mapping as a deployment secret from verified Person-to-Billing Account bindings. Set the same tokens on the Billing server in `TEST_CREDIT_RUNTIME_BINDINGS` as a JSON array of entries with `personId` (the Person ID in Billing’s database), `subject` (the verified Casdoor subject) and `token` (at least 32 characters). Billing rechecks the Person’s verified Casdoor link for every request. When rotating a Person's credential, keep it bound to the same Billing Account so retries and recovery can find the original reservation.
 
 The runtime selects the bearer from the persisted Person in the execution scope. That scope comes from the authorized Conversation Run, the Learning scope or the Hindsight Reflect session. The runtime denies execution before contacting Billing if the Person has no bound credential. It uses the Person's credential for quote, reserve, dispatch and reconciliation, including worker recovery. Missing credentials leave existing unknown-outcome Runs unresolved. Billing's durable reconciler can still settle them.
 

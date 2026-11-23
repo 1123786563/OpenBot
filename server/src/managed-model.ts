@@ -13,12 +13,17 @@ const denied = z.object({ state: z.literal("denied"), reason: denial });
 const reservation = z.discriminatedUnion("state", [
   z.object({ state: z.literal("reserved"), permit: z.string().min(1) }),
   denied,
-  z.object({ state: z.literal("existing") }),
+  z.object({
+    state: z.literal("existing"),
+    permit: z.string().min(1).optional(),
+  }),
 ]);
 const dispatch = z.discriminatedUnion("state", [
   z.object({ state: z.literal("completed"), text: z.string().trim().min(1) }),
   denied,
   z.object({ state: z.literal("reconciling") }),
+  z.object({ state: z.enum(["settled", "released"]) }),
+  z.object({ state: z.literal("existing") }),
 ]);
 const publication = z.object({
   route: z.string().min(1),
@@ -201,7 +206,7 @@ export function createManagedModel({
         return { state: "unavailable" };
       }
       if (admission.state === "denied") return { state: admission.reason };
-      if (admission.state === "existing") {
+      if (!admission.permit) {
         const state = await reconcile(input).catch(() => undefined);
         return {
           state:
@@ -229,6 +234,15 @@ export function createManagedModel({
           ),
         );
         if (result.state === "denied") return { state: result.reason };
+        if (result.state === "existing") {
+          const state = await reconcile(input);
+          return {
+            state:
+              state === "settled" || state === "released"
+                ? state
+                : "reconciling",
+          };
+        }
         return result;
       } catch {
         return { state: "reconciling" };

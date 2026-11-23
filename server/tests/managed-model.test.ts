@@ -330,3 +330,53 @@ test("a Person without a bound credential cannot reserve or reconcile another ac
     await control.stop(true);
   }
 });
+
+test("retry uses the existing unsent permit after a lost reservation response", async () => {
+  const ids: string[] = [];
+  let reserved = false;
+  let dispatches = 0;
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      expect(request.headers.get("authorization")).toBe("Bearer test-token");
+      const path = new URL(request.url).pathname;
+      if (path === "/api/billing/v1/quote")
+        return Response.json({ route, priceVersion });
+      const { operationId, permit } = await request.json();
+      ids.push(operationId);
+      if (path === "/api/billing/v1/reserve") {
+        if (reserved)
+          return Response.json({
+            state: "existing",
+            permit: "original-permit",
+          });
+        reserved = true;
+        return new Response(null, { status: 502 });
+      }
+      if (path === "/api/billing/v1/dispatch") {
+        expect(permit).toBe("original-permit");
+        dispatches++;
+        return Response.json({ state: "completed", text: "Answer" });
+      }
+      expect(path).toBe("/api/billing/v1/reconcile");
+      return Response.json({ state: dispatches ? "settled" : "pending" });
+    },
+  });
+  try {
+    const config = { url: new URL("/api/billing/", control.url), credentials };
+    const input = { scope, step: "answer", route, messages };
+    expect(await createManagedModel(config).complete(input)).toEqual({
+      state: "unavailable",
+    });
+    expect(dispatches).toBe(0);
+    expect(await createManagedModel(config).complete(input)).toEqual({
+      state: "completed",
+      text: "Answer",
+    });
+    expect(dispatches).toBe(1);
+    expect(new Set(ids).size).toBe(1);
+  } finally {
+    await control.stop(true);
+  }
+});

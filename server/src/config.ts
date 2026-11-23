@@ -1757,14 +1757,15 @@ function managedModelTrial(
     (origin.protocol !== "https:" && !loopback) ||
     origin.username ||
     origin.password ||
-    origin.pathname !== "/" ||
+    !["/", "/api/billing", "/api/billing/"].includes(origin.pathname) ||
     origin.search ||
     origin.hash
   ) {
     throw new Error(
-      `${name} must be an HTTPS origin (HTTP allowed for loopback tests).`,
+      `${name} must be an HTTPS origin or its /api/billing endpoint (HTTP allowed for loopback tests).`,
     );
   }
+  if (origin.pathname === "/api/billing") origin.pathname += "/";
   return { url: origin, credentials, route };
 }
 
