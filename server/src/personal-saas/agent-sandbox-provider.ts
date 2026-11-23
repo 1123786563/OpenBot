@@ -63,6 +63,8 @@ type WatchdogRequest = WatchdogAction & {
 type Row = typeof sandboxes.$inferSelect;
 
 type FlashWorkerArtifact = { archive: Blob; sha256: string };
+// The Flash gateway limits each HTTP request body to 32 MiB, including multipart framing.
+const flashUploadPartBytes = 24 * 1024 * 1024;
 
 async function installWorker(sandbox: Sandbox, artifact: FlashWorkerArtifact) {
   const path = "/root/.openbot-runtime.tar.gz";
@@ -71,16 +73,32 @@ async function installWorker(sandbox: Sandbox, artifact: FlashWorkerArtifact) {
     .string()
     .regex(/^[a-f0-9]{64}$/)
     .parse(artifact.sha256);
-  await sandbox.files.write(path, artifact.archive, {
-    user: "root",
-    requestTimeoutMs: 20_000,
-  });
+  const parts: string[] = [];
+  for (
+    let offset = 0;
+    offset < artifact.archive.size;
+    offset += flashUploadPartBytes
+  ) {
+    const part = `${path}.part-${parts.length}`;
+    await sandbox.files.write(
+      part,
+      artifact.archive.slice(offset, offset + flashUploadPartBytes),
+      {
+        user: "root",
+        requestTimeoutMs: 20_000,
+      },
+    );
+    parts.push(part);
+  }
+  if (parts.length === 0) throw new Error("Flash worker artifact is empty");
   await sandbox.commands.run(
-    `umask 022 && printf '%s  %s\n' '${digest}' '${path}' | sha256sum -c - && ` +
+    `umask 077 && cat -- ${parts.join(" ")} > ${path} && umask 022 && ` +
+      `printf '%s  %s\n' '${digest}' '${path}' | sha256sum -c - && ` +
       `install -d -o 0 -g 0 -m 0755 ${directory} && ` +
       `tar --no-same-owner -xzf ${path} -C ${directory} && ` +
       `chmod 0755 ${directory}/openbot-lease ${directory}/worker && ` +
-      `install -d -o 10001 -g 10001 -m 0700 ${directory}/workspace && rm -- ${path}`,
+      `install -d -o 10001 -g 10001 -m 0700 ${directory}/workspace && ` +
+      `rm -- ${path} ${parts.join(" ")}`,
     { user: "root", requestTimeoutMs: 4_000, timeoutMs: 4_000 },
   );
 }

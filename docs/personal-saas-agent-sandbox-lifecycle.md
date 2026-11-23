@@ -16,7 +16,7 @@ Hangzhou returned approximately 60 seconds of provider TTL for a 10-second creat
    shasum -a 256 /tmp/openbot-flash-runtime.tar.gz
    ```
 
-3. On each Personal SaaS server replica make the artifact readable at the configured absolute path. Apply the normal server migrations, including `0118_agent_sandbox_flash` if not already applied. Use the same database, encryption key, Team key, template and artifact on each replica. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES`. Leave the Docker supervisor and former authority settings unset. Drain existing Flash generations before deploying this worker protocol or changing region, template, Team key or provider.
+3. On each Personal SaaS server replica make the artifact readable at the configured absolute path. Apply the normal server migrations, including `0118_agent_sandbox_flash` if not already applied. Use the same database, encryption key, Team key, template and artifact on each replica. Use the template identifier returned in the Flash create response. In this Hangzhou trial it is `code-interpreter-v1`, while the template inventory reports a separate opaque ID. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES`. Leave the Docker supervisor and former authority settings unset. Drain existing Flash generations before deploying this worker protocol or changing region, template, Team key or provider.
 
    ```sh
    export OPENBOT_PERSONAL_SAAS_MODE=private-trial
@@ -28,7 +28,7 @@ Hangzhou returned approximately 60 seconds of provider TTL for a 10-second creat
    (cd server && bun --no-env-file src/personal-saas/index.ts)
    ```
 
-On each start request, OpenBot reserves one slot, creates a fresh private instance with public traffic and internet access disabled, uploads the archive through root envd, checks its SHA-256 and installs it in `/opt/openbot`. The instance needs no registry or package download. The setup reservation has a 30-second deadline. OpenBot rechecks account authorization after setup before issuing the initial work lease. Downloads, list, read and write use the same workspace implementation as the Docker computer. Flash exposes these file routes and health. OpenBot's gateway sends both the Flash traffic token and the worker token. Each issued lease applies to one generation and Flash keeps the original five-minute provider TTL. Run each scenario with a fresh instance.
+On each start request, OpenBot reserves one slot, creates a fresh private instance with public traffic and internet access disabled, uploads the archive in parts of at most 24 MiB through root envd, reassembles it, checks its SHA-256 and installs it in `/opt/openbot`. The Flash HTTP gateway accepts up to 32 MiB per upload request. The instance needs no registry or package download. [Flash large file uploads](https://help.aliyun.com/zh/agent-sandbox/upload-large-files-to-fc-agent-sandbox) The setup reservation has a 30-second deadline. OpenBot rechecks account authorization after setup before issuing the initial work lease. Downloads, list, read and write use the same workspace implementation as the Docker computer. Flash exposes these file routes and health. OpenBot's gateway sends both the Flash traffic token and the worker token. Each issued lease applies to one generation and Flash keeps the original five-minute provider TTL. Run each scenario with a fresh instance.
 
 A request whose create result is unknown keeps its slot occupied until reconciliation finds its exact metadata. An empty list by itself cannot close that intent. A delete response also leaves the slot occupied. The server saves worker exit evidence and then requests deletion. It requires an instance-specific Flash 404 and a complete generation-filtered inventory with no matches before releasing the slot. An instance that vanishes before OpenBot collects worker evidence remains pending. Preserve the database record and use the independent operator to investigate that generation.
 
@@ -72,6 +72,17 @@ PYTHON
 ```
 
 For the partition trial, use the last acknowledged deadline before blocking connectivity. If another renewal was acknowledged before account disablement, compare the independent observation with the latest accepted lease recorded by the watchdog.
+
+## Hangzhou pilot evidence
+
+On 2026-11-23, the pilot used `code-interpreter-v1` in `cn-hangzhou` with envd 0.6.1, an x86-64 artifact, and isolated PostgreSQL through migration 0118. The OpenBot trial used a local Casdoor-compatible identity fixture and a synthetic Bot runner. Sandbox creation, envd traffic, guarded worker file actions, process observation, and deletion used Alibaba Cloud.
+
+- Parallel starts across two OpenBot app instances yielded one accepted request and one quota refusal. A second owner saw an empty Computer state. Holding back the provider deletion confirmation left the first workspace in `stopping` and refused a new start.
+- Both a first-generation Bot task and a newly authorized task after restart wrote and read a synthetic file through the OpenBot gateway. A task queued before restart stopped before its runner dispatched.
+- After an acknowledged renewal, the cutoff run paused renewal and withheld Flash control connectivity for 20 seconds. An independent pidfd observer saw worker exit 13,011 ms after lease issue, with a 52 ms clock uncertainty estimate. The watchdog refused a renewal submitted after expiry. A separate account-disablement run observed worker exit 13,006 ms after lease issue, with a 70 ms clock uncertainty estimate.
+- The workspace released its slot after the provider confirmed deletion. Post-trial lookups returned 404 for all disposable instances.
+
+The built-in template denied `cgroup.kill`, so the trial used the no-child seccomp and pidfd path. A single archive upload failed with HTTP 400. Three upload parts, each at most 24 MiB, delivered the 51,824,275-byte archive and the in-sandbox hash check passed.
 
 ## Repeat the local checks
 
