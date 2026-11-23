@@ -5,13 +5,13 @@ import {
   check,
   index,
   integer,
-  jsonb,
   pgTable,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { jsonb } from "./json";
 import { testCreditAccounts } from "./test-credit";
 
 /**

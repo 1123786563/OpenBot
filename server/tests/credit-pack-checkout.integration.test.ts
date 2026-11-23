@@ -939,6 +939,17 @@ test("support reverses a fixture order and the statement preserves its dispatche
 
     const opened = await ops("open", "channel-case-104");
     expect(await ops("open", "channel-case-104")).toEqual(opened);
+    const [storedDispute] = await database
+      .select({
+        shape: sql<string>`jsonb_typeof(${paidRefunds.dispute})`,
+        reference: sql<string>`${paidRefunds.dispute}->'opened'->>'reference'`,
+      })
+      .from(paidRefunds)
+      .where(eq(paidRefunds.orderId, pack.orderId));
+    expect(storedDispute).toEqual({
+      shape: "object",
+      reference: "channel-case-104",
+    });
     expect(await pack.status()).toMatchObject({
       creditsFrozen: true,
       dispute: { id: opened.id, progress: "open", usedMicrocredits: "100000" },
