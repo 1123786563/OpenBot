@@ -1,4 +1,5 @@
 {
+  "frame.requestFailed": "That request failed.",
   "settings.language.browser": "Follow the browser",
   "settings.language.description": "Choose the language OpenBot uses for its own text.",
   "settings.language.title": "Language"
