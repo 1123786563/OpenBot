@@ -25,6 +25,7 @@ const issuer = "credit-pack-fixture";
 const alice = crypto.randomUUID();
 const bob = crypto.randomUUID();
 const outsider = crypto.randomUUID();
+const fixtureSubjects = new Set<string>([alice, bob, outsider]);
 let accountIds: string[] = [];
 const payments = new Map<string, object>();
 const starts = new Map<string, unknown>();
@@ -34,14 +35,14 @@ const secondApp = `checkout-second-${alice}`;
 const fixture = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
-  async fetch(request) {
+  async fetch(request, server): Promise<Response> {
     if (request.headers.get("authorization") !== `Bearer ${token}`)
       return new Response(null, { status: 401 });
     const id = new URL(request.url).pathname.split("/").at(-1) ?? "";
     if (request.method === "PUT") {
       starts.set(id, await request.json());
       return Response.json({
-        checkoutUrl: `${fixture.url.origin}/checkout/${id}`,
+        checkoutUrl: `${server.url.origin}/checkout/${id}`,
       });
     }
     await onQuery?.();
@@ -78,7 +79,7 @@ function mount(origin: string, eligible = accountIds.slice(0, 2)) {
       paid: { ledger: paid, creditPackTestChannel: channel },
       authenticate: async (request) => {
         const subject = request.headers.get("x-fixture-subject");
-        return subject && [alice, bob, outsider].includes(subject)
+        return subject && fixtureSubjects.has(subject)
           ? { issuer, subject }
           : undefined;
       },
