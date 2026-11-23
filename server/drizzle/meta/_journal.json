@@ -764,6 +764,13 @@
       "when": 1795362608388,
       "tag": "0108_app_paths_restore_and_channel_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1795404290805,
+      "tag": "0109_direct_chat_test_credit",
+      "breakpoints": true
     }
   ]
 }

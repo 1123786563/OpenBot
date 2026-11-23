@@ -21,6 +21,11 @@ import {
   useConversationQuestion,
 } from "@/components/approvals/question-notice";
 import { ChannelWorkRows } from "@/components/channels/channel-work";
+import {
+  type ChatCreditReceipt,
+  chatCreditReceipt,
+  useChatCreditConfirmation,
+} from "@/components/channels/chat-credit-confirmation";
 import { attachmentModality } from "@/components/channels/chat-messages";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ModelPicker } from "@/components/channels/composer/model-picker";
@@ -29,9 +34,9 @@ import { ConversationView } from "@/components/channels/conversation-view";
 import { ProgressRow } from "@/components/channels/progress-row";
 import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
-import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
@@ -39,6 +44,7 @@ import {
   carryingOnAfterApproval,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { conversationCreditQuoteQueryOptions } from "@/lib/billing/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import {
   recordChannelActivityMutationOptions,
@@ -70,7 +76,6 @@ import {
 } from "@/lib/copilot/approval-context";
 import { offerItsOwnTools } from "@/lib/copilot/bot-offer";
 import { isBrokenStream, STREAM_BROKE } from "@/lib/copilot/broken-stream";
-import { ConversationReadError } from "./conversation-status";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
 import {
@@ -84,6 +89,7 @@ import {
   readThreadMessages,
   withCurrentA2uiVersions,
 } from "@/lib/copilot/thread-messages";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
 import { useConversationModel } from "@/lib/models/run-model";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
@@ -104,6 +110,7 @@ import {
 import { useVoiceCall } from "@/lib/voice/use-voice-call";
 import { queryClient } from "@/query-client";
 import { newId } from "../../lib/new-id";
+import { ConversationReadError } from "./conversation-status";
 
 /**
  * How long a stalled thread join is worth waiting for before it is ended.
@@ -537,6 +544,13 @@ export function ChannelChat({
   }, [agent, runtimeAgentId, queries]);
 
   const { data: user } = useQuery(currentUserQueryOptions());
+  const { data: deployment } = useQuery(deploymentCapabilitiesQueryOptions());
+  const { confirmCredit, creditDialog } = useChatCreditConfirmation();
+  const [creditReceipt, setCreditReceipt] = useState<ChatCreditReceipt>();
+  const managedDraft = useRef<
+    { threadId: string; text: string; message: Message } | undefined
+  >(undefined);
+
   const [first, setFirst] = useState(() =>
     user ? findFirstMessage(user.id, channel.id) : null,
   );
@@ -1132,6 +1146,7 @@ export function ChannelChat({
     attachments: Attachment[],
     sent?: Message,
     beforeFirstSend?: () => Promise<void>,
+    creditQuote?: { route: string; priceVersion: string },
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -1223,13 +1238,13 @@ export function ChannelChat({
       );
 
     if (beforeFirstSend) await beforeFirstSend();
-    target.addMessage(
-      sent ?? {
-        content: toMessageContent(trimmed, attachments),
-        id: newId(),
-        role: "user",
-      },
-    );
+    const message = sent ?? {
+      content: toMessageContent(trimmed, attachments),
+      id: newId(),
+      role: "user" as const,
+    };
+    if (!creditQuote || !target.messages.some(({ id }) => id === message.id))
+      target.addMessage(message);
     report(trimmed || describeAttachments(attachments), null);
 
     // Providers reject later turns if prior tool calls have no result; repair before sending.
@@ -1266,7 +1281,14 @@ export function ChannelChat({
        */
       for (let carriedOn = false; ; carriedOn = true) {
         await withVoiceContext(copilotkit, target.agentId, voiceHistory, () =>
-          whileObserved(target, () => copilotkit.runAgent({ agent: target })),
+          whileObserved(target, () =>
+            copilotkit.runAgent({
+              agent: target,
+              ...(creditQuote
+                ? { forwardedProps: { testCreditQuote: creditQuote } }
+                : {}),
+            }),
+          ),
         );
         if (!streamBroke.current || turnFailure.current !== null) break;
         streamBroke.current = false;
@@ -1365,7 +1387,34 @@ export function ChannelChat({
       void setChannelBusy({ channelId: channel.id, busy: true });
     }
     try {
-      const reply = await deliver(trimmed, attachments, sent, beforeFirstSend);
+      let creditQuote: { route: string; priceVersion: string } | undefined;
+      if (deployment?.testCreditConversations) {
+        if (attachments.length > 0)
+          throw new Error("Test Credit Conversations accept text messages.");
+        const quote = await queries.fetchQuery(
+          conversationCreditQuoteQueryOptions(channel.threadId, runtimeAgentId),
+        );
+        if (!(await confirmCredit(quote))) throw new Error("Send cancelled.");
+        creditQuote = { route: quote.route, priceVersion: quote.priceVersion };
+        const previous = managedDraft.current;
+        sent ??=
+          previous?.threadId === channel.threadId && previous.text === trimmed
+            ? previous.message
+            : { id: newId(), role: "user", content: trimmed };
+        managedDraft.current = {
+          threadId: channel.threadId,
+          text: trimmed,
+          message: sent,
+        };
+      }
+      const reply = await deliver(
+        trimmed,
+        attachments,
+        sent,
+        beforeFirstSend,
+        creditQuote,
+      );
+      if (creditQuote) managedDraft.current = undefined;
       /*
        * The person left while this turn was running (holding control of the Bot's browser, say) and the turn went on
        * without this screen. The run-finished subscription that tells the roster what the Bot said went with it, so the
@@ -1413,7 +1462,16 @@ export function ChannelChat({
     const subscription = agent.subscribe?.({
       // Both surfaces fall back to the same sentence, from the same place, so a person who uses
       // both is not told two different things about the same silence.
-      onRunErrorEvent: ({ event }) => fail(stoppedReason(event?.message), true),
+      onRunErrorEvent: ({ event }) => {
+        if (event?.code && event.code !== "reconciling")
+          managedDraft.current = undefined;
+        fail(stoppedReason(event?.message), true);
+      },
+      onCustomEvent: ({ event }) => {
+        if (event.name !== "openbot-test-credit-receipt") return;
+        const receipt = chatCreditReceipt(event.value);
+        if (receipt) setCreditReceipt(receipt);
+      },
       onRunFailed: ({ error }) => {
         /*
          * Not the Bot failing: the run's stream reached this browser out of shape, in any run of a
@@ -1806,7 +1864,10 @@ export function ChannelChat({
             modelPicker={
               <ModelPicker
                 catalogue={
-                  botProfile?.runsOnOpenBotModel ? models.data : undefined
+                  botProfile?.runsOnOpenBotModel &&
+                  !deployment?.testCreditConversations
+                    ? models.data
+                    : undefined
                 }
                 disabled={!channel.active}
                 onChange={runModel.choose}
@@ -1910,6 +1971,10 @@ export function ChannelChat({
                 ) : null}
                 {/* What the person allowed for this conversation, each with Turn off. */}
                 {draftDiscard}
+                {creditDialog}
+                {creditReceipt && deployment?.testCreditConversations ? (
+                  <p role="status">{creditReceipt.description}</p>
+                ) : null}
                 {channel.active ? (
                   <ConversationAllowances threadId={channel.threadId} />
                 ) : null}

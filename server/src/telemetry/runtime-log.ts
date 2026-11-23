@@ -202,6 +202,15 @@ const events = {
     operation: "sweep",
     outcome: "succeeded",
   },
+  billed_conversation_recovery_failed: {
+    severity: "warn",
+    component: "worker",
+    operation: "sweep",
+    outcome: "failed",
+    error_category: "billed_conversation_recovery_error",
+    diagnostic:
+      "The worker could not recover billed Conversation replies. It will retry on the next tick.",
+  },
   routine_sweep_failed: {
     severity: "warn",
     component: "routines",

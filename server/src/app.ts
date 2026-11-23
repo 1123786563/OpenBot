@@ -33,12 +33,6 @@ import { createApprovalRoutes } from "./approvals/routes";
 import { createApprovalRuleDraftRoutes } from "./approvals/rule-translate";
 import type { RuleVocabulary } from "./approvals/rule-vocabulary";
 import type { ApprovalService } from "./approvals/service";
-import type { PaidCreditLedger } from "./billing/paid-ledger";
-import { createTestCreditRoutes } from "./billing/test-credit-routes";
-import type {
-  TestCreditLedger,
-  VerifiedBillingIdentity,
-} from "./billing/test-credit";
 import {
   type AuditEvent,
   type AuditEventType,
@@ -63,6 +57,12 @@ import {
 } from "./auth/guards";
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
+import type { PaidCreditLedger } from "./billing/paid-ledger";
+import type {
+  TestCreditLedger,
+  VerifiedBillingIdentity,
+} from "./billing/test-credit";
+import { createTestCreditRoutes } from "./billing/test-credit-routes";
 import {
   type BotBrowserRouteDeps,
   createBotBrowser,
@@ -585,6 +585,9 @@ export function createApp(
     paidLedger: PaidCreditLedger;
     /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
     identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
+    casdoorIdentityOf?: (
+      personId: string,
+    ) => Promise<VerifiedBillingIdentity | undefined>;
   },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
@@ -616,6 +619,7 @@ export function createApp(
     context.json({
       mode: config.runtime.mode,
       durableHistory: config.runtime.durableHistory,
+      ...(billing?.casdoorIdentityOf ? { testCreditConversations: true } : {}),
       /*
        * Whether a Bot may answer with an interface it wrote itself.
        *
@@ -906,7 +910,21 @@ export function createApp(
       createTestCreditRoutes({
         ledger: billing.testLedger,
         paid: { ledger: billing.paidLedger },
-        authenticate: async (request) => {
+        authenticate: async (request, intent) => {
+          if (intent === "execution") return undefined;
+          if (billing.casdoorIdentityOf) {
+            const session = await auth?.api.getSession({
+              headers: request.headers,
+              query: { disableCookieCache: true },
+            });
+            if (!session) return undefined;
+            const roles = session.user.role
+              ? [session.user.role]
+              : await roleRepository?.rolesForUser(session.user.id);
+            if (!roles?.some((role) => role === "user" || role === "admin"))
+              return undefined;
+            return billing.casdoorIdentityOf(session.user.id);
+          }
           // One person and no provider: that person is the account.
           if (config.singleUser)
             return { issuer: "openbot", subject: "single-user" };

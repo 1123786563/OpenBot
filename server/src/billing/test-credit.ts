@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, notExists, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNull, lte, notExists, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   catalogSchema,
@@ -8,28 +8,28 @@ import {
 } from "../admin/bifrost-catalog";
 import type { Database } from "../db/client";
 import {
-  allocatePaidSources,
-  consumePaidAllocations,
-  pilotReservesStoppedAt,
-  releasePaidAllocations,
-  restoreHolds,
-} from "./paid-ledger";
-import {
+  testCreditAccounts as accounts,
   billingApplications as applications,
   billingSpendingAuthorizations as authorizations,
-  testCreditAccounts as accounts,
   testCreditBatches as batches,
   testCreditBudgets as budgets,
   testCreditEnrollments as enrollments,
   enterpriseSettings,
   testCreditEvidence as evidence,
   lagoUsageEvents,
+  testCreditOperations as operations,
   pilotProviderCostHolds,
   pilotProviderCostLimitEvents,
   pilotProviderCostLimits,
-  testCreditOperations as operations,
   testCreditResumePoints as resumePoints,
 } from "../db/schema";
+import {
+  allocatePaidSources,
+  consumePaidAllocations,
+  pilotReservesStoppedAt,
+  releasePaidAllocations,
+  restoreHolds,
+} from "./paid-ledger";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -1590,6 +1590,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     async beginDispatch(
       identity: VerifiedBillingIdentity,
       input: { operationId: string; permit: string },
+      { executorAvailable = true } = {},
     ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -1658,6 +1659,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           await releaseReservation(tx, row);
           return denied("route_unavailable");
         }
+        if (!executorAvailable)
+          return { state: "executor_unavailable" } as const;
         await tx
           .update(operations)
           .set({ state: "pending", dispatchedAt })

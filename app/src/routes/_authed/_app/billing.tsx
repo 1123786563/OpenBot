@@ -9,9 +9,9 @@ import {
   IconWallet,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, useId, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { astryxScope, AstryxSurface } from "@/components/astryx-pilot/theme";
+import { Fragment, useId, useRef, useState } from "react";
+import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
@@ -34,6 +34,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -42,7 +43,6 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -53,14 +53,22 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
+  authorizeApplicationMutationOptions,
+  confirmResumePointMutationOptions,
+  createBudgetMutationOptions,
+  microcreditsFromCredits,
+  revokeAuthorizationMutationOptions,
+} from "@/lib/billing/mutations";
+import {
   applicationsQueryOptions,
   authorizationsQueryOptions,
-  billLinesQueryOptions,
-  billingBalanceQueryOptions,
-  billingQuoteQueryOptions,
-  budgetsQueryOptions,
-  type BillLine,
   type BillingApplication,
+  type BillLine,
+  billingBalanceQueryOptions,
+  billingOperationQueryOptions,
+  billingQuoteQueryOptions,
+  billLinesQueryOptions,
+  budgetsQueryOptions,
   creditsText,
   paidBalanceQueryOptions,
   paidSourcesQueryOptions,
@@ -68,13 +76,6 @@ import {
   resumePointsQueryOptions,
   type SpendingAuthorization,
 } from "@/lib/billing/queries";
-import {
-  authorizeApplicationMutationOptions,
-  confirmResumePointMutationOptions,
-  createBudgetMutationOptions,
-  microcreditsFromCredits,
-  revokeAuthorizationMutationOptions,
-} from "@/lib/billing/mutations";
 import { queryClient } from "@/query-client";
 
 /**
@@ -435,6 +436,11 @@ function AppAccessSection({
 function UsageSection() {
   const lines = useQuery(billLinesQueryOptions());
   const [app, setApp] = useState("all");
+  const [operationId, setOperationId] = useState<string>();
+  const receipt = useQuery({
+    ...billingOperationQueryOptions(operationId ?? ""),
+    enabled: operationId !== undefined,
+  });
   const [type, setType] = useState<"all" | "test" | "paid">("all");
   const data = lines.data ?? [];
   // Each filter is offered once it has something to tell apart.
@@ -523,12 +529,41 @@ function UsageSection() {
                 </ItemContent>
                 <ItemActions>
                   {creditsText(line.amountMicrocredits)}
+                  {line.source === "test" ? (
+                    <Button
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      onClick={() => setOperationId(line.operationId)}
+                    >
+                      View receipt
+                    </Button>
+                  ) : null}
                 </ItemActions>
               </Item>
             </Fragment>
           ))}
         </PageRows>
       )}
+      <Dialog
+        open={operationId !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setOperationId(undefined);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Credit receipt</DialogTitle>
+          <DialogBody>
+            {receipt.isPending ? (
+              <p role="status">Loading receipt…</p>
+            ) : receipt.error ? (
+              <p role="alert">{receipt.error.message}</p>
+            ) : receipt.data ? (
+              <DialogDescription>{`Charged ${creditsText(receipt.data.chargedMicrocredits ?? "0")} credits. Released ${creditsText(receipt.data.releasedMicrocredits ?? "0")} credits.`}</DialogDescription>
+            ) : null}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </PageSection>
   );
 }

@@ -13,6 +13,10 @@ import type {
   ProfileReadExecutor,
 } from "../agents/profile-store";
 import type { AgentActor } from "../agents/profile-types";
+import {
+  type DirectChatTestCredit,
+  testCreditConfirmation,
+} from "../billing/direct-chat-test-credit";
 import type { IdentifyActor } from "../copilot";
 import type { Database } from "../db/client";
 import {
@@ -23,6 +27,7 @@ import {
   groupBotThreads,
   intelligenceChannelMappings,
 } from "../db/schema";
+import { operationId } from "../managed-model";
 import type { ManagedModel, ManagedModelResult } from "../managed-model-trial";
 
 const id = z.string().min(1).max(256);
@@ -30,6 +35,10 @@ const runBody = z.object({
   threadId: id,
   runId: id,
   messages: z.array(z.unknown()).min(1),
+  forwardedProps: z
+    .object({ testCreditQuote: z.unknown().optional() })
+    .optional()
+    .catch(undefined),
 });
 const promptMessage = z.object({
   id,
@@ -113,13 +122,14 @@ export function createDirectChatRoutes(deps: {
   database: Database;
   profiles: AgentProfileStore;
   identifyActor: IdentifyActor;
+  testCredit?: DirectChatTestCredit;
   trial?: { route: string; model: ManagedModel };
   agentFor: (
     actor: AgentActor,
     agentId: string,
   ) => Promise<AbstractAgent | null>;
 }) {
-  const { database, profiles } = deps;
+  const { database, profiles, testCredit } = deps;
   const routes = new Hono();
 
   async function threadFor(
@@ -249,6 +259,29 @@ export function createDirectChatRoutes(deps: {
     });
   });
 
+  routes.get("/agent/:agentId/test-credit-quote", async (context) => {
+    context.header("Cache-Control", "no-store");
+    if (!testCredit)
+      return context.json({ error: "Test Credit quote unavailable." }, 404);
+    const actor = await actorFor(context.req.raw);
+    const threadId = context.req.query("threadId");
+    if (
+      !actor?.id ||
+      !threadId ||
+      !(await threadFor(
+        database,
+        actor,
+        threadId,
+        context.req.param("agentId"),
+      ))
+    )
+      return context.json(absent, 404);
+    const quote = await testCredit.quote(actor.id).catch(() => undefined);
+    return quote
+      ? context.json(quote)
+      : context.json({ error: "Test Credit quote unavailable." }, 503);
+  });
+
   routes.post("/agent/:agentId/run", async (context) => {
     const body = runBody.safeParse(await context.req.json().catch(() => null));
     if (!body.success)
@@ -257,11 +290,24 @@ export function createDirectChatRoutes(deps: {
     if (!prompt.success)
       return context.json({ error: "A text message is required." }, 400);
     const { threadId, runId } = body.data;
+    const confirmation = testCreditConfirmation.safeParse(
+      body.data.forwardedProps?.testCreditQuote,
+    );
     const { id: messageId, content } = prompt.data;
     const agentId = context.req.param("agentId");
     const actor = await actorFor(context.req.raw);
-    if (!actor) return context.json(absent, 404);
+    if (!actor?.id) return context.json(absent, 404);
 
+    const operationFor = (id: string) => ({
+      scope: {
+        source: "direct-chat" as const,
+        personId: actor.id,
+        botId: agentId,
+        conversationId: threadId,
+        runId: id,
+      },
+      step: "direct-chat-answer",
+    });
     const claim = await database.transaction(async (transaction) => {
       if (!(await threadFor(transaction, actor, threadId, agentId, true)))
         return { kind: "absent" } as const;
@@ -287,12 +333,17 @@ export function createDirectChatRoutes(deps: {
         return { kind: "conflict" } as const;
       if (previous.some((run) => run.status === "running"))
         return { kind: "busy" } as const;
+      if (testCredit && !confirmation.success)
+        return { kind: "confirmation_required" } as const;
       const [run] = await transaction
         .insert(directChatRuns)
         .values({
           threadId,
           id: runId,
           userMessageId: messageId,
+          testCreditOperationId: testCredit
+            ? operationId(operationFor(runId))
+            : null,
           prompt: content,
           status: "running",
         })
@@ -305,6 +356,11 @@ export function createDirectChatRoutes(deps: {
       } as const;
     });
     if (claim.kind === "absent") return context.json(absent, 404);
+    if (claim.kind === "confirmation_required")
+      return context.json(
+        { error: "Confirm the current Test Credit quote before sending." },
+        409,
+      );
     if (claim.kind === "conflict")
       return context.json({ error: "The request ID is already in use." }, 409);
     if (claim.kind === "busy")
@@ -318,18 +374,24 @@ export function createDirectChatRoutes(deps: {
       eq(directChatRuns.id, run.id),
     );
 
-    const operation = {
-      scope: {
-        source: "direct-chat" as const,
-        personId: actor.id,
-        botId: agentId,
-        conversationId: threadId,
-        runId: run.id,
-      },
-      step: "direct-chat-answer",
-    };
+    const operation = operationFor(run.id);
     const trial = deps.trial;
     return eventStream(async (emit) => {
+      function emitReceipt(
+        result: Awaited<ReturnType<DirectChatTestCredit["reconcile"]>>,
+      ) {
+        const receipt = result?.operation;
+        if (receipt)
+          emit({
+            type: EventType.CUSTOM,
+            name: "openbot-test-credit-receipt",
+            value: {
+              operationId: receipt.operationId,
+              chargedMicrocredits: receipt.chargedMicrocredits,
+              releasedMicrocredits: receipt.releasedMicrocredits,
+            },
+          });
+      }
       if (claim.kind === "repeat") {
         let outcome = run;
         const deadline = Date.now() + DUPLICATE_WAIT_MS;
@@ -348,6 +410,46 @@ export function createDirectChatRoutes(deps: {
         }
         if (!(await threadFor(database, actor, threadId, agentId))) return;
         emit({ type: EventType.RUN_STARTED, threadId, runId: run.id });
+        if (testCredit && run.testCreditOperationId) {
+          const recovered = await testCredit
+            .reconcile(run.testCreditOperationId, actor.id)
+            .catch(() => undefined);
+          emitReceipt(recovered);
+          if (
+            recovered?.state === "completed" &&
+            outcome.status !== "completed"
+          ) {
+            const [saved] = await database
+              .update(directChatRuns)
+              .set({
+                status: "completed",
+                reply: recovered.text,
+                assistantMessageId: crypto.randomUUID(),
+              })
+              .where(and(runKey, ne(directChatRuns.status, "completed")))
+              .returning();
+            if (saved) outcome = saved;
+            else {
+              const [completed] = await database
+                .select()
+                .from(directChatRuns)
+                .where(runKey);
+              if (completed) outcome = completed;
+            }
+          } else if (
+            outcome.status !== "completed" &&
+            recovered &&
+            recovered.state !== "completed" &&
+            recovered.state !== "unavailable"
+          ) {
+            emit({
+              type: EventType.RUN_ERROR,
+              code: recovered.state,
+              message: managedRunError[recovered.state],
+            });
+            return;
+          }
+        }
         if (outcome.status === "completed") {
           emit({
             type: EventType.MESSAGES_SNAPSHOT,
@@ -355,7 +457,7 @@ export function createDirectChatRoutes(deps: {
           });
           emit({ type: EventType.RUN_FINISHED, threadId, runId: run.id });
         } else {
-          if (outcome.status === "failed" && trial) {
+          if (outcome.status === "failed" && trial && !testCredit) {
             const state = await trial.model
               .reconcile(operation)
               .catch(() => undefined);
@@ -391,26 +493,58 @@ export function createDirectChatRoutes(deps: {
           })
           .where(running)
           .returning({ id: directChatRuns.id });
-        if (!saved) throw new Error("The Bot run has expired.");
+        if (saved) return reply;
+        const [recovered] = await database
+          .select()
+          .from(directChatRuns)
+          .where(runKey);
+        if (
+          recovered?.status === "completed" &&
+          recovered.assistantMessageId &&
+          recovered.reply !== null
+        )
+          return { id: recovered.assistantMessageId, content: recovered.reply };
+        throw new Error("The Bot run has expired.");
       }
 
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        if (trial) {
+        if (testCredit || trial) {
           emit({ type: EventType.RUN_STARTED, threadId, runId: run.id });
-          const result = await trial.model.complete({
-            ...operation,
-            route: trial.route,
-            messages: claim.messages.flatMap(({ role, content }) =>
-              (role === "user" || role === "assistant") &&
-              typeof content === "string"
-                ? [{ role, content }]
-                : [],
-            ),
-          });
+          const messages = claim.messages.flatMap(({ role, content }) =>
+            (role === "user" || role === "assistant") &&
+            typeof content === "string"
+              ? [{ role, content }]
+              : [],
+          );
+          let result: ManagedModelResult;
+          if (testCredit) {
+            if (!confirmation.success || !run.testCreditOperationId)
+              throw new Error("Test Credit confirmation unavailable.");
+            const credited = await testCredit
+              .complete({
+                id: run.testCreditOperationId,
+                personId: actor.id,
+                confirmation: confirmation.data,
+                messages,
+              })
+              .catch(() => ({ state: "unavailable" as const }));
+            emitReceipt(credited);
+            result = credited;
+          } else if (trial) {
+            result = await trial.model.complete({
+              ...operation,
+              route: trial.route,
+              messages,
+            });
+          } else {
+            throw new Error("Managed model unavailable.");
+          }
           if (result.state === "completed") {
-            const reply = { id: crypto.randomUUID(), content: result.text };
-            await finish(reply);
+            const reply = await finish({
+              id: crypto.randomUUID(),
+              content: result.text,
+            });
             emit({
               type: EventType.TEXT_MESSAGE_START,
               messageId: reply.id,

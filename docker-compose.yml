@@ -259,6 +259,9 @@ services:
       OTEL_SERVICE_NAME:
       DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
       SERVER_INTERNAL_URL: http://server:3001
+      OPENBOT_TEST_CREDIT_CONVERSATIONS:
+      TEST_CREDIT_CASDOOR_ISSUER:
+      TEST_CREDIT_CASDOOR_PROVIDER_ID:
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:-openbot-dev-worker-secret}
     depends_on:
       migrate:

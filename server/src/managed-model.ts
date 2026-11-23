@@ -55,7 +55,7 @@ type ModelMessage = {
   content: string;
 };
 
-function operationId({ scope, step, budget }: ModelOperation) {
+export function operationId({ scope, step, budget }: ModelOperation) {
   return createHash("sha256")
     .update(
       JSON.stringify([

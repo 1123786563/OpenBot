@@ -116,6 +116,10 @@ import {
 } from "./approvals/decision-waits";
 import type { AuditInitiator } from "./audit";
 import {
+  createDirectChatTestCredit,
+  type DirectChatTestCreditDependencies,
+} from "./billing/direct-chat-test-credit";
+import {
   attachmentIdsIn,
   newInlineBudget,
   resolveAttachmentParts,
@@ -3244,7 +3248,11 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
-    directChat?: { database: Database; profiles: AgentProfileStore };
+    directChat?: {
+      database: Database;
+      profiles: AgentProfileStore;
+      testCredit?: DirectChatTestCreditDependencies;
+    };
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.
@@ -3514,11 +3522,19 @@ export function mountCopilotRuntime(
   if (!intelligence) {
     if (!options.directChat)
       throw new Error("OpenBot chat requires its database and Bot profiles.");
-    const trial = config.managedModelTrial;
+    const trial = options.directChat.testCredit
+      ? undefined
+      : config.managedModelTrial;
     handler.route(
       basePath,
       createDirectChatRoutes({
         ...options.directChat,
+        testCredit:
+          options.directChat.testCredit &&
+          createDirectChatTestCredit(
+            options.directChat.database,
+            options.directChat.testCredit,
+          ),
         trial: trial && {
           route: trial.route,
           model: createManagedModel(trial),

@@ -94,8 +94,10 @@ import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
-import { createTestCreditLedger } from "./billing/test-credit";
+import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
+import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
+import { createTestCreditLedger } from "./billing/test-credit";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
 import { personBrowserEgressPolicy } from "./browser/egress";
@@ -644,13 +646,32 @@ const entra: ReturnType<typeof createEntra> | undefined =
 const auth: AuthService | undefined =
   organizationAuth ??
   (betterAuth && entra ? withEntraBearer(betterAuth, entra) : betterAuth);
+const directChatTestCredit = loadDirectChatTestCredit(process.env);
+if (
+  directChatTestCredit &&
+  (!betterAuth ||
+    organizationAuth ||
+    config.singleUser ||
+    config.runtime.mode !== "openbot")
+)
+  throw new Error(
+    "Test Credit Conversations require OpenBot with local OIDC session authentication.",
+  );
+const casdoorBillingIdentity = directChatTestCredit
+  ? createCasdoorBillingIdentity(database, directChatTestCredit.casdoor)
+  : undefined;
 const { resolveRequestActor, identifyUser, identifyActor } = createRequestActor(
   {
     singleUser: config.singleUser,
     // Answered only on the capture pass. Called per request, after the Recorder's wiring below exists.
     resolveRecorder: (request) => recorderExtension.resolve(request),
     getSession: async (headers) =>
-      (await auth?.api.getSession({ headers })) ?? null,
+      (await auth?.api.getSession({
+        headers,
+        ...(directChatTestCredit
+          ? { query: { disableCookieCache: true } }
+          : {}),
+      })) ?? null,
     rolesForUser: (id) => roleRepository.rolesForUser(id),
   },
 );
@@ -2378,7 +2399,14 @@ const copilotRuntime = mountCopilotRuntime(
   identifyUser,
   identifyActor,
   {
-    directChat: { database, profiles: agentProfileStore },
+    directChat: {
+      database,
+      profiles: agentProfileStore,
+      testCredit: directChatTestCredit && {
+        ledger: testCreditLedger,
+        ...directChatTestCredit,
+      },
+    },
     productTelemetry,
     decisionWaits: createDecisionWaits(database),
     onRunBusy: (input) => {
@@ -3484,6 +3512,7 @@ const app = createApp(
   {
     testLedger: testCreditLedger,
     paidLedger: createPaidCreditLedger(database),
+    casdoorIdentityOf: casdoorBillingIdentity,
   },
 );
 

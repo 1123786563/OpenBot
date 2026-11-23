@@ -50,13 +50,25 @@ const REJECTED = "invalid x-api-key";
 
 /** How the next `/run` goes. A fresh one per test. */
 type RunPlan =
-  | { kind: "fails"; message: string }
+  | { kind: "fails"; message: string; code?: string }
   | { kind: "calls"; tool: string }
   | { kind: "answers"; text: string }
   | { kind: "stalls"; text: string };
 
 let originalFetch: typeof fetch;
 let plans: RunPlan[] = [];
+const creditQuote = {
+  route: "fixture",
+  priceVersion: "fixture-price-version",
+  creditType: "test",
+  model: "fixture-model",
+  price: { inputPerMillion: 250_000, outputPerMillion: 250_000 },
+  maxChargeMicrocredits: "2",
+  usageDisclosure: "Interrupted or failed requests can still use Test Credits.",
+};
+let managedChat = false;
+let requestedRuns: RunAgentInput[] = [];
+
 /** Every event the runtime has streamed for a thread, run after run: what `/connect` replays. */
 let recorded = new Map<string, unknown[]>();
 /** The thread's stored messages: what was said, and nothing about how a run ended. */
@@ -91,6 +103,7 @@ function remember(threadId: string, messages: Message[]) {
 
 /** One run, as the runtime streams it and records it. */
 function run(input: RunAgentInput): Response {
+  requestedRuns.push(input);
   const plan = plans.shift();
   if (!plan) throw new Error("A run nobody planned for");
   const started = {
@@ -124,7 +137,11 @@ function run(input: RunAgentInput): Response {
   if (plan.kind === "fails") {
     const events = [
       started,
-      { type: "RUN_ERROR", message: plan.message, code: "agent_error" },
+      {
+        type: "RUN_ERROR",
+        message: plan.message,
+        code: plan.code ?? "agent_error",
+      },
     ];
     record(input.threadId, events);
     return sse(events);
@@ -139,6 +156,15 @@ function run(input: RunAgentInput): Response {
       started,
       ...reply,
       { type: "TEXT_MESSAGE_END", messageId },
+      ...(managedChat
+        ? [
+            {
+              type: "CUSTOM",
+              name: "openbot-test-credit-receipt",
+              value: { chargedMicrocredits: "1", releasedMicrocredits: "1" },
+            },
+          ]
+        : []),
       { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId },
     ];
     record(input.threadId, events);
@@ -194,6 +220,10 @@ beforeAll(() => {
       );
       const request = () =>
         input instanceof Request ? input : new Request(url, init);
+      if (url.pathname === "/api/capabilities")
+        return NativeResponse.json({ testCreditConversations: managedChat });
+      if (url.pathname.endsWith("/test-credit-quote"))
+        return NativeResponse.json(creditQuote);
       if (url.pathname === "/api/agents")
         return NativeResponse.json({ agents: [] });
       if (url.pathname === "/api/plugins/for/failed-run-bot")
@@ -268,6 +298,8 @@ afterEach(() => {
   cleanup();
   queryClient.clear();
   plans = [];
+  managedChat = false;
+  requestedRuns = [];
   recorded = new Map();
   stored = new Map();
   stopRequests = [];
@@ -432,5 +464,56 @@ test("a turn that fails in a run after its browser steps says so, as one that fa
   expect(stepsRun).toBe(2);
   await waitFor(() =>
     expect(live.queryByRole("button", { name: "Stop the Bot" })).toBeNull(),
+  );
+});
+
+test("a managed turn confirms its quote before sending and retries an uncertain turn with the same message ID", async () => {
+  managedChat = true;
+  plans = [
+    {
+      kind: "fails",
+      message: "The model outcome is being reconciled.",
+      code: "reconciling",
+    },
+    { kind: "answers", text: "Recovered answer" },
+  ];
+  const view = open();
+  const user = await send(view, "Bill this turn");
+  const confirm = await view.findByRole("button", { name: "Confirm and send" });
+  expect(view.getByText("Maximum reservation 2 microcredits.")).toBeTruthy();
+  expect(
+    view.getByText(
+      "Input 250000 and output 250000 microcredits per million tokens.",
+    ),
+  ).toBeTruthy();
+  expect(requestedRuns).toHaveLength(0);
+  await user.click(confirm);
+  await view.findByText("The model outcome is being reconciled.");
+  await waitFor(() =>
+    expect(
+      view
+        .getByRole("button", { name: "Send message" })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  await user.click(view.getByRole("button", { name: "Send message" }));
+  await user.click(
+    await view.findByRole("button", { name: "Confirm and send" }),
+  );
+  await settled(view, "Recovered answer");
+  expect(
+    view.getByText(
+      "Test Credits · 1 microcredit charged · 1 microcredit released",
+    ),
+  ).toBeTruthy();
+  expect(requestedRuns).toHaveLength(2);
+  expect(requestedRuns[0]?.forwardedProps).toMatchObject({
+    testCreditQuote: {
+      route: creditQuote.route,
+      priceVersion: creditQuote.priceVersion,
+    },
+  });
+  expect(requestedRuns[1]?.messages.at(-1)?.id).toBe(
+    requestedRuns[0]?.messages.at(-1)?.id,
   );
 });

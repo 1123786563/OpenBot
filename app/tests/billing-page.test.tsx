@@ -19,12 +19,12 @@ import userEvent from "@testing-library/user-event";
 import type { ComponentType } from "react";
 import { microcreditsFromCredits } from "@/lib/billing/mutations";
 import {
-  billingKeys,
   type BillLine,
   type BudgetRecord,
+  billingKeys,
+  creditsText,
   type PaidSource,
   type ResumePoint,
-  creditsText,
 } from "@/lib/billing/queries";
 import { Route as CreditsRoute } from "@/routes/_authed/_app/billing";
 
@@ -218,6 +218,39 @@ test("each charge is listed by the source that paid for it", async () => {
   // The charge values, in credits a person reads.
   expect(view.getByText("1")).toBeTruthy();
   expect(view.getByText("10")).toBeTruthy();
+});
+
+test("a charge opens the retained receipt with its released amount", async () => {
+  const requests: string[] = [];
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0]) => {
+      const url = new URL(
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url,
+        "http://localhost",
+      );
+      requests.push(url.pathname);
+      if (url.pathname === "/api/billing/operations/op-1")
+        return Response.json({
+          chargedMicrocredits: "6000000",
+          releasedMicrocredits: "2000000",
+        });
+      return Response.json([]);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = renderCredits(answered());
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const receipt = await view.findByRole("button", { name: "View receipt" });
+  expect(requests).not.toContain("/api/billing/operations/op-1");
+  await user.click(receipt);
+  expect(
+    await view.findByText("Charged 6 credits. Released 2 credits."),
+  ).toBeTruthy();
+  expect(requests).toContain("/api/billing/operations/op-1");
 });
 
 test("usage filters by app and by Credit type", async () => {

@@ -1,4 +1,4 @@
-import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
@@ -68,16 +68,7 @@ type Dependencies = {
     request: Request,
     intent: "account" | "execution",
   ): Promise<VerifiedBillingIdentity | undefined>;
-  // The controlled executor must enforce the frozen route's caps before sending and must never retry.
-  // Absent, the execution endpoints answer 503: a deployment that only shows balances and budgets
-  // mounts the views without one.
-  execute?(input: {
-    operationId: string;
-    accountId: string;
-    route: ReleasedBifrostRoute;
-    messages: z.infer<typeof messages>;
-    recheckRoute(): Promise<boolean>;
-  }): Promise<unknown>;
+  execute?: TestCreditExecutor;
   // The paid ledger's read views (#107): absent, `/paid/*` answers 503.
   paid?: { ledger: PaidCreditLedger };
   // Whether the caller holds an application's own credential (#111). Absent,
@@ -485,63 +476,16 @@ export function createTestCreditRoutes({
       return context.json({ error: "Invalid dispatch." }, 400);
     const acting = await actingAs(context, input.data.authorizationId);
     if (acting.state === "refused") return refused(context, acting.status);
-    const admission = await ledger.beginDispatch(acting.identity, input.data);
-    if (admission.state === "denied") return context.json(admission);
-    if (admission.state === "existing") {
-      return context.json({
-        state: "existing",
-        operation: admission.operation,
-      });
-    }
-    if (!execute) return context.json({ error: "Execution unavailable." }, 503);
-    try {
-      const completed = result.parse(
-        await execute({
-          accountId: admission.accountId,
-          operationId: input.data.operationId,
-          route: admission.route,
-          recheckRoute: () => ledger.routeStillEligible(admission.route),
-          messages: input.data.messages,
-        }),
-      );
-      if ("text" in completed)
-        await ledger.recordResult(
-          admission.accountId,
-          input.data.operationId,
-          completed.text,
-        );
-      const recorded = await ledger.recordEvidence(
-        admission.accountId,
-        input.data.operationId,
-        {
-          evidenceId: "inline-completion",
-          outcome: completed.outcome ?? "completed",
-          inputTokens: BigInt(completed.usage.inputTokens),
-          outputTokens: BigInt(completed.usage.outputTokens),
-        },
-      );
-      const receipt =
-        recorded &&
-        (await ledger.settleRecorded(
-          admission.accountId,
-          input.data.operationId,
-        ));
-      if (receipt && "text" in completed)
-        return context.json({
-          state: "completed",
-          text: completed.text,
-          operation: receipt,
-        });
-      if (receipt)
-        return context.json({ state: receipt.state, operation: receipt });
-    } catch (error) {
-      if (error instanceof UnsentBifrostRequest) {
-        await ledger.releaseUnsent(admission.accountId, input.data.operationId);
-        return context.json({ state: "denied", reason: error.reason });
-      }
-      // The permit was consumed durably. A retry must never resend this operation.
-    }
-    return context.json({ state: "reconciling" });
+    // A read-only mount cannot transition a reservation to pending.
+    const outcome = await dispatchTestCredit({
+      ledger,
+      execute,
+      identity: acting.identity,
+      input: input.data,
+    });
+    return outcome.state === "executor_unavailable"
+      ? context.json({ error: "Execution unavailable." }, 503)
+      : context.json(outcome);
   });
 
   api.post("/v1/reconcile", async (context) => {
@@ -566,4 +510,76 @@ export function createTestCreditRoutes({
   });
 
   return api;
+}
+
+export type TestCreditExecutor = (input: {
+  operationId: string;
+  accountId: string;
+  route: ReleasedBifrostRoute;
+  messages: z.infer<typeof messages>;
+  recheckRoute(): Promise<boolean>;
+}) => Promise<unknown>;
+
+export async function dispatchTestCredit({
+  ledger,
+  execute,
+  identity,
+  input,
+}: {
+  ledger: TestCreditLedger;
+  execute?: TestCreditExecutor;
+  identity: VerifiedBillingIdentity;
+  input: z.infer<typeof dispatch>;
+}) {
+  const admission = await ledger.beginDispatch(identity, input, {
+    executorAvailable: execute !== undefined,
+  });
+  if (admission.state === "denied" || admission.state === "existing")
+    return admission;
+  if (admission.state === "executor_unavailable" || !execute)
+    return { state: "executor_unavailable" } as const;
+  try {
+    const completed = result.parse(
+      await execute({
+        accountId: admission.accountId,
+        operationId: input.operationId,
+        route: admission.route,
+        recheckRoute: () => ledger.routeStillEligible(admission.route),
+        messages: input.messages,
+      }),
+    );
+    if ("text" in completed)
+      await ledger.recordResult(
+        admission.accountId,
+        input.operationId,
+        completed.text,
+      );
+    const recorded = await ledger.recordEvidence(
+      admission.accountId,
+      input.operationId,
+      {
+        evidenceId: "inline-completion",
+        outcome: completed.outcome ?? "completed",
+        inputTokens: BigInt(completed.usage.inputTokens),
+        outputTokens: BigInt(completed.usage.outputTokens),
+      },
+    );
+    const receipt =
+      recorded &&
+      (await ledger.settleRecorded(admission.accountId, input.operationId));
+    if (receipt && "text" in completed)
+      return {
+        state: "completed",
+        text: completed.text,
+        operation: receipt,
+      } as const;
+    if (receipt) return { state: receipt.state, operation: receipt };
+  } catch (error) {
+    if (error instanceof UnsentBifrostRequest) {
+      await ledger.releaseUnsent(admission.accountId, input.operationId);
+      return { state: "denied", reason: error.reason } as const;
+    }
+    // The permit was consumed durably. A retry must never resend this operation.
+  }
+  return { state: "reconciling" } as const;
 }

@@ -18,7 +18,8 @@ export type BillingQuote = {
   provider: string;
   model: string;
   price: { inputPerMillion: number; outputPerMillion: number };
-  maxChargeMicrocredits: number;
+  maxChargeMicrocredits: string;
+  usageDisclosure: string;
 };
 
 /** One paid source of credits, in the order a task spends them. */
@@ -130,6 +131,32 @@ export function billingQuoteQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.quote,
     queryFn: (): Promise<BillingQuote> => read("/api/billing/quote"),
+  });
+}
+
+export function billingOperationQueryOptions(operationId: string) {
+  return queryOptions({
+    queryKey: [...billingKeys.all, "operations", operationId],
+    queryFn: (): Promise<{
+      chargedMicrocredits: string | null;
+      releasedMicrocredits: string | null;
+    }> => read(`/api/billing/operations/${encodeURIComponent(operationId)}`),
+    retry: false,
+  });
+}
+
+export function conversationCreditQuoteQueryOptions(
+  threadId: string,
+  agentId: string,
+) {
+  return queryOptions({
+    queryKey: [...billingKeys.quote, threadId, agentId],
+    queryFn: ({ signal }): Promise<BillingQuote> =>
+      client(
+        `/api/copilotkit/agent/${encodeURIComponent(agentId)}/test-credit-quote?${new URLSearchParams({ threadId })}`,
+        { fallback: "Could not get a Test Credit quote", signal },
+      ).then((response) => response.json()),
+    retry: false,
   });
 }
 

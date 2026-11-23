@@ -8,8 +8,8 @@ import {
   verify,
 } from "../src/admin/bifrost-catalog";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
-import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
   billingApplications,
@@ -350,6 +350,39 @@ test("a paused step waits for a budget the person confirms", async () => {
   ).toMatchObject([
     { operationId: "routes-paused", budgetId: "routes-paid-continue" },
   ]);
+});
+
+test("a dispatch-only refusal leaves the reservation available to the controlled executor", async () => {
+  const ledger = createTestCreditLedger(database);
+  const person = { issuer: identity.issuer, subject: crypto.randomUUID() };
+  const batchId = crypto.randomUUID();
+  batchIds.push(batchId);
+  await ledger.enroll({ identity: person, batchId, amount: 100n });
+  await ledger.claim(person, batchId);
+  const held = await ledger.reserve(person, {
+    operationId: "routes-read-only-dispatch",
+    route: routeId,
+    priceVersion,
+  });
+  if (held.state !== "reserved") throw new Error("Could not reserve fixture.");
+  const view = createTestCreditRoutes({
+    ledger,
+    authenticate: async () => person,
+  });
+  const response = await view.request("/v1/dispatch", {
+    method: "POST",
+    body: JSON.stringify({
+      operationId: "routes-read-only-dispatch",
+      permit: held.permit,
+      messages: [{ role: "user", content: "Hello." }],
+    }),
+  });
+  expect(response.status).toBe(503);
+  expect(
+    await ledger.receipt(person, "routes-read-only-dispatch"),
+  ).toMatchObject({
+    state: "reserved",
+  });
 });
 
 test("a deployment without the paid ledger answers 503 on the paid views", async () => {

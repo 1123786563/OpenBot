@@ -17,6 +17,9 @@
  * tries again on the next tick. So every phase below gets its own try/catch, and nothing here ever
  * lets a phase's error reach the top and take the process down.
  */
+import { directChatCasdoorProvider } from "../../server/src/billing/direct-chat-test-credit-config";
+import { createDirectChatCreditRecovery } from "../../server/src/billing/direct-chat-test-credit-recovery";
+import { createTestCreditLedger } from "../../server/src/billing/test-credit";
 import { createDatabase } from "../../server/src/db/client";
 import { createRoutineStore } from "../../server/src/routines/store";
 import {
@@ -57,6 +60,14 @@ const { workerSharedSecret, serverInternalUrl, databaseUrl, owner } =
   environment;
 
 const database = createDatabase(databaseUrl);
+const casdoor = directChatCasdoorProvider(process.env);
+const recoverBilledConversations =
+  casdoor &&
+  createDirectChatCreditRecovery(
+    database,
+    createTestCreditLedger(database),
+    casdoor,
+  );
 const queue = createWorkQueue(database);
 const routineStore = createRoutineStore(database);
 writeRuntimeLog("worker_started");
@@ -138,6 +149,14 @@ async function runOneTick(): Promise<void> {
     writeRuntimeLog("routine_sweep_failed", {
       duration_ms: performance.now() - startedAt,
     });
+  }
+
+  if (recoverBilledConversations) {
+    try {
+      await recoverBilledConversations();
+    } catch {
+      writeRuntimeLog("billed_conversation_recovery_failed");
+    }
   }
 
   // The purge phase, on its own much longer cadence and its own try/catch: a purge failure this hour
