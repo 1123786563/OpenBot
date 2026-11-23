@@ -75,6 +75,21 @@ export const learningScheduleSettings = z
   })
   .strict();
 
+const learningEvidence = z.union([
+  z.object({
+    source: learningEvidenceSelection,
+    title: z.string(),
+    excerpt: z.string(),
+  }),
+  z.object({
+    runId: z.string(),
+    userMessageId: z.string(),
+    assistantMessageId: z.string(),
+    prompt: z.string(),
+    reply: z.string(),
+  }),
+]);
+
 export const directChatLearning = z.object({
   enabled: z.boolean(),
   available: z.boolean(),
@@ -100,22 +115,7 @@ export const directChatLearning = z.object({
       ]),
       review: directChatReview.nullable(),
       revisionSubmitted: z.boolean().optional(),
-      evidence: z.array(
-        z.union([
-          z.object({
-            source: learningEvidenceSelection,
-            title: z.string(),
-            excerpt: z.string(),
-          }),
-          z.object({
-            runId: z.string(),
-            userMessageId: z.string(),
-            assistantMessageId: z.string(),
-            prompt: z.string(),
-            reply: z.string(),
-          }),
-        ]),
-      ),
+      evidence: z.array(learningEvidence),
     }),
   ),
 });
@@ -135,3 +135,21 @@ export const openBotPersonalReview = z.object({
 });
 
 export type OpenBotPersonalReview = z.infer<typeof openBotPersonalReview>;
+
+export const adminLearningDecision = z
+  .object({ decision: directChatDecision.shape.decision })
+  .strict();
+
+export const adminLearningHistory = z.object({
+  runs: z.array(
+    analysis.extend({
+      proposal: directChatProposal
+        .extend({
+          evidence: z.array(learningEvidence),
+          decision: adminLearningDecision.shape.decision.nullable(),
+          canApprove: z.boolean(),
+        })
+        .nullable(),
+    }),
+  ),
+});

@@ -1,4 +1,5 @@
 import {
+  type adminLearningHistory,
   type DirectChatDecision,
   type DirectChatLearningScope,
   type DirectChatReview,
@@ -26,6 +27,7 @@ import type { Database } from "../db/client";
 import {
   directChatAnalyses as analyses,
   auditEvents,
+  channelMemberships,
   learningSettings,
   intelligenceChannelMappings as mappings,
   personalLearningAutoApproval as preferences,
@@ -197,17 +199,18 @@ async function saveReview(
   scope: Scope,
   decision: DirectChatDecision["decision"],
   mode: DirectChatReview["mode"],
+  reviewerId = scope.personId,
 ) {
   const review: DirectChatReview = {
     decision,
     scope,
     mode,
-    reviewerId: scope.personId,
+    reviewerId,
     reviewedAt: new Date().toISOString(),
   };
   await tx.insert(reviews).values({ proposalId, review });
   await tx.insert(auditEvents).values({
-    actorUserId: scope.personId,
+    actorUserId: reviewerId,
     eventType: "learning.proposal_reviewed",
     targetType: "learning_proposal",
     targetId: proposalId,
@@ -1009,6 +1012,185 @@ export function createDirectChatLearning(
     });
   }
 
+  type AuthorizeAdminReview = (
+    tx: ProfileReadExecutor,
+    scope: Scope,
+  ) => Promise<boolean>;
+
+  async function reviewEvidence(
+    tx: Transaction,
+    scope: Scope,
+    analysis: Analysis,
+    reviewerId: string,
+  ) {
+    if (reviewerId !== scope.personId && analysis.evidenceRunIds.length > 0)
+      return null;
+    const sources = await verifiedEvidence(tx, scope, analysis);
+    if (!sources || reviewerId === scope.personId) return sources;
+    for (const source of analysis.evidenceSources) {
+      const current = await readLearningSource(
+        tx,
+        { ...scope, personId: reviewerId },
+        source,
+        new Date(source.cutoff),
+      );
+      if (current?.digest !== source.digest) return null;
+    }
+    return sources;
+  }
+
+  function adminRows(tx: ProfileReadExecutor) {
+    return tx
+      .select({
+        analysis: analyses,
+        review: reviews.review,
+        personId: mappings.userId,
+      })
+      .from(analyses)
+      .innerJoin(mappings, eq(mappings.threadId, analyses.threadId))
+      .leftJoin(reviews, eq(reviews.proposalId, analyses.id));
+  }
+
+  async function adminHistory(
+    reviewerId: string,
+    authorize: AuthorizeAdminReview,
+  ) {
+    const runs: z.infer<typeof adminLearningHistory>["runs"] = [];
+    const limit = 50;
+    let before: { startedAt: string; id: string } | undefined;
+    while (runs.length < limit) {
+      // Membership filters candidates. The locked reads below authorize each source.
+      const batch = await database
+        .select({
+          id: analyses.id,
+          startedAt: sql<string>`${analyses.startedAt}::text`,
+        })
+        .from(analyses)
+        .innerJoin(mappings, eq(mappings.threadId, analyses.threadId))
+        .where(
+          and(
+            or(
+              eq(mappings.userId, reviewerId),
+              and(
+                sql`jsonb_array_length(${analyses.evidenceRunIds}) = 0`,
+                sql`jsonb_array_length(${analyses.evidenceSources}) > 0`,
+                sql`not exists (
+                select 1 from jsonb_array_elements(${analyses.evidenceSources}) source
+                where source->>'kind' <> 'conversation' or not exists (
+                  select 1 from ${channelMemberships}
+                  where ${channelMemberships.channelId} = source->>'id'
+                    and ${channelMemberships.userId} = ${reviewerId}
+                )
+              )`,
+              ),
+            ),
+            before
+              ? sql`(${analyses.startedAt}, ${analyses.id}) < (${before.startedAt}::timestamptz, ${before.id}::uuid)`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(analyses.startedAt), desc(analyses.id))
+        .limit(limit);
+      for (const candidate of batch) {
+        const visible = await database.transaction(async (tx) => {
+          const [row] = await adminRows(tx).where(
+            eq(analyses.id, candidate.id),
+          );
+          if (!row) return null;
+          const { analysis, personId, review } = row;
+          const scope = {
+            threadId: analysis.threadId,
+            botId: analysis.botId,
+            personId,
+          };
+          if (!(await authorize(tx, scope))) return null;
+          const evidence = await reviewEvidence(
+            tx,
+            scope,
+            analysis,
+            reviewerId,
+          );
+          if (!evidence && personId !== reviewerId) return null;
+          return {
+            ...summary(analysis),
+            proposal:
+              analysis.proposal &&
+              evidence &&
+              (!review || sameScope(review.scope, scope))
+                ? {
+                    ...analysis.proposal,
+                    evidence,
+                    decision: review?.decision ?? null,
+                    canApprove:
+                      !review && (await learningEnabled(tx, scope.botId)),
+                  }
+                : null,
+          };
+        });
+        if (visible) runs.push(visible);
+        if (runs.length === limit) break;
+      }
+      if (batch.length < limit) break;
+      before = batch.at(-1);
+    }
+    return { runs };
+  }
+
+  async function adminDecide(
+    reviewerId: string,
+    authorize: AuthorizeAdminReview,
+    proposalId: string,
+    decision: DirectChatDecision["decision"],
+  ) {
+    return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
+      const [candidate] = await tx
+        .select({
+          personId: mappings.userId,
+          threadId: analyses.threadId,
+          botId: analyses.botId,
+        })
+        .from(analyses)
+        .innerJoin(mappings, eq(mappings.threadId, analyses.threadId))
+        .where(eq(analyses.id, proposalId));
+      if (!candidate) return "absent";
+      await lockPersonLearning(tx, candidate);
+      if (!(await authorize(tx, candidate))) return "absent";
+      const [row] = await adminRows(tx).where(
+        and(
+          eq(analyses.id, proposalId),
+          inScope(candidate),
+          eq(mappings.userId, candidate.personId),
+        ),
+      );
+      if (
+        row?.analysis.state !== "proposed" ||
+        !row.analysis.proposal ||
+        !(await reviewEvidence(tx, candidate, row.analysis, reviewerId))
+      )
+        return "absent";
+      if (row.review)
+        return sameScope(row.review.scope, candidate) &&
+          row.review.decision === decision
+          ? "saved"
+          : "already_reviewed";
+      if (
+        decision === "approve" &&
+        !(await learningEnabled(tx, candidate.botId))
+      )
+        return "learning_disabled";
+      await saveReview(
+        tx,
+        proposalId,
+        candidate,
+        decision,
+        "manual",
+        reviewerId,
+      );
+      return "saved";
+    });
+  }
+
   async function setAutoApproval(
     scope: Scope,
     authorize: Authorize,
@@ -1063,6 +1245,8 @@ export function createDirectChatLearning(
     },
     sweep,
     decide,
+    adminHistory,
+    adminDecide,
     setAutoApproval,
     guidance,
   };

@@ -4548,6 +4548,127 @@ async function exerciseLearning(scheduled: boolean) {
         state: "pending_review",
         evidence: [{ source: recording, excerpt: "click: Open packing list" }],
       });
+      const adminLearning = web(
+        database,
+        { ...bob, role: "admin" },
+        bot.id,
+        async () => {},
+        { deployment },
+      );
+      const operations = "/api/copilotkit/admin/learning";
+      expect((await bobLearning.request(operations)).status).toBe(403);
+      expect((await adminLearning.request(operations)).status).toBe(200);
+      expect(await (await adminLearning.request(operations)).json()).toEqual({
+        runs: [],
+      });
+      const adminDecision = (id: string) => `${operations}/proposals/${id}`;
+      expect(
+        (
+          await adminLearning.request(
+            adminDecision(recordingProposal.id),
+            post({ decision: "approve" }),
+          )
+        ).status,
+      ).toBe(404);
+
+      expect(
+        (await aliceLearning.request(path, post({ evidence: [conversation] })))
+          .status,
+      ).toBe(202);
+      const sharedProposal = (await waitFor("proposed")).proposals[0];
+      expect(await (await adminLearning.request(operations)).json()).toEqual({
+        runs: [
+          expect.objectContaining({
+            id: sharedProposal.id,
+            state: "proposed",
+            proposal: expect.objectContaining({
+              evidence: [
+                {
+                  source: conversation,
+                  title: expect.any(String),
+                  excerpt: "Bot: Check the shipping label.",
+                },
+              ],
+            }),
+          }),
+        ],
+      });
+      expect(
+        (
+          await bobLearning.request(
+            adminDecision(sharedProposal.id),
+            post({ decision: "approve" }),
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await adminLearning.request(
+            adminDecision(sharedProposal.id),
+            post({
+              decision: "approve",
+              scope: { ...scope, personId: bob.id },
+            }),
+          )
+        ).status,
+      ).toBe(400);
+      const botDetails = {
+        name: bot.name,
+        title: bot.title,
+        roleDescription: bot.roleDescription,
+      };
+      await profiles.update(alice, bot.id, {
+        ...botDetails,
+        visibility: "private",
+      });
+      expect(await (await adminLearning.request(operations)).json()).toEqual({
+        runs: [],
+      });
+      expect(
+        (
+          await adminLearning.request(
+            adminDecision(sharedProposal.id),
+            post({ decision: "approve" }),
+          )
+        ).status,
+      ).toBe(404);
+      await profiles.update(alice, bot.id, {
+        ...botDetails,
+        visibility: "public",
+      });
+      expect((await admin.request("/settings", settings(false))).status).toBe(
+        200,
+      );
+      expect(
+        (
+          await adminLearning.request(
+            adminDecision(sharedProposal.id),
+            post({ decision: "approve" }),
+          )
+        ).status,
+      ).toBe(409);
+      expect((await admin.request("/settings", settings(true))).status).toBe(
+        200,
+      );
+      expect(
+        (
+          await adminLearning.request(
+            adminDecision(sharedProposal.id),
+            post({ decision: "approve" }),
+          )
+        ).status,
+      ).toBe(200);
+      expect((await read()).proposals).toContainEqual(
+        expect.objectContaining({
+          id: sharedProposal.id,
+          state: "published",
+          review: expect.objectContaining({ reviewerId: bob.id, scope }),
+        }),
+      );
+      expect(
+        (await (await bobLearning.request(bobPath)).json()).proposals,
+      ).toEqual([]);
+
       const reviewFor = (id: string) =>
         path.replace("/learn?", `/learn/proposals/${id}?`);
       expect(
@@ -4671,6 +4792,17 @@ async function exerciseLearning(scheduled: boolean) {
       expect(
         (await aliceLearning.request(reviewFor(revised.id), approve)).status,
       ).toBe(409);
+      expect(
+        (
+          await adminLearning.request(
+            adminDecision(sharedProposal.id),
+            post({ decision: "approve" }),
+          )
+        ).status,
+      ).toBe(404);
+      expect(await (await adminLearning.request(operations)).json()).toEqual({
+        runs: [],
+      });
       expect(JSON.stringify(await read())).not.toContain(
         "Check the shipping label.",
       );

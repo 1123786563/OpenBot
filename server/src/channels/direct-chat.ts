@@ -3,6 +3,8 @@ import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
 import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import {
+  adminLearningDecision,
+  type DirectChatLearningScope,
   directChatAutoApproval,
   directChatDecision,
   learningEvidencePermission,
@@ -475,6 +477,76 @@ export function createDirectChatRoutes(deps: {
     request.headers.get("sec-fetch-site") !== "cross-site" &&
     request.headers.get("content-type")?.split(";")[0]?.trim() ===
       "application/json";
+
+  function authorizeAdminLearning(reviewerId: string) {
+    return async (tx: ProfileReadExecutor, scope: DirectChatLearningScope) => {
+      if (!(await accountIsActive(tx, scope.personId))) return false;
+      if (scope.personId !== reviewerId) {
+        const roles = await createRoleRepository(tx).rolesForUser(
+          scope.personId,
+        );
+        if (!roles.includes("admin") && !roles.includes("user")) return false;
+        if (!(await accountIsActive(tx, reviewerId))) return false;
+      }
+      // The admin role grants access to the queue. Bot access still follows each person’s grants.
+      const owner = { id: scope.personId, role: "user" } satisfies AgentActor;
+      if (!(await threadFor(tx, owner, scope.threadId, scope.botId, true)))
+        return false;
+      if (scope.personId === reviewerId) return true;
+      const reviewer = { id: reviewerId, role: "user" } satisfies AgentActor;
+      const profile = await profiles.getWithin(tx, reviewer, scope.botId);
+      return Boolean(profile && !profile.deletedAt && !profile.hidden);
+    };
+  }
+
+  routes.get("/admin/learning", async (context) => {
+    const actor = await actorFor(context.req.raw);
+    if (!actor?.id || actor.role !== "admin")
+      return context.json({ error: "Only an admin can do this." }, 403);
+    context.header("Cache-Control", "no-store");
+    return context.json(
+      await learning.adminHistory(actor.id, authorizeAdminLearning(actor.id)),
+    );
+  });
+
+  routes.post("/admin/learning/proposals/:proposalId", async (context) => {
+    const request = context.req.raw;
+    if (!sameOriginJson(request))
+      return context.json({ error: "Use a same-origin JSON request." }, 403);
+    const actor = await actorFor(request);
+    if (!actor?.id || actor.role !== "admin")
+      return context.json({ error: "Only an admin can do this." }, 403);
+    const { proposalId } = context.req.param();
+    if (!z.uuid().safeParse(proposalId).success)
+      return context.json({ error: "Proposal not found." }, 404);
+    const body = adminLearningDecision.safeParse(
+      await request.json().catch(() => null),
+    );
+    if (!body.success)
+      return context.json(
+        { error: "Choose whether to approve or reject the proposal." },
+        400,
+      );
+    const outcome = await learning.adminDecide(
+      actor.id,
+      authorizeAdminLearning(actor.id),
+      proposalId,
+      body.data.decision,
+    );
+    switch (outcome) {
+      case "saved":
+        return context.json({ ok: true });
+      case "absent":
+        return context.json({ error: "Proposal not found." }, 404);
+      case "already_reviewed":
+        return context.json(
+          { error: "This proposal was already reviewed." },
+          409,
+        );
+      case "learning_disabled":
+        return context.json({ error: "Learning is disabled." }, 409);
+    }
+  });
 
   routes.get("/conversations/:channelId/learning-evidence", async (context) => {
     const actor = await actorFor(context.req.raw);
@@ -1171,16 +1243,19 @@ export function createDirectChatRoutes(deps: {
       .finally(() => workers.delete(workerId));
   }
 
-  async function backgroundAccountIsActive(personId: string) {
+  async function accountIsActive(
+    executor: ProfileReadExecutor,
+    personId: string,
+  ) {
     if (deps.singleUser) return true;
-    const [person] = await database
+    const [person] = await executor
       .select({ id: users.id })
       .from(users)
       .where(
         and(
           eq(users.id, personId),
           notExists(
-            database
+            executor
               .select({ email: revokedAccess.email })
               .from(revokedAccess)
               .where(eq(revokedAccess.email, sql`lower(trim(${users.email}))`)),
@@ -1235,7 +1310,7 @@ export function createDirectChatRoutes(deps: {
       const profile = actor && (await profiles.get(actor, action.botId));
       const allowed =
         actor?.id === action.actorId &&
-        (await backgroundAccountIsActive(actor.id)) &&
+        (await accountIsActive(database, actor.id)) &&
         (background
           ? await runThreadFor(database, actor, key.threadId, scopeBot)
           : await threadFor(database, actor, key.threadId, scopeBot)) &&
@@ -1390,7 +1465,7 @@ export function createDirectChatRoutes(deps: {
         (await isBotPaused(actor.id, input.agentId))
       )
         return null;
-      if (!(await backgroundAccountIsActive(actor.id))) return null;
+      if (!(await accountIsActive(database, actor.id))) return null;
       const refusal = await headlessTurnRefusal({
         ownerUserId: actor.id,
         agentId: input.agentId,
