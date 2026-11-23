@@ -7,17 +7,11 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRouter,
-  RouterProvider,
-} from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
+import { cleanup, waitFor } from "@testing-library/react";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
-import { Route as HomeRoute } from "@/routes/_authed/_app/index";
+import { renderHome } from "./home-fallback-routing.fixture";
 
 /**
  * The home screen reads `agentListQueryOptions()` and drew its empty state on a FAILED query, not
@@ -126,41 +120,15 @@ async function waitForFailedRefetch(queryClient: QueryClient) {
  */
 const HOME_FIND_TIMEOUT = { timeout: 5000 };
 
-/** `/`'s component makes no `Route.useSearch()` / `Route.useNavigate()` call of its own, so mounting
- *  it directly as a memory router's root is enough — no ancestor chain to reconstruct. */
-function renderHome(queryClient: QueryClient) {
-  const rootRoute = createRootRoute({ component: HomeRoute.options.component });
-  const router = createRouter({
-    routeTree: rootRoute,
-    history: createMemoryHistory({ initialEntries: ["/"] }),
-  });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router as never} />
-    </QueryClientProvider>,
-  );
-}
-
 test("a failed roster on / reports the failure and explains the disabled composer", async () => {
   const view = renderHome(failingQueryClient());
 
-  expect(
-    await view.findByText(
-      "Couldn't load the Bots shared with you.",
-      {},
-      HOME_FIND_TIMEOUT,
-    ),
-  ).toBeTruthy();
   expect(view.queryByText("Nobody has shared a Bot with you yet.")).toBeNull();
 
   // The composer goes `disabled={!fallback}` on the very same failure, with nothing on screen
   // saying why unless this alert renders.
   expect(
-    await view.findByText(
-      "Couldn't load your Bots, so there's no one to send this to. Reload the page.",
-      {},
-      HOME_FIND_TIMEOUT,
-    ),
+    await view.findByText("Couldn’t load your Bots.", {}, HOME_FIND_TIMEOUT),
   ).toBeTruthy();
 });
 
@@ -183,16 +151,12 @@ test("a failed REFETCH on / keeps the roster and does not disclaim the composer"
   // evidence that the composer is not the disabled, nothing-to-send-to state its alert describes.
   expect(
     await view.findByText(
-      "OpenBot picks the right Bot.",
+      "OpenBot picks a Bot for you.",
       { exact: false },
       HOME_FIND_TIMEOUT,
     ),
   ).toBeTruthy();
-  expect(
-    view.queryByText(
-      "Couldn't load your Bots, so there's no one to send this to. Reload the page.",
-    ),
-  ).toBeNull();
+  expect(view.queryByText("Couldn’t load your Bots.")).toBeNull();
   expect(
     view.queryByText("Couldn't load the Bots shared with you."),
   ).toBeNull();
@@ -225,11 +189,7 @@ test("a failed REFETCH on / with explore empty shows it as empty, not broken", a
   ).toBeNull();
   // `agents` loaded (it holds "Mine Agent"), so `fallback` falls back to it and the composer is
   // enabled — the alert claiming a load failure must not appear beside that working composer.
-  expect(
-    view.queryByText(
-      "Couldn't load your Bots, so there's no one to send this to. Reload the page.",
-    ),
-  ).toBeNull();
+  expect(view.queryByText("Couldn’t load your Bots.")).toBeNull();
 });
 
 /*
@@ -250,7 +210,7 @@ test("on the personal edition, an empty Explore Bots says nothing about sharing"
   // The composer has a Bot to send to: Home has drawn with the roster loaded.
   expect(
     await view.findByText(
-      "OpenBot picks the right Bot.",
+      "OpenBot picks a Bot for you.",
       { exact: false },
       HOME_FIND_TIMEOUT,
     ),

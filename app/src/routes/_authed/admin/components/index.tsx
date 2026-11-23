@@ -127,14 +127,22 @@ function RouteComponent() {
                   <div className="min-h-28 p-4">
                     <div className="flex flex-row items-center gap-2">
                       <div
+                        aria-hidden="true"
                         className={cn("inline-block size-1.5 rounded-full", {
                           "bg-muted-foreground": !component.published,
                           "bg-success": component.published,
                         })}
                       />
-                      <h4 className="line-clamp-1 font-medium text-sm">
+                      {/* h3, one level under the page's h1: a tile title jumping straight to h4
+                          skips a level for every screen-reader heading navigation. The status
+                          word rides in the heading: published-or-draft is a fact this page says
+                          matters, and a colour-only 6px dot asked for recall no legend taught. */}
+                      <h3 className="line-clamp-1 font-medium text-sm">
                         {component.title}
-                      </h4>
+                        <span className="font-normal text-muted-foreground">
+                          {component.published ? " · Published" : " · Draft"}
+                        </span>
+                      </h3>
                     </div>
                     <p className="mt-2 line-clamp-2 text-muted-foreground text-xs">
                       {component.draftDescription}

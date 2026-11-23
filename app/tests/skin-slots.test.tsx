@@ -263,9 +263,9 @@ function conversationRoutes(path: string) {
 }
 
 test.each([
-  ["a conversation with one Bot", "/channel/c-1", "Channel"],
+  ["a conversation with one Bot", "/channel/c-1", "Conversation"],
   ["a group conversation", "/group/g-1", "Group"],
-  ["a new conversation", "/channel/new", "To:"],
+  ["a new conversation", "/channel/new", "To"],
 ])("%s has its conversation header", async (_name, path, heading) => {
   const view = conversationRoutes(path);
   const header = await waitFor(() =>

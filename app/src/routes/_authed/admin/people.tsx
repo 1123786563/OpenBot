@@ -7,13 +7,14 @@ import {
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   PageEmpty,
   PageRows,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import {
   ActionIncomplete,
@@ -32,6 +33,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { terminateMemberComputersMutationOptions } from "@/lib/enterprise/mutations";
 import {
   setPersonAccessMutationOptions,
@@ -70,12 +72,15 @@ function describe(person: Person): string {
   if (person.configuredAdmin) {
     return `Admin by configuration · ${when}`;
   }
-  return `${providers || "no provider"} · ${when}`;
+  const role = person.role === "admin" ? "Admin" : "Member";
+  return `${role} · ${providers || "no provider"} · ${when}`;
 }
 
 function PeoplePage() {
   const [search, setSearch] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
+  const peopleHeading = useRef<HTMLHeadingElement>(null);
+  const moreErrorId = useId();
   const { requestConfirmation, confirmation } = useActionConfirmation();
   /*
    * Debounced, so typing a name is one request rather than one per keystroke against an aggregate
@@ -88,7 +93,8 @@ function PeoplePage() {
   }, [search]);
 
   const people = useInfiniteQuery(peopleListQueryOptions(query));
-  const rows = people.data?.pages.flatMap((page) => page.people) ?? [];
+  const loaded = canKeepCachedRead(people.error) ? people.data : undefined;
+  const rows = loaded?.pages.flatMap((page) => page.people) ?? [];
   const currentUser = useQuery(currentUserQueryOptions());
   const setRole = useMutation(setPersonRoleMutationOptions(queryClient));
   const setAccess = useMutation(setPersonAccessMutationOptions(queryClient));
@@ -218,6 +224,7 @@ function PeoplePage() {
     >
       <PageSection
         description="Addresses in INITIAL_ADMIN_EMAILS are always admins. You can't change them here."
+        headingRef={peopleHeading}
         title="Who is here"
       >
         {confirmation}
@@ -235,21 +242,23 @@ function PeoplePage() {
         />
 
         {people.isPending ? (
-          <p role="status">Loading people…</p>
-        ) : people.error && !people.data ? (
-          <>
-            <p className="mt-4 text-destructive text-sm" role="alert">
-              Couldn't load people.
-            </p>
-            <Button
-              onClick={() => void people.refetch()}
-              size="sm"
-              variant="outline"
-            >
-              Try again
-            </Button>
-          </>
-        ) : rows.length === 0 ? (
+          <ReadStatus kind="loading" message="Loading people…" />
+        ) : null}
+        {people.error && (!loaded || !people.isFetchNextPageError) ? (
+          <ReadError
+            description={
+              rows.length ? "Showing the last loaded people." : undefined
+            }
+            message={
+              rows.length ? "Couldn't refresh people." : "Couldn't load people."
+            }
+            retry={people.refetch}
+            retryBelow
+            retrying={people.isFetching}
+          />
+        ) : null}
+        {!loaded || (people.error && rows.length === 0) ? null : rows.length ===
+          0 ? (
           <PageEmpty
             icon={query ? IconSearch : IconUsers}
             title={query ? "No matches" : "Nobody has signed in yet"}
@@ -278,14 +287,15 @@ function PeoplePage() {
                     </ItemMedia>
                     <ItemContent>
                       <ItemTitle>{person.name ?? person.email}</ItemTitle>
-                      <ItemDescription>
+                      <ItemDescription className="line-clamp-none text-sm [overflow-wrap:anywhere]">
                         {person.name ? `${person.email} · ` : ""}
                         {describe(person)}
                       </ItemDescription>
                     </ItemContent>
-                    <ItemActions>
+                    <ItemActions className="min-w-0 flex-wrap max-sm:basis-full">
                       <Button
                         aria-label={`Stop computers for ${person.email}`}
+                        className="min-h-11"
                         onClick={(event) =>
                           confirm(person, "stop", event.currentTarget)
                         }
@@ -296,6 +306,7 @@ function PeoplePage() {
                       </Button>
                       <Button
                         aria-label={`${person.revoked ? "Restore" : "Remove"} access for ${person.email}`}
+                        className="min-h-11"
                         disabled={managed}
                         onClick={(event) =>
                           confirm(person, "access", event.currentTarget)
@@ -307,6 +318,7 @@ function PeoplePage() {
                       </Button>
                       <Button
                         aria-label={`${person.role === "admin" ? "Remove" : "Grant"} admin for ${person.email}`}
+                        className="min-h-11"
                         disabled={managed}
                         onClick={(event) =>
                           confirm(person, "role", event.currentTarget)
@@ -331,15 +343,51 @@ function PeoplePage() {
           Only when there is one. A button that says there is more when there is not is worse than
           no button, and this list ends for most deployments on the first page.
         */}
-        {people.hasNextPage ? (
+        {loaded && people.isFetchNextPageError ? (
+          <p
+            className="mt-4 text-destructive text-sm"
+            id={moreErrorId}
+            role="alert"
+          >
+            Couldn't load more people. The people already loaded are still
+            shown.
+          </p>
+        ) : null}
+        {loaded && people.hasNextPage ? (
           <Button
-            className="mt-4"
-            disabled={people.isFetchingNextPage}
-            onClick={() => people.fetchNextPage()}
+            aria-describedby={
+              people.isFetchNextPageError ? moreErrorId : undefined
+            }
+            aria-disabled={people.isFetching}
+            className="mt-4 min-h-11"
+            onClick={(event) => {
+              if (people.isFetching) return;
+              const button = event.currentTarget;
+              const document = button.ownerDocument;
+              const focused = document.activeElement === button;
+              void people
+                .fetchNextPage({ cancelRefetch: false })
+                .then((result) => {
+                  if (
+                    focused &&
+                    result.isSuccess &&
+                    !result.hasNextPage &&
+                    (document.activeElement === button ||
+                      (!button.isConnected &&
+                        document.activeElement === document.body))
+                  ) {
+                    peopleHeading.current?.focus();
+                  }
+                });
+            }}
             size="sm"
             variant="outline"
           >
-            {people.isFetchingNextPage ? "Loading…" : "Show more"}
+            {people.isFetchingNextPage
+              ? "Loading…"
+              : people.isFetchNextPageError
+                ? "Retry loading more"
+                : "Show more"}
           </Button>
         ) : null}
       </PageSection>

@@ -182,6 +182,24 @@ function RoutineCreateForm({
                 return (
                   <Field data-invalid={isInvalid}>
                     <FieldLabel htmlFor={field.name}>Bot</FieldLabel>
+                    {agents.error ? (
+                      /* An empty picker reads as "you have no Bots"; a failed read must say
+                         itself and offer the retry, so the form's other work survives. */
+                      <div className="flex flex-wrap items-center gap-3">
+                        <p className="text-destructive text-sm" role="alert">
+                          Couldn't load your Bots.
+                        </p>
+                        <Button
+                          disabled={agents.isFetching}
+                          onClick={() => void agents.refetch()}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          {agents.isFetching ? "Retrying…" : "Retry"}
+                        </Button>
+                      </div>
+                    ) : null}
                     <Select
                       items={botItems}
                       onValueChange={(value) => {

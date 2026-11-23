@@ -16,6 +16,7 @@ import {
   useConnectInNewTab,
 } from "@/components/plugins/connect-in-new-tab";
 import { AppInitial } from "@/components/plugins/plugin-logo";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -232,7 +233,34 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
    * edition Add stays the admin's act for everybody, and the row then says the admin's own account
    * isn't connected.
    */
+  /*
+   * An app the page itself flags as unreviewed and permission-bearing is turned on for the whole
+   * deployment by one Add, so that press asks first; an app with no measured permissions stays
+   * immediate.
+   */
+  const { requestConfirmation, confirmation: addConfirmation } =
+    useActionConfirmation();
   const add = (entry: ComposioApp) => {
+    /*
+     * Measured permissions are this directory's own warning: the row's sentence says what one
+     * approval lets a Bot do, and the same fact belongs between the press and the write.
+     */
+    if (entry.permissionCount) {
+      requestConfirmation({
+        title: `Add ${entry.name}?`,
+        description: consentBreadth(entry)
+          ? `${consentBreadth(entry)} People connect their own accounts.`
+          : `This makes ${entry.name}'s actions available to Bots. People connect their own accounts.`,
+        confirmLabel: "Add",
+        pendingLabel: "Adding…",
+        failureMessage: `Couldn't add ${entry.name}. Try again.`,
+        run: () => addConfirmed(entry),
+      });
+      return;
+    }
+    addConfirmed(entry);
+  };
+  const addConfirmed = async (entry: ComposioApp) => {
     const how = directoryConnect(entry);
     if (personal && how === "sign-in") {
       stopWaiting();
@@ -246,12 +274,14 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
       return;
     }
     if (personal && how === "key") {
-      enable.mutateAsync({ slug: entry.slug }).then(openKeyForm, () => {
+      await enable.mutateAsync({ slug: entry.slug }).then(openKeyForm, () => {
         // Said by the mutation's own `onError`.
       });
       return;
     }
-    enable.mutate({ slug: entry.slug });
+    await enable.mutateAsync({ slug: entry.slug }).catch(() => {
+      // Said by the mutation's own error state: the page's alert, not this promise.
+    });
   };
   const tabError = signingIn ? tab.error : null;
 
@@ -261,6 +291,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
       description={directoryDescriptions(paths.edition).page}
       title={directoryLabel}
     >
+      {addConfirmation}
       <PageSection
         description={directoryDescriptions(paths.edition).search}
         title="Apps"
@@ -386,6 +417,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                          */}
                         {state.kind === "addable" ? (
                           <ConnectionAction
+                            className="max-h-none min-h-11 px-4"
                             disabled={isAdding || (mine && tab.pending)}
                             onClick={() => add(entry)}
                             variant="outline"

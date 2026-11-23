@@ -1,6 +1,7 @@
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { HStack } from "@astryxdesign/core/Stack";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 import {
   ChangeRows,
   PermissionsPreview,
@@ -9,8 +10,9 @@ import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { DescribeField } from "@/components/boundaries/describe-rule";
 import { ReadingStatus } from "@/components/boundaries/rule-reading";
 import { PageCard } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
-import { FieldGroup } from "@/components/ui/field";
+import { FieldGroup, FieldSet } from "@/components/ui/field";
 import { saveCapabilityChangesMutationOptions } from "@/lib/capability-changes/mutations";
 import { capabilityChangesPreviewQueryOptions } from "@/lib/capability-changes/queries";
 import {
@@ -50,17 +52,38 @@ function DescribePermissionsPage() {
   const overview = useQuery(enterpriseOverviewQueryOptions());
   const [written, setWritten] = useState<WrittenChanges | null>(null);
   const [changes, setChanges] = useState<CapabilityChange[]>([]);
+  /* The last removed change, so one Remove is one step from undone. */
+  const [removed, setRemoved] = useState<{
+    index: number;
+    change: CapabilityChange;
+  } | null>(null);
+  const [description, setDescription] = useState("");
+  const [writing, setWriting] = useState(false);
+  const submitting = useRef(false);
+  const hasDraft = description.trim() !== "" || written !== null;
+  useBlocker({
+    enableBeforeUnload: hasDraft,
+    shouldBlockFn: ({ current, next }) =>
+      hasDraft &&
+      current.pathname !== next.pathname &&
+      !window.confirm("Leave without saving your permission changes?"),
+  });
+  const descriptionChanged =
+    written !== null && written.text !== description.trim();
 
   const preview = useQuery({
     ...capabilityChangesPreviewQueryOptions(changes),
-    enabled: changes.length > 0,
-    // The last answer stays up while the next loads, so the list does not blink after a removal.
-    placeholderData: keepPreviousData,
+    enabled: !descriptionChanged && changes.length > 0,
   });
-  /* The check of the changes on screen now, and not of the ones before a removal still loading. */
   const current =
-    preview.data && !preview.isPlaceholderData ? preview.data : null;
-  const ready = Boolean(current?.check.ok) && changes.length > 0;
+    preview.isSuccess && preview.fetchStatus === "idle" ? preview.data : null;
+  const ready =
+    written !== null &&
+    !descriptionChanged &&
+    !writing &&
+    !save.isPending &&
+    Boolean(current?.check.ok) &&
+    changes.length > 0;
   const edited = written !== null && !same(changes, written.changes);
   const titles = Object.fromEntries(
     (overview.data?.capabilities ?? []).map((capability) => [
@@ -70,15 +93,20 @@ function DescribePermissionsPage() {
   );
 
   const saveChanges = () => {
-    if (!ready) return;
+    if (!ready || !written || submitting.current) return;
+    submitting.current = true;
     save.mutate(
       {
         changes,
-        ...(written
-          ? { authoring: { source: "english" as const, text: written.text } }
-          : {}),
+        authoring: { source: "english", text: written.text },
       },
-      { onSuccess: () => void navigate({ to: "/admin/permissions" }) },
+      {
+        onSuccess: () =>
+          void navigate({ to: "/admin/permissions", ignoreBlocker: true }),
+        onSettled: () => {
+          submitting.current = false;
+        },
+      },
     );
   };
 
@@ -104,7 +132,7 @@ function DescribePermissionsPage() {
               >
                 Cancel
               </Button>
-              <Button disabled={!ready || save.isPending} type="submit">
+              <Button disabled={!ready} type="submit">
                 {save.isPending ? "Saving…" : "Save changes"}
               </Button>
             </>
@@ -113,18 +141,29 @@ function DescribePermissionsPage() {
           <FieldGroup>
             <DescribeField
               action="Write changes"
+              disabled={save.isPending}
               description="Say in a sentence who may or may not do something, and your model writes the changes from this OpenBot's roles and groups. A second reading that never sees your words says what the changes do."
               id="permissions-english"
               label="Describe the change"
+              onTextChange={setDescription}
+              onWritingChange={setWriting}
               placeholder="Contractors can't use their own computer"
+              text={description}
               write={async (described) => {
                 const translation = await translateCapabilityChanges(described);
                 save.reset();
                 setWritten({ ...translation, text: described });
                 setChanges(translation.changes);
+                setRemoved(null);
                 return null;
               }}
             />
+            {descriptionChanged ? (
+              <ReadStatus
+                kind="loading"
+                message="Your description changed. Choose Write changes to update the draft before saving."
+              />
+            ) : null}
             {written ? (
               <ReadingStatus
                 check={written.check}
@@ -146,23 +185,53 @@ function DescribePermissionsPage() {
               />
             ) : null}
             {changes.length > 0 ? (
-              <ChangeRows
-                changes={changes}
-                onRemove={(index) =>
-                  setChanges(changes.filter((_, at) => at !== index))
-                }
-                problems={
-                  current && !current.check.ok ? current.check.problems : []
-                }
-                titles={titles}
-              />
+              <FieldSet
+                disabled={writing || save.isPending || descriptionChanged}
+              >
+                <ChangeRows
+                  changes={changes}
+                  onRemove={(index) => {
+                    setRemoved({ index, change: changes[index] });
+                    setChanges(changes.filter((_, at) => at !== index));
+                  }}
+                  problems={
+                    current && !current.check.ok ? current.check.problems : []
+                  }
+                  titles={titles}
+                />
+              </FieldSet>
             ) : null}
-            {current &&
+            {removed ? (
+              <HStack gap={3} vAlign="center" wrap="wrap">
+                <p className="text-muted-foreground text-sm" role="status">
+                  Removed one change.
+                </p>
+                <Button
+                  disabled={writing || save.isPending || descriptionChanged}
+                  onClick={() => {
+                    const at = Math.min(removed.index, changes.length);
+                    setChanges([
+                      ...changes.slice(0, at),
+                      removed.change,
+                      ...changes.slice(at),
+                    ]);
+                    setRemoved(null);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Undo
+                </Button>
+              </HStack>
+            ) : null}
+            {!descriptionChanged &&
+            current &&
             !current.check.ok &&
             current.check.problems.length === 0 ? (
               <p className="text-destructive text-sm">{current.check.error}</p>
             ) : null}
-            {changes.length > 0 ? (
+            {!descriptionChanged && changes.length > 0 ? (
               <PermissionsPreview preview={preview} />
             ) : null}
           </FieldGroup>

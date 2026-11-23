@@ -16,7 +16,11 @@ function RouteComponent() {
       width="300px"
     >
       <SettingsSidebar />
-      <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+      <SidebarInset
+        id="main-content"
+        tabIndex={-1}
+        className="min-h-0 min-w-0 overflow-hidden"
+      >
         <Outlet />
       </SidebarInset>
     </SidebarShell>

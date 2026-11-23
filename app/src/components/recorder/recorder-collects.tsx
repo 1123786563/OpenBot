@@ -49,7 +49,7 @@ export function RecorderCollectsRows() {
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>{title}</ItemTitle>
-                <ItemDescription className="line-clamp-none">
+                <ItemDescription className="line-clamp-none text-sm leading-relaxed">
                   {description}
                 </ItemDescription>
               </ItemContent>

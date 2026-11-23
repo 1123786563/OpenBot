@@ -59,6 +59,8 @@ function line(
 }
 
 let open = true;
+let showQuestion = true;
+let failNextAnswer = false;
 let messages: GroupMessage[] = [];
 let answers: unknown[] = [];
 let groupSends: unknown[] = [];
@@ -113,21 +115,22 @@ beforeAll(() => {
         requests: [],
         rules: [],
         teamRules: [],
-        questions: open
-          ? [
-              {
-                id: "q-1",
-                botId: ERRANDS,
-                conversationBotId: ERRANDS,
-                // The Bot's own thread in the group, not the channel's.
-                threadId: "errand-helper-group-thread",
-                channelId: CHANNEL,
-                question: QUESTION,
-                why: WHY,
-                createdAt: "2026-11-08T05:16:39.000Z",
-              },
-            ]
-          : [],
+        questions:
+          open && showQuestion
+            ? [
+                {
+                  id: "q-1",
+                  botId: ERRANDS,
+                  conversationBotId: ERRANDS,
+                  // The Bot's own thread in the group, not the channel's.
+                  threadId: "errand-helper-group-thread",
+                  channelId: CHANNEL,
+                  question: QUESTION,
+                  why: WHY,
+                  createdAt: "2026-11-08T05:16:39.000Z",
+                },
+              ]
+            : [],
       });
     if (url.pathname === "/api/bots/attention")
       return Response.json({
@@ -151,6 +154,10 @@ beforeAll(() => {
     // that asked queued to answer it there.
     if (url.pathname === "/api/approvals/questions/q-1/respond") {
       answers.push(JSON.parse(String(init?.body)));
+      if (failNextAnswer) {
+        failNextAnswer = false;
+        return Response.json({}, { status: 503 });
+      }
       open = false;
       messages = [
         ...messages,
@@ -165,6 +172,8 @@ beforeAll(() => {
 beforeEach(() => {
   queryClient.clear();
   open = true;
+  showQuestion = true;
+  failNextAnswer = false;
   answers = [];
   groupSends = [];
   messages = [
@@ -183,6 +192,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   queryClient.clear();
+  sessionStorage.clear();
 });
 afterAll(async () => {
   await settleReactWork();
@@ -233,4 +243,31 @@ test("a Bot's question waits in the group, and answering it there clears the bad
   );
   await view.findByText(ANSWER);
   await view.findByText(REPLY);
+});
+
+test("a failed answer restored after reload still goes to the original question", async () => {
+  failNextAnswer = true;
+  const view = conversation();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await view.findByRole("region", {
+    name: "Errand Helper is waiting on your answer",
+  });
+  await user.type(
+    await view.findByRole("textbox", { name: "Message" }),
+    ANSWER,
+  );
+  await user.click(view.getByRole("button", { name: "Send message" }));
+  await view.findByText(/Couldn't confirm your answer/);
+  view.unmount();
+  queryClient.clear();
+  showQuestion = false;
+
+  const restored = conversation();
+  await restored.findByText(/Draft restored/);
+  await user.click(restored.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(answers).toEqual([{ response: ANSWER }, { response: ANSWER }]),
+  );
+  expect(groupSends).toEqual([]);
+  await restored.findByText(REPLY);
 });

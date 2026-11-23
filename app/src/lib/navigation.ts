@@ -6,6 +6,7 @@ import {
   IconPlug,
   IconSettings,
   IconShieldLock,
+  IconTarget,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { OpenBotLogo } from "@/components/edition/openbot-logo";
@@ -19,6 +20,7 @@ export type NavigationItem =
       id:
         | "bots"
         | "routines"
+        | "goals"
         | "capabilities"
         | "connections"
         | "admin"
@@ -27,10 +29,12 @@ export type NavigationItem =
       to:
         | "/bots"
         | "/routines"
+        | "/responsibilities"
         | "/capabilities"
         | "/connections"
         | "/admin"
         | "/settings";
+      search?: { view: "goals" };
       icon: Icon;
       section: "primary" | "account";
       /** Admin routes are guarded on the server; the entry is hidden from people who cannot open them. */
@@ -77,6 +81,14 @@ export const NAVIGATION: readonly NavigationItem[] = [
     label: "Routines",
     to: "/routines",
     icon: IconClock,
+    section: "primary",
+  },
+  {
+    id: "goals",
+    label: "Goals",
+    to: "/responsibilities",
+    search: { view: "goals" },
+    icon: IconTarget,
     section: "primary",
   },
   {

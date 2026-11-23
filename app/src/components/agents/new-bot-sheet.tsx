@@ -1,3 +1,6 @@
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { HStack } from "@astryxdesign/core/HStack";
 import {
   OPENBOT_HARNESS_NAME,
   summaryFor,
@@ -16,30 +19,33 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { MotionConfig, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import AgentOrb from "@/components/agents/orb/agent-orb";
-import { BotFormAction } from "@/components/astryx-pilot/bot-actions";
-import { BotField } from "@/components/astryx-pilot/bot-fields";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
 import { RoutinesAppHint } from "@/components/routines/routines-app-hint";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
+  FieldLabel,
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetClose,
   SheetContent,
   SheetFooter,
+  SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -65,6 +71,7 @@ import {
   type GiveableApp,
   giveableAppsQueryOptions,
 } from "@/lib/app-access/queries";
+import { ClientError } from "@/lib/client";
 import { isComposing } from "@/lib/composing";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -87,11 +94,11 @@ export function NewBotSheet({
   open,
   onClose,
   onCreated,
-  returnFocus,
+  finalFocus,
 }: {
   open: boolean;
-  returnFocus?: () => HTMLElement | null;
   onClose: () => void;
+  finalFocus?: ComponentProps<typeof SheetContent>["finalFocus"];
   /** The new Bot's id, so the caller can take the person to it. */
   onCreated: (agentId: string) => void;
 }) {
@@ -103,8 +110,7 @@ export function NewBotSheet({
       open={open}
     >
       <SheetContent
-        {...astryxScope}
-        finalFocus={returnFocus ? returnFocus : undefined}
+        finalFocus={finalFocus}
         className="gap-0 data-[side=right]:w-[calc(100%-1rem)] data-[side=right]:sm:max-w-2xl"
         showCloseButton={false}
         side="right"
@@ -187,11 +193,8 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
-  /*
-   * Assumed available while the answer loads, so the common deployment never sees the option flash
-   * from disabled to enabled; the server refuses the create either way.
-   */
-  const { data: capabilities } = useQuery(agentCapabilitiesQueryOptions());
+  const capabilityQuery = useQuery(agentCapabilitiesQueryOptions());
+  const capabilities = capabilityQuery.data;
   const builtInAvailable = capabilities?.builtInAvailable ?? true;
   /*
    * A computer of its own: whether this deployment can make one, and whether an administrator lets
@@ -361,6 +364,40 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
     if (runtime?.kind === "managed") await create(runtime);
   };
 
+  if (capabilities === undefined) {
+    const denied =
+      capabilityQuery.error instanceof ClientError &&
+      capabilityQuery.error.status === 403;
+    return (
+      <SheetHeader>
+        <SheetTitle>New Bot</SheetTitle>
+        {capabilityQuery.isPending ? (
+          <p role="status">Loading Bot creation options…</p>
+        ) : (
+          <Banner
+            status="error"
+            role="alert"
+            title={
+              denied
+                ? "You can’t create Bots in this workspace"
+                : "Couldn’t load Bot creation options"
+            }
+            endContent={
+              denied ? undefined : (
+                <AstryxButton
+                  label="Retry"
+                  isLoading={capabilityQuery.isFetching}
+                  onClick={() => void capabilityQuery.refetch()}
+                />
+              )
+            }
+          />
+        )}
+        <SheetClose render={<Button variant="ghost" />}>Cancel</SheetClose>
+      </SheetHeader>
+    );
+  }
+
   if (createdId) {
     return (
       <MotionConfig reducedMotion="user">
@@ -406,7 +443,7 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 pt-8 pb-6">
         <MotionConfig reducedMotion="user">
           {/* Shares its layout id with the orb on the created view, so it travels there. */}
-          <div className="flex items-center gap-3">
+          <HStack gap={3} vAlign="center">
             <motion.div className="w-fit" layoutId={ORB_LAYOUT_ID}>
               <AgentOrb
                 size="40px"
@@ -414,9 +451,13 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
               />
             </motion.div>
             <SheetTitle className="text-2xl font-semibold tracking-tight">
-              New Bot
+              {step === "about"
+                ? "New Bot"
+                : step === "runtime"
+                  ? "Choose a framework"
+                  : "Connect your agent"}
             </SheetTitle>
-          </div>
+          </HStack>
 
           <motion.div
             animate={{ opacity: 1, x: 0 }}
@@ -501,29 +542,28 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
       <SheetFooter className="flex-row flex-wrap items-center justify-between border-t border-border">
         {step === "about" ? (
           <SheetClose
-            render={
-              <BotFormAction className="px-4" variant="ghost">
-                Cancel
-              </BotFormAction>
-            }
-          />
+            render={<Button className="px-4" size="lg" variant="ghost" />}
+          >
+            Cancel
+          </SheetClose>
         ) : (
-          <BotFormAction
+          <Button
             className="px-4"
             disabled={busy}
             onClick={() => go(previous())}
+            size="lg"
             type="button"
             variant="ghost"
           >
             Back
-          </BotFormAction>
+          </Button>
         )}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {step === "about" && builtInAvailable && (
-            <BotFormAction
+            <Button
               type="button"
-              icon={<IconPlugConnected aria-hidden className="size-4" />}
               variant="outline"
+              size="lg"
               disabled={busy}
               onClick={() => {
                 const parsed = agentFormSchema.shape.name.safeParse(name);
@@ -536,23 +576,28 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
                 go("runtime");
               }}
             >
+              <IconPlugConnected className="size-4" />
               Connect a custom agent
-            </BotFormAction>
+            </Button>
           )}
           {step !== "runtime" && (
-            <BotFormAction
-              className="px-4"
-              disabled={!canContinue}
+            <AstryxButton
+              className="bot-primary-action"
+              isDisabled={!canContinue}
+              isLoading={busy}
+              size="lg"
               type="submit"
-            >
-              {checking
-                ? "Checking…"
-                : createAgent.isPending
-                  ? "Creating…"
-                  : step === "endpoint" || (step === "about" && !custom)
-                    ? "Create Bot"
-                    : "Continue"}
-            </BotFormAction>
+              variant="primary"
+              label={
+                checking
+                  ? "Checking connection…"
+                  : createAgent.isPending
+                    ? "Creating Bot…"
+                    : step === "endpoint" || (step === "about" && !custom)
+                      ? "Create Bot"
+                      : "Continue"
+              }
+            />
           )}
         </div>
       </SheetFooter>
@@ -680,26 +725,44 @@ function AboutStep({
 }) {
   return (
     <FieldGroup>
-      <BotField
-        autoFocus
-        error={nameError}
-        id="new-bot-name"
-        label="Name"
-        maxLength={80}
-        onChange={onName}
-        placeholder="Expense Review"
-        value={name}
-      />
-      <BotField
-        id="new-bot-instructions"
-        label="Instructions"
-        maxLength={1000}
-        onChange={onInstructions}
-        optional
-        placeholder="Review receipts, categorize expenses, and prepare reimbursement reports."
-        rows={5}
-        value={instructions}
-      />
+      <Field>
+        <FieldLabel htmlFor="new-bot-name">Name</FieldLabel>
+        <Input
+          autoComplete="off"
+          autoFocus
+          id="new-bot-name"
+          aria-invalid={Boolean(nameError)}
+          aria-describedby={nameError ? "new-bot-name-error" : undefined}
+          maxLength={80}
+          onChange={(event) => onName(event.target.value)}
+          placeholder="Expense Review"
+          value={name}
+        />
+        {nameError && (
+          <p
+            id="new-bot-name-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {nameError}
+          </p>
+        )}
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="new-bot-instructions">
+          Instructions
+          <span className="font-normal text-muted-foreground">Optional</span>
+        </FieldLabel>
+        <Textarea
+          autoComplete="off"
+          id="new-bot-instructions"
+          maxLength={1000}
+          onChange={(event) => onInstructions(event.target.value)}
+          placeholder="Review receipts, categorize expenses, and prepare reimbursement reports."
+          rows={5}
+          value={instructions}
+        />
+      </Field>
       {personal ? (
         <BusinessComputerLink />
       ) : (
@@ -751,7 +814,6 @@ function AboutStep({
                   "flex items-center gap-3 rounded-lg bg-muted/50 pr-3 text-sm",
                   app.key === ALWAYS_ON_APP && "sm:col-span-2",
                 )}
-                data-bot-form-app={app.key}
                 key={app.key}
               >
                 <label
@@ -807,7 +869,6 @@ function EveryAppList({ turnedOn }: { turnedOn: UseQueryResult<PluginsPage> }) {
                 "flex items-center gap-3 rounded-lg bg-muted/50 p-3 text-sm",
                 server.id === ALWAYS_ON_APP && "sm:col-span-2",
               )}
-              data-bot-form-app={server.id}
               key={server.id}
             >
               <PluginLogo logo={server.logo} />
@@ -1007,31 +1068,48 @@ function EndpointStep({
       </div>
 
       <FieldGroup>
-        <BotField
-          autoFocus
-          description={
-            endpointError
-              ? undefined
-              : "Any agent that speaks AG-UI works. OpenBot connects to it, so it has to be reachable from OpenBot's server."
-          }
-          error={endpointError}
-          id="new-bot-endpoint"
-          inputMode="url"
-          label="Agent address"
-          onChange={onEndpoint}
-          placeholder="https://your-agent.example.com/ag-ui"
-          value={endpoint}
-        />
-        <BotField
-          description="Sent as an Authorization header with every request, and stored encrypted."
-          id="new-bot-key"
-          label="Key"
-          onChange={onKey}
-          optional
-          placeholder="Bearer …"
-          type="password"
-          value={secret}
-        />
+        <Field data-invalid={endpointError ? true : undefined}>
+          <FieldLabel htmlFor="new-bot-endpoint">Agent address</FieldLabel>
+          <Input
+            aria-invalid={endpointError ? true : undefined}
+            autoComplete="off"
+            autoFocus
+            id="new-bot-endpoint"
+            inputMode="url"
+            onChange={(event) => onEndpoint(event.target.value)}
+            placeholder="https://your-agent.example.com/ag-ui"
+            value={endpoint}
+          />
+          {endpointError ? (
+            <FieldError
+              className="text-pretty"
+              errors={[{ message: endpointError }]}
+            />
+          ) : (
+            <FieldDescription>
+              Any agent that speaks AG-UI works. OpenBot connects to it, so it
+              has to be reachable from OpenBot's server.
+            </FieldDescription>
+          )}
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="new-bot-key">
+            Key
+            <span className="font-normal text-muted-foreground">Optional</span>
+          </FieldLabel>
+          <Input
+            autoComplete="off"
+            id="new-bot-key"
+            onChange={(event) => onKey(event.target.value)}
+            placeholder="Bearer …"
+            type="password"
+            value={secret}
+          />
+          <FieldDescription>
+            Sent as an <code>Authorization</code> header with every request, and
+            stored encrypted.
+          </FieldDescription>
+        </Field>
       </FieldGroup>
     </div>
   );

@@ -17,7 +17,7 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import type { ComponentType } from "react";
 import type { DesktopStatus } from "@/lib/desktop/queries";
 import { queryClient } from "@/query-client";
@@ -83,4 +83,42 @@ test("OpenBot's services say what they keep without mentioning memory", async ()
     await within(section).findByText("Conversations and learning"),
   ).toBeTruthy();
   expect(section.textContent).not.toMatch(/conversations, memory/i);
+});
+
+test("retries only the start when a confirmed restart has already stopped services", async () => {
+  const actions: string[] = [];
+  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {
+    async invoke(command: string, args: { action: string }) {
+      if (command !== "plugin:openbot-desktop|intelligence")
+        return shellInvoke(command);
+      if (args.action === "status") return { readiness: "ready" };
+      actions.push(args.action);
+      return { outcome: actions.length === 2 ? "failed" : "completed" };
+    },
+    transformCallback: () => 0,
+  };
+  const Page = ThisComputerRoute.options.component as ComponentType;
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <Page />
+    </QueryClientProvider>,
+  );
+  const restart = await view.findByRole("button", {
+    name: "Restart OpenBot services",
+  });
+  fireEvent.click(restart);
+  let dialog = within(await view.findByRole("alertdialog"));
+  fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+  expect(actions).toEqual([]);
+
+  fireEvent.click(restart);
+  dialog = within(await view.findByRole("alertdialog"));
+  fireEvent.click(dialog.getByRole("button", { name: "Restart services" }));
+  await dialog.findByText(
+    "The services stopped, but couldn't start again. Try again to start them.",
+  );
+  expect(actions).toEqual(["stop", "start"]);
+  fireEvent.click(dialog.getByRole("button", { name: "Try again" }));
+  await view.findByText("Change saved.");
+  expect(actions).toEqual(["stop", "start", "start"]);
 });

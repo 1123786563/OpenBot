@@ -33,7 +33,7 @@ export function GovernanceAction({
   ...props
 }: Pick<
   ComponentProps<"button">,
-  "onClick" | "type" | "disabled" | "className"
+  "onClick" | "type" | "disabled" | "className" | "aria-disabled"
 > & {
   label: string;
   variant?: "outline" | "destructive";

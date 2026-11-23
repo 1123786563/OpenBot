@@ -72,7 +72,10 @@ test("a Bot chosen with @ and the message appear in the Conversation handoff", a
     await view.findByRole("region", { name: "Messages" }),
   );
   expect(
-    await transcript.findByRole("heading", { level: 1, name: "Knowledge" }),
+    await view.findByRole("heading", { level: 1, name: "Knowledge" }),
+  ).toBeTruthy();
+  expect(
+    await transcript.findByRole("heading", { level: 2, name: "Knowledge" }),
   ).toBeTruthy();
   expect(
     await transcript.findByText("Summarize our onboarding policy", {
@@ -154,7 +157,11 @@ test("returning to a handoff that completed while on Home opens the same Convers
   await waitFor(() => expect(requests).toBe(1));
   expect(view.router.state.location.pathname).toBe("/");
 
-  await user.click(view.getByRole("link", { name: /Resume conversation/ }));
+  await user.click(
+    view.getByRole("link", {
+      name: "What were our Q3 numbers? Resume sending",
+    }),
+  );
   await view.findByText("The conversation");
   expect(view.router.state.location.pathname).toBe("/channel/channel-made");
   expect(requests).toBe(1);

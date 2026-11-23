@@ -8,14 +8,17 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ConnectionPage } from "@/components/connections/connection-surface";
+import {
+  ConnectionAction,
+  ConnectionPage,
+} from "@/components/connections/connection-surface";
 import { IdentityConnectionPage } from "@/components/connections/identity-connection-page";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { PluginPage } from "@/components/manage/plugin-page";
+import { appPageTitle, PluginPage } from "@/components/manage/plugin-page";
 import {
   BrokeredAccountRow,
   NotConnected,
@@ -38,6 +41,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -99,6 +103,9 @@ export function landedActionFrom(action: string | undefined): string | null {
 export function landedActionNotice(action: string): string {
   return `You just authorized ${action}.`;
 }
+
+/** Placeholder rows while the page loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
 
 /**
  * One service, and whether a Bot may read it as you.
@@ -367,7 +374,25 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    * whole of its state defaulted to "you have never connected this".
    */
   if (plugins.isPending || connections.isPending) {
-    return <ConnectionPage title="Account">{null}</ConnectionPage>;
+    return (
+      <ConnectionPage title="Account">
+        <div aria-busy="true" aria-label="Loading" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((row, index) => (
+              <div key={row}>
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-64" />
+                  </ItemContent>
+                </Item>
+                {index !== LOADING_ROWS.length - 1 && <Separator />}
+              </div>
+            ))}
+          </PageRows>
+        </div>
+      </ConnectionPage>
+    );
   }
 
   const back = {
@@ -393,11 +418,23 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (connections.error) {
     return (
-      <ConnectionPage backButton={back} title={server?.title ?? key}>
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          Couldn't load this connection. Reload the page, or ask an admin if it
-          keeps happening.
-        </p>
+      <ConnectionPage
+        backButton={back}
+        title={server?.title ?? appPageTitle(key)}
+      >
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load this connection.
+          </p>
+          <ConnectionAction
+            disabled={connections.isFetching}
+            onClick={() => void connections.refetch()}
+            type="button"
+            variant="outline"
+          >
+            {connections.isFetching ? "Retrying…" : "Retry"}
+          </ConnectionAction>
+        </div>
       </ConnectionPage>
     );
   }
@@ -409,11 +446,20 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    */
   if (!plugins.data) {
     return (
-      <ConnectionPage backButton={back} title={key}>
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          Couldn't load this app. Reload the page, or ask an admin if it keeps
-          happening.
-        </p>
+      <ConnectionPage backButton={back} title={appPageTitle(key)}>
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load this app.
+          </p>
+          <ConnectionAction
+            disabled={plugins.isFetching}
+            onClick={() => void plugins.refetch()}
+            type="button"
+            variant="outline"
+          >
+            {plugins.isFetching ? "Retrying…" : "Retry"}
+          </ConnectionAction>
+        </div>
       </ConnectionPage>
     );
   }
@@ -657,7 +703,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
                       <Button size="sm" type="button" variant="outline">
                         <span
                           aria-hidden="true"
-                          className="size-1.5 rounded-full bg-emerald-500"
+                          className="size-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400"
                         />
                         Connected
                         <IconChevronDown />
@@ -729,7 +775,10 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
               <ItemContent>
                 <ItemTitle>Allowed</ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  {connection.scope || `${entry.vendor} didn't say.`}
+                  {/* The vendor's own permission names, spaced apart so each reads as one word. */}
+                  {connection.scope
+                    ? `${connection.scope.split(/\s+/).join(", ")} (as ${entry.vendor} names them)`
+                    : `${entry.vendor} didn't say.`}
                 </ItemDescription>
               </ItemContent>
             </Item>
@@ -740,7 +789,11 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
               </ItemContent>
               <ItemActions>
                 <span className="text-muted-foreground text-xs">
-                  {new Date(connection.connectedAt).toLocaleString()}
+                  {/* Date precision to the minute: the second it happened is nobody's question. */}
+                  {new Date(connection.connectedAt).toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
                 </span>
               </ItemActions>
             </Item>

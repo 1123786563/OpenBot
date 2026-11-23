@@ -26,20 +26,20 @@ Bots are coworkers, and you own them. Each Bot has a computer of its own (a real
 - The web app in `app/` is the main surface. A Tauri desktop app and a mobile client use the same frame.
 - Main areas: chat with a chosen Bot, the Bot's own computer and browser, Bots, skills, routines, connections, memory, approvals, audit, admin and settings.
 - OpenBot is a template. Companies clone the repository and rename it through `brand.yaml`.
-- A person can pick a skin per account: the default `openbot` skin, OpenDuet, OpenDots or OpenMuse.
+- Astryx provides the unified Web appearance in light and dark. Bookmarked links from earlier appearances still lead to their corresponding workflows.
 
 ## Capabilities and Constraints
 
 - Light and dark mode must both ship finished.
-- The Web UI is moving to Astryx Neutral with OpenBot branding. The four existing skins remain available during the migration. Visual approval of the Bots pilot gates the remaining batches. Retire the skins after their navigation and workflows have a place in the unified UI. See [the migration decision](../docs/adr/0003-pilot-astryx-for-web.md).
+- Astryx Neutral is the shared Web design system. Roll out the Bots list and Create Bot pilot, then migrate the remaining workflows in batches.
 - Desktop and mobile must both work at native quality.
 - Dense admin screens (audit log, approvals, tables, settings) must stay easy to scan.
-- Stack: React 19, Vite, Tailwind 4, shadcn and Base UI components, Tabler icons, Motion.
+- Stack: React 19, Vite, Astryx, Tabler icons and Motion. Existing surfaces also use Tailwind, shadcn and Base UI during migration.
 
 ## Brand Commitments
 
 - The new look is opinionated. When a company renames OpenBot, it swaps the name and logo. The visual world stays.
-- The design must move away from the generic shadcn look (gray neutrals, Inter, default components).
+- Apply the hierarchy and interaction patterns in [DESIGN.md](DESIGN.md).
 - The user named Grok and Muse as references for simplicity, polish and elegance. The result must be unique, not a copy of either.
 - Binding brand input (pinned 2026-10-28): take the pixelation and color schemes of copilotkit.ai. Pixelation means square-pixel dither fields. The colors are periwinkle `#7480F1` to mint `#23D5A2`, sky `#8DC1F1` to violet `#686FDF`, lilac `#BEC2FF`, pale lavender `#EDEDF5` and deep plum `#35295F`. The rest of that website is not a reference.
 - Direction rounds 1 and 2 were rejected as generic. The user likes bold directions, except extreme ones such as a hand-drawn newsprint catalog.

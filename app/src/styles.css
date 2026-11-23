@@ -15,6 +15,41 @@
 /* Its code plugin, which Streamdown's docs say to scan the same way. */
 @source "../node_modules/@streamdown/code/dist/*.js";
 
+textarea.quick-chat-message::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+.quick-chat-actions button,
+button.quick-chat-touch-target {
+  min-block-size: var(--spacing-11, 2.75rem);
+  min-inline-size: var(--spacing-11, 2.75rem);
+}
+
+.sign-in-screen .sign-in-email {
+  border: var(--spacing-px, 0.0625rem) solid var(--muted-foreground);
+  border-radius: var(--radius-md);
+  min-block-size: var(--spacing-11, 2.75rem);
+}
+
+.sign-in-screen input::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+.recovery-link {
+  display: inline-flex;
+  align-items: center;
+  inline-size: fit-content;
+  min-block-size: var(--spacing-11, 2.75rem);
+  text-decoration: underline;
+}
+
+.sign-in-admin-summary {
+  min-block-size: var(--spacing-11, 2.75rem);
+  align-content: center;
+}
+
 /*
  * OpenBot Desktop on macOS has no separate title bar over this page: the window's buttons sit over
  * the top-left corner and the sidebar runs to the top edge, as in Mac apps with a sidebar. The
@@ -424,6 +459,89 @@
     radial-gradient(90% 90% at 100% 100%, #c7d2fe 0%, transparent 60%),
     linear-gradient(135deg, #fde2e4, #ede9fe);
 }
+[data-credential-form] .astryx-text-input input,
+[data-credential-form] button,
+[data-credential-form] a[data-slot="button"],
+.confirmation-action.confirmation-action,
+.local-service-action.local-service-action {
+  min-block-size: var(--spacing-11, 2.75rem);
+  min-inline-size: var(--spacing-11, 2.75rem);
+}
+
+/* Tailwind's preflight (`a { color: inherit }`, in @layer base) outranks Astryx's
+   own text colour (in @layer reset), so a primary button rendered as a link
+   paints page-coloured text on its accent fill. Unlayered beats every layer. */
+.astryx-button:is(a)[data-variant="primary"] {
+  color: var(--color-on-accent);
+}
+
+.conversation-recovery-action.conversation-recovery-action {
+  min-block-size: var(--spacing-11, 2.75rem);
+  padding-inline: var(--spacing-3);
+}
+
+.routine-enable input[role="switch"] {
+  opacity: 0;
+}
+
+.routine-enable .astryx-switch:not([data-checked]) {
+  background-color: var(--muted-foreground);
+}
+
+.routine-enable:has(input[role="switch"]:focus-visible) .astryx-switch {
+  outline: calc(var(--spacing) / 2) solid var(--ring);
+  outline-offset: calc(var(--spacing) / 2);
+}
+
+.bot-primary-action.bot-primary-action {
+  min-block-size: var(--spacing-11, 2.75rem);
+  padding-inline: var(--spacing-4);
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.bot-primary-action.bot-primary-action:hover:not([aria-disabled="true"]) {
+  background-color: color-mix(in oklab, var(--primary) 90%, var(--background));
+}
+
+.bot-primary-action.bot-primary-action:is(:disabled, [aria-disabled="true"]) {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.astryx-banner-content:has(> .conversation-recovery-action) {
+  padding: var(--spacing-2) var(--spacing-4);
+}
+
+.group-participants-button.group-participants-button {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+  min-block-size: var(--spacing-11, 2.75rem);
+  padding-inline: var(--spacing-3);
+}
+
+.group-participants-dialog .astryx-text-input {
+  border: var(--spacing-px, 0.0625rem) solid var(--muted-foreground);
+  border-radius: var(--radius-md);
+}
+
+.group-participants-dialog button {
+  min-block-size: var(--spacing-11, 2.75rem);
+  min-inline-size: var(--spacing-11, 2.75rem);
+}
+
+.group-participants-dialog button[data-variant="primary"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  padding-inline: var(--spacing-3);
+}
+
+.group-participants-dialog
+  button[data-variant="primary"][aria-disabled="true"] {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
 .dark .teach-stage {
   background:
     radial-gradient(120% 90% at 0% 0%, #5b2147 0%, transparent 55%),

@@ -58,9 +58,20 @@ export function AccessRequestsSection({ app }: { app?: string }) {
   if (inbox.error)
     return (
       <PageSection title="Requests">
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load access requests. Reload the page.
-        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load access requests.
+          </p>
+          <Button
+            disabled={inbox.isFetching}
+            onClick={() => void inbox.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {inbox.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       </PageSection>
     );
   const requests = inbox.data?.requests ?? [];

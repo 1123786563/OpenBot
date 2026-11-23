@@ -25,6 +25,7 @@ import {
   sharedSectionSentence,
 } from "@/components/plugins/shared-approval-fields";
 import { SkippedToolsNotice } from "@/components/plugins/skipped-tools-notice";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import {
   Dialog,
   DialogBody,
@@ -121,6 +122,12 @@ export function PluginBotPage({
    */
   const hiddenAgents = useQuery(agentListQueryOptions(true));
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Granting an action the vendor marks destructive lets a Bot do things that do not come back,
+   * so that one direction of the switch asks first. Everything else stays immediate.
+   */
+  const { requestConfirmation, confirmation: grantConfirmation } =
+    useActionConfirmation();
   /** What the list is narrowed to, over action names. Never over what is switched on. */
   const [search, setSearch] = useState("");
   /**
@@ -438,6 +445,25 @@ export function PluginBotPage({
                      * stale "no approval yet" must not be trusted as the final answer — stops here and
                      * asks first.
                      */
+                    if (next && tool.destructive) {
+                      requestConfirmation({
+                        title: `Let ${botName} call ${tool.name}?`,
+                        description: `The vendor warns this action destroys things: what it changes does not come back. ${botName} could call it without asking each time.`,
+                        confirmLabel: "Allow",
+                        pendingLabel: "Allowing…",
+                        failureMessage: `Couldn't let ${botName} call ${tool.name}. Try again.`,
+                        variant: "destructive",
+                        run: async () => {
+                          await setGrant.mutateAsync({
+                            agentId,
+                            granted: true,
+                            kind: "mcp",
+                            ref: tool.ref,
+                          });
+                        },
+                      });
+                      return;
+                    }
                     if (next && shared && !sharedApp?.approval) {
                       setPendingGrant({ ref: tool.ref });
                       setApproval(
@@ -638,6 +664,7 @@ export function PluginBotPage({
           </Dialog>
         </>
       )}
+      {grantConfirmation}
     </ConnectionPage>
   );
 }

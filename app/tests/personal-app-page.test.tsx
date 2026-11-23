@@ -304,7 +304,7 @@ describe("Gmail's page in the personal edition", () => {
     expect(row.textContent).toContain(
       "Adds and/or removes specified Gmail labels for a message.",
     );
-    expect(row.textContent).toContain("changes things");
+    expect(row.textContent).toContain("Changes things");
     expect(view.getByText("Send email")).toBeTruthy();
     expect(view.getByText("Get draft")).toBeTruthy();
     expect(view.getByText("Retrieves a single Gmail draft.")).toBeTruthy();
@@ -312,9 +312,9 @@ describe("Gmail's page in the personal edition", () => {
     const profile = view
       .getByText("Get profile")
       .closest("[data-slot=item]") as HTMLElement;
-    expect(profile.textContent).toBe("Get profilereads");
-    expect(view.getAllByText("changes things")).toHaveLength(2);
-    expect(view.getAllByText("reads")).toHaveLength(3);
+    expect(profile.textContent).toBe("Get profileReads");
+    expect(view.getAllByText("Changes things")).toHaveLength(2);
+    expect(view.getAllByText("Reads")).toHaveLength(3);
 
     const text = view.container.textContent ?? "";
     expect(text).not.toContain("GMAIL_");
@@ -413,7 +413,7 @@ test("Gmail's page says what each tool does as a person would, not as its descri
   );
   const text = view.container.textContent ?? "";
   expect(text).not.toMatch(/Tool to|DELETES|by (its )?ID/);
-  expect(view.getAllByText("changes things")).toHaveLength(6);
+  expect(view.getAllByText("Changes things")).toHaveLength(6);
 });
 
 test("team Admin keeps the descriptions as the app wrote them", async () => {
@@ -478,10 +478,10 @@ describe("turning an app off from its own page", () => {
   test("an app added from the directory goes back to Connections", async () => {
     const { view, router } = drawAtConnections([exaServer], "composio-exa");
     const user = userEvent.setup({ document });
+    // Turning off asks first: the switch deletes the app and every Bot's access.
     await user.click(
       await view.findByRole("switch", { name: "Turn Exa on or off" }),
     );
-    // Turning an app off asks first; the switch never moves on its own.
     await user.click(await view.findByRole("button", { name: "Turn off" }));
     expect(await view.findByText("The Connections list")).toBeTruthy();
     expect(router.state.location.pathname).toBe("/connections");

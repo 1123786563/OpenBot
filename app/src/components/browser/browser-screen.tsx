@@ -297,7 +297,7 @@ export function BrowserDesk({
  * it is opening, so the page never sits blank or half drawn. A deliberate exception to the data-access rule (no loading
  * placeholder): what arrives here is a whole browser, slow to start, and the empty pane read as broken. Nothing in the
  * frame can be pressed, so it is never mistaken for the browser itself. `problem` says why it has not opened instead,
- * with Try again where asking again can help (`onRetry`).
+ * with Retry where asking again can help (`onRetry`).
  */
 export function OpeningBrowser({
   heading,
@@ -342,7 +342,7 @@ export function OpeningBrowser({
                 </p>
                 {onRetry ? (
                   <DeviceAction onClick={onRetry} size="sm" variant="outline">
-                    Try again
+                    Retry
                   </DeviceAction>
                 ) : null}
               </div>
@@ -438,7 +438,7 @@ function Screen({
             size="sm"
             variant="outline"
           >
-            Try again
+            Retry
           </DeviceAction>
         </div>
       ) : blank ? (

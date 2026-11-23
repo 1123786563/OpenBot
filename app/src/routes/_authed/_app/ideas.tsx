@@ -2,7 +2,9 @@ import { IconBulb } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, linkOptions } from "@tanstack/react-router";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
+import { BotScopeSelect } from "@/components/bots/bot-scope-select";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
+import { ReadStatus } from "@/components/layout/read-status";
 import {
   ProactiveResearchSettings,
   SuggestionsInbox,
@@ -14,10 +16,11 @@ import {
 } from "@/lib/agents/chosen-bot";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { searchTextEntry } from "@/lib/search-text";
 
 export const Route = createFileRoute("/_authed/_app/ideas")({
   validateSearch: (search: Record<string, unknown>): { agent?: string } =>
-    typeof search.agent === "string" ? { agent: search.agent } : {},
+    searchTextEntry("agent", search.agent),
   component: IdeasPage,
 });
 
@@ -26,7 +29,9 @@ function IdeasPage() {
   const roster = useQuery(agentListQueryOptions());
   const { data: user } = useQuery(currentUserQueryOptions());
   const chosen = useChosenBotId(user?.id);
-  const bot = resolveChosenBot(roster.data, chosen, agent);
+  const bot = agent
+    ? roster.data?.find(({ id, hidden }) => id === agent && !hidden)
+    : resolveChosenBot(roster.data, chosen);
   const navigate = Route.useNavigate();
 
   return (
@@ -36,30 +41,37 @@ function IdeasPage() {
         description="Review what your Bot found and manage its check-ins."
         title="Ideas"
       >
-        {roster.isPending ? null : roster.error ? (
-          <p className="mt-6 text-destructive text-sm" role="alert">
-            {roster.error.message}
-          </p>
+        {roster.isPending ? (
+          <ReadStatus kind="loading" message="Loading Bots…" />
+        ) : roster.error ? (
+          <ReadStatus
+            kind="error"
+            message="Couldn’t load your Bots"
+            retry={roster.refetch}
+          />
+        ) : agent && !bot ? (
+          <PageEmpty icon={IconBulb} title="This Bot is unavailable">
+            It may have been hidden or your access may have changed.{" "}
+            <Link
+              className="underline underline-offset-4"
+              replace
+              search={{}}
+              to="/ideas"
+            >
+              Browse Ideas for available Bots
+            </Link>
+            .
+          </PageEmpty>
         ) : bot ? (
           <>
-            <label className="mt-6 grid max-w-xs gap-2 text-sm">
-              Bot
-              <select
-                className="w-full rounded-md border border-border bg-background p-2 focus-visible:outline-2 focus-visible:outline-ring"
-                onChange={(event) => {
-                  const id = event.target.value;
-                  if (user) chooseBot(user.id, id);
-                  void navigate({ search: { agent: id }, replace: true });
-                }}
-                value={bot.id}
-              >
-                {roster.data.map(({ id, name }) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <BotScopeSelect
+              bots={roster.data}
+              onChange={(id) => {
+                if (user) chooseBot(user.id, id);
+                void navigate({ search: { agent: id }, replace: true });
+              }}
+              value={bot.id}
+            />
             <SuggestionsInbox agentId={bot.id} key={bot.id} showEmpty />
             <ProactiveResearchSettings
               agentId={bot.id}

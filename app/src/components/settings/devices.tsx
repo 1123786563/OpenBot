@@ -8,6 +8,8 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -17,12 +19,16 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   deliveryQueryOptions,
   type Reachability,
   removePushDeviceMutationOptions,
 } from "@/lib/delivery";
 import { queryClient } from "@/query-client";
+
+/** Placeholder rows while a list loads: enough to hold its shape, claiming nothing. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
 
 const PLATFORM: Record<"ios" | "android", string> = {
   ios: "iOS",
@@ -70,6 +76,11 @@ const STATE: Record<Delivery["state"], string> = {
 export function NativeDevices() {
   const reach = useQuery(deliveryQueryOptions());
   const remove = useMutation(removePushDeviceMutationOptions(queryClient));
+  /*
+   * Removal asks first: it takes push notifications off a phone the person may not be holding,
+   * and the row that named what would be lost disappears the moment it happens.
+   */
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const error = reach.error ?? remove.error;
   return (
     <AstryxSurface className="min-w-0">
@@ -77,13 +88,53 @@ export function NativeDevices() {
         description="Sign in to the OpenBot app on your phone and turn on notifications to add it here."
         title="Your devices"
       >
-        {error ? (
+        {confirmation}
+        {reach.error ? (
+          /*
+           * A failed read is the section's whole answer: the empty state below must not claim
+           * "No devices yet" about a list that could not be read, and the failure gets its own
+           * Retry instead of a reload.
+           */
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load your devices.
+            </p>
+            <Button
+              disabled={reach.isFetching}
+              onClick={() => void reach.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {reach.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
+        ) : error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            {error.message}
+            Couldn't remove this device. Try again.
           </p>
         ) : null}
-        {reach.isPending || !reach.data ? null : reach.data.devices.length ===
-          0 ? (
+        {reach.isPending ? (
+          <div aria-busy="true" aria-label="Loading your devices" role="status">
+            <PageRows>
+              {LOADING_ROWS.map((key, index) => (
+                <Fragment key={key}>
+                  {index > 0 ? <Separator /> : null}
+                  <Item size="sm">
+                    <ItemMedia variant="icon">
+                      <Skeleton className="size-full" />
+                    </ItemMedia>
+                    <ItemContent className="gap-1.5">
+                      <Skeleton className="h-3.5 w-28" />
+                    </ItemContent>
+                  </Item>
+                </Fragment>
+              ))}
+            </PageRows>
+          </div>
+        ) : /* Under a failed read the empty state must not render at all: it would say
+               "No devices yet" about a list nobody could read. */
+        reach.error ? null : !reach.data || reach.data.devices.length === 0 ? (
           <PageEmpty icon={IconDevices} title="No devices yet">
             Phones and computers you sign in on show up here.
           </PageEmpty>
@@ -101,8 +152,21 @@ export function NativeDevices() {
                   </ItemContent>
                   <ItemActions>
                     <DeviceAction
-                      disabled={remove.isPending}
-                      onClick={() => remove.mutate(device.id)}
+                      onClick={() =>
+                        requestConfirmation({
+                          title: `Remove this ${PLATFORM[device.platform]} device?`,
+                          description:
+                            "It stops receiving push notifications for your Bots. Signing in on it again adds it back.",
+                          confirmLabel: "Remove device",
+                          pendingLabel: "Removing…",
+                          failureMessage:
+                            "Couldn't remove that device. Try again.",
+                          variant: "destructive",
+                          run: async () => {
+                            await remove.mutateAsync(device.id);
+                          },
+                        })
+                      }
                       size="sm"
                       variant="outline"
                     >
@@ -125,12 +189,46 @@ export function RecentDeliveries() {
   return (
     <PageSection title="Recent deliveries">
       {reach.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {reach.error.message}
-        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load your recent deliveries.
+          </p>
+          <Button
+            disabled={reach.isFetching}
+            onClick={() => void reach.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {reach.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : null}
-      {reach.isPending || !reach.data ? null : reach.data.deliveries.length ===
-        0 ? (
+      {reach.isPending ? (
+        <div
+          aria-busy="true"
+          aria-label="Loading recent deliveries"
+          role="status"
+        >
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <Skeleton className="size-full" />
+                  </ItemMedia>
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-64" />
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </div>
+      ) : /* Same rule as the devices above: no empty state over an unreadable list. */
+      reach.error ? null : !reach.data || reach.data.deliveries.length === 0 ? (
         <PageEmpty icon={IconSend} title="No deliveries yet">
           Notifications sent to your devices show up here.
         </PageEmpty>

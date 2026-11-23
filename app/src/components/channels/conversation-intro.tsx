@@ -1,3 +1,4 @@
+import { Heading } from "@astryxdesign/core/Heading";
 import { useQuery } from "@tanstack/react-query";
 import { BotOrb } from "@/components/agents/bot-orb";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,11 +37,9 @@ export function ConversationIntro({
 }) {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
-  const about = [
-    agent.title && shownSubtitle(agent.title),
-    agent.roleDescription,
-  ]
-    .filter((part): part is string => Boolean(part?.trim()))
+  const subtitle = agent.title ? shownSubtitle(agent.title).trim() : "";
+  const about = [subtitle, agent.roleDescription?.trim()]
+    .filter((part, index, parts) => part && parts.indexOf(part) === index)
     .join(" · ");
   return (
     <div className={`flex items-center gap-5 pt-4 pb-2 ${HALO_ROOM}`}>
@@ -53,7 +52,9 @@ export function ConversationIntro({
         />
       </div>
       <div className="min-w-0">
-        <h1 className="font-bold text-3xl tracking-tight">{agent.name}</h1>
+        <Heading level={2} weight="bold">
+          {agent.name}
+        </Heading>
         {/* Two lines at most: a role can run to a paragraph, and the intro introduces, it doesn't brief.
             The whole role is on the Bot's page and in the detail pane. */}
         {about ? (

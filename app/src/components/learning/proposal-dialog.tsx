@@ -120,9 +120,24 @@ export function ProposalDialog<TKey extends QueryKey>({
         </DialogHeader>
         <DialogBody className="mt-4 gap-5 overflow-y-auto">
           {detail.isPending ? null : detail.error ? (
-            <p role="alert" className="text-destructive text-sm">
-              {detail.error.message}
-            </p>
+            /*
+             * The failure keeps its way back inside the dialog: this read is the page's core
+             * approve-to-publish flow, and a dead end here closed the whole workflow.
+             */
+            <div className="flex flex-wrap items-center gap-3">
+              <p role="alert" className="text-destructive text-sm">
+                {detail.error.message}
+              </p>
+              <Button
+                disabled={detail.isFetching}
+                onClick={() => void detail.refetch()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {detail.isFetching ? "Retrying…" : "Retry"}
+              </Button>
+            </div>
           ) : (
             <>
               <section className="grid gap-1.5">

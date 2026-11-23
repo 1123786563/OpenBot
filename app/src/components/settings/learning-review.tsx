@@ -166,9 +166,20 @@ export function LearningReview() {
   if (review.isPending) return null;
   if (review.error) {
     return (
-      <p className="mt-6 text-destructive text-sm" role="alert">
-        {review.error.message}
-      </p>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <p className="text-destructive text-sm" role="alert">
+          Couldn't load what your Bots learned.
+        </p>
+        <Button
+          disabled={review.isFetching}
+          onClick={() => void review.refetch()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {review.isFetching ? "Retrying…" : "Retry"}
+        </Button>
+      </div>
     );
   }
   const { canReview, sources, autoApprove } = review.data;

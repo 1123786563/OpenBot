@@ -23,19 +23,18 @@ import userEvent from "@testing-library/user-event";
 import * as NewBotSheetModule from "@/components/agents/new-bot-sheet";
 import * as SidebarToggleModule from "@/components/layout/sidebar-toggle";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { authKeys } from "@/lib/auth/queries";
+import { readPendingStart } from "@/lib/channels/pending-start";
 import {
   type DeploymentCapabilities,
   deploymentKeys,
 } from "@/lib/deployment/queries";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
-import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
 import {
   NewBotCreationStub,
   SidebarToggleStub,
 } from "./channel-new-error-state.fixture";
 import { settleReactWork } from "./settle-react-work";
-
-const NativeResponse = globalThis.Response;
 
 beforeAll(() => GlobalRegistrator.register());
 
@@ -191,16 +190,13 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
-const startRouteOptions = {
-  id: "/start/$startId",
-  path: "/start/$startId",
+const handoffRoute = createRoute({
   getParentRoute: () => appRoute,
-  component: StartRoute.options.component,
-};
-const testStartRoute = StartRoute.update(startRouteOptions);
+  path: "/start/$startId",
+});
 const routeTree = rootRoute.addChildren([
   authedRoute.addChildren([
-    appRoute.addChildren([testStartRoute, testChannelNewRoute]),
+    appRoute.addChildren([testChannelNewRoute, handoffRoute]),
   ]),
 ]);
 
@@ -222,26 +218,11 @@ function renderChannelNew(
   );
 }
 
-/**
- * `hidden: true` BECAUSE THE OPEN PICKER MAKES THE PAGE INERT, not because the composer is missing.
- *
- * `/channel/new` opens the recipient combobox by default whenever no recipient is settled, and Base
- * UI marks everything outside its popup `data-base-ui-inert` while it is open — so the composer is
- * removed from the accessibility tree and the default role query cannot see it at all. That is the
- * real browser behaviour, and it only shows up in a test once `app/tests/preload.ts` has evaluated
- * Base UI against a DOM: without it the isomorphic layout effect is a no-op, the popup never mounts,
- * nothing is inert, and this query found the composer by accident.
- *
- * The assertion itself is unchanged and is still the property under test: `aria-disabled` says
- * whether the composer would take a message. Being behind an open picker is a second reason it
- * cannot be typed into, not a substitute for the first.
- */
 async function expectMessageComposerDisabled(
   view: ReturnType<typeof render>,
   disabled: boolean,
 ) {
   const editor = await view.findByRole("textbox", {
-    hidden: true,
     name: "Message",
   });
   await waitFor(() =>
@@ -266,9 +247,10 @@ const SEVERAL_BOTS = [
 test("/channel/new reports a failed initial roster load", async () => {
   const view = renderChannelNew(queryClientWithFailingAgents());
 
-  expect((await view.findByRole("alert")).textContent).toBe(
-    "Couldn't load your Bots. Reload the page.",
-  );
+  // The first test also waits for the router to mount the conversation page.
+  expect(
+    (await view.findByRole("alert", {}, { timeout: 5_000 })).textContent,
+  ).toContain("Couldn’t load your Bots.");
   expect(view.queryByText("No agents found.")).toBeNull();
   await expectMessageComposerDisabled(view, true);
 });
@@ -281,18 +263,30 @@ test("/channel/new reports a failed URL-selected hidden detail load", async () =
     "/channel/new?agent=hidden-bot",
   );
 
-  expect((await view.findByRole("alert")).textContent).toBe(
-    "Couldn't load that Bot. Reload the page.",
+  expect((await view.findByRole("alert")).textContent).toContain(
+    "Couldn’t load that Bot.",
   );
   expect(view.queryByText("No agents found.")).toBeNull();
   await expectMessageComposerDisabled(view, true);
 });
 
-test("/channel/new keeps a successful empty roster as an empty picker", async () => {
+test("/channel/new directs a person with an empty roster to create a Bot", async () => {
   const view = renderChannelNew(queryClientWithAgents([]));
 
   expect(view.queryByRole("alert")).toBeNull();
-  await expectSendHeldForABot(view);
+  expect(view.queryByRole("listbox")).toBeNull();
+  await view.findByText(
+    "No Bots are available. Create a Bot to send your message.",
+  );
+  const user = userEvent.setup({ document });
+  await user.click(await view.findByRole("textbox", { name: "Message" }));
+  await user.keyboard("for whoever{Enter}");
+  expect(document.activeElement).toBe(
+    view.getByRole("button", { name: "New Bot" }),
+  );
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "for whoever",
+  );
 });
 
 test("/channel/new in the team edition with several Bots leaves the To: field empty", async () => {
@@ -379,16 +373,14 @@ test("/channel/new keeps a usable hidden detail when a background refetch fails"
 test("New Bot is a fixed action outside the auto-highlighted recipient options", async () => {
   const view = renderChannelNew(queryClientWithAgents(SEVERAL_BOTS));
   const create = await view.findByRole("button", {
-    name: "New Bot Create a new Bot",
+    name: "New Bot",
   });
   expect(view.queryByRole("option", { name: /New Bot/ })).toBeNull();
   expect(create.hasAttribute("data-highlighted")).toBe(false);
   const input = view.getByRole("combobox");
   await userEvent.setup({ document }).type(input, "no matching recipient");
-  await view.findByText("No Bots found.");
-  expect(
-    view.getByRole("button", { name: "New Bot Create a new Bot" }),
-  ).toBeTruthy();
+  await view.findByText("No Bots match your search.");
+  expect(view.getByRole("button", { name: "New Bot" })).toBeTruthy();
   fireEvent.click(create);
   expect(await view.findByRole("dialog", { name: "New Bot" })).toBeTruthy();
 });
@@ -402,9 +394,7 @@ test("creating a Bot preserves existing recipients and selects the created Bot",
   const view = renderChannelNew(query, "/channel/new?agent=general-assistant");
   const input = await view.findByRole("combobox");
   fireEvent.keyDown(input, { key: "ArrowDown" });
-  fireEvent.click(
-    await view.findByRole("button", { name: "New Bot Create a new Bot" }),
-  );
+  fireEvent.click(await view.findByRole("button", { name: "New Bot" }));
   fireEvent.click(await view.findByRole("button", { name: "Finish creation" }));
   await waitFor(() => {
     expect(
@@ -607,41 +597,49 @@ test("+ while writing to nobody yet starts a fresh conversation", async () => {
   ).toBe("");
 });
 
-test("Enter with no Bot chosen keeps the message, says so, and opens the To: picker", async () => {
-  const view = renderChannelNew(queryClientWithAgents(SEVERAL_BOTS));
-  await typeDraftToNobody("hello there", view);
+test.each(["Enter", "Send"])(
+  "%s with no Bot chosen keeps the draft and explains how to send",
+  async (action) => {
+    const view = renderChannelNew(queryClientWithAgents(SEVERAL_BOTS));
+    if (action === "Enter") {
+      await typeDraftToNobody("hello there", view);
+      await userEvent.setup({ document }).keyboard("{Enter}");
+    } else {
+      await expectPickerOpenAndFocused(view);
+      await typeDraft("hello there", view);
+      await userEvent
+        .setup({ document })
+        .click(view.getByRole("button", { name: "Choose a Bot to send" }));
+    }
 
-  await userEvent.setup({ document }).keyboard("{Enter}");
-
-  const hint = await view.findByText("Choose a Bot first.");
-  expect(hint.getAttribute("role")).toBe("status");
-  // Inset to the composer's text, not flush with the column's edge.
-  expect(hint.className).toContain("px-3.5");
-  await expectPickerOpenAndFocused(view);
-  const editor = await view.findByRole("textbox", {
-    hidden: true,
-    name: "Message",
-  });
-  expect(editor.textContent).toBe("hello there");
-
-  // Answering the question clears it, and the message is still there to send.
-  fireEvent.click(
-    await view.findByRole("option", {
+    const hint = await view.findByText("Choose a Bot first.");
+    expect(hint.getAttribute("role")).toBe("status");
+    await expectPickerOpenAndFocused(view);
+    const editor = await view.findByRole("textbox", {
       hidden: true,
-      name: /General Assistant/,
-    }),
-  );
-  await view.findByRole("button", {
-    hidden: true,
-    name: "Remove General Assistant",
-  });
-  await waitFor(() =>
-    expect(view.queryByText("Choose a Bot first.")).toBeNull(),
-  );
-  expect(editor.textContent).toBe("hello there");
-  await waitFor(() => expect(document.activeElement).toBe(editor));
-  await expectMessageComposerDisabled(view, false);
-});
+      name: "Message",
+    });
+    expect(editor.textContent).toBe("hello there");
+
+    // Answering the question clears it, and the message is still there to send.
+    fireEvent.click(
+      await view.findByRole("option", {
+        hidden: true,
+        name: /General Assistant/,
+      }),
+    );
+    await view.findByRole("button", {
+      hidden: true,
+      name: "Remove General Assistant",
+    });
+    await waitFor(() =>
+      expect(view.queryByText("Choose a Bot first.")).toBeNull(),
+    );
+    expect(editor.textContent).toBe("hello there");
+    await waitFor(() => expect(document.activeElement).toBe(editor));
+    await expectMessageComposerDisabled(view, false);
+  },
+);
 
 /*
  * + asks who the message is for: To: starts empty with the Bot menu open, in either edition and
@@ -665,77 +663,39 @@ test("+ in the personal edition opens To: empty with the Bot menu open, and pick
   expect(view.router.state.location.href).toBe("/channel/new");
 });
 
-test("+ with only one Bot still opens the menu with it, and the Bot picked there is the one Enter sends to", async () => {
-  const created: unknown[] = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (
-    input: Parameters<typeof fetch>[0],
-    init?: RequestInit,
-  ) => {
-    const url = new URL(
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url,
-      "http://localhost",
-    );
-    if (url.pathname === "/api/me")
-      return NativeResponse.json({
-        user: {
-          id: "person",
-          name: "Sam",
-          email: "sam@example.com",
-          role: "user",
-        },
-      });
-    if (url.pathname === "/api/channels" && init?.method === "POST") {
-      created.push(JSON.parse(String(init.body)));
-      return NativeResponse.json(
-        {
-          channel: {
-            id: "assistant-channel",
-            name: "General Assistant",
-            agentIds: [GENERAL_ASSISTANT.id],
-            threadId: "assistant-thread",
-            active: true,
-            lastMessageAt: null,
-          },
-        },
-        { status: 201 },
-      );
-    }
-    return NativeResponse.json({ error: "Not here." }, { status: 404 });
-  }) as typeof fetch;
-  try {
-    const view = renderChannelNew(
-      queryClientWithEdition([GENERAL_ASSISTANT], "team"),
-    );
-    await expectPickerOpenAndFocused(view);
-    expect(
-      view.queryByRole("button", { hidden: true, name: /^Remove / }),
-    ).toBeNull();
+test("+ with only one Bot still opens the menu and Enter hands off to the chosen Bot", async () => {
+  const owner = "recipient-test";
+  const queryClient = queryClientWithEdition([GENERAL_ASSISTANT], "team");
+  queryClient.setQueryData(authKeys.currentUser(), { id: owner });
+  const view = renderChannelNew(queryClient);
+  await expectPickerOpenAndFocused(view);
+  expect(
+    view.queryByRole("button", { hidden: true, name: /^Remove / }),
+  ).toBeNull();
 
-    fireEvent.click(
-      await view.findByRole("option", {
-        hidden: true,
-        name: /General Assistant/,
-      }),
-    );
-    await view.findByRole("button", {
+  fireEvent.click(
+    await view.findByRole("option", {
       hidden: true,
-      name: "Remove General Assistant",
-    });
-    await typeDraft("what changed in the latest release?", view);
-    await userEvent.setup({ document }).keyboard("{Enter}");
+      name: /General Assistant/,
+    }),
+  );
+  await view.findByRole("button", {
+    hidden: true,
+    name: "Remove General Assistant",
+  });
+  await typeDraft("what changed in the latest release?", view);
+  await userEvent.setup({ document }).keyboard("{Enter}");
 
-    await waitFor(() =>
-      expect(created).toEqual([
-        { agentIds: [GENERAL_ASSISTANT.id], requestId: expect.any(String) },
-      ]),
-    );
-    expect(view.queryByText("Choose a Bot first.")).toBeNull();
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  await waitFor(() =>
+    expect(view.router.state.location.pathname).toMatch(/^\/start\/[^/]+$/),
+  );
+  const startId = view.router.state.location.pathname.split("/").at(-1);
+  expect(readPendingStart(owner, startId ?? "")).toMatchObject({
+    state: "pending",
+    draft: {
+      text: "what changed in the latest release?",
+      recipient: { kind: "direct", agentId: GENERAL_ASSISTANT.id },
+    },
+  });
+  expect(view.queryByText("Choose a Bot first.")).toBeNull();
 });

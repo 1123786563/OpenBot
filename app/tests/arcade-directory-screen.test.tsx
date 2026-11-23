@@ -165,7 +165,7 @@ test("the Arcade directory renders the coverage warning and the breadth line on 
     );
   });
   expect(row.textContent).toContain(
-    "This app uses 1 separate permission across 2 actions. A further 1 requests no permission of its own and becomes callable with any approval here.",
+    "Approving this app grants 1 permission that covers 2 actions. One more action needs no permission of its own: approving any action here also lets a Bot call it.",
   );
   // Arcade signs a person in to its apps and never asks them for a key, so no row says one.
   expect(row.textContent).not.toContain("Needs a key");

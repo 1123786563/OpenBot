@@ -88,6 +88,8 @@ const NO_COMPUTER = {
 const originalFetch = globalThis.fetch;
 let saved: number;
 let saves: number[];
+let saveStep: (step: number) => Promise<boolean>;
+let profileSaves: number;
 let completed: boolean;
 let completeFail: boolean;
 let named: string | null;
@@ -112,6 +114,8 @@ beforeEach(() => {
   });
   saved = 0;
   saves = [];
+  saveStep = async () => true;
+  profileSaves = 0;
   completed = false;
   completeFail = false;
   named = null;
@@ -143,6 +147,7 @@ beforeEach(() => {
           },
         });
       if (path === "/api/me/profile" && method === "PATCH") {
+        profileSaves += 1;
         named = (JSON.parse(String(init?.body)) as { name: string }).name;
         return Response.json({ profile: { name: named, needsName: false } });
       }
@@ -161,6 +166,9 @@ beforeEach(() => {
         }
         if (body.step === undefined) throw new Error("Missing onboarding step");
         saves.push(body.step);
+        if (!(await saveStep(body.step))) {
+          return Response.json({ error: "down" }, { status: 503 });
+        }
         saved = body.step;
         return Response.json({
           onboarding: { step: saved, completedAt: null },
@@ -320,16 +328,14 @@ test("arriving without a step writes the first one into the address, in place", 
   expect(view.history.length).toBe(1);
 });
 
-// "Hand work to Bots" was read with "Hand" as a noun. "Give" can only be the verb.
-test("Welcome says to give work to Bots in plain words", async () => {
+test("Welcome tells the person what they can do when setup is done", async () => {
   const view = open("/onboarding?step=welcome");
   await heading(view, "Welcome to OpenBot");
   expect(
     view.getByText(
-      "Give work to Bots in plain words. They tell you when it's done.",
+      "Finish setup to give a Bot your first task in plain words.",
     ),
   ).toBeTruthy();
-  expect(view.queryByText(/Hand work to Bots/)).toBeNull();
 });
 
 test("Continue adds a step to the address and to history, and saves it", async () => {
@@ -403,7 +409,7 @@ test("on every step, its name in the list of steps is its heading", async () => 
     const step = searchOf(view).step;
     fireEvent.click(
       step === "selfhost"
-        ? view.getByRole("button", { name: "Not now" })
+        ? view.getByRole("button", { name: "Continue setup" })
         : await continueButton(view),
     );
     await waitFor(() => expect(searchOf(view).step).not.toBe(step));
@@ -420,7 +426,7 @@ test("Welcome asks when Bots should ask, with Extra vigilant beside the words, n
   await heading(view, "Welcome to OpenBot");
 
   const permissions = view.getByRole("heading", {
-    name: "Choose when Bots ask",
+    name: "Approval preferences",
   });
   expect(permissions.tagName).toBe("H2");
   const ask = await view.findByRole("switch", {
@@ -463,7 +469,7 @@ test("Welcome says what always asks before the switch, and the switch says what 
     "Require your approval for every change to your apps, websites, and files, including routine edits and updates.",
   );
 
-  const later = view.getByText("You can change this anytime in Settings.");
+  const later = view.getByText("Change this anytime in Settings → Approvals.");
   expect(
     ask.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
@@ -681,20 +687,14 @@ test("somebody trying OpenBot alone gets Book a demo before the name, with the b
       view.container.querySelector('[data-demo="self-host"]'),
     ).toBeTruthy();
     expect(view.container.querySelector("iframe")).toBeNull();
-    expect(footerButtons(view)).toEqual(["Back", "Book a demo", "Not now"]);
+    expect(footerButtons(view)).toEqual(["Back", "Continue setup"]);
 
     await bookDemo(view);
     expect(calendar(view).getAttribute("src")).toBe(BOOKING_CALENDAR);
     expect(view.container.querySelector('[data-demo="self-host"]')).toBeNull();
 
-    // Before a booking there is one way on, and it says it skips: no Continue that reads as booking.
-    expect(footerButtons(view)).toEqual(["Back", "Not now"]);
-    expect(
-      view.container.querySelector("[data-onboarding-primary]"),
-    ).toBeNull();
-    expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
-
-    fireEvent.click(view.getByRole("button", { name: "Not now" }));
+    expect(footerButtons(view)).toEqual(["Back", "Continue setup"]);
+    fireEvent.click(view.getByRole("button", { name: "Continue setup" }));
     expect(await heading(view, "What should we call you?")).toBeTruthy();
     expect(opened).toEqual([]);
     expect(completed).toBe(false);
@@ -712,19 +712,21 @@ test("when the calendar can't load, Book a demo shows its picture and Book a cal
 
     expect(
       await view.findByText(
-        "Couldn't load the calendar. Book a call opens it in your browser.",
+        "The calendar couldn’t load. Book a call opens it in a new tab.",
       ),
     ).toBeTruthy();
     expect(view.container.querySelector("iframe")).toBeNull();
     expect(
       view.container.querySelector('[data-demo="self-host"]'),
     ).toBeTruthy();
-    expect(footerButtons(view)).toEqual(["Back", "Book a call", "Not now"]);
+    expect(footerButtons(view)).toEqual(["Back", "Continue setup"]);
 
     fireEvent.click(view.getByRole("button", { name: "Book a call" }));
     expect(opened).toEqual([
       [OPENBOT_FOR_BUSINESS, "_blank", "noopener,noreferrer"],
     ]);
+    expect(searchOf(view).step).toBe("selfhost");
+    fireEvent.click(view.getByRole("button", { name: "Continue setup" }));
     expect(await heading(view, "What should we call you?")).toBeTruthy();
   });
 });
@@ -748,7 +750,7 @@ test("offline, Book a demo goes straight to Book a call", async () => {
   }
 });
 
-test("a booking made in the calendar turns Not now into Continue; a message from anywhere else does not", async () => {
+test("the calendar confirms a real booking and keeps setup available", async () => {
   localEvaluation = true;
   const view = open("/onboarding?step=selfhost");
   await heading(view, "OpenBot for Business");
@@ -765,7 +767,8 @@ test("a booking made in the calendar turns Not now into Continue; a message from
       }),
     );
   });
-  expect(footerButtons(view)).toEqual(["Back", "Not now"]);
+  expect(view.queryByText(/Your demo is booked/)).toBeNull();
+  expect(footerButtons(view)).toEqual(["Back", "Continue setup"]);
 
   act(() => {
     window.dispatchEvent(
@@ -776,25 +779,21 @@ test("a booking made in the calendar turns Not now into Continue; a message from
       }),
     );
   });
-  await waitFor(() =>
-    expect(footerButtons(view)).toEqual(["Back", "Continue"]),
-  );
-  // Continue takes Not now's place: no empty place kept under it that would lift it up.
   expect(
-    view.container.querySelector("[data-onboarding-secondary-slot]"),
-  ).toBeNull();
-
-  fireEvent.click(view.getByRole("button", { name: "Continue" }));
+    await view.findByText("Your demo is booked. You can continue setup."),
+  ).toBeTruthy();
+  expect(footerButtons(view)).toEqual(["Back", "Continue setup"]);
+  fireEvent.click(view.getByRole("button", { name: "Continue setup" }));
   expect(await heading(view, "What should we call you?")).toBeTruthy();
 });
 
-test("Not now on Book a demo moves on without opening anything", async () => {
+test("Continue setup on the booking step moves on without opening anything", async () => {
   localEvaluation = true;
   await withOpen(async (opened) => {
     const view = open("/onboarding?step=selfhost");
     await heading(view, "OpenBot for Business");
 
-    fireEvent.click(view.getByRole("button", { name: "Not now" }));
+    fireEvent.click(view.getByRole("button", { name: "Continue setup" }));
 
     expect(await heading(view, "What should we call you?")).toBeTruthy();
     expect(opened).toEqual([]);
@@ -829,10 +828,8 @@ test("until the deployment answers, Welcome's Continue waits; a failure says so 
   await heading(view, "Welcome to OpenBot");
 
   expect(
-    (
-      await view.findByText("Couldn't load your setup. Try again to continue.")
-    ).getAttribute("role"),
-  ).toBe("alert");
+    (await view.findByText("Couldn’t load your setup")).closest("[role=alert]"),
+  ).toBeTruthy();
   const next = view.getByRole("button", { name: "Continue" });
   expect(
     next.hasAttribute("disabled") ||
@@ -845,9 +842,7 @@ test("until the deployment answers, Welcome's Continue waits; a failure says so 
   await waitFor(() => expect(capabilitiesAsked).toBeGreaterThan(asked));
   fireEvent.click(await continueButton(view));
   expect(await heading(view, "What should we call you?")).toBeTruthy();
-  expect(
-    view.queryByText("Couldn't load your setup. Try again to continue."),
-  ).toBeNull();
+  expect(view.queryByText("Couldn’t load your setup")).toBeNull();
 });
 
 test.each([
@@ -903,7 +898,7 @@ test("a name step in the address, once the name is known, opens the last step th
   ).toBe(null);
 });
 
-test("somebody trying OpenBot alone whose name is known ends on Book a demo, where Not now opens the app", async () => {
+test("somebody trying OpenBot alone whose name is known can finish from the optional booking step", async () => {
   named = "Maya";
   localEvaluation = true;
   await withOpen(async (opened) => {
@@ -916,9 +911,9 @@ test("somebody trying OpenBot alone whose name is known ends on Book a demo, whe
     );
     fireEvent.click(await continueButton(view));
     await heading(view, "OpenBot for Business");
-    expect(footerButtons(view)).toEqual(["Back", "Book a demo", "Not now"]);
+    expect(footerButtons(view)).toEqual(["Back", "Get started"]);
 
-    fireEvent.click(view.getByRole("button", { name: "Not now" }));
+    fireEvent.click(view.getByRole("button", { name: "Get started" }));
 
     await waitFor(() => expect(completed).toBe(true));
     await waitFor(() => expect(view.getByText("Home")).toBeTruthy(), {
@@ -938,10 +933,10 @@ test("on the last step, Book a demo opens the calendar and stays, rather than op
 
   expect(calendar(view).getAttribute("src")).toBe(BOOKING_CALENDAR);
   expect(completed).toBe(false);
-  expect(footerButtons(view)).toEqual(["Back", "Not now"]);
+  expect(footerButtons(view)).toEqual(["Back", "Get started"]);
 });
 
-test("somebody trying OpenBot alone whose name is known, without the calendar, books a call in a new tab, and that opens the app", async () => {
+test("booking fallback opens a tab and keeps the final setup action available", async () => {
   named = "Maya";
   localEvaluation = true;
   await withOpen(async (opened) => {
@@ -955,6 +950,8 @@ test("somebody trying OpenBot alone whose name is known, without the calendar, b
     expect(opened).toEqual([
       [OPENBOT_FOR_BUSINESS, "_blank", "noopener,noreferrer"],
     ]);
+    expect(completed).toBe(false);
+    fireEvent.click(await ready(view, "Get started"));
     await waitFor(() => expect(completed).toBe(true));
     await waitFor(() => expect(view.getByText("Home")).toBeTruthy(), {
       timeout: 3000,
@@ -971,16 +968,97 @@ test("a completion that fails on the last step says so, stays, and can be presse
   fireEvent.click(await ready(view, "Get started"));
 
   expect(
-    (
-      await view.findByText("Couldn't finish setting up. Try again.")
-    ).getAttribute("role"),
-  ).toBe("alert");
+    (await view.findByText("Couldn’t finish setup")).closest("[role=alert]"),
+  ).toBeTruthy();
   expect(completed).toBe(false);
   expect(view.queryByText("Home")).toBeNull();
 
   completeFail = false;
-  fireEvent.click(await ready(view, "Get started"));
+  fireEvent.click(await ready(view, "Retry setup"));
   await waitFor(() => expect(view.getByText("Home")).toBeTruthy(), {
     timeout: 3000,
   });
 });
+
+test("a failed progress save can be retried, and reload and Back preserve the step history", async () => {
+  localEvaluation = true;
+  saved = 1;
+  saveStep = async (step) => step !== 2;
+  const view = open("/onboarding?step=welcome");
+  await heading(view, "Welcome to OpenBot");
+  fireEvent.click(await continueButton(view));
+  await heading(view, "OpenBot for Business");
+  const warning = await view.findByText("Couldn’t save your place");
+  expect(warning.closest("[role=alert]")).toBeTruthy();
+  expect(saved).toBe(1);
+  expect(searchOf(view).step).toBe("selfhost");
+
+  saveStep = async () => true;
+  fireEvent.click(view.getByRole("button", { name: "Retry save" }));
+  await waitFor(() => expect(saved).toBe(2));
+  await waitFor(() =>
+    expect(view.queryByText("Couldn’t save your place")).toBeNull(),
+  );
+  const history = view.history;
+  view.unmount();
+  queryClient.clear();
+
+  const reload = open("/onboarding?step=selfhost", history);
+  await heading(reload, "OpenBot for Business");
+  fireEvent.click(back(reload));
+  await heading(reload, "Welcome to OpenBot");
+  await waitFor(() => expect(saved).toBe(1));
+});
+
+test("Back while a step save is in flight leaves the earlier step saved", async () => {
+  saved = 1;
+  const pending = Promise.withResolvers<boolean>();
+  saveStep = (step) => (step === 3 ? pending.promise : Promise.resolve(true));
+  const view = open("/onboarding?step=welcome");
+  await heading(view, "Welcome to OpenBot");
+  fireEvent.click(await continueButton(view));
+  await heading(view, "What should we call you?");
+  await waitFor(() => expect(saves).toEqual([3]));
+  await act(async () => view.history.back());
+  await heading(view, "Welcome to OpenBot");
+  await act(async () => pending.resolve(true));
+  await waitFor(() => expect(saves).toEqual([3, 1]));
+  await waitFor(() => expect(saved).toBe(1));
+});
+
+test.each([
+  { reload: false, progressSaved: true },
+  { reload: true, progressSaved: true },
+  { reload: true, progressSaved: false },
+])(
+  "a completion retry reuses the saved name with reload=$reload and progressSaved=$progressSaved",
+  async ({ reload, progressSaved }) => {
+    completeFail = true;
+    saved = progressSaved ? 3 : 1;
+    saveStep = async () => progressSaved;
+    let view = open("/onboarding?step=name");
+    await heading(view, "What should we call you?");
+    await userEvent
+      .setup({ document })
+      .type(view.getByLabelText("Name"), "Maya");
+    fireEvent.click(await ready(view, "Get started"));
+
+    await view.findByText("Couldn’t finish setup");
+    expect(named).toBe("Maya");
+    expect(profileSaves).toBe(1);
+    if (reload) {
+      const history = view.history;
+      view.unmount();
+      queryClient.clear();
+      view = open("/onboarding?step=name", history);
+      await heading(view, "What should we call you?");
+    }
+    expect(view.getByLabelText("Name")).toHaveProperty("value", "Maya");
+    completeFail = false;
+    fireEvent.click(await ready(view, reload ? "Get started" : "Retry setup"));
+    await waitFor(() => expect(view.getByText("Home")).toBeTruthy(), {
+      timeout: 3000,
+    });
+    expect(profileSaves).toBe(1);
+  },
+);
