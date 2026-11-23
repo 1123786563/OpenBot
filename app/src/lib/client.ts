@@ -123,7 +123,9 @@ export async function client<T>(
       })
       .catch(() => undefined);
     throw new ClientError(
-      message ?? options.fallback ?? t("frame.requestFailed", "That request failed."),
+      message ??
+        options.fallback ??
+        t("frame.requestFailed", "That request failed."),
       response.status,
     );
   }
@@ -134,7 +136,9 @@ export async function client<T>(
   // a TypeError on property access. Malformed success is a failed request with the fallback.
   const body = (await response.json().catch(() => null)) as unknown;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error(options.fallback ?? t("frame.requestFailed", "That request failed."));
+    throw new Error(
+      options.fallback ?? t("frame.requestFailed", "That request failed."),
+    );
   }
   return (body as Record<string, T>)[key];
 }
