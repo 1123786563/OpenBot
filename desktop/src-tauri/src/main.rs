@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod cloud_connection;
 mod desktop_connection;
 mod desktop_host_access;
 mod desktop_page;
@@ -6861,6 +6862,10 @@ mod app_page_tests {
                 })
                 .build();
         let app = tauri::test::mock_builder()
+            .invoke_handler(cloud_connection::protect_ipc(|invoke| {
+                invoke.resolver.resolve(());
+                true
+            }))
             .plugin(stand_in)
             .plugin(tauri_plugin_notification::init())
             .plugin(intelligence_bridge::plugin())
@@ -6898,6 +6903,24 @@ mod app_page_tests {
     }
 
     const STOP: &str = "plugin:openbot-desktop|stop";
+
+    #[test]
+    fn cloud_window_has_no_desktop_ipc_even_at_an_owned_origin() {
+        let (app, main) = app();
+        let owned = "http://127.0.0.1:3010/";
+        trust_owned_app(app.handle(), owned);
+        let cloud =
+            tauri::WebviewWindowBuilder::new(&app, "cloud-connection-0", Default::default())
+                .build()
+                .unwrap();
+
+        assert!(ask(&main, owned, STOP).is_ok());
+        assert!(ask(&cloud, owned, STOP).is_err());
+        assert!(ask(&cloud, owned, "plugin:openbot-intelligence|watch").is_err());
+        let setup = setup_destination(app.handle()).unwrap();
+        assert!(ask(&main, setup.as_str(), "start_stack").is_ok());
+        assert!(ask(&cloud, setup.as_str(), "start_stack").is_err());
+    }
 
     /// Settings → This computer can stop OpenBot and the local Intelligence. A page on another
     /// loopback port that this window loads, from a link in a reply for instance, used to get the
@@ -9677,6 +9700,17 @@ fn watch_connections<R: tauri::Runtime>(
 /// Used by the tray and by a second launch, both of which happen at moments when the caller has no
 /// idea which of the two the person should be looking at.
 fn show_whichever_applies(app: &tauri::AppHandle) {
+    if cloud_connection::has_saved_connection(app) {
+        if let Some(window) = app.get_webview_window("main") {
+            if !window.url().is_ok_and(|url| on_setup_page(app, &url)) {
+                let _ = show_setup(app.clone());
+            }
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        return;
+    }
     match ports_for_shell(app) {
         Ok(ports) => restore_window_on(app, &ports),
         Err(problem) => {
@@ -10923,7 +10957,11 @@ fn main() {
         .plugin(desktop_page::plugin())
         .plugin(outside_links_guard())
         .manage(Shell::default())
-        .invoke_handler(tauri::generate_handler![
+        .manage(cloud_connection::CloudConnection::default())
+        .invoke_handler(cloud_connection::protect_ipc(tauri::generate_handler![
+            cloud_connection::saved_cloud_origin,
+            cloud_connection::open_cloud,
+            cloud_connection::disconnect_cloud,
             back_end_wait_ended,
             start_early_downloads,
             early_downloads_now,
@@ -10989,7 +11027,7 @@ fn main() {
             open_log_folder,
             troubleshooting_logs,
             save_troubleshooting_logs,
-        ])
+        ]))
         // A packaged application is not a browser tab. Left alone, WebView2 answers a right-click
         // with Back, Refresh, Save as and Print: Back walks the window out of OpenBot with nothing
         // to walk it home, and Save as offers to write the page to disk as `Webpage, complete`.
@@ -10997,6 +11035,9 @@ fn main() {
         // no such setting, and Tauri has no configuration option for it either, so the page is
         // asked to refuse. Every navigation, because the window navigates to OpenBot and back.
         .on_page_load(|window, payload| {
+            if cloud_connection::is_cloud_window(window.label()) {
+                return;
+            }
             // A new page in the main window is not the setup page until it sends a heartbeat.
             if window.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started
             {
@@ -11038,26 +11079,31 @@ fn main() {
         // menu item that points at nothing: `get_webview_window` returns None from then on, and the
         // only way back is to quit and start again, with a stack still running that nothing on
         // screen can reach.
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                let _ = window.hide();
+        .on_window_event(|window, event| {
+            if cloud_connection::is_cloud_window(window.label()) {
+                return;
             }
-            // The setup screens follow the system's light and dark, and so does their title bar.
-            tauri::WindowEvent::ThemeChanged(_) => {
-                let app = window.app_handle();
-                // The menu bar's icons are drawn for each appearance.
-                if window.label() == "main" {
-                    refresh_menus(app);
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
-                if let Some(url) = app
-                    .get_webview_window(window.label())
-                    .and_then(|own| own.url().ok())
-                {
-                    match_title_bar(window, window_page(app, &url));
+                // The setup screens follow the system's light and dark, and so does their title bar.
+                tauri::WindowEvent::ThemeChanged(_) => {
+                    let app = window.app_handle();
+                    // The menu bar's icons are drawn for each appearance.
+                    if window.label() == "main" {
+                        refresh_menus(app);
+                    }
+                    if let Some(url) = app
+                        .get_webview_window(window.label())
+                        .and_then(|own| own.url().ok())
+                    {
+                        match_title_bar(window, window_page(app, &url));
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         })
         .setup(move |app| {
             build_main_window(app.handle())?;
