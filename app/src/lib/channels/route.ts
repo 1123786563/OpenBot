@@ -51,6 +51,7 @@ export async function routeMessage(
   text: string,
   agentId?: string,
   skillSlugs: readonly string[] = [],
+  requestId?: string,
 ): Promise<RoutingDecision> {
   const asked = routingText(text);
   const response = await tryClient("/api/route", {
@@ -59,6 +60,7 @@ export async function routeMessage(
       text: asked,
       ...(agentId ? { agentId } : {}),
       ...(skillSlugs.length ? { skillSlugs } : {}),
+      ...(requestId ? { requestId } : {}),
     },
   });
   if (!response.ok) {

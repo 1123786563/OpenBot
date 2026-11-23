@@ -595,6 +595,7 @@ export function createApp(
      */
     auditQuestions?: {
       complete: ModelCompleter;
+      platformBudgetId?: string;
       vocabulary: () => Promise<AuditVocabulary>;
       /** The clock a question's "yesterday" is read against. A test fixes it; absent is now. */
       now?: () => Date;
@@ -1255,6 +1256,7 @@ export function createApp(
       createAuditAskRoutes({
         requireUser,
         complete: coworker.auditQuestions.complete,
+        platformBudgetId: coworker.auditQuestions.platformBudgetId,
         vocabulary: coworker.auditQuestions.vocabulary,
         ...(coworker.auditQuestions.now
           ? { now: coworker.auditQuestions.now }

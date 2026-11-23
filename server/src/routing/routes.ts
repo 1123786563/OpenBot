@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { z } from "zod";
 import type { AppVariables } from "../auth/guards";
 import {
   type HttpCoworkerRoutingService,
@@ -26,6 +27,7 @@ export function createRoutingRoutes(
       text?: unknown;
       agentId?: unknown;
       skillSlugs?: unknown;
+      requestId?: unknown;
     } | null;
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text) return context.json({ error: "A message is required." }, 400);
@@ -56,11 +58,16 @@ export function createRoutingRoutes(
       );
     const skillSlugs = body?.skillSlugs as string[] | undefined;
 
+    const requestId = z.uuid().optional().safeParse(body?.requestId);
+    if (!requestId.success)
+      return context.json({ error: "Invalid routing request ID." }, 400);
+
     const detail = await routing.routeDetailed({
       actor: context.var.actor,
       text,
       agentId,
       skillSlugs,
+      ...(requestId.data ? { requestId: requestId.data } : {}),
     });
     const { result } = detail;
     if (result.kind === "none") {

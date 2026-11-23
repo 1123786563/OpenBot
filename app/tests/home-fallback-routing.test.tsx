@@ -255,7 +255,13 @@ for (const status of [409, 500]) {
     await user.click(await view.findByRole("option", { name: /First skill/ }));
     await user.click(await view.findByRole("button", { name: "Send message" }));
     await view.findByText("Cannot route these skills");
-    expect(requests).toEqual([{ text: "/first", skillSlugs: ["first"] }]);
+    expect(requests).toEqual([
+      {
+        text: "/first",
+        skillSlugs: ["first"],
+        requestId: expect.stringMatching(/^[a-f0-9-]{36}$/),
+      },
+    ]);
     expect(starts).toEqual([]);
     expect(view.getByText("/first")).toBeTruthy();
   });

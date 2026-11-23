@@ -188,8 +188,9 @@ export function resumeConversationStart(
     if (draft.recipient.kind === "route") {
       let agentId: string | undefined;
       try {
-        agentId = (await routeMessage(draft.text, undefined, draft.commandIds))
-          .agentId;
+        agentId = (
+          await routeMessage(draft.text, undefined, draft.commandIds, id)
+        ).agentId;
       } catch (error) {
         if (
           draft.commandIds.length ||

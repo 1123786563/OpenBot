@@ -43,7 +43,7 @@ type ModelScope = {
   conversationId: string;
   botId: string;
 };
-type ModelOperation = {
+export type ModelOperation = {
   scope: ModelScope;
   step: string;
   budget?: { id: string; stepId?: string };
@@ -53,7 +53,11 @@ type ModelMessage = {
   content: string;
 };
 
-function operationId({ scope, step, budget }: ModelOperation) {
+export function managedModelOperationId({
+  scope,
+  step,
+  budget,
+}: ModelOperation) {
   return createHash("sha256")
     .update(
       JSON.stringify([
@@ -123,7 +127,11 @@ export function createManagedModel({
 
   async function reconcile(operation: ModelOperation) {
     return reconciliation.parse(
-      await post("reconcile", { operationId: operationId(operation) }, 5_000),
+      await post(
+        "reconcile",
+        { operationId: managedModelOperationId(operation) },
+        5_000,
+      ),
     ).state;
   }
 
@@ -135,7 +143,7 @@ export function createManagedModel({
         messages: readonly ModelMessage[];
       },
     ): Promise<ManagedModelResult> {
-      const id = operationId(input);
+      const id = managedModelOperationId(input);
       // Nothing has been asked of the ledger until the publication is read,
       // so a control plane that cannot serve it leaves nothing to reconcile.
       let price: string;

@@ -1,5 +1,4 @@
 import { PlanModel, type PlanModelConfig } from "../agents/plan-model";
-import { createAuxiliaryModelCompleter } from "../billing/auxiliary-model";
 import type { RuntimeModel } from "../copilot";
 import { startMarketRequest } from "../skill-market/disablements";
 
@@ -216,7 +215,6 @@ export function createModelCompleter(deps: {
 export function createSkillChooser(
   model: RuntimeModel,
   resolveApiKey: () => Promise<string | null>,
-  metered?: ModelCompleter,
 ): ModelCompleter {
   const complete = createModelCompleter({ model, resolveApiKey });
   /*
@@ -227,11 +225,7 @@ export function createSkillChooser(
   const said = new Set<string>();
   return async (prompt, signal, options) => {
     try {
-      return await (options?.billing && metered ? metered : complete)(
-        prompt,
-        signal,
-        options,
-      );
+      return await complete(prompt, signal, options);
     } catch (error) {
       if (!signal?.aborted) {
         const reason = (error instanceof Error ? error.message : String(error))
@@ -251,17 +245,6 @@ export function createSkillChooser(
       throw error;
     }
   };
-}
-
-export function createMeteredAuxiliaryModelCompleter(config: {
-  url: URL;
-  token: string;
-  route: string;
-}): ModelCompleter {
-  return createAuxiliaryModelCompleter({
-    model: { url: config.url, token: config.token },
-    route: config.route,
-  });
 }
 
 /**

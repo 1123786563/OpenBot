@@ -16,6 +16,25 @@ Register Casdoor as an OIDC provider in the OpenBot deployment and provision the
 
 The API also needs `TEST_CREDIT_BIFROST_URL` for Chat Completions and `TEST_CREDIT_INPUT_METER_URL` for the request meter. Configure their scoped credentials in `TEST_CREDIT_BIFROST_TOKEN` and `TEST_CREDIT_INPUT_METER_TOKEN`. Use the publication's `TEST_CREDIT_GATEWAY_REVISION`, `TEST_CREDIT_GATEWAY_IMAGE_DIGEST`, and `TEST_CREDIT_METERING_REVISION`. Match these to the route verification report before enabling the pilot. The executor checks the meter's proof against the exact request bytes and sends `max_completion_tokens` with the published limit.
 
+## Auxiliary model calls
+
+The Web Conversation pilot uses the published default chat route for the auxiliary calls below. Verify that its input and output caps fit both the prompts and replies before enabling either feature. The eight-token output cap in the first pilot matrix is unsuitable for these structured replies.
+
+| Product action | Pilot behavior |
+| --- | --- |
+| Send a new Conversation without choosing a Bot, `POST /api/route` | Set `TEST_CREDIT_AUXILIARY_ROUTING=enabled` to enable model routing. It spends the signed-in person's Test Credits through their verified Casdoor link. Routing occurs before the separate Conversation quote. Explicit Bot picks, name matches, and single-Bot rosters skip the model. |
+| Ask a question about the audit trail, `POST /api/admin/audit-events/ask` | Set `TEST_CREDIT_AUDIT_BUDGET_ID` to a confirmed Test Credit budget on the platform Billing Account with issuer `openbot:platform` and subject `audit-ask`. Use the trusted ledger provisioning API to enroll and claim Test Credits for that account and call `createBudget` with a positive microcredit limit. The filter writer, its correction if needed, and the filter readback each reserve under that budget. |
+| Tool preselection in a Bot run, automatic approval review | Model calls are off. Tool selection uses its existing fallback, and approval review asks the person. |
+| Draft a computer boundary, network allowlist, approval rule, capability change, or app grant. Ask a What-if question. | Model calls are off. Manual controls and policy evaluation remain available. |
+| Automatic Conversation titles, dictation, realtime voice, and voice summaries | Model calls are off. |
+| OpenBot's Learning model proxy, `/api/learning-model/v1/chat/completions` | The proxy is off. Downstream Learning and Hindsight acceptance is tracked in [#32](https://github.com/1123786563/OpenBot/issues/32). |
+
+The legacy `OPENBOT_MANAGED_MODEL_TRIAL_*` deployment leaves auxiliary model calls off. The first-party Web Conversation pilot resolves each caller's Billing Account and uses the same verified executor as Direct Chat. Deployments outside these pilots continue to use their configured model helpers.
+
+Missing identity, insufficient funds, an unavailable ledger, or a failed input-meter check blocks inference. Platform-funded calls never debit the asking admin's Billing Account. The meter, Bifrost request, usage evidence, and bill share the operation ID. Replaying a saved Conversation start reuses its routing operation. Audit Ask assigns a separate operation to each step of a submission.
+
+The focused fixture test exercises both HTTP product routes with PostgreSQL, a stored OIDC account link, a published route, and loopback Bifrost and meter responses. It checks budget exhaustion, missing budget, ledger write failure, meter failure, and replay. Production acceptance requires the published route and pinned gateway to handle actual routing and Audit Ask prompts within the verified caps.
+
 ## Execution contract
 
 | Endpoint | Request |

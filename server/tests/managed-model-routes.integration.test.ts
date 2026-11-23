@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq, inArray } from "drizzle-orm";
+import { Hono, type MiddlewareHandler } from "hono";
 import {
   configure,
   emptyCatalog,
@@ -7,6 +8,12 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
+import type { AgentProfile } from "../src/agents/profile-types";
+import { type AuditVocabulary, createAuditAskRoutes } from "../src/audit-ask";
+import type { AppVariables } from "../src/auth/guards";
+import { createPilotAuxiliaryModel } from "../src/billing/auxiliary-model";
+import { createCasdoorBillingIdentity } from "../src/billing/direct-chat-test-credit";
+import { loadDirectChatTestCredit } from "../src/billing/direct-chat-test-credit-config";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import {
   createTestCreditLedger,
@@ -15,16 +22,24 @@ import {
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
+  accounts,
   enterpriseSettings,
   lagoUsageEvents,
   testCreditAccounts,
   testCreditBatches,
+  testCreditBudgets,
   testCreditEnrollments,
   testCreditEvidence,
   testCreditOperations,
   testCreditResumePoints,
+  users,
 } from "../src/db/schema";
 import { createManagedModel } from "../src/managed-model-trial";
+import { createIntentRouter } from "../src/routing/classify";
+import { createRoutingRoutes } from "../src/routing/routes";
+import { createCoworkerRoutingService } from "../src/routing/service";
+import auditFixture from "./fixtures/audit-ask-recorded.json";
+import auditDeployment from "./fixtures/audit-ask-vocabulary.json";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -66,6 +81,7 @@ const { catalog } = publish(
 
 const identities: Record<string, VerifiedBillingIdentity> = {};
 const dispatched: string[] = [];
+const fixtureAccountIds: string[] = [];
 const batchIds: string[] = [];
 // The ledger's entry as a deployment mounts it: the service credential names
 // the person, and the controlled executor is behind it.
@@ -93,11 +109,14 @@ const entry = Bun.serve({
 
 let originalCatalog: { value: unknown } | undefined;
 
-async function enrolled(tag: string, testGrant: bigint) {
-  const identity: VerifiedBillingIdentity = {
+async function enrolled(
+  tag: string,
+  testGrant: bigint,
+  identity: VerifiedBillingIdentity = {
     issuer: `managed-model-routes-${tag}`,
     subject: crypto.randomUUID(),
-  };
+  },
+) {
   const batchId = crypto.randomUUID();
   batchIds.push(batchId);
   await ledger.enroll({ identity, batchId, amount: testGrant });
@@ -115,6 +134,7 @@ async function enrolled(tag: string, testGrant: bigint) {
       ),
     );
   if (!row) throw new Error(`no Billing Account for the ${tag} identity`);
+  fixtureAccountIds.push(row.id);
   return { identity, accountId: row.id, credential };
 }
 
@@ -135,17 +155,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await entry.stop(true);
   await database.transaction(async (tx) => {
-    // By issuer prefix, so orphaned rows from a crashed run clean up too.
-    const rows = await tx
-      .select({ id: testCreditAccounts.id })
-      .from(testCreditAccounts)
-      .where(
-        inArray(
-          testCreditAccounts.issuer,
-          ["funded", "empty"].map((tag) => `managed-model-routes-${tag}`),
-        ),
-      );
-    const ids = rows.map(({ id }) => id);
+    const ids = fixtureAccountIds;
     if (ids.length > 0) {
       await tx
         .delete(lagoUsageEvents)
@@ -162,6 +172,9 @@ afterAll(async () => {
       await tx
         .delete(testCreditEnrollments)
         .where(inArray(testCreditEnrollments.accountId, ids));
+      await tx
+        .delete(testCreditBudgets)
+        .where(inArray(testCreditBudgets.accountId, ids));
       await tx
         .delete(testCreditAccounts)
         .where(inArray(testCreditAccounts.id, ids));
@@ -287,4 +300,227 @@ test("a call out of Test credits is refused and, since nothing retries it, waits
   expect(await ledger.resumePoints(identity)).toMatchObject([
     { operationId: "resumable-step", reason: "insufficient_credits" },
   ]);
+});
+
+test("routing and Audit Ask settle against their own accounts and refuse unbillable dispatch", async () => {
+  const casdoor = {
+    issuer: "https://casdoor.example.test",
+    providerId: "fixture",
+  };
+  const personId = crypto.randomUUID();
+  const person = await enrolled("aux-user", 40n, {
+    issuer: casdoor.issuer,
+    subject: crypto.randomUUID(),
+  });
+  await database.insert(users).values({
+    id: personId,
+    email: `${personId}@example.test`,
+    name: "Pilot person",
+  });
+  await database.insert(accounts).values({
+    id: crypto.randomUUID(),
+    userId: personId,
+    providerId: casdoor.providerId,
+    issuer: casdoor.issuer,
+    accountId: person.identity.subject,
+  });
+  const platform = await enrolled("aux-platform", 40n, {
+    issuer: "openbot:platform",
+    subject: "audit-ask",
+  });
+  const budgetId = "issue-96-audit";
+
+  const gatewayIds: string[] = [];
+  const meterIds: string[] = [];
+  let meterAvailable = true;
+  const recording = auditFixture.answered;
+  const gateway = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const operationId = request.headers.get("x-openbot-operation-id") ?? "";
+      if (new URL(request.url).pathname === "/meter") {
+        meterIds.push(operationId);
+        if (!meterAvailable) return new Response(null, { status: 503 });
+        return Response.json({
+          gatewayRevision: routeSpec.gatewayRevision,
+          meteringRevision: routeSpec.meteringRevision,
+          inputTokenUpperBound: 7,
+          requestSha256: Bun.CryptoHasher.hash(
+            "sha256",
+            await request.text(),
+            "hex",
+          ),
+        });
+      }
+      gatewayIds.push(operationId);
+      const { messages } = await request.json();
+      const prompt = messages[0].content;
+      const content = prompt.includes("<question>")
+        ? recording.writer[0]
+        : prompt.includes("You read one set of filters")
+          ? recording.reader
+          : '{"agentId":"specialist","confidence":1}';
+      return Response.json({
+        choices: [{ message: { content }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 7, completion_tokens: 1 },
+      });
+    },
+  });
+  const settings = loadDirectChatTestCredit({
+    OPENBOT_TEST_CREDIT_CONVERSATIONS: "enabled",
+    TEST_CREDIT_CASDOOR_ISSUER: casdoor.issuer,
+    TEST_CREDIT_CASDOOR_PROVIDER_ID: casdoor.providerId,
+    TEST_CREDIT_BIFROST_URL: new URL("/v1/chat/completions", gateway.url).href,
+    TEST_CREDIT_BIFROST_TOKEN: "fixture-gateway",
+    TEST_CREDIT_GATEWAY_REVISION: routeSpec.gatewayRevision,
+    TEST_CREDIT_GATEWAY_IMAGE_DIGEST: fixtureTraceReport(harnessImage, proposed)
+      .gatewayImageDigest,
+    TEST_CREDIT_INPUT_METER_URL: new URL("/meter", gateway.url).href,
+    TEST_CREDIT_INPUT_METER_TOKEN: "fixture-meter",
+    TEST_CREDIT_METERING_REVISION: routeSpec.meteringRevision,
+  });
+  if (!settings) throw new Error("Expected pilot settings");
+  let ledgerAvailable = true;
+  const metered = createPilotAuxiliaryModel({
+    ledger: {
+      ...ledger,
+      async reserve(...args) {
+        if (!ledgerAvailable) throw new Error("ledger offline");
+        return ledger.reserve(...args);
+      },
+    },
+    execute: settings.execute,
+    identityOf: createCasdoorBillingIdentity(database, settings.casdoor),
+    platformBudgetId: budgetId,
+  });
+  const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+    context,
+    next,
+  ) => {
+    context.set("actor", {
+      id: personId,
+      email: "person@openbot.test",
+      role: "admin",
+    });
+    await next();
+  };
+  const roster: AgentProfile[] = ["general", "specialist"].map((id) => ({
+    id,
+    name: id,
+    title: id,
+    roleDescription: id,
+    avatarSeed: id,
+    deletedAt: null,
+    endpoint: null,
+    hasAuth: false,
+    hasCallbackToken: false,
+    hidden: false,
+    pinned: false,
+    isolated: false,
+    ownerUserId: personId,
+    systemOwned: false,
+    visibility: "public",
+  }));
+  const app = new Hono()
+    .route(
+      "/api/route",
+      createRoutingRoutes(
+        createCoworkerRoutingService({
+          store: { list: async () => roster },
+          router: createIntentRouter({
+            complete: (prompt, options) => metered(prompt, undefined, options),
+          }),
+        }),
+        requireUser,
+      ),
+    )
+    .route(
+      "/api/admin/audit-events",
+      createAuditAskRoutes({
+        requireUser,
+        complete: metered,
+        platformBudgetId: budgetId,
+        vocabulary: async () => auditDeployment.vocabulary as AuditVocabulary,
+        now: () => new Date(auditDeployment.asked.now),
+      }),
+    );
+  const post = (path: string, body: object) =>
+    app.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const routingRequestId = crypto.randomUUID();
+  const route = (requestId = crypto.randomUUID()) =>
+    post("/api/route", { text: "Review this policy.", requestId });
+  const ask = () =>
+    post("/api/admin/audit-events/ask", {
+      question: recording.text,
+      timeZone: auditDeployment.asked.timeZone,
+    });
+  try {
+    expect(await (await route(routingRequestId)).json()).toMatchObject({
+      agentId: "specialist",
+      fallback: false,
+    });
+    expect(await (await route(routingRequestId)).json()).toMatchObject({
+      agentId: "specialist",
+      fallback: false,
+    });
+    expect(gatewayIds).toHaveLength(1);
+    const personalAfterRouting = await ledger.balance(person.identity);
+    expect(personalAfterRouting).toMatchObject({ chargedMicrocredits: "7" });
+    expect((await ask()).status).toBe(502);
+    expect(meterIds).toHaveLength(1);
+    await ledger.createBudget(platform.identity, {
+      budgetId,
+      creditType: "test",
+      limitMicrocredits: 17n,
+    });
+    expect((await ask()).status).toBe(200);
+    expect(await ledger.balance(person.identity)).toEqual(personalAfterRouting);
+    expect(await ledger.balance(platform.identity)).toMatchObject({
+      chargedMicrocredits: "14",
+      reservedMicrocredits: "0",
+    });
+    expect(new Set(gatewayIds).size).toBe(3);
+    expect(meterIds).toEqual(gatewayIds);
+    for (const [account, ids] of [
+      [person, gatewayIds.slice(0, 1)],
+      [platform, gatewayIds.slice(1)],
+    ] as const) {
+      const bill = await paid.bill(account.accountId);
+      expect(bill.map((line) => line.operationId).sort()).toEqual(
+        [...ids].sort(),
+      );
+      const evidence = await database
+        .select()
+        .from(testCreditEvidence)
+        .where(eq(testCreditEvidence.accountId, account.accountId));
+      expect(evidence.map((row) => row.operationId).sort()).toEqual(
+        [...ids].sort(),
+      );
+    }
+
+    expect((await ask()).status).toBe(502); // platform budget exhausted
+    expect(meterIds).toHaveLength(3);
+    ledgerAvailable = false;
+    expect(await (await route()).json()).toMatchObject({
+      undecided: "unreachable",
+    });
+    expect(meterIds).toHaveLength(3);
+    ledgerAvailable = true;
+    meterAvailable = false;
+    expect(await (await route()).json()).toMatchObject({
+      undecided: "unreachable",
+    });
+    expect(meterIds).toHaveLength(4);
+    expect(gatewayIds).toHaveLength(3);
+    expect(await ledger.balance(person.identity)).toEqual(personalAfterRouting);
+  } finally {
+    await gateway.stop(true);
+    await database.delete(accounts).where(eq(accounts.userId, personId));
+    await database.delete(users).where(eq(users.id, personId));
+  }
 });

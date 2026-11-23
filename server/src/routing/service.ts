@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { canAccessAgent } from "../agents/profile-policy";
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { AgentActor, AgentProfile } from "../agents/profile-types";
@@ -57,6 +58,7 @@ export type CoworkerRoutingInput = {
   agentId?: string | null;
   /** Every selected skill must be offered by the recipient. */
   skillSlugs?: readonly string[];
+  requestId?: string;
 };
 
 export type CoworkerRouteDetail = {
@@ -74,7 +76,7 @@ export type HttpCoworkerRoutingService = CoworkerRoutingService & {
 };
 
 export type CreateCoworkerRoutingServiceOptions = {
-  store: AgentProfileStore;
+  store: Pick<AgentProfileStore, "list">;
   router: IntentRouter;
   auditStore?: AuditStore;
   reachableSystems?: (agentId: string) => Promise<readonly string[]>;
@@ -479,8 +481,12 @@ export function createCoworkerRoutingService(
           source: "routing",
           personId: input.actor.id,
           conversationId: `routing:${input.actor.id}`,
-          botId: preferred.id,
-          runId: crypto.randomUUID(),
+          botId: "intent-router",
+          runId: input.requestId
+            ? createHash("sha256")
+                .update(JSON.stringify([input.requestId, input.text, required]))
+                .digest("hex")
+            : crypto.randomUUID(),
           step: "route-intent",
           funding: { kind: "user" },
         },

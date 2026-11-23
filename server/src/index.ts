@@ -95,6 +95,10 @@ import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
+import {
+  createPilotAuxiliaryModel,
+  disabledAuxiliaryModel,
+} from "./billing/auxiliary-model";
 import { createBackgroundModel } from "./billing/background-model";
 import { budgetedTurn } from "./billing/background-model-turn";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
@@ -365,7 +369,6 @@ import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
 import {
-  createMeteredAuxiliaryModelCompleter,
   createModelCompleter,
   createSkillChooser,
   routingModelFor,
@@ -403,7 +406,14 @@ import { readAuditEvent, readWhatIfVocabulary } from "./what-if";
 import { repeatAfterEach } from "./work/loop";
 import { createWorkQueue, type WorkOfferedListener } from "./work/queue";
 
-const config = loadConfig();
+const deployment = loadConfig();
+const directChatTestCredit = loadDirectChatTestCredit(process.env);
+const auxiliaryPilot = Boolean(
+  directChatTestCredit || deployment.managedModelTrial,
+);
+const config = auxiliaryPilot
+  ? { ...deployment, transcription: undefined, voice: undefined }
+  : deployment;
 const legacyIntelligence =
   config.runtime.intelligence ?? disabledIntelligenceSettings;
 // Before anything resolves a capability or reads an enterprise setting. See edition.ts.
@@ -673,7 +683,6 @@ const entra: ReturnType<typeof createEntra> | undefined =
 const auth: AuthService | undefined =
   organizationAuth ??
   (betterAuth && entra ? withEntraBearer(betterAuth, entra) : betterAuth);
-const directChatTestCredit = loadDirectChatTestCredit(process.env);
 const weknoraBilling = loadWeKnoraBilling(process.env);
 const billingCasdoor = (directChatTestCredit ?? weknoraBilling)?.casdoor;
 if (
@@ -878,11 +887,13 @@ const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);
  * Where local Intelligence's Learning thinks on the person's plan, with a record of what became of
  * each call so Settings can say why a run failed. Absent off a plan or without Desktop's secret.
  */
-const learningModelEndpoint = learningModelEndpointFor(
-  runtimeModel.plan,
-  process.env.OPENBOT_LEARNING_MODEL_TOKEN,
-  createLearningModelCalls(),
-);
+const learningModelEndpoint = auxiliaryPilot
+  ? undefined
+  : learningModelEndpointFor(
+      runtimeModel.plan,
+      process.env.OPENBOT_LEARNING_MODEL_TOKEN,
+      createLearningModelCalls(),
+    );
 // And before any Bot's model is resolved: behind a gateway, the API that model takes tools on (chooseOpenAIApi).
 if (chooseOpenAIApi(runtimeModel) === "responses")
   console.info(
@@ -904,30 +915,39 @@ const resolveDeploymentModelKey = () =>
     environment: process.env,
   });
 
-const meteredAuxiliaryModel = config.managedModelTrial
-  ? createMeteredAuxiliaryModelCompleter(config.managedModelTrial)
-  : undefined;
+const testCreditLedger = createTestCreditLedger(database);
+const platformAuditBudgetId =
+  process.env.TEST_CREDIT_AUDIT_BUDGET_ID?.trim() || undefined;
+const pilotAuxiliaryModel =
+  directChatTestCredit && casdoorBillingIdentity
+    ? createPilotAuxiliaryModel({
+        ledger: testCreditLedger,
+        execute: directChatTestCredit.execute,
+        identityOf: casdoorBillingIdentity,
+        platformBudgetId: platformAuditBudgetId,
+      })
+    : disabledAuxiliaryModel;
 
 /**
  * Pass one of tool selection, on the model the built-in Bots run on: their key, or their plan's
  * harness. See `createSkillChooser`. Built once rather than per request, because it holds nothing
  * about a person.
  */
-const chooseSkills = createSkillChooser(
-  runtimeModel,
-  resolveDeploymentModelKey,
-  meteredAuxiliaryModel,
-);
+const chooseSkills = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createSkillChooser(runtimeModel, resolveDeploymentModelKey);
 
 /**
  * The approval reviewer's model: the deployment's own, with its key or on its plan's harness (see
  * `createModelCompleter`). On a plan it threw on every call and failed closed, so Auto-review asked
  * the person about everything. It still fails closed on an error or a timeout (`reviewAction`).
  */
-const reviewActions = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-});
+const reviewActions = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+    });
 
 /**
  * Writes a boundary from an admin's description, and reads it back (computer/policy-translate.ts).
@@ -935,33 +955,39 @@ const reviewActions = createModelCompleter({
  * is waiting for a rule, which is a longer answer than a router's one name, and a reasoning model
  * spends seconds before it starts.
  */
-const writeBoundaries = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-  timeoutMs: 45_000,
-  // Room for the thinking a current Claude model does before it answers, which counts against it.
-  maxTokens: 16_000,
-});
+const writeBoundaries = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+      timeoutMs: 45_000,
+      // Room for the thinking a current Claude model does before it answers, which counts against it.
+      maxTokens: 16_000,
+    });
 
 /**
  * Reads an admin's question about the audit trail as filters, and reads the filters back
  * (audit-ask.ts). The deployment's own model, given as long as a boundary's writer for the same
  * reason: an admin pressed Ask and is waiting.
  */
-const askTheAuditTrail = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-  timeoutMs: 45_000,
-  maxTokens: 16_000,
-});
+const askTheAuditTrail = auxiliaryPilot
+  ? pilotAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+      timeoutMs: 45_000,
+      maxTokens: 16_000,
+    });
 
 /** Reads "what would happen if…" as one action (what-if.ts), for an admin who pressed Ask. */
-const readWhatIfQuestions = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-  timeoutMs: 45_000,
-  maxTokens: 16_000,
-});
+const readWhatIfQuestions = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+      timeoutMs: 45_000,
+      maxTokens: 16_000,
+    });
 
 /*
  * The pair a headless turn is driven through, built ONCE.
@@ -1744,11 +1770,17 @@ const intentRouterCompleter = createModelCompleter({
       environment: process.env,
     }),
 });
+const pilotRoutingModel =
+  process.env.TEST_CREDIT_AUXILIARY_ROUTING === "enabled"
+    ? pilotAuxiliaryModel
+    : disabledAuxiliaryModel;
 const intentRouter = createIntentRouter({
   complete: (prompt, options) =>
-    options?.billing && meteredAuxiliaryModel
-      ? meteredAuxiliaryModel(prompt, undefined, options)
-      : intentRouterCompleter(prompt, undefined, options),
+    (auxiliaryPilot ? pilotRoutingModel : intentRouterCompleter)(
+      prompt,
+      undefined,
+      options,
+    ),
 });
 
 // Said once at boot: whether the key can call the model the Bots run on. A key without access to it
@@ -1849,7 +1881,6 @@ const recorderExtension = createRecorderExtension({
   // A connection is made or ended exactly when its row is written: both in one transaction.
   auditFor: createAuditStore,
 });
-const testCreditLedger = createTestCreditLedger(database);
 const backgroundModel =
   directChatTestCredit && casdoorBillingIdentity
     ? createBackgroundModel({
@@ -2246,24 +2277,7 @@ const selectionForActor = (actorId: string): ToolSelection => ({
   // The deployment's own model and key, the same pair the intent router uses, so selection is
   // never a second thing to configure. It throws on a missing key, which reads as "could not
   // choose" and leaves the whole catalogue offered.
-  choose: (prompt, signal, scope) =>
-    chooseSkills(
-      prompt,
-      signal,
-      scope
-        ? {
-            billing: {
-              source: "tool-selection",
-              personId: actorId,
-              conversationId: scope.conversationId,
-              botId: scope.botId,
-              runId: scope.runId,
-              step: "select-tools",
-              funding: { kind: "user" },
-            },
-          }
-        : undefined,
-    ),
+  choose: (prompt, signal) => chooseSkills(prompt, signal),
   record: async (botId, selection) => {
     await recordAuditEvent(bootAuditStore, {
       eventType: "mcp.tools_discovered",
@@ -3412,26 +3426,30 @@ const channelSummaries = {
   }),
   owner: workOwner("summariser"),
 };
-repeatAfterEach(async () => {
-  try {
-    await offerChannelsAwaitingSummary(channelSummaries);
-    const report = await summariseClaimedChannels(channelSummaries);
-    if (report.written.length > 0) {
-      console.info(
-        JSON.stringify({ type: "channel-summaries", written: report.written }),
+if (!auxiliaryPilot)
+  repeatAfterEach(async () => {
+    try {
+      await offerChannelsAwaitingSummary(channelSummaries);
+      const report = await summariseClaimedChannels(channelSummaries);
+      if (report.written.length > 0) {
+        console.info(
+          JSON.stringify({
+            type: "channel-summaries",
+            written: report.written,
+          }),
+        );
+      }
+      // Same pass: one statement, deletes by age, and two replicas running it changes nothing.
+      await forgetSettledSummaries(channelSummaries);
+    } catch (error) {
+      // Never fatal, and never loud enough to drown the log: a deployment with no model configured
+      // reaches this on every pass, and it has not gone wrong, it simply has no titles.
+      console.warn(
+        "[channels] conversations could not be named:",
+        error instanceof Error ? error.message : error,
       );
     }
-    // Same pass: one statement, deletes by age, and two replicas running it changes nothing.
-    await forgetSettledSummaries(channelSummaries);
-  } catch (error) {
-    // Never fatal, and never loud enough to drown the log: a deployment with no model configured
-    // reaches this on every pass, and it has not gone wrong, it simply has no titles.
-    console.warn(
-      "[channels] conversations could not be named:",
-      error instanceof Error ? error.message : error,
-    );
-  }
-}, 10_000);
+  }, 10_000);
 
 /*
  * Enterprise controls (server/src/admin): capability switches, SSO-required, SCIM offboarding,
@@ -3618,14 +3636,16 @@ const app = createApp(
     ? createProviderOAuthProxy(process.env.OPENBOT_MODEL_OAUTH_FILE.trim())
     : undefined,
   createUserPreferencesStore(database),
-  {
-    store: createVoiceSessionStore(database, channelStore),
-    summarize: createVoiceSummarizer({
-      model: runtimeModel,
-      resolveApiKey: resolveRuntimeModelApiKey,
-    }),
-    channels: channelStore,
-  },
+  auxiliaryPilot
+    ? undefined
+    : {
+        store: createVoiceSessionStore(database, channelStore),
+        summarize: createVoiceSummarizer({
+          model: runtimeModel,
+          resolveApiKey: resolveRuntimeModelApiKey,
+        }),
+        channels: channelStore,
+      },
   {
     store: learningSettings,
     autoAssign: learningAutoAssign,
@@ -3789,6 +3809,7 @@ const app = createApp(
     approvalRules: { vocabulary: () => loadRuleVocabulary(database) },
     auditQuestions: {
       complete: askTheAuditTrail,
+      platformBudgetId: auxiliaryPilot ? platformAuditBudgetId : undefined,
       vocabulary: () => readAuditVocabulary(database, () => policyStore.get()),
     },
     // The stores the live path decides from: the same boundary, controls snapshot, grants and gate.
