@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   index,
   integer,
@@ -72,6 +73,24 @@ export const personalWorkspaces = pgTable("personal_workspaces", {
     .unique()
     .references(() => personalSaasAccounts.id),
 });
+
+export const personalWorkspaceAgentSandboxes = pgTable(
+  "personal_workspace_agent_sandboxes",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
+    generation: uuid().notNull(),
+    epoch: integer().notNull(),
+    startedAt: bigint("started_at", { mode: "number" }).notNull(),
+    issuedAt: bigint("issued_at", { mode: "number" }).notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+    phase: text({
+      enum: ["starting", "active", "stopping", "stopped"],
+    }).notNull(),
+    cutoff: text({ enum: ["confirmed", "failed"] }),
+  },
+);
 
 export const personalWorkspaceDefaultBots = pgTable(
   "personal_workspace_default_bots",

@@ -44,6 +44,7 @@ import {
   type AccountDisablement,
   createAccountAccess,
 } from "../src/personal-saas/account-access";
+import type { AgentSandboxObservation } from "../src/personal-saas/agent-sandbox";
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
@@ -5042,6 +5043,311 @@ test("manual and scheduled automation share the trigger limit and retain history
   await worker.sweepAutomationRoutines();
   expect(calls).toEqual([manual.routineId, manual.routineId]);
 });
+
+test("Agent Sandbox reserves one slot across replicas until process exit is proved", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const allocation = Promise.withResolvers<void>();
+  const accepted = Promise.withResolvers<void>();
+  let creates = 0;
+  let destroys = 0;
+  let leaseExpiresAt = 0;
+  let observation: AgentSandboxObservation = { kind: "starting" };
+  const config: WorkspaceComputerConfig = {
+    agentSandbox: {
+      async start(binding, lease) {
+        expect(binding.workspaceId).toBe(owner.workspaceId);
+        expect(lease.expiresAt - lease.issuedAt).toBeLessThanOrEqual(15_000);
+        leaseExpiresAt = lease.expiresAt;
+        creates++;
+        accepted.resolve();
+        await allocation.promise;
+      },
+      async inspect() {
+        return observation;
+      },
+      async destroy() {
+        destroys++;
+      },
+      async renew() {
+        throw new Error("Unexpected renewal");
+      },
+    },
+  };
+  const first = newApp(database, config);
+  const second = newApp(database, config);
+  const request = async (service: typeof app, session: string, action = "") =>
+    service.request(`/api/workspace/computer${action}`, {
+      method: action ? "POST" : "GET",
+      headers: { origin, cookie: session },
+    });
+  clockTime = now();
+  try {
+    const start = request(first, owner.session, "/start");
+    try {
+      await Promise.race([
+        accepted.promise,
+        start.then((response) => {
+          throw new Error(
+            `Expected sandbox allocation, got ${response.status}`,
+          );
+        }),
+      ]);
+      expect(await (await request(second, owner.session)).json()).toEqual({
+        status: "starting",
+      });
+      expect((await request(second, owner.session, "/start")).status).toBe(429);
+      expect(await (await request(second, other.session)).json()).toEqual({
+        status: "not_started",
+      });
+      expect((await request(second, other.session, "/stop")).status).toBe(202);
+      expect(destroys).toBe(0);
+    } finally {
+      allocation.resolve();
+    }
+    expect((await start).status).toBe(202);
+    expect(creates).toBe(1);
+    observation = { kind: "running", leaseExpiresAt };
+    expect(await (await request(first, owner.session)).json()).toEqual({
+      status: "running",
+    });
+    expect((await request(second, owner.session, "/stop")).status).toBe(202);
+    expect(destroys).toBeGreaterThan(0);
+    observation = { kind: "unconfirmed" };
+    expect(await (await request(first, owner.session)).json()).toEqual({
+      status: "stopping",
+    });
+    expect((await request(first, owner.session, "/start")).status).toBe(429);
+    observation = { kind: "exited", exitedAt: now(), leaseExpiresAt };
+    expect(await (await request(first, owner.session)).json()).toEqual({
+      status: "restart_required",
+      cutoff: "confirmed",
+    });
+    observation = { kind: "starting" };
+    clockTime += 1;
+    expect((await request(second, owner.session, "/start")).status).toBe(202);
+    expect(creates).toBe(2);
+    expect((await request(second, owner.session, "/stop")).status).toBe(202);
+    observation = { kind: "never_started" };
+    expect(await (await request(second, owner.session)).json()).toEqual({
+      status: "restart_required",
+      cutoff: "confirmed",
+    });
+  } finally {
+    clockTime = undefined;
+  }
+});
+
+test("Agent Sandbox holds an ambiguous create across restart and records late exit as failed", async () => {
+  const owner = await isolationOwner();
+  let allocation: { generation: string; expiresAt: number } | undefined;
+  let observation: AgentSandboxObservation = { kind: "unconfirmed" };
+  let creates = 0;
+  const config: WorkspaceComputerConfig = {
+    agentSandbox: {
+      async start({ generation }, lease) {
+        allocation = { generation, expiresAt: lease.expiresAt };
+        creates++;
+        throw new Error("Create response lost after allocation");
+      },
+      async inspect({ generation }) {
+        if (!allocation) throw new Error("Expected an allocation");
+        expect(generation).toBe(allocation.generation);
+        return observation;
+      },
+      async destroy() {
+        throw new Error("Destroy response unavailable");
+      },
+      async renew() {
+        throw new Error("Unexpected renewal");
+      },
+    },
+  };
+  function request(service: typeof app, action = "") {
+    return service.request(`/api/workspace/computer${action}`, {
+      method: action ? "POST" : "GET",
+      headers: { origin, cookie: owner.session },
+    });
+  }
+  try {
+    expect((await request(newApp(database, config), "/start")).status).toBe(
+      429,
+    );
+    if (!allocation) throw new Error("Expected an allocation");
+    const replica = newApp(database, config);
+    clockTime = allocation.expiresAt + 10;
+    expect(await (await request(replica)).json()).toEqual({
+      status: "stopping",
+    });
+    expect((await request(replica, "/start")).status).toBe(429);
+    expect(creates).toBe(1);
+    observation = {
+      kind: "exited",
+      exitedAt: allocation.expiresAt + 1,
+      leaseExpiresAt: allocation.expiresAt,
+    };
+    expect(await (await request(replica)).json()).toEqual({
+      status: "restart_required",
+      cutoff: "failed",
+    });
+  } finally {
+    clockTime = undefined;
+  }
+});
+
+for (const cutoff of [
+  "account_disabled",
+  "workspace_paused",
+  "renewal_lost",
+] as const) {
+  test(`Agent Sandbox stops admitting work after ${cutoff} and requires a fresh start and task`, async () => {
+    // Work queue claims use the PostgreSQL clock. Keep the scenario's manual
+    // clock behind it so both the old and fresh runs are due when swept.
+    clockTime = Date.now() - 20_000;
+    try {
+      const owner = await isolationOwner();
+      const dispatched: string[] = [];
+      const instances = new Map<
+        string,
+        { leaseExpiresAt: number; exitedAt?: number }
+      >();
+      const leaseOffers: number[] = [];
+      let delayEvidence = false;
+      let session = owner.session;
+      const dependency: WorkspaceComputerConfig = {
+        agentSandbox: {
+          async start({ generation }, lease) {
+            instances.set(generation, { leaseExpiresAt: lease.expiresAt });
+            expect(lease.expiresAt - lease.issuedAt).toBe(15_000);
+          },
+          async renew({ generation }, lease) {
+            const instance = instances.get(generation);
+            if (!instance) return;
+            leaseOffers.push(lease.expiresAt);
+            expect(lease.expiresAt - lease.issuedAt).toBe(15_000);
+            instance.leaseExpiresAt = lease.expiresAt;
+          },
+          async destroy() {
+            // Cloud accepts the request independently of observing process exit.
+          },
+          async inspect({ generation }) {
+            const instance = instances.get(generation);
+            if (!instance) return { kind: "unconfirmed" };
+            const { leaseExpiresAt } = instance;
+            if (now() >= leaseExpiresAt) instance.exitedAt ??= leaseExpiresAt;
+            if (instance.exitedAt !== undefined) {
+              if (delayEvidence) return { kind: "unconfirmed" };
+              return {
+                kind: "exited",
+                exitedAt: instance.exitedAt,
+                leaseExpiresAt,
+              };
+            }
+            return {
+              kind: "running",
+              leaseExpiresAt,
+              endpoint: {
+                address: "https://sandbox-fixture.example",
+                token: generation,
+              },
+            };
+          },
+        },
+      };
+      const worker = newApp(
+        database,
+        async ({ runId, beforeDispatch }) => {
+          await beforeDispatch?.();
+          if (!runId) throw new Error("Expected a persistent run ID");
+          dispatched.push(runId);
+          return { replyText: "Completed" };
+        },
+        dependency,
+      );
+      function request(path: string, body?: object) {
+        return worker.request(`/api/workspace/${path}`, {
+          method: body ? "POST" : "GET",
+          headers: {
+            origin,
+            cookie: session,
+            "content-type": "application/json",
+          },
+          body: body && JSON.stringify(body),
+        });
+      }
+      const task = {
+        workspaceId: owner.workspaceId,
+        botId: owner.botId,
+        instruction: "Use the Computer",
+        requiresComputer: true,
+      };
+      expect((await request("computer/start", {})).status).toBe(202);
+      clockTime += 1_000;
+      await worker.renewWorkspaceComputers?.();
+      expect(leaseOffers).toEqual([clockTime + 15_000]);
+      const firstDeadline = clockTime + 15_000;
+
+      const queued = await request("bot-runs", task);
+      expect(queued.status).toBe(202);
+      const { runId: oldRunId } = await queued.json();
+
+      clockTime += 1_000;
+      delayEvidence = true;
+      if (cutoff !== "renewal_lost") {
+        await cutOffAutomation(owner, worker, cutoff);
+        await worker.renewWorkspaceComputers?.();
+        expect([401, 403]).toContain(
+          (await request("computer/start", {})).status,
+        );
+        expect([401, 403]).toContain((await request("bot-runs", task)).status);
+      }
+      expect(leaseOffers).toEqual([firstDeadline]);
+
+      if (cutoff !== "renewal_lost")
+        session = await restoreAutomation(owner, cutoff);
+      clockTime = firstDeadline + 1;
+      expect(await (await request("computer")).json()).toEqual({
+        status: "stopping",
+      });
+      expect((await request("computer/start", {})).status).toBe(429);
+      delayEvidence = false;
+      expect(await (await request("computer")).json()).toEqual({
+        status: "restart_required",
+        cutoff: "confirmed",
+      });
+
+      clockTime = undefined;
+      expect((await request("computer/start", {})).status).toBe(202);
+      expect(instances.size).toBe(2);
+      await worker.sweepBotWork();
+      expect(dispatched).toEqual([]);
+      const old = await (await request(`bot-runs/${oldRunId}`)).json();
+      expect(old).toMatchObject({ state: "stopped" });
+      if (cutoff === "renewal_lost")
+        expect(old.interruption).toMatchObject({
+          reason: "computer_unavailable",
+        });
+
+      const fresh = await request("bot-runs", task);
+      expect(fresh.status).toBe(202);
+      const { runId: freshRunId } = await fresh.json();
+      expect(await worker.sweepBotWork()).toBe(true);
+      expect(dispatched).toEqual([freshRunId]);
+      expect(
+        await (await request(`bot-runs/${freshRunId}`)).json(),
+      ).toMatchObject({
+        state: "completed",
+      });
+
+      clockTime = now() + 15_000;
+      expect(await (await request("computer")).json()).toMatchObject({
+        status: "restart_required",
+      });
+    } finally {
+      clockTime = undefined;
+    }
+  });
+}
 
 test("Computer quota rejects concurrent starts and a confirmed stop releases capacity", async () => {
   const computers = new Set<string>();

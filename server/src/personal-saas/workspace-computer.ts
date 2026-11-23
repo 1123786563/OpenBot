@@ -3,6 +3,10 @@ import { z } from "zod";
 import type { Database } from "../db/client";
 import { personalWorkspaces } from "../db/schema/personal-saas";
 import type { AccountGrant, createAccountAccess } from "./account-access";
+import {
+  type AgentSandboxProvider,
+  agentSandboxComputer,
+} from "./agent-sandbox";
 
 const status = z.object({
   status: z.enum([
@@ -14,6 +18,7 @@ const status = z.object({
   ]),
   cutoff: z.enum(["confirmed", "failed"]).optional(),
   stopped: z.boolean().optional(),
+  leaseExpiresAt: z.int().optional(),
   address: z.url({ protocol: /^http$/ }).optional(),
   token: z.string().min(1).optional(),
 });
@@ -29,18 +34,30 @@ export const workspaceComputerRestartMessage =
 export const workspaceComputerLeaseMs = 15_000;
 type Workspace = { id: string; ownerId: string };
 
-export type WorkspaceComputerConfig = {
+type SupervisorConfig = {
   supervisorUrl: string;
   supervisorToken: string;
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
 };
 
-export function workspaceComputer(
-  config: WorkspaceComputerConfig,
-  database: Database,
-  accounts: Pick<ReturnType<typeof createAccountAccess>, "decision" | "verify">,
-  now: () => number,
-) {
+export type WorkspaceComputerConfig =
+  | SupervisorConfig
+  | { agentSandbox: AgentSandboxProvider };
+
+export type ComputerLease = {
+  epoch: number;
+  issuedAt: number;
+  expiresAt: number;
+};
+export type ComputerTask = { epoch: number; authorizedAt: number };
+export type ComputerStatus = z.infer<typeof status>;
+export type ComputerGeneration = {
+  id: string;
+  epoch: number;
+  generation?: string;
+};
+
+function supervisorComputer(config: SupervisorConfig) {
   const base = new URL("/workspace-computers", config.supervisorUrl).href;
   async function call(
     path = "",
@@ -64,15 +81,78 @@ export function workspaceComputer(
     });
   }
 
-  async function read(
-    id: string,
-    task?: { epoch: number; authorizedAt: number },
-  ) {
+  async function read(id: string, task?: ComputerTask) {
     const response = await call(
       `/${id}${task ? `?${new URLSearchParams({ epoch: String(task.epoch), authorizedAt: String(task.authorizedAt) })}` : ""}`,
     );
     if (!response.ok) throw new Error("Managed Computer status unavailable");
     return status.parse(await response.json());
+  }
+
+  async function change(
+    path: string,
+    lease: ComputerLease & { storageBytes?: number },
+  ) {
+    const response = await call(path, lease);
+    if (response.status === 409) return false;
+    if (!response.ok) throw new Error("Managed Computer request unavailable");
+    return true;
+  }
+
+  return {
+    read,
+    async eraseStorage(id: string) {
+      const response = await call(`/${id}/storage`, undefined, "DELETE");
+      if (response.status !== 204)
+        throw new Error("Workspace Computer cleanup unconfirmed");
+    },
+    async storageUsage(id: string, storageBytes: number) {
+      const response = await call(`/${id}/storage`);
+      if (!response.ok) throw new Error("Managed Computer storage unavailable");
+      const { used, capacity } = storage.parse(await response.json());
+      if (used > capacity || capacity > storageBytes)
+        throw new Error("Managed Computer storage exceeds its reservation");
+      return used;
+    },
+    start(id: string, lease: ComputerLease, storageBytes: number) {
+      return change(`/${id}/start-with-storage`, { ...lease, storageBytes });
+    },
+    stop(id: string, lease: ComputerLease) {
+      return change(`/${id}/stop`, lease);
+    },
+    async generations(): Promise<ComputerGeneration[]> {
+      const response = await call();
+      if (!response.ok) throw new Error("Managed Computer leases unavailable");
+      return running.parse(await response.json()).computers;
+    },
+    revoke: undefined,
+    renew({ id }: ComputerGeneration, lease: ComputerLease) {
+      return change(`/${id}/renew`, lease);
+    },
+  };
+}
+
+export function workspaceComputer(
+  config: WorkspaceComputerConfig,
+  database: Database,
+  accounts: Pick<ReturnType<typeof createAccountAccess>, "decision" | "verify">,
+  now: () => number,
+) {
+  const backend =
+    "agentSandbox" in config
+      ? agentSandboxComputer(config.agentSandbox, database, now)
+      : supervisorComputer(config);
+  const { read } = backend;
+
+  function leaseFor(
+    grant: { epoch: number; expiresAt: number },
+    issuedAt: number,
+  ) {
+    return {
+      epoch: grant.epoch,
+      issuedAt,
+      expiresAt: Math.min(grant.expiresAt, issuedAt + workspaceComputerLeaseMs),
+    };
   }
 
   async function ownedWorkspace(id: string, ownerId: string) {
@@ -89,15 +169,8 @@ export function workspaceComputer(
   }
 
   return {
-    async eraseStorage(workspaceId: string) {
-      const response = await call(
-        `/${workspaceId}/storage`,
-        undefined,
-        "DELETE",
-      );
-      if (response.status !== 204)
-        throw new Error("Workspace Computer cleanup unconfirmed");
-    },
+    eraseStorage: backend.eraseStorage,
+    storageUsage: backend.storageUsage,
     async status(workspaceId: string) {
       const current = await read(workspaceId);
       return { status: current.status, cutoff: current.cutoff };
@@ -111,14 +184,6 @@ export function workspaceComputer(
             current.cutoff === "confirmed"))
       );
     },
-    async storageUsage(workspaceId: string, storageBytes: number) {
-      const response = await call(`/${workspaceId}/storage`);
-      if (!response.ok) throw new Error("Managed Computer storage unavailable");
-      const { used, capacity } = storage.parse(await response.json());
-      if (used > capacity || capacity > storageBytes)
-        throw new Error("Managed Computer storage exceeds its reservation");
-      return used;
-    },
     async start(
       workspaceId: string,
       session: AccountGrant,
@@ -128,17 +193,14 @@ export function workspaceComputer(
       if (!(await ownedWorkspace(workspaceId, session.accountId))) return false;
       const grant = await accounts.verify(session);
       if (grant.kind !== "active") return false;
-      const response = await call(`/${workspaceId}/start-with-storage`, {
-        storageBytes,
-        epoch: grant.epoch,
-        issuedAt,
-        expiresAt: Math.min(
-          grant.expiresAt,
-          issuedAt + workspaceComputerLeaseMs,
-        ),
-      });
-      if (response.status === 409) return false;
-      if (!response.ok) throw new Error("Managed Computer start unavailable");
+      if (
+        !(await backend.start(
+          workspaceId,
+          leaseFor(grant, issuedAt),
+          storageBytes,
+        ))
+      )
+        return false;
       return (await accounts.verify(session)).kind === "active";
     },
     async stop(workspaceId: string, session: AccountGrant) {
@@ -146,14 +208,7 @@ export function workspaceComputer(
       const grant = await accounts.verify(session);
       if (grant.kind !== "active") return false;
       const issuedAt = now();
-      const response = await call(`/${workspaceId}/stop`, {
-        epoch: grant.epoch,
-        issuedAt,
-        expiresAt: Math.min(grant.expiresAt, issuedAt + 15_000),
-      });
-      if (response.status === 409) return false;
-      if (!response.ok) throw new Error("Managed Computer stop unavailable");
-      return true;
+      return backend.stop(workspaceId, leaseFor(grant, issuedAt));
     },
     async accessForTask(
       workspaceId: string,
@@ -170,7 +225,13 @@ export function workspaceComputer(
       if ((await accounts.verify(grant)).kind !== "active")
         return { kind: "denied" } as const;
       if (computer.status === "starting") return { kind: "starting" } as const;
-      if (computer.status !== "running" || !computer.address || !computer.token)
+      if (
+        computer.status !== "running" ||
+        !computer.address ||
+        !computer.token ||
+        (computer.leaseExpiresAt !== undefined &&
+          now() >= computer.leaseExpiresAt)
+      )
         return {
           kind: "restart_required",
           message: workspaceComputerRestartMessage,
@@ -182,9 +243,7 @@ export function workspaceComputer(
       } as const;
     },
     async renew() {
-      const response = await call();
-      if (!response.ok) throw new Error("Managed Computer leases unavailable");
-      const { computers } = running.parse(await response.json());
+      const computers: ComputerGeneration[] = await backend.generations();
       if (computers.length === 0) return;
       const workspaces: Workspace[] =
         await database.query.personalWorkspaces.findMany({
@@ -199,22 +258,15 @@ export function workspaceComputer(
         workspaces.map(({ id, ownerId }) => [id, ownerId]),
       );
       const results = await Promise.allSettled(
-        computers.map(async ({ id, epoch }) => {
-          const owner = owners.get(id);
-          if (!owner) return;
+        computers.map(async (computer) => {
+          const owner = owners.get(computer.id);
           const issuedAt = now();
-          const grant = await accounts.decision(owner);
-          if (grant.kind !== "active" || grant.epoch !== epoch) return;
-          const result = await call(`/${id}/renew`, {
-            epoch,
-            issuedAt,
-            expiresAt: Math.min(
-              grant.expiresAt,
-              issuedAt + workspaceComputerLeaseMs,
-            ),
-          });
-          if (!result.ok && result.status !== 409)
-            throw new Error("Lease renewal unavailable");
+          const grant = owner ? await accounts.decision(owner) : null;
+          if (grant?.kind !== "active" || grant.epoch !== computer.epoch) {
+            await backend.revoke?.(computer);
+            return;
+          }
+          await backend.renew(computer, leaseFor(grant, issuedAt));
         }),
       );
       if (results.some(({ status }) => status === "rejected")) {

@@ -6,6 +6,7 @@ import { createBifrostEmbeddingExecutor } from "../billing/test-credit-embedding
 import { createDatabase } from "../db/client";
 import { personalWorkspaceClosures } from "../db/schema";
 import { repeatAfterEach } from "../work/loop";
+import { createAgentSandboxProvider } from "./agent-sandbox-provider";
 import { createPersonalSaasApp } from "./app";
 import {
   cleanupSteps,
@@ -65,6 +66,8 @@ const trial = z.object({
     .trim()
     .min(1)
     .optional(),
+  OPENBOT_AGENT_SANDBOX_AUTHORITY_URL: httpsUrl.optional(),
+  OPENBOT_AGENT_SANDBOX_AUTHORITY_TOKEN: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_CLEANUP_URL: httpsUrl.optional(),
   OPENBOT_CLOSURE_CLEANUP_TOKEN: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_RESTORE_JOURNAL: z.string().trim().min(1).optional(),
@@ -166,6 +169,20 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
     "Configure the workspace Computer supervisor URL and token together",
   );
 
+const sandboxUrl = env.OPENBOT_AGENT_SANDBOX_AUTHORITY_URL;
+const sandboxToken = env.OPENBOT_AGENT_SANDBOX_AUTHORITY_TOKEN;
+if (Boolean(sandboxUrl) !== Boolean(sandboxToken))
+  throw new Error(
+    "Configure the Agent Sandbox authority URL and token together",
+  );
+if (sandboxUrl && supervisorUrl)
+  throw new Error("Configure one workspace Computer provider per deployment");
+
+const sandbox =
+  sandboxUrl && sandboxToken
+    ? createAgentSandboxProvider({ url: sandboxUrl, token: sandboxToken })
+    : undefined;
+
 const cleanupUrl = env.OPENBOT_CLOSURE_CLEANUP_URL;
 const cleanupToken = env.OPENBOT_CLOSURE_CLEANUP_TOKEN;
 if (Boolean(cleanupUrl) !== Boolean(cleanupToken))
@@ -212,8 +229,9 @@ const app = createPersonalSaasApp(
         ? { id: operatorId, token: operatorToken }
         : undefined,
     suspensionSupport,
-    computer:
-      supervisorUrl && supervisorToken
+    computer: sandbox
+      ? { agentSandbox: sandbox }
+      : supervisorUrl && supervisorToken
         ? { supervisorUrl, supervisorToken }
         : undefined,
     casdoor: {
