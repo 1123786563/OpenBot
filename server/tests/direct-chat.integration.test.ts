@@ -1329,7 +1329,42 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       expect(await ledger.balance(bobIdentity)).toEqual(before);
     }
     expect(operationIds).toHaveLength(7);
-    expect(sentModels).toEqual(Array.from({ length: 7 }, () => "fixture/text"));
+    const late = await other.run("late-gateway-log", confirmed);
+    expect(await late.text()).toContain('"state":"pending"');
+    const lateOperation = operationIds.at(-1);
+    if (!lateOperation || !lostRequest)
+      throw new Error("Missing late gateway request.");
+    const lateLog = {
+      ...goodLog,
+      id: lostRequest.id,
+      metadata: lostRequest.metadata,
+    };
+    await expect(
+      Promise.resolve(
+        database
+          .update(testCreditOperations)
+          .set({ gatewayRequestId: lostRequest.id })
+          .where(eq(testCreditOperations.id, unknown)),
+      ),
+    ).rejects.toThrow("Failed query");
+    now += day;
+    storedLog = lateLog;
+    const balanceAtCutoff = await ledger.balance(bobIdentity);
+    await recoverBifrostEvidence(ledger, readEvidence);
+    await recoverBifrostEvidence(ledger, readEvidence);
+    expect(await receiptOf(lateOperation)).toMatchObject({
+      state: "released",
+      outcome: "unknown",
+      chargedMicrocredits: null,
+      releasedMicrocredits: "2",
+    });
+    expect(await ledger.reconciliationCost(bobAccount, lateOperation)).toBe(
+      "2",
+    );
+    expect(await ledger.balance(bobIdentity)).toEqual(balanceAtCutoff);
+    expect(operationIds).toHaveLength(8);
+
+    expect(sentModels).toEqual(Array.from({ length: 8 }, () => "fixture/text"));
     const beforeModelSelection = sentModels.length;
     gatewayOutcome = "answer";
     expect((await first.models(other.headers)).status).toBe(404);
@@ -1492,41 +1527,6 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       "fixture/text",
       "fixture-b/alternate",
     ]);
-
-    const late = await other.run("late-gateway-log", confirmed);
-    expect(await late.text()).toContain('"state":"pending"');
-    const lateOperation = operationIds.at(-1);
-    if (!lateOperation || !lostRequest)
-      throw new Error("Missing late gateway request.");
-    const lateLog = {
-      ...goodLog,
-      id: lostRequest.id,
-      metadata: lostRequest.metadata,
-    };
-    await expect(
-      Promise.resolve(
-        database
-          .update(testCreditOperations)
-          .set({ gatewayRequestId: lostRequest.id })
-          .where(eq(testCreditOperations.id, unknown)),
-      ),
-    ).rejects.toThrow("Failed query");
-    now += day;
-    storedLog = lateLog;
-    const balanceAtCutoff = await ledger.balance(bobIdentity);
-    await recoverBifrostEvidence(ledger, readEvidence);
-    await recoverBifrostEvidence(ledger, readEvidence);
-    expect(await receiptOf(lateOperation)).toMatchObject({
-      state: "released",
-      outcome: "unknown",
-      chargedMicrocredits: null,
-      releasedMicrocredits: "2",
-    });
-    expect(await ledger.reconciliationCost(bobAccount, lateOperation)).toBe(
-      "2",
-    );
-    expect(await ledger.balance(bobIdentity)).toEqual(balanceAtCutoff);
-    expect(operationIds).toHaveLength(8);
 
     await database
       .delete(testCreditEnrollments)
