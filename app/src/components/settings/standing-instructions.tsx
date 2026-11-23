@@ -19,6 +19,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/i18n";
 import { saveInstructionsMutationOptions } from "@/lib/settings/mutations";
 import {
   INSTRUCTIONS_LIMIT,
@@ -35,8 +36,6 @@ import { queryClient } from "@/query-client";
  * is for, this says how the person wants things done. Without that sentence the obvious mistake is
  * to write a job description here and get it applied to every coworker at once.
  */
-const DESCRIPTION =
-  "Applies to every Bot in every conversation. A Bot's role says what it does. This says how you want it done, like your writing style.";
 
 /**
  * The standing instructions as a row on General: what they say, cut to two lines, and a dialog to write them. A free
@@ -45,6 +44,7 @@ const DESCRIPTION =
 export function StandingInstructionsRow() {
   const stored = useQuery(instructionsQueryOptions());
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
   const written = stored.data?.trim();
   return (
     <>
@@ -56,11 +56,20 @@ export function StandingInstructionsRow() {
           <IconNotes />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle>Standing instructions</ItemTitle>
+          <ItemTitle>
+            {t("settings.instructions", "Standing instructions")}
+          </ItemTitle>
           <ItemDescription>
             {stored.error
-              ? "Couldn't load your instructions."
-              : written || "None yet. Tell every Bot how you want things done."}
+              ? t(
+                  "settings.instructions.loadFailed",
+                  "Couldn't load your instructions.",
+                )
+              : written ||
+                t(
+                  "settings.instructions.empty",
+                  "None yet. Tell every Bot how you want things done.",
+                )}
           </ItemDescription>
         </ItemContent>
         <ItemActions>
@@ -70,8 +79,19 @@ export function StandingInstructionsRow() {
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Standing instructions</DialogTitle>
-            <DialogDescription>{DESCRIPTION}</DialogDescription>
+            <DialogTitle>
+              {t("settings.instructions", "Standing instructions")}
+            </DialogTitle>
+            {/*
+             * What this is for, said on the screen rather than left to be guessed: the role says
+             * what a Bot is for, this says how the person wants things done.
+             */}
+            <DialogDescription>
+              {t(
+                "settings.instructions.description",
+                "Applies to every Bot in every conversation. A Bot's role says what it does. This says how you want it done, like your writing style.",
+              )}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
             <StandingInstructionsEditor />
@@ -86,6 +106,7 @@ export function StandingInstructionsRow() {
 function StandingInstructionsEditor() {
   const stored = useQuery(instructionsQueryOptions());
   const save = useMutation(saveInstructionsMutationOptions(queryClient));
+  const { t } = useTranslation();
 
   const [draft, setDraft] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -128,14 +149,17 @@ function StandingInstructionsEditor() {
       ) : (
         <div className="flex flex-col gap-2">
           <Textarea
-            aria-label="Standing instructions"
+            aria-label={t("settings.instructions", "Standing instructions")}
             className="min-h-40"
             disabled={save.isPending}
             onChange={(event) => {
               setDraft(event.target.value);
               setSaved(false);
             }}
-            placeholder="We are two people, not a team. Write in British English, and never call our product a platform."
+            placeholder={t(
+              "settings.instructions.placeholder",
+              "We are two people, not a team. Write in British English, and never call our product a platform.",
+            )}
             value={text}
           />
           <div className="flex flex-row items-center justify-between gap-4">
@@ -146,7 +170,11 @@ function StandingInstructionsEditor() {
                   : "text-muted-foreground text-xs"
               }
             >
-              {text.trim().length} of {INSTRUCTIONS_LIMIT} characters
+              {t(
+                "settings.instructions.count",
+                "{count} of {limit} characters",
+                { count: text.trim().length, limit: INSTRUCTIONS_LIMIT },
+              )}
             </p>
             <div className="flex flex-row items-center gap-3">
               {/*
@@ -158,14 +186,16 @@ function StandingInstructionsEditor() {
                   {problem}
                 </span>
               ) : saved ? (
-                <span className="text-muted-foreground text-xs">Saved</span>
+                <span className="text-muted-foreground text-xs">
+                  {t("settings.instructions.saved", "Saved")}
+                </span>
               ) : null}
               <Button
                 disabled={save.isPending || over || unchanged}
                 onClick={submit}
                 size="sm"
               >
-                Save
+                {t("settings.instructions.save", "Save")}
               </Button>
             </div>
           </div>

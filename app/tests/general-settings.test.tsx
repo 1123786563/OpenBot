@@ -9,15 +9,18 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, within } from "@testing-library/react";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ComponentType } from "react";
 import { LanguageRow } from "@/components/settings/language-row";
 import { NameRow } from "@/components/settings/profile";
 import { StandingInstructionsRow } from "@/components/settings/standing-instructions";
+import { ThemeProvider } from "@/components/theme-provider";
 import { initI18n } from "@/i18n";
 import { authKeys } from "@/lib/auth/queries";
 import { settingsKeys } from "@/lib/settings/queries";
 import { queryClient } from "@/query-client";
+import { Route as generalSettingsRoute } from "@/routes/_authed/settings/index";
 import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
@@ -107,6 +110,173 @@ test("standing instructions are a row that says what they are, or that there are
   expect(
     await written.findByRole("button", { name: /Write in British English\./ }),
   ).toBeTruthy();
+});
+
+/*
+ * The page itself: its title, its sections, the dark theme row and the shortcut rows all speak the
+ * interface language, and the document title follows. Drawn through the real route, with the
+ * desktop-only sections absent because no desktop shell is standing in here.
+ */
+describe("the General page speaks the interface language", () => {
+  afterEach(async () => {
+    cleanup();
+    await pinLocale("en");
+  });
+
+  function drawPage() {
+    queryClient.setQueryData(authKeys.currentUser(), {
+      id: "ada",
+      email: "ada@example.com",
+      name: "Ada",
+      needsName: false,
+    } as never);
+    const Page = generalSettingsRoute.options.component as ComponentType;
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <Page />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  const rowTitle = (view: ReturnType<typeof render>, name: string) =>
+    view.getByText(name, { selector: '[data-slot="item-title"]' });
+
+  test("in English it reads General, with its sections and the one shortcut", async () => {
+    const view = drawPage();
+    expect(document.title).toBe("General · OpenBot");
+    expect(view.getByRole("heading", { name: "About you" })).toBeTruthy();
+    expect(rowTitle(view, "Dark theme")).toBeTruthy();
+    expect(
+      view.getByText("Use the dark appearance across OpenBot."),
+    ).toBeTruthy();
+    expect(
+      view.getByRole("heading", { name: "Keyboard shortcuts" }),
+    ).toBeTruthy();
+    expect(rowTitle(view, "New conversation")).toBeTruthy();
+    expect(
+      view.getByText("Start a new conversation from anywhere in OpenBot."),
+    ).toBeTruthy();
+  });
+
+  test("in Simplified Chinese the page, its sections and its shortcuts read in Chinese", async () => {
+    await pinLocale("zh-CN");
+    const view = drawPage();
+    expect(document.title).toBe("通用 · OpenBot");
+    expect(view.getByRole("heading", { name: "关于你" })).toBeTruthy();
+    expect(rowTitle(view, "深色主题")).toBeTruthy();
+    expect(view.getByText("在 OpenBot 中使用深色外观。")).toBeTruthy();
+    expect(view.getByRole("heading", { name: "键盘快捷键" })).toBeTruthy();
+    expect(rowTitle(view, "新对话")).toBeTruthy();
+    expect(
+      view.getByText("在 OpenBot 的任何地方开始一个新对话。"),
+    ).toBeTruthy();
+  });
+
+  test("in Chinese the name row and its dialog read in Chinese, with Ada unchanged", async () => {
+    await pinLocale("zh-CN");
+    const view = drawPage();
+    const row = view.getByRole("button", { name: /^姓名/ });
+    expect(row.textContent).toContain("Ada");
+    await userEvent.setup({ document }).click(row);
+    const dialog = await view.findByRole("dialog");
+    expect(within(dialog).getByText("你的名字")).toBeTruthy();
+    expect(
+      (within(dialog).getByLabelText("姓名") as HTMLInputElement).value,
+    ).toBe("Ada");
+    expect(
+      within(dialog).getByRole("button", { name: "保存名字" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText("选择 OpenBot 为你显示的名字。"),
+    ).toBeTruthy();
+  });
+
+  test("in Chinese the instructions row and dialog read in Chinese, with written content unchanged", async () => {
+    instructions = "Write in British English.";
+    queryClient.setQueryData(settingsKeys.instructions(), instructions);
+    await pinLocale("zh-CN");
+    const view = drawPage();
+    const row = view.getByRole("button", { name: /^常设指令/ });
+    expect(row.textContent).toContain("Write in British English.");
+    await userEvent.setup({ document }).click(row);
+    const dialog = await view.findByRole("dialog");
+    expect(within(dialog).getByText("常设指令")).toBeTruthy();
+    expect(
+      within(dialog).getByRole("textbox", { name: "常设指令" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByPlaceholderText(
+        "我们是两个人，不是一个团队。用英式英语书写，不要把我们的产品称为平台。",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("已用 25 / 4000 个字符")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "保存" })).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "适用于每个对话中的每个 Bot。Bot 的角色说明它做什么；这里说明你希望它怎么做，比如你的写作风格。",
+      ),
+    ).toBeTruthy();
+  });
+
+  test("in Chinese a read that fails speaks the fallback in Chinese, on the row and in the editor", async () => {
+    await pinLocale("zh-CN");
+    global.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0]) => {
+        if (String(input) === "/api/settings/instructions")
+          return new Response(null, { status: 500 });
+        return new Response(null, { status: 404 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const view = drawPage();
+    const row = view.getByRole("button", { name: /^常设指令/ });
+    await waitFor(
+      () => expect(row.textContent).toContain("无法加载你的指令。"),
+      { timeout: 3000 },
+    );
+    await userEvent.setup({ document }).click(row);
+    const dialog = await view.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(
+        "无法加载你的常设指令",
+        {},
+        { timeout: 3000 },
+      ),
+    ).toBeTruthy();
+  });
+
+  test("in Chinese a save that fails speaks the fallback in Chinese", async () => {
+    await pinLocale("zh-CN");
+    global.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        if (String(input) === "/api/settings/instructions") {
+          if (init?.method === "PUT")
+            return new Response(null, { status: 500 });
+          return Response.json({ instructions: "" });
+        }
+        return new Response(null, { status: 404 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const view = drawPage();
+    await view.findByRole("button", { name: /^常设指令/ });
+    await userEvent
+      .setup({ document })
+      .click(view.getByRole("button", { name: /^常设指令/ }));
+    const dialog = await view.findByRole("dialog");
+    const box = await within(dialog).findByRole("textbox", {
+      name: "常设指令",
+    });
+    await userEvent.setup({ document }).type(box, "先简后繁。");
+    await userEvent
+      .setup({ document })
+      .click(within(dialog).getByRole("button", { name: "保存" }));
+    expect(
+      await within(dialog).findByText("无法保存你的常设指令"),
+    ).toBeTruthy();
+  });
 });
 
 /*

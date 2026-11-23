@@ -16,6 +16,7 @@ import {
   saveUserPreferencesMutationOptions,
   userPreferencesQueryOptions,
 } from "@/lib/settings/message-list";
+import { pinLocale } from "./i18n";
 
 const originalFetch = globalThis.fetch;
 const clients: QueryClient[] = [];
@@ -38,8 +39,9 @@ beforeEach(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
   for (const client of clients) client.clear();
   clients.length = 0;
   globalThis.fetch = originalFetch;
@@ -148,4 +150,20 @@ test("successful writes update only the current account cache; failures preserve
     skin: "openbot",
     proactive: "on",
   });
+});
+
+test("in Chinese the preference row, trigger and preview speak the interface language", async () => {
+  await pinLocale("zh-CN");
+  const { view } = setup();
+  await view.findByText("通用助手");
+  // emphasis "agent": the Bot name line is the prominent one.
+  expect(view.getByText("通用助手").className).toContain("text-sm");
+  expect(view.getByText("计划下周安排").className).toContain("text-[12px]");
+  expect(view.getByText("2 小时")).toBeTruthy();
+  expect(view.getByText("消息列表突出显示")).toBeTruthy();
+  expect(view.getByText("选择侧边栏中更突出的一行。")).toBeTruthy();
+  const combo = view.getByRole("combobox");
+  expect(combo.getAttribute("aria-label")).toBe("消息列表突出显示");
+  expect(combo).toHaveProperty("disabled", false);
+  expect(combo.textContent).toContain("Bot 名称");
 });

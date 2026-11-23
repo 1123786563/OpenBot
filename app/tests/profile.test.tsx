@@ -6,12 +6,14 @@ import userEvent from "@testing-library/user-event";
 import { ProfileNameForm } from "@/components/settings/profile";
 import { authKeys } from "@/lib/auth/queries";
 import { queryClient } from "@/query-client";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => GlobalRegistrator.register());
 const originalFetch = globalThis.fetch;
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
   queryClient.clear();
   globalThis.fetch = originalFetch;
 });
@@ -82,6 +84,39 @@ test("failed saves show an error and preserve the draft for retry", async () => 
     ),
   );
   expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe("Sam");
+});
+
+test("in Chinese the form's label, button and outcome sentences read in Chinese", async () => {
+  let patchCalls = 0;
+  globalThis.fetch = Object.assign(
+    async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        patchCalls += 1;
+        // First save: the server breaks without sending a message, so the app's own
+        // sentence is what a person reads; the second save goes through.
+        return patchCalls === 1
+          ? new Response(null, { status: 500 })
+          : Response.json({ profile: { name: "Samuel", needsName: false } });
+      }
+      return Response.json({ profile: { name: "Samuel", needsName: false } });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  await pinLocale("zh-CN");
+  const view = render(
+    <QueryClientProvider client={client(false)}>
+      <ProfileNameForm initialName="Sam" />
+    </QueryClientProvider>,
+  );
+  expect((view.getByLabelText("姓名") as HTMLInputElement).value).toBe("Sam");
+  fireEvent.click(view.getByRole("button", { name: "保存名字" }));
+  await waitFor(() =>
+    expect(view.getByRole("alert").textContent).toBe("无法保存你的名字"),
+  );
+  fireEvent.click(view.getByRole("button", { name: "保存名字" }));
+  await waitFor(() =>
+    expect(view.getByRole("status").textContent).toBe("你的名字已保存。"),
+  );
 });
 
 test("an untouched settings form reflects a name saved by the welcome dialog", () => {

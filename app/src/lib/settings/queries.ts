@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { t } from "@/i18n";
 import { client } from "@/lib/client";
 
 /**
@@ -22,7 +23,11 @@ export function instructionsQueryOptions() {
     queryKey: settingsKeys.instructions(),
     queryFn: async (): Promise<string> =>
       client("/api/settings/instructions", "instructions", {
-        fallback: "Could not load your standing instructions",
+        // Read when the query runs, in the language in force then.
+        fallback: t(
+          "settings.instructions.readFailed",
+          "Could not load your standing instructions",
+        ),
       }),
   });
 }

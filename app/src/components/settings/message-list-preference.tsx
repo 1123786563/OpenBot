@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslation } from "@/i18n";
 import {
   saveUserPreferencesMutationOptions,
   useUserPreferences,
@@ -26,6 +27,7 @@ import {
 export function MessageListPreference() {
   const preferences = useUserPreferences();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const save = useMutation(
     saveUserPreferencesMutationOptions(queryClient, preferences.userId),
   );
@@ -40,9 +42,14 @@ export function MessageListPreference() {
           <IconLayoutSidebar />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle>Message list emphasis</ItemTitle>
+          <ItemTitle>
+            {t("settings.messageList.title", "Message list emphasis")}
+          </ItemTitle>
           <ItemDescription>
-            Choose which line stands out in the sidebar.
+            {t(
+              "settings.messageList.description",
+              "Choose which line stands out in the sidebar.",
+            )}
           </ItemDescription>
         </ItemContent>
         <ItemActions>
@@ -55,18 +62,33 @@ export function MessageListPreference() {
               }
             }}
           >
-            <SelectTrigger aria-label="Message list emphasis">
+            <SelectTrigger
+              aria-label={t(
+                "settings.messageList.title",
+                "Message list emphasis",
+              )}
+            >
               <SelectValue>
                 {emphasis
                   ? emphasis === "agent"
-                    ? "Bot name"
-                    : "Conversation title"
-                  : "Loading…"}
+                    ? t("settings.messageList.botName", "Bot name")
+                    : t(
+                        "settings.messageList.conversationTitle",
+                        "Conversation title",
+                      )
+                  : t("settings.messageList.loading", "Loading…")}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="thread">Conversation title</SelectItem>
-              <SelectItem value="agent">Bot name</SelectItem>
+              <SelectItem value="thread">
+                {t(
+                  "settings.messageList.conversationTitle",
+                  "Conversation title",
+                )}
+              </SelectItem>
+              <SelectItem value="agent">
+                {t("settings.messageList.botName", "Bot name")}
+              </SelectItem>
             </SelectContent>
           </Select>
         </ItemActions>
@@ -81,7 +103,7 @@ export function MessageListPreference() {
             size="sm"
             onClick={() => void preferences.refetch()}
           >
-            Try again
+            {t("frame.tryAgain", "Try again")}
           </Button>
         </div>
       ) : null}
@@ -92,20 +114,23 @@ export function MessageListPreference() {
       ) : null}
       {save.isPending ? (
         <p role="status" className="px-3 text-sm text-muted-foreground">
-          Saving…
+          {t("settings.messageList.saving", "Saving…")}
         </p>
       ) : null}
       {emphasis ? (
         <div className="flex justify-center px-6 pt-3 pb-6">
           <figure
-            aria-label="Message list preview"
+            aria-label={t(
+              "settings.messageList.preview",
+              "Message list preview",
+            )}
             className="flex h-16 w-full max-w-xs items-center rounded-lg border border-border bg-sidebar px-3"
           >
             <ChannelItemContent
               participantIds={["message-list-preview"]}
-              name="General Assistant"
-              title="Plan next week"
-              lastMessageAt="2h"
+              name={t("settings.messageList.sampleName", "General Assistant")}
+              title={t("settings.messageList.sampleTitle", "Plan next week")}
+              lastMessageAt={t("settings.messageList.sampleTime", "2h")}
               emphasis={emphasis}
             />
           </figure>
