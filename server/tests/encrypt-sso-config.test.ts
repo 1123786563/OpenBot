@@ -78,6 +78,29 @@ describe("the identity provider config in the database", () => {
     expect(row.oidcConfig).toBe(OIDC_CONFIG);
   });
 
+  test("the SSO provider config is readable when the callback rechecks it inside a transaction", async () => {
+    const outer = fakeAdapter();
+    const scoped = fakeAdapter();
+    scoped.holds({
+      providerId: "acme",
+      oidcConfig: await encryptSecret(KEY, OIDC_CONFIG),
+    });
+    const adapter = encryptSsoConfig(
+      () => ({
+        ...outer.adapter,
+        transaction: <Result>(
+          callback: (adapter: typeof scoped.adapter) => Promise<Result>,
+        ) => callback(scoped.adapter),
+      }),
+      KEY,
+    )({});
+
+    const row = await adapter.transaction((transaction) =>
+      transaction.findOne({ model: "ssoProvider" }),
+    );
+    expect(row).toMatchObject({ oidcConfig: OIDC_CONFIG });
+  });
+
   test("a row written before this existed still reads, so an upgrade does not lock anybody out", async () => {
     const fake = fakeAdapter();
     fake.holds({ providerId: "acme", oidcConfig: OIDC_CONFIG });
