@@ -1841,6 +1841,12 @@ export function createPaidCreditLedger(
         return existing;
       }
 
+      if (await restoreHolds(tx, input.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "Credits cannot be issued during ledger recovery.",
+        );
+
       const sources = await tx
         .select()
         .from(paidEntitlements)

@@ -23,6 +23,7 @@ import {
   billingSpendingAuthorizations,
   enterpriseSettings,
   lagoUsageEvents,
+  paidCorrections,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
@@ -232,6 +233,9 @@ async function cleanUp() {
         .delete(paidCreditAllocations)
         .where(inArray(paidCreditAllocations.accountId, ids));
       await tx.delete(paidRefunds).where(inArray(paidRefunds.accountId, ids));
+      await tx
+        .delete(paidCorrections)
+        .where(inArray(paidCorrections.accountId, ids));
       await tx
         .delete(paidEntitlements)
         .where(inArray(paidEntitlements.accountId, ids));
@@ -946,6 +950,19 @@ test("a restore from an old backup pauses the ledger, replays each record once a
     await expect(newOrder(accountId)).rejects.toMatchObject({
       code: "ledger_restoring",
     });
+  const heldBatch = crypto.randomUUID();
+  batchIds.push(heldBatch);
+  await ledger.enroll({ identity: b.identity, batchId: heldBatch, amount: 5n });
+  expect(await ledger.claim(b.identity, heldBatch)).toBeUndefined();
+  await expect(
+    paid.applyCompensation({
+      accountId: b.accountId,
+      amountMicrocredits: 5n,
+      reason: "Recovery fixture",
+      evidence: "recovery-compensation",
+      by: "operator",
+    }),
+  ).rejects.toMatchObject({ code: "ledger_restoring" });
   expect(
     await ledger.reserve(a.identity, {
       operationId: "restore-op-3",
@@ -1098,6 +1115,9 @@ test("a restore from an old backup pauses the ledger, replays each record once a
   // reconciled, and its payment verifies by the original reference.
   await restoreOrder(laterB, b.accountId);
   await paid.resumeAccount(b.accountId);
+  expect(await ledger.claim(b.identity, heldBatch)).toMatchObject({
+    batchId: heldBatch,
+  });
   expect((await replayPayment(laterB, "b1", clock)).claimed).toBe(true);
   expect(await replayPayment(laterB, "b1", clock)).toMatchObject({
     replayed: true,

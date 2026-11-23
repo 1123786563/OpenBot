@@ -809,7 +809,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         );
         const [enrollment] = await tx.select().from(enrollments).where(key);
         if (!enrollment) return undefined;
-        const claimedAt = enrollment.claimedAt ?? new Date();
+        if (enrollment.claimedAt)
+          return { batchId, claimedAt: enrollment.claimedAt };
+        if (await restoreHolds(tx, accountId)) return undefined;
+        const claimedAt = new Date();
         await tx
           .update(enrollments)
           .set({ claimedAt })
