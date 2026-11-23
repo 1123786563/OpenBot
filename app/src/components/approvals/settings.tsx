@@ -1,6 +1,7 @@
 import { Text } from "@astryxdesign/core/Text";
 import {
   IconChecklist,
+  IconChevronDown,
   IconEyeCheck,
   IconHandStop,
   IconTerminal2,
@@ -33,13 +34,9 @@ import {
   updateApprovalRuleMutationOptions,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
-import {
-  ALWAYS_ASKS,
-  ASK_FIRST_DESCRIPTION,
-  ASK_FIRST_TITLE,
-  HANDED_TO_YOU,
-} from "./ask-first-copy";
+import { ALWAYS_ASKS, ASK_FIRST_TITLE, HANDED_TO_YOU } from "./ask-first-copy";
 import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
 
 /**
@@ -64,12 +61,13 @@ export function ApprovalSettings() {
     updateApprovalRuleMutationOptions(queryClient),
   );
   const revoke = useMutation(revokeApprovalRuleMutationOptions(queryClient));
-  const data = inbox.data;
+  const data = canKeepCachedRead(inbox.error) ? inbox.data : undefined;
   if (!data) {
     return inbox.isError ? (
       <ReadError
         message="Couldn't load your approval settings."
         retry={inbox.refetch}
+        retryBelow
         retrying={inbox.isFetching}
       />
     ) : (
@@ -105,8 +103,9 @@ export function ApprovalSettings() {
       {inbox.isError ? (
         <ReadError
           message="Couldn't refresh your approval settings."
-          description="These are your last loaded settings. Reload them before you make any changes."
+          description="These are your last loaded settings. Retry the check before changing them."
           retry={inbox.refetch}
+          retryBelow
           retrying={inbox.isFetching}
         />
       ) : null}
@@ -119,23 +118,22 @@ export function ApprovalSettings() {
           .
         </p>
       ) : null}
-      <PageSection
-        description={
-          /*
-           * What asks whatever these settings say (server/src/approvals/policy.ts), in the same words
-           * as onboarding's Welcome (ask-first-copy.ts). A Bot's own workspace is left out of what
-           * always asks on purpose: deleting a file there is an ordinary change, as the last sentence
-           * says.
-           */
-          <>
+      <PageSection title="Before a Bot acts">
+        <details className="group text-muted-foreground text-sm">
+          <summary className="flex min-h-11 cursor-pointer items-center gap-2 hover:text-foreground">
+            When Bots ask by default
+            <IconChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 group-open:rotate-180"
+            />
+          </summary>
+          <p>
             {ALWAYS_ASKS} They also ask before every edit or command in a folder
             on your own computer. {HANDED_TO_YOU} Bots can create, edit, and
             delete files in their own workspace without asking, unless your
             settings or rules say so.
-          </>
-        }
-        title="Before a Bot acts"
-      >
+          </p>
+        </details>
         {preferences.error ? (
           <ReadError
             message="Couldn't save your approval preference."
@@ -152,19 +150,27 @@ export function ApprovalSettings() {
         ) : null}
         <PageRows>
           <Item size="sm">
-            <ItemMedia variant="icon">
+            <ItemMedia className="self-start" variant="icon">
               <IconHandStop />
             </ItemMedia>
             <ItemContent>
               <ItemTitle>{ASK_FIRST_TITLE}</ItemTitle>
-              <Text as="p" color="secondary" size="sm">
-                {ASK_FIRST_DESCRIPTION}
+              <Text
+                as="p"
+                color="secondary"
+                id="extra-vigilant-description"
+                size="sm"
+              >
+                Ask before changes that your rules haven’t already decided,
+                including routine edits.
               </Text>
             </ItemContent>
             <ItemActions>
               <Switch
+                aria-describedby="extra-vigilant-description"
                 aria-label={ASK_FIRST_TITLE}
                 checked={data.enabled}
+                className="after:top-1/2 after:bottom-auto after:h-11 after:-translate-y-1/2"
                 disabled={preferencesDisabled}
                 onCheckedChange={(enabled) => preferences.mutate({ enabled })}
               />
@@ -174,7 +180,7 @@ export function ApprovalSettings() {
             <>
               <Separator />
               <Item size="sm">
-                <ItemMedia variant="icon">
+                <ItemMedia className="self-start" variant="icon">
                   <IconEyeCheck />
                 </ItemMedia>
                 <ItemContent>
@@ -186,9 +192,10 @@ export function ApprovalSettings() {
                     size="sm"
                   >
                     {enforced ? "An admin requires this. " : ""}
-                    Before a Bot does something that could affect your accounts
-                    or share information, OpenBot checks it against your request
-                    and your rules. If it can't tell, it asks you.
+                    Checks actions that could affect your accounts or share
+                    information against your request and rules. It can ask for
+                    approval or hand the action to you, even if Extra vigilant
+                    is off.
                   </Text>
                 </ItemContent>
                 <ItemActions>
@@ -198,6 +205,7 @@ export function ApprovalSettings() {
                     aria-describedby="auto-review-description"
                     aria-labelledby="auto-review-title"
                     checked={enforced || data.preferences.autoReview}
+                    className="after:top-1/2 after:bottom-auto after:h-11 after:-translate-y-1/2"
                     disabled={enforced || preferencesDisabled}
                     onCheckedChange={(autoReview) =>
                       preferences.mutate({ autoReview })
@@ -223,6 +231,7 @@ export function ApprovalSettings() {
                 </ItemContent>
                 <ItemActions>
                   <LabelSelect
+                    className="min-h-11"
                     disabled={preferencesDisabled}
                     label="Commands on your computer"
                     labels={HOST_LABELS}

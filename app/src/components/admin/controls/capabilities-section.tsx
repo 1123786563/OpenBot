@@ -4,7 +4,7 @@ import {
   IconToggleRight,
   IconUsersGroup,
 } from "@tabler/icons-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useRef, useState } from "react";
 import { PageRows } from "@/components/layout/page-shell";
@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { capabilityChangesPreviewQueryOptions } from "@/lib/capability-changes/queries";
+import type { CapabilityChange } from "@/lib/capability-changes/translate";
 import { setCapabilityMutationOptions } from "@/lib/enterprise/mutations";
 import {
   type EnterpriseOverview,
@@ -44,6 +46,7 @@ import {
 } from "@/lib/enterprise/queries";
 import { queryClient } from "@/query-client";
 import { ControlsSection } from "./controls-section";
+import { PermissionsPreview } from "./describe-capabilities";
 
 type Capability = EnterpriseOverview["capabilities"][number];
 type OverrideScope =
@@ -51,7 +54,28 @@ type OverrideScope =
   | { kind: "group"; id: string; label: string };
 
 function usePermissionConfirmation() {
-  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const [changeToPreview, setChangeToPreview] = useState<CapabilityChange>();
+  const preview = useQuery({
+    ...capabilityChangesPreviewQueryOptions(
+      changeToPreview ? [changeToPreview] : [],
+    ),
+    enabled: changeToPreview !== undefined,
+    staleTime: 0,
+  });
+  const check = preview.data?.check;
+  const ready = preview.isSuccess && preview.fetchStatus === "idle";
+  const { requestConfirmation, confirmation } = useActionConfirmation({
+    content:
+      ready && check && !check.ok ? (
+        <p className="text-destructive text-sm" role="alert">
+          {check.problems[0]?.message ?? check.error}
+        </p>
+      ) : (
+        <PermissionsPreview compact preview={preview} />
+      ),
+    ready: ready && check?.ok === true,
+    onClose: () => setChangeToPreview(undefined),
+  });
   const save = useMutation(setCapabilityMutationOptions(queryClient));
 
   function confirmPermission({
@@ -73,6 +97,12 @@ function usePermissionConfirmation() {
           : (capability.groups[scope.id] ?? null);
     if (expected === allowed) return;
 
+    const next = {
+      scopeKind: scope.kind,
+      scopeId: scope.id,
+      capability: capability.capability,
+      allowed,
+    };
     const change =
       allowed === null ? "Remove override" : allowed ? "Enable" : "Disable";
     const impact =
@@ -81,9 +111,10 @@ function usePermissionConfirmation() {
         : scope.kind === "role"
           ? "This changes access for people with this role. Group grants still apply."
           : "This changes access for members of this group. Access granted by other scopes still applies.";
+    setChangeToPreview(next);
     requestConfirmation({
       title: `${change} ${capability.title}?`,
-      description: `${scope.label}. ${impact} You can change this setting again in Permissions.`,
+      description: `${scope.label}. ${impact}`,
       confirmLabel: change,
       pendingLabel: "Saving permission…",
       failureMessage: "Couldn't save this permission. Try again.",
@@ -92,14 +123,7 @@ function usePermissionConfirmation() {
       trigger,
       refresh: () =>
         queryClient.invalidateQueries({ queryKey: enterpriseKeys.all }),
-      run: () =>
-        save.mutateAsync({
-          scopeKind: scope.kind,
-          scopeId: scope.id,
-          capability: capability.capability,
-          allowed,
-          expected,
-        }),
+      run: () => save.mutateAsync({ ...next, expected }),
     });
   }
 
@@ -108,13 +132,16 @@ function usePermissionConfirmation() {
 
 /**
  * Admin, Permissions: what people may do, for the whole organization, with the row that opens the
- * overrides for roles and directory groups. The page's only section, so it has no title of its own.
+ * overrides for roles and directory groups.
  */
 export function CapabilitiesSection() {
   const [overridesOpen, setOverridesOpen] = useState(false);
   const { confirmation, confirmPermission } = usePermissionConfirmation();
   return (
-    <ControlsSection>
+    <ControlsSection
+      description="Roles can override these defaults. Directory groups can grant additional permissions."
+      title="Organization defaults"
+    >
       {({ data }) => {
         const overrideCount = data.capabilities.reduce(
           (count, capability) =>
@@ -136,10 +163,8 @@ export function CapabilitiesSection() {
                       </ItemMedia>
                       <ItemContent>
                         <ItemTitle>{capability.title}</ItemTitle>
-                        <ItemDescription>
-                          {effective
-                            ? capability.description
-                            : "Off for everybody, unless a role or group turns it on."}
+                        <ItemDescription className="line-clamp-none text-sm">
+                          {capability.description}
                         </ItemDescription>
                       </ItemContent>
                       <ItemActions>
@@ -264,13 +289,19 @@ function OverridesDialog({
             onValueChange={(value) => value && setScopeKey(value)}
             value={scope ? `${scope.kind}:${scope.id}` : null}
           >
-            <SelectTrigger aria-label="Scope">
-              <SelectValue>{scope?.label}</SelectValue>
+            <SelectTrigger
+              aria-label="Scope"
+              className="min-h-12 w-full whitespace-normal data-[size=default]:h-auto *:data-[slot=select-value]:line-clamp-none"
+            >
+              <SelectValue className="min-w-0 wrap-anywhere">
+                {scope?.label}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
                 {scopes.map((candidate) => (
                   <SelectItem
+                    className="min-h-12 *:first:min-w-0 *:first:shrink *:first:wrap-anywhere *:first:whitespace-normal"
                     key={`${candidate.kind}:${candidate.id}`}
                     value={`${candidate.kind}:${candidate.id}`}
                   >
@@ -280,10 +311,10 @@ function OverridesDialog({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-sm">
             {scope?.kind === "group"
-              ? "A group can only add. Grant gives its members the capability even when the organization has it off."
-              : "A role's setting replaces the organization switch for everybody with that role."}
+              ? "Allowed grants this permission to group members. No grant leaves access to the other rules."
+              : "Allowed or Blocked overrides the organization default. Use default follows it. Group grants still apply."}
           </p>
           {scope &&
             data.capabilities.map((capability) => (
@@ -297,7 +328,12 @@ function OverridesDialog({
           {confirmation}
         </DialogBody>
         <DialogFooter className="mt-4">
-          <Button onClick={() => onOpenChange(false)} size="sm" type="button">
+          <Button
+            className="min-h-12"
+            onClick={() => onOpenChange(false)}
+            size="sm"
+            type="button"
+          >
             Done
           </Button>
         </DialogFooter>
@@ -323,11 +359,13 @@ function PermissionOverrideRow({
       ? capability.roles[scope.id]
       : capability.groups[scope.id];
   const value: Tri = stored === undefined ? "inherit" : stored ? "on" : "off";
+  const inherit = scope.kind === "group" ? "No grant" : "Use default";
+  const labels = { inherit, on: "Allowed", off: "Blocked" };
 
   return (
     <Item size="sm">
       <ItemContent>
-        <Label>{capability.title}</Label>
+        <Label className="wrap-anywhere">{capability.title}</Label>
       </ItemContent>
       <ItemActions>
         <Select<Tri>
@@ -344,19 +382,17 @@ function PermissionOverrideRow({
         >
           <SelectTrigger
             aria-label={`${capability.title} for ${scope.label}`}
-            className="w-36"
+            className="min-h-12 w-28"
             ref={trigger}
           >
-            <SelectValue />
+            <SelectValue>{labels[value]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="inherit">Inherit</SelectItem>
-              <SelectItem value="on">
-                {scope.kind === "group" ? "Grant" : "On"}
-              </SelectItem>
+              <SelectItem value="inherit">{inherit}</SelectItem>
+              <SelectItem value="on">{labels.on}</SelectItem>
               {scope.kind === "role" && (
-                <SelectItem value="off">Off</SelectItem>
+                <SelectItem value="off">{labels.off}</SelectItem>
               )}
             </SelectGroup>
           </SelectContent>

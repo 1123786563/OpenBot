@@ -1,7 +1,14 @@
 import type { BrowserApiState } from "@openbot/shared/openbot-browser";
 import { IconSearch } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
-import { type ReactNode, type RefObject, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
@@ -67,6 +74,7 @@ export function ScreenBrowser({
   computerId,
   state,
   reopen,
+  reopenFailed,
   reopening,
   heading,
   children,
@@ -74,6 +82,7 @@ export function ScreenBrowser({
   computerId: string;
   state: BrowserApiState;
   reopen: () => void;
+  reopenFailed: boolean;
   reopening: boolean;
   /** Above the window, as wide as it. Without one the page's name is said to screen readers only. */
   heading?: ReactNode;
@@ -209,6 +218,7 @@ export function ScreenBrowser({
                 onGo={go}
                 open={state.open}
                 reopen={reopen}
+                reopenFailed={reopenFailed}
                 reopening={reopening}
                 screen={screen}
               />
@@ -341,7 +351,12 @@ export function OpeningBrowser({
                   {problem}
                 </p>
                 {onRetry ? (
-                  <DeviceAction onClick={onRetry} size="sm" variant="outline">
+                  <DeviceAction
+                    className="confirmation-action"
+                    onClick={onRetry}
+                    size="sm"
+                    variant="outline"
+                  >
                     Retry
                   </DeviceAction>
                 ) : null}
@@ -379,6 +394,7 @@ function Screen({
   onGo,
   open,
   reopen,
+  reopenFailed,
   reopening,
   screen,
 }: {
@@ -391,16 +407,27 @@ function Screen({
   onGo: (url: string) => void;
   open: boolean;
   reopen: () => void;
+  reopenFailed: boolean;
   reopening: boolean;
   screen: RefObject<LiveScreenHandle | null>;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const viewport = useRef<HTMLElement>(null);
+  const focusOnReopen = useRef(false);
+  useEffect(() => {
+    if (!open || !focusOnReopen.current) return;
+    focusOnReopen.current = false;
+    if (document.activeElement === document.body) viewport.current?.focus();
+  }, [open]);
   // The page sits flush under the toolbar, at the browser's own shape, as wide as the window.
   return (
-    <div
+    <section
+      aria-label="Browser screen"
       className="relative w-full overflow-hidden bg-background"
+      ref={viewport}
       style={{ aspectRatio: SCREEN_ASPECT_RATIO }}
+      tabIndex={-1}
     >
       {open ? (
         <LiveScreen
@@ -421,11 +448,33 @@ function Screen({
           </span>
         </div>
       ) : !open ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center text-muted-foreground text-sm">
-          <span>Your browser is closed.</span>
-          <DeviceAction disabled={reopening} onClick={reopen} size="sm">
-            {reopening ? "Opening…" : "Open it again"}
-          </DeviceAction>
+        <div className="absolute inset-0 overflow-y-auto p-4 text-center text-muted-foreground text-sm">
+          <section className="flex min-h-full flex-col items-center justify-center gap-3">
+            {reopenFailed ? (
+              <p className="text-destructive" role="alert">
+                Couldn't reopen your browser. Try again to reconnect.
+              </p>
+            ) : (
+              <p>
+                {reopening
+                  ? "Connecting to your browser…"
+                  : "Your browser is closed."}
+              </p>
+            )}
+            <DeviceAction
+              className="confirmation-action"
+              aria-disabled={reopening || undefined}
+              onClick={(event) => {
+                if (reopening) return;
+                focusOnReopen.current =
+                  document.activeElement === event.currentTarget;
+                reopen();
+              }}
+              size="sm"
+            >
+              {reopening ? "Opening…" : "Open it again"}
+            </DeviceAction>
+          </section>
         </div>
       ) : problem ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/85 p-4 text-center text-muted-foreground text-sm">
@@ -444,7 +493,7 @@ function Screen({
       ) : blank ? (
         <StartPage onGo={onGo} />
       ) : null}
-    </div>
+    </section>
   );
 }
 

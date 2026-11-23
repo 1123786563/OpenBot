@@ -1,15 +1,13 @@
 import { IconBolt, IconPlugOff, IconTool } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import {
-  ConnectionAction,
-  ConnectionPage,
-} from "@/components/connections/connection-surface";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { appPageTitle } from "@/components/manage/plugin-page";
 import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Input } from "@/components/ui/input";
@@ -25,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { useManagePaths } from "@/lib/manage-paths";
 import { setPluginGrantMutationOptions } from "@/lib/plugins/mutations";
@@ -130,22 +129,15 @@ export function PluginToolPage({
    * deployment that a request that never came back is no evidence for. The per-Bot grant screen
    * keeps the same guard.
    */
-  if (!plugins.data) {
+  if (!plugins.data || !canKeepCachedRead(plugins.error)) {
     return (
       <ConnectionPage backButton={back} title={toolName}>
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load plugins.
-          </p>
-          <ConnectionAction
-            disabled={plugins.isFetching}
-            onClick={() => void plugins.refetch()}
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching ? "Retrying…" : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          message="Couldn't load plugins."
+          retry={plugins.refetch}
+          retrying={plugins.isFetching}
+          retryBelow
+        />
       </ConnectionPage>
     );
   }

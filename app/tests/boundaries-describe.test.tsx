@@ -7,6 +7,7 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { boundaryRuleId } from "@openbot/shared/boundary-rule-id";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -235,6 +236,7 @@ test("a description fills the rule, shows its reading and compile result, replay
       [SOCIAL.rule]: {
         name: "Bots may not visit social media sites",
         description: "Stops a Bot opening Facebook.",
+        id: expect.stringMatching(/^r-/),
       },
     },
     authoring: {
@@ -274,6 +276,8 @@ test("editing the written rule by hand is allowed and called out", async () => {
     " and do not post status updates",
   );
   await view.findByText(/Your description changed/);
+  expect(view.queryByLabelText("Rule")).toBeNull();
+  expect(view.queryByText(SOCIAL.explanation as string)).toBeNull();
   expect(add.hasAttribute("disabled")).toBe(true);
 });
 
@@ -297,8 +301,10 @@ test("What it stops is filled from the reading when empty, and what the admin ty
   );
 
   // Once the admin writes their own, a new rule never overwrites it.
-  await user.clear(stops);
-  await user.type(stops, "Keeps Bots off social sites.");
+  await user.type(stops, "Keeps Bots off social sites.", {
+    initialSelectionStart: 0,
+    initialSelectionEnd: stops.value.length,
+  });
   translation = { ...SOCIAL, summary: "Stops a Bot opening Reddit." };
   await user.click(view.getByRole("button", { name: "Write rule" }));
   await waitFor(() => expect(described).toHaveLength(3));
@@ -387,16 +393,17 @@ test("with no model set up, the server's sentence is shown and nothing is filled
 
 test("on a rule's own page, a description rewrites it in place, keeps its name, and Save rule sends the description", async () => {
   const old = 'intent == "navigate" && contains(page.host, "facebook.com")';
-  serving({
+  const initial: ActionPolicy = {
     mode: "enforce",
     deny: ["true", old],
     allow: ["true"],
     labels: {
       [old]: { name: "No Facebook", description: "Keeps Bots off it." },
     },
-  });
+  };
+  serving(initial);
   translation = SOCIAL;
-  const { view } = open("/admin/boundaries/1");
+  const { view } = open(`/admin/boundaries/${boundaryRuleId(old)}`);
 
   expect(
     ((await view.findByLabelText("Rule")) as HTMLTextAreaElement).value,
@@ -421,11 +428,16 @@ test("on a rule's own page, a description rewrites it in place, keeps its name, 
   fireEvent.click(view.getByRole("button", { name: "Save rule" }));
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0]).toEqual({
+    expected: initial,
     mode: "enforce",
     deny: ["true", SOCIAL.rule],
     allow: ["true"],
     labels: {
-      [SOCIAL.rule]: { name: "No Facebook", description: "Keeps Bots off it." },
+      [SOCIAL.rule]: {
+        name: "No Facebook",
+        description: "Keeps Bots off it.",
+        id: boundaryRuleId(old),
+      },
     },
     authoring: {
       source: "english",

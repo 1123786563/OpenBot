@@ -14,7 +14,7 @@ import {
   useInfiniteQuery,
   useQuery,
 } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { AskTheTrail, AuditAnswerNote } from "@/components/audit/ask-the-trail";
 import type { AuditEvent } from "@/components/audit/audit-cells";
 import {
@@ -160,6 +160,8 @@ export function AuditPage({
   children,
   description = ADMIN_DESCRIPTION,
   onClearBot,
+  onScopeChange,
+  permissionsOnly = false,
 }: {
   action?: ReactNode;
   /**
@@ -171,6 +173,8 @@ export function AuditPage({
   children?: ReactNode;
   description?: string;
   onClearBot?: () => void;
+  onScopeChange?: (scope: { bot?: string; permissions?: true }) => void;
+  permissionsOnly?: boolean;
 } = {}) {
   const paths = useManagePaths();
   const [view, setView] = useState<string>(FILTERS[0].search);
@@ -179,18 +183,49 @@ export function AuditPage({
    * A Bot's own Activity page links here with `bot`, which arrives as that Bot's chip, so the one Bot
    * filter there is the chip, and taking it off takes it out of the address too.
    */
-  const [chips, setChipState] = useState<ChipFilters>(() =>
-    ask && bot ? { bot } : {},
-  );
+  const [chips, setChipState] = useState<ChipFilters>(() => ({
+    ...(ask && bot ? { bot } : {}),
+    ...(ask && permissionsOnly ? { eventType: ["capability.changed"] } : {}),
+  }));
+  const previousBot = useRef(bot);
   useEffect(() => {
-    if (ask && bot)
-      setChipState((current) =>
-        current.bot === bot ? current : { ...current, bot },
-      );
+    const prior = previousBot.current;
+    previousBot.current = bot;
+    if (!ask || (!bot && !prior)) return;
+    setChipState((current) =>
+      current.bot === bot || (!bot && current.bot !== prior)
+        ? current
+        : { ...current, bot },
+    );
   }, [ask, bot]);
+  useEffect(() => {
+    if (!ask) return;
+    setChipState((current) => {
+      const types = current.eventType ?? [];
+      if (types.includes("capability.changed") === permissionsOnly)
+        return current;
+      return {
+        ...current,
+        eventType: permissionsOnly
+          ? [...types, "capability.changed"]
+          : types.filter((type) => type !== "capability.changed"),
+      };
+    });
+  }, [ask, permissionsOnly]);
   const setChips = (next: ChipFilters) => {
     setChipState(next);
-    if (bot && next.bot !== bot) onClearBot?.();
+    const removesBot = Boolean(bot && next.bot !== bot);
+    const removesPermissions =
+      permissionsOnly && !next.eventType?.includes("capability.changed");
+    if (removesBot || removesPermissions) {
+      onScopeChange?.({
+        ...(bot && !removesBot ? { bot } : {}),
+        ...(permissionsOnly && !removesPermissions
+          ? { permissions: true }
+          : {}),
+      });
+      if (removesBot) onClearBot?.();
+    }
   };
   const [answer, setAnswer] = useState<
     (AuditAnswer & { question: string }) | null
@@ -219,6 +254,7 @@ export function AuditPage({
     ...auditEventsQueryOptions(search),
     placeholderData: keepPreviousData,
   });
+  const moreToLoad = events.hasNextPage && !events.isPlaceholderData;
   // Activity names a skill by the title its page shows; the trail keeps only its slug.
   const skills = useQuery({
     ...pluginsPageQueryOptions(),
@@ -323,7 +359,7 @@ export function AuditPage({
             deploymentName={paths.deploymentName}
             events={rows}
             footer={
-              events.hasNextPage ? (
+              moreToLoad ? (
                 <div className="flex flex-col items-center gap-2 py-3">
                   {events.isFetchNextPageError ? (
                     <p className="text-destructive text-sm" role="alert">
@@ -332,19 +368,23 @@ export function AuditPage({
                   ) : null}
                   <Button
                     className="max-sm:min-h-11"
-                    disabled={events.isFetchingNextPage}
-                    onClick={() => events.fetchNextPage()}
+                    aria-disabled={events.isFetching}
+                    onClick={() => {
+                      if (!events.isFetching) void events.fetchNextPage();
+                    }}
                     size="sm"
                     variant="outline"
                   >
                     {events.isFetchingNextPage
                       ? "Loading…"
-                      : "Show older events"}
+                      : events.isFetchNextPageError
+                        ? "Retry loading older events"
+                        : "Show older events"}
                   </Button>
                 </div>
               ) : null
             }
-            moreToLoad={events.hasNextPage}
+            moreToLoad={moreToLoad}
             nameFor={nameFor}
             query={query}
             storedNames={edition !== "personal"}
@@ -498,7 +538,9 @@ export function AuditPage({
                   !events.isPlaceholderData &&
                   rows.length === 0 ? (
                   <PageEmpty icon={IconSearch} title="No matches">
-                    No events match this filter yet.
+                    {moreToLoad
+                      ? "No events on the loaded pages. Older events are available."
+                      : "No events match this filter yet."}
                   </PageEmpty>
                 ) : null}
               </div>

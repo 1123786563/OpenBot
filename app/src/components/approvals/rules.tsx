@@ -67,6 +67,7 @@ export const HOST_LABELS: Record<HostCommandPolicy, string> = {
  * are handled. The keys of `labels` are the values, in the order they are offered.
  */
 export function LabelSelect<T extends string>({
+  className,
   id,
   label,
   labels,
@@ -74,6 +75,7 @@ export function LabelSelect<T extends string>({
   disabled,
   onChange,
 }: {
+  className?: string;
   id?: string;
   /** The trigger's accessible name, where no visible label names it. */
   label?: string;
@@ -90,7 +92,7 @@ export function LabelSelect<T extends string>({
       }}
       value={value}
     >
-      <SelectTrigger aria-label={label} id={id}>
+      <SelectTrigger aria-label={label} className={className} id={id}>
         <SelectValue>{labels[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent {...governanceOverlay}>

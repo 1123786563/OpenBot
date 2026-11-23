@@ -1,16 +1,21 @@
-import { IconKey, IconPlug, IconSearch } from "@tabler/icons-react";
+import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
+import { IconKey } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, type LinkOptions, useNavigate } from "@tanstack/react-router";
+import {
+  Link,
+  type LinkOptions,
+  Navigate,
+  useNavigate,
+} from "@tanstack/react-router";
 import * as React from "react";
 import {
   ConnectionAction,
   ConnectionPage,
 } from "@/components/connections/connection-surface";
-import {
-  PageEmpty,
-  PageRows,
-  PageSection,
-} from "@/components/layout/page-shell";
+import { PageSection } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   type ConnectInNewTab,
   useConnectInNewTab,
@@ -18,7 +23,6 @@ import {
 import { AppInitial } from "@/components/plugins/plugin-logo";
 import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -48,6 +52,7 @@ import {
 import {
   directoryDescriptions,
   directoryReadFailure,
+  directoryRouteDecision,
   type PluginsProvider,
   providerVocabulary,
 } from "@/lib/plugins/provider-vocabulary";
@@ -86,6 +91,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
   const paths = useManagePaths();
   const { directoryLabel } = providerVocabulary(provider);
   const [search, setSearch] = React.useState("");
+  const searchInput = React.useRef<HTMLInputElement>(null);
   /*
    * Debounced, as on People, and for a stronger reason: every distinct term is a cache key of its
    * own and a request to the vendor, so typing a name un-debounced is a round trip per keystroke
@@ -97,7 +103,14 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const apps = useQuery(composioAppsQueryOptions(query, provider));
+  // The shared endpoint serves the active provider. Confirm it before requesting the directory.
+  const plugins = useQuery(pluginsPageQueryOptions());
+  const decision = directoryRouteDecision(provider, plugins.data);
+  const directoryReady = decision === "render" && !plugins.isError;
+  const apps = useQuery({
+    ...composioAppsQueryOptions(query, provider),
+    enabled: directoryReady,
+  });
   /*
    * WHAT A FAILED ADD SAID, KEPT WHERE A SECOND ADD CANNOT ERASE IT.
    *
@@ -131,8 +144,10 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
    * added, and adding records the app without signing anybody in to it. These are the reads the
    * Connections list and the app's page answer the same question from.
    */
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const connections = useQuery(connectionsQueryOptions());
+  const connections = useQuery({
+    ...connectionsQueryOptions(),
+    enabled: directoryReady,
+  });
   /*
    * ONE SIGN-IN AT A TIME, IN A NEW TAB, the way a Bot's Connect card starts one
    * (`AppAccessAction`). `signingIn` names the row it is for, so only that row says it is waiting.
@@ -167,7 +182,9 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
     directoryAppState(entry, {
       provider,
       servers: plugins.data?.servers,
-      connections: connections.data?.connections,
+      connections: connections.isError
+        ? undefined
+        : connections.data?.connections,
     });
 
   /*
@@ -240,7 +257,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
    */
   const { requestConfirmation, confirmation: addConfirmation } =
     useActionConfirmation();
-  const add = (entry: ComposioApp) => {
+  const add = (entry: ComposioApp, trigger: HTMLElement) => {
     /*
      * Measured permissions are this directory's own warning: the row's sentence says what one
      * approval lets a Bot do, and the same fact belongs between the press and the write.
@@ -254,11 +271,15 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
         confirmLabel: "Add",
         pendingLabel: "Adding…",
         failureMessage: `Couldn't add ${entry.name}. Try again.`,
+        successMessage: `Added ${entry.name}.`,
+        trigger,
         run: () => addConfirmed(entry),
       });
       return;
     }
-    addConfirmed(entry);
+    void addConfirmed(entry).catch(() => {
+      // The mutation reports a refusal beside the app list.
+    });
   };
   const addConfirmed = async (entry: ComposioApp) => {
     const how = directoryConnect(entry);
@@ -266,7 +287,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
       stopWaiting();
       setSigningIn(entry.slug);
       signingInServer.current = null;
-      tab.openAfter(async () => {
+      await tab.openAfter(async () => {
         const serverId = await enable.mutateAsync({ slug: entry.slug });
         signingInServer.current = serverId;
         return serverId;
@@ -274,50 +295,100 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
       return;
     }
     if (personal && how === "key") {
-      await enable.mutateAsync({ slug: entry.slug }).then(openKeyForm, () => {
-        // Said by the mutation's own `onError`.
-      });
+      openKeyForm(await enable.mutateAsync({ slug: entry.slug }));
       return;
     }
-    await enable.mutateAsync({ slug: entry.slug }).catch(() => {
-      // Said by the mutation's own error state: the page's alert, not this promise.
-    });
+    await enable.mutateAsync({ slug: entry.slug });
   };
   const tabError = signingIn ? tab.error : null;
 
+  if (decision === "redirect" && !plugins.isError) {
+    return <Navigate replace {...paths.plugins()} />;
+  }
+
+  const frame = {
+    backButton: { label: paths.pluginsLabel, linkProps: paths.plugins() },
+    description: directoryDescriptions(paths.edition).page,
+    title: directoryLabel,
+  };
+  if (!directoryReady) {
+    return (
+      <ConnectionPage {...frame}>
+        {addConfirmation}
+        <PageSection>
+          {plugins.isError ? (
+            <ReadError
+              focusAfterRetry={() => searchInput.current}
+              message="Couldn't load the app directory."
+              retry={plugins.refetch}
+              retrying={plugins.isFetching}
+              retryBelow
+            />
+          ) : (
+            <ReadStatus
+              kind="loading"
+              message="Checking which app directory is available…"
+            />
+          )}
+        </PageSection>
+      </ConnectionPage>
+    );
+  }
+
   return (
-    <ConnectionPage
-      backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
-      description={directoryDescriptions(paths.edition).page}
-      title={directoryLabel}
-    >
+    <ConnectionPage {...frame}>
       {addConfirmation}
-      <PageSection
-        description={directoryDescriptions(paths.edition).search}
-        title="Apps"
-      >
+      <PageSection description={directoryDescriptions(paths.edition).search}>
         {enableError || tabError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
             {enableError ?? tabError}
           </p>
         ) : null}
 
-        <Input
-          aria-label="Search apps"
-          className="mt-4"
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by app name"
+        <TextInput
+          autoComplete="off"
+          containerStyle={{ marginBlockStart: "var(--spacing-4)" }}
+          controlClassName="[&_button]:min-h-11 [&_button]:min-w-11"
+          controlStyle={{
+            minBlockSize: "var(--spacing-11)",
+            paddingInlineStart: "var(--spacing-3)",
+          }}
+          enterKeyHint="search"
+          hasAutoCorrect={false}
+          hasClear
+          hasSpellCheck={false}
+          label="Search apps"
+          onChange={setSearch}
+          onEnter={() => setQuery(search)}
+          ref={searchInput}
+          size="lg"
+          type="search"
           value={search}
+          width="100%"
         />
+
+        {connections.isError ? (
+          <ReadError
+            description="You can still browse apps. Retry to check which accounts are connected."
+            focusAfterRetry={() => searchInput.current}
+            message="Couldn't check your app connections."
+            retry={connections.refetch}
+            retrying={connections.isFetching}
+            retryBelow
+          />
+        ) : null}
 
         {/*
          * Pending, error, empty, rows. Pending draws placeholder rows: the full directory takes a
          * couple of seconds to arrive, and a bare search box over blank space read as a page with
          * nothing on it. They assert nothing, so no sentence claims anything mid-fetch.
          */}
-        {apps.isPending ? (
-          <div aria-busy="true" aria-label="Loading apps" role="status">
-            <PageRows>
+        {apps.isPending || search !== query ? (
+          <VStack role="status">
+            <Text as="p" color="secondary" size="sm">
+              {search ? "Searching apps…" : "Loading apps…"}
+            </Text>
+            <VStack>
               {LOADING_ROWS.map((key, index) => (
                 <React.Fragment key={key}>
                   {index > 0 ? <Separator /> : null}
@@ -332,46 +403,36 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                   </Item>
                 </React.Fragment>
               ))}
-            </PageRows>
-          </div>
+            </VStack>
+          </VStack>
         ) : apps.error ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <p className="text-destructive text-sm" role="alert">
-              {/*
-               * The server's own sentence, as the enable failure above already does. A keyless
-               * deployment is refused with one naming the key's environment variable, and that name
-               * is the single thing an operator who reached this URL needs to read; the derived line
-               * stays as the fallback for a failure that arrived carrying no message of its own.
-               */}
-              {apps.error.message || directoryReadFailure(provider)}
-            </p>
-            <ConnectionAction
-              disabled={apps.isFetching}
-              onClick={() => void apps.refetch()}
-              type="button"
-              variant="outline"
-            >
-              {apps.isFetching ? "Retrying…" : "Retry"}
-            </ConnectionAction>
-          </div>
+          <ReadError
+            focusAfterRetry={() => searchInput.current}
+            message={apps.error.message || directoryReadFailure(provider)}
+            retry={apps.refetch}
+            retrying={apps.isFetching}
+            retryBelow
+          />
         ) : listed.length === 0 ? (
-          <PageEmpty
-            icon={query ? IconSearch : IconPlug}
-            title={query ? "No matches" : "No apps"}
-          >
-            {query
-              ? `No app matches "${query}".`
-              : "No apps to show yet. Reload the page to try again."}
-          </PageEmpty>
+          <VStack gap={1} paddingBlock={4} role="status">
+            <Text as="p" weight="semibold">
+              {query ? "No matches" : "No apps"}
+            </Text>
+            <Text as="p" type="supporting" wordBreak="break-word">
+              {query
+                ? `No app matches "${query}". Try a shorter name or clear the search to browse all apps.`
+                : "The directory has no apps to show yet."}
+            </Text>
+          </VStack>
         ) : (
           <>
             {/* How many there are, before the list: with no search, this is the whole directory. */}
-            <p className="mt-4 text-muted-foreground text-xs">
+            <p className="mt-4 text-muted-foreground text-sm" role="status">
               {query
                 ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "match" : "matches"}`
-                : `${listed.length.toLocaleString()} apps. Search by name to narrow them.`}
+                : `${listed.length.toLocaleString()} ${listed.length === 1 ? "app" : "apps"}`}
             </p>
-            <PageRows className="mt-2">
+            <VStack>
               {listed.map((entry, index) => {
                 // One mutation serves every row, so which rows are mid-request is tracked beside it
                 // rather than read off it. See `adding` above.
@@ -382,10 +443,10 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                 return (
                   <React.Fragment key={entry.slug}>
                     {/* The test id names the screen, not the vendor: this module draws whichever
-                      broker is active, and the id is not user-visible. */}
+                  broker is active, and the id is not user-visible. */}
                     <Item data-testid={`directory-${entry.slug}`} size="sm">
                       {/* The vendor's own mark where the broker supplies one, and its initial where it
-                        does not, so a list of third parties still has a fixed left edge. */}
+                    does not, so a list of third parties still has a fixed left edge. */}
                       <ItemMedia variant={entry.logo ? "image" : "icon"}>
                         {entry.logo ? (
                           <img alt="" src={entry.logo} />
@@ -395,7 +456,9 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                       </ItemMedia>
                       <ItemContent>
                         <ItemTitle>{entry.name}</ItemTitle>
-                        <ItemDescription>{entry.description}</ItemDescription>
+                        <ItemDescription className="line-clamp-none text-sm">
+                          {entry.description}
+                        </ItemDescription>
                         <KeyNeededNote app={entry} />
                         {entry.enabled ? null : <CoverageNote app={entry} />}
                         {entry.enabled ? null : <BreadthNote app={entry} />}
@@ -405,10 +468,11 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                       </ItemContent>
                       <ItemActions>
                         {/* The size of the decision, stated before it is made: an app is not one
-                          tool, and "167 actions" is what says so. */}
-                        <span className="text-muted-foreground text-xs">
-                          {entry.actionCount} actions
-                        </span>
+                      tool, and "167 actions" is what says so. */}
+                        <Text color="secondary" size="sm">
+                          {entry.actionCount}{" "}
+                          {entry.actionCount === 1 ? "action" : "actions"}
+                        </Text>
                         {/*
                          * An app this deployment already has says where it stands rather than
                          * offering Add again. A second Add would ask the server to record an app it
@@ -419,7 +483,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                           <ConnectionAction
                             className="max-h-none min-h-11 px-4"
                             disabled={isAdding || (mine && tab.pending)}
-                            onClick={() => add(entry)}
+                            onClick={(event) => add(entry, event.currentTarget)}
                             variant="outline"
                           >
                             {isAdding ? "Adding…" : "Add"}
@@ -439,6 +503,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                                 : null
                             }
                             name={entry.name}
+                            checkingConnection={connections.isPending}
                             onConnect={
                               state.kind === "not_connected"
                                 ? () => connect(entry.slug, state.serverId)
@@ -456,7 +521,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                   </React.Fragment>
                 );
               })}
-            </PageRows>
+            </VStack>
           </>
         )}
       </PageSection>
@@ -474,7 +539,7 @@ export function KeyNeededNote({ app }: { app: ComposioApp }) {
   if (!line) return null;
   return (
     <p
-      className="flex items-center gap-1 text-muted-foreground text-xs"
+      className="flex items-center gap-1 text-muted-foreground text-sm"
       data-testid="key-needed"
     >
       <IconKey aria-hidden="true" className="size-3.5 shrink-0" />
@@ -488,7 +553,7 @@ export function CoverageNote({ app }: { app: ComposioApp }) {
   const warning = coverageWarning(app);
   if (!warning) return null;
   return (
-    <p className="text-muted-foreground text-xs" data-testid="coverage-warning">
+    <p className="text-muted-foreground text-sm" data-testid="coverage-warning">
       {warning}
     </p>
   );
@@ -499,7 +564,7 @@ export function BreadthNote({ app }: { app: ComposioApp }) {
   const breadth = consentBreadth(app);
   if (!breadth) return null;
   return (
-    <p className="text-muted-foreground text-xs" data-testid="breadth-note">
+    <p className="text-muted-foreground text-sm" data-testid="breadth-note">
       {breadth}
     </p>
   );
@@ -515,6 +580,7 @@ export function BreadthNote({ app }: { app: ComposioApp }) {
 function DirectoryRowState({
   state,
   name,
+  checkingConnection,
   personal,
   onConnect,
   connectLink,
@@ -523,6 +589,7 @@ function DirectoryRowState({
 }: {
   state: Exclude<DirectoryAppState, { kind: "addable" }>;
   name: string;
+  checkingConnection: boolean;
   personal: boolean;
   onConnect: (() => void) | undefined;
   /** Where Connect goes for an app that takes a key: its page, with the key form. */
@@ -530,32 +597,30 @@ function DirectoryRowState({
   opening: boolean;
   waiting: boolean;
 }) {
-  if (state.kind === "loading") return null;
-  if (state.kind === "added")
-    return <span className="text-muted-foreground text-xs">Added</span>;
-  if (state.kind === "connected")
+  if (state.kind === "loading")
     return (
-      <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-        {/* Decorative: the word beside it already says which. */}
-        <span
-          aria-hidden="true"
-          className="size-1.5 rounded-full bg-emerald-500"
-        />
-        Connected
-      </span>
+      <Text color="secondary" size="sm">
+        {checkingConnection
+          ? "Checking connection…"
+          : "Connection status unavailable"}
+      </Text>
+    );
+  if (state.kind === "added" || state.kind === "connected")
+    return (
+      <Text color="secondary" size="sm">
+        {state.kind === "added" ? "Added" : "Connected"}
+      </Text>
     );
   return (
     <>
-      <span
-        className="text-muted-foreground text-xs"
-        data-testid="directory-not-connected"
-      >
+      <Text color="secondary" size="sm" data-testid="directory-not-connected">
         {personal ? "Not connected" : "Added, not connected"}
-      </span>
+      </Text>
       {connectLink ? (
         <Button
           render={<Link {...connectLink} />}
           aria-label={`Connect ${name}`}
+          className="min-h-11"
           size="sm"
           variant="outline"
         >
@@ -564,6 +629,7 @@ function DirectoryRowState({
       ) : (
         <ConnectionAction
           aria-label={opening || waiting ? undefined : `Connect ${name}`}
+          className="max-h-none min-h-11"
           disabled={opening}
           onClick={onConnect}
           variant="outline"
@@ -583,7 +649,7 @@ function DirectoryRowState({
 function SignInNote({ name, tab }: { name: string; tab: ConnectInNewTab }) {
   if (tab.blockedUrl)
     return (
-      <p className="text-xs" role="status">
+      <p className="text-sm" role="status">
         This browser blocked the tab.{" "}
         <a
           className="underline underline-offset-2"
@@ -598,7 +664,7 @@ function SignInNote({ name, tab }: { name: string; tab: ConnectInNewTab }) {
     );
   if (tab.waiting)
     return (
-      <p className="text-muted-foreground text-xs" role="status">
+      <p className="text-muted-foreground text-sm" role="status">
         Finish signing in to {name} in the tab that opened.
       </p>
     );

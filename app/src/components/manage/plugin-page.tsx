@@ -11,7 +11,6 @@ import * as React from "react";
 import { useState } from "react";
 import { ASK_FIRST_TITLE } from "@/components/approvals/ask-first-copy";
 import {
-  ConnectionAction,
   ConnectionDialogContent,
   ConnectionPage,
 } from "@/components/connections/connection-surface";
@@ -20,6 +19,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { AccessRequestsSection } from "@/components/plugins/access-requests";
 import { AccountModeDialog } from "@/components/plugins/account-mode-dialog";
 import {
@@ -54,6 +54,7 @@ import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { grantSummary } from "@/lib/agents/grant-summary";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { storeMcpToken } from "@/lib/credentials/mutations";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -244,16 +245,25 @@ export function connectionKindFor(
  * buttons — somebody reading with a screen reader has to be told the controls are gone and why,
  * not left to notice their absence.
  */
-function ConnectionStateUnreadable() {
-  const paths = useManagePaths();
+function ConnectionStateUnreadable({
+  title,
+  retry,
+  retrying,
+}: {
+  title: string;
+  retry: () => Promise<unknown>;
+  retrying: boolean;
+}) {
   return (
     <Item size="sm">
       <ItemContent>
-        <ItemTitle>Your account</ItemTitle>
-        <ItemDescription role="alert">
-          Couldn't load whether you've connected an account here. Reload the
-          page, or check {paths.deploymentName}'s logs if it keeps happening.
-        </ItemDescription>
+        <ItemTitle>{title}</ItemTitle>
+        <ReadError
+          message="Couldn't check the account connection."
+          retry={retry}
+          retrying={retrying}
+          retryBelow
+        />
       </ItemContent>
     </Item>
   );
@@ -645,30 +655,20 @@ export function PluginPage({
    * is no evidence for the first. Nothing on this page survives the failure: the title, the tools
    * and the grants are all that one response.
    */
-  if (!plugins.data) {
+  if (!plugins.data || !canKeepCachedRead(plugins.error)) {
     return (
       <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
         title={appPageTitle(key)}
       >
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            {personal ? "Couldn't load your apps." : "Couldn't load plugins."}
-          </p>
-          <ConnectionAction
-            disabled={plugins.isFetching || connections.isFetching}
-            onClick={() => {
-              void plugins.refetch();
-              void connections.refetch();
-            }}
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching || connections.isFetching
-              ? "Retrying…"
-              : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          message={
+            personal ? "Couldn't load your apps." : "Couldn't load plugins."
+          }
+          retry={() => Promise.all([plugins.refetch(), connections.refetch()])}
+          retrying={plugins.isFetching || connections.isFetching}
+          retryBelow
+        />
       </ConnectionPage>
     );
   }
@@ -1143,7 +1143,11 @@ export function PluginPage({
               <>
                 <Separator />
                 {connectionsUnreadable ? (
-                  <ConnectionStateUnreadable />
+                  <ConnectionStateUnreadable
+                    retry={connections.refetch}
+                    retrying={connections.isFetching}
+                    title={shared ? "Team account" : "Your account"}
+                  />
                 ) : server?.sharedOnly && !shared ? (
                   /*
                    * NO PERSONAL CONNECT FOR AN APP THAT CAN ONLY HOLD A SHARED ACCOUNT. It signs in
@@ -1165,7 +1169,7 @@ export function PluginPage({
                     edition={paths.edition}
                     connectedDescription={`Connected${sharedConnection?.displayName ? ` as ${sharedConnection.displayName}` : ""}${sharedConnection?.connectedBy ? ` by ${sharedConnection.connectedBy}` : ""}. Every Bot with these tools acts as this account.`}
                     disconnectedDescription="No team account is connected. Bots with these tools are refused."
-                    heading="Team account"
+                    sharedAccount
                     notice="Sign in as the team account, not your own."
                     provider={provider}
                     title={title}
@@ -1209,7 +1213,11 @@ export function PluginPage({
               <>
                 <Separator />
                 {connectionsUnreadable ? (
-                  <ConnectionStateUnreadable />
+                  <ConnectionStateUnreadable
+                    retry={connections.refetch}
+                    retrying={connections.isFetching}
+                    title="Your account"
+                  />
                 ) : (
                   <Item size="sm">
                     <ItemContent>

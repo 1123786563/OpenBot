@@ -1,4 +1,10 @@
+import { boundaryRuleId } from "@openbot/shared/boundary-rule-id";
+import { z } from "zod";
 import type { ActionPolicy, RuleLabel } from "@/lib/computers/queries";
+
+export const boundaryListSearch = z.object({
+  q: z.string().max(200).optional().catch(undefined),
+});
 
 /**
  * A rule an administrator can start from, in words first and CEL underneath.
@@ -99,6 +105,10 @@ export function ruleLabel(policy: ActionPolicy, rule: string): RuleLabel {
   return { name: "Custom rule", description: "" };
 }
 
+export function ruleId(policy: ActionPolicy, rule: string): string {
+  return boundaryRuleId(rule, policy.labels?.[rule]?.id);
+}
+
 /**
  * The policy with one rule rewritten in place, keeping its position and taking its name with it.
  *
@@ -110,17 +120,14 @@ export function withRuleReplaced(
   rule: string,
   next: string,
 ): ActionPolicy {
-  const { [rule]: own, ...labels } = policy.labels ?? {};
-  const template = templateOf(rule);
-  const label =
-    own ??
-    (template
-      ? { name: template.name, description: template.description }
-      : undefined);
+  const { [rule]: _previous, ...labels } = policy.labels ?? {};
   return {
     ...policy,
     deny: policy.deny.map((one) => (one === rule ? next : one)),
-    labels: label ? { ...labels, [next]: label } : labels,
+    labels: {
+      ...labels,
+      [next]: { ...ruleLabel(policy, rule), id: ruleId(policy, rule) },
+    },
   };
 }
 

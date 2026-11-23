@@ -4,7 +4,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { type ComponentProps, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
 import { astryxScope } from "@/components/astryx-pilot/theme";
@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "@/components/ui/toast";
 import { ClientError } from "@/lib/client";
 import {
   type CredentialFormValues,
@@ -92,6 +93,8 @@ function CredentialInput({
  */
 export function NewCredentialPage() {
   const paths = useManagePaths();
+  const entry = paths.edition === "personal" ? "key" : "credential";
+  const entryTitle = entry === "key" ? "Key" : "Credential";
   const back = {
     label: paths.credentialsLabel,
     linkProps: paths.credentials(),
@@ -104,7 +107,17 @@ export function NewCredentialPage() {
   );
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const submitButton = useRef<HTMLButtonElement>(null);
+  const saveErrorMessage = useRef<HTMLParagraphElement>(null);
   const [saveError, setSaveError] = useState("");
+  useEffect(() => {
+    if (
+      saveError &&
+      (document.activeElement === document.body ||
+        document.activeElement === submitButton.current)
+    ) {
+      saveErrorMessage.current?.focus();
+    }
+  }, [saveError]);
   const canCheckReplacement = credentials.isSuccess && !credentials.isFetching;
   const defaultValues: CredentialFormValues = {
     kind: "model",
@@ -125,10 +138,9 @@ export function NewCredentialPage() {
         requestConfirmation({
           title: `Replace ${previous.keyId} for ${previous.provider}?`,
           description: `This saves the new secret for ${paths.deploymentName} and permanently revokes the current one. Apps or models using the old secret may stop working.`,
-          confirmLabel: "Replace credential",
-          pendingLabel: "Replacing credential…",
-          failureMessage:
-            "Couldn't replace the credential. Your entries are still here.",
+          confirmLabel: `Replace ${entry}`,
+          pendingLabel: `Replacing ${entry}…`,
+          failureMessage: `Couldn't replace the ${entry}. Your entries are still here.`,
           trigger: submitButton.current ?? undefined,
           refresh: () => credentials.refetch(),
           run: async () => {
@@ -144,11 +156,12 @@ export function NewCredentialPage() {
                 [404, 409].includes(error.status)
               ) {
                 throw new ActionUnavailable(
-                  "The active credential changed. Close this dialog and review the replacement again.",
+                  `The active ${entry} changed. Close this dialog and review the replacement again.`,
                 );
               }
               throw error;
             }
+            toast.add({ title: `${entryTitle} replaced`, type: "success" });
             await navigate(paths.credentials());
           },
         });
@@ -164,18 +177,19 @@ export function NewCredentialPage() {
       } catch (error) {
         if (error instanceof ClientError && error.status === 409) {
           setSaveError(
-            "An active credential now exists for this key. Review it before replacing it.",
+            `An active ${entry} now exists with this ID. Review it before replacing it.`,
           );
           await credentials.refetch();
         } else if (error instanceof ClientError && error.status === 403) {
-          setSaveError("You no longer have permission to save credentials.");
+          setSaveError(`You no longer have permission to save ${entry}s.`);
         } else {
           setSaveError(
-            "Couldn't save the credential. Your entries are still here. Try again.",
+            `Couldn't save the ${entry}. Your entries are still here. Try again.`,
           );
         }
         return;
       }
+      toast.add({ title: `${entryTitle} saved`, type: "success" });
       await navigate(paths.credentials());
     },
   });
@@ -183,8 +197,8 @@ export function NewCredentialPage() {
   return (
     <DevicePage
       backButton={back}
-      description={`Save a credential for ${paths.deploymentName}. You won’t be able to view the secret after saving it.`}
-      title="Add credential"
+      description={`Save a ${entry} for ${paths.deploymentName}. You won’t be able to view the secret after saving it.`}
+      title={`Add ${entry}`}
     >
       <form
         data-credential-form=""
@@ -225,7 +239,7 @@ export function NewCredentialPage() {
                       ? "Saving…"
                       : liveCredentialFor(credentials.data, values)
                         ? "Review replacement"
-                        : "Save credential"}
+                        : `Save ${entry}`}
                   </DeviceAction>
                 )}
               </form.Subscribe>
@@ -235,8 +249,8 @@ export function NewCredentialPage() {
           <VStack gap={4}>
             {credentials.isError ? (
               <ReadError
-                description="Your entries are kept. Check for an existing credential before saving."
-                message="Couldn't check existing credentials."
+                description={`Your entries are kept. Check for an existing ${entry} before saving.`}
+                message={`Couldn't check existing ${entry}s.`}
                 retry={() => credentials.refetch()}
                 retryBelow
                 retrying={credentials.isFetching}
@@ -244,7 +258,7 @@ export function NewCredentialPage() {
             ) : !canCheckReplacement && !saveCredential.isPending ? (
               <ReadStatus
                 kind="loading"
-                message="Checking for existing credentials…"
+                message={`Checking for existing ${entry}s…`}
               />
             ) : null}
             <FieldGroup>
@@ -390,7 +404,7 @@ export function NewCredentialPage() {
               </form.Field>
             </FieldGroup>
             {saveError ? (
-              <Text as="p" role="alert">
+              <Text as="p" ref={saveErrorMessage} role="alert" tabIndex={-1}>
                 {saveError}
               </Text>
             ) : null}

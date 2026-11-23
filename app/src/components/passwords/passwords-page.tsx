@@ -7,6 +7,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   ActionUnavailable,
   useActionConfirmation,
@@ -21,6 +22,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { deleteSavedLoginMutationOptions } from "@/lib/passwords/mutations";
 import { savedLoginsQueryOptions } from "@/lib/passwords/queries";
@@ -38,6 +40,7 @@ export function PasswordsPage() {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const logins = useQuery(savedLoginsQueryOptions());
+  const saved = canKeepCachedRead(logins.error) ? logins.data : undefined;
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const remove = useMutation(deleteSavedLoginMutationOptions(queryClient));
   return (
@@ -48,31 +51,32 @@ export function PasswordsPage() {
       <PageSection title={personal ? undefined : "Saved logins"}>
         {confirmation}
         {logins.isPending ? (
-          <p role="status">Loading saved logins…</p>
-        ) : logins.error && !logins.data ? (
-          <>
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load your saved logins.
-            </p>
-            <Button
-              onClick={() => void logins.refetch()}
-              size="sm"
-              variant="outline"
-            >
-              Try again
-            </Button>
-          </>
-        ) : !logins.data?.passwordManager ? (
-          <PageEmpty icon={IconLockOff} title="Saved passwords are off">
-            An admin turned them off. Your logins are kept but won't be offered.
+          <ReadStatus kind="loading" message="Loading saved logins…" />
+        ) : logins.isError ? (
+          <ReadError
+            description={
+              saved?.passwordManager && saved.logins.length
+                ? "Showing the last list we could load."
+                : undefined
+            }
+            message="Couldn't load your saved logins."
+            retry={logins.refetch}
+            retryBelow
+            retrying={logins.isFetching}
+          />
+        ) : null}
+        {logins.isSuccess && saved && !saved.passwordManager ? (
+          <PageEmpty icon={IconLockOff} title="Saving website logins is off">
+            Your saved logins are kept. OpenBot will offer them during sign-in
+            when saving is turned back on.
           </PageEmpty>
-        ) : logins.data.logins.length === 0 ? (
+        ) : logins.isSuccess && saved?.logins.length === 0 ? (
           <PageEmpty icon={IconKey} title="No saved logins yet">
-            Choose Save to Passwords when you sign a Bot in to a website.
+            Select “Save this login” when you sign a Bot in to a website.
           </PageEmpty>
-        ) : (
+        ) : saved?.passwordManager && saved.logins.length > 0 ? (
           <PageRows>
-            {logins.data.logins.map((login, index) => (
+            {saved.logins.map((login, index) => (
               <Fragment key={login.id}>
                 {index > 0 ? <Separator /> : null}
                 <Item size="sm">
@@ -80,8 +84,10 @@ export function PasswordsPage() {
                     <IconKey />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{login.origin}</ItemTitle>
-                    <ItemDescription>
+                    <ItemTitle className="wrap-anywhere">
+                      {login.origin}
+                    </ItemTitle>
+                    <ItemDescription className="line-clamp-none wrap-anywhere">
                       {login.username}
                       {login.lastUsedAt
                         ? ` · last used ${new Date(login.lastUsedAt).toLocaleDateString()}`
@@ -92,6 +98,7 @@ export function PasswordsPage() {
                     <Button
                       aria-label={`Delete saved login for ${login.username} at ${login.origin}`}
                       size="sm"
+                      className="min-h-11"
                       variant="ghost"
                       onClick={(event) =>
                         requestConfirmation({
@@ -135,7 +142,7 @@ export function PasswordsPage() {
               </Fragment>
             ))}
           </PageRows>
-        )}
+        ) : null}
       </PageSection>
     </PageShell>
   );

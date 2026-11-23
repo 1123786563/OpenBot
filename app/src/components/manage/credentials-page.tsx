@@ -8,6 +8,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import {
   ActionUnavailable,
@@ -22,20 +23,22 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { canKeepCachedRead } from "@/lib/client";
 import { revokeCredentialMutationOptions } from "@/lib/credentials/mutations";
 import { credentialListQueryOptions } from "@/lib/credentials/queries";
-import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
 
 export function CredentialsPage() {
   const paths = useManagePaths();
   const addButton = useRef<HTMLAnchorElement>(null);
   const { requestConfirmation, confirmation } = useActionConfirmation();
-  // Called Keys in the personal edition, which links here from Connections too.
-  const personal =
-    useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const personal = paths.edition === "personal";
+  const entry = personal ? "key" : "credential";
   const queryClient = useQueryClient();
   const credentials = useQuery(credentialListQueryOptions());
+  const entries = canKeepCachedRead(credentials.error)
+    ? credentials.data
+    : undefined;
   const revokeCredential = useMutation(
     revokeCredentialMutationOptions(queryClient),
   );
@@ -49,10 +52,11 @@ export function CredentialsPage() {
             <Link {...props} {...paths.newCredential()} ref={addButton} />
           )}
           size="sm"
+          className="min-h-11"
           variant="ghost"
         >
           <IconPlus />
-          Add credential
+          Add {entry}
         </Button>
       }
       description={
@@ -62,50 +66,37 @@ export function CredentialsPage() {
       }
       title={paths.credentialsLabel}
     >
-      <PageSection title="Saved credentials">
+      <PageSection title={personal ? "Saved keys" : "Saved credentials"}>
         {confirmation}
         {credentials.isPending ? (
-          <p role="status">Loading credentials…</p>
-        ) : credentials.error && !credentials.data ? (
-          <>
-            <p className="mt-4 text-destructive text-sm" role="alert">
-              Couldn't load credentials.
-            </p>
-            <Button
-              onClick={() => void credentials.refetch()}
-              size="sm"
-              variant="outline"
-            >
-              Try again
-            </Button>
-          </>
-        ) : credentials.data?.length === 0 ? (
-          <PageEmpty
-            action={
-              <Button
-                render={(props) => (
-                  <Link {...props} {...paths.newCredential()} />
-                )}
-                size="sm"
-                variant="outline"
-              >
-                <IconPlus />
-                Add credential
-              </Button>
+          <ReadStatus kind="loading" message={`Loading ${entry}s…`} />
+        ) : credentials.isError ? (
+          <ReadError
+            description={
+              entries?.length
+                ? "Showing the last list we could load."
+                : undefined
             }
-            icon={IconKey}
-            title="No credentials yet"
-          >
-            Keys and tokens for models and connectors are kept here.
+            message={`Couldn't load ${entry}s.`}
+            retry={credentials.refetch}
+            retryBelow
+            retrying={credentials.isFetching}
+          />
+        ) : null}
+        {credentials.isSuccess && entries?.length === 0 ? (
+          <PageEmpty icon={IconKey} title={`No ${entry}s yet`}>
+            Use Add {entry} to save an API key or token.
           </PageEmpty>
-        ) : (
+        ) : entries?.length ? (
           <PageRows>
-            {credentials.data?.map((credential, index) => (
+            {entries.map((credential, index) => (
               <StaggerItem index={index} key={credential.id}>
                 <Item size="sm">
                   <ItemContent>
-                    <ItemTitle>{credential.provider}</ItemTitle>
-                    <ItemDescription>
+                    <ItemTitle className="wrap-anywhere">
+                      {credential.provider}
+                    </ItemTitle>
+                    <ItemDescription className="line-clamp-none wrap-anywhere">
                       {credential.kind} · {credential.keyId} ·{" "}
                       {credential.revokedAt ? "revoked" : "active"}
                     </ItemDescription>
@@ -120,8 +111,8 @@ export function CredentialsPage() {
                           description: personal
                             ? "Apps or models using this credential may stop working. Revocation is permanent. Add a replacement credential to restore access."
                             : "This revokes the credential for this deployment. Any apps or models using it may stop working. Revocation is permanent. Add a replacement credential to restore access.",
-                          confirmLabel: "Revoke credential",
-                          pendingLabel: "Revoking credential…",
+                          confirmLabel: `Revoke ${entry}`,
+                          pendingLabel: `Revoking ${entry}…`,
                           failureMessage:
                             "Revocation could not be confirmed. Try again to check the credential’s status.",
                           successMessage: `${credential.keyId} was revoked.`,
@@ -145,17 +136,18 @@ export function CredentialsPage() {
                         })
                       }
                       size="sm"
+                      className="min-h-11"
                       variant="outline"
                     >
                       Revoke
                     </Button>
                   </ItemActions>
                 </Item>
-                {index !== (credentials.data?.length ?? 0) - 1 && <Separator />}
+                {index !== entries.length - 1 && <Separator />}
               </StaggerItem>
             ))}
           </PageRows>
-        )}
+        ) : null}
       </PageSection>
     </PageShell>
   );

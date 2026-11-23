@@ -170,12 +170,13 @@ function appFor() {
   return build(...args);
 }
 
-const post = (path: string, body: unknown) =>
+const post = (path: string, body: unknown, requestId?: string) =>
   appFor().request(`http://localhost:3001/api/approvals/team/rules/${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       origin: "http://localhost:3001",
+      ...(requestId ? { "Idempotency-Key": requestId } : {}),
     },
     body: JSON.stringify(body),
   });
@@ -332,4 +333,74 @@ test("saving rules from a description adds them together, with one row naming wh
   await expect(
     service.gate(candidate("SALESFORCE_UPDATE_OPPORTUNITY", { id: "006C" })),
   ).resolves.toBeUndefined();
+});
+
+test("a committed batch with a lost response can be retried without saving or auditing it again", async () => {
+  const requestId = randomUUID();
+  const draft = {
+    rules: [allowUpdates],
+    authoring: {
+      source: "english",
+      text: "Retry after losing the save response",
+    },
+  };
+  const audit = () =>
+    database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.actorUserId, admin),
+          eq(auditEvents.eventType, "approval.rule_changed"),
+        ),
+      );
+  const before = (await audit()).length;
+  const ruleRows = () =>
+    database
+      .select({ id: approvalTeamRules.id })
+      .from(approvalTeamRules)
+      .where(eq(approvalTeamRules.botId, bot));
+  const ruleCount = (await ruleRows()).length;
+  const initial = await post("batch", draft, requestId);
+  expect(initial.status).toBe(201);
+  // The client does not use the first response. Concurrent retries converge on the original save.
+  const retries = await Promise.all([
+    post("batch", draft, requestId),
+    post("batch", draft, requestId),
+  ]);
+  for (const response of retries) expect(response.status).toBe(201);
+  const [one, two] = await Promise.all(
+    retries.map((response) => response.json()),
+  );
+  expect(two).toEqual(one);
+  expect(one.rules).toHaveLength(1);
+  savedRuleIds.push(one.rules[0].id);
+  const conflict = await post(
+    "batch",
+    { ...draft, authoring: { ...draft.authoring, text: "A changed draft" } },
+    requestId,
+  );
+  expect(conflict.status).toBe(409);
+  expect(await audit()).toHaveLength(before + 1);
+  expect(await ruleRows()).toHaveLength(ruleCount + 1);
+});
+
+test("an invalid draft does not consume its save key, and a first-write race saves only once", async () => {
+  const requestId = randomUUID();
+  const invalid = await post(
+    "batch",
+    { rules: [{ ...allowUpdates, toolRef: "mcp/salesforce/*" }] },
+    requestId,
+  );
+  expect(invalid.status).toBe(400);
+  const draft = { rules: [allowUpdates] };
+  const [first, second] = await Promise.all([
+    post("batch", draft, requestId),
+    post("batch", draft, requestId),
+  ]);
+  expect(first.status).toBe(201);
+  expect(second.status).toBe(201);
+  const saved = await first.json();
+  expect(await second.json()).toEqual(saved);
+  savedRuleIds.push(saved.rules[0].id);
 });

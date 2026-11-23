@@ -21,6 +21,7 @@ import { createDatabase } from "../src/db/client";
 import {
   auditEvents,
   capabilitySettings,
+  revokedAccess,
   userRoles,
   users,
 } from "../src/db/schema";
@@ -611,4 +612,64 @@ describe("POST /api/admin/enterprise/capabilities/batch", () => {
     expect(response.status).toBe(200);
     expect(await controls.capabilityFor(sam.id, LOCAL)).toBeFalse();
   });
+});
+
+test("only admins can read a member's current permissions and their sources", async () => {
+  const uri = (id: string) =>
+    `http://localhost:3001/api/admin/enterprise/capabilities/members/${encodeURIComponent(id)}/effective`;
+  const regular = appFor({ role: "user" });
+  expect((await regular.request(uri(cam.id))).status).toBe(403);
+  expect((await regular.request(uri("me"))).status).toBe(403);
+  expect(
+    (await regular.request("http://localhost:3001/api/admin/enterprise/me"))
+      .status,
+  ).toBe(200);
+
+  await controls.store.setCapabilities(
+    [
+      {
+        scopeKind: "organization",
+        scopeId: "",
+        capability: LOCAL,
+        allowed: false,
+      },
+      {
+        scopeKind: "group",
+        scopeId: "Contractors",
+        capability: LOCAL,
+        allowed: true,
+      },
+    ],
+    ada.email,
+  );
+  const admin = appFor();
+  const granted = await admin.request(uri(cam.id));
+  expect(granted.status).toBe(200);
+  expect(granted.headers.get("Cache-Control")).toBe("no-store");
+  expect(await granted.json()).toMatchObject({
+    status: "active",
+    person: { name: cam.name, email: cam.email, role: "user" },
+    capabilities: expect.arrayContaining([
+      expect.objectContaining({
+        capability: LOCAL,
+        allowed: true,
+        decidedBy: "group",
+        scopeId: "Contractors",
+      }),
+    ]),
+  });
+  expect((await admin.request(uri("missing-member"))).status).toBe(404);
+  await database
+    .insert(revokedAccess)
+    .values({ email: cam.email, revokedBy: ada.email });
+  try {
+    expect(await (await admin.request(uri(cam.id))).json()).toEqual({
+      status: "access-removed",
+      person: { name: cam.name, email: cam.email, role: "user" },
+    });
+  } finally {
+    await database
+      .delete(revokedAccess)
+      .where(eq(revokedAccess.email, cam.email));
+  }
 });

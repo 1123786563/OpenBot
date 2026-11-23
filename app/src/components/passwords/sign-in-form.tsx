@@ -389,7 +389,7 @@ export function SignInFields({
                 checked={save}
                 onCheckedChange={(checked) => setSave(checked === true)}
               />
-              Save to Passwords
+              Save this login
             </label>
           ) : null}
           {failure ? (

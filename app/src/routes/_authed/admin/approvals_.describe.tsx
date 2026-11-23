@@ -1,7 +1,8 @@
 import { HStack } from "@astryxdesign/core/Stack";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import {
   RuleRowsEditor,
   RulesBacktest,
@@ -20,6 +21,7 @@ import {
   translateApprovalRules,
 } from "@/lib/approval-rules/translate";
 import type { ApprovalRuleInput } from "@/lib/approvals";
+import { newId } from "@/lib/new-id";
 import { queryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/admin/approvals_/describe")({
@@ -63,16 +65,27 @@ function DescribeTeamRulesPage() {
   const [description, setDescription] = useState("");
   const [writing, setWriting] = useState(false);
   const submitting = useRef(false);
+  const saveRequests = useRef(new Map<string, string>());
+  const form = useRef<HTMLFormElement>(null);
+  const backtest = useRef<HTMLElement>(null);
+  const undo = useRef<HTMLButtonElement>(null);
+  const restoredRow = useRef<number | null>(null);
   const hasDraft = description.trim() !== "" || written !== null;
-  useBlocker({
-    enableBeforeUnload: hasDraft,
-    shouldBlockFn: ({ current, next }) =>
-      hasDraft &&
-      current.pathname !== next.pathname &&
-      !window.confirm("Leave without saving your approval rules?"),
-  });
   const descriptionChanged =
     written !== null && written.text !== description.trim();
+  const showDraft = written !== null && !descriptionChanged && !writing;
+
+  useLayoutEffect(() => {
+    if (removed) undo.current?.focus();
+    if (restoredRow.current !== null) {
+      form.current
+        ?.querySelector<HTMLButtonElement>(
+          `[data-approval-rule="${restoredRow.current}"] button[aria-expanded]`,
+        )
+        ?.focus();
+      restoredRow.current = null;
+    }
+  }, [removed]);
 
   /* The rules as they stood a moment ago, debounced as Add rule's preview is. */
   const [settled, setSettled] = useState<ApprovalRuleInput[]>([]);
@@ -81,11 +94,11 @@ function DescribeTeamRulesPage() {
     return () => clearTimeout(timer);
   }, [rules]);
 
+  const settling = !same(settled, rules);
   const preview = useQuery({
     ...approvalRulesBacktestQueryOptions(settled),
-    enabled: !descriptionChanged && settled.length > 0,
+    enabled: showDraft && !settling && settled.length > 0,
   });
-  const settling = !same(settled, rules);
   const current =
     preview.isSuccess && preview.fetchStatus === "idle" && !settling
       ? preview.data
@@ -101,11 +114,15 @@ function DescribeTeamRulesPage() {
 
   const add = () => {
     if (!ready || !written || submitting.current) return;
+    const draft = JSON.stringify([rules, written.text]);
+    const requestId = saveRequests.current.get(draft) ?? newId();
+    saveRequests.current.set(draft, requestId);
     submitting.current = true;
     save.mutate(
       {
         rules,
         authoring: { source: "english", text: written.text },
+        requestId,
       },
       {
         onSuccess: () =>
@@ -125,6 +142,7 @@ function DescribeTeamRulesPage() {
     >
       <form
         noValidate
+        ref={form}
         onSubmit={(event) => {
           event.preventDefault();
           add();
@@ -134,12 +152,14 @@ function DescribeTeamRulesPage() {
           footer={
             <>
               <Button
+                className="min-h-12"
+                disabled={save.isPending}
                 render={(props) => <Link {...props} to="/admin/approvals" />}
                 variant="outline"
               >
                 Cancel
               </Button>
-              <Button disabled={!ready} type="submit">
+              <Button className="min-h-12" disabled={!ready} type="submit">
                 {save.isPending ? "Saving…" : "Save rules"}
               </Button>
             </>
@@ -149,12 +169,15 @@ function DescribeTeamRulesPage() {
             <DescribeField
               action="Write rules"
               disabled={save.isPending}
-              description="Say in a sentence what Bots should do, and your model writes rules from this OpenBot's apps and Bots. A second reading that never sees your words says what the rules do."
+              description="Name the Bot or app, the action, and what should happen before it runs. You’ll review the proposed rules and test them against recent activity."
+              example="Ask before any Bot sends email from Gmail."
               id="team-rules-english"
               label="Describe the rules"
-              onTextChange={setDescription}
+              onTextChange={(text) => {
+                if (save.isError) save.reset();
+                setDescription(text);
+              }}
               onWritingChange={setWriting}
-              placeholder="Ask before any Bot sends email from Gmail"
               text={description}
               write={async (described) => {
                 const translation = await translateApprovalRules(described);
@@ -165,20 +188,16 @@ function DescribeTeamRulesPage() {
                 return null;
               }}
             />
-            {descriptionChanged ? (
+            {descriptionChanged && !writing ? (
               <ReadStatus
                 kind="loading"
                 message="Your description changed. Choose Write rules to update the draft before saving."
               />
             ) : null}
-            {written ? (
+            {showDraft && !edited ? (
               <ReadingStatus
                 check={written.check}
-                edited={
-                  edited
-                    ? "You've changed the rules since they were written. The check and the reading above are for the written rules, not your edit."
-                    : null
-                }
+                edited={null}
                 explanation={written.explanation}
                 failed={
                   // No rules says so itself, with the model's reason.
@@ -188,19 +207,37 @@ function DescribeTeamRulesPage() {
                 }
                 heading="What these rules do"
                 passed="Checks. Every rule matches tools and Bots this OpenBot has."
-                warning={written.warning}
+                warning={current ? null : written.warning}
               />
             ) : null}
-            {written && (rules.length > 0 || written.rules.length > 0) ? (
+            {showDraft && edited && !removed && rules.length > 0 ? (
+              <ReadStatus
+                kind="loading"
+                message="Rule edited. Review the updated preview before saving."
+              />
+            ) : null}
+            {showDraft && rules.length > 0 ? (
+              <Button
+                className="min-h-12 self-start"
+                onClick={() => backtest.current?.focus()}
+                type="button"
+                variant="outline"
+              >
+                Review recent activity
+              </Button>
+            ) : null}
+            {showDraft && rules.length > 0 ? (
               <FieldSet
                 disabled={writing || save.isPending || descriptionChanged}
               >
                 <RuleRowsEditor
                   onChange={(next) => {
+                    if (save.isError) save.reset();
                     setRemoved(null);
                     setRules(next);
                   }}
                   onRemove={(index, rule) => {
+                    if (save.isError) save.reset();
                     setRemoved({ index, rule });
                     setRules(rules.filter((_, at) => at !== index));
                   }}
@@ -211,14 +248,19 @@ function DescribeTeamRulesPage() {
                 />
               </FieldSet>
             ) : null}
-            {removed ? (
+            {showDraft && removed ? (
               <HStack gap={3} vAlign="center" wrap="wrap">
                 <p className="text-muted-foreground text-sm" role="status">
-                  Removed one rule.
+                  {rules.length > 0
+                    ? "Rule removed. Review the updated preview before saving."
+                    : "There are no rules to save. Undo the last removal or write rules again."}
                 </p>
                 <Button
+                  className="min-h-12"
                   disabled={writing || save.isPending || descriptionChanged}
                   onClick={() => {
+                    if (save.isError) save.reset();
+                    restoredRow.current = removed.index + 1;
                     setRules([
                       ...rules.slice(0, removed.index),
                       removed.rule,
@@ -227,6 +269,7 @@ function DescribeTeamRulesPage() {
                     setRemoved(null);
                   }}
                   size="sm"
+                  ref={undo}
                   type="button"
                   variant="outline"
                 >
@@ -234,27 +277,42 @@ function DescribeTeamRulesPage() {
                 </Button>
               </HStack>
             ) : null}
-            {!descriptionChanged &&
+            {showDraft &&
             current &&
             !current.check.ok &&
             current.check.problems.length === 0 ? (
               <p className="text-destructive text-sm">{current.check.error}</p>
             ) : null}
-            {!descriptionChanged && rules.length > 0 ? (
-              <RulesBacktest
-                asksMore={rules.some((rule) => rule.behaviour !== "allow")}
-                preview={preview}
-                settling={settling}
-              />
+            {showDraft && rules.length > 0 ? (
+              <section
+                aria-label="Rule preview"
+                className="scroll-mt-4 rounded-lg"
+                ref={backtest}
+                tabIndex={-1}
+              >
+                <RulesBacktest
+                  asksMore={rules.some((rule) => rule.behaviour !== "allow")}
+                  preview={preview}
+                  settling={settling}
+                />
+              </section>
             ) : null}
           </FieldGroup>
           {save.error ? (
             <p className="mt-5 text-destructive text-sm" role="alert">
-              {save.error.message}
+              {save.error instanceof TypeError
+                ? "Couldn't confirm the save. Choose Save rules again to check the same draft."
+                : save.error.message}
             </p>
           ) : null}
         </PageCard>
       </form>
+      <DraftLeaveConfirmation
+        hasDraft={hasDraft}
+        saving={save.isPending}
+        submitting={submitting}
+        title="Discard approval rules?"
+      />
     </GovernancePage>
   );
 }

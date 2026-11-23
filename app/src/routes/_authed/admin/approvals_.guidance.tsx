@@ -1,7 +1,7 @@
-import { IconShieldLock } from "@tabler/icons-react";
+import { IconChevronDown, IconShieldLock } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 import { GuidanceBacktestField } from "@/components/approvals/guidance-backtest";
 import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { ReadingStatus } from "@/components/boundaries/rule-reading";
@@ -66,6 +66,7 @@ function ReviewerGuidancePage() {
   const backtest = useMutation({ mutationFn: backtestReviewerGuidance });
   /* Null until the admin types, so the saved guidance shows once it has loaded. */
   const [draft, setDraft] = useState<string | null>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
   const [checked, setChecked] = useState<{
     text: string;
     reading: GuidanceReading;
@@ -75,10 +76,19 @@ function ReviewerGuidancePage() {
   const passed =
     checked !== null && checked.text === text && checked.reading.check.ok;
   const unchanged = text === (saved.data ?? "");
+  const hasDraft = draft !== null && !unchanged;
+  useBlocker({
+    enableBeforeUnload: hasDraft,
+    shouldBlockFn: ({ current, next }) =>
+      hasDraft &&
+      current.pathname !== next.pathname &&
+      !window.confirm("Leave without saving your auto-review guidance?"),
+  });
   const canWrite = saved.isSuccess && !remove.isPending;
   const ready =
     canWrite && passed && !unchanged && !check.isPending && !save.isPending;
-  const back = () => void navigate({ to: "/admin/approvals" });
+  const back = () =>
+    void navigate({ to: "/admin/approvals", ignoreBlocker: true });
 
   const runCheck = () => {
     if (!text || check.isPending || save.isPending) return;
@@ -95,6 +105,7 @@ function ReviewerGuidancePage() {
       description="Tell the reviewer what your organization needs a person for, or what is routine. It reads your guidance with every action it checks. Nothing changes until you save."
       title="Guidance for auto-review"
     >
+      {confirmation}
       {saved.isError ? (
         <ReadError
           message="Couldn't load saved guidance."
@@ -121,12 +132,13 @@ function ReviewerGuidancePage() {
             footer={
               <>
                 <Button
+                  className="min-h-11"
                   render={(props) => <Link {...props} to="/admin/approvals" />}
                   variant="outline"
                 >
                   Cancel
                 </Button>
-                <Button disabled={!ready} type="submit">
+                <Button className="min-h-11" disabled={!ready} type="submit">
                   {save.isPending ? "Saving…" : "Save guidance"}
                 </Button>
               </>
@@ -145,22 +157,39 @@ function ReviewerGuidancePage() {
                   maxLength={GUIDANCE_LIMIT}
                   onChange={(event) => setDraft(event.target.value)}
                   placeholder="Anything that emails someone outside the company needs a person"
+                  ref={editor}
                   rows={4}
                   value={draft ?? saved.data ?? ""}
                 />
-                <p className="flex gap-1.5 text-muted-foreground text-sm">
-                  <IconShieldLock className="mt-0.5 size-4 shrink-0" />
-                  <span>
-                    Built-in safety always comes first. Deleting, sending,
-                    sharing, posting, paying and changing account settings ask
-                    first. Members can allow each once, for a conversation, or
-                    always, unless you set it to ask every time. Changing a
-                    password on a website is always left to the person. Guidance
-                    can't change that.
-                  </span>
+                <p className="text-muted-foreground text-sm">
+                  Built-in safety always comes first.
                 </p>
-                <div>
+                <details className="group text-muted-foreground text-sm">
+                  <summary className="flex min-h-11 cursor-pointer items-center gap-2 hover:text-foreground">
+                    <IconShieldLock
+                      aria-hidden="true"
+                      className="size-4 shrink-0"
+                    />
+                    What built-in safety covers
+                    <IconChevronDown
+                      aria-hidden="true"
+                      className="size-4 shrink-0 group-open:rotate-180"
+                    />
+                  </summary>
+                  <p>
+                    Deleting, sending, sharing, posting, paying and changing
+                    account settings ask first. Members can allow each once, for
+                    a conversation, or always, unless you set it to ask every
+                    time. A person always changes passwords on websites
+                    themselves.
+                  </p>
+                </details>
+                <section
+                  className="flex flex-wrap gap-2"
+                  aria-label="Draft actions"
+                >
                   <Button
+                    className="min-h-11"
                     disabled={!text || check.isPending || save.isPending}
                     onClick={runCheck}
                     size="sm"
@@ -169,7 +198,43 @@ function ReviewerGuidancePage() {
                   >
                     {check.isPending ? "Checking…" : "Check guidance"}
                   </Button>
-                </div>
+                  {hasDraft ? (
+                    <Button
+                      className="min-h-11"
+                      disabled={!canWrite || save.isPending}
+                      onClick={(event) =>
+                        requestConfirmation({
+                          title: "Discard your guidance draft?",
+                          description: saved.data
+                            ? "This restores the last saved guidance and clears the draft’s check and test results."
+                            : "This clears the editor and the draft’s check and test results.",
+                          confirmLabel: saved.data
+                            ? "Restore saved guidance"
+                            : "Clear draft",
+                          pendingLabel: "Discarding…",
+                          failureMessage:
+                            "Couldn't discard the draft. Try again.",
+                          successMessage: saved.data
+                            ? "Saved guidance restored."
+                            : "Draft cleared.",
+                          trigger: event.currentTarget,
+                          fallbackFocus: () => editor.current,
+                          run: async () => {
+                            setDraft(null);
+                            setChecked(null);
+                            check.reset();
+                            backtest.reset();
+                            save.reset();
+                          },
+                        })
+                      }
+                      type="button"
+                      variant="ghost"
+                    >
+                      {saved.data ? "Restore saved guidance" : "Clear draft"}
+                    </Button>
+                  ) : null}
+                </section>
                 {check.error ? (
                   <p className="text-destructive text-sm" role="alert">
                     {check.error.message}
@@ -224,13 +289,14 @@ function ReviewerGuidancePage() {
           title="Remove"
         >
           <Button
-            className="mt-4"
+            className="mt-4 min-h-11"
             disabled={!canWrite || save.isPending}
             onClick={(event) => {
               requestConfirmation({
                 title: "Remove the guidance?",
-                description:
-                  "The reviewer goes back to its own instructions from the next action it checks.",
+                description: hasDraft
+                  ? "The reviewer goes back to its own instructions. Your unsaved guidance draft is also discarded."
+                  : "The reviewer goes back to its own instructions from the next action it checks.",
                 confirmLabel: "Remove guidance",
                 pendingLabel: "Removing…",
                 failureMessage: "Couldn't remove the guidance. Try again.",
@@ -258,7 +324,6 @@ function ReviewerGuidancePage() {
           </Button>
         </PageSection>
       ) : null}
-      {confirmation}
     </GovernancePage>
   );
 }

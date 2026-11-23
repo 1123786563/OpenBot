@@ -285,10 +285,14 @@ describe("the Computer page", () => {
       .parentElement?.parentElement as HTMLElement;
     expect(within(browsers).getByText("Personal Assistant")).toBeTruthy();
     expect(
-      within(browsers).getByRole("button", { name: "Stop browser" }),
+      within(browsers).getByRole("button", {
+        name: "Stop browser: Personal Assistant",
+      }),
     ).toBeTruthy();
     expect(
-      within(browsers).getByRole("button", { name: "Reset" }),
+      within(browsers).getByRole("button", {
+        name: "Reset: Personal Assistant",
+      }),
     ).toBeTruthy();
   });
 
@@ -333,16 +337,22 @@ describe("the Computer page", () => {
     const own = browserRow(view, "Your OpenBot browser");
     expect(own.textContent).toContain("You record in it with Teach a Bot.");
     expect(
-      within(own).getByRole("button", { name: "Stop browser" }),
+      within(own).getByRole("button", {
+        name: "Stop browser: Your OpenBot browser",
+      }),
     ).toBeTruthy();
     expect(
-      within(own).getByRole("button", { name: "Clear browser data" }),
+      within(own).getByRole("button", {
+        name: "Clear browser data: Your OpenBot browser",
+      }),
     ).toBeTruthy();
-    expect(within(own).queryByRole("button", { name: "Reset" })).toBeNull();
+    expect(within(own).queryByRole("button", { name: /^Reset:/ })).toBeNull();
 
     // The Bot's own row keeps its Reset.
     const bot = browserRow(view, "Personal Assistant");
-    expect(within(bot).getByRole("button", { name: "Reset" })).toBeTruthy();
+    expect(
+      within(bot).getByRole("button", { name: "Reset: Personal Assistant" }),
+    ).toBeTruthy();
 
     const text = view.container.textContent ?? "";
     expect(text).not.toContain("closes a Bot's browser");
@@ -384,11 +394,13 @@ describe("the Computer page", () => {
     expect(view.getByText("A person's OpenBot browser")).toBeTruthy();
     expect(view.container.textContent).not.toContain("A Bot no longer here");
 
-    within(ada).getByRole("button", { name: "Reset" }).click();
-    const dialog = await view.findByRole("dialog");
+    within(ada)
+      .getByRole("button", { name: "Reset: Ada's OpenBot browser" })
+      .click();
+    const dialog = await view.findByRole("alertdialog");
     expect(dialog.textContent).toContain("Reset Ada's OpenBot browser?");
     expect(dialog.textContent).toContain(
-      "The person is signed out of every site they signed in to in it.",
+      "The person is signed out of every site in it.",
     );
     expect(dialog.textContent).not.toContain("The Bot is signed out");
   });

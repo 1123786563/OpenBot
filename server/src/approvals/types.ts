@@ -237,6 +237,9 @@ export type ApprovalRuleInput = {
   scope: string;
   behaviour: RuleBehaviour;
 };
+export type ApprovalRuleSave = { requestId: string; validate: () => void };
+
+export class ApprovalRuleSaveConflictError extends Error {}
 /**
  * Where saved rules came from, when they were not typed into the form: a sentence in plain English
  * that the deployment's model wrote them from, and the admin then saved. The boundary's own shape
@@ -307,6 +310,7 @@ export type ApprovalPolicyStore = {
     by: string,
     input: readonly ApprovalRuleInput[],
     authoring?: ApprovalRuleAuthoring,
+    request?: ApprovalRuleSave,
   ): Promise<ApprovalTeamRule[]>;
   /**
    * The newest requests across every person, for replaying candidate rules over what people were

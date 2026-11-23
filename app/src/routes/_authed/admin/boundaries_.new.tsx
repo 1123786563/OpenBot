@@ -7,7 +7,8 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { GovernancePage } from "@/components/astryx-pilot/governance";
 import {
   DescribeRule,
@@ -15,12 +16,13 @@ import {
 } from "@/components/boundaries/describe-rule";
 import { RulePreview } from "@/components/boundaries/rule-preview";
 import { RuleReading } from "@/components/boundaries/rule-reading";
+import { RuleReference } from "@/components/boundaries/rule-reference";
 import {
   PageCard,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { ReadError } from "@/components/layout/read-status";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -39,11 +41,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  RULE_ATTRIBUTES,
-  RULE_TEMPLATES,
-  type RuleTemplate,
-} from "@/lib/boundaries/rules";
+import { RULE_TEMPLATES, type RuleTemplate } from "@/lib/boundaries/rules";
 import { ClientError } from "@/lib/client";
 import { isComposing } from "@/lib/composing";
 import { saveActionPolicyMutationOptions } from "@/lib/computers/mutations";
@@ -52,6 +50,7 @@ import {
   actionPolicyQueryOptions,
   policyDryRunQueryOptions,
 } from "@/lib/computers/queries";
+import { newId } from "@/lib/new-id";
 
 export const Route = createFileRoute("/_authed/admin/boundaries_/new")({
   component: NewRulePage,
@@ -108,12 +107,33 @@ function NewRulePage() {
   const [drafts, setDrafts] = useState<Partial<Record<string, Draft>>>({});
   const [problem, setProblem] = useState<Error | null>(null);
   const [writing, setWriting] = useState(false);
+  const submitting = useRef(false);
+  const ruleHeading = useRef<HTMLHeadingElement>(null);
+  const starterHeading = useRef<HTMLHeadingElement>(null);
+  const policyRecovery = useRef<HTMLElement>(null);
+  const hasDraft = Object.entries(drafts).some(([id, value]) => {
+    if (!value) return false;
+    const original = startDraft(
+      RULE_TEMPLATES.find((template) => template.rule === id) ?? null,
+    );
+    return Boolean(
+      value.written ||
+        value.prompt.trim() ||
+        value.rule !== original.rule ||
+        value.name !== original.name ||
+        value.description !== original.description,
+    );
+  });
+  useLayoutEffect(() => {
+    if (chosen) ruleHeading.current?.focus();
+  }, [chosen]);
 
   const key = typeof chosen === "string" ? chosen : chosen?.rule;
   const draft = (key && drafts[key]) || startDraft(chosen);
   const { name, description, rule, prompt, written } = draft;
   const updateDraft = (update: (current: Draft) => Partial<Draft>) => {
     if (!key) return;
+    if (problem && !needsPolicyRefresh) setProblem(null);
     setDrafts((previous) => {
       const current = previous[key] ?? startDraft(chosen);
       return { ...previous, [key]: { ...current, ...update(current) } };
@@ -168,6 +188,9 @@ function NewRulePage() {
     preview.error instanceof ClientError ? preview.error.status : null;
   const needsPolicyRefresh =
     problem instanceof ClientError && problem.status === 409;
+  useLayoutEffect(() => {
+    if (needsPolicyRefresh) policyRecovery.current?.focus();
+  }, [needsPolicyRefresh]);
   const ready = Boolean(
     candidate &&
       name.trim() &&
@@ -184,17 +207,9 @@ function NewRulePage() {
   };
 
   const choose = (next: Start) => {
+    if (chosen === next) ruleHeading.current?.focus();
     setChosen(next);
     if (!needsPolicyRefresh) setProblem(null);
-    /*
-     * The form under the sources is the point of the choice, and on a phone it sits a
-     * full source list below the fold, so the choice itself carries the scroll.
-     */
-    requestAnimationFrame(() =>
-      document
-        .getElementById("the-rule-section")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    );
   };
 
   /* The model's rule goes into the CEL field, where the preview picks it up as it would any rule. */
@@ -224,7 +239,8 @@ function NewRulePage() {
   };
 
   const add = () => {
-    if (!policy || !ready || savePolicy.isPending) return;
+    if (!policy || !ready || submitting.current) return;
+    submitting.current = true;
     setProblem(null);
     savePolicy.mutate(
       {
@@ -233,7 +249,11 @@ function NewRulePage() {
         deny: [...policy.deny, trimmed],
         labels: {
           ...policy.labels,
-          [trimmed]: { name: name.trim(), description: description.trim() },
+          [trimmed]: {
+            name: name.trim(),
+            description: description.trim(),
+            id: `r-${newId()}`,
+          },
         },
         ...(written
           ? { authoring: { source: "english" as const, text: written.text } }
@@ -241,7 +261,11 @@ function NewRulePage() {
       },
       {
         onError: setProblem,
-        onSuccess: () => void navigate({ to: "/admin/boundaries" }),
+        onSuccess: () =>
+          void navigate({ to: "/admin/boundaries", ignoreBlocker: true }),
+        onSettled: () => {
+          submitting.current = false;
+        },
       },
     );
   };
@@ -255,6 +279,72 @@ function NewRulePage() {
     { key: "custom", value: "custom" },
   ];
 
+  const starters = (
+    <PageSection headingRef={starterHeading} title="Start from">
+      <PageRows>
+        {options.map((option, index) => {
+          const custom = option.value === "custom";
+          const describe = option.value === "describe";
+          const template =
+            custom || describe ? null : (option.value as RuleTemplate);
+          const selected = chosen === option.value;
+          const taken = template
+            ? policy?.deny.includes(template.rule) && !drafts[option.key]
+            : false;
+          return (
+            <Fragment key={option.key}>
+              <Item
+                aria-pressed={selected}
+                render={
+                  <button
+                    disabled={taken || writing || savePolicy.isPending}
+                    type="button"
+                  />
+                }
+                onClick={() => choose(option.value)}
+                size="sm"
+              >
+                <ItemMedia variant="icon">
+                  {describe ? (
+                    <IconSparkles />
+                  ) : custom ? (
+                    <IconCode />
+                  ) : (
+                    <IconShieldX />
+                  )}
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>
+                    {template
+                      ? template.name
+                      : describe
+                        ? "Describe it in words"
+                        : "Write your own"}
+                  </ItemTitle>
+                  <ItemDescription className="line-clamp-none text-sm">
+                    {template
+                      ? taken
+                        ? "Already one of your rules."
+                        : template.description
+                      : describe
+                        ? "Say what no Bot may do, and your model writes the rule."
+                        : "Describe the action yourself, in CEL."}
+                  </ItemDescription>
+                </ItemContent>
+                {selected ? (
+                  <ItemActions>
+                    <IconCheck aria-hidden className="size-4" />
+                  </ItemActions>
+                ) : null}
+              </Item>
+              {index !== options.length - 1 && <Separator />}
+            </Fragment>
+          );
+        })}
+      </PageRows>
+    </PageSection>
+  );
+
   return (
     <GovernancePage
       backButton={BACK}
@@ -262,79 +352,49 @@ function NewRulePage() {
       title="Add rule"
     >
       {stored.isError || needsPolicyRefresh ? (
-        <ReadError
-          description={stored.error?.message ?? problem?.message}
-          message="Reload the current boundaries before adding your rule."
-          retry={reloadPolicy}
-          retrying={stored.isFetching}
-        />
+        <section
+          aria-label="Boundary status"
+          ref={policyRecovery}
+          tabIndex={-1}
+        >
+          <ReadError
+            description={stored.error?.message ?? problem?.message}
+            focusAfterRetry={() =>
+              ruleHeading.current ?? starterHeading.current
+            }
+            message="Reload the current boundaries before adding your rule."
+            retry={reloadPolicy}
+            retryBelow
+            retrying={stored.isFetching}
+          />
+        </section>
+      ) : stored.isPending ? (
+        <ReadStatus kind="loading" message="Loading current boundaries…" />
       ) : null}
-      <PageSection title="Start from">
-        <PageRows>
-          {options.map((option, index) => {
-            const custom = option.value === "custom";
-            const describe = option.value === "describe";
-            const template =
-              custom || describe ? null : (option.value as RuleTemplate);
-            const selected = chosen === option.value;
-            const taken = template
-              ? policy?.deny.includes(template.rule) && !drafts[option.key]
-              : false;
-            return (
-              <Fragment key={option.key}>
-                <Item
-                  aria-pressed={selected}
-                  render={
-                    <button
-                      disabled={taken || writing || savePolicy.isPending}
-                      type="button"
-                    />
-                  }
-                  onClick={() => choose(option.value)}
-                  size="sm"
-                >
-                  <ItemMedia variant="icon">
-                    {describe ? (
-                      <IconSparkles />
-                    ) : custom ? (
-                      <IconCode />
-                    ) : (
-                      <IconShieldX />
-                    )}
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>
-                      {template
-                        ? template.name
-                        : describe
-                          ? "Describe it in words"
-                          : "Write your own"}
-                    </ItemTitle>
-                    <ItemDescription>
-                      {template
-                        ? taken
-                          ? "Already one of your rules."
-                          : template.description
-                        : describe
-                          ? "Say what no Bot may do, and your model writes the rule."
-                          : "Describe the action yourself, in CEL."}
-                    </ItemDescription>
-                  </ItemContent>
-                  {selected ? (
-                    <ItemActions>
-                      <IconCheck className="size-4" />
-                    </ItemActions>
-                  ) : null}
-                </Item>
-                {index !== options.length - 1 && <Separator />}
-              </Fragment>
-            );
-          })}
-        </PageRows>
-      </PageSection>
+      {chosen ? null : starters}
 
       {chosen ? (
-        <PageSection id="the-rule-section" title="The rule">
+        <PageSection
+          headingRef={ruleHeading}
+          description={
+            chosen === "describe"
+              ? "From a description"
+              : chosen === "custom"
+                ? "Written in CEL"
+                : `From the “${chosen.name}” template`
+          }
+          title="The rule"
+          action={
+            <Button
+              className="min-h-12"
+              onClick={() => starterHeading.current?.focus()}
+              type="button"
+              variant="outline"
+            >
+              Change starting point
+            </Button>
+          }
+        >
           <form
             className="mt-4"
             noValidate
@@ -350,6 +410,8 @@ function NewRulePage() {
               footer={
                 <>
                   <Button
+                    className="min-h-12"
+                    disabled={savePolicy.isPending}
                     render={(props) => (
                       <Link {...props} to="/admin/boundaries" />
                     )}
@@ -358,6 +420,7 @@ function NewRulePage() {
                     Cancel
                   </Button>
                   <Button
+                    className="min-h-12"
                     disabled={!ready || savePolicy.isPending}
                     onClick={add}
                     type="button"
@@ -383,117 +446,126 @@ function NewRulePage() {
                     draft before adding it.
                   </Text>
                 ) : null}
-                <Field>
-                  <FieldLabel htmlFor="rule-name">Name</FieldLabel>
-                  <Input
-                    id="rule-name"
-                    maxLength={80}
-                    onChange={(event) => {
-                      const name = event.target.value;
-                      updateDraft(() => ({ name }));
-                    }}
-                    placeholder="Never delete files"
-                    value={name}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rule-description">
-                    What it stops
-                  </FieldLabel>
-                  <FieldDescription>
-                    One sentence, shown under the name in the list.
-                  </FieldDescription>
-                  <Input
-                    id="rule-description"
-                    maxLength={300}
-                    onChange={(event) => {
-                      const description = event.target.value;
-                      updateDraft(() => ({ description }));
-                    }}
-                    value={description}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rule-expression">Rule</FieldLabel>
-                  <FieldDescription>
-                    Written in CEL. OpenBot checks the rule before it's added,
-                    so a typo can't stop every action.
-                  </FieldDescription>
-                  <Textarea
-                    aria-describedby={
-                      candidate && previewStatus === 400
-                        ? "rule-validation-error"
-                        : undefined
-                    }
-                    aria-invalid={
-                      duplicate ||
-                      broken ||
-                      (candidate && previewStatus === 400)
-                        ? true
-                        : undefined
-                    }
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    className="min-h-20 font-mono text-xs"
-                    id="rule-expression"
-                    onChange={(event) => {
-                      const rule = event.target.value;
-                      updateDraft(() => ({ rule }));
-                    }}
-                    placeholder='tool.name == "computer_click" && contains(element.name, "delete")'
-                    readOnly={writing || savePolicy.isPending}
-                    spellCheck={false}
-                    value={rule}
-                  />
-                  {duplicate ? (
-                    <p className="text-destructive text-sm">
-                      This rule is already in place.
-                    </p>
-                  ) : null}
-                  {chosen !== "custom" && chosen !== "describe" ? (
-                    <p className="text-amber-600 text-sm dark:text-amber-500">
-                      {chosen.cost}
-                    </p>
-                  ) : null}
-                  {written && !promptChanged && !writing ? (
-                    <RuleReading rule={rule} written={written} />
-                  ) : null}
-                  {candidate && previewStatus === 400 ? (
-                    <Text
-                      as="p"
-                      className="text-destructive"
-                      id="rule-validation-error"
-                      role="alert"
-                      size="sm"
-                    >
-                      {preview.error?.message}
-                    </Text>
-                  ) : null}
-                  <RuleReference />
-                </Field>
-                {canPreview && !stored.isError ? (
-                  !candidate ||
-                  preview.isPending ||
-                  (preview.isFetching && !preview.error) ? (
-                    <Text as="p" color="secondary" role="status" size="sm">
-                      Checking this rule…
-                    </Text>
-                  ) : previewStatus === 501 ? (
-                    <Text as="p" color="secondary" role="status" size="sm">
-                      Rule checked. This deployment has no readable audit
-                      history to preview.
-                    </Text>
-                  ) : preview.isError && previewStatus !== 400 ? (
-                    <ReadError
-                      description={preview.error.message}
-                      message="Couldn’t check this rule."
-                      retry={() => preview.refetch()}
-                      retrying={preview.isFetching}
-                    />
-                  ) : preview.isSuccess ? (
-                    <RulePreview preview={preview} />
-                  ) : null
-                ) : null}
+                {promptChanged ? null : (
+                  <>
+                    <Field>
+                      <FieldLabel htmlFor="rule-name">Name</FieldLabel>
+                      <Input
+                        className="min-h-12"
+                        id="rule-name"
+                        readOnly={savePolicy.isPending}
+                        maxLength={80}
+                        onChange={(event) => {
+                          const name = event.target.value;
+                          updateDraft(() => ({ name }));
+                        }}
+                        placeholder="Never delete files"
+                        value={name}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="rule-description">
+                        What it stops
+                      </FieldLabel>
+                      <FieldDescription>
+                        One sentence, shown under the name in the list.
+                      </FieldDescription>
+                      <Input
+                        className="min-h-12"
+                        id="rule-description"
+                        readOnly={savePolicy.isPending}
+                        maxLength={300}
+                        onChange={(event) => {
+                          const description = event.target.value;
+                          updateDraft(() => ({ description }));
+                        }}
+                        value={description}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="rule-expression">Rule</FieldLabel>
+                      <FieldDescription>
+                        Written in CEL. OpenBot checks the rule before it's
+                        added, so a typo can't stop every action.
+                      </FieldDescription>
+                      <Textarea
+                        aria-describedby={
+                          candidate && previewStatus === 400
+                            ? "rule-validation-error"
+                            : undefined
+                        }
+                        aria-invalid={
+                          duplicate ||
+                          broken ||
+                          (candidate && previewStatus === 400)
+                            ? true
+                            : undefined
+                        }
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        className="min-h-20 font-mono text-sm"
+                        id="rule-expression"
+                        onChange={(event) => {
+                          const rule = event.target.value;
+                          updateDraft(() => ({ rule }));
+                        }}
+                        placeholder='tool.name == "computer_click" && contains(element.name, "delete")'
+                        readOnly={writing || savePolicy.isPending}
+                        spellCheck={false}
+                        value={rule}
+                      />
+                      {duplicate ? (
+                        <p className="text-destructive text-sm">
+                          This rule is already in place.
+                        </p>
+                      ) : null}
+                      {chosen !== "custom" && chosen !== "describe" ? (
+                        <p className="text-amber-600 text-sm dark:text-amber-500">
+                          {chosen.cost}
+                        </p>
+                      ) : null}
+                      {written && !promptChanged && !writing ? (
+                        <RuleReading rule={rule} written={written} />
+                      ) : null}
+                      {candidate && previewStatus === 400 ? (
+                        <Text
+                          as="p"
+                          className="text-destructive"
+                          id="rule-validation-error"
+                          role="alert"
+                          size="sm"
+                        >
+                          {preview.error?.message}
+                        </Text>
+                      ) : null}
+                      <RuleReference />
+                    </Field>
+                    {canPreview && !stored.isError ? (
+                      !candidate ||
+                      preview.isPending ||
+                      (preview.isFetching && !preview.error) ? (
+                        <Text as="p" color="secondary" role="status" size="sm">
+                          Checking this rule…
+                        </Text>
+                      ) : previewStatus === 501 ? (
+                        <Text as="p" color="secondary" role="status" size="sm">
+                          Rule checked. This deployment has no readable audit
+                          history to preview.
+                        </Text>
+                      ) : preview.isError && previewStatus !== 400 ? (
+                        <ReadError
+                          description={preview.error.message}
+                          message="Couldn’t check this rule."
+                          retry={() => preview.refetch()}
+                          retryBelow
+                          retrying={preview.isFetching}
+                        />
+                      ) : preview.isSuccess ? (
+                        <RulePreview preview={preview} />
+                      ) : null
+                    ) : null}
+                  </>
+                )}
               </FieldGroup>
 
               {problem && !needsPolicyRefresh ? (
@@ -506,39 +578,13 @@ function NewRulePage() {
           </form>
         </PageSection>
       ) : null}
+      {chosen ? starters : null}
+      <DraftLeaveConfirmation
+        hasDraft={hasDraft}
+        saving={savePolicy.isPending}
+        submitting={submitting}
+        title="Discard boundary draft?"
+      />
     </GovernancePage>
-  );
-}
-
-/**
- * What a rule can check, folded away until it is wanted. It used to be the page's description, a
- * paragraph of attribute names read by everybody to find out what the screen was for.
- */
-function RuleReference() {
-  return (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-        What a rule can check
-      </summary>
-      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-        {RULE_ATTRIBUTES.map((attribute) => (
-          <div className="contents" key={attribute.name}>
-            <dt>
-              <code className="font-mono text-xs">{attribute.name}</code>
-            </dt>
-            <dd className="text-muted-foreground">{attribute.meaning}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-3 text-muted-foreground">
-        A rule that names something an action doesn't have, such as{" "}
-        <code className="font-mono text-xs">key</code> on a click, counts as a
-        match. Name the tool first so the rest is only checked where it applies:{" "}
-        <code className="font-mono text-xs">
-          tool.name == "computer_key" && key == "Enter"
-        </code>
-        .
-      </p>
-    </details>
   );
 }

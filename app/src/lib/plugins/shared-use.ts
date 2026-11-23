@@ -86,6 +86,13 @@ export function decideSharedUseMutationOptions(queryClient: QueryClient) {
         `/api/approvals/shared-use/${encodeURIComponent(id)}/${decision}`,
         { method: "POST", fallback: "Couldn't save that decision." },
       ),
+    onSuccess: async (_response, { id }) => {
+      const queryKey = sharedUseKeys.requests();
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData<SharedUseRequest[]>(queryKey, (pending) =>
+        pending?.filter((request) => request.id !== id),
+      );
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["approvals"] }),
   });
 }

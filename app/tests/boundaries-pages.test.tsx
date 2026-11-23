@@ -7,6 +7,7 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { boundaryRuleId } from "@openbot/shared/boundary-rule-id";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -204,12 +205,43 @@ test("adding from a template saves the rule with its name and returns to the lis
       [template.rule]: {
         name: template.name,
         description: template.description,
+        id: expect.stringMatching(/^r-/),
       },
     },
   });
   await waitFor(() =>
     expect(router.state.location.pathname).toBe("/admin/boundaries"),
   );
+});
+
+test("a boundary search opens the matching rule by identifier and survives returning", async () => {
+  serving({
+    mode: "enforce",
+    deny: [template.rule, custom],
+    allow: ["true"],
+    labels: {
+      [custom]: {
+        name: "Delete safeguard",
+        description: "Protects project files",
+      },
+    },
+  });
+  const { view, router } = open("/admin/boundaries");
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const search = await view.findByRole("searchbox", {
+    name: "Search boundary rules",
+  });
+  await user.type(search, "DELETE project");
+  await view.findByText("1 of 2 rules match");
+  const matching = view.getByRole("link", { name: /Delete safeguard/ });
+  await user.click(matching);
+  await view.findByRole("heading", { name: "Delete safeguard" });
+  expect(router.state.location.pathname).toBe(
+    `/admin/boundaries/${boundaryRuleId(custom)}`,
+  );
+  await user.click(view.getByRole("link", { name: "Boundaries" }));
+  await view.findByText("1 of 2 rules match");
+  expect(view.getByDisplayValue("DELETE project")).toBeTruthy();
 });
 
 test("new rule keeps its draft through a starter switch and a failed preview", async () => {
@@ -275,7 +307,7 @@ test("removing a rule is confirmed, and takes its name with it", async () => {
     allow: ["true"],
     labels: { [custom]: { name: "No rm", description: "" } },
   });
-  const { view } = open("/admin/boundaries/1");
+  const { view } = open(`/admin/boundaries/${boundaryRuleId(custom)}`);
 
   fireEvent.click(await view.findByRole("button", { name: "Remove rule" }));
   expect(saved).toHaveLength(0);
@@ -284,6 +316,110 @@ test("removing a rule is confirmed, and takes its name with it", async () => {
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0]?.deny).toEqual([template.rule]);
   expect(saved[0]?.labels).toEqual({});
+});
+
+test("editing a rule requires the current expression to pass its check", async () => {
+  serving({ mode: "enforce", deny: [custom], allow: ["true"] });
+  const invalid = "page.host ==";
+  const valid = 'page.host == "blocked.example.test"';
+  replay = (policy) =>
+    policy.deny.includes(invalid)
+      ? Response.json({ error: "Incomplete expression." }, { status: 400 })
+      : Response.json({ error: "No audit history." }, { status: 501 });
+
+  const { view } = open(`/admin/boundaries/${boundaryRuleId(custom)}`);
+  const field = await view.findByRole("textbox", { name: "Rule" });
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.clear(field);
+  await user.type(field, invalid);
+  const save = view.getByRole("button", { name: "Save rule" });
+  expect(save.hasAttribute("disabled")).toBe(true);
+  await view.findByText("Incomplete expression.");
+  expect(field.getAttribute("aria-invalid")).toBe("true");
+  fireEvent.submit(save.closest("form")!);
+  expect(expectedPolicies).toHaveLength(0);
+
+  await user.clear(field);
+  await user.type(field, valid);
+  expect(save.hasAttribute("disabled")).toBe(true);
+  await view.findByText(/Rule checked/);
+  expect(field.hasAttribute("aria-invalid")).toBe(false);
+  fireEvent.click(save);
+  await waitFor(() => expect(saved[0]?.deny).toEqual([valid]));
+});
+
+test("editing a rule keeps the draft and a concurrent addition", async () => {
+  const initial: ActionPolicy = {
+    mode: "enforce",
+    deny: [custom],
+    allow: ["true"],
+  };
+  serving(initial);
+  const { view } = open(`/admin/boundaries/${boundaryRuleId(custom)}`);
+  const field = await view.findByRole("textbox", {
+    name: "Rule",
+  });
+  const draft = 'page.host == "blocked.example.test"';
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.clear(field);
+  await user.type(field, draft);
+  stored = { ...initial, deny: [custom, template.rule] };
+  const save = view.getByRole("button", {
+    name: "Save rule",
+  });
+  await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(save);
+
+  const reload = await view.findByRole("button", {
+    name: "Reload current boundaries",
+  });
+  expect(save.hasAttribute("disabled")).toBe(true);
+  expect(saved).toHaveLength(0);
+  fireEvent.click(reload);
+  await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
+  expect(field instanceof HTMLTextAreaElement && field.value).toBe(draft);
+  fireEvent.click(save);
+  await waitFor(() => expect(saved[0]?.deny).toEqual([draft, template.rule]));
+});
+
+test("editing a removed rule preserves the draft and prevents replacing it", async () => {
+  const initial: ActionPolicy = {
+    mode: "enforce",
+    deny: [custom],
+    allow: ["true"],
+  };
+  serving(initial);
+  const { view } = open(`/admin/boundaries/${boundaryRuleId(custom)}`);
+  const field = await view.findByRole("textbox", {
+    name: "Rule",
+  });
+  const draft = 'page.host == "blocked.example.test"';
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.clear(field);
+  await user.type(field, draft);
+  stored = { ...initial, deny: [] };
+  const save = view.getByRole("button", {
+    name: "Save rule",
+  });
+  await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(save);
+
+  fireEvent.click(
+    await view.findByRole("button", { name: "Reload current boundaries" }),
+  );
+  await view.findByText("This rule was changed or removed.");
+  expect(field instanceof HTMLTextAreaElement && field.value).toBe(draft);
+  expect(save.hasAttribute("disabled")).toBe(true);
+  expect(expectedPolicies).toEqual([initial]);
+  expect(saved).toHaveLength(0);
+});
+
+test("a positional bookmark asks the administrator to find the boundary again", async () => {
+  serving({ mode: "enforce", deny: [template.rule, custom], allow: ["true"] });
+  const { view } = open("/admin/boundaries/1");
+  await view.findByRole("heading", { name: "Choose a boundary" });
+  expect(view.getByText(/older link used a position in the list/)).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Remove rule" })).toBeNull();
 });
 
 test("changing Trial mode reviews impact and declines to overwrite a newer policy", async () => {
@@ -443,7 +579,9 @@ test("a rule's page lists the recorded refusals that would be allowed without it
         ],
       },
     });
-  const { view } = open("/admin/boundaries/0");
+  const { view } = open(
+    `/admin/boundaries/${boundaryRuleId(salesforceWrites)}`,
+  );
 
   expect(
     await view.findByText(

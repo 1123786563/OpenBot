@@ -1,23 +1,21 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconAppsOff,
   IconArrowUpRight,
-  IconChevronDown,
   IconPlugOff,
   IconUsers,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  ConnectionAction,
-  ConnectionPage,
-} from "@/components/connections/connection-surface";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import { IdentityConnectionPage } from "@/components/connections/identity-connection-page";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { appPageTitle, PluginPage } from "@/components/manage/plugin-page";
 import {
   BrokeredAccountRow,
@@ -28,12 +26,6 @@ import { GrantList } from "@/components/plugins/grant-list";
 import { RoutinesConnectionPage } from "@/components/routines/routines-connection-page";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Item,
   ItemActions,
   ItemContent,
@@ -43,16 +35,13 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
 import { connectAccountMutationOptions } from "@/lib/plugins/mutations";
+import { brokeredProvenance } from "@/lib/plugins/provider-vocabulary";
 import {
-  brokeredProvenance,
-  disconnectSiblingsNotice,
-} from "@/lib/plugins/provider-vocabulary";
-import {
-  connectionSiblingsQueryOptions,
   connectionsQueryOptions,
   type PluginServer,
   personalConnections,
@@ -272,8 +261,11 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
     },
   });
 
-  const entry = plugins.data?.catalogue.find((item) => item.key === key);
-  const server = (plugins.data?.servers ?? []).find((s) => s.id === key);
+  const pluginData = canKeepCachedRead(plugins.error)
+    ? plugins.data
+    : undefined;
+  const entry = pluginData?.catalogue.find((item) => item.key === key);
+  const server = (pluginData?.servers ?? []).find((s) => s.id === key);
   const enabled = server !== undefined;
   /*
    * READ THROUGH `personalConnections`, never the raw list: a Shared app's row is the deployment's
@@ -293,20 +285,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    * THE VENDOR'S NAME, from the active provider and never from a row: a deployment with the key set
    * and nothing enabled has no row, and a row cannot say which broker holds the account.
    */
-  const provider = pluginsProvider(plugins.data);
-  /*
-   * WHAT A DISCONNECT WOULD ALSO END, asked only while there is an account for it to end. The query
-   * is gated on the connection and its answer is read only through the same gate, so a cached answer
-   * from before a disconnect is never drawn beside "Connect".
-   */
-  const siblings = useQuery({
-    ...connectionSiblingsQueryOptions(key),
-    enabled: brokered && connection !== undefined,
-  });
-  const siblingsNotice =
-    brokered && connection !== undefined && siblings.data
-      ? disconnectSiblingsNotice(siblings.data)
-      : null;
+  const provider = pluginsProvider(pluginData);
   /* From the snapshot above and never from the live search, which is stripped. */
   const landedAction = arrival.key === key ? arrival.landedAction : null;
   /*
@@ -318,7 +297,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    * absent, this drew the list and every press 503'd. False on Composio — whose auth config fixes
    * one state for the whole toolkit — so every Composio render is unchanged.
    */
-  const perActionGrants = plugins.data?.authorizesPerAction ?? false;
+  const perActionGrants = pluginData?.authorizesPerAction ?? false;
   /* Who is asking only matters to a Shared app's Authorize, so it is not read for anything else. */
   const sharedHere = server?.accountMode === "shared";
   const me = useQuery({
@@ -335,7 +314,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
        a consent over the connection that stands. */
     reconnectsInPlace: perActionGrants,
     brokered,
-    configured: plugins.data?.composioConfigured ?? false,
+    configured: pluginData?.composioConfigured ?? false,
     recorded: connection !== undefined,
     report: setNotice,
     returnTo: "settings",
@@ -422,19 +401,12 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
         backButton={back}
         title={server?.title ?? appPageTitle(key)}
       >
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load this connection.
-          </p>
-          <ConnectionAction
-            disabled={connections.isFetching}
-            onClick={() => void connections.refetch()}
-            type="button"
-            variant="outline"
-          >
-            {connections.isFetching ? "Retrying…" : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          message="Couldn't load this connection."
+          retry={connections.refetch}
+          retrying={connections.isFetching}
+          retryBelow
+        />
       </ConnectionPage>
     );
   }
@@ -444,22 +416,15 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    * without it they concluded there is none: "This is not a service you connect for yourself",
    * about a connector this person may hold right now.
    */
-  if (!plugins.data) {
+  if (!pluginData) {
     return (
       <ConnectionPage backButton={back} title={appPageTitle(key)}>
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load this app.
-          </p>
-          <ConnectionAction
-            disabled={plugins.isFetching}
-            onClick={() => void plugins.refetch()}
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching ? "Retrying…" : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          message="Couldn't load this app."
+          retry={plugins.refetch}
+          retrying={plugins.isFetching}
+          retryBelow
+        />
       </ConnectionPage>
     );
   }
@@ -471,7 +436,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
    * brokered row's own sentence for this case names an environment variable — an instruction for
    * whoever runs the deployment, read by somebody who cannot act on it.
    */
-  if (server?.provenance === "composio" && !plugins.data.composioConfigured) {
+  if (server?.provenance === "composio" && !pluginData.composioConfigured) {
     return (
       <ConnectionPage backButton={back} title={server.title}>
         <PageEmpty icon={IconPlugOff} title="Not set up yet">
@@ -617,7 +582,6 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
                  types never leaves this page — but which Bots can read this person's mail is the
                  whole point of the screen and holds for both kinds. */
               disconnectedReassurance={reassurance}
-              notice={siblingsNotice ?? undefined}
               provider={provider}
               title={server.title}
             />
@@ -681,7 +645,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
               {/* Not "Connect your account": the row is also the connected state, and a title has to
                   read for both. */}
               <ItemTitle>Your account</ItemTitle>
-              <ItemDescription>
+              <ItemDescription className="line-clamp-none text-sm">
                 {!enabled
                   ? "Not available yet. An admin has to turn this on first."
                   : connection
@@ -691,53 +655,9 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
             </ItemContent>
             <ItemActions>
               {connection ? (
-                /*
-                 * A state and a menu, not a switch. Connected is a fact about a grant that lives at
-                 * the vendor, and withdrawing it is a deliberate act rather than the other half of a
-                 * position — so it is named in a menu instead of being whatever happens when
-                 * something slides back.
-                 */
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button size="sm" type="button" variant="outline">
-                        <span
-                          aria-hidden="true"
-                          className="size-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400"
-                        />
-                        Connected
-                        <IconChevronDown />
-                      </Button>
-                    }
-                  />
-                  {/*
-                   * `w-auto`, because the default is `w-(--anchor-width)` — the width of the trigger,
-                   * which here is a small "Connected" button. Left alone, the one item inside wraps
-                   * onto three lines and a destructive action becomes hard to read at the moment it
-                   * most needs to be legible.
-                   */}
-                  <DropdownMenuContent align="end" className="w-auto">
-                    <DropdownMenuItem
-                      onClick={() =>
-                        /*
-                         * NOT BUILT YET, and it says so rather than appearing to work.
-                         *
-                         * Withdrawing is three acts — revoke at the vendor, revoke the vault
-                         * credential, delete the row — and none exist. An item that closed the menu
-                         * and changed nothing would report that access had been withdrawn when it
-                         * had not, which is the one outcome worse than not offering it.
-                         */
-                        setNotice(
-                          `You can't disconnect here yet. To stop access now, remove OpenBot in your ${entry.vendor} account's third-party access settings.`,
-                        )
-                      }
-                      className="whitespace-nowrap"
-                      variant="destructive"
-                    >
-                      Disconnect your {entry.title} account
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Text color="secondary" size="sm">
+                  Connected
+                </Text>
               ) : (
                 <>
                   {enabled ? <NotConnected /> : null}
@@ -746,6 +666,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
                    * vendor's own consent page, and a control that navigates away should look like one.
                    */}
                   <Button
+                    className="min-h-11"
                     disabled={!enabled || connect.isPending}
                     onClick={() => {
                       setNotice(null);
@@ -774,7 +695,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
             <Item size="sm">
               <ItemContent>
                 <ItemTitle>Allowed</ItemTitle>
-                <ItemDescription className="line-clamp-none">
+                <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
                   {/* The vendor's own permission names, spaced apart so each reads as one word. */}
                   {connection.scope
                     ? `${connection.scope.split(/\s+/).join(", ")} (as ${entry.vendor} names them)`
@@ -788,14 +709,24 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
                 <ItemTitle>Connected</ItemTitle>
               </ItemContent>
               <ItemActions>
-                <span className="text-muted-foreground text-xs">
+                <Text color="secondary" size="sm">
                   {/* Date precision to the minute: the second it happened is nobody's question. */}
                   {new Date(connection.connectedAt).toLocaleString(undefined, {
                     dateStyle: "medium",
                     timeStyle: "short",
                   })}
-                </span>
+                </Text>
               </ItemActions>
+            </Item>
+            <Separator />
+            <Item size="sm">
+              <ItemContent>
+                <ItemTitle>Remove access</ItemTitle>
+                <ItemDescription className="line-clamp-none text-sm">
+                  To stop access, remove OpenBot from third-party access in your{" "}
+                  {entry.vendor} account settings.
+                </ItemDescription>
+              </ItemContent>
             </Item>
           </PageRows>
         </PageSection>

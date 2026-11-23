@@ -680,6 +680,13 @@
       "when": 1795189761199,
       "tag": "0096_corsair_revocation",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795432486743,
+      "tag": "0097_approval_team_rule_saves",
+      "breakpoints": true
     }
   ]
 }

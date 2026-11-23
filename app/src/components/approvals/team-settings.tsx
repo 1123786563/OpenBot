@@ -5,6 +5,7 @@ import {
   IconCreditCard,
   IconEyeCheck,
   IconKey,
+  IconListSearch,
   IconLock,
   IconNotes,
   IconSend,
@@ -17,7 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   PageEmpty,
   PageRows,
@@ -28,6 +29,8 @@ import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -38,6 +41,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { useBotNames } from "@/lib/agents/bot-names";
 import {
   type ActionKind,
   type ActionKindPolicy,
@@ -120,6 +124,27 @@ export function TeamApprovalSettings() {
   const inboxData = denied ? undefined : inbox.data;
   const settings = inboxData?.team;
   const teamRules = inboxData?.teamRules ?? [];
+  const [ruleSearch, setRuleSearch] = useState("");
+  const ruleSearchInput = useRef<HTMLInputElement>(null);
+  const botName = useBotNames();
+  const words = ruleSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matchingRules = words.length
+    ? teamRules.filter((rule) => {
+        const text = [
+          ruleTitle(rule).title,
+          rule.toolRef,
+          rule.scope,
+          rule.effect,
+          rule.botId === "*" ? "all bots" : botName(rule.botId),
+          rule.botId,
+          rule.account,
+          BEHAVIOUR_LABELS[rule.behaviour],
+        ]
+          .join(" ")
+          .toLowerCase();
+        return words.every((word) => text.includes(word));
+      })
+    : teamRules;
 
   function confirmSetting({
     id,
@@ -181,7 +206,9 @@ export function TeamApprovalSettings() {
         document.getElementById(
           `team-rule-${behaviour ? "behaviour" : "remove"}-${rule.id}`,
         ) ?? undefined,
-      fallbackFocus: () => document.getElementById("describe-team-rule"),
+      fallbackFocus: () =>
+        ruleSearchInput.current ??
+        document.getElementById("describe-team-rule"),
       variant: behaviour ? "default" : "destructive",
       refresh: () => inbox.refetch(),
       run: async () => {
@@ -407,8 +434,52 @@ export function TeamApprovalSettings() {
           {teamRules.length === 0 ? (
             <PageEmpty icon={IconChecklist} title="No team rules" />
           ) : null}
+          {teamRules.length > 0 ? (
+            <Input
+              aria-label="Search team rules"
+              className="mt-4 min-h-12"
+              maxLength={200}
+              onChange={(event) => setRuleSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && ruleSearch) {
+                  event.preventDefault();
+                  setRuleSearch("");
+                }
+              }}
+              placeholder="Search by action, app, Bot, or policy"
+              ref={ruleSearchInput}
+              type="search"
+              value={ruleSearch}
+            />
+          ) : null}
+          {words.length > 0 && teamRules.length > 0 ? (
+            <p className="mt-2 text-muted-foreground text-sm" role="status">
+              {matchingRules.length} of {teamRules.length} rules match
+            </p>
+          ) : null}
+          {words.length > 0 &&
+          teamRules.length > 0 &&
+          matchingRules.length === 0 ? (
+            <PageEmpty
+              action={
+                <Button
+                  className="min-h-12"
+                  onClick={() => {
+                    setRuleSearch("");
+                    ruleSearchInput.current?.focus();
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  Clear search
+                </Button>
+              }
+              icon={IconListSearch}
+              title="No matching team rules"
+            />
+          ) : null}
           <PageRows>
-            {teamRules.map((rule) => (
+            {matchingRules.map((rule) => (
               <Fragment key={rule.id}>
                 <RuleRow
                   disabled={revokeTeam.isPending || changeTeamRule.isPending}

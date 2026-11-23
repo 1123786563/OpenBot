@@ -11,10 +11,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { Route as BoundariesRoute } from "@/routes/_authed/admin/boundaries";
 
@@ -50,9 +51,17 @@ function drawBoundaries() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const root = createRootRoute();
+  const authed = createRoute({ id: "/_authed", getParentRoute: () => root });
+  const boundaries = createRoute({
+    path: "/admin/boundaries",
+    getParentRoute: () => authed,
+    validateSearch: BoundariesRoute.options.validateSearch,
+    component: () => <Boundaries />,
+  });
   const router = createRouter({
-    history: createMemoryHistory({ initialEntries: ["/"] }),
-    routeTree: createRootRoute({ component: () => <Boundaries /> }),
+    history: createMemoryHistory({ initialEntries: ["/admin/boundaries"] }),
+    routeTree: root.addChildren([authed.addChildren([boundaries])]),
   });
   return render(
     <QueryClientProvider client={queryClient}>
@@ -61,14 +70,21 @@ function drawBoundaries() {
   );
 }
 
-test("a boundary that could not be read says so instead of leaving the page blank", async () => {
+test("a failed boundary read can be retried without showing an empty list", async () => {
   // The shape a broken server actually sends: a 500 with no body, so the query's own sentence.
   policyResponse = () => new Response(null, { status: 500 });
 
   const view = drawBoundaries();
 
   const alert = await view.findByRole("alert");
-  expect(alert.textContent).toBe("The boundary could not be read.");
+  expect(
+    within(alert).getByText("The boundary could not be read."),
+  ).toBeTruthy();
+  expect(view.queryByText("No rules yet")).toBeNull();
+  policyResponse = () =>
+    Response.json({ policy: { mode: "enforce", deny: [], allow: ["true"] } });
+  fireEvent.click(view.getByRole("button", { name: "Retry" }));
+  expect(await view.findByText("No rules yet")).toBeTruthy();
 });
 
 test("a refused read shows the server's own reason", async () => {
@@ -81,7 +97,8 @@ test("a refused read shows the server's own reason", async () => {
   const view = drawBoundaries();
 
   const alert = await view.findByRole("alert");
-  expect(alert.textContent).toBe(
-    "Only an administrator may read the boundary.",
-  );
+  expect(
+    within(alert).getByText("Only an administrator may read the boundary."),
+  ).toBeTruthy();
+  expect(view.queryByRole("switch", { name: "Trial mode" })).toBeNull();
 });

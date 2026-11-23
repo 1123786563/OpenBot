@@ -1,6 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import {
+  ActionPolicyChangedError,
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
 } from "../src/computer/policy-store";
@@ -43,11 +44,15 @@ describe("a boundary set while running", () => {
     expect(after.get().deny).toEqual([rule]);
   });
 
-  test("keeps each rule's name and description across a restart", async () => {
+  test("keeps each rule's name, description, and link across a restart", async () => {
     const before = createPolicyStore(configured, database);
     await before.load();
     const labels = {
-      [rule]: { name: "Never submit a form", description: "Stops submits." },
+      [rule]: {
+        name: "Never submit a form",
+        description: "Stops submits.",
+        id: "r-2efe8e71-6c3c-4a89-a185-347b050ec891",
+      },
     };
     await before.set({
       mode: "enforce",
@@ -59,6 +64,43 @@ describe("a boundary set while running", () => {
     const after = createPolicyStore(configured, database);
     await after.load();
     expect(after.get().labels).toEqual(labels);
+  });
+
+  test("rejects a stale edit across stores and keeps the stable link on retry", async () => {
+    const editing = createPolicyStore(configured, database);
+    const adding = createPolicyStore(configured, database);
+    const added = 'page.host == "example.test"';
+    const edited = 'page.host == "blocked.example.test"';
+    const label = {
+      name: "Never submit a form",
+      description: "Stops submits.",
+      id: "r-2efe8e71-6c3c-4a89-a185-347b050ec891",
+    };
+    await editing.set({
+      mode: "enforce",
+      deny: [rule],
+      allow: ["true"],
+      labels: { [rule]: label },
+    });
+    const initial = editing.get();
+    await adding.load();
+    await adding.set({ ...initial, deny: [rule, added] }, undefined, initial);
+    const draft = {
+      ...initial,
+      deny: [edited],
+      labels: { [edited]: label },
+    };
+    await expect(editing.set(draft, undefined, initial)).rejects.toBeInstanceOf(
+      ActionPolicyChangedError,
+    );
+
+    await editing.load();
+    const latest = editing.get();
+    expect(latest.deny).toEqual([rule, added]);
+    await editing.set({ ...draft, deny: [edited, added] }, undefined, latest);
+    await adding.load();
+    expect(adding.get().deny).toEqual([edited, added]);
+    expect(adding.get().labels?.[edited]?.id).toBe(label.id);
   });
 
   test("a deployment that never set one gets its configured default", async () => {
