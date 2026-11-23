@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { queryClient } from "@/query-client";
 import type { Stopped } from "./recording";
+import { RecordingLearning } from "./recording-learning";
 
 /** Where the skills learned from recordings are reviewed and listed. */
 export const YOUR_SKILLS = "/settings/learning";
@@ -40,6 +41,7 @@ type Skill = LearningProposal & { container: string };
 export type LearningNext =
   /** Learning can't run on this machine, and why. */
   | { kind: "model"; reason: string }
+  | { kind: "native"; recordingId: string }
   /** Learning is off in the back end. */
   | { kind: "off" }
   /** Couldn't ask. */
@@ -149,11 +151,7 @@ export function useLearningNext(stopped: Stopped) {
   else if (legacy?.modelProblem)
     next = { kind: "model", reason: legacy.modelProblem };
   else if (review.data && "mode" in review.data)
-    next = {
-      kind: "model",
-      reason:
-        "Open Learning in a Bot conversation to select this recording as evidence.",
-    };
+    next = { kind: "native", recordingId: stopped.recordingId };
   else if (off) next = { kind: "off" };
   else if (running) next = { kind: "learning" };
   else if (skills.error)
@@ -176,7 +174,10 @@ export function useLearningNext(stopped: Stopped) {
   const kind = next.kind;
   useEffect(() => {
     pace.current =
-      kind === "learned" || kind === "model" || kind === "off"
+      kind === "learned" ||
+      kind === "model" ||
+      kind === "off" ||
+      kind === "native"
         ? false
         : kind === "learning"
           ? 10_000
@@ -281,6 +282,11 @@ export function learningNextWords(
           heading: "Your new skill is waiting for an admin",
           sentence: `Learning made a skill from “${title}”. Once an admin approves it, ask any Bot to do it.`,
         };
+  if (next.kind === "native")
+    return {
+      heading: `Saved “${title}”`,
+      sentence: "Choose a Bot conversation to learn from this recording.",
+    };
   if (next.kind === "model" || next.kind === "off")
     return {
       heading: `Saved “${title}”`,
@@ -370,6 +376,11 @@ export function LearningNextRow({
       sentence =
         "Learning didn't find a skill in this recording. Record it again, and say what you're doing as you go.";
       action = learnNow;
+      break;
+    case "native":
+      heading = "Learn from this recording";
+      sentence = "Draft a skill for review in a conversation you choose.";
+      action = <RecordingLearning id={next.recordingId} title={title} />;
       break;
     case "model":
       tone = "warn";

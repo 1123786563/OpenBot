@@ -4442,6 +4442,7 @@ async function exerciseLearning(scheduled: boolean) {
         createRecorderRoutes({
           connections: createRecorderConnectionStore(database),
           localRecordings: local,
+          recordings: local,
           requireUser: async (context, next) => {
             context.set("actor", alice);
             await next();
@@ -4502,7 +4503,16 @@ async function exerciseLearning(scheduled: boolean) {
         ended: "succeeded",
         events: [{ name: "click" }, { name: "outcome" }],
       });
-      const recording = { kind: "recording", id: recordingId };
+      const listedRecordings = await recorderApp.request(
+        "/api/recorder/recordings",
+      );
+      expect(listedRecordings.status).toBe(200);
+      const saved = (await listedRecordings.json()).recordings;
+      expect(saved).toMatchObject([
+        { id: recordingId, title: "Pack a shipment", ended: "succeeded" },
+      ]);
+      const recording = { kind: "recording", id: saved[0].id };
+      const recordingRequest = post({ evidence: [recording] });
       const conversation = { kind: "conversation", id: groupId };
       const openedSource = await aliceChat.request(
         "/api/channels",
@@ -4521,10 +4531,15 @@ async function exerciseLearning(scheduled: boolean) {
       const both = post({ evidence: [recording, conversation, directSource] });
       expect((await aliceLearning.request(path, both)).status).toBe(409);
       const bobPath = `/api/copilotkit/threads/${bobChannel.threadId}/learn?agentId=${bot.id}`;
-      expect(
-        (await bobLearning.request(bobPath, post({ evidence: [recording] })))
-          .status,
-      ).toBe(409);
+      const beforeRecording = reservations.length;
+      const mountedBob = nativeLearningSettings(bob, bobLearning);
+      expect((await mountedBob.request(path, recordingRequest)).status).toBe(
+        404,
+      );
+      expect((await mountedBob.request(bobPath, recordingRequest)).status).toBe(
+        409,
+      );
+      expect(reservations).toHaveLength(beforeRecording);
       const grantLearning = {
         ...post({ allowed: true }),
         method: "PUT",
@@ -4538,14 +4553,41 @@ async function exerciseLearning(scheduled: boolean) {
         (await bobLearning.request(permission, grantLearning)).status,
       ).toBe(200);
 
-      const recordingOnly = await aliceLearning.request(
-        path,
-        post({ evidence: [recording] }),
+      dispatched = Promise.withResolvers<void>();
+      release = Promise.withResolvers<void>();
+      reconciled = Promise.withResolvers<void>();
+      const starts = await Promise.all([
+        mountedLearning.request(path, recordingRequest),
+        mountedLearning.request(path, recordingRequest),
+      ]);
+      expect(starts.map(({ status }) => status)).toEqual([202, 202]);
+      const [first, retry] = await Promise.all(
+        starts.map((response) => response.json()),
       );
-      expect(recordingOnly.status).toBe(202);
-      const recordingProposal = (await waitFor("proposed")).proposals[0];
+      expect(first.latest).toMatchObject({
+        state: "running",
+        evidenceCount: 1,
+      });
+      expect(retry.latest).toEqual(first.latest);
+      await dispatched.promise;
+      expect(reservations.slice(beforeRecording)).toEqual([
+        expect.objectContaining({
+          creditType: "test",
+          applicationId: "openbot",
+        }),
+      ]);
+      release.resolve();
+      await reconciled.promise;
+      await waitFor("proposed");
+      const recordedLearning = await (
+        await mountedLearning.request(path)
+      ).json();
+      expect(recordedLearning.autoApprove).toBe(true);
+      const recordingProposal = recordedLearning.proposals[0];
       expect(recordingProposal).toMatchObject({
+        id: first.latest.id,
         state: "pending_review",
+        review: null,
         evidence: [{ source: recording, excerpt: "click: Open packing list" }],
       });
       await database
@@ -4725,6 +4767,14 @@ async function exerciseLearning(scheduled: boolean) {
       expect((await aliceLearning.request(path, both)).status).toBe(202);
       const pending = (await waitFor("proposed")).proposals[0];
       expect(pending.id).not.toBe(mixed.id);
+
+      dispatched = Promise.withResolvers<void>();
+      release = Promise.withResolvers<void>();
+      reconciled = Promise.withResolvers<void>();
+      const racing = await mountedLearning.request(path, recordingRequest);
+      expect(racing.status).toBe(202);
+      const { latest: inFlight } = await racing.json();
+      await dispatched.promise;
       const remove = await recorderApp.request(
         `/api/recorder/recordings/${recordingId}`,
         { method: "DELETE" },
@@ -4734,7 +4784,22 @@ async function exerciseLearning(scheduled: boolean) {
         (await recorderApp.request(`/api/recorder/recordings/${recordingId}`))
           .status,
       ).toBe(404);
-      const withdrawn = await read();
+      release.resolve();
+      await reconciled.promise;
+      const withdrawn = await (await mountedLearning.request(path)).json();
+      expect(withdrawn.latest).toMatchObject({
+        id: inFlight.id,
+        state: "cancelled",
+        reason: "evidence_unavailable",
+      });
+      expect(
+        withdrawn.proposals.map(({ id }: { id: string }) => id),
+      ).not.toContain(inFlight.id);
+      const afterDeletion = reservations.length;
+      expect(
+        (await mountedLearning.request(path, recordingRequest)).status,
+      ).toBe(409);
+      expect(reservations).toHaveLength(afterDeletion);
       expect(withdrawn.proposals).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

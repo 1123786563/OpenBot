@@ -34,9 +34,11 @@ function inProgress(analysis: Analysis | null | undefined) {
   return analysis?.state === "running" || analysis?.state === "reconciling";
 }
 
-function analysisText(analysis: Analysis) {
+function analysisText(analysis: Analysis, recording = false) {
   const count = analysis.evidenceCount;
-  const scope = `${count} completed ${count === 1 ? "turn" : "turns"}`;
+  const scope = recording
+    ? `${count} evidence ${count === 1 ? "source" : "sources"}`
+    : `${count} completed ${count === 1 ? "turn" : "turns"}`;
   if (analysis.state === "running") return `Analyzing ${scope}…`;
   if (analysis.state === "reconciling")
     return `Checking the model outcome for ${scope}…`;
@@ -160,11 +162,14 @@ export function DirectChatLearning({
   threadId,
   agentId,
   conversationTitle,
+  recording,
 }: {
   threadId: string;
   agentId: string;
-  conversationTitle?: string;
-}) {
+} & (
+  | { conversationTitle?: string; recording?: never }
+  | { conversationTitle: string; recording: { id: string; title: string } }
+)) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const base = `/api/copilotkit/threads/${encodeURIComponent(threadId)}/learn`;
@@ -175,7 +180,7 @@ export function DirectChatLearning({
   const queryKey = [...learningKeys.directChat, threadId, agentId];
   const fromSettings = conversationTitle !== undefined;
   const status = useQuery({
-    enabled: !fromSettings || open,
+    enabled: Boolean(recording) || !fromSettings || open,
     queryKey,
     queryFn: async ({ signal }) => {
       const response = await tryClient(path, { signal });
@@ -184,7 +189,7 @@ export function DirectChatLearning({
       return directChatLearning.parse(await response.json());
     },
     refetchInterval: (query) =>
-      open && inProgress(query.state.data?.latest)
+      (open || recording) && inProgress(query.state.data?.latest)
         ? 1000
         : open && query.state.data?.schedule?.enabled
           ? 30_000
@@ -241,133 +246,122 @@ export function DirectChatLearning({
       queryClient.invalidateQueries({ queryKey: learningKeys.all }),
   });
   const data = status.data;
-  if (!fromSettings && (!data || status.error)) return null;
+  if (!recording && !fromSettings && (!data || status.error)) return null;
   const working = inProgress(data?.latest);
   const last = data?.lastResult;
 
-  return (
+  const panel = (
     <>
-      <Button
-        size="sm"
-        variant="ghost"
-        aria-label={
-          fromSettings ? `Learning for ${conversationTitle}` : undefined
-        }
-        onClick={() => {
-          start.reset();
-          setSelected([]);
-          setChooseSources(false);
-          review.reset();
-          autoApproval.reset();
-          if (!fromSettings) void status.refetch();
-          setOpen(true);
-        }}
-      >
-        Learning
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {fromSettings
-                ? `Learning for ${conversationTitle}`
-                : "Learn from this conversation"}
-            </DialogTitle>
-            <DialogDescription>
-              Analyze completed turns using Test Credits and draft a proposal
-              for review.
-            </DialogDescription>
-          </DialogHeader>
-          {status.error ? (
-            <VStack gap={2}>
-              <p role="alert">Couldn't load Learning.</p>
-              <Button
-                onClick={() => void status.refetch()}
-                disabled={status.isFetching}
-              >
-                Retry
-              </Button>
-            </VStack>
-          ) : status.isPending ? (
-            <p role="status">Loading Learning…</p>
-          ) : !data ? (
-            <p role="status">
-              Learning is no longer accessible for this conversation.
-            </p>
-          ) : (
-            <>
-              <VStack gap={2} className="text-sm" role="status">
-                {!data.enabled && <p>Learning is disabled.</p>}
-                {data.enabled && !data.available && (
-                  <p>The Learning model is unavailable.</p>
-                )}
-                {working && data.latest && <p>{analysisText(data.latest)}</p>}
-                {last && <p>Last result · {analysisText(last)}</p>}
-              </VStack>
-              {data.schedule && (
-                <form
-                  key={`${data.schedule.enabled}-${data.schedule.intervalHours}`}
-                  className="space-y-2 rounded-md border p-3 text-sm"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const fields = new FormData(event.currentTarget);
-                    configure.mutate({
-                      enabled: fields.has("enabled"),
-                      intervalHours: Number(fields.get("intervalHours")),
-                    });
-                  }}
-                >
-                  <label className="flex items-center gap-2 font-medium">
-                    <input
-                      type="checkbox"
-                      name="enabled"
-                      defaultChecked={data.schedule.enabled}
-                    />
-                    Allow scheduled analysis to spend Test Credits
-                  </label>
-                  <label className="flex items-center gap-2">
-                    Run every
-                    <input
-                      aria-label="Analysis interval in hours"
-                      className="w-20 rounded border bg-background px-2 py-1"
-                      type="number"
-                      name="intervalHours"
-                      min={1}
-                      max={168}
-                      step={1}
-                      required
-                      defaultValue={data.schedule.intervalHours}
-                    />
-                    hours
-                  </label>
-                  <p role="status">
-                    {data.schedule.nextAt
-                      ? `Next analysis · ${new Date(data.schedule.nextAt).toLocaleString()}`
-                      : data.schedule.enabled
-                        ? "Scheduled analysis is paused."
-                        : "Scheduled analysis is off."}
-                  </p>
-                  {data.schedule.lastResult && (
-                    <p>
-                      Last scheduled result ·{" "}
-                      {analysisText(data.schedule.lastResult)}
-                    </p>
-                  )}
-                  {configure.error && (
-                    <p className="text-destructive" role="alert">
-                      {configure.error.message}
-                    </p>
-                  )}
-                  <Button
-                    type="submit"
-                    size="sm"
-                    variant="outline"
-                    disabled={configure.isPending}
-                  >
-                    Save schedule
-                  </Button>
-                </form>
+      <DialogHeader>
+        <DialogTitle>
+          {recording
+            ? `Learn from ${recording.title}`
+            : fromSettings
+              ? `Learning for ${conversationTitle}`
+              : "Learn from this conversation"}
+        </DialogTitle>
+        <DialogDescription>
+          {recording
+            ? `Analyze this recording for ${conversationTitle}. Learning uses Test Credits, and any proposal requires review before this Bot can use the skill in this conversation.`
+            : "Analyze completed turns using Test Credits and draft a proposal for review."}
+        </DialogDescription>
+      </DialogHeader>
+      {status.error ? (
+        <VStack gap={2}>
+          <p role="alert">Couldn't load Learning.</p>
+          <Button
+            onClick={() => void status.refetch()}
+            disabled={status.isFetching}
+          >
+            Retry
+          </Button>
+        </VStack>
+      ) : status.isPending ? (
+        <p role="status">Loading Learning…</p>
+      ) : !data ? (
+        <p role="status">
+          Learning is no longer accessible for this conversation.
+        </p>
+      ) : (
+        <>
+          <VStack gap={2} className="text-sm" role="status">
+            {!data.enabled && <p>Learning is disabled.</p>}
+            {data.enabled && !data.available && (
+              <p>The Learning model is unavailable.</p>
+            )}
+            {working && data.latest && (
+              <p>{analysisText(data.latest, Boolean(recording))}</p>
+            )}
+            {last && (
+              <p>Last result · {analysisText(last, Boolean(recording))}</p>
+            )}
+          </VStack>
+          {!recording && data.schedule && (
+            <form
+              key={`${data.schedule.enabled}-${data.schedule.intervalHours}`}
+              className="space-y-2 rounded-md border p-3 text-sm"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const fields = new FormData(event.currentTarget);
+                configure.mutate({
+                  enabled: fields.has("enabled"),
+                  intervalHours: Number(fields.get("intervalHours")),
+                });
+              }}
+            >
+              <label className="flex items-center gap-2 font-medium">
+                <input
+                  type="checkbox"
+                  name="enabled"
+                  defaultChecked={data.schedule.enabled}
+                />
+                Allow scheduled analysis to spend Test Credits
+              </label>
+              <label className="flex items-center gap-2">
+                Run every
+                <input
+                  aria-label="Analysis interval in hours"
+                  className="w-20 rounded border bg-background px-2 py-1"
+                  type="number"
+                  name="intervalHours"
+                  min={1}
+                  max={168}
+                  step={1}
+                  required
+                  defaultValue={data.schedule.intervalHours}
+                />
+                hours
+              </label>
+              <p role="status">
+                {data.schedule.nextAt
+                  ? `Next analysis · ${new Date(data.schedule.nextAt).toLocaleString()}`
+                  : data.schedule.enabled
+                    ? "Scheduled analysis is paused."
+                    : "Scheduled analysis is off."}
+              </p>
+              {data.schedule.lastResult && (
+                <p>
+                  Last scheduled result ·{" "}
+                  {analysisText(data.schedule.lastResult)}
+                </p>
               )}
+              {configure.error && (
+                <p className="text-destructive" role="alert">
+                  {configure.error.message}
+                </p>
+              )}
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={configure.isPending}
+              >
+                Save schedule
+              </Button>
+            </form>
+          )}
+          {!recording && (
+            <>
               <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -403,152 +397,189 @@ export function DirectChatLearning({
                   onChange={setSelected}
                 />
               )}
-              {data.proposals.map((proposal) => (
-                <article
-                  key={proposal.id}
-                  className="space-y-2 rounded-md border p-3 text-sm"
-                >
-                  <p className="text-xs text-muted-foreground">
-                    {proposal.state === "pending_review" && "Pending review"}
-                    {proposal.state === "published" &&
-                      "Published for this conversation"}
-                    {proposal.state === "rejected" && "Rejected"}
-                    {proposal.state === "revision_required" &&
-                      "Revision required"}
-                    {proposal.state === "paused" && "Skill delivery paused"}
-                    {proposal.revisionSubmitted && " · Revision submitted"}
-                    {proposal.review?.mode === "automatic" &&
-                      " · Automatically approved"}
-                    {proposal.review &&
-                      ` · ${new Date(proposal.review.reviewedAt).toLocaleString()}`}
-                  </p>
-                  <h3 className="font-medium break-words">{proposal.title}</h3>
-                  <p className="whitespace-pre-wrap break-words">
-                    {proposal.instructions}
-                  </p>
-                  <details>
-                    <summary className="cursor-pointer">
-                      Evidence ({proposal.evidence.length}{" "}
-                      {proposal.evidence.length === 1 ? "turn" : "turns"})
-                    </summary>
-                    <ol className="mt-2 space-y-3">
-                      {proposal.evidence.map((item) =>
-                        "source" in item ? (
-                          <li
-                            key={`${item.source.kind}:${item.source.id}`}
-                            className="space-y-1 border-l pl-3 break-words"
-                          >
-                            <p>
-                              <strong>
-                                {item.source.kind === "recording"
-                                  ? "Recording"
-                                  : "Conversation"}
-                              </strong>{" "}
-                              · {item.title}
-                            </p>
-                            <p className="whitespace-pre-wrap">
-                              {item.excerpt}
-                            </p>
-                          </li>
-                        ) : (
-                          <li
-                            key={item.runId}
-                            className="space-y-1 border-l pl-3 break-words"
-                          >
-                            <p className="whitespace-pre-wrap">
-                              <strong>You</strong> · {item.prompt}
-                            </p>
-                            <p className="whitespace-pre-wrap">
-                              <strong>Bot</strong> · {item.reply}
-                            </p>
-                          </li>
-                        ),
-                      )}
-                    </ol>
-                  </details>
-                  {(proposal.state === "paused" ||
-                    proposal.state === "revision_required") &&
-                    !proposal.revisionSubmitted &&
-                    proposal.evidence.length > 0 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          !data.enabled ||
-                          !data.available ||
-                          working ||
-                          start.isPending
-                        }
-                        onClick={() =>
-                          start.mutate({ revisesProposalId: proposal.id })
-                        }
-                      >
-                        Resubmit remaining evidence
-                      </Button>
-                    )}
-                  {proposal.state === "pending_review" && (
-                    <HStack wrap="wrap" gap={2}>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={review.isPending}
-                        onClick={() =>
-                          review.mutate({
-                            id: proposal.id,
-                            body: { decision: "reject", scope: data.scope },
-                          })
-                        }
-                      >
-                        Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={!data.enabled || review.isPending}
-                        onClick={() =>
-                          review.mutate({
-                            id: proposal.id,
-                            body: { decision: "approve", scope: data.scope },
-                          })
-                        }
-                      >
-                        Approve for this conversation
-                      </Button>
-                    </HStack>
-                  )}
-                </article>
-              ))}
-              {[start.error, review.error, autoApproval.error].map(
-                (error) =>
-                  error && (
-                    <p
-                      key={error.message}
-                      className="text-sm text-destructive"
-                      role="alert"
-                    >
-                      {error.message}
-                    </p>
-                  ),
-              )}
-              <DialogFooter>
-                <Button
-                  disabled={
-                    !data.enabled ||
-                    !data.available ||
-                    working ||
-                    start.isPending ||
-                    (chooseSources && !selected.length)
-                  }
-                  onClick={() =>
-                    start.mutate(chooseSources ? { evidence: selected } : {})
-                  }
-                >
-                  Learn now
-                </Button>
-              </DialogFooter>
             </>
           )}
-        </DialogContent>
+          {data.proposals.map((proposal) => (
+            <article
+              key={proposal.id}
+              className="space-y-2 rounded-md border p-3 text-sm"
+            >
+              <p className="text-xs text-muted-foreground">
+                {proposal.state === "pending_review" && "Pending review"}
+                {proposal.state === "published" &&
+                  "Published for this conversation"}
+                {proposal.state === "rejected" && "Rejected"}
+                {proposal.state === "revision_required" && "Revision required"}
+                {proposal.state === "paused" && "Skill delivery paused"}
+                {proposal.revisionSubmitted && " · Revision submitted"}
+                {proposal.review?.mode === "automatic" &&
+                  " · Automatically approved"}
+                {proposal.review &&
+                  ` · ${new Date(proposal.review.reviewedAt).toLocaleString()}`}
+              </p>
+              <h3 className="font-medium break-words">{proposal.title}</h3>
+              <p className="whitespace-pre-wrap break-words">
+                {proposal.instructions}
+              </p>
+              <details>
+                <summary className="cursor-pointer">
+                  Evidence ({proposal.evidence.length}{" "}
+                  {proposal.evidence.some((item) => "source" in item)
+                    ? proposal.evidence.length === 1
+                      ? "source"
+                      : "sources"
+                    : proposal.evidence.length === 1
+                      ? "turn"
+                      : "turns"}
+                  )
+                </summary>
+                <ol className="mt-2 space-y-3">
+                  {proposal.evidence.map((item) =>
+                    "source" in item ? (
+                      <li
+                        key={`${item.source.kind}:${item.source.id}`}
+                        className="space-y-1 border-l pl-3 break-words"
+                      >
+                        <p>
+                          <strong>
+                            {item.source.kind === "recording"
+                              ? "Recording"
+                              : "Conversation"}
+                          </strong>{" "}
+                          · {item.title}
+                        </p>
+                        <p className="whitespace-pre-wrap">{item.excerpt}</p>
+                      </li>
+                    ) : (
+                      <li
+                        key={item.runId}
+                        className="space-y-1 border-l pl-3 break-words"
+                      >
+                        <p className="whitespace-pre-wrap">
+                          <strong>You</strong> · {item.prompt}
+                        </p>
+                        <p className="whitespace-pre-wrap">
+                          <strong>Bot</strong> · {item.reply}
+                        </p>
+                      </li>
+                    ),
+                  )}
+                </ol>
+              </details>
+              {(proposal.state === "paused" ||
+                proposal.state === "revision_required") &&
+                !proposal.revisionSubmitted &&
+                proposal.evidence.length > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      !data.enabled ||
+                      !data.available ||
+                      working ||
+                      start.isPending
+                    }
+                    onClick={() =>
+                      start.mutate({ revisesProposalId: proposal.id })
+                    }
+                  >
+                    Resubmit remaining evidence
+                  </Button>
+                )}
+              {proposal.state === "pending_review" && (
+                <HStack wrap="wrap" gap={2}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={review.isPending}
+                    onClick={() =>
+                      review.mutate({
+                        id: proposal.id,
+                        body: { decision: "reject", scope: data.scope },
+                      })
+                    }
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!data.enabled || review.isPending}
+                    onClick={() =>
+                      review.mutate({
+                        id: proposal.id,
+                        body: { decision: "approve", scope: data.scope },
+                      })
+                    }
+                  >
+                    Approve for this conversation
+                  </Button>
+                </HStack>
+              )}
+            </article>
+          ))}
+          {[start.error, review.error, autoApproval.error].map(
+            (error) =>
+              error && (
+                <p
+                  key={error.message}
+                  className="text-sm text-destructive"
+                  role="alert"
+                >
+                  {error.message}
+                </p>
+              ),
+          )}
+          <DialogFooter>
+            <Button
+              disabled={
+                !data.enabled ||
+                !data.available ||
+                working ||
+                start.isPending ||
+                (chooseSources && !selected.length)
+              }
+              onClick={() =>
+                start.mutate(
+                  recording
+                    ? { evidence: [{ kind: "recording", id: recording.id }] }
+                    : chooseSources
+                      ? { evidence: selected }
+                      : {},
+                )
+              }
+            >
+              Learn now
+            </Button>
+          </DialogFooter>
+        </>
+      )}
+    </>
+  );
+  if (recording) return panel;
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label={
+          fromSettings ? `Learning for ${conversationTitle}` : undefined
+        }
+        onClick={() => {
+          start.reset();
+          setSelected([]);
+          setChooseSources(false);
+          review.reset();
+          autoApproval.reset();
+          if (!fromSettings) void status.refetch();
+          setOpen(true);
+        }}
+      >
+        Learning
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="overflow-y-auto">{panel}</DialogContent>
       </Dialog>
     </>
   );

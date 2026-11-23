@@ -20,6 +20,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { recordingsQueryOptions } from "@/lib/recorder/queries";
 import { RecordingDetails } from "./recording-details";
+import { RecordingLearning } from "./recording-learning";
 
 const STOP_REASONS: Record<string, string> = {
   disconnected: "disconnected",
@@ -117,7 +118,15 @@ export function YourRecordings({
                           {ended}
                         </span>
                         {recordings.data?.pages[0]?.canManage ? (
-                          <RecordingDetails row={row} />
+                          <>
+                            {row.ended === "succeeded" ? (
+                              <RecordingLearning
+                                id={row.id}
+                                title={row.title ?? "Untitled recording"}
+                              />
+                            ) : null}
+                            <RecordingDetails row={row} />
+                          </>
                         ) : null}
                       </ItemActions>
                     ) : null}
