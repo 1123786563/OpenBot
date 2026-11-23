@@ -39,6 +39,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { ClientError, canKeepCachedRead } from "@/lib/client";
+import { useTranslation } from "@/i18n";
 import { relativeTime } from "@/lib/relative-time";
 import {
   deleteRoutineMutationOptions,
@@ -169,6 +170,8 @@ const RUN_STATUS: Record<
 
 /** Every firing of one routine, newest first, each linking to the thread it ran in. */
 function RoutineRuns({ routine }: { routine: RoutineRecord }) {
+  // Subscribes this history to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const runs = useQuery(routineRunsQueryOptions(routine.id));
   const history = canKeepCachedRead(runs.error) ? runs.data : undefined;
   if (runs.isPending)
@@ -257,6 +260,8 @@ function RoutineRow({
   routine: RoutineRecord;
   showBot: boolean;
 }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const setEnabled = useMutation(setRoutineEnabledMutationOptions(queryClient));
   const runNow = useMutation(runRoutineNowMutationOptions(queryClient));
   const writePending = setEnabled.isPending || runNow.isPending;
@@ -480,6 +485,8 @@ export function RoutinesList({
   /** The surrounding page already provides its create action. */
   hasCreateAction?: boolean;
 } = {}) {
+  // Subscribes this list to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const routines = useQuery(routinesQueryOptions());
   /* Names and faces for the Bot chip, hidden Bots included: a routine outlives hiding its Bot. */
   const shownBots = useQuery({

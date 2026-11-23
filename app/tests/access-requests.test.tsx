@@ -18,8 +18,12 @@ import {
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { AccessRequestsSection } from "@/components/plugins/access-requests";
-import type { AppAccessRequest } from "@/lib/app-access/queries";
+import {
+  type AppAccessRequest,
+  appAccessInboxQueryOptions,
+} from "@/lib/app-access/queries";
 import { Route as PluginsIndexRoute } from "@/routes/_authed/admin/plugins/index";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -32,15 +36,18 @@ import { settleReactWork } from "./settle-react-work";
  */
 
 beforeAll(() => GlobalRegistrator.register());
-afterEach(cleanup);
 afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
 });
 
 const originalFetch = global.fetch;
-afterEach(() => {
+afterEach(async () => {
+  cleanup();
+  await settleReactWork();
   global.fetch = originalFetch;
+  // Every test file in a run shares one translation instance, so this file puts English back.
+  await pinLocale("en");
 });
 
 const request = (
@@ -149,12 +156,45 @@ function draw(Page: () => ReactNode) {
     routeTree: root.addChildren([page, app, composio, bot]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <RouterProvider router={router as never} />
-    </QueryClientProvider>,
-  );
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    ),
+  };
 }
+
+test("choosing a language redraws when a request was asked, where it stands", async () => {
+  const askedAt = new Date(Date.now() - 5 * 60_000).toISOString();
+  serving({ requests: [request({ createdAt: askedAt })] });
+  const view = draw(() => <AccessRequestsSection app="composio-gmail" />);
+  const row = (await view.findByText("Give Gmail to Expenses")).closest(
+    "[data-request]",
+  ) as HTMLElement;
+  expect(within(row).getByText(/Ada asked 5 minutes ago/)).toBeTruthy();
+
+  await pinLocale("zh-CN");
+
+  expect(within(row).getByText(/Ada asked 5 分钟前/)).toBeTruthy();
+  expect(within(row).queryByText(/5 minutes ago/)).toBeNull();
+
+  await pinLocale("en");
+
+  expect(within(row).getByText(/Ada asked 5 minutes ago/)).toBeTruthy();
+  expect(within(row).queryByText(/5 分钟前/)).toBeNull();
+  // Redrawn, not rebuilt: it is still the row that was mounted first.
+  expect(
+    view.getByText("Give Gmail to Expenses").closest("[data-request]"),
+  ).toBe(row);
+  // The instant on record is the one the server sent; only its wording moved.
+  expect(
+    view.client.getQueryData(
+      appAccessInboxQueryOptions(true, "composio-gmail").queryKey,
+    ),
+  ).toMatchObject({ requests: [{ createdAt: askedAt }] });
+});
 
 test("lists who asked for what, for which Bot, and when — and nothing about anybody's connection", async () => {
   serving({
