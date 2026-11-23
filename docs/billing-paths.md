@@ -62,6 +62,32 @@ DATABASE_URL=… bun scripts/billing-paths.ts apps
 
 Registering and approving applications is an operator action. The Credits page shows a person their authorizations, lets them grant one to an approved application whose path is open, and revoke it.
 
+### Independent application Test Credit pilot
+
+Register the application as `independent` with the CLI above. Keep its
+resource prefix narrow, and approve it before the user grants access. On the
+Billing API set `TEST_CREDIT_APPLICATION_BINDINGS` to a JSON object of
+application IDs and lowercase SHA-256 digests. Generate a distinct random
+bearer of at least 32 URL-safe characters for each application. Give the
+application its bearer and retain only the digest on the Billing API.
+
+Configure the Billing API's Casdoor issuer/provider and the existing
+`TEST_CREDIT_BIFROST_*` gateway, revision, digest, and meter settings. The
+application uses `X-OpenBot-Application` and `Authorization: Bearer …` on
+`/api/billing/v1`. It can read its own active grant and append `/quote` to
+`spending-authorizations/<id>` for the published route and hold. Reserve
+through `/reserve` with the grant, resource, operation ID, route, and price
+version. Send the grant, operation ID, returned permit, and text messages to
+`/dispatch`. A background reservation includes the task in the grant. Poll
+`spending-authorizations/<id>/operations/<operation-id>` for the receipt.
+The named application's account access is separate from the user's bill.
+
+This entry spends Test Credits. Paid enablement needs independent path
+evidence and deployment signoff. The local test in
+`server/tests/billing-routes.integration.test.ts` uses a real PostgreSQL
+ledger, loopback application HTTP, and a simulated meter and gateway.
+
+
 ## Set the shared provider-cost ceiling
 
 Apply migration `0117_shared_pilot_provider_cost` before deploying the updated API and Worker. Run these commands from `server/` with the operator's database credentials.

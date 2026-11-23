@@ -641,6 +641,10 @@ export function createApp(
       ): Promise<VerifiedBillingIdentity | undefined>;
       execute: TestCreditExecutor;
     };
+    independentApplication?: {
+      authenticate(request: Request, applicationId: string): Promise<boolean>;
+      execute: TestCreditExecutor;
+    };
     weknora?: WeKnoraRuntime;
     testCreditConversations?: boolean;
     canStartBackgroundBudget?: (
@@ -996,6 +1000,17 @@ export function createApp(
       createTestCreditRoutes({
         ledger: billing.testLedger,
         execute: billing.runtime?.execute,
+        authenticateApplication: billing.independentApplication
+          ? async (request, appId) =>
+              Boolean(
+                await billing.independentApplication?.authenticate(
+                  request,
+                  appId,
+                ),
+              ) &&
+              (await billing.testLedger.approvedIndependentApplication(appId))
+          : undefined,
+        applicationExecute: billing.independentApplication?.execute,
         weknoraRouteId: billing.weknora?.routeId,
         paid: {
           ledger: billing.paidLedger,

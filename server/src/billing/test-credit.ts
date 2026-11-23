@@ -1416,6 +1416,19 @@ export function createTestCreditLedger(
         };
         const existing = prior;
         if (existing) {
+          if (!embedding && request.authorizationId) {
+            const held = await authorization(
+              accountId,
+              request.authorizationId,
+              tx,
+            );
+            if (
+              !held ||
+              held.taskId !== (request.taskId ?? null) ||
+              !request.resourceId?.startsWith(held.resourcePrefix)
+            )
+              return denied("not_authorized");
+          }
           if (
             existing.authorizationId !== (input.authorizationId ?? null) ||
             (!request.child &&
@@ -1768,6 +1781,14 @@ export function createTestCreditLedger(
       markApplication(id, "pause", by),
 
     resumeApplication: (id: string) => markApplication(id, "resume", ""),
+
+    async approvedIndependentApplication(id: string) {
+      const [row] = await database
+        .select()
+        .from(applications)
+        .where(eq(applications.id, id));
+      return row?.operator === "independent" && row.approvedAt !== null;
+    },
 
     /** Every application with its approval and pause state. */
     async applications() {

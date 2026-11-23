@@ -72,10 +72,16 @@ export function loadDirectChatTestCredit(
   | undefined {
   const casdoor = directChatCasdoorProvider(environment);
   if (!casdoor) return undefined;
+  return { casdoor, execute: loadMeteredChatExecutor(environment) };
+}
+
+export function loadMeteredChatExecutor(
+  environment: Record<string, string | undefined>,
+): TestCreditExecutor {
   const parsed = settings.safeParse(environment);
   if (!parsed.success)
     throw new Error(
-      `Invalid Test Credit Conversation settings: ${parsed.error.issues.map(({ path }) => path.join(".")).join(", ")}`,
+      `Invalid Test Credit chat gateway settings: ${parsed.error.issues.map(({ path }) => path.join(".")).join(", ")}`,
     );
   const config = parsed.data;
   const execute = createBifrostCreditExecutor({
@@ -114,15 +120,12 @@ export function loadDirectChatTestCredit(
       return measured.inputTokenUpperBound;
     },
   });
-  return {
-    casdoor,
-    execute: async (input) => {
-      if (
-        input.route.verification.report.gatewayImageDigest !==
-        config.TEST_CREDIT_GATEWAY_IMAGE_DIGEST
-      )
-        throw new UnsentBifrostRequest("route_unavailable");
-      return execute({ ...input, routeProof: bifrostRouteProof(input.route) });
-    },
+  return async (input) => {
+    if (
+      input.route.verification.report.gatewayImageDigest !==
+      config.TEST_CREDIT_GATEWAY_IMAGE_DIGEST
+    )
+      throw new UnsentBifrostRequest("route_unavailable");
+    return execute({ ...input, routeProof: bifrostRouteProof(input.route) });
   };
 }

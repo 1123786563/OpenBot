@@ -8,6 +8,7 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
+import { loadIndependentAppBilling } from "../src/billing/independent-app-config";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
@@ -1034,6 +1035,287 @@ test("WeKnora worker requests retain uploader attribution after sign-out and sha
     await local.stop(true);
   }
 });
+
+test("an independent HTTP app uses a bound credential and the metered dispatcher for online and background work", async () => {
+  const payer = { ...identity, subject: crypto.randomUUID() };
+  const other = { ...identity, subject: crypto.randomUUID() };
+  let now = Date.now();
+  const ledger = createTestCreditLedger(database, () => new Date(now));
+  const appId = `independent-${crypto.randomUUID()}`;
+  const otherApp = `independent-${crypto.randomUUID()}`;
+  const resourcePrefix = "independent:kb:";
+  const token = crypto.randomUUID().replaceAll("-", "");
+  const otherToken = crypto.randomUUID().replaceAll("-", "");
+  const hash = (text: string) =>
+    createHash("sha256").update(text).digest("hex");
+  const sends: string[] = [];
+  let duringMeter: (() => Promise<void>) | undefined;
+  const gateway = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const operation = request.headers.get("x-openbot-operation-id");
+      const body = await request.text();
+      if (new URL(request.url).pathname === "/meter") {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer fixture-meter",
+        );
+        await duringMeter?.();
+        return Response.json({
+          requestSha256: hash(body),
+          inputTokenUpperBound: 4,
+          gatewayRevision: "routes-r1",
+          meteringRevision: "routes-m1",
+        });
+      }
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer fixture-gateway",
+      );
+      expect(JSON.parse(body)).toMatchObject({
+        model: "fixture-routes/model-routes",
+        max_completion_tokens: 2,
+      });
+      sends.push(operation ?? "missing");
+      return Response.json({
+        choices: [{ message: { content: "Fixture answer." } }],
+        usage: { prompt_tokens: 3, completion_tokens: 1 },
+      });
+    },
+  });
+  const runtime = loadIndependentAppBilling({
+    TEST_CREDIT_APPLICATION_BINDINGS: JSON.stringify({
+      [appId]: hash(token),
+      [otherApp]: hash(otherToken),
+    }),
+    TEST_CREDIT_BIFROST_URL: new URL("/v1/chat/completions", gateway.url).href,
+    TEST_CREDIT_INPUT_METER_URL: new URL("/meter", gateway.url).href,
+    TEST_CREDIT_GATEWAY_IMAGE_DIGEST: embeddingReport.gatewayImageDigest,
+    TEST_CREDIT_GATEWAY_REVISION: "routes-r1",
+    TEST_CREDIT_METERING_REVISION: "routes-m1",
+    TEST_CREDIT_CASDOOR_ISSUER: "https://casdoor.example.test",
+    TEST_CREDIT_CASDOOR_PROVIDER_ID: "fixture",
+    TEST_CREDIT_BIFROST_TOKEN: "fixture-gateway",
+    TEST_CREDIT_INPUT_METER_TOKEN: "fixture-meter",
+  });
+  if (!runtime) throw new Error("Missing independent application runtime.");
+  const router = createTestCreditRoutes({
+    ledger,
+    authenticate: async (request) => {
+      const subject = request.headers.get("x-fixture-person");
+      return [payer, other].find((person) => person.subject === subject);
+    },
+    authenticateApplication: async (request, id) =>
+      (await runtime.authenticate(request, id)) &&
+      (await ledger.approvedIndependentApplication(id)),
+    applicationExecute: runtime.execute,
+    paid: { ledger: createPaidCreditLedger(database) },
+  });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: router.fetch,
+  });
+  const call = (
+    path: string,
+    headers: Record<string, string>,
+    body?: unknown,
+  ) =>
+    fetch(new URL(path, server.url), {
+      method: body === undefined ? "GET" : "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const appHeaders = {
+    "x-openbot-application": appId,
+    authorization: `Bearer ${token}`,
+  };
+  const otherHeaders = {
+    "x-openbot-application": otherApp,
+    authorization: `Bearer ${otherToken}`,
+  };
+  const owner = { "x-fixture-person": payer.subject };
+  const toGrant = (kind: "online" | "background", limit = "30") => ({
+    authorizationId: crypto.randomUUID(),
+    applicationId: appId,
+    kind,
+    resourcePrefix,
+    expiresAt: new Date(now + 60_000).toISOString(),
+    limitMicrocredits: limit,
+    taskId: kind === "background" ? "fixture-task" : undefined,
+  });
+  const grant = async (kind: "online" | "background", limit?: string) => {
+    const input = toGrant(kind, limit);
+    expect((await call("/authorizations", owner, input)).status).toBe(200);
+    return input;
+  };
+  try {
+    for (const person of [payer, other]) {
+      const batchId = crypto.randomUUID();
+      batchIds.push(batchId);
+      await ledger.enroll({ identity: person, batchId, amount: 100n });
+      await ledger.claim(person, batchId);
+    }
+    for (const id of [appId, otherApp]) {
+      applicationIds.push(id);
+      await ledger.registerApplication({
+        id,
+        name: id,
+        operator: "independent",
+        resourcePrefix,
+      });
+    }
+    expect(
+      (await call("/authorizations", owner, toGrant("online"))).status,
+    ).toBe(409);
+    expect(
+      (await call("/v1/spending-authorizations/unknown", appHeaders)).status,
+    ).toBe(401);
+    await ledger.approveApplication(appId, "local-pilot-lead");
+    await ledger.approveApplication(otherApp, "local-pilot-lead");
+    const messages = [{ role: "user", content: "Fixture prompt." }];
+    const reserve = (authorizationId: string, taskId?: string) => ({
+      authorizationId,
+      taskId,
+      operationId: crypto.randomUUID(),
+      route: routeId,
+      priceVersion,
+      resourceId: `${resourcePrefix}doc`,
+    });
+    const post = async (path: string, input: unknown) =>
+      (await call(path, appHeaders, input)).json();
+    for (const kind of ["online", "background"] as const) {
+      const authorization = await grant(kind);
+      const scope = `/v1/spending-authorizations/${authorization.authorizationId}`;
+      expect(
+        (
+          await call(scope, {
+            ...appHeaders,
+            authorization: otherHeaders.authorization,
+          })
+        ).status,
+      ).toBe(401);
+      expect((await call(scope, otherHeaders)).status).toBe(404);
+      expect(
+        await (await call(`${scope}/quote`, appHeaders)).json(),
+      ).toMatchObject({ route: routeId, priceVersion });
+      const step = reserve(authorization.authorizationId, authorization.taskId);
+      expect(
+        await post("/v1/reserve", { ...step, resourceId: "another:doc" }),
+      ).toMatchObject({ state: "denied" });
+      expect(
+        await post("/v1/reserve", { ...step, taskId: "different-task" }),
+      ).toMatchObject({ state: "denied" });
+      expect(
+        await post("/v1/reserve", { ...step, creditType: "paid" }),
+      ).toMatchObject({ state: "denied" });
+      const saved = await post("/v1/reserve", step);
+      expect(saved).toMatchObject({ state: "reserved" });
+      expect(
+        await post("/v1/reserve", { ...step, resourceId: "another:doc" }),
+      ).toMatchObject({ state: "denied" });
+      const request = {
+        authorizationId: step.authorizationId,
+        operationId: step.operationId,
+        permit: saved.permit,
+        messages,
+      };
+      expect((await call("/v1/dispatch", owner, request)).status).toBe(401);
+      expect(await post("/v1/dispatch", request)).toMatchObject({
+        state: "completed",
+        text: "Fixture answer.",
+        operation: {
+          applicationId: appId,
+          creditType: "test",
+          chargedMicrocredits: "3",
+        },
+      });
+      expect(await post("/v1/dispatch", request)).toMatchObject({
+        state: "existing",
+      });
+      expect(
+        await (
+          await call(`${scope}/operations/${step.operationId}`, appHeaders)
+        ).json(),
+      ).toMatchObject({ state: "settled" });
+      expect(
+        (await call(`${scope}/operations/${step.operationId}`, otherHeaders))
+          .status,
+      ).toBe(404);
+    }
+    const small = await grant("online", "1");
+    expect(
+      await post("/v1/reserve", reserve(small.authorizationId)),
+    ).toMatchObject({ state: "denied", reason: "execution_limit" });
+    const revoked = await grant("background");
+    const step = reserve(revoked.authorizationId, revoked.taskId);
+    const hold = await post("/v1/reserve", step);
+    duringMeter = async () => {
+      await ledger.revokeAuthorization(payer, revoked.authorizationId);
+    };
+    expect(
+      await post("/v1/dispatch", {
+        authorizationId: step.authorizationId,
+        operationId: step.operationId,
+        permit: hold.permit,
+        messages,
+      }),
+    ).toMatchObject({ state: "denied" });
+    duringMeter = undefined;
+    expect(await ledger.receipt(payer, step.operationId)).toMatchObject({
+      state: "released",
+    });
+    expect(
+      (
+        await call(
+          `/v1/spending-authorizations/${revoked.authorizationId}`,
+          appHeaders,
+        )
+      ).status,
+    ).toBe(404);
+    const expiring = await grant("background");
+    now += 60_001;
+    expect(
+      await post(
+        "/v1/reserve",
+        reserve(expiring.authorizationId, expiring.taskId),
+      ),
+    ).toMatchObject({ state: "denied" });
+    expect(sends).toHaveLength(2);
+    const bill = await call("/paid/bill", owner);
+    expect(await bill.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: sends[1],
+          applicationId: appId,
+          source: "test",
+          amountMicrocredits: "3",
+        }),
+        expect.objectContaining({
+          operationId: sends[0],
+          applicationId: appId,
+          source: "test",
+          amountMicrocredits: "3",
+        }),
+      ]),
+    );
+    expect((await call("/paid/bill", appHeaders)).status).toBe(401);
+    expect(
+      await (
+        await call("/paid/bill", { "x-fixture-person": other.subject })
+      ).json(),
+    ).toEqual([]);
+
+    expect(await ledger.balance(payer)).toMatchObject({
+      availableMicrocredits: "94",
+    });
+    expect(await ledger.balance(other)).toMatchObject({
+      availableMicrocredits: "100",
+    });
+  } finally {
+    await server.stop(true);
+    await gateway.stop(true);
+  }
+}, 90_000);
 
 afterAll(async () => {
   const accounts = await database

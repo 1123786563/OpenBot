@@ -92,6 +92,7 @@ type Dependencies = {
   };
   // Whether the caller holds an application's own credential (#111). Absent,
   // a call that names an application answers 503.
+  applicationExecute?: TestCreditExecutor;
   authenticateApplication?(
     request: Request,
     applicationId: string,
@@ -123,6 +124,7 @@ export function createTestCreditRoutes({
   execute,
   paid,
   authenticateApplication,
+  applicationExecute,
   weknoraRouteId,
 }: Dependencies) {
   const api = new Hono<{ Variables: Variables }>();
@@ -536,7 +538,9 @@ export function createTestCreditRoutes({
   ) => {
     const application = context.var.application;
     if (application === undefined)
-      return { state: "identity" as const, identity: context.var.identity };
+      return authorizationId === undefined
+        ? { state: "identity" as const, identity: context.var.identity }
+        : { state: "refused" as const, status: 401 as const };
     if (!authorizationId)
       return { state: "refused" as const, status: 400 as const };
     const identity = await ledger.authorizationIdentity(
@@ -570,24 +574,62 @@ export function createTestCreditRoutes({
       return context.json({ error: "Verified application required." }, 401);
     const acting = await actingAs(context, input.data.authorizationId);
     if (acting.state === "refused") return refused(context, acting.status);
+    const managedApplication =
+      context.var.application !== undefined && applicationExecute !== undefined;
+    if (
+      managedApplication &&
+      (input.data.budgetId || input.data.rerunOfOperationId)
+    )
+      return context.json(
+        { error: "Use the application's Spending Authorization." },
+        400,
+      );
+    if (managedApplication && input.data.creditType === "paid")
+      return context.json({ state: "denied", reason: "route_unavailable" });
     return context.json(
       await ledger.reserve(
         acting.identity,
         context.var.application === undefined
           ? input.data
-          : { ...input.data, applicationId: context.var.application },
+          : {
+              ...input.data,
+              applicationId: context.var.application,
+              ...(managedApplication ? { creditType: "test" as const } : {}),
+            },
       ),
     );
   });
 
   // What an application may read: only through its own authorizations (#111).
+  api.get("/v1/spending-authorizations/:id/quote", async (context) => {
+    const id = operationId.safeParse(context.req.param("id"));
+    if (!id.success || context.var.application === undefined)
+      return context.json(
+        { error: "Spending Authorization unavailable." },
+        404,
+      );
+    const grant = await ledger.authorizationSummary(
+      context.var.application,
+      id.data,
+    );
+    if (grant?.state !== "active")
+      return context.json(
+        { error: "Spending Authorization unavailable." },
+        404,
+      );
+    const quote = await ledger.quote();
+    return quote
+      ? context.json(quote)
+      : context.json({ error: "Execution unavailable." }, 503);
+  });
+
   api.get("/v1/spending-authorizations/:id", async (context) => {
     const id = operationId.safeParse(context.req.param("id"));
     const summary =
       id.success && context.var.application !== undefined
         ? await ledger.authorizationSummary(context.var.application, id.data)
         : undefined;
-    return summary
+    return summary?.state === "active"
       ? context.json(summary)
       : context.json({ error: "Spending Authorization unavailable." }, 404);
   });
@@ -623,7 +665,10 @@ export function createTestCreditRoutes({
     // A read-only mount cannot transition a reservation to pending.
     const outcome = await dispatchTestCredit({
       ledger,
-      execute,
+      execute:
+        context.var.application === undefined
+          ? execute
+          : (applicationExecute ?? execute),
       identity: acting.identity,
       input: input.data,
     });
@@ -711,7 +756,10 @@ export async function dispatchTestCredit({
             admission.accountId,
             input.operationId,
             request,
-            { recheckAdmission: authorizeDispatch !== undefined },
+            {
+              recheckAdmission: authorizeDispatch !== undefined,
+              recheckAuthorization: input.authorizationId !== undefined,
+            },
           );
           if (!bound) throw new UnsentBifrostRequest("route_unavailable");
           return bound;

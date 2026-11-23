@@ -104,6 +104,7 @@ import { budgetedTurn } from "./billing/background-model-turn";
 import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
+import { loadIndependentAppBilling } from "./billing/independent-app-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
 import { reconcilePilotClosure } from "./billing/pilot-closure";
 import { createTestCreditLedger } from "./billing/test-credit";
@@ -687,7 +688,12 @@ const auth: AuthService | undefined =
   organizationAuth ??
   (betterAuth && entra ? withEntraBearer(betterAuth, entra) : betterAuth);
 const weknoraBilling = loadWeKnoraBilling(process.env);
-const billingCasdoor = (directChatTestCredit ?? weknoraBilling)?.casdoor;
+const independentApplication = loadIndependentAppBilling(process.env);
+const billingCasdoor = (
+  directChatTestCredit ??
+  weknoraBilling ??
+  independentApplication
+)?.casdoor;
 if (
   billingCasdoor &&
   (!betterAuth ||
@@ -4025,6 +4031,7 @@ const app = createApp(
     alipayCreditPackTestChannel,
     casdoorIdentityOf: casdoorBillingIdentity,
     weknora: weknoraBilling,
+    independentApplication,
     testCreditConversations: directChatTestCredit !== undefined,
     canStartBackgroundBudget: backgroundModel?.canStart,
   },
