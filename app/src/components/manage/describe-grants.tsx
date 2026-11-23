@@ -34,6 +34,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { saveAppGrantsMutationOptions } from "@/lib/app-grants/mutations";
 import {
   type AppGrantReplay,
@@ -132,6 +133,8 @@ function ActionRows<T extends ChangedAction>({
   verdict: string;
   verdictClassName: string;
 }) {
+  // Subscribes these rows to the interface language, so choosing another one redraws their times in place.
+  useTranslation();
   const [open, setOpen] = useState(false);
   const shown = open ? actions : actions.slice(0, SHOWN);
   return (
@@ -423,6 +426,8 @@ function RecentUse({
   appTitle: string;
   botName: string;
 }) {
+  // Subscribes this card to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   return (
     <Field aria-labelledby="app-grants-replay" aria-live="polite">
       <FieldLabel id="app-grants-replay">

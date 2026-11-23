@@ -1,10 +1,10 @@
 import { Selector } from "@astryxdesign/core/Selector";
+import { Text } from "@astryxdesign/core/Text";
 import { IconLanguage } from "@tabler/icons-react";
 import {
   Item,
   ItemActions,
   ItemContent,
-  ItemDescription,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -30,12 +30,13 @@ export function LanguageRow() {
       </ItemMedia>
       <ItemContent>
         <ItemTitle>{t("settings.language.title", "Language")}</ItemTitle>
-        <ItemDescription>
+        {/* Text never truncates; the slot is what aligns the row's icon with its title. */}
+        <Text as="p" data-slot="item-description" type="supporting">
           {t(
             "settings.language.description",
             "Choose the language OpenBot uses for its own text.",
           )}
-        </ItemDescription>
+        </Text>
       </ItemContent>
       <ItemActions>
         <Selector
