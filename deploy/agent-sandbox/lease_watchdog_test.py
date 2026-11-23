@@ -162,6 +162,16 @@ class FileWorkerTest(unittest.TestCase):
         output = subprocess.check_output(["/opt/openbot/openbot-lease", "control", encoded])
         return json.loads(output)["observation"]
 
+    def test_artifact_does_not_create_missing_workspace_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            mount = Path(directory) / "unmounted"
+            worker = subprocess.run(
+                ["/opt/openbot/worker"], capture_output=True, timeout=2,
+                env={"WORKSPACE_DIR": str(mount), "COMPUTER_TOKEN": "synthetic-token"},
+            )
+            self.assertNotEqual(worker.returncode, 0)
+            self.assertFalse(mount.exists())
+
     def test_artifact_serves_files_under_lease_and_exits_without_control(self):
         with self.assertRaises(URLError):
             self.request("/health")

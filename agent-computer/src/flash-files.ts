@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { serve } from "bun";
 import { isPersonBrowserId } from "../../shared/openbot-browser";
 import { matchesToken, offeredToken } from "./authorisation";
@@ -9,7 +9,8 @@ import { createWorkspace } from "./workspace";
 const token = process.env.COMPUTER_TOKEN?.trim();
 const root = process.env.WORKSPACE_DIR;
 if (!token || !root) throw new Error("Flash file worker configuration missing");
-await mkdir(root, { recursive: true });
+if (!(await stat(root)).isDirectory())
+  throw new Error("Flash Workspace mount is unavailable");
 const files = createWorkspace(root);
 
 serve({
@@ -37,7 +38,6 @@ serve({
         { error: "A person's browser needs its own computer." },
         { status: 503 },
       );
-    // The pilot owns one ephemeral workspace per instance, with no shell or browser routes.
     return (
       (await handleFileRequest(request, url, async () => files)) ??
       Response.json({ error: "Not found." }, { status: 404 })

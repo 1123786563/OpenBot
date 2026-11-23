@@ -3,13 +3,20 @@ import type { Sandbox } from "e2b";
 import { z } from "zod";
 import { seal, unseal } from "../auth/signed-value";
 import type { Database } from "../db/client";
-import { personalWorkspaceAgentSandboxes as sandboxes } from "../db/schema/personal-saas";
+import {
+  personalWorkspaceAgentSandboxes as sandboxes,
+  personalWorkspaceAgenticSpaces as spaces,
+} from "../db/schema/personal-saas";
 import type {
   AgentSandboxBinding,
   AgentSandboxObservation,
   AgentSandboxProvider,
 } from "./agent-sandbox";
-import { createFlashSandboxApi, flashConnection } from "./flash-sandbox-api";
+import {
+  createFlashSandboxApi,
+  flashConnection,
+  flashWorkspaceMount,
+} from "./flash-sandbox-api";
 import {
   type ComputerLease,
   workspaceComputerLeaseMs,
@@ -67,6 +74,11 @@ type FlashWorkerArtifact = { archive: Blob; sha256: string };
 const flashUploadPartBytes = 24 * 1024 * 1024;
 
 async function installWorker(sandbox: Sandbox, artifact: FlashWorkerArtifact) {
+  // Check the exact mount point before installing or admitting the worker.
+  await sandbox.commands.run(
+    `findmnt --noheadings --mountpoint ${flashWorkspaceMount} --types nfs --options vers=3`,
+    { user: "root", requestTimeoutMs: 3_000, timeoutMs: 3_000 },
+  );
   const path = "/root/.openbot-runtime.tar.gz";
   const directory = "/opt/openbot";
   const digest = z
@@ -97,7 +109,6 @@ async function installWorker(sandbox: Sandbox, artifact: FlashWorkerArtifact) {
       `install -d -o 0 -g 0 -m 0755 ${directory} && ` +
       `tar --no-same-owner -xzf ${path} -C ${directory} && ` +
       `chmod 0755 ${directory}/openbot-lease ${directory}/worker && ` +
-      `install -d -o 10001 -g 10001 -m 0700 ${directory}/workspace && ` +
       `rm -- ${path} ${parts.join(" ")}`,
     { user: "root", requestTimeoutMs: 4_000, timeoutMs: 4_000 },
   );
@@ -246,9 +257,19 @@ export function createAgentSandboxProvider(
   return {
     allocationScope,
     async prepare(binding) {
+      const [storage] = await database
+        .select()
+        .from(spaces)
+        .where(eq(spaces.workspaceId, binding.workspaceId));
+      if (!storage)
+        throw new Error("Workspace AgenticFS has not been provisioned");
+      const mount = api.workspaceMount(storage);
       const [intent] = await database
         .update(sandboxes)
-        .set({ flashCreateRequested: true })
+        .set({
+          flashCreateRequested: true,
+          flashAgenticSpaceId: storage.agenticSpaceId,
+        })
         .where(
           and(
             generation(binding),
@@ -260,7 +281,7 @@ export function createAgentSandboxProvider(
         .returning();
       if (!intent) throw new Error("Flash allocation no longer authorized");
 
-      const allocation = await api.create(binding);
+      const allocation = await api.create(binding, mount);
       await database
         .update(sandboxes)
         .set({ flashSandboxId: allocation.id })
@@ -295,7 +316,7 @@ export function createAgentSandboxProvider(
     },
     async start(binding, lease) {
       const row = await state(binding);
-      if (!row.flashConnection)
+      if (!row.flashConnection || !row.flashAgenticSpaceId)
         throw new Error("Flash runtime setup unconfirmed");
       const { computerToken } = await credentials(row);
       const [armed] = await database
@@ -325,6 +346,7 @@ export function createAgentSandboxProvider(
       const row = await state(binding);
       if (
         row.phase !== "active" ||
+        !row.flashAgenticSpaceId ||
         row.issuedAt !== lease.issuedAt ||
         row.expiresAt !== lease.expiresAt ||
         lease.expiresAt <= now()
@@ -401,7 +423,11 @@ export function createAgentSandboxProvider(
           : { ...terminal.data, clockUncertaintyMs };
       }
 
-      if (row.phase !== "active" || !row.flashSandboxId)
+      if (
+        row.phase !== "active" ||
+        !row.flashSandboxId ||
+        !row.flashAgenticSpaceId
+      )
         return { kind: "starting" };
       const observation = await watchdog(row, { action: "inspect" });
       if (observation.kind !== "running") return { kind: "unconfirmed" };

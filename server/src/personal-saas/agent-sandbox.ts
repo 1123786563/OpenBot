@@ -1,7 +1,10 @@
 import { and, eq, gt, inArray, lt, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
-import { personalWorkspaceAgentSandboxes as sandboxes } from "../db/schema/personal-saas";
+import {
+  personalWorkspaceAgentSandboxes as sandboxes,
+  personalWorkspaceAgenticSpaces as spaces,
+} from "../db/schema/personal-saas";
 import type {
   ComputerGeneration,
   ComputerLease,
@@ -194,7 +197,7 @@ export function agentSandboxComputer(
 
   return {
     read,
-    // This lifecycle-only pilot runs with ephemeral storage and no workspace file mount.
+    // Cloud usage accounting is tracked in #145.
     async storageUsage() {
       return 0;
     },
@@ -202,6 +205,14 @@ export function agentSandboxComputer(
       const result = await read(workspaceId);
       if (result.status !== "not_started" && !result.stopped)
         throw new Error("Workspace Computer cleanup unconfirmed");
+      // Instance deletion does not erase AgenticFS. Keep closure pending
+      // until the durable storage cleanup contract in #146 is implemented.
+      const [storage] = await database
+        .select({ workspaceId: spaces.workspaceId })
+        .from(spaces)
+        .where(eq(spaces.workspaceId, workspaceId));
+      if (storage)
+        throw new Error("Workspace Computer storage cleanup unconfirmed");
     },
     async start(
       workspaceId: string,
@@ -224,6 +235,7 @@ export function agentSandboxComputer(
         flashScope: provider.allocationScope ?? null,
         flashCreateRequested: false,
         flashSandboxId: null,
+        flashAgenticSpaceId: null,
         flashConnection: null,
         flashWorkRequested: false,
         flashWorkerExit: null,

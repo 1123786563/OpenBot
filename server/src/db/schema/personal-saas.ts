@@ -75,6 +75,24 @@ export const personalWorkspaces = pgTable("personal_workspaces", {
     .references(() => personalSaasAccounts.id),
 });
 
+export const personalWorkspaceAgenticSpaces = pgTable(
+  "personal_workspace_agentic_spaces",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
+    agenticSpaceId: text("agentic_space_id").notNull().unique(),
+    fileSystemId: text("file_system_id").notNull(),
+    accessPointId: text("access_point_id").notNull().unique(),
+    accessPointDomain: text("access_point_domain").notNull(),
+    roleArn: text("role_arn").notNull().unique(),
+    storageEgressIps: text("storage_egress_ips").array().notNull(),
+    vpcId: text("vpc_id").notNull(),
+    vSwitchId: text("vswitch_id").notNull(),
+    securityGroupId: text("security_group_id").notNull(),
+  },
+);
+
 export const personalWorkspaceAgentSandboxes = pgTable(
   "personal_workspace_agent_sandboxes",
   {
@@ -95,6 +113,7 @@ export const personalWorkspaceAgentSandboxes = pgTable(
       .notNull()
       .default(false),
     flashSandboxId: text("flash_sandbox_id"),
+    flashAgenticSpaceId: text("flash_agentic_space_id"),
     flashConnection: text("flash_connection"),
     flashWorkRequested: boolean("flash_work_requested")
       .notNull()

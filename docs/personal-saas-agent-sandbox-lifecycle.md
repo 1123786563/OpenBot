@@ -1,12 +1,12 @@
 # Validate the Personal SaaS Agent Sandbox in Hangzhou
 
-[Issue #143](https://github.com/1123786563/OpenBot/issues/143) covers the private-trial lifecycle for [Agent Sandbox](adr/0013-use-agent-sandbox-and-agenticfs-for-the-personal-saas-computer-pilot.md). Use an isolated Alibaba Cloud Team, an empty database for the trial, and two test workspace owners. Use synthetic files and a template without mounts. AgenticFS and its quota belong to #144.
+[Issue #143](https://github.com/1123786563/OpenBot/issues/143) covers the private-trial lifecycle for [Agent Sandbox](adr/0013-use-agent-sandbox-and-agenticfs-for-the-personal-saas-computer-pilot.md). Use an isolated Alibaba Cloud Team, an empty database for the trial, and two test workspace owners. The historical #143 run used synthetic files and a template without mounts. To run this protocol on the current pilot, first [provision AgenticFS](personal-saas-agenticfs.md).
 
 Hangzhou returned approximately 60 seconds of provider TTL for a 10-second create request and a 5-second timeout update. Fresh commands succeeded past 15 seconds in both trials. OpenBot gives Alibaba a five-minute resource TTL and issues absolute work leases of at most 15 seconds. A root-owned watchdog runs the file worker as UID and GID 10001. It applies Linux seccomp before exec, allowing threads in the same process and denying new processes. It checks wall time and monotonic boot time, reserves two seconds for termination, sends SIGKILL through a Linux pidfd and waits for that pidfd to report process exit. It seals the generation so delayed starts and renewals cannot restart it. [Hangzhou probe evidence](https://github.com/1123786563/OpenBot/pull/148) · [Flash lifecycle](https://www.alibabacloud.com/help/en/agent-sandbox/lifecycle)
 
 ## Build and configure the private trial
 
-1. Use the Hangzhou Team's existing `code-interpreter-v1` template. On a disposable instance verify `uname -m`, root envd commands and file upload, and that TCP 4100 is initially unused. The runtime needs Python 3 with `os.pidfd_open` and `signal.pidfd_send_signal`, `libseccomp.so.2`, a glibc-compatible Bun binary, `tar`, `sha256sum` and `install`. Confirm UID and GID 10001 are free for OpenBot's worker. Require port 4100 to reject traffic when the Flash traffic token is omitted. Destroy the disposable instance and verify detail and inventory. [Flash private port access](https://www.alibabacloud.com/help/en/agent-sandbox/network-access-control)
+1. Use an AgenticFS-capable template in the Hangzhou Team. On a disposable instance verify `uname -m`, root envd commands and file upload, and that TCP 4100 is initially unused. The runtime needs Python 3 with `os.pidfd_open` and `signal.pidfd_send_signal`, `libseccomp.so.2`, a glibc-compatible Bun binary, `tar`, `sha256sum` and `install`. Confirm UID and GID 10001 are free for OpenBot's worker. Require port 4100 to reject traffic when the Flash traffic token is omitted. Destroy the disposable instance and verify detail and inventory. [Flash private port access](https://www.alibabacloud.com/help/en/agent-sandbox/network-access-control)
 
 2. From the repository root, use the Bun version in `package.json` and build the worker at the same revision as the server. The example assumes `uname -m` returned `x86_64`. Pass `aarch64` for an ARM instance.
 
@@ -16,12 +16,12 @@ Hangzhou returned approximately 60 seconds of provider TTL for a 10-second creat
    shasum -a 256 /tmp/openbot-flash-runtime.tar.gz
    ```
 
-3. On each Personal SaaS server replica make the artifact readable at the configured absolute path. Apply the normal server migrations, including `0118_agent_sandbox_flash` if not already applied. Use the same database, encryption key, Team key, template and artifact on each replica. Use the template identifier returned in the Flash create response. In this Hangzhou trial it is `code-interpreter-v1`, while the template inventory reports a separate opaque ID. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES`. Leave the Docker supervisor and former authority settings unset. Drain existing Flash generations before deploying this worker protocol or changing region, template, Team key or provider.
+3. On each Personal SaaS server replica make the artifact readable at the configured absolute path. Apply the normal server migrations, including `0118_agent_sandbox_flash` if not already applied. Use the same database, encryption key, Team key, template and artifact on each replica. Use the template identifier returned in the Flash create response. The #143 Hangzhou trial returned `code-interpreter-v1`. Choose the identifier for your AgenticFS-capable template. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES`. Leave the Docker supervisor and former authority settings unset. Drain existing Flash generations before deploying this worker protocol or changing region, template, Team key or provider.
 
    ```sh
    export OPENBOT_PERSONAL_SAAS_MODE=private-trial
    export OPENBOT_AGENT_SANDBOX_FLASH_REGION=cn-hangzhou
-   export OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE=code-interpreter-v1
+   export OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE="replace-with-agenticfs-template-id"
    export OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT=/tmp/openbot-flash-runtime.tar.gz
    # Supply E2B_API_KEY through the deployment's secret mechanism.
    (cd server && bun --no-env-file scripts/migrate.ts)
@@ -95,7 +95,7 @@ docker run --rm --network none \
     -v "$PWD/deploy/agent-sandbox:/tests:ro" python:3.12-slim sh -ec '
       install -d -m 0755 /opt/openbot
       tar --no-same-owner -xzf /runtime.tar.gz -C /opt/openbot
-      install -d -o 10001 -g 10001 -m 0700 /opt/openbot/workspace
+      install -d -o 10001 -g 10001 -m 0700 /mnt/openbot-workspace
       python3 -B /tests/lease_watchdog_test.py
     '
 bun test --no-env-file --env-file=.env.test \

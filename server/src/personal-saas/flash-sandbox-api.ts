@@ -2,6 +2,31 @@ import { type paths, Sandbox } from "e2b";
 import { z } from "zod";
 import type { AgentSandboxBinding } from "./agent-sandbox";
 
+export const flashWorkspaceMount = "/mnt/openbot-workspace";
+const flashWorkerUid = 10001;
+
+const privateAddress = z.ipv4().refine((address) => {
+  const [first, second] = address.split(".").map(Number);
+  return (
+    first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+});
+const agenticStorage = z.object({
+  accessPointId: z.string().regex(/^ap-[a-z0-9]+$/),
+  accessPointDomain: z
+    .string()
+    .max(126)
+    .regex(/^[a-z0-9.-]+$/),
+  fileSystemId: z.string().regex(/^[a-z0-9]+$/),
+  roleArn: z.string().regex(/^acs:ram::[0-9]+:role\/[a-z0-9_-]+$/),
+  storageEgressIps: z.array(privateAddress).min(1),
+  vpcId: z.string().regex(/^vpc-[a-z0-9]+$/),
+  vSwitchId: z.string().regex(/^vsw-[a-z0-9]+$/),
+  securityGroupId: z.string().regex(/^sg-[a-z0-9]+$/),
+});
+
 const sandboxId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/);
 const detail = z.object({
   sandboxID: sandboxId,
@@ -91,7 +116,44 @@ export function createFlashSandboxApi(config: FlashConfig) {
     );
   }
 
+  function workspaceMount(storage: unknown) {
+    const mount = agenticStorage.parse(storage);
+    const region = config.domain.split(".")[0];
+    const [accessPoint, filesystem, ...domain] =
+      mount.accessPointDomain.split(".");
+    if (
+      accessPoint !== mount.accessPointId ||
+      !filesystem?.startsWith(`${mount.fileSystemId}-`) ||
+      !/^[a-z0-9]+-[a-z0-9]+$/.test(filesystem) ||
+      domain.join(".") !== `${region}.nas.aliyuncs.com`
+    ) {
+      throw new Error("Invalid Workspace AgenticFS Access Point");
+    }
+    return {
+      allowOut: mount.storageEgressIps,
+      metadata: {
+        "fc.sandbox.storage.agenticfs": JSON.stringify({
+          userID: flashWorkerUid,
+          groupID: flashWorkerUid,
+          mountPoints: [
+            {
+              serverAddr: `${mount.accessPointDomain}:/`,
+              mountDir: flashWorkspaceMount,
+            },
+          ],
+        }),
+        "fc.sandbox.network.vpc": JSON.stringify({
+          vpcId: mount.vpcId,
+          securityGroupId: mount.securityGroupId,
+          vSwitchIds: [mount.vSwitchId],
+        }),
+        "fc.sandbox.auth.role": mount.roleArn,
+      },
+    };
+  }
+
   return {
+    workspaceMount,
     async discover(binding: AgentSandboxBinding) {
       const entries = await inventory(binding);
       return [
@@ -102,20 +164,27 @@ export function createFlashSandboxApi(config: FlashConfig) {
         ),
       ];
     },
-    async create(binding: AgentSandboxBinding) {
+    async create(
+      binding: AgentSandboxBinding,
+      mount: ReturnType<typeof workspaceMount>,
+    ) {
       // One POST per generation. A lost response is resolved from metadata.
       const response = await request(
         new URL("/sandboxes", config.apiUrl),
         "POST",
         {
+          signal: AbortSignal.timeout(20_000),
           body: {
             templateID: config.template,
-            metadata: metadata(binding),
+            metadata: {
+              ...metadata(binding),
+              ...mount.metadata,
+            },
             secure: true,
             autoPause: false,
             autoResume: { enabled: false },
             allow_internet_access: false,
-            network: { allowPublicTraffic: false },
+            network: { allowPublicTraffic: false, allowOut: mount.allowOut },
             timeout: 300,
           },
         },

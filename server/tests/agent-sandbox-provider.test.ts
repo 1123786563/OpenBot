@@ -14,6 +14,16 @@ const metadata = {
 const sandboxId = "sandbox-fixture";
 const template = "template-fixture";
 const domain = "cn-hangzhou.sandbox.aliyuncs.com";
+const storage = {
+  accessPointId: "ap-fixture",
+  fileSystemId: "31a8e4",
+  accessPointDomain: "ap-fixture.31a8e4-fixture.cn-hangzhou.nas.aliyuncs.com",
+  roleArn: "acs:ram::1234567890123456:role/openbot-fixture",
+  storageEgressIps: ["10.12.0.2", "10.12.0.3"],
+  vpcId: "vpc-fixture",
+  vSwitchId: "vsw-fixture",
+  securityGroupId: "sg-fixture",
+};
 const fixture = {
   sandboxID: sandboxId,
   templateID: template,
@@ -36,16 +46,40 @@ test("Flash creates a private instance once and independently verifies inventory
       expect(request.headers.get("x-api-key")).toBe("fixture-api-key");
       calls.push(`${request.method} ${url.pathname}`);
       if (url.pathname === "/sandboxes" && request.method === "POST") {
-        expect(await request.json()).toMatchObject({
+        const create = await request.json();
+        expect(create).toMatchObject({
           templateID: template,
           metadata,
           secure: true,
           autoPause: false,
           autoResume: { enabled: false },
           allow_internet_access: false,
-          network: { allowPublicTraffic: false },
+          network: {
+            allowPublicTraffic: false,
+            allowOut: ["10.12.0.2", "10.12.0.3"],
+          },
           timeout: 300,
         });
+        expect(
+          JSON.parse(create.metadata["fc.sandbox.storage.agenticfs"]),
+        ).toEqual({
+          userID: 10001,
+          groupID: 10001,
+          mountPoints: [
+            {
+              serverAddr:
+                "ap-fixture.31a8e4-fixture.cn-hangzhou.nas.aliyuncs.com:/",
+              mountDir: "/mnt/openbot-workspace",
+            },
+          ],
+        });
+        expect(JSON.parse(create.metadata["fc.sandbox.network.vpc"])).toEqual({
+          vpcId: "vpc-fixture",
+          vSwitchIds: ["vsw-fixture"],
+          securityGroupId: "sg-fixture",
+        });
+        expect(create.metadata["fc.sandbox.auth.role"]).toBe(storage.roleArn);
+        expect(create).not.toHaveProperty("envVars");
         return Response.json(fixture, { status: 201 });
       }
       if (url.pathname === `/sandboxes/${sandboxId}`) {
@@ -80,7 +114,19 @@ test("Flash creates a private instance once and independently verifies inventory
       domain,
       template,
     });
-    const allocation = await api.create(binding);
+    expect(() =>
+      api.workspaceMount({
+        ...storage,
+        accessPointDomain: `${storage.accessPointDomain}:/folder`,
+      }),
+    ).toThrow();
+    expect(() =>
+      api.workspaceMount({ ...storage, accessPointId: "ap-other" }),
+    ).toThrow();
+    expect(() =>
+      api.workspaceMount({ ...storage, storageEgressIps: ["100.100.100.200"] }),
+    ).toThrow();
+    const allocation = await api.create(binding, api.workspaceMount(storage));
     expect(allocation.id).toBe(sandboxId);
     expect(await api.discover(binding)).toEqual([sandboxId]);
     await api.delete(sandboxId);

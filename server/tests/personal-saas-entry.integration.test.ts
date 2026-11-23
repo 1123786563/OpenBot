@@ -1,10 +1,15 @@
 import { afterAll, beforeAll, expect, jest, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EventType, HttpAgent, type RunAgentInput } from "@ag-ui/client";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, sql } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { Observable } from "rxjs";
+import { handleFileRequest } from "../../agent-computer/src/file-routes";
+import { createWorkspace } from "../../agent-computer/src/workspace";
 import { workspaceComputers } from "../../supervisor/src/workspace-computers";
 import {
   configure,
@@ -17,6 +22,7 @@ import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createWakeUpStore } from "../src/agents/wake-up";
 import { createApprovalStore } from "../src/approvals/store";
 import { approvalAction } from "../src/approvals/types";
+import { createAuditReader } from "../src/audit";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { botSeat, seatText } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
@@ -38,6 +44,7 @@ import {
 import {
   personalSaasAccounts,
   personalSaasNativeCodes,
+  personalWorkspaceAgenticSpaces,
   personalWorkspaceClosures,
 } from "../src/db/schema/personal-saas";
 import {
@@ -5054,6 +5061,18 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
   let sandboxId = "flash-lifecycle-fixture";
   let loseCreateResponse = false;
   const templateID = "flash-template-fixture";
+  await database.insert(personalWorkspaceAgenticSpaces).values({
+    workspaceId: owner.workspaceId,
+    agenticSpaceId: `agentic-${owner.workspaceId}`,
+    fileSystemId: "fs144",
+    accessPointId: `ap-${owner.workspaceId.replaceAll("-", "")}`,
+    accessPointDomain: `ap-${owner.workspaceId.replaceAll("-", "")}.fs144-fixture.cn-hangzhou.nas.aliyuncs.com`,
+    roleArn: `acs:ram::1234567890123456:role/workspace-${owner.workspaceId}`,
+    storageEgressIps: ["10.12.0.2"],
+    vpcId: "vpc-fixture",
+    vSwitchId: "vsw-fixture",
+    securityGroupId: "sg-fixture",
+  });
   let creates = 0;
   let provisions = 0;
   let deletes = 0;
@@ -5175,7 +5194,7 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
   try {
     const first = replica();
     const second = replica();
-    const start = request(first, "/start");
+    const start = Promise.resolve(request(first, "/start"));
     try {
       await Promise.race([
         createReceived.promise,
@@ -5259,6 +5278,377 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
   } finally {
     clockTime = undefined;
     fixture.stop(true);
+  }
+});
+
+test("Flash AgenticFS keeps Bot files across stop and failed setup, with a distinct mount per Workspace", async () => {
+  const owner = await isolationOwner();
+  const other = await isolationOwner();
+  const dir = await mkdtemp(join(tmpdir(), "openbot-agenticfs-"));
+  const domain = "cn-hangzhou.sandbox.aliyuncs.com";
+  const templateID = "fixture-template";
+  const path = "notes/private.txt";
+  const contents = "owner only 🔒\r\n";
+  const appendix = "second line\n";
+  const expected = contents + appendix;
+  const bytes = Buffer.byteLength(expected);
+  const workspaceStorage = (workspaceId: string, suffix: string) => ({
+    workspaceId,
+    agenticSpaceId: `agentic-${suffix}`,
+    fileSystemId: "fs144",
+    accessPointId: `ap-${suffix}`,
+    accessPointDomain: `ap-${suffix}.fs144-fixture.cn-hangzhou.nas.aliyuncs.com`,
+    roleArn: `acs:ram::1234567890123456:role/workspace-${suffix}`,
+    storageEgressIps: ["10.12.0.2"],
+    vpcId: "vpc-fixture",
+    vSwitchId: "vsw-fixture",
+    securityGroupId: "sg-fixture",
+  });
+  const ownerStorage = workspaceStorage(
+    owner.workspaceId,
+    owner.workspaceId.replaceAll("-", ""),
+  );
+  const otherStorage = workspaceStorage(
+    other.workspaceId,
+    other.workspaceId.replaceAll("-", ""),
+  );
+  const storages = [ownerStorage, otherStorage];
+  await Promise.all(
+    storages.map(({ agenticSpaceId }) => mkdir(join(dir, agenticSpaceId))),
+  );
+  const roots = new Map(
+    storages.map(({ agenticSpaceId }) => [
+      agenticSpaceId,
+      createWorkspace(join(dir, agenticSpaceId)),
+    ]),
+  );
+  const instances = new Map<
+    string,
+    {
+      ownerId: string;
+      metadata: Record<string, string>;
+      storageId: string;
+      trafficToken: string;
+      bootId: string;
+      lease?: { issuedAt: number; expiresAt: number; token: string };
+    }
+  >();
+  const allocations: { id: string; mount: string }[] = [];
+  const destroyed: string[] = [];
+  let failSetup = false;
+
+  using cloud = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const { pathname } = new URL(request.url);
+      if (request.method === "POST" && pathname === "/sandboxes") {
+        const { metadata, ...body } = await request.json();
+        expect(body).not.toHaveProperty("envVars");
+        const { mountPoints } = JSON.parse(
+          metadata["fc.sandbox.storage.agenticfs"],
+        );
+        expect(mountPoints).toHaveLength(1);
+        const storage = storages.find(
+          (value) =>
+            mountPoints[0].serverAddr === `${value.accessPointDomain}:/`,
+        );
+        if (
+          !storage ||
+          storage.workspaceId !== metadata.openbotWorkspace ||
+          storage.roleArn !== metadata["fc.sandbox.auth.role"]
+        ) {
+          return new Response(null, { status: 403 });
+        }
+
+        const id = `fixture-${allocations.length + 1}`;
+        const trafficToken = `traffic-${id}`;
+        allocations.push({ id, mount: mountPoints[0].serverAddr });
+        instances.set(id, {
+          ownerId: storage.workspaceId,
+          metadata,
+          storageId: storage.agenticSpaceId,
+          trafficToken,
+          bootId: crypto.randomUUID(),
+        });
+        return Response.json(
+          {
+            sandboxID: id,
+            templateID,
+            domain,
+            envdVersion: "0.6.1",
+            envdAccessToken: `envd-${id}`,
+            trafficAccessToken: trafficToken,
+          },
+          { status: 201 },
+        );
+      }
+      if (pathname === "/v2/sandboxes")
+        return Response.json(
+          Array.from(instances, ([sandboxID, { metadata }]) => ({
+            sandboxID,
+            templateID,
+            metadata,
+          })),
+        );
+      const id = pathname.split("/").at(-1) ?? "";
+      if (!instances.has(id))
+        return Response.json({ code: 404 }, { status: 404 });
+      if (request.method === "DELETE") {
+        destroyed.push(id);
+        instances.delete(id);
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ sandboxID: id, templateID });
+    },
+  });
+
+  const nativeFetch = globalThis.fetch;
+  const runtimeFetch = async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    const request = new Request(input, init);
+    const url = new URL(request.url);
+    if (!url.hostname.endsWith(`.${domain}`)) return nativeFetch(input, init);
+    const id = url.hostname.split(".")[0].replace(/^4100-/, "");
+    const instance = instances.get(id);
+    if (
+      !instance?.lease ||
+      request.headers.get("e2b-traffic-access-token") !==
+        instance.trafficToken ||
+      request.headers.get("x-openbot-computer-token") !== instance.lease.token
+    )
+      return new Response(null, { status: 403 });
+    if (url.pathname === "/health") return new Response(null, { status: 200 });
+    const bot = instance.ownerId === owner.workspaceId ? owner : other;
+    expect(request.headers.get("x-openbot-bot-id")).toBe(bot.botId);
+    const root = roots.get(instance.storageId);
+    if (!root) throw new Error("Mount missing in fixture");
+    return (
+      (await handleFileRequest(request, url, async () => root)) ??
+      new Response(null, { status: 404 })
+    );
+  };
+  const runtime = jest
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(
+      Object.assign(runtimeFetch, { preconnect: nativeFetch.preconnect }),
+    );
+  const options: Parameters<typeof createAgentSandboxProvider>[0] = {
+    apiUrl: cloud.url.origin,
+    apiKey: "fixture-key",
+    domain,
+    template: templateID,
+    encryptionKey: Buffer.alloc(32, 34).toString("base64"),
+    artifact: { archive: new Blob(["fixture"]), sha256: "a".repeat(64) },
+    async provision() {
+      if (failSetup) throw new Error("Fixture mount failed verification");
+    },
+    async invoke(sandbox, message) {
+      const instance = instances.get(sandbox.sandboxId);
+      if (!instance || instance.ownerId !== message.binding.workspaceId)
+        throw new Error("Invalid fixture instance binding");
+      if (message.action === "start") instance.lease = message;
+      const lease = instance.lease;
+      if (!lease) throw new Error("Fixture worker was never started");
+      return {
+        binding: message.binding,
+        observation: {
+          kind: message.action === "stop" ? "exited" : "running",
+          ...(message.action === "stop" && { exitedAt: now() }),
+          issuedAt: lease.issuedAt,
+          leaseExpiresAt: lease.expiresAt,
+          pid: 123,
+          bootId: instance.bootId,
+        },
+      };
+    },
+  };
+  const replica = () =>
+    newApp(
+      database,
+      async ({ beforeDispatch, additionalTools, signal, instruction }) => {
+        await beforeDispatch?.();
+        if (!signal) throw new Error("Expected task signal");
+        const tool = (name: string, input: object) => {
+          const selected = additionalTools?.find(
+            ({ definition }) => definition.name === name,
+          );
+          if (!selected) throw new Error(`Missing tool ${name}`);
+          return selected.execute(input, {
+            signal,
+            toolCallId: crypto.randomUUID(),
+          });
+        };
+        if (instruction === "Write fixture") {
+          expect(await tool("computer_write_file", { path, contents })).toEqual(
+            {
+              ok: true,
+              path,
+              bytes: Buffer.byteLength(contents),
+              appended: false,
+            },
+          );
+          expect(
+            await tool("computer_write_file", {
+              path,
+              contents: appendix,
+              append: true,
+            }),
+          ).toEqual({
+            ok: true,
+            path,
+            bytes: Buffer.byteLength(appendix),
+            appended: true,
+          });
+        }
+        if (instruction === "Check isolation") {
+          await expect(tool("computer_read_file", { path })).rejects.toThrow(
+            "There is no file",
+          );
+          expect(await tool("computer_list_files", {})).toMatchObject({
+            entries: [],
+          });
+          expect(
+            await tool("computer_write_file", { path, contents: "other" }),
+          ).toMatchObject({ ok: true, bytes: 5 });
+          expect(await tool("computer_read_file", { path })).toMatchObject({
+            text: "other",
+          });
+        } else {
+          expect(await tool("computer_list_files", { path: "notes" })).toEqual({
+            ok: true,
+            path: "notes",
+            entries: [{ path, kind: "file", bytes }],
+            truncated: false,
+          });
+          expect(await tool("computer_read_file", { path })).toMatchObject({
+            ok: true,
+            path,
+            text: expected,
+            bytes,
+            truncated: false,
+          });
+        }
+        return { replyText: "Verified files" };
+      },
+      { agentSandbox: createAgentSandboxProvider(options, database, now) },
+    );
+  let service = replica();
+  function computer(session: string, operation = "") {
+    return service.request(`/api/workspace/computer${operation}`, {
+      method: operation ? "POST" : "GET",
+      headers: { origin, cookie: session },
+    });
+  }
+  async function run(bot: typeof owner, instruction: string) {
+    // The queue timestamps the submission in PostgreSQL.
+    const startTime = now();
+    while (Date.now() <= startTime) await Bun.sleep(1);
+    const headers = {
+      origin,
+      cookie: bot.session,
+      "content-type": "application/json",
+    };
+    const queued = await service.request("/api/workspace/bot-runs", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        workspaceId: bot.workspaceId,
+        botId: bot.botId,
+        instruction,
+        requiresComputer: true,
+      }),
+    });
+    expect(queued.status).toBe(202);
+    const { runId } = await queued.json();
+    const [stamp] = await database.$client`
+      select extract(epoch from clock_timestamp()) * 1000 as ms
+    `;
+    clockTime = Math.max(now(), Math.ceil(Number(stamp.ms)));
+    expect(await service.sweepBotWork()).toBe(true);
+    const result = await service.request(`/api/workspace/bot-runs/${runId}`, {
+      headers,
+    });
+    expect(await result.json()).toMatchObject({ state: "completed" });
+  }
+
+  clockTime = now();
+  try {
+    expect((await computer(owner.session, "/start")).status).toBe(409);
+    expect(allocations).toEqual([]);
+    await database.insert(personalWorkspaceAgenticSpaces).values(storages);
+    clockTime += 10;
+    expect((await computer(owner.session, "/start")).status).toBe(202);
+    await run(owner, "Write fixture");
+    const { events } = await createAuditReader(database).list({
+      targetId: owner.botId,
+      limit: 20,
+    });
+    expect(
+      events
+        .filter(({ eventType }) => eventType === "computer.action_allowed")
+        .map(({ payload }) => payload),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "computer_write_file", file: path }),
+        expect.objectContaining({
+          action: "computer_list_files",
+          file: "notes",
+        }),
+        expect.objectContaining({ action: "computer_read_file", file: path }),
+      ]),
+    );
+    expect(JSON.stringify(events)).not.toContain("owner only");
+
+    expect((await computer(owner.session, "/stop")).status).toBe(202);
+    expect(await (await computer(owner.session)).json()).toEqual({
+      status: "restart_required",
+      cutoff: "confirmed",
+    });
+    expect(destroyed).toEqual(["fixture-1"]);
+
+    service = replica();
+    clockTime += 10;
+    failSetup = true;
+    expect((await computer(owner.session, "/start")).status).toBe(409);
+    expect(destroyed).toEqual(["fixture-1", "fixture-2"]);
+    failSetup = false;
+
+    clockTime += 10;
+    expect((await computer(owner.session, "/start")).status).toBe(202);
+    await run(owner, "Read retained fixture");
+    expect((await computer(other.session, "/start")).status).toBe(202);
+    const crossWorkspace = await service.request("/api/workspace/bot-runs", {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: other.session,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: owner.workspaceId,
+        botId: owner.botId,
+        instruction: "Read fixture",
+        requiresComputer: true,
+      }),
+    });
+    expect(crossWorkspace.status).toBe(404);
+    await run(other, "Check isolation");
+    await run(owner, "Read retained fixture");
+    expect((await computer(owner.session, "/stop")).status).toBe(202);
+    expect((await computer(other.session, "/stop")).status).toBe(202);
+    expect(allocations).toEqual([
+      { id: "fixture-1", mount: `${ownerStorage.accessPointDomain}:/` },
+      { id: "fixture-2", mount: `${ownerStorage.accessPointDomain}:/` },
+      { id: "fixture-3", mount: `${ownerStorage.accessPointDomain}:/` },
+      { id: "fixture-4", mount: `${otherStorage.accessPointDomain}:/` },
+    ]);
+  } finally {
+    clockTime = undefined;
+    runtime.mockRestore();
+    await rm(dir, { recursive: true, force: true });
   }
 });
 
