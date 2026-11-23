@@ -142,6 +142,12 @@
   "settings.name.saveFailed": "无法保存你的名字",
   "settings.name.saved": "你的名字已保存。",
   "settings.name.saving": "正在保存…",
+  "settings.privacy.changeFailed": "无法更改此设置。请重试。",
+  "settings.privacy.explanation": "OpenBot 会发送使用数据，并关联到你的 OpenBot 账号。它绝不会发送你的对话、文件或密钥。更改将在下次 OpenBot 启动时生效。",
+  "settings.privacy.offByEnvironment": "在这台电脑上已关闭。OpenBot 不发送使用数据。",
+  "settings.privacy.share": "共享使用数据",
+  "settings.privacy.title": "隐私",
+  "settings.privacy.whatIsSent": "OpenBot 发送的内容",
   "settings.shortcuts": "键盘快捷键",
   "settings.shortcuts.newConversation.description": "在 OpenBot 的任何地方开始一个新对话。",
   "settings.title": "通用"

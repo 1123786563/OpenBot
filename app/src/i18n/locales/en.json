@@ -142,6 +142,12 @@
   "settings.name.saveFailed": "Your name could not be saved",
   "settings.name.saved": "Your name has been saved.",
   "settings.name.saving": "Saving…",
+  "settings.privacy.changeFailed": "Couldn't change this setting. Try again.",
+  "settings.privacy.explanation": "OpenBot sends usage data, linked to your OpenBot account. It never sends your conversations, files or keys. Changes apply the next time OpenBot starts.",
+  "settings.privacy.offByEnvironment": "Turned off on this computer. OpenBot sends no usage data.",
+  "settings.privacy.share": "Share usage data",
+  "settings.privacy.title": "Privacy",
+  "settings.privacy.whatIsSent": "What OpenBot sends",
   "settings.shortcuts": "Keyboard shortcuts",
   "settings.shortcuts.newConversation.description": "Start a new conversation from anywhere in OpenBot.",
   "settings.title": "General"

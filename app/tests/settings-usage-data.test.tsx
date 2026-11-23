@@ -25,6 +25,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import type { DesktopUsageData } from "@/lib/desktop/queries";
 import { queryClient } from "@/query-client";
 import { Route as GeneralRoute } from "@/routes/_authed/settings/index";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 let usageData: DesktopUsageData;
@@ -58,8 +59,9 @@ beforeEach(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
   queryClient.clear();
   global.fetch = originalFetch;
   delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -151,4 +153,36 @@ test("a desktop app without the command draws no Privacy section", async () => {
   await older.findByRole("heading", { name: "About you" });
   await settleReactWork();
   expect(older.queryByRole("heading", { name: "Privacy" })).toBeNull();
+});
+
+test("in Chinese the privacy section speaks the interface language, doc link unchanged", async () => {
+  await pinLocale("zh-CN");
+  const view = renderGeneral();
+  await view.findByRole("heading", { name: "隐私" });
+  const toggle = view.getByRole("switch", { name: "共享使用数据" });
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(
+    view.getByText(/绝不会发送你的对话、文件或密钥。更改将在下次 OpenBot 启动时生效。/),
+  ).toBeTruthy();
+  expect(
+    view.getByRole("link", { name: "OpenBot 发送的内容" }).getAttribute("href"),
+  ).toBe(
+    "https://github.com/CopilotKit/OpenBot/blob/main/desktop/TELEMETRY.md",
+  );
+  await userEvent.click(toggle);
+  await waitFor(() =>
+    expect(calls).toContainEqual({
+      command: "plugin:openbot-desktop|set_usage_data",
+      args: { share: false },
+    }),
+  );
+});
+
+test("in Chinese an environment opt-out still reads as off on this computer", async () => {
+  usageData = { shared: false, offByEnvironment: true };
+  await pinLocale("zh-CN");
+  const view = renderGeneral();
+  const toggle = await view.findByRole("switch", { name: "共享使用数据" });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(view.getByText(/在这台电脑上已关闭/)).toBeTruthy();
 });
