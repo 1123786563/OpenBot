@@ -1755,11 +1755,10 @@ export function createDirectChatRoutes(deps: {
         });
         return;
       }
-      const skills =
-        background &&
-        (background.source === "handoff" || currentRun?.groupThreadId)
-          ? []
-          : await currentGuidance();
+      const usesLearningGuidance =
+        !background ||
+        (background.source !== "handoff" && !currentRun?.groupThreadId);
+      const skills = usesLearningGuidance ? await currentGuidance() : [];
       if (!skills) {
         await shouldContinue();
         return;
@@ -1786,6 +1785,7 @@ export function createDirectChatRoutes(deps: {
           messages: conversation,
           beforeDispatch: async () => {
             if (!(await shouldContinue())) return false;
+            if (!usesLearningGuidance) return conversation;
             const current = await currentGuidance();
             if (!current) return false;
             const instructions = learningInstructions(current);
