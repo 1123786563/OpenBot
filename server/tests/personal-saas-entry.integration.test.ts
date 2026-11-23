@@ -5,6 +5,7 @@ import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, sql } from "drizzle-orm";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { Observable } from "rxjs";
+import { workspaceComputers } from "../../supervisor/src/workspace-computers";
 import {
   configure,
   emptyCatalog,
@@ -46,11 +47,16 @@ import {
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
+import { closureRestoreJournal } from "../src/personal-saas/closure-cleanup-contract";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import { personalSaasStore } from "../src/personal-saas/store";
 import { loadPersonalTestCreditExecutor } from "../src/personal-saas/test-credit-config";
 import { workspaceBots } from "../src/personal-saas/workspace-bots";
-import type { WorkspaceComputerConfig } from "../src/personal-saas/workspace-computer";
+import { reapplyWorkspaceClosures } from "../src/personal-saas/workspace-cleanup";
+import {
+  type WorkspaceComputerConfig,
+  workspaceComputerLeaseMs,
+} from "../src/personal-saas/workspace-computer";
 import { workspaceResourceOwner } from "../src/personal-saas/workspace-principal";
 import { createWorkQueue } from "../src/work/queue";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
@@ -5935,26 +5941,70 @@ test("closure survives an unavailable supervisor and confirms only observed proc
   }
 });
 
-test("closure rolls back partial acceptance, stops an in-flight Bot and fences queued dispatch", async () => {
+test("closure rolls back partial acceptance, fences queued dispatch, and cuts off Bot and Computer work within 60 seconds", async () => {
   const previousApp = app;
   const started = Promise.withResolvers<string>();
   const aborted = Promise.withResolvers<void>();
   const finish = Promise.withResolvers<void>();
   let running: Promise<boolean> | undefined;
-  app = newApp(database, async ({ runId, signal }) => {
-    started.resolve(runId);
-    await Promise.race([
-      finish.promise,
-      new Promise<void>((resolve) => {
-        if (signal?.aborted) resolve();
-        else signal?.addEventListener("abort", () => resolve(), { once: true });
-      }),
-    ]);
-    if (signal?.aborted) aborted.resolve();
-    await finish.promise;
-    signal?.throwIfAborted();
-    return { replyText: "" };
+  let computerProcess: ReturnType<typeof Bun.spawn> | undefined;
+  let computerStoppedAt: number | undefined;
+  let computerExitObservedAt: number | undefined;
+  let computerId: string | undefined;
+  let supervisorSweep: ReturnType<typeof setInterval> | undefined;
+  const supervisor = workspaceComputers({
+    now: Date.now,
+    async launch() {
+      computerProcess = Bun.spawn(["sleep", "60"]);
+    },
+    async stop() {
+      computerProcess?.kill();
+      await computerProcess?.exited;
+      computerStoppedAt ??= Date.now();
+    },
+    async inspect() {
+      if (!computerProcess) return null;
+      return computerStoppedAt === undefined
+        ? { status: "running" }
+        : { status: "exited", finishedAt: computerStoppedAt };
+    },
   });
+  const computer = {
+    supervisorUrl: "http://supervisor.example",
+    supervisorToken: "fixture-supervisor-token",
+    async fetch(input, init) {
+      const request = new Request(input, init);
+      const [, , id, operation] = new URL(request.url).pathname.split("/");
+      if (operation === "start-with-storage") {
+        computerId = id;
+        const accepted = await supervisor.start(id, await request.json());
+        return new Response(null, { status: accepted ? 204 : 409 });
+      }
+      if (id !== computerId) return Response.json({ status: "not_started" });
+      const state = await supervisor.status(id);
+      if (state.stopped) computerExitObservedAt ??= Date.now();
+      return Response.json(state);
+    },
+  } satisfies WorkspaceComputerConfig;
+  app = newApp(
+    database,
+    async ({ runId, signal }) => {
+      started.resolve(runId);
+      await Promise.race([
+        finish.promise,
+        new Promise<void>((resolve) => {
+          if (signal?.aborted) resolve();
+          else
+            signal?.addEventListener("abort", () => resolve(), { once: true });
+        }),
+      ]);
+      if (signal?.aborted) aborted.resolve();
+      await finish.promise;
+      signal?.throwIfAborted();
+      return { replyText: "" };
+    },
+    computer,
+  );
   try {
     const owner = await isolationOwner();
     const requestBot = () =>
@@ -6016,6 +6066,17 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences q
     const queued = await requestBot();
     expect(queued.status).toBe(202);
     const { runId: queuedId } = await queued.json();
+    expect(
+      (
+        await send("/api/workspace/computer/start", {
+          method: "POST",
+          headers: { cookie: owner.session, origin },
+        })
+      ).status,
+    ).toBe(202);
+    supervisorSweep = setInterval(() => {
+      void supervisor.sweep();
+    }, 100);
     const accepted = await confirmClosure(proof);
     expect(accepted.status).toBe(200);
     expect((await requestBot()).status).toBe(403);
@@ -6027,23 +6088,48 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences q
       attempts: 0,
       interruption: { reason: "workspace_closed", outcomeUnknown: false },
     });
+    const { operationId } = await accepted.json();
     const status = cookie(accepted, "__Host-openbot-closure-status=");
     await aborted.promise;
     await app.sweepWorkspaceClosures();
     expect(await (await closureStatus(status)).json()).toMatchObject({
-      executionCutoff: { work: "pending" },
+      executionCutoff: { work: "pending", computer: "pending" },
     });
     finish.resolve();
     expect(await running).toBe(true);
+    const [closure] = await database
+      .select({
+        acceptedAt: personalWorkspaceClosures.acceptedAt,
+        deadline: personalWorkspaceClosures.cutoffDeadline,
+      })
+      .from(personalWorkspaceClosures)
+      .where(eq(personalWorkspaceClosures.id, operationId));
+    expect(closure.deadline.getTime() - closure.acceptedAt.getTime()).toBe(
+      60_000,
+    );
+    await Bun.sleep(
+      Math.max(
+        0,
+        closure.acceptedAt.getTime() + workspaceComputerLeaseMs - Date.now(),
+      ),
+    );
     await app.sweepWorkspaceClosures();
     expect(await (await closureStatus(status)).json()).toMatchObject({
-      executionCutoff: { work: "confirmed" },
+      executionCutoff: { work: "confirmed", computer: "confirmed" },
     });
+    expect(computerStoppedAt).toBeGreaterThanOrEqual(
+      closure.acceptedAt.getTime(),
+    );
+    expect(computerExitObservedAt).toBeGreaterThanOrEqual(
+      computerStoppedAt ?? Infinity,
+    );
+    expect(computerExitObservedAt).toBeLessThan(closure.deadline.getTime());
     const [stopped] = await database
       .select({
         claimedBy: workItems.claimedBy,
         interruption: workItems.interruption,
         storedReason: sql<string>`${workItems.interruption}->>'reason'`,
+        endedAt: sql<number>`(${workItems.interruption}->>'endedAt')::double precision`,
       })
       .from(workItems)
       .where(eq(workItems.key, runId));
@@ -6056,15 +6142,67 @@ test("closure rolls back partial acceptance, stops an in-flight Bot and fences q
         endedAt: expect.any(Number),
       },
     });
+    expect(stopped.endedAt).toBeGreaterThanOrEqual(
+      closure.acceptedAt.getTime(),
+    );
+    expect(stopped.endedAt).toBeLessThan(closure.deadline.getTime());
   } finally {
+    clearInterval(supervisorSweep);
+    computerProcess?.kill();
+    await computerProcess?.exited;
     finish.resolve();
     await running;
     app = previousApp;
   }
-}, 60_000);
+}, 120_000);
+
+function exportClosureJournal() {
+  const journal = Bun.spawnSync(
+    [
+      "bun",
+      "--no-env-file",
+      "server/scripts/export-workspace-closure-journal.ts",
+    ],
+    { env: { ...process.env, DATABASE_URL: testDatabaseUrl() } },
+  );
+  expect(journal.exitCode).toBe(0);
+  return closureRestoreJournal.parse(JSON.parse(journal.stdout.toString()));
+}
 
 test("a returning owner explicitly opens one empty workspace after recorded cleanup", async () => {
   const owner = await isolationOwner();
+  const identity = { issuer, subject: owner.account.sub };
+  const ledger = createTestCreditLedger(database);
+  const grant = {
+    budgetId: crypto.randomUUID(),
+    batchId: crypto.randomUUID(),
+    amount: 7n,
+    budget: 14n,
+  };
+  const creditApp = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    { ledger, grant },
+  );
+  const readCredits = async (session: string) => {
+    const response = await creditApp.fetch(
+      new Request(new URL("/api/workspace", origin), {
+        headers: { cookie: session },
+      }),
+    );
+    expect(response.status).toBe(200);
+    return (await response.json()).testCredits;
+  };
+  const credits = await readCredits(owner.session);
+  expect(credits).toMatchObject({
+    state: "issued",
+    balance: { grantedMicrocredits: "7", availableMicrocredits: "7" },
+  });
   expect(
     (await operateAutomationWorkspace(owner.workspaceId, "pause")).status,
   ).toBe(201);
@@ -6144,11 +6282,20 @@ test("a returning owner explicitly opens one empty workspace after recorded clea
     open(returningStatus),
   ]);
   expect(attempts.map(({ status }) => status).sort()).toEqual([303, 409]);
+  expect(exportClosureJournal()).toContainEqual(
+    expect.objectContaining({
+      id: operationId,
+      workspaceId: owner.workspaceId,
+      intelligence: [],
+    }),
+  );
   const signedIn = await authenticate({
     ...owner.account,
     email: "changed@example.com",
   });
   const newSession = cookie(signedIn, "__Host-openbot-personal=");
+  expect(await readCredits(newSession)).toEqual(credits);
+  expect(await ledger.balance(identity)).toEqual(credits.balance);
   const replacement = await workspace(newSession);
   expect(replacement.id).not.toBe(owner.workspaceId);
   expect(replacement.personalAssistant.id).not.toBe(owner.botId);
@@ -6333,4 +6480,133 @@ test("a Casdoor session can consent to scoped WeKnora spending and only its owne
   } finally {
     app = previous;
   }
+});
+
+test("a pre-closure restore fences sessions, exports and dispatch before worker cleanup", async () => {
+  const owner = await isolationOwner();
+  const [account] = await database
+    .select({ id: personalSaasAccounts.id })
+    .from(personalSaasAccounts)
+    .where(eq(personalSaasAccounts.subject, owner.account.sub));
+  const exportResponse = await send(
+    `/api/workspaces/${owner.workspaceId}/exports`,
+    { method: "POST", headers: { cookie: owner.session, origin } },
+  );
+  expect(exportResponse.status).toBe(201);
+  const { downloadUrl } = await exportResponse.json();
+  expect(
+    (await send(downloadUrl, { headers: { cookie: owner.session } })).status,
+  ).toBe(200);
+  const integrations = workspaceIntegrationGrants(database);
+  const grant = await integrations.issueAssistantRead({
+    accountId: account.id,
+    workspaceId: owner.workspaceId,
+    botId: owner.botId,
+    expiresAt: new Date(Date.now() + 600_000),
+  });
+  if (!grant) throw new Error("Missing integration fixture");
+  const access = {
+    ...grant,
+    workspaceId: owner.workspaceId,
+    botId: owner.botId,
+    action: "assistant.read",
+  };
+  expect(await integrations.execute(access)).toBeDefined();
+  const botApp = newApp(database, async () => ({ replyText: "" }));
+  const queued = await botApp.request("/api/workspace/bot-runs", {
+    method: "POST",
+    headers: {
+      origin,
+      cookie: owner.session,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      workspaceId: owner.workspaceId,
+      botId: owner.botId,
+      instruction: "Restored work",
+    }),
+  });
+  expect(queued.status).toBe(202);
+  const { runId } = await queued.json();
+  const ledger = createTestCreditLedger(database);
+  const identity = { issuer, subject: owner.account.sub };
+  await ledger.ensureOneTimeGrant(identity, {
+    budgetId: crypto.randomUUID(),
+    batchId: crypto.randomUUID(),
+    amount: 5n,
+    budget: 5n,
+  });
+
+  // The DB represents the backup taken before closure. The journal also
+  // contains a run locator recorded by the authority after that backup.
+  const operationId = crypto.randomUUID();
+  const journal = [
+    ...exportClosureJournal(),
+    ...closureRestoreJournal.parse({
+      version: 2,
+      operations: [
+        {
+          id: operationId,
+          accountId: account.id,
+          workspaceId: owner.workspaceId,
+          acceptedAt: new Date().toISOString(),
+          intelligence: [
+            {
+              agentId: owner.botId,
+              threadId: "after-backup",
+              runId: "after-backup",
+            },
+          ],
+        },
+      ],
+    }),
+  ];
+  await reapplyWorkspaceClosures(database, journal);
+  await reapplyWorkspaceClosures(database, journal);
+  expect(await integrations.execute(access)).toBeUndefined();
+  expect(
+    (await send("/api/workspace", { headers: { cookie: owner.session } }))
+      .status,
+  ).toBe(401);
+  expect(
+    (await send(downloadUrl, { headers: { cookie: owner.session } })).status,
+  ).toBe(401);
+  expect(
+    await database.select().from(workItems).where(eq(workItems.key, runId)),
+  ).toHaveLength(0);
+
+  const returning = await authenticate(owner.account);
+  expect(returning.headers.get("location")).toBe("/workspace/closure/progress");
+  const status = cookie(returning, "__Host-openbot-closure-status=");
+  const seen: unknown[] = [];
+  const worker = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    async (step, target) => {
+      if (target.id !== operationId) return { status: "unconfirmed" };
+      if (step === "internalServices")
+        seen.push(...(target.intelligence ?? []));
+      return { status: "confirmed" };
+    },
+  );
+  await worker.sweepWorkspaceClosures();
+  expect(await (await closureStatus(status)).json()).toMatchObject({
+    operationId,
+    onlineCleanup: { postgres: { status: "confirmed" } },
+    remoteRevocation: { status: "confirmed" },
+  });
+  expect(seen).toContainEqual({
+    agentId: owner.botId,
+    threadId: "after-backup",
+    runId: "after-backup",
+  });
+  expect(
+    await database.select().from(agents).where(eq(agents.id, owner.botId)),
+  ).toHaveLength(0);
+  expect(await ledger.balance(identity)).toMatchObject({
+    grantedMicrocredits: "5",
+  });
 });
