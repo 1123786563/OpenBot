@@ -30,17 +30,23 @@ type Skill = {
   latestVersion: string;
 };
 
-type VersionPreview = Skill &
-  MarketVersionIdentity & {
-    publisher: string | null;
-    disableReason?: string;
-    instructions: string;
-    runtimeRequirements: string | null;
-    reasons: string[];
-    installable: boolean;
-    command?: string;
-    canAssignCommand?: boolean;
-  };
+type VersionPreview = (
+  | MarketVersionIdentity
+  | {
+      registry: "bifrost";
+      source: string;
+      version: string;
+    }
+) & {
+  publisher: string | null;
+  disableReason?: string;
+  instructions: string;
+  runtimeRequirements: string | null;
+  reasons: string[];
+  installable: boolean;
+  command?: string;
+  canAssignCommand?: boolean;
+};
 
 async function load<T>(path: string, signal: AbortSignal): Promise<T> {
   return (await client(`/api/skill-market${path}`, { signal })).json();
@@ -310,13 +316,19 @@ function MarketPreview({
                   </>
                 )}
               </VStack>
-              {isAdmin && (
+              {isAdmin && !("registry" in preview.data) && (
                 <MarketVersionControl
                   key={versionPath}
                   version={preview.data}
                   disableReason={preview.data.disableReason ?? null}
                 />
               )}
+              <MarketDownload
+                key={`download:${versionPath}`}
+                path={versionPath}
+                filename={`${skill.slug}-${version}.zip`}
+                version={version}
+              />
               {preview.data.canAssignCommand && (
                 <MarketCommandAssignment path={path} />
               )}
@@ -360,6 +372,42 @@ function MarketPreview({
         </VStack>
       </Section>
     </section>
+  );
+}
+
+function MarketDownload({
+  path,
+  filename,
+  version,
+}: {
+  path: string;
+  filename: string;
+  version: string;
+}) {
+  const download = useMutation({
+    mutationFn: async () => {
+      const response = await client(`/api/skill-market${path}/download`, {
+        fallback: "Couldn't download the skill package.",
+      });
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    },
+  });
+
+  return (
+    <VStack gap={1} align="start">
+      <Button
+        label={`Download ${version} ZIP`}
+        size="sm"
+        isLoading={download.isPending}
+        onClick={() => download.mutate()}
+      />
+      {download.isError && <p role="alert">{download.error.message}</p>}
+    </VStack>
   );
 }
 

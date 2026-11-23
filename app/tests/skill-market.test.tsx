@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -45,6 +45,7 @@ test("searches the shared market and shows the selected version's instructions a
     summary: "Summarize meeting notes",
     latestVersion: "2.0.0",
   };
+  const downloadPaths: string[] = [];
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(init?.credentials).toBe("include");
@@ -58,6 +59,18 @@ test("searches the shared market and shows the selected version's instructions a
       }
       if (url.pathname === "/api/skill-market/catalog/summarize") {
         return Response.json({ versions: ["2.0.0", "1.0.0"], hasMore: false });
+      }
+      if (url.pathname.endsWith("/download")) {
+        downloadPaths.push(url.pathname);
+        if (downloadPaths.length === 1) {
+          return Response.json(
+            { error: "This Bifrost package is incomplete." },
+            { status: 502 },
+          );
+        }
+        return new Response(new Uint8Array([80, 75, 3, 4]), {
+          headers: { "Content-Type": "application/zip" },
+        });
       }
       const version = url.pathname.split("/").at(-1);
       return Response.json({
@@ -99,6 +112,27 @@ test("searches the shared market and shows the selected version's instructions a
       "A reviewer has not confirmed OpenBot compatibility for this package.",
     ),
   ).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Download 1.0.0 ZIP" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "This Bifrost package is incomplete.",
+  );
+  const filenames: string[] = [];
+  const save = spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+    function (this: HTMLAnchorElement) {
+      filenames.push(this.download);
+    },
+  );
+  try {
+    fireEvent.click(view.getByRole("button", { name: "Download 1.0.0 ZIP" }));
+    await waitFor(() => expect(filenames).toEqual(["summarize-1.0.0.zip"]));
+    expect(view.queryByRole("alert")).toBeNull();
+    expect(downloadPaths).toEqual([
+      "/api/skill-market/catalog/summarize/versions/1.0.0/download",
+      "/api/skill-market/catalog/summarize/versions/1.0.0/download",
+    ]);
+  } finally {
+    save.mockRestore();
+  }
 });
 
 test("installs the previewed version only on a Bot the server offers to manage", async () => {

@@ -24,8 +24,11 @@ cleanup() {
   if (( status != 0 )); then
     docker logs --tail 25 "$project-gateway" >&2 || true
     docker logs --tail 15 "$project-fixture" >&2 || true
+    if [[ -n "${market_rehearsal:-}" ]]; then
+      docker logs --tail 15 "$project-edge" >&2 || true
+    fi
   fi
-  docker rm -fv "$project-gateway" "$project-fixture" "$project-db" >/dev/null 2>&1 || true
+  docker rm -fv "$project-edge" "$project-gateway" "$project-fixture" "$project-db" >/dev/null 2>&1 || true
   docker network rm "$project" >/dev/null 2>&1 || true
   rm -rf "$temp"
 }
@@ -77,3 +80,44 @@ echo "Restored v2.4.0 PostgreSQL snapshot into a separate database"
 start_gateway "$image" restored_upgrade "$temp/restore.json"
 docker exec "$project-fixture" python /fixture.py models
 docker exec "$project-fixture" python /fixture.py skills
+
+if [[ "${1:-}" == "--skill-market" ]]; then
+  market_rehearsal=1
+  repository=$(cd "$directory/../../.." && pwd)
+  docker exec "$project-fixture" python /fixture.py seed-market
+  docker exec -i "$project-db" psql -v ON_ERROR_STOP=1 -U bifrost -d restored_upgrade <<'SQL'
+CREATE ROLE openbot_skill_reader LOGIN PASSWORD 'fixture-market-reader';
+UPDATE public.skill_files SET blob_id = NULL
+WHERE skill_version_id IN (
+  SELECT version.id FROM public.skill_versions AS version
+  JOIN public.skills AS skill ON skill.id = version.skill_id
+  WHERE skill.name = 'missing-blob'
+);
+UPDATE public.skill_files SET file_size_bytes = file_size_bytes + 1
+WHERE skill_version_id IN (
+  SELECT version.id FROM public.skill_versions AS version
+  JOIN public.skills AS skill ON skill.id = version.skill_id
+  WHERE skill.name = 'wrong-size'
+);
+SQL
+  docker exec -i "$project-db" psql -v ON_ERROR_STOP=1 -U bifrost -d restored_upgrade \
+    < "$directory/skill-market-reader.sql"
+  docker run --rm --network "$project" -v "$repository:/work:ro" -w /work \
+    -e BIFROST_SKILL_MARKET_DATABASE_URL=postgres://openbot_skill_reader:fixture-market-reader@db/restored_upgrade \
+    oven/bun:1.4.3-alpine bun --no-env-file server/tests/support/bifrost-market-rehearsal.ts
+  docker exec "$project-fixture" python /fixture.py market-pointer
+
+  mkdir -p "$temp/edge/private"
+  sed 's#127\.0\.0\.1:18080#gateway:8080#' "$directory/../openresty/openbot-middleware.conf" \
+    > "$temp/market-edge.conf"
+  cp "$directory/../openresty/proxy-headers.conf" "$temp/edge/"
+  printf '%s\n' 'set $openbot_otlp_authorization "Bearer fixture";' > "$temp/edge/private/otlp-token.conf"
+  docker run -d --name "$project-edge" --network "$project" --network-alias edge \
+    -v "$temp/market-edge.conf:/etc/nginx/conf.d/default.conf:ro" \
+    -v "$temp/edge:/www/openbot-middleware:ro" nginx:1.28-alpine >/dev/null
+  docker exec "$project-edge" nginx -t
+  docker exec "$project-fixture" python /fixture.py market-edge http://edge external
+  docker run --rm --network "container:$project-edge" \
+    -v "$directory/rehearsal/fixture.py:/fixture.py:ro" "$python" \
+    python /fixture.py market-edge http://127.0.0.1 local
+fi

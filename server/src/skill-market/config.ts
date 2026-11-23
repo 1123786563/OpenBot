@@ -42,7 +42,39 @@ export function skillHubOrigin(value: string): string | undefined {
   return url.origin;
 }
 
+export const bifrostNamespace = "bifrost";
+
+export type BifrostMarketConfig = {
+  kind: "bifrost";
+  namespace: typeof bifrostNamespace;
+  databaseUrl: string;
+  legacy?: SkillMarketConfig;
+};
+
 export function loadSkillMarketConfig(
+  env: Record<string, string | undefined>,
+): SkillMarketConfig | BifrostMarketConfig | undefined {
+  const legacy = loadSkillHubConfig(env);
+  const databaseUrl = env.BIFROST_SKILL_MARKET_DATABASE_URL?.trim();
+  if (!databaseUrl) return legacy;
+
+  const url = URL.parse(databaseUrl);
+  if (
+    !url ||
+    !["postgres:", "postgresql:"].includes(url.protocol) ||
+    !url.hostname ||
+    !url.username ||
+    url.pathname.length < 2 ||
+    legacy?.namespace === bifrostNamespace
+  ) {
+    throw new Error(
+      "BIFROST_SKILL_MARKET_DATABASE_URL requires a PostgreSQL catalog reader URL and reserves the bifrost namespace.",
+    );
+  }
+  return { kind: "bifrost", namespace: bifrostNamespace, databaseUrl, legacy };
+}
+
+function loadSkillHubConfig(
   env: Record<string, string | undefined>,
 ): SkillMarketConfig | undefined {
   const url = env.SKILLHUB_URL?.trim();

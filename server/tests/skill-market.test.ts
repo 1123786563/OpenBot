@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { loadSkillMarketConfig } from "../src/skill-market/config";
+
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
 
 const skill = {
@@ -111,23 +113,28 @@ test("signed-in users share published catalog previews while direct reads enforc
   ).toBe(false);
 });
 
-test("a compatibility confirmation applies only to the reviewed package fingerprint", async () => {
+test("legacy compatibility still requires the reviewed fingerprint when Bifrost is enabled", async () => {
   const fingerprint = `sha256:${"a".repeat(64)}`;
   let resolvedFingerprint = fingerprint;
   const routes = createSkillMarketRoutes(
     async (_context, next) => next(),
     {
-      baseUrl: "https://registry.example",
-      namespace: "catalog",
-      token: "read",
-      confirmations: {
-        3: {
-          slug: "summarize",
-          version: "1.0.0",
-          versionId: 3,
-          reviewTaskId: 8,
-          reviewerId: "catalog-reviewer",
-          fingerprint,
+      kind: "bifrost",
+      namespace: "bifrost",
+      databaseUrl: "postgres://reader:fixture@localhost:1/bifrost",
+      legacy: {
+        baseUrl: "https://registry.example",
+        namespace: "catalog",
+        token: "read",
+        confirmations: {
+          3: {
+            slug: "summarize",
+            version: "1.0.0",
+            versionId: 3,
+            reviewTaskId: 8,
+            reviewerId: "catalog-reviewer",
+            fingerprint,
+          },
         },
       },
     },
@@ -194,4 +201,25 @@ test("a compatibility confirmation applies only to the reviewed package fingerpr
       "Only a package containing a single SKILL.md file is supported.",
     ],
   });
+});
+
+test("Bifrost mode protects the catalog and exact downloads with the market session", async () => {
+  const config = loadSkillMarketConfig({
+    BIFROST_SKILL_MARKET_DATABASE_URL:
+      "postgres://reader:fixture@localhost:1/bifrost",
+  });
+  expect(config).toMatchObject({ kind: "bifrost", namespace: "bifrost" });
+  if (!config) throw new Error("Bifrost market unavailable");
+  const routes = createSkillMarketRoutes(
+    async (context) => context.body(null, 401),
+    config,
+  );
+  for (const path of [
+    "/?q=summarize",
+    "/bifrost/summarize",
+    "/bifrost/summarize/versions/1.0.0",
+    "/bifrost/summarize/versions/1.0.0/download",
+  ]) {
+    expect((await routes.request(path)).status).toBe(401);
+  }
 });

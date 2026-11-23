@@ -3,9 +3,11 @@
 import base64
 import http.cookiejar
 import json
+import socket
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -208,6 +210,80 @@ def skills():
     print("Administrator created two skill versions and read back 1.0.0 with all three original attachments")
 
 
+def seed_market():
+    client = admin()
+    path = "/api/skills"
+    body = {
+        "name": "market-rehearsal",
+        "description": "Historical market rehearsal",
+        "version": "1.0.0",
+        "skill_md_body": "Original instructions.\n",
+        "files": [
+            {"path": "scripts/check.sh", "source_type": "text", "content": "echo old\n"},
+            {"path": "references/nested/notes.md", "source_type": "text", "content": "Original reference.\n"},
+            {"path": "assets/fixture.bin", "source_type": "dataurl", "dataurl": "data:application/octet-stream;base64,AP8Q"},
+        ],
+    }
+    skill = request(path, client=client, body=body)["skill"]
+    request(f"{path}/{skill['id']}", client=client, method="PUT", body={
+        "version": "2.0.0",
+        "description": "Current market rehearsal",
+        "skill_md_body": "Current instructions.\n",
+        "files": [{"path": "assets/fixture.bin", "source_type": "text", "content": "current bytes"}],
+    })
+    for slug in ["missing-blob", "wrong-size", "mutable-url"]:
+        files = body["files"][:1]
+        if slug == "mutable-url":
+            files = [{"path": "references/live.md", "source_type": "url", "source_url": "http://upstream:8080/v1/models", "mime_type": "text/plain"}]
+        request(path, client=client, body={**body, "name": slug, "files": files})
+    check_market_pointer()
+
+
+def check_market_pointer():
+    path = "/api/skills/serve/market-rehearsal/files/assets/fixture.bin"
+    with urllib.request.urlopen(GATEWAY + path, timeout=8) as response:
+        assert response.read() == b"current bytes"
+
+
+def check_market_edge(host, local):
+    global GATEWAY
+    GATEWAY = host
+    headers = {"Host": "bifrost.persaas.cn"}
+    target = urllib.parse.urlsplit(host)
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            with socket.create_connection((target.hostname, target.port or 80), timeout=1):
+                break
+        except OSError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.25)
+    for path in [
+        "/api/skills",
+        "/api/skills/serve/market-rehearsal/download.zip",
+        "/api/skills/serve/market-rehearsal/files/assets/fixture.bin",
+        "/api/skills/serve/claude-code.git/info/refs",
+        "/api/skills/serve/codex/.agents/plugins/marketplace.json",
+    ]:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(host + path, headers=headers), timeout=8):
+                pass
+        except urllib.error.HTTPError as error:
+            assert error.code == 404, (path, error.code)
+        else:
+            raise AssertionError(f"Native skill route was exposed: {path}")
+    if local:
+        for model in (f"openai/{MODEL}", ALIAS):
+            completion = request("/v1/chat/completions", headers={**headers, "x-bf-vk": VIRTUAL_KEY}, body={
+                "model": model, "messages": [{"role": "user", "content": "edge smoke test"}],
+            })
+            assert completion["choices"][0]["message"]["content"] == "fixture model response", completion
+        print("Middleware serves direct and routed inference while denying native skill routes")
+    else:
+        print("External clients cannot reach the native skill routes through middleware")
+
+
 if __name__ == "__main__":
     command = sys.argv[1]
     if command == "upstream":
@@ -218,3 +294,9 @@ if __name__ == "__main__":
         models()
     elif command == "skills":
         skills()
+    elif command == "seed-market":
+        seed_market()
+    elif command == "market-pointer":
+        check_market_pointer()
+    elif command == "market-edge":
+        check_market_edge(sys.argv[2], sys.argv[3] == "local")
