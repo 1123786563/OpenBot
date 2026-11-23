@@ -56,13 +56,18 @@ const quotaUsage = z.object({
   limit: z.number().int().nonnegative(),
 });
 
+export const workRecovery = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("cancel") }),
+  z.object({ action: z.literal("retry"), key: z.string().min(1).optional() }),
+]);
+
 const stoppedWork = z.object({
   key: z.string().min(1).max(1024),
   reasonMessage: z.string(),
   recordedAt: z.number().optional(),
   output: z.string().nullable(),
   outcomeUnknown: z.boolean(),
-  recovery: z.object({ action: z.enum(["cancel", "retry"]) }).nullable(),
+  recovery: workRecovery.nullable(),
 });
 const automationResource = z.object({
   id: z.string(),
@@ -86,7 +91,12 @@ export type WorkspaceAction =
 export const personalWorkspace = z.object({
   id: z.string().min(1),
   recovery: z
-    .array(stoppedWork.extend({ instruction: z.string() }))
+    .array(
+      stoppedWork.extend({
+        instruction: z.string(),
+        managed: z.boolean().default(false),
+      }),
+    )
     .default([]),
   interruptedBackgroundWork: z
     .array(

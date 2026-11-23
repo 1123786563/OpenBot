@@ -103,14 +103,14 @@ const webBotRunInput = botWorkInput.omit({ requiresComputer: true }).extend({
   requestId: z.uuid(),
   ...botRunCreditQuote.shape,
 });
-const webBotRunKey = z.string().regex(/^[a-f0-9]{64}$/);
+const webBotRunKey = z.union([z.uuid(), z.string().regex(/^[a-f0-9]{64}$/)]);
 const botRunSubmissionError = {
   authorization_changed: "Your workspace access changed. Sign in to try again.",
   bot_unavailable: "The Personal Assistant is unavailable.",
   insufficient_credits: "Not enough Test Credits to reserve this Bot run.",
   managed_computer_unavailable: "This Bot run can only process text.",
   test_credit_quote_changed:
-    "Test Credit pricing changed. Review the current price in your workspace before sending a new message.",
+    "Test Credit pricing changed. Review the current price in your workspace before starting a run.",
   test_credit_route_unavailable:
     "Managed Bot runs are temporarily unavailable.",
 };
@@ -1008,6 +1008,14 @@ export function createPersonalSaasApp(
       computerStatus,
     );
     const testCredits = await testCreditStatus(session);
+    const stoppedBotWork = recovery.map((item) => {
+      const quote = item.managed ? testCredits?.quote : undefined;
+      return {
+        item,
+        quote,
+        canRetry: item.managed ? Boolean(quote) : Boolean(runPersonalBot),
+      };
+    });
     if (!(await remainingAccess(token, session.grant)))
       return context.redirect("/workspace");
     return context.html(
@@ -1312,7 +1320,7 @@ export function createPersonalSaasApp(
                     Stopped work
                   </Heading>
                   <List edge="flush" hasDividers>
-                    {recovery.map((item) => (
+                    {stoppedBotWork.map(({ item, quote, canRetry }) => (
                       <ListItem
                         key={item.key}
                         label={
@@ -1350,7 +1358,31 @@ export function createPersonalSaasApp(
                                   encodeURIComponent(item.key)
                                 }
                               >
-                                {runPersonalBot && item.outcomeUnknown ? (
+                                {quote ? (
+                                  <>
+                                    <Text as="p">
+                                      {quote.model} costs{" "}
+                                      {quote.price.inputPerMillion} microcredits
+                                      per million input tokens and{" "}
+                                      {quote.price.outputPerMillion}{" "}
+                                      microcredits per million output tokens.{" "}
+                                      Maximum reservation for the new run:{" "}
+                                      {quote.maxChargeMicrocredits}{" "}
+                                      microcredits. {quote.usageDisclosure}
+                                    </Text>
+                                    <input
+                                      type="hidden"
+                                      name="route"
+                                      value={quote.route}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      name="priceVersion"
+                                      value={quote.priceVersion}
+                                    />
+                                  </>
+                                ) : null}
+                                {canRetry && item.outcomeUnknown ? (
                                   <label>
                                     <input
                                       type="checkbox"
@@ -1362,15 +1394,19 @@ export function createPersonalSaasApp(
                                 ) : (
                                   ""
                                 )}
-                                {runPersonalBot ? (
+                                {canRetry ? (
                                   <Button
                                     type="submit"
                                     name="action"
                                     value="retry"
                                     label={
-                                      item.outcomeUnknown
-                                        ? "Retry as a new run"
-                                        : "Requeue"
+                                      quote
+                                        ? item.outcomeUnknown
+                                          ? "Retry with Test Credits"
+                                          : "Requeue with Test Credits"
+                                        : item.outcomeUnknown
+                                          ? "Retry as a new run"
+                                          : "Requeue"
                                     }
                                   />
                                 ) : (
@@ -1766,6 +1802,41 @@ export function createPersonalSaasApp(
       : context.json({ error: result.error }, result.status);
   });
 
+  async function managedBotAdmission(
+    session: AuthorizedSession,
+    disclosedQuote?: z.infer<typeof botRunCreditQuote>,
+  ): Promise<BotRunCreditAdmission> {
+    if (!managedCredits)
+      return { error: "test_credit_route_unavailable", status: 503 };
+    const identity = {
+      issuer: config.casdoor.issuer,
+      subject: session.subject,
+    };
+    const { ledger } = managedCredits;
+    try {
+      const [quote, balance] = await Promise.all([
+        ledger.quote(),
+        ledger.balance(identity),
+      ]);
+      if (!quote)
+        return { error: "test_credit_route_unavailable", status: 503 };
+      if (
+        disclosedQuote &&
+        (quote.route !== disclosedQuote.route ||
+          quote.priceVersion !== disclosedQuote.priceVersion)
+      )
+        return { error: "test_credit_quote_changed", status: 409 };
+      if (
+        BigInt(balance?.availableMicrocredits ?? "0") <
+        BigInt(quote.maxChargeMicrocredits)
+      )
+        return { error: "insufficient_credits", status: 402 };
+      return { quote: botRunCreditQuote.parse(quote) };
+    } catch {
+      return { error: "test_credit_route_unavailable", status: 503 };
+    }
+  }
+
   async function submitBotRun({
     token,
     session,
@@ -1792,48 +1863,9 @@ export function createPersonalSaasApp(
           .digest("hex")
       : crypto.randomUUID();
     const admission = managedCredits
-      ? await (async (): Promise<BotRunCreditAdmission> => {
-          if (input.requiresComputer)
-            return {
-              error: "managed_computer_unavailable",
-              status: 422,
-            } as const;
-          const identity = {
-            issuer: config.casdoor.issuer,
-            subject: session.subject,
-          };
-          const { ledger } = managedCredits;
-          return await Promise.all([ledger.quote(), ledger.balance(identity)])
-            .then(([quote, balance]) => {
-              if (!quote)
-                return {
-                  error: "test_credit_route_unavailable",
-                  status: 503,
-                } as const;
-              if (
-                disclosedQuote &&
-                (quote.route !== disclosedQuote.route ||
-                  quote.priceVersion !== disclosedQuote.priceVersion)
-              )
-                return {
-                  error: "test_credit_quote_changed",
-                  status: 409,
-                } as const;
-              if (
-                BigInt(balance?.availableMicrocredits ?? "0") <
-                BigInt(quote.maxChargeMicrocredits)
-              )
-                return { error: "insufficient_credits", status: 402 } as const;
-              return { quote: botRunCreditQuote.parse(quote) };
-            })
-            .catch(
-              () =>
-                ({
-                  error: "test_credit_route_unavailable",
-                  status: 503,
-                }) as const,
-            );
-        })()
+      ? input.requiresComputer
+        ? ({ error: "managed_computer_unavailable", status: 422 } as const)
+        : await managedBotAdmission(session, disclosedQuote)
       : undefined;
     const outcome = await store.withAuthorizedSession(
       session.grant,
@@ -2073,11 +2105,28 @@ export function createPersonalSaasApp(
     const body = form ? await context.req.parseBody() : undefined;
     const input = recoveryInput.safeParse(
       body
-        ? { action: body.action, acknowledged: body.acknowledged === "true" }
+        ? {
+            action: body.action,
+            acknowledged: body.acknowledged === "true",
+            ...(body.action === "retry" && (body.route || body.priceVersion)
+              ? {
+                  quote: { route: body.route, priceVersion: body.priceVersion },
+                }
+              : {}),
+          }
         : await context.req.json().catch(() => null),
     );
     if (!key.success || !input.success)
       return context.json({ error: "invalid_recovery_request" }, 400);
+    const { action, quote, acknowledged } = input.data;
+    const admission =
+      action === "retry" && quote
+        ? await managedBotAdmission(session, quote)
+        : undefined;
+    let creditError:
+      | Extract<BotRunCreditAdmission, { error: string }>
+      | { error: "test_credit_quote_required"; status: 400 }
+      | undefined;
     const accountId = session.grant.accountId;
     await createWorkQueue(database, now).reconcilePersonalWork(
       PERSONAL_BOT_WORK,
@@ -2096,25 +2145,71 @@ export function createPersonalSaasApp(
         )
           return { kind: "missing" } as const;
         return queue.recover({
-          ...input.data,
+          action,
+          acknowledged,
           kind,
           accountId,
           key: key.data,
           ...(kind === PERSONAL_BOT_WORK
             ? {
-                mayRetry: async (transaction, payload) => {
+                async startFresh(transaction, payload) {
                   const request = queuedBotWorkInput.safeParse(payload);
-                  const mayRetry = Boolean(
-                    runPersonalBot &&
-                      request.success &&
-                      !request.data.testCredit &&
-                      (await workspaceBots(transaction).get({
-                        ...request.data,
-                        accountId,
-                      })),
+                  if (!request.success) return;
+                  const {
+                    testCredit,
+                    workspaceId,
+                    botId,
+                    instruction,
+                    requiresComputer,
+                  } = request.data;
+                  const work = {
+                    workspaceId,
+                    botId,
+                    instruction,
+                    requiresComputer,
+                  };
+                  if (testCredit) {
+                    if (!admission) {
+                      creditError = {
+                        error: "test_credit_quote_required",
+                        status: 400,
+                      };
+                      return;
+                    }
+                    if ("error" in admission) {
+                      creditError = admission;
+                      return;
+                    }
+                    if (work.requiresComputer) return;
+                  } else if (!runPersonalBot || quote) {
+                    return;
+                  }
+                  if (
+                    !(await workspaceBots(transaction).get({
+                      ...work,
+                      accountId,
+                    }))
+                  )
+                    return;
+                  await quotas.admitBot(transaction, accountId);
+                  const newKey = crypto.randomUUID();
+                  const offered = await createWorkQueue(transaction, now).offer(
+                    {
+                      kind,
+                      key: newKey,
+                      accountId,
+                      payload: {
+                        ...work,
+                        ...(testCredit && admission && "quote" in admission
+                          ? {
+                              testCredit: admission.quote,
+                              rerunOfOperationId: key.data,
+                            }
+                          : {}),
+                      },
+                    },
                   );
-                  if (mayRetry) await quotas.admitBot(transaction, accountId);
-                  return mayRetry;
+                  return offered === "queued" ? newKey : undefined;
                 },
               }
             : {
@@ -2135,8 +2230,22 @@ export function createPersonalSaasApp(
         });
       },
     );
-    if (!outcome.authorized || outcome.result.kind === "forbidden")
+    if (!outcome.authorized)
       return context.json({ error: "recovery_unavailable" }, 403);
+    if (outcome.result.kind === "forbidden") {
+      if (!creditError)
+        return context.json({ error: "recovery_unavailable" }, 403);
+      const { error, status } = creditError;
+      return form
+        ? webRunError(
+            context,
+            error === "test_credit_quote_required"
+              ? "Review the current Test Credit price in your workspace before retrying."
+              : botRunSubmissionError[error],
+            status,
+          )
+        : context.json({ error }, status);
+    }
     if (outcome.result.kind === "missing")
       return context.json({ error: "work_not_found" }, 404);
     if (outcome.result.kind === "acknowledgement_required")
@@ -2145,7 +2254,14 @@ export function createPersonalSaasApp(
         409,
       );
     return form
-      ? context.redirect("/workspace", 303)
+      ? context.redirect(
+          action === "retry" &&
+            quote &&
+            outcome.result.recovery.action === "retry"
+            ? `${webBotRunsPath}/${outcome.result.recovery.key}`
+            : "/workspace",
+          303,
+        )
       : context.json(outcome.result.recovery);
   });
 
