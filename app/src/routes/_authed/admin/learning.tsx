@@ -14,6 +14,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, useId, useState } from "react";
+import { NativeLearningHistory } from "@/components/admin/controls/native-learning-history";
 import {
   PeopleProposalsSection,
   SharingRequestsSection,
@@ -271,9 +272,10 @@ function NativeLearningPolicy() {
     onSuccess: async (next) => {
       queryClient.setQueryData(learningKeys.settings, next);
       setDraft(null);
-      await queryClient.invalidateQueries({
-        queryKey: learningKeys.directChat,
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: learningKeys.directChat }),
+        queryClient.invalidateQueries({ queryKey: learningKeys.adminHistory }),
+      ]);
     },
   });
   function change(next: LearningSettings) {
@@ -285,7 +287,7 @@ function NativeLearningPolicy() {
     <PageShell title="Automatic learning">
       <PageSection
         title="Conversation Learning"
-        description="Control which Bots can analyze conversations and use the skills learned there. People start runs and review proposals in their own conversations."
+        description="Control which Bots can analyze conversations and use the skills learned there. People can start runs from their own conversations."
       >
         {settingsQuery.isPending && (
           <p role="status">Loading Learning settings…</p>
@@ -363,6 +365,7 @@ function NativeLearningPolicy() {
           </form>
         )}
       </PageSection>
+      <NativeLearningHistory />
     </PageShell>
   );
 }

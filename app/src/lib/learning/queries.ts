@@ -26,6 +26,7 @@ export const learningKeys = {
   automatic: ["learning", "automatic"] as const,
   personal: ["learning", "personal"] as const,
   review: ["learning", "review"] as const,
+  adminHistory: ["learning", "admin-history"] as const,
   directChat: ["learning", "direct-chat"] as const,
   peopleProposals: ["learning", "people-proposals"] as const,
   sharingRequests: ["learning", "sharing-requests"] as const,

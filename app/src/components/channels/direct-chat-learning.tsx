@@ -24,26 +24,11 @@ import {
 } from "@/components/ui/dialog";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { client, tryClient } from "@/lib/client";
+import { learningAnalysisReason } from "@/lib/learning/display";
 import { learningKeys } from "@/lib/learning/queries";
 import { recordingsQueryOptions } from "@/lib/recorder/queries";
 
 type Analysis = NonNullable<z.infer<typeof directChatLearning>["latest"]>;
-
-const reasons: Record<string, string> = {
-  insufficient_credits: "There are not enough Test Credits.",
-  execution_limit: "The Test Credit limit was reached.",
-  not_authorized: "Authorization to analyze or spend Test Credits was lost.",
-  route_unavailable: "The model route is unavailable.",
-  unavailable: "Test Credit admission is unavailable.",
-  no_evidence: "There are no completed turns to analyze.",
-  no_procedure: "No reusable procedure was found.",
-  invalid_model_result: "The model returned an invalid proposal.",
-  analysis_interrupted: "The analysis was interrupted.",
-  schedule_disabled: "Scheduled Learning was turned off.",
-  learning_disabled: "Learning was turned off.",
-  evidence_unavailable: "The selected evidence is unavailable.",
-  evidence_withdrawn: "Evidence was withdrawn.",
-};
 
 function inProgress(analysis: Analysis | null | undefined) {
   return analysis?.state === "running" || analysis?.state === "reconciling";
@@ -58,7 +43,8 @@ function analysisText(analysis: Analysis) {
   if (analysis.state === "proposed")
     return `Proposal ready for review from ${scope}.`;
   return (
-    reasons[analysis.reason ?? ""] ?? "The analysis ended without a proposal."
+    learningAnalysisReason(analysis.reason) ??
+    "The analysis ended without a proposal."
   );
 }
 
