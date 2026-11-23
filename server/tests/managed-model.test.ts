@@ -11,6 +11,7 @@ const scope = {
 const route = "pilot-text-v1";
 const messages = [{ role: "user", content: "One question" }] as const;
 
+const credentials = new Map([[scope.personId, "test-token"]]);
 const priceVersion = "a6000000-0000-4000-8000-000000000001";
 
 test("reserves on the quoted Price Version using the billing execution contract", async () => {
@@ -44,7 +45,10 @@ test("reserves on the quoted Price Version using the billing execution contract"
     },
   });
   try {
-    const model = createManagedModel({ url: control.url, token: "test-token" });
+    const model = createManagedModel({
+      url: control.url,
+      credentials,
+    });
     expect(
       await model.complete({ scope, step: "answer", route, messages }),
     ).toEqual({
@@ -83,7 +87,7 @@ test.each([
     try {
       const model = createManagedModel({
         url: control.url,
-        token: "test-token",
+        credentials,
       });
       expect(
         await model.complete({ scope, step: "answer", route, messages }),
@@ -114,7 +118,10 @@ test("a product model call requires a confirmed Test Credit reservation", async 
     },
   });
   try {
-    const model = createManagedModel({ url: control.url, token: "test-token" });
+    const model = createManagedModel({
+      url: control.url,
+      credentials,
+    });
     expect(
       await model.complete({ scope, step: "answer", route, messages }),
     ).toEqual({
@@ -141,7 +148,10 @@ test("losing a reservation response fails closed and reconciles only the origina
     },
   });
   try {
-    const model = createManagedModel({ url: control.url, token: "test-token" });
+    const model = createManagedModel({
+      url: control.url,
+      credentials,
+    });
     expect(
       await model.complete({ scope, step: "answer", route, messages }),
     ).toEqual({ state: "unavailable" });
@@ -184,7 +194,10 @@ test.each(["settled", "released"] as const)(
       },
     });
     try {
-      const config = { url: control.url, token: "test-token" };
+      const config = {
+        url: control.url,
+        credentials,
+      };
       const input = { scope, step: "answer", route, messages };
       expect(await createManagedModel(config).complete(input)).toEqual({
         state: "reconciling",
@@ -228,7 +241,10 @@ test("a lost authorization at dispatch returns a refusal and reconciles the rese
     },
   });
   try {
-    const model = createManagedModel({ url: control.url, token: "test-token" });
+    const model = createManagedModel({
+      url: control.url,
+      credentials,
+    });
     expect(
       await model.complete({ scope, step: "answer", route, messages }),
     ).toEqual({ state: "not_authorized" });
@@ -258,7 +274,10 @@ test("a receipt for a dispatched or different operation cannot clear the Run hol
     },
   });
   try {
-    const model = createManagedModel({ url: control.url, token: "test-token" });
+    const model = createManagedModel({
+      url: control.url,
+      credentials,
+    });
     expect(await model.reconcileOutcome({ scope, step: "answer" })).toEqual({
       state: "released",
       outcome: undefined,
@@ -268,6 +287,41 @@ test("a receipt for a dispatched or different operation cannot clear the Run hol
       state: "released",
       outcome: undefined,
     });
+  } finally {
+    await control.stop(true);
+  }
+});
+
+test("a Person without a bound credential cannot reserve or reconcile another account's credits", async () => {
+  let requests = 0;
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch() {
+      requests++;
+      return Response.json({ route, priceVersion, state: "absent" });
+    },
+  });
+  try {
+    const model = createManagedModel({
+      url: control.url,
+      credentials,
+    });
+    const operation = {
+      scope: {
+        ...scope,
+        personId: "other-person",
+        source: "learning" as const,
+      },
+      step: "analysis",
+    };
+    expect(await model.complete({ ...operation, route, messages })).toEqual({
+      state: "not_authorized",
+    });
+    await expect(model.reconcile(operation)).rejects.toThrow(
+      "identity required",
+    );
+    expect(requests).toBe(0);
   } finally {
     await control.stop(true);
   }

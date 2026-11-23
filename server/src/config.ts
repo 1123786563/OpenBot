@@ -10,7 +10,8 @@ import {
   deploymentAddresses,
   isLoopbackHost,
 } from "@openbot/shared/this-machine";
-import { singleUserEnabled } from "./auth/dev-actor";
+import { z } from "zod";
+import { DEV_ACTOR, singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";
 import type { ActionPolicy } from "./computer/policy";
@@ -375,7 +376,11 @@ export type DeploymentConfig = {
   openObserveUrl?: string;
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
-  managedModelTrial?: { url: URL; token: string; route: string };
+  managedModelTrial?: {
+    url: URL;
+    credentials: ReadonlyMap<string, string>;
+    route: string;
+  };
   hindsight?: HindsightConfig;
   hindsightReflectToken?: string;
   opik?: OpikConfig;
@@ -1699,16 +1704,51 @@ function serverPort(environment: Environment): number {
 function managedModelTrial(
   environment: Environment,
   runtime: RuntimeCapabilities,
+  singleUser: boolean,
 ): DeploymentConfig["managedModelTrial"] {
   const name = "OPENBOT_MANAGED_MODEL_TRIAL_URL";
   const origin = optionalHttpUrl(environment, name);
   const token = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_TOKEN");
+  const credentialsName = "OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS";
+  const encoded = optional(environment, credentialsName);
   const route = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_ROUTE");
-  if (!origin && !token && !route) return undefined;
-  if (!origin || !token || !route || runtime.mode !== "openbot") {
+  if (!origin && !token && !encoded && !route) return undefined;
+  if (!origin || !route || runtime.mode !== "openbot") {
     throw new Error(
-      "The managed model trial requires URL, TOKEN, ROUTE, and the OpenBot runtime.",
+      "The managed model trial requires URL, ROUTE, and the OpenBot runtime.",
     );
+  }
+  if (token && (!singleUser || encoded)) {
+    throw new Error(
+      `The managed model trial TOKEN is only supported by itself in single-user mode. Use ${credentialsName} for multiple People.`,
+    );
+  }
+  const credentials = new Map<string, string>();
+  if (token) {
+    credentials.set(DEV_ACTOR.id, token);
+  } else {
+    let value: unknown;
+    try {
+      value = JSON.parse(encoded ?? "null");
+    } catch {
+      throw new Error(`Invalid ${credentialsName}.`);
+    }
+    const parsed = z
+      .record(z.string().min(1), z.string().regex(/^[A-Za-z0-9._~+/-]+=*$/))
+      .safeParse(value);
+    if (!parsed.success) throw new Error(`Invalid ${credentialsName}.`);
+    const entries = Object.entries(parsed.data);
+    if (
+      !entries.length ||
+      new Set(entries.map(([, credential]) => credential)).size !==
+        entries.length
+    ) {
+      throw new Error(
+        `${credentialsName} requires distinct credentials for each Person.`,
+      );
+    }
+    for (const [personId, credential] of entries)
+      credentials.set(personId, credential);
   }
   const loopback = ["127.0.0.1", "[::1]", "localhost"].includes(
     origin.hostname,
@@ -1725,7 +1765,7 @@ function managedModelTrial(
       `${name} must be an HTTPS origin (HTTP allowed for loopback tests).`,
     );
   }
-  return { url: origin, token, route };
+  return { url: origin, credentials, route };
 }
 
 function openObserveUrl(environment: Environment): string | undefined {
@@ -1783,7 +1823,11 @@ export function loadConfig(
     environment,
     "OPENBOT_HINDSIGHT_REFLECT_TOKEN",
   );
-  const modelTrial = managedModelTrial(environment, runtime);
+  // An external authority takes precedence over local single-user auth.
+  const singleUser =
+    !organizationAuthUrl &&
+    singleUserAllowed(environment, configuredAuthProviders(auth).length > 0);
+  const modelTrial = managedModelTrial(environment, runtime, singleUser);
   if (
     hindsightReflect &&
     (!hindsightUrl ||
@@ -1871,14 +1915,7 @@ export function loadConfig(
     oauth: { google },
     auth,
     ...(organizationAuthUrl ? { organizationAuthUrl } : {}),
-    /*
-     * The authority short-circuits this, and that ordering is load-bearing: a white-label
-     * deployment naming an external authority lets it win, and `singleUserAllowed` is never
-     * reached and so cannot refuse a combination that already resolves.
-     */
-    singleUser:
-      !organizationAuthUrl &&
-      singleUserAllowed(environment, configuredAuthProviders(auth).length > 0),
+    singleUser,
     edition,
     accessibility: accessibilityEnabled(environment),
     generativeUi: generativeUiEnabled(environment),

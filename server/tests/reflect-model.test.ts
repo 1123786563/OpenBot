@@ -40,7 +40,10 @@ test("a Hindsight model callback uses authenticated run scope and Test Credit ad
   });
   try {
     const gateway = createReflectModelGateway({
-      model: createManagedModel({ url: control.url, token: "control-fixture" }),
+      model: createManagedModel({
+        url: control.url,
+        credentials: new Map([["person", "control-fixture"]]),
+      }),
       route: "approved-v1",
       token: "hindsight-fixture",
     });

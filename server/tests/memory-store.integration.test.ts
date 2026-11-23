@@ -1227,7 +1227,10 @@ test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
       },
     });
     const gateway = createReflectModelGateway({
-      model: createManagedModel({ url: control.url, token: "ledger-fixture" }),
+      model: createManagedModel({
+        url: control.url,
+        credentials: new Map([[owner, "ledger-fixture"]]),
+      }),
       route: "fixture-approved-v1",
       token: "hindsight-fixture",
     });

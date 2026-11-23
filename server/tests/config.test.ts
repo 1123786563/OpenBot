@@ -1551,3 +1551,38 @@ test("Hindsight Reflect is explicit and managed mode requires both service crede
   expect(managed.hindsight).toMatchObject({ reflect: true });
   expect(managed.hindsightReflectToken).toBe("callback-fixture");
 });
+
+test("multi-Person model trials require distinct Person credentials", () => {
+  const environment = {
+    DATABASE_URL: baseEnvironment.DATABASE_URL,
+    KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+    OPENBOT_ORGANIZATION_AUTH_URL: "https://auth.example.test",
+    OPENBOT_MANAGED_MODEL_TRIAL_URL: "https://managed.example.test",
+    OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "approved-v1",
+  };
+  expect(() =>
+    loadConfig({
+      ...environment,
+      OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "shared",
+    }),
+  ).toThrow("single-user mode");
+  expect(() =>
+    loadConfig({
+      ...environment,
+      OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS:
+        '{"alice":"shared","bob":"shared"}',
+    }),
+  ).toThrow("distinct credentials");
+  expect(
+    loadConfig({
+      ...environment,
+      OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS:
+        '{"alice":"first","bob":"second"}',
+    }).managedModelTrial?.credentials,
+  ).toEqual(
+    new Map([
+      ["alice", "first"],
+      ["bob", "second"],
+    ]),
+  );
+});

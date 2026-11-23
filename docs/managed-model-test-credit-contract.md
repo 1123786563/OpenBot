@@ -7,16 +7,19 @@ The OpenBot runtime can send direct-chat text turns and voice requests delegated
 | Variable | Value |
 | --- | --- |
 | `OPENBOT_MANAGED_MODEL_TRIAL_URL` | HTTPS origin of the internal controlled entry point. Loopback HTTP is allowed for local contract tests. |
-| `OPENBOT_MANAGED_MODEL_TRIAL_TOKEN` | Service credential scoped to OpenBot's Test Credit trial. |
+| `OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS` | Server-side JSON object mapping persisted OpenBot Person IDs to distinct bearer credentials issued for their Billing Accounts. |
+| `OPENBOT_MANAGED_MODEL_TRIAL_TOKEN` | Single-user deployments only. Billing must verify this bearer as the single user's execution identity. |
 | `OPENBOT_MANAGED_MODEL_TRIAL_ROUTE` | Published route key for one verified text model. The client reads the active Price Version before each reservation. |
 
-Set all three values on the OpenBot runtime deployment to enable the trial. The route applies to direct chat in that deployment. Account eligibility is checked by the controlled entry point. Chat sends server-persisted user and assistant text and returns the completed reply using the existing AG-UI stream. Other execution paths require their own integration with this client before they can use platform credentials.
+Set the URL and route with the applicable credential setting. Provision the credential mapping as a deployment secret from verified Person-to-Billing Account bindings. When rotating a Person's credential, keep it bound to the same Billing Account so retries and recovery can find the original reservation.
 
-The configured origin must expose the billing execution routes and authenticate the bearer credential as a verified billing identity for the Person whose account funds the request. The static deployment credential selects the billing identity. OpenBot derives the operation ID from the persisted Person and Run scope. A multi-Person deployment needs an execution identity that binds each request to the authenticated Person.
+The runtime selects the bearer from the persisted Person in the execution scope. That scope comes from the authorized Conversation Run, the Learning scope or the Hindsight Reflect session. The runtime denies execution before contacting Billing if the Person has no bound credential. It uses the Person's credential for quote, reserve, dispatch and reconciliation, including worker recovery. Missing credentials leave existing unknown-outcome Runs unresolved. Billing's durable reconciler can still settle them.
+
+The configured origin must verify the runtime bearer and resolve it to the Person's Billing Account. The OpenBot runtime uses the first-party execution path. It supplies the OpenBot bill attribution and derives the operation ID from the persisted execution scope. Current product authorization still governs foreground and scheduled runs. External applications' task-scoped Spending Authorizations use Billing's separate application-authenticated path.
 
 ## HTTP contract
 
-OpenBot sends the configured bearer token on every request. The control plane returns typed business outcomes as HTTP success responses. An unsuccessful HTTP status, timeout or invalid response cannot grant a dispatch permit.
+OpenBot sends the executing Person's bound bearer token on every request. The control plane returns typed business outcomes as HTTP success responses. An unsuccessful HTTP status, timeout or invalid response cannot grant a dispatch permit.
 
 | Endpoint | Request | Response |
 | --- | --- | --- |

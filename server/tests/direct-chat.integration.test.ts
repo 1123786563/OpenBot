@@ -1025,7 +1025,9 @@ test("Routine recovery checks an unknown model outcome without dispatching again
       OPENBOT_ORGANIZATION_AUTH_URL: "https://example.test",
       KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       OPENBOT_MANAGED_MODEL_TRIAL_URL: control.url.href,
-      OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "test-token",
+      OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS: JSON.stringify({
+        [actor.id]: "test-token",
+      }),
       OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "pilot-text-v1",
     });
     const legacy = async () => {
@@ -2599,7 +2601,9 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
     OPENBOT_ORGANIZATION_AUTH_URL: "https://example.test",
     KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     OPENBOT_MANAGED_MODEL_TRIAL_URL: control.url.href,
-    OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "test-token",
+    OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS: JSON.stringify({
+      [alice.id]: "test-token",
+    }),
     OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "pilot-text-v1",
   });
   try {
@@ -3467,7 +3471,7 @@ async function exerciseLearning(scheduled: boolean) {
     ...config,
     managedModelTrial: {
       url: control.url,
-      token: "test-token",
+      credentials: new Map([[alice.id, "test-token"]]),
       route: "pilot-text-v1",
     },
   };

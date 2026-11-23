@@ -86,14 +86,15 @@ export type ManagedModelResult =
 
 export function createManagedModel({
   url,
-  token,
+  credentials,
 }: {
   url: URL;
-  token: string;
+  credentials: ReadonlyMap<string, string>;
 }) {
-  const headers = { authorization: `Bearer ${token}` };
+  const credentialsByPerson = new Map(credentials);
 
   async function post(
+    token: string,
     path: string,
     body: object,
     timeout: number,
@@ -101,7 +102,10 @@ export function createManagedModel({
     const response = await fetch(new URL(`v1/${path}`, url), {
       method: "POST",
       redirect: "error",
-      headers: { ...headers, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
@@ -110,9 +114,9 @@ export function createManagedModel({
     return response.json();
   }
 
-  async function readPriceVersion() {
+  async function readPriceVersion(token: string) {
     const response = await fetch(new URL("v1/quote", url), {
-      headers,
+      headers: { authorization: `Bearer ${token}` },
       redirect: "error",
       signal: AbortSignal.timeout(5_000),
     });
@@ -123,9 +127,11 @@ export function createManagedModel({
   }
 
   async function reconcileOutcome(operation: ModelOperation) {
+    const token = credentialsByPerson.get(operation.scope.personId);
+    if (!token) throw new Error("Managed model execution identity required.");
     const id = operationId(operation);
     const result = reconciliation.parse(
-      await post("reconcile", { operationId: id }, 5_000),
+      await post(token, "reconcile", { operationId: id }, 5_000),
     );
     if (!("operation" in result)) return result;
     const receipt = operationReceipt.safeParse(result.operation);
@@ -163,10 +169,12 @@ export function createManagedModel({
         beforeDispatch?: () => Promise<boolean | readonly ModelMessage[]>;
       },
     ): Promise<ManagedModelResult> {
+      const token = credentialsByPerson.get(input.scope.personId);
+      if (!token) return { state: "not_authorized" };
       const id = operationId(input);
       let priceVersion: string;
       try {
-        priceVersion = await readPriceVersion();
+        priceVersion = await readPriceVersion(token);
       } catch {
         return { state: "unavailable" };
       }
@@ -175,6 +183,7 @@ export function createManagedModel({
       try {
         admission = reservation.parse(
           await post(
+            token,
             "reserve",
             {
               operationId: id,
@@ -209,6 +218,7 @@ export function createManagedModel({
             : prepared;
         const result = dispatch.parse(
           await post(
+            token,
             "dispatch",
             {
               operationId: id,
