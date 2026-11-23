@@ -416,7 +416,7 @@ test("a rule that doesn't compile says why under it, and isn't replayed as one t
   ).toBe(true);
 });
 
-test("a rule's replay lists app calls that would pass without it", async () => {
+test("a rule's page lists the recorded refusals that would be allowed without it", async () => {
   serving({
     mode: "enforce",
     deny: [salesforceWrites],
