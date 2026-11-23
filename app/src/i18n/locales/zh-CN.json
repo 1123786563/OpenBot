@@ -1,5 +1,8 @@
 {
   "banner.dismiss": "关闭",
+  "banner.selfHost.call": "预约通话",
+  "banner.selfHost.name": "自托管 OpenBot",
+  "banner.selfHost.offer": "为你的组织自托管 OpenBot。",
   "banner.update.available": "OpenBot {version} 现已可用。",
   "banner.update.downloading": "OpenBot {version} 正在后台下载（{share}%）。",
   "banner.update.failed": "无法安装更新：{reason}",
