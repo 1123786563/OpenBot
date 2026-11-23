@@ -1008,18 +1008,38 @@ export function createPaidCreditLedger(
           "not_verified",
           "No refund has been requested for this order.",
         );
-      if (refund.openedBy === customerRefund) {
-        // Manual confirmation is a trusted operator action after reconciling
-        // the original payment. A manual review has no automatic payout.
-        if (refund.state !== "manual_owed" || !succeeded) return refund;
-        if (await restoreHolds(tx, refund.accountId))
-          throw new PaidLedgerError(
-            "ledger_restoring",
-            "Refund verification is paused during ledger recovery.",
-          );
-        return settleRefundWithin(tx, refund, true);
-      }
+      if (refund.openedBy === customerRefund) return refund;
       return settleRefundWithin(tx, refund, succeeded);
+    });
+  }
+
+  /** Records the operator's confirmation after reconciling a manual payout. */
+  async function confirmTestPackManualRefund(input: {
+    orderId: string;
+    returnedCents: number;
+  }) {
+    return database.transaction(async (tx) => {
+      const order = await lockRefundOrder(tx, input.orderId);
+      const refund = await findRefund(tx, order.id);
+      if (!order.testMerchant || !refund || refund.openedBy !== customerRefund)
+        throw new PaidLedgerError("order_unknown", "Unknown test refund.");
+      if (input.returnedCents !== refund.amountCents)
+        throw new PaidLedgerError(
+          "verification_mismatch",
+          "The returned amount does not match the test refund.",
+        );
+      if (refund.state === "confirmed") return refund;
+      if (refund.state !== "manual_owed")
+        throw new PaidLedgerError(
+          "not_verified",
+          "The test refund is not awaiting a manual payout.",
+        );
+      if (await restoreHolds(tx, refund.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "Refund verification is paused during ledger recovery.",
+        );
+      return settleRefundWithin(tx, refund, true);
     });
   }
 
@@ -1726,6 +1746,7 @@ export function createPaidCreditLedger(
     testPackRefundDispatch,
     applyTestPackRefundResult,
     confirmRefund,
+    confirmTestPackManualRefund,
     refunds,
     correctOvercharge,
     applyCompensation,

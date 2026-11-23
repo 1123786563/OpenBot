@@ -62,3 +62,11 @@ Give the fixture the same token. Set `OPENBOT_CREDIT_PACK_FIXTURE_CALLBACK` to `
 Sign in to OpenBot as an eligible tester and open **Credits → Test Credit Pack**. Place an order, prepare checkout, open the checkout link, and confirm the simulated payment. Return to Credits and select **Check payment** if the order is still pending. The order links to its paid credit source while the source has spendable credits.
 
 The fixture holds payment records in memory. Keep it running through reconciliation. To stop new orders while retaining existing orders and callbacks, clear the account allowlist and restart OpenBot with the same fixture origin and merchant.
+
+For a test refund awaiting manual payout, match the original order and full returned amount against the fixture's payment record. With the isolated ledger configured in `DATABASE_URL`, record the verified return from the worktree root.
+
+```sh
+bun --no-env-file server/scripts/billing-paths.ts confirm-test-refund <order-id> --returned-cents <amount>
+```
+
+The original order shows the confirmed refund after the frozen credits are revoked.

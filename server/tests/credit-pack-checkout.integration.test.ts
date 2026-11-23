@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { run as runBillingPaths } from "../scripts/billing-paths";
 import { startCreditPackFixture } from "../scripts/credit-pack-test-fixture";
 import {
   configure,
@@ -672,8 +673,21 @@ test("owed funds keep the original refund frozen until an operator confirms the 
   expect((await paid.confirmRefund(pack.orderId, false)).state).toBe(
     "manual_owed",
   );
-  await paid.confirmRefund(pack.orderId, true);
-  await paid.confirmRefund(pack.orderId, true);
+  expect((await paid.confirmRefund(pack.orderId, true)).state).toBe(
+    "manual_owed",
+  );
+  const confirmReturned = (cents: string) =>
+    runBillingPaths(
+      ["confirm-test-refund", pack.orderId, "--returned-cents", cents],
+      { credit: ledger, paid },
+    );
+  await expect(confirmReturned("3499")).rejects.toHaveProperty(
+    "code",
+    "verification_mismatch",
+  );
+  expect(await pack.balance()).toMatchObject({ availableMicrocredits: "0" });
+  await confirmReturned("3500");
+  await confirmReturned("3500");
   expect(await pack.status()).toMatchObject({
     state: "refunded",
     refund: { id: refund.id, amountCents: 3500, state: "confirmed" },
