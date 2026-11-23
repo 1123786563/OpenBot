@@ -30,8 +30,10 @@ export const configuration = z
   .strictObject({ harnessImage: harness, routes })
   .refine(({ routes }) => {
     const entries = Object.values(routes);
+    const chat = entries.filter(({ purpose }) => purpose !== "embedding");
     return (
-      entries.length <= 2 &&
+      chat.length <= 2 &&
+      entries.length - chat.length <= 1 &&
       entries.every((entry) =>
         entry.purpose === "embedding"
           ? entry.maxOutputTokens === 0 &&
@@ -39,11 +41,10 @@ export const configuration = z
             !entry.tools
           : entry.maxOutputTokens > 0,
       ) &&
-      new Set(entries.map(({ provider }) => provider)).size ===
-        entries.length &&
-      new Set(entries.map(({ model }) => model)).size === entries.length
+      new Set(chat.map(({ provider }) => provider)).size === chat.length &&
+      new Set(chat.map(({ model }) => model)).size === chat.length
     );
-  }, "The pilot supports two distinct models on distinct providers.");
+  }, "The pilot supports two chat models on distinct providers and one embedding route.");
 
 const evidenceIdentity = z.strictObject({
   revision: z.uuid(),
@@ -227,7 +228,7 @@ export const releaseSchema = z.strictObject({
   at: z.iso.datetime(),
   harnessImage: harness,
   defaultRoute: id.nullable(),
-  routes: z.array(releasedRoute).min(1).max(2),
+  routes: z.array(releasedRoute).min(1).max(3),
 });
 export const catalogSchema = z.strictObject({
   harnessImage: harness.nullable(),
@@ -444,7 +445,7 @@ export function verify(
 
 export const publication = z
   .strictObject({
-    routes: z.array(id).min(1).max(2),
+    routes: z.array(id).min(1).max(3),
     defaultRoute: id.nullable(),
   })
   .refine(

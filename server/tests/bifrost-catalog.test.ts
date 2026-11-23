@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   catalogSchema,
+  configuration,
   configure,
   emptyCatalog,
   publish,
@@ -8,7 +9,10 @@ import {
   verify,
   view,
 } from "../src/admin/bifrost-catalog";
-import { fixtureTraceReport } from "./support/bifrost-evidence";
+import {
+  fixtureEmbeddingReport,
+  fixtureTraceReport,
+} from "./support/bifrost-evidence";
 
 const route = {
   provider: "openai",
@@ -22,6 +26,59 @@ const route = {
 };
 const other = { ...route, provider: "anthropic", model: "fixture-b" };
 const harnessImage = `agent-langgraph-agui@sha256:${"a".repeat(64)}`;
+
+test("the pilot can publish two chat routes beside one embedding route", () => {
+  const embedding = {
+    ...route,
+    purpose: "embedding" as const,
+    model: "fixture-embedding",
+    maxOutputTokens: 0,
+    tools: false,
+    price: { inputPerMillion: 20_000, outputPerMillion: 0 },
+  };
+  const draft = configuration.parse({
+    harnessImage,
+    routes: { a: route, b: other, embedding },
+  });
+  let catalog = configure(emptyCatalog, draft);
+  for (const [id, entry] of Object.entries(catalog.routes)) {
+    const report =
+      entry.purpose === "embedding"
+        ? fixtureEmbeddingReport(harnessImage, entry)
+        : fixtureTraceReport(harnessImage, entry);
+    catalog = verify(catalog, id, report, "admin");
+  }
+  const published = publish(catalog, ["a", "b", "embedding"], "a", "admin");
+  expect(view(catalogSchema.parse(published.catalog))).toMatchObject({
+    defaultRoute: "a",
+    options: [
+      { id: "a" },
+      { id: "b" },
+      { id: "embedding", purpose: "embedding" },
+    ],
+  });
+  expect(releaseSchema.parse(published.release).routes).toHaveLength(3);
+  expect(
+    configuration.safeParse({
+      harnessImage,
+      routes: {
+        a: route,
+        b: other,
+        c: { ...route, provider: "third", model: "fixture-c" },
+      },
+    }).success,
+  ).toBe(false);
+  expect(
+    configuration.safeParse({
+      harnessImage,
+      routes: {
+        a: route,
+        embedding,
+        second: { ...embedding, provider: "second", model: "fixture-second" },
+      },
+    }).success,
+  ).toBe(false);
+});
 
 function legacyReport(revision: string, provider: string, model: string) {
   return {
