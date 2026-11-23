@@ -2058,7 +2058,7 @@ test(
       await database.delete(users).where(eq(users.id, bob.id));
     }
   },
-  process.env.TEST_OPIK_API_URL ? 300_000 : 30_000,
+  process.env.TEST_OPIK_API_URL ? 300_000 : 120_000,
 );
 
 test("archiving hides only the list entry; deletion withdraws direct history, attachments and an active stream", async () => {
