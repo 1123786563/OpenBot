@@ -20,7 +20,10 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useSignOut } from "@/components/app-sidebar/use-sign-out";
 import { Toaster } from "@/components/ui/toast";
+import { initI18n } from "@/i18n";
 import { queryClient } from "@/query-client";
+import { Route as SignRoute } from "@/routes/sign";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -33,7 +36,10 @@ import { settleReactWork } from "./settle-react-work";
 const UNFINISHED = "Signing out did not finish. Try again.";
 
 beforeAll(() => GlobalRegistrator.register());
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await pinLocale("en");
+});
 afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
@@ -45,10 +51,20 @@ const originalFetch = global.fetch;
 beforeEach(() => {
   queryClient.clear();
   global.fetch = Object.assign(
-    async (input: Parameters<typeof fetch>[0]) =>
-      String(input).endsWith("/api/auth/sign-out")
-        ? answer()
-        : new Response(null, { status: 404 }),
+    async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input);
+      if (url.endsWith("/api/auth/sign-out")) return answer();
+      // Arriving at the real sign screen: nobody is signed in, and this deployment
+      // has no way in configured, which is what the screen then says.
+      if (url.endsWith("/api/me")) return new Response(null, { status: 401 });
+      if (url.endsWith("/api/capabilities"))
+        return Response.json({
+          authProviders: [],
+          ssoConfigured: false,
+          ssoRequired: false,
+        });
+      return new Response(null, { status: 404 });
+    },
     { preconnect: originalFetch.preconnect },
   );
 });
@@ -77,17 +93,19 @@ function draw() {
   });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/"] }),
+    context: { queryClient },
     routeTree: rootRoute.addChildren([
       createRoute({
         getParentRoute: () => rootRoute,
         path: "/",
         component: SignOutButton,
       }),
-      createRoute({
-        getParentRoute: () => rootRoute,
+      // The real destination: the same route main.tsx mounts on /sign.
+      SignRoute.update({
+        id: "/sign",
         path: "/sign",
-        component: () => <p>Sign in</p>,
-      }),
+        getParentRoute: () => rootRoute,
+      } as never),
     ]),
   });
   const view = render(
@@ -123,3 +141,17 @@ for (const [who, body] of [
     await waitFor(() => expect(toasts()).toEqual([]));
   });
 }
+
+test("sign-out lands on the real sign screen, speaking the language this browser kept", async () => {
+  localStorage.setItem("openbot-locale", "zh-CN");
+  initI18n();
+  answer = () => Response.json({ success: true });
+  const { view, router } = draw();
+  const button = await view.findByRole("button", { name: "Sign out" });
+  await userEvent.click(button);
+  await waitFor(() => expect(router.state.location.pathname).toBe("/sign"));
+  expect(
+    await view.findByRole("heading", { name: "登录 OpenBot" }),
+  ).toBeTruthy();
+  expect(toasts()).toEqual([]);
+});

@@ -12,8 +12,10 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { I18nProvider, initI18n } from "@/i18n";
 import { authKeys } from "@/lib/auth/queries";
 import { appReturnPath, resumeUrlFor } from "@/lib/auth/resume";
+import { pinLocale } from "./i18n";
 
 /*
  * The Better Auth client is replaced at the module boundary: its fetch is captured when it is built,
@@ -41,7 +43,11 @@ let domainSignInSpy: DomainSignInSpy = async () => {};
  * drives the real functions through their injectable starter. The two together cover the handoff.
  */
 mock.module("@/lib/auth/client", () => ({
-  providerName: () => "Google",
+  /*
+   * Display names come from the real table: a button that says Google for every id would make
+   * "Microsoft/Okta keep their names" a test of the mock, not of the screen.
+   */
+  providerName: realAuthClient.providerName,
   signInWith: (...args: Parameters<SignInSpy>) => signInSpy(...args),
   signInWithEmailDomain: (...args: Parameters<DomainSignInSpy>) =>
     domainSignInSpy(...args),
@@ -55,8 +61,9 @@ beforeAll(() => {
     window as unknown as { happyDOM: { setURL(url: string): void } }
   ).happyDOM.setURL("http://localhost:3010/");
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
 });
 afterAll(() => {
   // Module mocks are process-wide in bun: hand the real client back to whatever runs next.
@@ -162,11 +169,20 @@ function renderSignScreen(
     providers: string[];
     sso: boolean;
     ssoRequired: boolean;
+    /**
+     * The options read fails, the way it does behind `beforeLoad`'s swallow. The test makes `fetch`
+     * refuse, so the failure is a real one and nothing is sent to the fake origin.
+     */
+    failed?: boolean;
   },
   initialEntry = "/sign?flow_id=h1",
 ) {
-  const queryClient = new QueryClient();
-  queryClient.setQueryData(authKeys.providers(), options);
+  // Retries off, so the one failed read refuses at once rather than after 7s of backing off.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  // Nothing seeded for a failed read: the screen shows its read-error, not a deployment with no way in.
+  if (!options.failed) queryClient.setQueryData(authKeys.providers(), options);
 
   queryClient.setQueryData(authKeys.currentUser(), null);
   const root = createRootRoute();
@@ -181,16 +197,166 @@ function renderSignScreen(
     context: { queryClient },
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
   } as never) as never;
+  // The real tree order from main.tsx: Astryx's language bridge sits above the app, so its own
+  // words (a required marker) follow the interface language along with OpenBot's.
   const view = render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </I18nProvider>,
   );
   return {
     view,
     user: userEvent.setup({ document: view.container.ownerDocument }),
   };
 }
+
+test("the sign page translates its heading, title and provider action in place", async () => {
+  const { view } = renderSignScreen({
+    providers: ["google"],
+    sso: false,
+    ssoRequired: false,
+  });
+  expect(
+    await view.findByRole("heading", { name: "Sign in to OpenBot" }),
+  ).toBeTruthy();
+  await pinLocale("zh-CN");
+  expect(view.getByRole("heading", { name: "登录 OpenBot" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "使用 Google 继续" })).toBeTruthy();
+  // The tab reads like every other page's, which PageShell titles: "<page> · OpenBot".
+  expect(document.title).toBe("登录 · OpenBot");
+  await pinLocale("en");
+  expect(
+    view.getByRole("button", { name: "Continue with Google" }),
+  ).toBeTruthy();
+  expect(document.title).toBe("Sign in · OpenBot");
+});
+
+test("the company form speaks the interface language, required marker included", async () => {
+  const { view, user } = renderSignScreen({
+    providers: ["google"],
+    sso: true,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  expect(view.getByRole("textbox", { name: /公司邮箱/ })).toBeTruthy();
+  // Astryx draws its own required marker through the same bridge, not in a second language.
+  expect(view.getByText("必填")).toBeTruthy();
+  expect(view.getByText("请使用你的组织发放的邮箱地址。")).toBeTruthy();
+  expect(view.getByText("或")).toBeTruthy();
+  const submit = view.getByRole("button", {
+    name: "使用公司账号继续",
+  }) as HTMLElement;
+  // This screen disables with the native attribute, not Astryx's isDisabled.
+  expect(submit.getAttribute("disabled")).toBe(""); // nothing typed yet
+  await user.type(view.getByPlaceholderText("you@company.com"), "ada@corp.cn");
+  expect(submit.getAttribute("disabled")).toBeNull();
+  await user.click(submit);
+  expect(view.getByRole("button", { name: "正在打开…" })).toBeTruthy();
+
+  await pinLocale("en");
+  expect(view.getByRole("textbox", { name: /Company email/ })).toBeTruthy();
+  // The press above succeeded, so the button is still in its opening state — now in English.
+  expect(view.getByRole("button", { name: "Opening…" })).toBeTruthy();
+});
+
+test("a deployment that requires the company account says so, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: ["google"],
+    sso: true,
+    ssoRequired: true,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+  expect(
+    view.getByText(
+      "Your organization requires you to sign in with your company account.",
+    ),
+  ).toBeTruthy();
+
+  await pinLocale("zh-CN");
+  expect(view.getByText("你的组织要求你使用公司账号登录。")).toBeTruthy();
+  // The administrators' break-glass keeps its summary in the interface language.
+  // (happy-dom gives <summary> no role, so it is read as an element, not by role.)
+  expect(view.container.querySelector("details > summary")?.textContent).toBe(
+    "管理员登录",
+  );
+
+  await pinLocale("en");
+  expect(view.container.querySelector("details > summary")?.textContent).toBe(
+    "Admin sign-in",
+  );
+});
+
+test("opening a provider names it, in the interface language", async () => {
+  const { view, user } = renderSignScreen({
+    providers: ["google"],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  // Uninitialized on purpose: `= null` would keep it narrowed to null here, where the release the
+  // executor stores is still typed as nothing.
+  let release: (() => void) | undefined;
+  try {
+    signInSpy = async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    };
+    await user.click(view.getByRole("button", { name: "使用 Google 继续" }));
+    expect(view.getByRole("button", { name: "正在打开 Google…" })).toBeTruthy();
+
+    await pinLocale("en");
+    expect(view.getByRole("button", { name: "Opening Google…" })).toBeTruthy();
+  } finally {
+    release?.();
+  }
+});
+
+test("a deployment with no way in says so, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: [],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+  expect(
+    view.getByText(
+      "Sign-in isn’t set up yet. Contact your OpenBot administrator for access.",
+    ),
+  ).toBeTruthy();
+
+  await pinLocale("zh-CN");
+  expect(
+    view.getByText("登录尚未配置。请联系你的 OpenBot 管理员获取访问权限。"),
+  ).toBeTruthy();
+});
+
+test("a required but unavailable company sign-in says so, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: [],
+    sso: false,
+    ssoRequired: true,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+  expect(
+    view.getByText(
+      "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
+    ),
+  ).toBeTruthy();
+
+  await pinLocale("zh-CN");
+  expect(
+    view.getByText(
+      "需要公司登录，但当前不可用。请联系你的 OpenBot 管理员获取访问权限。",
+    ),
+  ).toBeTruthy();
+});
 
 /** Where a press on this screen has to send the browser back to, with `?flow_id=h1` carried in. */
 const RESUME_URL = "/api/plugins/arcade/verify?flow_id=h1";
@@ -381,5 +547,233 @@ test("returns to a Web deep link without the newer URL.parse API", () => {
   } finally {
     if (descriptor) Object.defineProperty(URL, "parse", descriptor);
     else Reflect.deleteProperty(URL, "parse");
+  }
+});
+
+test("a refused provider press passes the server's words through, and says its own in the interface language", async () => {
+  const { view, user } = renderSignScreen({
+    providers: ["google"],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  // The server's own sentence is a value: shown as it arrived, in either language.
+  signInSpy = async () => {
+    throw new Error("Sign-in provider unavailable");
+  };
+  await user.click(view.getByRole("button", { name: "使用 Google 继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Sign-in provider unavailable",
+  );
+
+  // Without a reason from the server, the screen says its own sentence.
+  signInSpy = async () => {
+    throw "no reason given";
+  };
+  await user.click(view.getByRole("button", { name: "使用 Google 继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "无法打开 Google 登录。请重试。",
+  );
+
+  await pinLocale("en");
+  await user.click(view.getByRole("button", { name: "Continue with Google" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Couldn't open Google sign-in. Try again.",
+  );
+});
+
+test("a refused company sign-in keeps the server's words and guides in the interface language", async () => {
+  const { view, user } = renderSignScreen({
+    providers: [],
+    sso: true,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  await user.type(view.getByPlaceholderText("you@company.com"), "ada@corp.cn");
+  // The server's sentence is a value inside a translated one, so it carries the characters an
+  // escaping formatter, or a second pass of the parser, would change.
+  const said = "Tom & Jerry's domain isn't registered (100%)";
+  domainSignInSpy = async () => {
+    throw new Error(said);
+  };
+  await user.click(view.getByRole("button", { name: "使用公司账号继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    `${said} 请检查你的公司邮箱后重试。如果问题仍然存在，请联系你的 OpenBot 管理员。`,
+  );
+
+  domainSignInSpy = async () => {
+    throw "no reason given";
+  };
+  await user.click(view.getByRole("button", { name: "使用公司账号继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "无法打开公司登录。 请检查你的公司邮箱后重试。如果问题仍然存在，请联系你的 OpenBot 管理员。",
+  );
+});
+
+test("a failed read of the sign-in options speaks the interface language, retry included", async () => {
+  // `fetch` refuses, the way a dropped connection makes it. Nothing is sent to the fake origin —
+  // whose port may be somebody's live server — and the screen renders from the failure `beforeLoad`
+  // swallowed, not from seeded options.
+  const realFetch = window.fetch;
+  const offline = () => Promise.reject(new TypeError("offline"));
+  window.fetch = Object.assign(offline, { preconnect: realFetch.preconnect });
+  try {
+    const { view, user } = renderSignScreen({
+      providers: [],
+      sso: false,
+      ssoRequired: false,
+      failed: true,
+    });
+    await view.findByText("Couldn't load sign-in options.");
+    expect(view.getByText("Check your connection and try again.")).toBeTruthy();
+    // The retry comes from the shared frame vocabulary, not a second catalog.
+    expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
+
+    await pinLocale("zh-CN");
+    expect(view.getByText("无法加载登录选项。")).toBeTruthy();
+    expect(view.getByText("请检查你的网络连接后重试。")).toBeTruthy();
+
+    // That retry is wired: once the connection answers, pressing it brings the ways in, in that language.
+    const back = () =>
+      Promise.resolve(
+        Response.json({
+          authProviders: ["google"],
+          ssoConfigured: false,
+          ssoRequired: false,
+        }),
+      );
+    window.fetch = Object.assign(back, { preconnect: realFetch.preconnect });
+    await user.click(view.getByRole("button", { name: "重试" }));
+    expect(
+      await view.findByRole("button", { name: "使用 Google 继续" }),
+    ).toBeTruthy();
+    expect(view.queryByText("无法加载登录选项。")).toBeNull();
+  } finally {
+    window.fetch = realFetch;
+  }
+});
+
+test("every provider keeps its own name, in the interface language", async () => {
+  const { view } = renderSignScreen({
+    providers: ["google", "microsoft", "okta"],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  expect(view.getByRole("button", { name: "使用 Google 继续" })).toBeTruthy();
+  expect(
+    view.getByRole("button", { name: "使用 Microsoft 继续" }),
+  ).toBeTruthy();
+  expect(view.getByRole("button", { name: "使用 Okta 继续" })).toBeTruthy();
+
+  await pinLocale("en");
+  expect(
+    view.getByRole("button", { name: "Continue with Microsoft" }),
+  ).toBeTruthy();
+  expect(view.getByRole("button", { name: "Continue with Okta" })).toBeTruthy();
+});
+
+/*
+ * The first frame: whichever language the visit opens in, the sign page is already speaking it
+ * before anyone touches a setting. `initI18n` is what main.tsx calls before rendering.
+ */
+
+/** Makes the browser ask for `languages`, most preferred first, until the returned function runs. */
+function browserSpeaks(languages: string[]): () => void {
+  const asked = Object.getOwnPropertyDescriptor(navigator, "languages");
+  Object.defineProperty(navigator, "languages", {
+    configurable: true,
+    get: () => languages,
+  });
+  return () => {
+    if (asked) Object.defineProperty(navigator, "languages", asked);
+    else Reflect.deleteProperty(navigator, "languages");
+  };
+}
+
+test("the sign page speaks the browser's language from its first frame", async () => {
+  const unSpeak = browserSpeaks(["zh-Hans-CN"]);
+  try {
+    localStorage.clear(); // no saved choice: the browser decides
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "登录 OpenBot" }),
+    ).toBeTruthy();
+    expect(view.getByRole("button", { name: "使用 Google 继续" })).toBeTruthy();
+    // Even the tab is titled in the interface language before anyone switches anything.
+    expect(document.title).toBe("登录 · OpenBot");
+  } finally {
+    unSpeak();
+  }
+});
+
+test("a browser asking for Traditional Chinese reads the sign page in English", async () => {
+  const unSpeak = browserSpeaks(["zh-Hant-TW"]);
+  try {
+    localStorage.clear();
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "Sign in to OpenBot" }),
+    ).toBeTruthy();
+    expect(document.title).toBe("Sign in · OpenBot");
+  } finally {
+    unSpeak();
+  }
+});
+
+test("a language this browser kept decides the sign page's first frame over the browser's ask", async () => {
+  localStorage.setItem("openbot-locale", "zh-CN");
+  const unSpeak = browserSpeaks(["en-GB"]);
+  try {
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "登录 OpenBot" }),
+    ).toBeTruthy();
+  } finally {
+    unSpeak();
+  }
+});
+
+test("an English this browser kept decides the sign page's first frame over a Chinese ask", async () => {
+  localStorage.setItem("openbot-locale", "en");
+  const unSpeak = browserSpeaks(["zh-Hans-CN"]);
+  try {
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "Sign in to OpenBot" }),
+    ).toBeTruthy();
+    expect(document.title).toBe("Sign in · OpenBot");
+  } finally {
+    unSpeak();
   }
 });
