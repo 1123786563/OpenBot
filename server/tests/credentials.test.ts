@@ -789,6 +789,11 @@ describe("admin credential API", () => {
       undefined,
       {
         list: async () => [],
+        // Only create is exercised here; the rest satisfy CredentialAdminService.
+        rotate: async () => {
+          throw new Error("rotate is not used in this test");
+        },
+        revoke: async (id) => ({ id, revokedAt: new Date() }),
         create: async (input) => {
           created.push(input);
           return {
