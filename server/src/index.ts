@@ -278,7 +278,7 @@ import {
   createSharedSlackProvider,
   sharedSlackRegistration,
 } from "./plugins/corsair/slack/shared-provider";
-import { useCorsairCloudClient } from "./plugins/corsair/transport";
+import { useCorsairCloudClient as installCorsairCloudClient } from "./plugins/corsair/transport";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -1374,7 +1374,7 @@ const corsairCloud = process.env.CORSAIR_CLOUD_KEY?.trim()
       instanceKey: process.env.CORSAIR_CLOUD_INSTANCE?.trim(),
     })
   : undefined;
-useCorsairCloudClient(corsairCloud ?? null);
+installCorsairCloudClient(corsairCloud ?? null);
 if (corsairCloud) {
   try {
     await pluginStore.addServer({
