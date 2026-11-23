@@ -15,6 +15,7 @@ import {
 import type * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /*
@@ -170,10 +171,11 @@ function ToastClose({
   render = <Button variant="ghost" size="icon-sm" />,
   ...props
 }: ToastPrimitive.Close.Props) {
+  const { t } = useTranslation();
   return (
     <ToastPrimitive.Close
       data-slot="toast-close"
-      aria-label="Close"
+      aria-label={t("frame.close", "Close")}
       render={render}
       className={cn(
         "relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-foreground",

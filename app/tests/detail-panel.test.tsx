@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { useEffect } from "react";
 import { DetailPanel } from "@/components/layout/detail-panel";
+import { pinLocale } from "./i18n";
 
 class Observer implements ResizeObserver {
   static targets = new Map<Element, Observer>();
@@ -45,8 +46,10 @@ beforeAll(() => {
   originalObserver = globalThis.ResizeObserver;
   globalThis.ResizeObserver = Observer;
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // The language tests share one translation instance with every other file in the run.
+  await pinLocale("en");
   Observer.targets.clear();
 });
 afterAll(() => {
@@ -109,4 +112,30 @@ test("closing narrow details invokes the owner and unmounts detail work", async 
   expect(closed).toBe(1);
   view.rerender(<DetailPanel {...props} open={false} />);
   await waitFor(() => expect(view.queryByText("Browser preview")).toBeNull());
+});
+
+test("the wide pane's close button speaks the interface language, and its title is the page's", async () => {
+  let closed = 0;
+  const view = render(
+    <DetailPanel
+      open
+      title="Computer"
+      onClose={() => {
+        closed += 1;
+      }}
+      detail={<p>Browser preview</p>}
+    >
+      <p>Chat</p>
+    </DetailPanel>,
+  );
+  await resize(view.container, 1000);
+  const before = view.getByRole("button", { name: "Close details" });
+
+  await pinLocale("zh-CN");
+
+  expect(view.getByRole("button", { name: "关闭详情" })).toBe(before);
+  expect(view.queryByRole("button", { name: "Close details" })).toBeNull();
+  expect(view.getByText("Computer")).toBeTruthy();
+  fireEvent.click(before);
+  expect(closed).toBe(1);
 });
