@@ -5,11 +5,13 @@ import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import {
   adminLearningDecision,
   type DirectChatLearningScope,
+  type DirectChatReview,
   directChatAutoApproval,
   directChatDecision,
   learningEvidencePermission,
   learningRequest,
   learningScheduleSettings,
+  publishedSkillShare,
 } from "@openbot/shared/direct-chat-learning";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
 import { answerMessageId } from "@openbot/shared/handoff-markers";
@@ -19,6 +21,7 @@ import {
   CONTEXT_REVOKED_MESSAGE,
   createRunContext,
   type RunContextVersion,
+  runContextVersion,
   trackRunContext,
   verifyRunContext,
   withRunContext,
@@ -31,8 +34,10 @@ import {
 import { and, eq, exists, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
+import { readSkillSharingAllowed } from "../admin/settings-store";
 import { isBotPaused } from "../agents/lifecycle";
 import type {
   AgentProfileStore,
@@ -63,9 +68,11 @@ import {
   userRoles,
   users,
 } from "../db/schema";
+import { currentEdition } from "../edition";
 import {
   createDirectChatLearning,
   LearningEvidenceUnavailable,
+  lockLearningSettings,
 } from "../learning/direct-chat";
 import { setSharedLearningPermission } from "../learning/evidence";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
@@ -88,6 +95,11 @@ import {
   stopDirectChatRun,
   stoppedRunEvent,
 } from "./direct-chat-replay";
+
+type RunTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+const dispatchedVersions = z.array(
+  runContextVersion.extend({ kind: z.literal("learned_skill") }),
+);
 
 const id = z.string().min(1).max(256);
 const runBody = z.object({
@@ -365,7 +377,7 @@ export function createDirectChatRoutes(deps: {
     if (!row) return null;
     const profile = await profiles.getWithin(executor, actor, agentId);
     return profile && !profile.deletedAt && !profile.hidden
-      ? { channelId: row.channelId }
+      ? { channelId: row.channelId, botName: profile.name }
       : null;
   }
 
@@ -478,6 +490,127 @@ export function createDirectChatRoutes(deps: {
     request.headers.get("sec-fetch-site") !== "cross-site" &&
     request.headers.get("content-type")?.split(";")[0]?.trim() ===
       "application/json";
+
+  const skillPolicy = {
+    async authorize(tx: ProfileReadExecutor, scope: DirectChatLearningScope) {
+      if (!(await accountIsActive(tx, scope.personId))) return null;
+      if (!deps.singleUser) {
+        const roles = await createRoleRepository(tx).rolesForUser(
+          scope.personId,
+        );
+        if (!roles.includes("admin") && !roles.includes("user")) return null;
+      }
+      // Publication grants follow the Person's Bot access, including for administrators.
+      const owner = { id: scope.personId, role: "user" } satisfies AgentActor;
+      return threadFor(tx, owner, scope.threadId, scope.botId);
+    },
+    enabled: readSkillSharingAllowed,
+    async reviewerMayShare(tx: ProfileReadExecutor, review: DirectChatReview) {
+      if (currentEdition() === "personal") return true;
+      return (
+        review.mode === "manual" &&
+        (await accountIsActive(tx, review.reviewerId)) &&
+        (
+          await createRoleRepository(tx).rolesForUser(review.reviewerId)
+        ).includes("admin")
+      );
+    },
+  };
+  const skillPath = "/learning/skills";
+  const skillAbsent = { error: "Published skill not found." };
+
+  routes.get(skillPath, async (context) => {
+    context.header("Cache-Control", "no-store");
+    const actor = await actorFor(context.req.raw);
+    if (!actor?.id)
+      return context.json({ error: "Sign in to view skills." }, 401);
+    const { skills } = await learning.catalog(actor.id, skillPolicy);
+    return context.json({ skills });
+  });
+
+  routes.get(`${skillPath}/:id`, async (context) => {
+    context.header("Cache-Control", "no-store");
+    const actor = await actorFor(context.req.raw);
+    const id = z.uuid().safeParse(context.req.param("id"));
+    if (!actor?.id || !id.success) return context.json(skillAbsent, 404);
+    const { detail } = await learning.catalog(actor.id, skillPolicy, id.data);
+    return detail ? context.json(detail) : context.json(skillAbsent, 404);
+  });
+
+  routes.post(
+    `${skillPath}/:id/shares`,
+    bodyLimit({ maxSize: 2048 }),
+    async (context) => {
+      const request = context.req.raw;
+      const actor = await actorFor(request);
+      const id = z.uuid().safeParse(context.req.param("id"));
+      if (!actor?.id || !id.success) return context.json(skillAbsent, 404);
+      if (!sameOriginJson(request))
+        return context.json({ error: "Use a same-origin JSON request." }, 403);
+      const input = publishedSkillShare.safeParse(
+        await request.json().catch(() => null),
+      );
+      if (!input.success)
+        return context.json({ error: "Enter a valid email address." }, 400);
+      const shared = await learning.shareSkill(
+        actor.id,
+        id.data,
+        skillPolicy,
+        async (tx, botId) => {
+          const recipients = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(sql`lower(trim(${users.email}))`, input.data.email))
+            .limit(2);
+          const [recipient] = recipients;
+          if (
+            recipients.length !== 1 ||
+            !recipient ||
+            recipient.id === actor.id
+          )
+            return null;
+          const threads = await directThreadQuery(
+            tx,
+            recipient.id,
+            undefined,
+            botId,
+          ).limit(2);
+          const [thread] = threads;
+          return threads.length === 1 && thread
+            ? learningScope(thread.threadId, botId, recipient.id)
+            : null;
+        },
+      );
+      return shared
+        ? context.json({ ok: true })
+        : context.json(
+            { error: "This skill or recipient is unavailable for sharing." },
+            404,
+          );
+    },
+  );
+
+  routes.delete(`${skillPath}/:id/shares/:recipientId`, async (context) => {
+    const request = context.req.raw;
+    if (request.headers.get("sec-fetch-site") === "cross-site")
+      return context.json({ error: "Use a same-origin request." }, 403);
+    const actor = await actorFor(request);
+    const id = z.uuid().safeParse(context.req.param("id"));
+    if (
+      !actor?.id ||
+      !id.success ||
+      !(await accountIsActive(database, actor.id))
+    )
+      return context.json(skillAbsent, 404);
+    const removed = await learning.revokeSkillShare(
+      actor.id,
+      id.data,
+      context.req.param("recipientId"),
+    );
+    return removed
+      ? context.json({ ok: true })
+      : context.json(skillAbsent, 404);
+  });
 
   function authorizeAdminLearning(reviewerId: string) {
     return async (tx: ProfileReadExecutor, scope: DirectChatLearningScope) => {
@@ -832,6 +965,82 @@ export function createDirectChatRoutes(deps: {
     };
   }
 
+  async function loadedSkillsCurrent(
+    tx: RunTransaction,
+    scope: DirectChatLearningScope,
+    versions: RunContextVersion[],
+  ) {
+    if (!versions.length) return true;
+    const current = await learning.guidanceForIds(
+      tx,
+      scope,
+      skillPolicy,
+      versions.map(({ id }) => id),
+    );
+    return versionsMatch(learnedSkillVersions(current), versions);
+  }
+
+  async function learnedSkillVersionsCurrent(
+    actor: AgentActor,
+    threadId: string,
+    agentId: string,
+    versions: RunContextVersion[],
+    scopeBot = agentId,
+  ) {
+    if (!versions.length) return true;
+    return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
+      return (
+        Boolean(await threadFor(tx, actor, threadId, scopeBot, true)) &&
+        loadedSkillsCurrent(
+          tx,
+          learningScope(threadId, agentId, actor.id),
+          versions,
+        )
+      );
+    });
+  }
+
+  async function settleManagedReceipt(
+    tx: RunTransaction,
+    key: RunKey,
+    scope: DirectChatLearningScope,
+    evidence: Extract<
+      Awaited<ReturnType<ManagedModel["reconcileOutcome"]>>,
+      { outcome: "executed" | "not_dispatched" }
+    >,
+    answerId: () => string,
+  ) {
+    const pending = and(
+      matchingRun(key),
+      eq(directChatRuns.externalOutcome, "unknown"),
+      isNull(directChatRuns.waitingApprovalId),
+    );
+    const [run] = await tx.select().from(directChatRuns).where(pending);
+    if (!run) return;
+
+    // Older dispatches have no dependency record. Their receipts can still settle.
+    const versions = dispatchedVersions.safeParse(run.dispatchedSkillVersions);
+    const canPublish =
+      evidence.outcome === "executed" &&
+      run.stopReason !== CONTEXT_REVOKED &&
+      versions.success &&
+      (await loadedSkillsCurrent(tx, scope, versions.data));
+    await tx
+      .update(directChatRuns)
+      .set({
+        externalOutcome: evidence.outcome,
+        ...(evidence.outcome === "executed" &&
+          (canPublish
+            ? {
+                assistantMessageId: run.assistantMessageId ?? answerId(),
+                reply: evidence.text,
+              }
+            : { stopReason: run.stopReason ?? CONTEXT_REVOKED })),
+      })
+      .where(pending);
+  }
+
   routes.post("/threads/:threadId/runs/:runId/reconcile", async (context) => {
     const key = context.req.param();
     const agentId = context.req.query("agentId");
@@ -888,28 +1097,20 @@ export function createDirectChatRoutes(deps: {
     if (!currentActor || currentActor.id !== actor.id)
       return context.json(absent, 404);
     return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
       if (!(await runThreadFor(tx, currentActor, key.threadId, agentId, true)))
         return context.json(absent, 404);
       if (
         evidence?.outcome === "executed" ||
         evidence?.outcome === "not_dispatched"
       ) {
-        await tx
-          .update(directChatRuns)
-          .set({
-            externalOutcome: evidence.outcome,
-            ...(evidence.outcome === "executed" && {
-              assistantMessageId: run.assistantMessageId ?? crypto.randomUUID(),
-              reply: evidence.text,
-            }),
-          })
-          .where(
-            and(
-              matchingRun(key),
-              eq(directChatRuns.externalOutcome, "unknown"),
-              isNull(directChatRuns.waitingApprovalId),
-            ),
-          );
+        await settleManagedReceipt(
+          tx,
+          key,
+          learningScope(key.threadId, agentId, actor.id),
+          evidence,
+          () => crypto.randomUUID(),
+        );
       }
       const [current] = await tx
         .select()
@@ -1624,29 +1825,21 @@ export function createDirectChatRoutes(deps: {
             (await authorize())?.id === actor.id
           ) {
             await database.transaction(async (tx) => {
+              await lockLearningSettings(tx);
               if (
                 !(await runThreadFor(tx, actor, key.threadId, scopeBot, true))
               )
                 return;
-              await tx
-                .update(directChatRuns)
-                .set({
-                  externalOutcome: evidence.outcome,
-                  ...(evidence.outcome === "executed" && {
-                    assistantMessageId:
-                      input.source === "handoff"
-                        ? answerMessageId(input.agentId, key.runId)
-                        : crypto.randomUUID(),
-                    reply: evidence.text,
-                  }),
-                })
-                .where(
-                  and(
-                    matchingRun(key),
-                    eq(directChatRuns.externalOutcome, "unknown"),
-                    isNull(directChatRuns.waitingApprovalId),
-                  ),
-                );
+              await settleManagedReceipt(
+                tx,
+                key,
+                learningScope(key.threadId, input.agentId, actor.id),
+                evidence,
+                () =>
+                  input.source === "handoff"
+                    ? answerMessageId(input.agentId, key.runId)
+                    : crypto.randomUUID(),
+              );
             });
             continue;
           }
@@ -1717,6 +1910,7 @@ export function createDirectChatRoutes(deps: {
           currentActor?.id === actor.id
             ? threadFor(tx, currentActor, threadId, scopeBot, true)
             : Promise.resolve(null),
+        skillPolicy,
       );
     };
     const previous = await history(database, threadId);
@@ -1794,10 +1988,11 @@ export function createDirectChatRoutes(deps: {
       return false;
     };
     if (!(await shouldContinue())) return;
+    const dispatchTime = new Date();
     const [dispatched] = await database
       .update(directChatRuns)
       .set({
-        dispatchedAt: new Date(),
+        dispatchedAt: dispatchTime,
         waitingApprovalId: null,
         ...(!background && continuation && { externalOutcome: null }),
         ...((trial || (background && !background.literalAnswer)) &&
@@ -1833,6 +2028,33 @@ export function createDirectChatRoutes(deps: {
     }
     watcher = setTimeout(() => void watchAuthorization(), 250);
     const runContext = createRunContext();
+    let learnedVersions: RunContextVersion[] | undefined;
+    let learnedContextRevoked = false;
+    async function learnedContextIsCurrent() {
+      if (learnedContextRevoked) return false;
+      if (!learnedVersions?.length) return true;
+      const currentActor = await authorize();
+      if (
+        currentActor?.id !== operation.scope.personId ||
+        !(await learnedSkillVersionsCurrent(
+          currentActor,
+          threadId,
+          agentId,
+          learnedVersions,
+          scopeBot,
+        ).catch(() => false))
+      ) {
+        learnedContextRevoked = true;
+        runContext.revoked = true;
+      }
+      return !learnedContextRevoked;
+    }
+    const stopRevokedContext = (externalOutcome?: "executed") =>
+      database.transaction((tx) =>
+        stopDirectChatRun(tx, key, CONTEXT_REVOKED, traceRuns, {
+          externalOutcome,
+        }),
+      );
     let writes = Promise.resolve();
     let writeFailed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1902,11 +2124,26 @@ export function createDirectChatRoutes(deps: {
           ...operation,
           route: trial.route,
           messages: conversation,
+          beforeRecovery: shouldContinue,
           beforeDispatch: async () => {
             if (!(await shouldContinue())) return false;
-            if (!usesLearningGuidance) return conversation;
-            const current = await currentGuidance();
+            const current = usesLearningGuidance ? await currentGuidance() : [];
             if (!current) return false;
+            const versions = learnedSkillVersions(current);
+            const [recorded] = await database
+              .update(directChatRuns)
+              .set({ dispatchedSkillVersions: versions })
+              .where(
+                and(
+                  matchingRun(key),
+                  eq(directChatRuns.status, "running"),
+                  eq(directChatRuns.dispatchedAt, dispatchTime),
+                  isNull(directChatRuns.dispatchedSkillVersions),
+                ),
+              )
+              .returning({ id: directChatRuns.id });
+            if (!recorded) return false;
+            learnedVersions = versions;
             const instructions = learningInstructions(current);
             return instructions
               ? [{ role: "system", content: instructions }, ...conversation]
@@ -1914,6 +2151,15 @@ export function createDirectChatRoutes(deps: {
           },
         });
         if (!(await shouldContinue())) return;
+        if (
+          (result.state === "completed" && learnedVersions === undefined) ||
+          !(await learnedContextIsCurrent())
+        ) {
+          await stopRevokedContext(
+            result.state === "completed" ? "executed" : undefined,
+          );
+          return;
+        }
         if (result.state === "completed") {
           await appendDirectChatEvent(
             database,
@@ -1957,14 +2203,12 @@ export function createDirectChatRoutes(deps: {
       const versions = continuation
         ? (continuation.snapshot.sourceVersions ?? [])
         : learnedSkillVersions(skills);
+      learnedVersions = versions.filter(({ kind }) => kind === "learned_skill");
       if (
         versions.length ||
         continuation?.result.error === CONTEXT_REVOKED_MESSAGE
       ) {
         const memories = versions.filter(({ kind }) => kind === "memory");
-        const learnedSkills = versions.filter(
-          ({ kind }) => kind === "learned_skill",
-        );
         withRunContext(runContext, () =>
           trackRunContext(async () => {
             if (continuation?.result.error === CONTEXT_REVOKED_MESSAGE)
@@ -1974,12 +2218,7 @@ export function createDirectChatRoutes(deps: {
               !(await deps.memoryVersionsCurrent?.(actor.id, agentId, memories))
             )
               return false;
-            if (!learnedSkills.length) return true;
-            const current = await currentGuidance();
-            return (
-              current !== null &&
-              versionsMatch(learnedSkillVersions(current), learnedSkills)
-            );
+            return learnedContextIsCurrent();
           }, versions),
         );
       }
@@ -2033,9 +2272,14 @@ export function createDirectChatRoutes(deps: {
             } else if (event.type !== EventType.RUN_FINISHED) {
               writes = writes
                 .then(async () => {
+                  if (!runnable || writeFailed) return;
+                  if (!(await learnedContextIsCurrent())) {
+                    if (await shouldContinue()) await stopRevokedContext();
+                    abort();
+                    return;
+                  }
                   if (
                     runnable &&
-                    !writeFailed &&
                     !(await appendDirectChatEvent(database, key, event))
                   )
                     writeFailed = true;
@@ -2074,7 +2318,10 @@ export function createDirectChatRoutes(deps: {
         );
       await writes;
       if (!(await shouldContinue())) return;
-      if (runContext.revoked) throw new Error(CONTEXT_REVOKED_MESSAGE);
+      if (!(await learnedContextIsCurrent()) || runContext.revoked) {
+        await stopRevokedContext();
+        return;
+      }
       if (waitingApprovalId && !writeFailed && !failure) {
         const approval = await approvalCheckpoint(
           key,
@@ -2129,10 +2376,8 @@ export function createDirectChatRoutes(deps: {
     } catch {
       await writes;
       if (!(await shouldContinue())) return;
-      if (runContext.revoked) {
-        await database.transaction((tx) =>
-          stopDirectChatRun(tx, key, CONTEXT_REVOKED, traceRuns),
-        );
+      if (runContext.revoked || !(await learnedContextIsCurrent())) {
+        await stopRevokedContext();
         return;
       }
       await appendDirectChatEvent(database, key, terminal(key, "failed"), {
@@ -2150,22 +2395,7 @@ export function createDirectChatRoutes(deps: {
 
   return {
     routes,
-    async learnedSkillVersionsCurrent(
-      actor: AgentActor,
-      threadId: string,
-      agentId: string,
-      versions: RunContextVersion[],
-    ) {
-      if (!versions.length) return true;
-      const current = await learning.guidance(
-        learningScope(threadId, agentId, actor.id),
-        (tx) => threadFor(tx, actor, threadId, agentId, true),
-      );
-      return (
-        current !== null &&
-        versionsMatch(learnedSkillVersions(current), versions)
-      );
-    },
+    learnedSkillVersionsCurrent,
     runBackground,
     backgroundApproval,
     learningConversations,

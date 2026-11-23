@@ -18,7 +18,7 @@ import {
   type RunContextVersion,
   runContextVersions,
 } from "@openbot/toolkit/run-context";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
@@ -29,6 +29,7 @@ import {
 } from "../../app/src/lib/voice/agent-bridge";
 import { VoiceSession } from "../../app/src/lib/voice/session";
 import type { VoiceEvent } from "../../app/src/lib/voice/types";
+import { createEnterpriseStore } from "../src/admin/settings-store";
 import {
   type ActorAgentResolver,
   createActorAgentResolver,
@@ -77,8 +78,11 @@ import {
   auditEvents,
   channelMemberships,
   channels,
+  directChatAnalyses,
+  directChatProposalReviews,
   directChatRunEvents,
   directChatRuns,
+  directChatSkillShares,
   learningSettings,
   opikRuns,
   recorderConnections,
@@ -90,6 +94,7 @@ import {
 } from "../src/db/schema";
 import { currentEdition, setEdition } from "../src/edition";
 import { createSkillApprovalStore } from "../src/learning/approvals";
+import { readLearningSource } from "../src/learning/evidence";
 import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
 import { createLearningSharingStore } from "../src/learning/sharing";
@@ -3695,6 +3700,557 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
     await database.delete(users).where(eq(users.id, actor.id));
   }
 }, 20_000);
+
+test.each([
+  "native",
+  "managed",
+  "managed-uncertain",
+  "native-selection",
+  "late-user",
+  "late-background",
+  "late-authorized",
+  "late-background-authorized",
+  "late-deleted",
+  "late-version-change",
+  "late-legacy",
+])(
+  "published skill catalog checks guidance and revocation for %s",
+  exercisePublishedSkill,
+  90_000,
+);
+
+async function exercisePublishedSkill(mode: string) {
+  const alice = await person();
+  const bob = await person();
+  const outsider = await person();
+  const reviewer = await person();
+  await database
+    .insert(userRoles)
+    .values({ userId: reviewer.id, role: "admin" });
+  const botDetails = {
+    name: "Packing Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+  };
+  const bot = await profiles.create(alice, {
+    ...botDetails,
+    visibility: "public",
+  });
+  const second = await profiles.create(alice, {
+    ...botDetails,
+    name: "Second Bot",
+    visibility: "public",
+  });
+  const channelIds: string[] = [];
+  const enterprise = createEnterpriseStore(database);
+  const previousSharing = (await enterprise.settings()).skillSharing;
+  const runInputs: RunAgentInput[] = [];
+  let sharedVersions: RunContextVersion[] | undefined;
+  const capture = async (input: RunAgentInput) => {
+    runInputs.push(input);
+    if (input.runId === "shared-skill") sharedVersions = runContextVersions();
+  };
+  const aliceChat = web(database, alice, bot.id, capture);
+  const bobChat = web(database, bob, bot.id, capture);
+  const outsiderChat = web(database, outsider, bot.id, capture);
+  const admin = web(database, { ...reviewer, role: "admin" }, bot.id, capture);
+  try {
+    await enterprise.setSetting("skillSharing", true, bob.id);
+    async function open(app: typeof aliceChat, ids: string[]) {
+      const result = await app.request(
+        "/api/channels",
+        post({ agentIds: ids }),
+      );
+      expect(result.status).toBe(201);
+      const data = z
+        .object({
+          channel: z.object({ id: z.string(), threadId: z.string() }),
+        })
+        .parse(await result.json());
+      channelIds.push(data.channel.id);
+      return data.channel;
+    }
+    const aliceChannel = await open(aliceChat, [bot.id]);
+    const bobChannel = await open(bobChat, [bot.id]);
+    await open(outsiderChat, [bot.id]);
+    const source = await open(aliceChat, [bot.id, second.id]);
+    const groups = createGroupStore(database, () => crypto.randomUUID());
+    await groups.seedOrder(alice.id, source.id, [bot.id, second.id]);
+    await groups.addMember(alice.id, source.id, bob.email);
+    await groups.addMember(alice.id, source.id, reviewer.email);
+    await groups.append({
+      id: crypto.randomUUID(),
+      ownerUserId: alice.id,
+      channelId: source.id,
+      agentId: bot.id,
+      threadId: "shared-fixture",
+      text: "Check the shipping label.",
+      details: {},
+    });
+    const permission = `/api/copilotkit/conversations/${source.id}/learning-evidence`;
+    const grant = { ...post({ allowed: true }), method: "PUT" };
+    expect((await aliceChat.request(permission, grant)).status).toBe(200);
+    expect((await bobChat.request(permission, grant)).status).toBe(200);
+    expect((await admin.request(permission, grant)).status).toBe(200);
+    const scope = {
+      personId: alice.id,
+      botId: bot.id,
+      threadId: aliceChannel.threadId,
+    };
+    const locator = { kind: "conversation", id: source.id } as const;
+    const cutoff = new Date();
+    const evidence = await database.transaction((tx) =>
+      readLearningSource(tx, scope, locator, cutoff),
+    );
+    if (!evidence) throw new Error("Expected eligible shared evidence.");
+    const id = crypto.randomUUID();
+    await database.insert(directChatAnalyses).values({
+      id,
+      threadId: scope.threadId,
+      botId: scope.botId,
+      state: "proposed",
+      evidenceRunIds: [],
+      evidenceSources: [
+        { ...locator, digest: evidence.digest, cutoff: cutoff.toISOString() },
+      ],
+      proposal: {
+        title: "Pack a shipment",
+        instructions: "List the steps in order.",
+      },
+    });
+    const catalog = "/api/copilotkit/learning/skills";
+    expect((await aliceChat.request(`${catalog}/${id}`)).status).toBe(404);
+    expect(
+      (
+        await admin.request(
+          `/api/copilotkit/admin/learning/proposals/${id}`,
+          post({ decision: "approve" }),
+        )
+      ).status,
+    ).toBe(200);
+    const detail = `${catalog}/${id}`;
+    const share = (recipient: string) => post({ email: recipient });
+    expect(await (await aliceChat.request(catalog)).json()).toMatchObject({
+      skills: [expect.objectContaining({ id: id, access: "owned" })],
+    });
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect(
+      (await bobChat.request(`${detail}/shares`, share(alice.email))).status,
+    ).toBe(404);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(alice.email))).status,
+    ).toBe(404);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(outsider.email)))
+        .status,
+    ).toBe(404);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(bob.email))).status,
+    ).toBe(200);
+    expect(await (await bobChat.request(detail)).json()).toMatchObject({
+      id: id,
+      access: "shared",
+      instructions: "List the steps in order.",
+    });
+    const bobTurn = async (runId: string) => {
+      const response = await bobChat.request(
+        `/api/copilotkit/agent/${bot.id}/run`,
+        post({
+          threadId: bobChannel.threadId,
+          runId,
+          messages: [
+            { id: runId, role: "user", content: "Show the procedure." },
+          ],
+        }),
+      );
+      expect(response.status).toBe(200);
+      await response.text();
+      return runInputs.at(-1)?.messages[0]?.content;
+    };
+    const guidance = await bobTurn("shared-skill");
+    expect(guidance).toContain(id);
+    expect(guidance).toContain(
+      "Follow existing instructions, tool permissions, and approval requirements.",
+    );
+    const versionsCurrent = bobChat.learnedSkillVersionsCurrent;
+    if (!versionsCurrent || !sharedVersions)
+      throw new Error("Expected versioned shared guidance.");
+    expect(sharedVersions).toEqual([
+      { kind: "learned_skill", id, version: expect.any(String) },
+    ]);
+    expect(
+      await versionsCurrent(bob, bobChannel.threadId, bot.id, sharedVersions),
+    ).toBe(true);
+    const revoke = `${detail}/shares/${encodeURIComponent(bob.id)}`;
+    expect((await bobChat.request(revoke, { method: "DELETE" })).status).toBe(
+      404,
+    );
+    expect((await aliceChat.request(revoke, { method: "DELETE" })).status).toBe(
+      200,
+    );
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect(await bobTurn("unshared-skill")).not.toContain(id);
+    expect(
+      await versionsCurrent(bob, bobChannel.threadId, bot.id, sharedVersions),
+    ).toBe(false);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(bob.email))).status,
+    ).toBe(200);
+
+    expect(await (await bobChat.request(catalog)).json()).toMatchObject({
+      skills: [{ id, access: "shared" }],
+    });
+    const native = mode.startsWith("native");
+    const late = mode.startsWith("late");
+    const background = mode.startsWith("late-background");
+    const selectionChanged = mode === "native-selection";
+    const authorizedReceipt = mode.endsWith("-authorized");
+    const loaded = Promise.withResolvers<string>();
+    const respond = Promise.withResolvers<void>();
+    let dispatches = 0;
+    let receiptReady = false;
+    const dispatch = async (prompt: string) => {
+      dispatches++;
+      loaded.resolve(prompt);
+      await respond.promise;
+    };
+    const control = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        switch (new URL(request.url).pathname) {
+          case "/v1/quote":
+            return Response.json({
+              route: "pilot-text-v1",
+              priceVersion: "00000000-0000-4000-8000-000000000001",
+            });
+          case "/v1/reserve":
+            return Response.json({ state: "reserved", permit: "fixture" });
+          case "/v1/dispatch":
+            await dispatch(await request.text());
+            return late || mode === "managed-uncertain"
+              ? new Response(null, { status: 504 })
+              : Response.json({
+                  state: "completed",
+                  text: "Withheld managed answer.",
+                });
+          case "/v1/reconcile":
+            return Response.json(
+              receiptReady
+                ? {
+                    state: "settled",
+                    outcome: "executed",
+                    text: "Withheld managed answer.",
+                  }
+                : { state: "pending" },
+            );
+          default:
+            return new Response(null, { status: 404 });
+        }
+      },
+    });
+    try {
+      const mount = () =>
+        web(
+          database,
+          bob,
+          bot.id,
+          async (input) => {
+            await dispatch(JSON.stringify(input.messages));
+          },
+          {
+            ...(native
+              ? { partial: "Safe partial." }
+              : {
+                  deployment: {
+                    ...config,
+                    managedModelTrial: {
+                      url: control.url,
+                      credentials: new Map([[bob.id, "fixture"]]),
+                      route: "pilot-text-v1",
+                    },
+                  },
+                }),
+          },
+        );
+      let chat = mount();
+      const route = `/api/copilotkit/agent/${bot.id}`;
+      const runId = `in-flight-share-${mode}`;
+      const run = { threadId: bobChannel.threadId, runId };
+      const request = post({
+        ...run,
+        messages: [{ id: runId, role: "user", content: "Use the share." }],
+      });
+      const backgroundTurn = {
+        source: "delivery" as const,
+        id: runId,
+        threadId: run.threadId,
+        conversationBotId: bot.id,
+        personId: bob.id,
+        agentId: bot.id,
+        prompt: "Use the share.",
+        authorize: async () => bob,
+        initiator: { kind: "person" as const },
+      };
+      const runBackground = chat.runBackground;
+      if (!runBackground) throw new Error("Missing background runtime.");
+      const initial = background
+        ? runBackground(backgroundTurn).catch((error: unknown) => error)
+        : null;
+      const response = background
+        ? null
+        : await chat.request(`${route}/run`, request);
+      if (response) expect(response.status).toBe(200);
+      expect(await loaded.promise).toContain(id);
+      const reader = response?.body?.getReader();
+      const decoder = new TextDecoder();
+      let live = "";
+      const read = async () => {
+        if (!reader) return false;
+        const { done, value } = await reader.read();
+        live += decoder.decode(value, { stream: !done });
+        return !done;
+      };
+      if (native) {
+        while (!live.includes("Safe partial.") && (await read())) {}
+        expect(live).toContain("Safe partial.");
+      }
+      const revokeShare = async () => {
+        expect(
+          (await aliceChat.request(revoke, { method: "DELETE" })).status,
+        ).toBe(200);
+      };
+      const newerIds = Array.from({ length: 20 }, () => crypto.randomUUID());
+      if (selectionChanged) {
+        const [original] = await database
+          .select()
+          .from(directChatAnalyses)
+          .where(eq(directChatAnalyses.id, id));
+        const [decision] = await database
+          .select()
+          .from(directChatProposalReviews)
+          .where(eq(directChatProposalReviews.proposalId, id));
+        if (!original || !decision) throw new Error("Missing published skill.");
+        await database.insert(directChatAnalyses).values(
+          newerIds.map((id) => ({
+            ...original,
+            id,
+            startedAt: new Date("2099-01-01"),
+          })),
+        );
+        await database
+          .insert(directChatProposalReviews)
+          .values(newerIds.map((proposalId) => ({ ...decision, proposalId })));
+        await database.insert(directChatSkillShares).values(
+          newerIds.map((proposalId) => ({
+            proposalId,
+            recipientId: bob.id,
+            threadId: run.threadId,
+          })),
+        );
+      } else if (!late) {
+        await revokeShare();
+      }
+      respond.resolve();
+      while (await read()) {}
+      const thread = `/api/copilotkit/threads/${run.threadId}`;
+      const history = () =>
+        chat.request(`${thread}/messages?agentId=${bot.id}`);
+      const reconcile = () =>
+        chat.request(
+          `${thread}/runs/${runId}/reconcile?agentId=${bot.id}`,
+          post({}),
+        );
+      if (selectionChanged) {
+        expect(live).toContain("Offline answer.");
+        expect(live).not.toContain("context_revoked");
+        expect(await bobTurn("capped-selection")).not.toContain(id);
+        await database
+          .delete(directChatAnalyses)
+          .where(inArray(directChatAnalyses.id, newerIds));
+        return;
+      }
+      if (late) {
+        if (background) {
+          expect(await initial).toEqual(
+            expect.objectContaining({
+              message: expect.stringContaining("unverified external outcome"),
+            }),
+          );
+        } else {
+          expect(live).toContain("reconciling");
+        }
+        expect((await (await history()).json()).runs).toContainEqual(
+          expect.objectContaining({
+            id: runId,
+            status: "failed",
+            externalOutcome: "unknown",
+          }),
+        );
+        if (mode === "late-deleted") {
+          await database
+            .delete(directChatAnalyses)
+            .where(eq(directChatAnalyses.id, id));
+        } else if (mode === "late-version-change") {
+          await database
+            .update(directChatAnalyses)
+            .set({
+              proposal: {
+                title: "Pack a shipment",
+                instructions: "Check the label first.",
+              },
+            })
+            .where(eq(directChatAnalyses.id, id));
+        } else if (mode === "late-legacy") {
+          await database
+            .update(directChatRuns)
+            .set({ dispatchedSkillVersions: null })
+            .where(
+              and(
+                eq(directChatRuns.id, runId),
+                eq(directChatRuns.threadId, run.threadId),
+              ),
+            );
+        } else if (!authorizedReceipt) {
+          await revokeShare();
+        }
+      } else {
+        expect(live).toContain("context_revoked");
+        expect(live).not.toContain(
+          native ? "Offline answer." : "Withheld managed answer.",
+        );
+      }
+      if (late || mode === "managed-uncertain") {
+        if (late) chat = mount();
+        receiptReady = true;
+        if (background) {
+          const retryBackground = chat.runBackground;
+          if (!retryBackground) throw new Error("Missing background runtime.");
+          if (authorizedReceipt) {
+            expect(await retryBackground(backgroundTurn)).toEqual({
+              replyText: "Withheld managed answer.",
+              shared: false,
+            });
+          } else {
+            await expect(retryBackground(backgroundTurn)).rejects.toThrow(
+              "The Bot Run failed",
+            );
+          }
+        } else {
+          expect(await (await reconcile()).json()).toEqual({
+            externalOutcome: "executed",
+            settlement: "settled",
+          });
+        }
+      }
+      const transcript = await (await history()).json();
+      const replay = async (cursor: number) =>
+        (
+          await chat.request(`${route}/resume`, post({ ...run, cursor }))
+        ).text();
+      const replayed = await replay(0);
+      const resumed = late ? await replay(2) : replayed;
+      if (authorizedReceipt) {
+        expect(JSON.stringify(transcript.messages)).toContain(
+          "Withheld managed answer.",
+        );
+        expect(replayed).toContain("Withheld managed answer.");
+        expect(resumed).toContain("Withheld managed answer.");
+      } else {
+        expect(JSON.stringify(transcript.messages)).not.toContain(
+          "Withheld managed answer.",
+        );
+        expect(transcript.runs).toContainEqual(
+          expect.objectContaining({
+            id: runId,
+            status: "failed",
+            stopReason: "context_revoked",
+            ...((late || mode === "managed-uncertain") && {
+              externalOutcome: "executed",
+            }),
+          }),
+        );
+        expect(replayed).toContain("context_revoked");
+        expect(resumed).toContain("context_revoked");
+        expect(resumed).not.toContain("Withheld managed answer.");
+        expect(replayed).not.toContain(
+          native ? "Offline answer." : "Withheld managed answer.",
+        );
+        expect(replayed.includes("Safe partial.")).toBe(native);
+        if (!background) {
+          const repeated = await chat.request(`${route}/run`, request);
+          const repeatedEvents = await repeated.text();
+          expect(repeatedEvents).toContain("context_revoked");
+          expect(repeatedEvents).not.toContain(
+            native ? "Offline answer." : "Withheld managed answer.",
+          );
+        }
+      }
+      expect(dispatches).toBe(1);
+    } finally {
+      respond.resolve();
+      await control.stop(true);
+    }
+    if (mode === "late-deleted") return;
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(bob.email))).status,
+    ).toBe(200);
+
+    await database.insert(revokedAccess).values({
+      email: reviewer.email,
+      revokedBy: "scim:directory",
+    });
+    try {
+      expect((await bobChat.request(detail)).status).toBe(404);
+      expect(await (await bobChat.request(catalog)).json()).toEqual({
+        skills: [],
+      });
+      expect(await bobTurn("reviewer-revoked")).not.toContain(id);
+    } finally {
+      await database
+        .delete(revokedAccess)
+        .where(eq(revokedAccess.email, reviewer.email));
+    }
+    expect((await bobChat.request(detail)).status).toBe(200);
+    await enterprise.setSetting("skillSharing", false, bob.id);
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect((await aliceChat.request(detail)).status).toBe(200);
+    await enterprise.setSetting("skillSharing", true, bob.id);
+    await profiles.update(alice, bot.id, {
+      ...botDetails,
+      visibility: "private",
+    });
+    expect((await bobChat.request(detail)).status).toBe(404);
+    await profiles.update(alice, bot.id, {
+      ...botDetails,
+      visibility: "public",
+    });
+    expect(
+      (
+        await bobChat.request(permission, {
+          ...post({ allowed: false }),
+          method: "PUT",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect(await (await aliceChat.request(catalog)).json()).toEqual({
+      skills: [],
+    });
+    expect(await bobTurn("withdrawn-shared-skill")).not.toContain(id);
+    expect((await aliceChat.request(revoke, { method: "DELETE" })).status).toBe(
+      200,
+    );
+  } finally {
+    await enterprise.setSetting("skillSharing", previousSharing, bob.id);
+    for (const id of channelIds)
+      await database.delete(channels).where(eq(channels.id, id));
+    for (const id of [bot.id, second.id])
+      await database.delete(agents).where(eq(agents.id, id));
+    for (const { id } of [alice, bob, outsider, reviewer])
+      await database.delete(users).where(eq(users.id, id));
+  }
+}
 
 test.each([
   { feature: "scheduled analysis", scheduled: true },

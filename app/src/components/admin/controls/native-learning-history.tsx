@@ -84,9 +84,12 @@ export function NativeLearningHistory() {
         decision === "approve" ? "Proposal published." : "Proposal rejected.",
       );
       setSelected(null);
-      await queryClient.invalidateQueries({
-        queryKey: learningKeys.directChat,
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: learningKeys.directChat }),
+        queryClient.invalidateQueries({
+          queryKey: learningKeys.publishedSkills,
+        }),
+      ]);
     },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: learningKeys.adminHistory }),

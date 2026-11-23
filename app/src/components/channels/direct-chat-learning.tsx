@@ -233,6 +233,8 @@ export function DirectChatLearning({
         body,
         fallback: "Couldn't save the review.",
       }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: learningKeys.publishedSkills }),
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
   const autoApproval = useMutation({

@@ -34,6 +34,8 @@ import {
   directChatProposalReviews as reviews,
   directChatRuns as runs,
   directChatLearningSchedules as schedules,
+  directChatSkillShares as shares,
+  users,
 } from "../db/schema";
 import type { ManagedModel, ManagedModelResult } from "../managed-model";
 import { readLearningSource } from "./evidence";
@@ -51,13 +53,27 @@ type Authorize = (
 ) => Promise<{ channelId: string } | null>;
 type RefreshAuthorization = () => Promise<Authorize>;
 
+type AuthorizeSkillScope = (
+  tx: ProfileReadExecutor,
+  scope: Scope,
+) => Promise<{ botName: string } | null>;
+
+type SharingPolicy = {
+  authorize: AuthorizeSkillScope;
+  enabled: (tx: ProfileReadExecutor) => Promise<boolean>;
+  reviewerMayShare: (
+    tx: ProfileReadExecutor,
+    review: DirectChatReview,
+  ) => Promise<boolean>;
+};
+
 const maxTurns = 8;
 const excerptLength = 1200;
 const dispatchDeadlineMs = 120_000;
 const reconcileIntervalMs = 10_000;
 
 // The settings writer takes the matching exclusive lock before cancelling active analyses.
-async function lockLearningSettings(tx: Pick<Database, "execute">) {
+export async function lockLearningSettings(tx: Pick<Database, "execute">) {
   await tx.execute(
     sql`select pg_advisory_xact_lock_shared(hashtextextended('openbot:learning-settings', 0))`,
   );
@@ -1203,39 +1219,325 @@ export function createDirectChatLearning(
     });
   }
 
-  async function guidance(scope: Scope, authorize: Authorize) {
+  function publishedRows(
+    tx: Transaction,
+    personId: string,
+    filter: ReturnType<typeof and>,
+  ) {
+    return tx
+      .select({
+        analysis: analyses,
+        review: reviews.review,
+        ownerId: mappings.userId,
+        recipientThread: shares.threadId,
+      })
+      .from(reviews)
+      .innerJoin(analyses, eq(analyses.id, reviews.proposalId))
+      .innerJoin(mappings, eq(mappings.threadId, analyses.threadId))
+      .leftJoin(
+        shares,
+        and(
+          eq(shares.proposalId, analyses.id),
+          eq(shares.recipientId, personId),
+        ),
+      )
+      .where(
+        and(
+          filter,
+          eq(analyses.state, "proposed"),
+          sql`${reviews.review}->>'decision' = 'approve'`,
+        ),
+      );
+  }
+
+  type PublishedRow = Awaited<ReturnType<typeof publishedRows>>[number];
+
+  function ownerScope(row: PublishedRow): Scope {
+    return {
+      personId: row.ownerId,
+      threadId: row.analysis.threadId,
+      botId: row.analysis.botId,
+    };
+  }
+
+  async function readPublished(
+    tx: Transaction,
+    row: PublishedRow,
+    policy: SharingPolicy,
+  ) {
+    const scope = ownerScope(row);
+    if (!row.analysis.proposal || !sameScope(row.review.scope, scope))
+      return null;
+    const bot = await policy.authorize(tx, scope);
+    if (!bot || !(await verifiedEvidence(tx, scope, row.analysis))) return null;
+    return { id: row.analysis.id, ...row.analysis.proposal, ...bot };
+  }
+
+  async function shareable(
+    tx: Transaction,
+    row: PublishedRow,
+    policy: SharingPolicy,
+  ) {
+    return (
+      row.analysis.evidenceRunIds.length === 0 &&
+      row.analysis.evidenceSources.length > 0 &&
+      row.analysis.evidenceSources.every(
+        ({ kind }) => kind === "conversation",
+      ) &&
+      (await policy.reviewerMayShare(tx, row.review)) &&
+      (await policy.enabled(tx)) &&
+      (await learningEnabled(tx, row.analysis.botId))
+    );
+  }
+
+  async function recipientMayUse(
+    tx: Transaction,
+    row: PublishedRow,
+    scope: Scope,
+    policy: SharingPolicy,
+  ) {
+    return (
+      (await shareable(tx, row, policy)) &&
+      Boolean(await policy.authorize(tx, scope)) &&
+      Boolean(await verifiedEvidence(tx, scope, row.analysis))
+    );
+  }
+
+  function summaryOf(
+    skill: NonNullable<Awaited<ReturnType<typeof readPublished>>>,
+    access: "owned" | "shared",
+  ) {
+    return { id: skill.id, title: skill.title, botName: skill.botName, access };
+  }
+
+  async function catalog(personId: string, policy: SharingPolicy, id?: string) {
+    return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
+      const rows = await publishedRows(
+        tx,
+        personId,
+        and(
+          or(eq(mappings.userId, personId), eq(shares.recipientId, personId)),
+          id ? eq(analyses.id, id) : undefined,
+        ),
+      ).orderBy(desc(analyses.startedAt), desc(analyses.id));
+      const skills = [];
+      for (const row of rows) {
+        const skill = await readPublished(tx, row, policy);
+        if (!skill) continue;
+        const owned = row.ownerId === personId;
+        if (
+          !owned &&
+          (!row.recipientThread ||
+            !(await recipientMayUse(
+              tx,
+              row,
+              {
+                personId,
+                threadId: row.recipientThread,
+                botId: row.analysis.botId,
+              },
+              policy,
+            )))
+        )
+          continue;
+        const summary = summaryOf(skill, owned ? "owned" : "shared");
+        if (!id) {
+          skills.push(summary);
+          continue;
+        }
+        const recipients = owned
+          ? await tx
+              .select({ recipientId: shares.recipientId, email: users.email })
+              .from(shares)
+              .innerJoin(users, eq(users.id, shares.recipientId))
+              .where(eq(shares.proposalId, id))
+              .orderBy(users.email)
+          : [];
+        return {
+          skills,
+          detail: {
+            ...summary,
+            instructions: skill.instructions,
+            canShare: owned && (await shareable(tx, row, policy)),
+            shares: recipients,
+          },
+        };
+      }
+      return { skills, detail: null };
+    });
+  }
+
+  async function shareSkill(
+    personId: string,
+    id: string,
+    policy: SharingPolicy,
+    resolveRecipient: (
+      tx: ProfileReadExecutor,
+      botId: string,
+    ) => Promise<Scope | null>,
+  ) {
+    return database.transaction(async (tx) => {
+      await lockLearningSettings(tx);
+      const [row] = await publishedRows(
+        tx,
+        personId,
+        and(eq(analyses.id, id), eq(mappings.userId, personId)),
+      );
+      if (!row || !(await readPublished(tx, row, policy))) return false;
+      const recipient = await resolveRecipient(tx, row.analysis.botId);
+      if (
+        !recipient ||
+        recipient.personId === personId ||
+        !(await recipientMayUse(tx, row, recipient, policy))
+      )
+        return false;
+      const [added] = await tx
+        .insert(shares)
+        .values({
+          proposalId: id,
+          recipientId: recipient.personId,
+          threadId: recipient.threadId,
+        })
+        .onConflictDoNothing()
+        .returning({ threadId: shares.threadId });
+      if (!added) {
+        const [existing] = await tx
+          .select({ threadId: shares.threadId })
+          .from(shares)
+          .where(
+            and(
+              eq(shares.proposalId, id),
+              eq(shares.recipientId, recipient.personId),
+            ),
+          );
+        return existing?.threadId === recipient.threadId;
+      }
+      await tx.insert(auditEvents).values({
+        actorUserId: personId,
+        eventType: "learning.skill_shared",
+        targetType: "learned_skill",
+        targetId: id,
+        payload: { recipient },
+      });
+      return true;
+    });
+  }
+
+  async function revokeSkillShare(
+    personId: string,
+    id: string,
+    recipientId: string,
+  ) {
+    return database.transaction(async (tx) => {
+      const [owner] = await tx
+        .select({ id: analyses.id })
+        .from(analyses)
+        .innerJoin(mappings, eq(mappings.threadId, analyses.threadId))
+        .where(and(eq(analyses.id, id), eq(mappings.userId, personId)));
+      if (!owner) return false;
+      const [removed] = await tx
+        .delete(shares)
+        .where(
+          and(eq(shares.proposalId, id), eq(shares.recipientId, recipientId)),
+        )
+        .returning({ threadId: shares.threadId });
+      if (removed)
+        await tx.insert(auditEvents).values({
+          actorUserId: personId,
+          eventType: "learning.skill_share_revoked",
+          targetType: "learned_skill",
+          targetId: id,
+          payload: { recipientId, threadId: removed.threadId },
+        });
+      return true;
+    });
+  }
+
+  async function guidance(
+    scope: Scope,
+    authorize: Authorize,
+    policy: SharingPolicy,
+  ) {
     return database.transaction(async (tx) => {
       await lockLearningSettings(tx);
       await lockPersonLearning(tx, scope);
       if (!(await authorize(tx))) return null;
-      if (!(await learningEnabled(tx, scope.botId))) return [];
-      const candidates = await tx
-        .select({ analysis: analyses, review: reviews.review })
-        .from(analyses)
-        .innerJoin(reviews, eq(reviews.proposalId, analyses.id))
-        .where(
-          and(
-            inScope(scope),
-            eq(analyses.state, "proposed"),
-            sql`${reviews.review}->>'decision' = 'approve'`,
-          ),
-        )
-        .orderBy(desc(analyses.startedAt), desc(analyses.id))
-        .limit(20);
-      const skills = [];
-      for (const { analysis, review } of candidates) {
-        if (
-          analysis.proposal &&
-          sameScope(review.scope, scope) &&
-          (await verifiedEvidence(tx, scope, analysis))
-        )
-          skills.push({ id: analysis.id, ...analysis.proposal });
-      }
-      return skills;
+      return readGuidance(tx, scope, policy);
     });
   }
 
+  async function readGuidance(
+    tx: Transaction,
+    scope: Scope,
+    policy: SharingPolicy,
+    ids?: string[],
+  ) {
+    if (!(await learningEnabled(tx, scope.botId))) return [];
+    const candidates = await tx
+      .select({ analysis: analyses, review: reviews.review })
+      .from(analyses)
+      .innerJoin(reviews, eq(reviews.proposalId, analyses.id))
+      .where(
+        and(
+          inScope(scope),
+          ids && inArray(analyses.id, ids),
+          eq(analyses.state, "proposed"),
+          sql`${reviews.review}->>'decision' = 'approve'`,
+        ),
+      )
+      .orderBy(desc(analyses.startedAt), desc(analyses.id))
+      .limit(ids?.length ?? 20);
+    const skills = [];
+    for (const { analysis, review } of candidates) {
+      if (
+        analysis.proposal &&
+        sameScope(review.scope, scope) &&
+        (await verifiedEvidence(tx, scope, analysis))
+      )
+        skills.push({ id: analysis.id, ...analysis.proposal });
+    }
+    const shared = await publishedRows(
+      tx,
+      scope.personId,
+      and(
+        ids && inArray(analyses.id, ids),
+        eq(shares.recipientId, scope.personId),
+        eq(shares.threadId, scope.threadId),
+        eq(analyses.botId, scope.botId),
+      ),
+    )
+      .orderBy(desc(analyses.startedAt), desc(analyses.id))
+      .limit(ids?.length ?? 20);
+    for (const row of shared) {
+      if (!ids && skills.length >= 20) break;
+      const skill = await readPublished(tx, row, policy);
+      if (skill && (await recipientMayUse(tx, row, scope, policy))) {
+        if (ids) {
+          const [grant] = await tx
+            .select({ id: shares.proposalId })
+            .from(shares)
+            .where(
+              and(
+                eq(shares.proposalId, skill.id),
+                eq(shares.recipientId, scope.personId),
+                eq(shares.threadId, scope.threadId),
+              ),
+            )
+            .for("share");
+          if (!grant) continue;
+        }
+        const { id, title, instructions } = skill;
+        skills.push({ id, title, instructions });
+      }
+    }
+    return skills;
+  }
+
   return {
+    catalog,
+    shareSkill,
+    revokeSkillShare,
     async access(
       scope: Scope,
       authorize: RefreshAuthorization,
@@ -1249,5 +1551,16 @@ export function createDirectChatLearning(
     adminDecide,
     setAutoApproval,
     guidance,
+    guidanceForIds(
+      tx: Transaction,
+      scope: Scope,
+      policy: SharingPolicy,
+      ids: string[],
+    ) {
+      const validIds = ids.filter((id) => z.uuid().safeParse(id).success);
+      return validIds.length
+        ? readGuidance(tx, scope, policy, validIds)
+        : Promise.resolve([]);
+    },
   };
 }

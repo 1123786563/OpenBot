@@ -153,3 +153,29 @@ export const adminLearningHistory = z.object({
     }),
   ),
 });
+
+const publishedSkillSummary = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  botName: z.string(),
+  access: z.enum(["owned", "shared"]),
+});
+
+export const publishedSkillCatalog = z.object({
+  skills: z.array(publishedSkillSummary),
+});
+
+export const publishedSkillDetail = publishedSkillSummary.extend({
+  instructions: z.string(),
+  canShare: z.boolean(),
+  shares: z.array(z.object({ recipientId: scopeId, email: z.string() })),
+});
+
+export const publishedSkillShare = z
+  .object({
+    email: z
+      .email()
+      .max(254)
+      .transform((value) => value.toLowerCase()),
+  })
+  .strict();

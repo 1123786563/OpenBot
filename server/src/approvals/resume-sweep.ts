@@ -163,7 +163,7 @@ export function createApprovalResumeTick(
                 key,
                 CONTEXT_REVOKED,
                 Boolean(deps.traceRuns),
-                background ? request.id : undefined,
+                { waitingApprovalId: background ? request.id : undefined },
               );
             });
           if (!background)
