@@ -9,7 +9,9 @@ import {
 
 // Opik expects a UUIDv7. Use the Run's finished time and a persisted, server-generated
 // random ID, with separate IDs for ordinary traces and incomplete recovery records.
-function traceId(run: typeof opikRuns.$inferSelect) {
+export function opikTraceId(
+  run: Pick<typeof opikRuns.$inferSelect, "id" | "finishedAt" | "trace">,
+) {
   const time = run.finishedAt.getTime().toString(16).padStart(12, "0");
   const hash = new Bun.CryptoHasher("sha256")
     .update(`${run.id}:${run.trace === "dropped"}`)
@@ -91,7 +93,7 @@ export function createOpikDelivery(
         eq(opikRuns.id, run.id),
         eq(opikRuns.leaseId, leaseId),
       );
-      const id = traceId(run);
+      const id = opikTraceId(run);
       try {
         if (run.trace !== "delivered")
           await opik.trace({

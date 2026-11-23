@@ -379,6 +379,7 @@ export type DeploymentConfig = {
   hindsight?: HindsightConfig;
   hindsightReflectToken?: string;
   opik?: OpikConfig;
+  opikTraceOperators?: ReadonlySet<string>;
   opikEvaluation?: OpikEvaluationConfig;
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
@@ -1814,6 +1815,12 @@ export function loadConfig(
     };
   }
   const opik = opikConfig(environment);
+  const opikTraceOperators = new Set(
+    (optional(environment, "OPENBOT_OPIK_TRACE_OPERATORS") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
   const opikEvaluation = opikEvaluationConfig(environment, opik);
 
   // Built first and checked after, so every refusal the team edition gives keeps its order.
@@ -1846,6 +1853,7 @@ export function loadConfig(
     ...(hindsightReflect === "managed" ? { hindsightReflectToken } : {}),
     ...(hindsight ? { hindsight } : {}),
     ...(opik ? { opik } : {}),
+    ...(opikTraceOperators.size ? { opikTraceOperators } : {}),
     ...(opikEvaluation ? { opikEvaluation } : {}),
     recorder: { extraExtensionIds: recorderExtraExtensionIds(environment) },
     learning: learningDefault(environment),
