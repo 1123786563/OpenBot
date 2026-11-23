@@ -36,6 +36,7 @@ import {
   allocatePaidSources,
   consumePaidAllocations,
   hasDisputedPaidHold,
+  paidBalanceWithin,
   pilotReservesStoppedAt,
   releasePaidAllocations,
   restoreHolds,
@@ -44,6 +45,8 @@ import {
   readPilotRoutes as activeRoutes,
   currentRouteLimit,
   type PilotDeployment,
+  type PilotResource,
+  sharedPilotCostScope,
   signedApplication,
 } from "./pilot-signoffs";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
@@ -59,7 +62,6 @@ type Budget = typeof budgets.$inferSelect;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 // The catalog only accepts route IDs beginning with a lowercase letter or digit.
-const sharedPilotCostScope = "@pilot";
 
 function sharedPilotLimitReached(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -251,6 +253,7 @@ async function totals(database: Database | Transaction, accountId: string) {
 }
 
 function receiptCreditType(row: Operation) {
+  if (row.requestedCreditType) return row.requestedCreditType;
   const paid =
     row.charged === null
       ? row.paidHoldMicrocredits
@@ -299,8 +302,9 @@ function operationReceipt(
         ? "unknown"
         : null),
     cutoffAt:
-      dispatchedAt &&
-      new Date(dispatchedAt.getTime() + reconciliationMilliseconds),
+      operation.reconciliationCutoffAt ??
+      (dispatchedAt &&
+        new Date(dispatchedAt.getTime() + reconciliationMilliseconds)),
     heldMicrocredits: held.toString(),
     state,
     priceVersion,
@@ -371,9 +375,15 @@ export function createTestCreditLedger(
       // Match the partial index predicate even on a generic prepared plan.
       sql`${operations.state} = 'pending'`,
       isNull(operations.cutoffHold),
-      lte(
-        operations.dispatchedAt,
-        new Date(now.getTime() - reconciliationMilliseconds),
+      or(
+        lte(operations.reconciliationCutoffAt, now),
+        and(
+          isNull(operations.reconciliationCutoffAt),
+          lte(
+            operations.dispatchedAt,
+            new Date(now.getTime() - reconciliationMilliseconds),
+          ),
+        ),
       ),
     );
   }
@@ -607,24 +617,43 @@ export function createTestCreditLedger(
     return (await (lock ? query.for("share") : query))[0];
   }
 
-  async function pilotAllowsDispatch(tx: Transaction, row: Operation) {
-    if (!pilot) return true;
+  async function paidPolicy(
+    tx: Transaction,
+    applicationId: string,
+    accountId: string,
+    route: ReleasedBifrostRoute,
+    bound: bigint,
+    resource: PilotResource,
+  ) {
+    if (!pilot) return;
+    return signedApplication(
+      tx,
+      pilot,
+      applicationId,
+      accountId,
+      route,
+      await currentRouteLimit(tx, route.id),
+      bound,
+      resource,
+    );
+  }
+
+  async function dispatchPolicy(tx: Transaction, row: Operation) {
+    if (!pilot) return {};
     const applicationId = row.applicationId ?? "openbot";
     const path = await application(applicationId, tx, true);
-    if (path?.pausedAt) return false;
-    if (row.paidHoldMicrocredits === 0n) return true;
-    return (
-      !!path?.approvedAt &&
-      (await signedApplication(
-        tx,
-        pilot,
-        applicationId,
-        row.accountId,
-        row.route,
-        await currentRouteLimit(tx, row.route.id),
-        row.reserved,
-      ))
+    if (path?.pausedAt) return;
+    if (row.paidHoldMicrocredits === 0n) return {};
+    if (!path?.approvedAt) return;
+    const policy = await paidPolicy(
+      tx,
+      applicationId,
+      row.accountId,
+      row.route,
+      row.reserved,
+      row.pilotResource ?? row.route.purpose ?? "chat",
     );
+    if (policy) return { windowSeconds: policy.reconciliationWindowSeconds };
   }
 
   async function authorizationRecord(
@@ -637,6 +666,7 @@ export function createTestCreditLedger(
       authorizationId: row.id,
       applicationId: row.applicationId,
       kind: row.kind,
+      creditType: row.creditType ?? ("test" as const),
       taskId: row.taskId,
       resourcePrefix: row.resourcePrefix,
       expiresAt: row.expiresAt,
@@ -1193,6 +1223,34 @@ export function createTestCreditLedger(
       return { source, options, reason } as const;
     },
 
+    async paidChatAvailable(
+      accountId: string,
+      quote: { route: string; priceVersion: string },
+    ) {
+      if (!pilot) return false;
+      return database.transaction(async (tx) => {
+        const catalog = await activeRoutes(tx);
+        const route = catalog?.options.find(
+          ({ id, purpose }) => id === quote.route && !purpose,
+        );
+        const path = await application("openbot", tx);
+        return Boolean(
+          route &&
+            catalog?.priceVersion === quote.priceVersion &&
+            path?.approvedAt &&
+            !path.pausedAt &&
+            (await paidPolicy(
+              tx,
+              "openbot",
+              accountId,
+              route,
+              BigInt(route.maxChargeMicrocredits),
+              "chat",
+            )),
+        );
+      });
+    },
+
     async weknoraQuote(
       routeId: string,
       purpose: "embedding" | "rerank" | undefined,
@@ -1296,7 +1354,12 @@ export function createTestCreditLedger(
       {
         embedding = false,
         weknoraWork,
-      }: { embedding?: boolean; weknoraWork?: WeKnoraWork } = {},
+        managedApplication = false,
+      }: {
+        embedding?: boolean;
+        weknoraWork?: WeKnoraWork;
+        managedApplication?: boolean;
+      } = {},
     ) {
       const reservation = database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -1304,8 +1367,7 @@ export function createTestCreditLedger(
         if (
           (embedding || weknoraWork) &&
           (request.applicationId !== WEKNORA_APPLICATION_ID ||
-            !request.authorizationId ||
-            request.creditType !== "test")
+            !request.authorizationId)
         )
           return denied("not_authorized");
         const purpose = embedding
@@ -1313,6 +1375,7 @@ export function createTestCreditLedger(
           : weknoraWork === "rerank"
             ? "rerank"
             : undefined;
+        const pilotResource = weknoraWork ?? purpose ?? "chat";
         const now = await currentTime(tx);
         await applyCutoff(tx, accountId, now);
         const expired = new Date(now.getTime() - reservationMilliseconds);
@@ -1330,9 +1393,10 @@ export function createTestCreditLedger(
         // A step that stopped for want of credits or budget room resumes on
         // the budget the person confirmed for it (#107 安全续做点): that one
         // confirmation is the entry for this step, whatever the runner asks.
-        const ingestionAuthorizationId = embedding
-          ? request.authorizationId
-          : undefined;
+        const ingestionAuthorizationId =
+          embedding && request.creditType !== "paid"
+            ? request.authorizationId
+            : undefined;
         const pointId = ingestionAuthorizationId
           ? ingestionPointKey(ingestionAuthorizationId, request.operationId)
           : request.operationId;
@@ -1437,6 +1501,11 @@ export function createTestCreditLedger(
             (!request.child &&
               existing.parentRunId !== (input.parentRunId ?? null)) ||
             existing.route.purpose !== purpose ||
+            (existing.pilotResource !== null &&
+              existing.pilotResource !== pilotResource) ||
+            (existing.requestedCreditType !== null &&
+              input.creditType !== undefined &&
+              existing.requestedCreditType !== input.creditType) ||
             (embedding && existing.stepId !== input.stepId) ||
             (input.applicationId !== undefined &&
               existing.applicationId !== input.applicationId)
@@ -1496,6 +1565,17 @@ export function createTestCreditLedger(
             )
           : undefined;
         if (under?.refusal) return denied(under.refusal);
+        const grantedType =
+          under?.held?.creditType ??
+          (under?.held &&
+          (pilot || managedApplication || embedding || weknoraWork)
+            ? "test"
+            : undefined);
+        if (grantedType && input.creditType && input.creditType !== grantedType)
+          return denied("not_authorized");
+        const funding = grantedType ?? input.creditType;
+        if (grantedType === "paid" && !pilot)
+          return denied("route_unavailable");
         const applicationId =
           under?.held.applicationId ?? input.applicationId ?? "openbot";
         const pilotPath = pilot
@@ -1554,10 +1634,10 @@ export function createTestCreditLedger(
         // match the entry the caller chose (#107).
         if (
           input.budgetId &&
-          executionBudget?.creditType !== (input.creditType ?? "test")
+          executionBudget?.creditType !== (funding ?? "test")
         )
           return denied("not_authorized");
-        if (input.creditType !== "paid" && (await trialEnded(tx, accountId)))
+        if (funding !== "paid" && (await trialEnded(tx, accountId)))
           return embedding ? denied("trial_ended") : pause("trial_ended");
         const limits = executionBudget
           ? await budgetChain(tx, executionBudget)
@@ -1632,22 +1712,26 @@ export function createTestCreditLedger(
         // this same transaction (#101).
         if (
           pilot &&
-          (input.creditType === "paid" ||
-            (input.creditType === undefined && balance.available < reserved)) &&
-          (!pilotPath?.approvedAt ||
-            !(await signedApplication(
+          (funding === "paid" ||
+            (funding === undefined && balance.available < reserved))
+        ) {
+          // The shared-cost trigger and the operator use this same lock.
+          await tx.execute(sql`select lock_pilot_provider_cost()`);
+          if (
+            !pilotPath?.approvedAt ||
+            !(await paidPolicy(
               tx,
-              pilot,
               applicationId,
               accountId,
               route,
-              costLimit?.limitMicrocredits,
               reserved,
-            )))
-        )
-          return denied("route_unavailable");
+              pilotResource,
+            ))
+          )
+            return denied("route_unavailable");
+        }
         let paidHold = 0n;
-        if (input.creditType === "paid") {
+        if (funding === "paid") {
           const paid = await allocatePaidSources(
             tx,
             {
@@ -1659,7 +1743,7 @@ export function createTestCreditLedger(
           );
           if (paid.state !== "allocated") return pause("insufficient_credits");
           paidHold = paid.amount;
-        } else if (input.creditType === "test") {
+        } else if (funding === "test") {
           if (balance.granted === 0n) return denied("not_authorized");
           if (balance.available < reserved)
             return pause("insufficient_credits");
@@ -1694,6 +1778,8 @@ export function createTestCreditLedger(
             route,
             reserved,
             paidHoldMicrocredits: paidHold,
+            pilotResource,
+            requestedCreditType: funding,
             createdAt: now,
             rerunOfOperationId: input.rerunOfOperationId,
             state: "reserved",
@@ -1814,6 +1900,7 @@ export function createTestCreditLedger(
         applicationId: string;
         // A background authorization is bound to one task.
         kind: "online" | "background";
+        creditType?: "test" | "paid";
         taskId?: string;
         resourcePrefix?: string;
         expiresAt: Date;
@@ -1831,7 +1918,10 @@ export function createTestCreditLedger(
         // A second ask with the same ID answers with the first grant, or
         // nothing when it was for another application.
         if (existing) {
-          if (existing.applicationId !== input.applicationId)
+          if (
+            existing.applicationId !== input.applicationId ||
+            (existing.creditType ?? "test") !== (input.creditType ?? "test")
+          )
             return { state: "denied" as const };
           return {
             state: "existing" as const,
@@ -1860,6 +1950,7 @@ export function createTestCreditLedger(
             applicationId: input.applicationId,
             accountId,
             kind: input.kind,
+            creditType: input.creditType,
             taskId: input.taskId ?? null,
             resourcePrefix: prefix,
             expiresAt: input.expiresAt,
@@ -2010,7 +2101,6 @@ export function createTestCreditLedger(
             ),
           );
         if (!held) return undefined;
-        const balance = await totals(tx, held.accountId);
         const spent = await chargedOrHeld(
           tx,
           and(
@@ -2018,8 +2108,20 @@ export function createTestCreditLedger(
             eq(operations.authorizationId, held.id),
           ),
         );
+        const grant = await authorizationRecord(tx, held, spent);
+        if (grant.creditType === "paid") {
+          return {
+            ...grant,
+            ...(await paidBalanceWithin(
+              tx,
+              held.accountId,
+              await currentTime(tx),
+            )),
+          };
+        }
+        const balance = await totals(tx, held.accountId);
         return {
-          ...(await authorizationRecord(tx, held, spent)),
+          ...grant,
           availableMicrocredits: balance.available.toString(),
           reservedMicrocredits: balance.held.toString(),
           chargedMicrocredits: balance.spent.toString(),
@@ -2330,7 +2432,8 @@ export function createTestCreditLedger(
           }
           deadline = under.held.expiresAt;
         }
-        if (!(await pilotAllowsDispatch(tx, row))) {
+        const policy = await dispatchPolicy(tx, row);
+        if (!policy) {
           await releaseReservation(tx, row);
           return denied("route_unavailable");
         }
@@ -2357,7 +2460,16 @@ export function createTestCreditLedger(
           return { state: "executor_unavailable" } as const;
         await tx
           .update(operations)
-          .set({ state: "pending", dispatchedAt })
+          .set({
+            state: "pending",
+            dispatchedAt,
+            reconciliationCutoffAt:
+              policy.windowSeconds === undefined
+                ? null
+                : new Date(
+                    dispatchedAt.getTime() + policy.windowSeconds * 1000,
+                  ),
+          })
           .where(filter);
         return {
           state: "dispatch",
@@ -2373,7 +2485,11 @@ export function createTestCreditLedger(
         const row = await operation(accountId, id, tx);
         const unsent = await tx
           .update(operations)
-          .set({ state: "released", dispatchedAt: null })
+          .set({
+            state: "released",
+            dispatchedAt: null,
+            reconciliationCutoffAt: null,
+          })
           .where(
             and(
               operationFilter(accountId, id),
@@ -2414,7 +2530,7 @@ export function createTestCreditLedger(
         await applyCutoff(tx, accountId, now);
         if (pilot || recheckAdmission || recheckAuthorization) {
           const operationRow = await operation(accountId, id, tx);
-          if (!operationRow || !(await pilotAllowsDispatch(tx, operationRow)))
+          if (!operationRow || !(await dispatchPolicy(tx, operationRow)))
             return false;
           if (recheckAuthorization) {
             const grantId = operationRow.authorizationId;
@@ -2485,6 +2601,7 @@ export function createTestCreditLedger(
             requestId: operations.gatewayRequestId,
             digest: operations.gatewayRequestDigest,
             dispatchedAt: operations.dispatchedAt,
+            reconciliationCutoffAt: operations.reconciliationCutoffAt,
           })
           .from(operations)
           .where(lte(operations.gatewayEvidenceCheckAt, now))
@@ -2501,14 +2618,17 @@ export function createTestCreditLedger(
           requestId,
           digest,
           dispatchedAt,
+          reconciliationCutoffAt,
           ...candidate
         } of candidates) {
           const valid =
             requestId &&
             digest &&
             dispatchedAt &&
-            dispatchedAt.getTime() + evidenceRetentionMilliseconds >
-              now.getTime();
+            Math.max(
+              dispatchedAt.getTime() + evidenceRetentionMilliseconds,
+              reconciliationCutoffAt?.getTime() ?? 0,
+            ) > now.getTime();
           await tx
             .update(operations)
             .set({

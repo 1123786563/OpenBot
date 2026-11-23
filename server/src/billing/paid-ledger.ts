@@ -43,9 +43,9 @@ import {
   eligibleSignoff,
   type PilotDeployment,
   readPilotRoutes,
+  sharedPilotCostScope,
   signedSupplier,
 } from "./pilot-signoffs";
-import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 const customerRefund = "customer";
 const automaticFixtureRefund = "fixture-automatic";
@@ -156,10 +156,7 @@ function disputeView(
   };
 }
 
-const paidPathFilter = and(
-  isNotNull(billingApplications.approvedAt),
-  ne(billingApplications.id, WEKNORA_APPLICATION_ID),
-);
+const paidPathFilter = isNotNull(billingApplications.approvedAt);
 
 /**
  * Paid credit ledger (#99–#101): orders that lock the purchased product
@@ -305,6 +302,7 @@ export function createPaidCreditLedger(
       paths ?? (await readPaidPaths(tx, testApplicationIds).for("share"));
     if (pilot) {
       const catalog = await readPilotRoutes(tx, true);
+      const shared = await currentRouteLimit(tx, sharedPilotCostScope);
       let qualified = false;
       path: for (const { id, pausedAt } of availablePaths) {
         if (pausedAt) continue;
@@ -317,12 +315,16 @@ export function createPaidCreditLedger(
         );
         if (record?.kind !== "application") continue;
         for (const route of catalog?.options ?? []) {
+          const routeLimit = await currentRouteLimit(tx, route.id);
           if (
-            signedSupplier(
-              record,
-              route,
-              await currentRouteLimit(tx, route.id),
-              BigInt(route.maxChargeMicrocredits),
+            record.routes.some(({ resourceType }) =>
+              signedSupplier(
+                record,
+                route,
+                { route: routeLimit, shared },
+                BigInt(route.maxChargeMicrocredits),
+                resourceType,
+              ),
             )
           ) {
             qualified = true;
@@ -2461,33 +2463,9 @@ export function createPaidCreditLedger(
    * charged.
    */
   async function paidBalance(accountId: string) {
-    return database.transaction(async (tx) => {
-      const sources = await spendableSources(tx, accountId, now());
-      const [held] = await tx
-        .select({
-          amount: sql<string>`coalesce(sum(${paidCreditAllocations.amountMicrocredits}), 0)::text`,
-        })
-        .from(paidCreditAllocations)
-        .where(
-          and(
-            eq(paidCreditAllocations.accountId, accountId),
-            eq(paidCreditAllocations.state, "held"),
-          ),
-        );
-      const [consumed] = await tx
-        .select({
-          amount: sql<string>`coalesce(sum(${paidEntitlements.consumedMicrocredits}), 0)::text`,
-        })
-        .from(paidEntitlements)
-        .where(eq(paidEntitlements.accountId, accountId));
-      return {
-        availableMicrocredits: sources
-          .reduce((sum, { remaining }) => sum + remaining, 0n)
-          .toString(),
-        reservedMicrocredits: held?.amount ?? "0",
-        chargedMicrocredits: consumed?.amount ?? "0",
-      };
-    });
+    return database.transaction((tx) =>
+      paidBalanceWithin(tx, accountId, now()),
+    );
   }
 
   async function allocate(input: {
@@ -2775,7 +2753,12 @@ async function spendableSourcesWithin(tx: PaidTx, accountId: string, at: Date) {
       held: sql<string>`sum(${paidCreditAllocations.amountMicrocredits})`,
     })
     .from(paidCreditAllocations)
-    .where(eq(paidCreditAllocations.state, "held"))
+    .where(
+      and(
+        eq(paidCreditAllocations.accountId, accountId),
+        eq(paidCreditAllocations.state, "held"),
+      ),
+    )
     .groupBy(paidCreditAllocations.entitlementId);
   const heldBy = new Map(
     holds.flatMap(({ entitlementId, held }) =>
@@ -2792,6 +2775,38 @@ async function spendableSourcesWithin(tx: PaidTx, accountId: string, at: Date) {
         (heldBy.get(row.id) ?? 0n),
     }))
     .filter(({ spendableAt, remaining }) => spendableAt && remaining > 0n);
+}
+
+export async function paidBalanceWithin(
+  tx: PaidTx,
+  accountId: string,
+  at: Date,
+) {
+  const sources = await spendableSourcesWithin(tx, accountId, at);
+  const [held] = await tx
+    .select({
+      amount: sql<string>`coalesce(sum(${paidCreditAllocations.amountMicrocredits}), 0)::text`,
+    })
+    .from(paidCreditAllocations)
+    .where(
+      and(
+        eq(paidCreditAllocations.accountId, accountId),
+        eq(paidCreditAllocations.state, "held"),
+      ),
+    );
+  const [consumed] = await tx
+    .select({
+      amount: sql<string>`coalesce(sum(${paidEntitlements.consumedMicrocredits}), 0)::text`,
+    })
+    .from(paidEntitlements)
+    .where(eq(paidEntitlements.accountId, accountId));
+  return {
+    availableMicrocredits: sources
+      .reduce((sum, { remaining }) => sum + remaining, 0n)
+      .toString(),
+    reservedMicrocredits: held?.amount ?? "0",
+    chargedMicrocredits: consumed?.amount ?? "0",
+  };
 }
 
 /**

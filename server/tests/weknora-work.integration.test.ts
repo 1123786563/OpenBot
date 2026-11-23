@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   configure,
   emptyCatalog,
@@ -8,14 +8,24 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
+import { createPaidCreditLedger } from "../src/billing/paid-ledger";
+import { createPilotSignoffs } from "../src/billing/pilot-signoffs";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { loadWeKnoraBilling } from "../src/billing/weknora-config";
 import { createWeKnoraRoutes } from "../src/billing/weknora-routes";
 import { createDatabase } from "../src/db/client";
 import {
   billingApplications,
+  billingPilotSignoffs,
   enterpriseSettings,
   lagoUsageEvents,
+  paidCreditAllocations,
+  paidEntitlements,
+  paidOrders,
+  paidProducts,
+  pilotProviderCostHolds,
+  pilotProviderCostLimitEvents,
+  pilotProviderCostLimits,
   testCreditAccounts,
   testCreditBatches,
   testCreditEnrollments,
@@ -32,7 +42,13 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
   const db = createDatabase(testDatabaseUrl(), TEST_POOL);
   const now = Date.now();
   let clock = now;
-  const ledger = createTestCreditLedger(db, () => new Date(clock));
+  const pilot = {
+    evidence: "fixture" as const,
+    deploymentId: "fixture",
+    buildVersion: "fixture-weknora-work",
+    imageDigest: `sha256:${"d".repeat(64)}`,
+  };
+  const ledger = createTestCreditLedger(db, () => new Date(clock), pilot);
   const issuer = "https://casdoor.example.test";
   const subject = crypto.randomUUID();
   const identity = { issuer, subject };
@@ -178,12 +194,14 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
   const authorization = async (
     kind: "chat" | "rerank" | "maintenance",
     limit = 100n,
+    creditType: "test" | "paid" = "test",
   ) => {
     const authorizationId = crypto.randomUUID();
     expect(
       await ledger.authorize(identity, {
         authorizationId,
         applicationId: "weknora",
+        creditType,
         kind: kind === "maintenance" ? "background" : "online",
         taskId: kind === "maintenance" ? taskId : undefined,
         expiresAt: new Date(now + 60_000),
@@ -209,6 +227,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
       }),
     });
   const batchId = crypto.randomUUID();
+  const productCode = `work-pack-${batchId}`;
   try {
     await db
       .insert(enterpriseSettings)
@@ -384,6 +403,105 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     expect(
       requests.filter((row) => row.operation === lost.operationId),
     ).toHaveLength(1);
+    const accountId = await ledger.accountOf(identity);
+    if (!accountId) throw new Error("Paid fixture account missing.");
+    const paid = createPaidCreditLedger(db);
+    await db.insert(paidProducts).values({
+      code: productCode,
+      kind: "credit_pack",
+      version: 1,
+      priceCents: 100,
+      creditsMicrocredits: 100n,
+      active: true,
+    });
+    const order = await paid.createOrder({
+      accountId,
+      productCode,
+      channel: "alipay",
+    });
+    expect(
+      (
+        await paid.verifyOrder({
+          orderId: order.id,
+          channel: "alipay",
+          channelOrderRef: `fixture:${order.id}`,
+          amountCents: 100,
+          paidAt: new Date(now),
+        })
+      ).claimed,
+    ).toBe(true);
+    await ledger.setPilotProviderCostLimit({
+      limitMicrocredits: 1_000_000n,
+      by: subject,
+    });
+    for (const path of ["text", "rank"]) {
+      await ledger.setProviderCostLimit({
+        path,
+        limitMicrocredits: 1000n,
+        by: subject,
+      });
+    }
+    const signed = {
+      ...pilot,
+      kind: "application",
+      id: "weknora",
+      approvedBy: subject,
+      pauseOwner: subject,
+      accountIds: [accountId],
+      deploymentRef: "fixture:deployment",
+      pathRef: "fixture:weknora",
+      rampRef: "fixture:ramp",
+      sharedSupplierCapMicrocredits: "1000000",
+    };
+    const paidPaths = chart.map(({ kind, route }) => ({
+      id: route,
+      revision: route === "rank" ? rankRoute.revision : textRoute.revision,
+      provider: "fixture",
+      resourceType: kind,
+      pathRef: `fixture:weknora:${kind}`,
+      reconciliationWindowSeconds: kind === "rerank" ? 3600 : 7200,
+      reconciliationRef: `fixture:reconciliation:${kind}`,
+      supplierCapMicrocredits: "1000",
+      maxOperationMicrocredits: "16",
+    }));
+    const previousCount = requests.length;
+    const previousTrialBalance = await ledger.balance(identity);
+    const signoffs = createPilotSignoffs(db);
+    await signoffs.record({
+      ...signed,
+      routes: paidPaths.filter(({ resourceType }) => resourceType === "chat"),
+    });
+    for (const entry of chart) {
+      const reply = await send({
+        input: entry.input,
+        authorizationId: await authorization(entry.kind, 100n, "paid"),
+        taskId: entry.kind === "maintenance" ? taskId : undefined,
+      });
+      expect(reply.status).toBe(entry.kind === "chat" ? 200 : 503);
+      expect(await reply.json()).toMatchObject(
+        entry.kind === "chat"
+          ? { receipt: { creditType: "paid", chargedMicrocredits: "5" } }
+          : { code: "route_unavailable" },
+      );
+    }
+    expect(requests).toHaveLength(previousCount + 1);
+    await signoffs.record({ ...signed, routes: paidPaths });
+    for (const entry of chart.filter(({ kind }) => kind !== "chat")) {
+      const reply = await send({
+        input: entry.input,
+        authorizationId: await authorization(entry.kind, 100n, "paid"),
+        taskId: entry.kind === "maintenance" ? taskId : undefined,
+      });
+      expect(reply.status).toBe(200);
+      expect(await reply.json()).toMatchObject({
+        receipt: { creditType: "paid", chargedMicrocredits: entry.cost },
+      });
+    }
+    expect(requests).toHaveLength(previousCount + 3);
+    expect(await ledger.balance(identity)).toEqual(previousTrialBalance);
+    expect(await paid.paidBalance(accountId)).toMatchObject({
+      availableMicrocredits: "87",
+    });
   } finally {
     await server.stop(true);
     await upstream.stop(true);
@@ -398,6 +516,34 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
       await tx
         .delete(testCreditEvidence)
         .where(inArray(testCreditEvidence.accountId, accounts));
+      await tx
+        .delete(pilotProviderCostHolds)
+        .where(inArray(pilotProviderCostHolds.accountId, accounts));
+      await tx
+        .delete(pilotProviderCostLimitEvents)
+        .where(eq(pilotProviderCostLimitEvents.by, subject));
+      await tx
+        .delete(pilotProviderCostLimits)
+        .where(eq(pilotProviderCostLimits.updatedBy, subject));
+      await tx
+        .delete(paidCreditAllocations)
+        .where(inArray(paidCreditAllocations.accountId, accounts));
+      await tx
+        .delete(paidEntitlements)
+        .where(inArray(paidEntitlements.accountId, accounts));
+      await tx
+        .delete(paidOrders)
+        .where(inArray(paidOrders.accountId, accounts));
+      await tx.delete(paidProducts).where(eq(paidProducts.code, productCode));
+      await tx
+        .delete(billingPilotSignoffs)
+        .where(
+          and(
+            eq(billingPilotSignoffs.id, "weknora"),
+            eq(billingPilotSignoffs.evidence, "fixture"),
+            sql`${billingPilotSignoffs.record}->>'approvedBy' = ${subject}`,
+          ),
+        );
       await tx
         .delete(testCreditOperations)
         .where(inArray(testCreditOperations.accountId, accounts));

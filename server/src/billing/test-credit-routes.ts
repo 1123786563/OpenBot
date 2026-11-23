@@ -442,6 +442,7 @@ export function createTestCreditRoutes({
         authorizationId: operationId,
         applicationId: operationId,
         kind: z.enum(["online", "background"]),
+        creditType: z.enum(["test", "paid"]).optional(),
         taskId: operationId.optional(),
         resourcePrefix: z.string().min(1).max(512).optional(),
         expiresAt: z.iso.datetime(),
@@ -584,8 +585,6 @@ export function createTestCreditRoutes({
         { error: "Use the application's Spending Authorization." },
         400,
       );
-    if (managedApplication && input.data.creditType === "paid")
-      return context.json({ state: "denied", reason: "route_unavailable" });
     return context.json(
       await ledger.reserve(
         acting.identity,
@@ -594,8 +593,8 @@ export function createTestCreditRoutes({
           : {
               ...input.data,
               applicationId: context.var.application,
-              ...(managedApplication ? { creditType: "test" as const } : {}),
             },
+        { managedApplication },
       ),
     );
   });
@@ -619,7 +618,14 @@ export function createTestCreditRoutes({
       );
     const quote = await ledger.quote();
     return quote
-      ? context.json(quote)
+      ? context.json({
+          ...quote,
+          creditType: grant.creditType,
+          usageDisclosure:
+            grant.creditType === "paid"
+              ? "Interrupted, cancelled, or failed requests may still use Paid Credits."
+              : quote.usageDisclosure,
+        })
       : context.json({ error: "Execution unavailable." }, 503);
   });
 

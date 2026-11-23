@@ -86,6 +86,7 @@ export const billingSpendingAuthorizations = pgTable(
       .notNull()
       .references(() => testCreditAccounts.id, { onDelete: "cascade" }),
     kind: text({ enum: ["online", "background"] }).notNull(),
+    creditType: text("credit_type", { enum: ["test", "paid"] }),
     taskId: text("task_id"),
     resourcePrefix: text("resource_prefix").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -251,6 +252,15 @@ export const testCreditOperations = pgTable(
     cutoffHold: bigint("cutoff_hold", { mode: "bigint" }),
     eligibleEvidenceId: text("eligible_evidence_id"),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    reconciliationCutoffAt: timestamp("reconciliation_cutoff_at", {
+      withTimezone: true,
+    }),
+    pilotResource: text("pilot_resource", {
+      enum: ["chat", "embedding", "rerank", "maintenance"],
+    }),
+    requestedCreditType: text("requested_credit_type", {
+      enum: ["test", "paid"],
+    }),
     budgetId: text("budget_id"),
     stepId: text("step_id"),
     parentRunId: text("parent_run_id"),
@@ -278,6 +288,11 @@ export const testCreditOperations = pgTable(
     index("test_credit_operations_due_cutoff_idx")
       .on(table.dispatchedAt, table.accountId, table.id)
       .where(sql`${table.state} = 'pending' AND ${table.cutoffHold} IS NULL`),
+    index("test_credit_operations_paid_cutoff_idx")
+      .on(table.reconciliationCutoffAt, table.accountId, table.id)
+      .where(
+        sql`${table.state} = 'pending' AND ${table.cutoffHold} IS NULL AND ${table.reconciliationCutoffAt} IS NOT NULL`,
+      ),
     index("test_credit_operations_gateway_evidence_idx")
       .on(table.gatewayEvidenceCheckAt)
       .where(sql`${table.gatewayEvidenceCheckAt} IS NOT NULL`),

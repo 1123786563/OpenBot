@@ -1,3 +1,7 @@
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@astryxdesign/core/SegmentedControl";
 import { Text } from "@astryxdesign/core/Text";
 import {
   IconApps,
@@ -412,8 +416,21 @@ function AppAccessSection({
                   <ItemTitle>{nameOf(held.applicationId)}</ItemTitle>
                   <ItemDescription className="line-clamp-none">
                     {held.applicationId === "weknora"
-                      ? `Upload authorization ID ${held.authorizationId}. Limit ${creditsText(held.limitMicrocredits)} Test credits. Used ${creditsText(held.spentMicrocredits)}. Until ${onDate(held.expiresAt)}.`
-                      : `${held.kind === "background" ? `For task ${held.taskId}. ` : ""}Limit ${creditsText(held.limitMicrocredits)} credits. Used ${creditsText(held.spentMicrocredits)}. Until ${onDate(held.expiresAt)}.`}
+                      ? `Authorization ID ${held.authorizationId}. `
+                      : ""}
+                    {held.kind === "background" &&
+                    held.applicationId !== "weknora"
+                      ? `For task ${held.taskId}. `
+                      : ""}
+                    Limit {creditsText(held.limitMicrocredits)}{" "}
+                    {held.creditType === "paid"
+                      ? "Paid credits"
+                      : held.creditType === "test" ||
+                          held.applicationId === "weknora"
+                        ? "Test credits"
+                        : "credits"}
+                    . Used {creditsText(held.spentMicrocredits)}. Until{" "}
+                    {onDate(held.expiresAt)}.
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
@@ -967,18 +984,21 @@ function AuthorizeAppDialog({
   );
   const [kind, setKind] = useState<"online" | "background">("online");
   const [taskId, setTaskId] = useState("");
+  const [creditType, setCreditType] = useState<"test" | "paid">("test");
   const [limitCredits, setLimitCredits] = useState("");
   const [days, setDays] = useState("7");
   const limit = microcreditsFromCredits(limitCredits);
   const authorize = useMutation(
     authorizeApplicationMutationOptions(queryClient),
   );
-  const ingestion = applicationId === "weknora";
+  const weknora = applicationId === "weknora";
+  const work = weknora && /:(chat|rerank|maintenance)$/.test(resources);
+  const ingestion = weknora && !work;
   const preview = useQuery({
     ...weknoraPreviewQueryOptions(),
     enabled: ingestion,
   });
-  const grantId = ingestion ? authorize.data?.authorizationId : undefined;
+  const grantId = weknora ? authorize.data?.authorizationId : undefined;
   const ready = Boolean(
     limit &&
       (ingestion
@@ -994,8 +1014,9 @@ function AuthorizeAppDialog({
           <DialogHeader>
             <DialogTitle>WeKnora is authorized</DialogTitle>
             <DialogDescription>
-              Send this ID in the openbot_authorization_id field when you upload
-              to WeKnora.
+              {ingestion
+                ? "Send this ID in the openbot_authorization_id field when you upload to WeKnora."
+                : "Use this ID for the WeKnora task or online call you authorized."}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -1036,6 +1057,7 @@ function AuthorizeAppDialog({
               authorize.mutate(
                 {
                   applicationId,
+                  creditType,
                   kind,
                   ...(kind === "background" ? { taskId } : {}),
                   resourcePrefix: resources,
@@ -1044,7 +1066,7 @@ function AuthorizeAppDialog({
                 },
                 {
                   onSuccess: () => {
-                    if (!ingestion) onClose();
+                    if (!weknora) onClose();
                   },
                 },
               );
@@ -1098,7 +1120,7 @@ function AuthorizeAppDialog({
                 />
                 <FieldDescription>
                   {ingestion
-                    ? "Enter the exact knowledge base resource ID for this upload."
+                    ? "Enter the knowledge base ID. For other WeKnora work, append :chat, :rerank, or :maintenance."
                     : "The app can spend only on resources whose names start with this."}
                 </FieldDescription>
               </Field>
@@ -1138,6 +1160,16 @@ function AuthorizeAppDialog({
                   />
                 </Field>
               ) : null}
+              <SegmentedControl
+                label="Credit type"
+                value={creditType}
+                onChange={(value) =>
+                  setCreditType(value === "paid" ? "paid" : "test")
+                }
+              >
+                <SegmentedControlItem value="test" label="Test Credits" />
+                <SegmentedControlItem value="paid" label="Paid Credits" />
+              </SegmentedControl>
               <Field>
                 <FieldLabel htmlFor={`${formId}-limit`}>
                   {ingestion ? "Upload spending limit" : "Limit"}
@@ -1145,7 +1177,7 @@ function AuthorizeAppDialog({
                 {ingestion ? (
                   <FieldDescription>
                     {preview.data
-                      ? `${creditsText(preview.data.price.inputPerMillion)} Test credits per million input tokens. Each batch can reserve up to ${creditsText(preview.data.maxChargeMicrocredits)} Test credits.`
+                      ? `${creditsText(preview.data.price.inputPerMillion)} ${creditType === "paid" ? "Paid" : "Test"} credits per million input tokens. Each batch can reserve up to ${creditsText(preview.data.maxChargeMicrocredits)} ${creditType === "paid" ? "Paid" : "Test"} credits.`
                       : preview.error
                         ? "The WeKnora price is unavailable."
                         : "Loading the WeKnora price…"}
@@ -1166,7 +1198,7 @@ function AuthorizeAppDialog({
                 ) : (
                   <FieldDescription>
                     {ingestion
-                      ? "The total this upload can spend, in Test credits."
+                      ? "The total this upload can spend."
                       : "The most it can spend, in credits."}
                   </FieldDescription>
                 )}

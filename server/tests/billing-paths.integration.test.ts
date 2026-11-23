@@ -17,7 +17,10 @@ import {
   type TestCreditLedger,
   type VerifiedBillingIdentity,
 } from "../src/billing/test-credit";
-import { dispatchTestCredit } from "../src/billing/test-credit-routes";
+import {
+  createTestCreditRoutes,
+  dispatchTestCredit,
+} from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
   billingApplications,
@@ -210,10 +213,10 @@ async function cleanUp() {
       .where(eq(pilotProviderCostHolds.path, routeId));
     await tx
       .delete(pilotProviderCostLimitEvents)
-      .where(eq(pilotProviderCostLimitEvents.path, routeId));
+      .where(inArray(pilotProviderCostLimitEvents.path, [routeId, "@pilot"]));
     await tx
       .delete(pilotProviderCostLimits)
-      .where(eq(pilotProviderCostLimits.path, routeId));
+      .where(inArray(pilotProviderCostLimits.path, [routeId, "@pilot"]));
     if (ids.length > 0) {
       // Evidence references its operation, and an operation references its
       // authorization, so they go in that order.
@@ -1190,7 +1193,7 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
   await credit.registerApplication({
     id: alternative,
     name: "Fixture alternative path",
-    operator: "platform",
+    operator: "independent",
     resourcePrefix: "fixture-alternative:",
   });
   await credit.approveApplication(alternative, "fixture-lead");
@@ -1230,12 +1233,15 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
       id,
       pathRef: `fixture:${id}`,
       rampRef: "fixture:ramp",
+      sharedSupplierCapMicrocredits: "1000000",
       routes: [
         {
           id: routeId,
           provider: "fixture-paths",
           revision,
           resourceType: "chat",
+          pathRef: `fixture:${id}:chat`,
+          reconciliationWindowSeconds: id === firstParty ? 48 * 3600 : 6 * 3600,
           reconciliationRef: "fixture:supplier-window",
           supplierCapMicrocredits: "1000",
           maxOperationMicrocredits: "20",
@@ -1243,6 +1249,11 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
       ],
     });
   }
+  await expect(order()).rejects.toMatchObject({ code: "no_paid_path" });
+  await credit.setPilotProviderCostLimit({
+    limitMicrocredits: 1_000_000n,
+    by: "fixture-ops",
+  });
   await expect(order("wechat")).rejects.toMatchObject({
     code: "channel_unavailable",
   });
@@ -1368,6 +1379,18 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
     limitMicrocredits: 1000n,
     by: "fixture-ops",
   });
+  await credit.setPilotProviderCostLimit({
+    limitMicrocredits: 1_000_001n,
+    by: "fixture-ops",
+  });
+  expect(await credit.reserve(identity, step("excess-shared-cap"))).toEqual({
+    state: "denied",
+    reason: "route_unavailable",
+  });
+  await credit.setPilotProviderCostLimit({
+    limitMicrocredits: 1_000_000n,
+    by: "fixture-ops",
+  });
   const dispatched = await reservedAs(credit, identity, step("signed-sent"));
   expect(
     await credit.beginDispatch(identity, {
@@ -1375,6 +1398,10 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
       permit: dispatched,
     }),
   ).toMatchObject({ state: "dispatch" });
+  const paidWindow = await operationRow(accountId, "signed-sent");
+  expect(paidWindow?.reconciliationCutoffAt?.getTime()).toBe(
+    (paidWindow?.dispatchedAt?.getTime() ?? 0) + 48 * 3600_000,
+  );
   const held = await reservedAs(credit, identity, step("signed-held"));
   const metering = await reservedAs(credit, identity, step("signed-metering"));
   const meteringDispatch = await dispatchTestCredit({
@@ -1419,33 +1446,82 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
   expect(await operationRow(accountId, "signed-held")).toMatchObject({
     state: "released",
   });
-  const alternativePermit = await reservedAs(
-    credit,
-    identity,
-    step("signed-alternative", alternative),
-  );
+  const api = createTestCreditRoutes({
+    ledger: credit,
+    authenticate: async () => identity,
+    authenticateApplication: async (request, id) =>
+      id === alternative &&
+      request.headers.get("authorization") === "Bearer fixture-app" &&
+      (await credit.approvedIndependentApplication(id)),
+    applicationExecute: async ({ bindGatewayRequest }) => {
+      expect(
+        await bindGatewayRequest({
+          requestId: crypto.randomUUID(),
+          digest: "a".repeat(64),
+        }),
+      ).toBe(true);
+      return {
+        text: "Fixture alternative reply.",
+        usage: { inputTokens: 2, outputTokens: 0 },
+      };
+    },
+  });
+  const post = (
+    path: string,
+    body: Record<string, unknown>,
+    application = false,
+  ) =>
+    api.request(path, {
+      method: "POST",
+      headers: application
+        ? {
+            "x-openbot-application": alternative,
+            authorization: "Bearer fixture-app",
+          }
+        : undefined,
+      body: JSON.stringify(body),
+    });
+  const authorizationId = "paid-independent-grant";
+  const grant = await post("/authorizations", {
+    authorizationId,
+    applicationId: alternative,
+    kind: "online",
+    creditType: "paid",
+    limitMicrocredits: "30",
+    expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  expect(grant.status).toBe(200);
+  expect(await grant.json()).toMatchObject({ creditType: "paid" });
+  const appStep = {
+    ...step("signed-alternative", alternative),
+    authorizationId,
+    resourceId: "fixture-alternative:document",
+  };
   expect(
-    await dispatchTestCredit({
-      ledger: credit,
-      identity,
-      input: {
-        operationId: "signed-alternative",
-        permit: alternativePermit,
-        messages: [{ role: "user", content: "Fixture alternative route." }],
-      },
-      execute: async ({ bindGatewayRequest }) => {
-        expect(
-          await bindGatewayRequest({
-            requestId: crypto.randomUUID(),
-            digest: "a".repeat(64),
-          }),
-        ).toBe(true);
-        return {
-          text: "Fixture alternative reply.",
-          usage: { inputTokens: 2, outputTokens: 0 },
-        };
-      },
-    }),
+    await (
+      await post("/v1/reserve", { ...appStep, creditType: "test" }, true)
+    ).json(),
+  ).toEqual({ state: "denied", reason: "not_authorized" });
+  const appReservation = await (
+    await post("/v1/reserve", appStep, true)
+  ).json();
+  expect(appReservation).toMatchObject({
+    state: "reserved",
+    operation: { creditType: "paid" },
+  });
+  expect(
+    await (
+      await post(
+        "/v1/dispatch",
+        {
+          operationId: appStep.operationId,
+          authorizationId,
+          permit: appReservation.permit,
+          messages: [{ role: "user", content: "Fixture alternative route." }],
+        },
+        true,
+      )
+    ).json(),
   ).toMatchObject({
     state: "completed",
     operation: {
@@ -1454,6 +1530,10 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
       chargedMicrocredits: "2",
     },
   });
+  const alternativeWindow = await operationRow(accountId, "signed-alternative");
+  expect(alternativeWindow?.reconciliationCutoffAt?.getTime()).toBe(
+    (alternativeWindow?.dispatchedAt?.getTime() ?? 0) + 6 * 3600_000,
+  );
   expect((await fixtureOrder()).state).toBe("pending");
   await signoffs.setChannelPause("alipay", "fixture", "fixture-ops");
   await signoffs.record(channelRecord);
@@ -1542,6 +1622,18 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
       }),
     ]),
   );
+  await database
+    .update(testCreditOperations)
+    .set({
+      dispatchedAt: new Date(Date.now() - 25 * 3600_000),
+      reconciliationCutoffAt: new Date(Date.now() + 23 * 3600_000),
+    })
+    .where(
+      and(
+        eq(testCreditOperations.accountId, accountId),
+        eq(testCreditOperations.id, "signed-sent"),
+      ),
+    );
   expect(
     await credit.settle(accountId, "signed-sent", {
       inputTokens: 7n,

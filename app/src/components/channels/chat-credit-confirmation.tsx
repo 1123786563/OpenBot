@@ -1,4 +1,8 @@
 import { Button } from "@astryxdesign/core/Button";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@astryxdesign/core/SegmentedControl";
 import { Stack } from "@astryxdesign/core/Stack";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -10,6 +14,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { BillingQuote } from "@/lib/billing/queries";
+
+type CreditType = "test" | "paid";
 
 export type ChatCreditReceipt = {
   userMessageId: string;
@@ -34,6 +40,10 @@ export function chatCreditReceipt(
   )
     return undefined;
   const { userMessageId, state } = value;
+  const credits =
+    "creditType" in value && value.creditType === "paid"
+      ? "Paid Credits"
+      : "Test Credits";
   if (state === "pending" || state === "reserved") {
     if (
       !("heldMicrocredits" in value) ||
@@ -42,7 +52,7 @@ export function chatCreditReceipt(
       return undefined;
     return {
       userMessageId,
-      description: `Test Credits · Pending reconciliation · ${microcredits(value.heldMicrocredits)} held`,
+      description: `${credits} · Pending reconciliation · ${microcredits(value.heldMicrocredits)} held`,
       pending: true,
       canRerun: true,
     };
@@ -62,8 +72,8 @@ export function chatCreditReceipt(
     userMessageId,
     description:
       state === "released"
-        ? `Test Credits · Reservation released · ${microcredits(value.releasedMicrocredits)} returned`
-        : `Test Credits · Settled · ${microcredits(charged)} charged · ${microcredits(value.releasedMicrocredits)} released`,
+        ? `${credits} · Reservation released · ${microcredits(value.releasedMicrocredits)} returned`
+        : `${credits} · Settled · ${microcredits(charged)} charged · ${microcredits(value.releasedMicrocredits)} released`,
     pending: false,
     canRerun: "hasReply" in value && value.hasReply === false,
   };
@@ -74,13 +84,17 @@ export function useChatCreditConfirmation() {
     quote: BillingQuote;
     rerun: boolean;
   }>();
+  const [creditType, setCreditType] = useState<CreditType>("test");
+  const creditLabel = creditType === "paid" ? "Paid Credits" : "Test Credits";
   const quote = confirmation?.quote;
   const rerun = confirmation?.rerun === true;
-  const resolve = useRef<((confirmed: boolean) => void) | undefined>(undefined);
+  const resolve = useRef<
+    ((confirmed: CreditType | undefined) => void) | undefined
+  >(undefined);
   const cancelButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => () => resolve.current?.(false), []);
+  useEffect(() => () => resolve.current?.(undefined), []);
 
-  function finish(confirmed: boolean) {
+  function finish(confirmed?: CreditType) {
     resolve.current?.(confirmed);
     resolve.current = undefined;
     setConfirmation(undefined);
@@ -88,7 +102,8 @@ export function useChatCreditConfirmation() {
 
   return {
     confirmCredit: (next: BillingQuote, rerun: boolean) =>
-      new Promise<boolean>((confirmed) => {
+      new Promise<CreditType | undefined>((confirmed) => {
+        setCreditType("test");
         resolve.current = confirmed;
         setConfirmation({ quote: next, rerun });
       }),
@@ -96,16 +111,28 @@ export function useChatCreditConfirmation() {
       <Dialog
         open={quote !== undefined}
         onOpenChange={(open) => {
-          if (!open) finish(false);
+          if (!open) finish();
         }}
       >
         <DialogContent initialFocus={cancelButton} showCloseButton={false}>
           <DialogTitle>
             {rerun
-              ? "Run again using Test Credits?"
-              : "Send using Test Credits?"}
+              ? `Run again using ${creditLabel}?`
+              : `Send using ${creditLabel}?`}
           </DialogTitle>
           <DialogBody>
+            {quote?.paidAvailable ? (
+              <SegmentedControl
+                label="Credit type"
+                value={creditType}
+                onChange={(value) =>
+                  setCreditType(value === "paid" ? "paid" : "test")
+                }
+              >
+                <SegmentedControlItem value="test" label="Test Credits" />
+                <SegmentedControlItem value="paid" label="Paid Credits" />
+              </SegmentedControl>
+            ) : null}
             {quote ? (
               <DialogDescription render={<Stack gap={2} />}>
                 <p>
@@ -120,7 +147,11 @@ export function useChatCreditConfirmation() {
                   Maximum reservation{" "}
                   {microcredits(quote.maxChargeMicrocredits)}.
                 </p>
-                <p>{quote.usageDisclosure}</p>
+                <p>
+                  {creditType === "paid"
+                    ? "Interrupted, cancelled, or failed requests may still use Paid Credits."
+                    : quote.usageDisclosure}
+                </p>
                 {rerun ? (
                   <p>
                     Running again makes a new reservation. The original charge
@@ -135,12 +166,12 @@ export function useChatCreditConfirmation() {
               ref={cancelButton}
               label="Cancel"
               variant="secondary"
-              onClick={() => finish(false)}
+              onClick={() => finish()}
             />
             <Button
               label={rerun ? "Confirm and rerun" : "Confirm and send"}
               variant="primary"
-              onClick={() => finish(true)}
+              onClick={() => finish(creditType)}
             />
           </DialogFooter>
         </DialogContent>

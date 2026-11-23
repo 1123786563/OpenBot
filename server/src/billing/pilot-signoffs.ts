@@ -39,11 +39,21 @@ const common = deployment.extend({
   accountIds: z.array(z.uuid().transform((id) => id.toLowerCase())).min(1),
   deploymentRef: reference,
 });
+export const sharedPilotCostScope = "@pilot";
+
+export type PilotResource = "chat" | "embedding" | "rerank" | "maintenance";
+
 const signedRoute = z.strictObject({
   id: label,
   revision: z.uuid(),
   provider: label,
-  resourceType: z.literal("chat"),
+  resourceType: z.enum(["chat", "embedding", "rerank", "maintenance"]),
+  pathRef: reference,
+  reconciliationWindowSeconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(7 * 86400),
   reconciliationRef: reference,
   supplierCapMicrocredits: microcredits,
   maxOperationMicrocredits: microcredits,
@@ -54,11 +64,17 @@ const signoff = z.discriminatedUnion("kind", [
     id: label,
     pathRef: reference,
     rampRef: reference,
+    sharedSupplierCapMicrocredits: microcredits,
     routes: z
       .array(signedRoute)
       .min(1)
       .refine(
-        (routes) => new Set(routes.map(({ id }) => id)).size === routes.length,
+        (routes) =>
+          new Set(
+            routes.map(({ id, resourceType }) =>
+              JSON.stringify([id, resourceType]),
+            ),
+          ).size === routes.length,
       ),
   }),
   common.strict().extend({
@@ -201,21 +217,31 @@ export async function eligibleSignoff(
 export function signedSupplier(
   record: ApplicationSignoff,
   route: ReleasedBifrostRoute,
-  limit: bigint | undefined,
+  limits: { route?: bigint; shared?: bigint },
   bound: bigint,
+  resourceType: PilotResource,
 ) {
-  const supplier = record.routes.find(({ id }) => id === route.id);
-  return (
-    supplier !== undefined &&
-    route.purpose === undefined &&
+  const supplier = record.routes.find(
+    (entry) => entry.id === route.id && entry.resourceType === resourceType,
+  );
+  const { route: routeLimit, shared } = limits;
+  if (
+    supplier &&
+    (resourceType === "maintenance" ? "chat" : resourceType) ===
+      (route.purpose ?? "chat") &&
     supplier.provider === route.provider &&
     supplier.revision === route.revision &&
-    limit !== undefined &&
-    limit > 0n &&
-    limit <= BigInt(supplier.supplierCapMicrocredits) &&
-    bound <= limit &&
+    routeLimit !== undefined &&
+    shared !== undefined &&
+    routeLimit > 0n &&
+    shared > 0n &&
+    routeLimit <= BigInt(supplier.supplierCapMicrocredits) &&
+    shared <= BigInt(record.sharedSupplierCapMicrocredits) &&
+    bound <= routeLimit &&
+    bound <= shared &&
     bound <= BigInt(supplier.maxOperationMicrocredits)
-  );
+  )
+    return supplier;
 }
 
 export async function signedApplication(
@@ -224,13 +250,21 @@ export async function signedApplication(
   id: string,
   accountId: string,
   route: ReleasedBifrostRoute,
-  limit: bigint | undefined,
+  routeLimit: bigint | undefined,
   bound: bigint,
+  resourceType: PilotResource,
 ) {
   const record = await eligibleSignoff(tx, scope, "application", id, accountId);
-  return (
-    record?.kind === "application" &&
-    signedSupplier(record, route, limit, bound)
+  if (record?.kind !== "application") return;
+  return signedSupplier(
+    record,
+    route,
+    {
+      route: routeLimit,
+      shared: await currentRouteLimit(tx, sharedPilotCostScope),
+    },
+    bound,
+    resourceType,
   );
 }
 

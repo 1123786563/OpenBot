@@ -56,6 +56,7 @@ export function createBudgetMutationOptions(queryClient: QueryClient) {
  * number of days from now.
  */
 export type AuthorizationInput = {
+  creditType?: "test" | "paid";
   applicationId: string;
   kind: "online" | "background";
   taskId?: string;
@@ -70,14 +71,19 @@ export function authorizeApplicationMutationOptions(queryClient: QueryClient) {
     mutationFn: async (
       input: AuthorizationInput,
     ): Promise<SpendingAuthorization> => {
-      const ingestion = input.applicationId === "weknora";
+      const weknora = input.applicationId === "weknora";
+      const ingestion =
+        weknora && !/:(chat|rerank|maintenance)$/.test(input.resourcePrefix);
       const uuid = crypto.randomUUID();
       return (
         await client("/api/billing/authorizations", {
           method: "POST",
           body: {
-            authorizationId: ingestion ? uuid : `authorization-${uuid}`,
+            authorizationId: weknora ? uuid : `authorization-${uuid}`,
             applicationId: input.applicationId,
+            ...(input.creditType === "paid"
+              ? { creditType: input.creditType }
+              : {}),
             kind: ingestion ? "background" : input.kind,
             taskId: ingestion ? uuid : input.taskId,
             resourcePrefix: input.resourcePrefix,

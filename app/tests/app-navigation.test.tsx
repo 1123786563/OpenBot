@@ -259,6 +259,7 @@ test("Admin is in the list for admins only", () => {
     "goals",
     "capabilities",
     "connections",
+    "credits",
     "settings",
   ]);
 });

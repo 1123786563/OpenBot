@@ -90,7 +90,7 @@ ledger, loopback application HTTP, and a simulated meter and gateway.
 
 ## Set the shared provider-cost ceiling
 
-Apply migration `0117_shared_pilot_provider_cost` before deploying the updated API and Worker. Run these commands from `server/` with the operator's database credentials.
+Apply migration `0119_shared_pilot_provider_cost` before deploying the updated API and Worker. Run these commands from `server/` with the operator's database credentials.
 
 ```sh
 bun scripts/billing-paths.ts provider-cost
@@ -107,12 +107,13 @@ Keep migration `0117` applied during a binary rollback. Its trigger still caps n
 
 ## Record paid pilot signoff
 
-Apply migration `0122_billing_pilot_signoffs`. Run the operator CLI from the repository root with `DATABASE_URL` set to the target ledger.
+Apply migrations through `0126_billing_paid_path_policy`. Run the operator CLI from the repository root with `DATABASE_URL` set to the target ledger.
 
 ```sh
 bun server/scripts/billing-paths.ts signoff record --file application-signoff.json
 bun server/scripts/billing-paths.ts signoff record --file channel-signoff.json
 bun server/scripts/billing-paths.ts signoff list
+bun server/scripts/billing-paths.ts provider-cost set --microcredits <shared-amount> --by <operator>
 bun server/scripts/billing-paths.ts provider-cost set --route <route-id> --microcredits <amount> --by <operator>
 bun server/scripts/billing-paths.ts provider-cost --route <route-id>
 bun server/scripts/billing-paths.ts pause <application-id> --by <operator>
@@ -125,17 +126,21 @@ Each JSON file contains `kind`, `id`, `evidence`, `deploymentId`, `buildVersion`
 
 | Record | Additional fields |
 | --- | --- |
-| `kind: "application"` | The registered application ID in `id`. Set `pathRef` and `rampRef`. Each item in `routes` has the released route `id`, `revision`, and `provider`, plus `resourceType: "chat"`, `reconciliationRef`, `supplierCapMicrocredits`, and `maxOperationMicrocredits`. Provide microcredits as decimal strings. |
+| `kind: "application"` | The registered application ID in `id`. Set `pathRef`, `rampRef`, and `sharedSupplierCapMicrocredits`. Each item in `routes` has the released route `id`, `revision`, and `provider`, plus its own `pathRef`, `resourceType` (`chat`, `embedding`, `rerank`, or `maintenance`), `reconciliationRef`, `reconciliationWindowSeconds`, `supplierCapMicrocredits`, and `maxOperationMicrocredits`. Use decimal strings for microcredits and a positive integer for seconds. |
 | `kind: "channel"` | Set `id` to `alipay` or `wechat`. Set `merchant`, `maxOrderCents` as an integer, and `paymentRef`, `refundRef`, `reconciliationRef`, and `rulesRef`. |
 
 The running API requires `deployment` evidence matching `DEPLOYMENT_ID`, `OPENBOT_BUILD_VERSION`, and `OPENBOT_BILLING_IMAGE_DIGEST`. The operator verifies the image digest against the running container before configuring it. Fixture signoffs qualify only a ledger running with an explicit fixture scope. The existing loopback checkout adapter also requires fixture scope for new sales.
 
-Approve each registered paid application with the existing `approve` command. The first-party application ID is `openbot`. A paid reservation needs a matching application signoff for the account and released route. The provider-cost ceiling for that route must be within the signed cap. Dispatch rechecks the signoff and releases a reservation that no longer qualifies. A sale needs at least one eligible application path and a matching channel signoff for the buyer, merchant, and amount. Recording new evidence for a paused channel preserves its pause.
+Approve each registered paid application with the existing `approve` command. The first-party application ID is `openbot`. A paid reservation needs a matching application signoff for the account and released route. Both the route ceiling and the shared pilot ceiling must be configured within the signed caps. The ledger acquires the shared exposure and user hold in one transaction. Dispatch rechecks the signoff and releases a reservation that no longer qualifies. A sale needs at least one eligible application path and a matching channel signoff for the buyer, merchant, and amount. Recording new evidence for a paused channel preserves its pause. Update the signed route list to enable or withdraw one resource path. Maintenance and chat can share a gateway route and still require separate entries.
+
+At dispatch, the ledger freezes the signed reconciliation deadline on each paid operation. Existing operations and Test Credit requests keep their original 24-hour rule. Re-record application signoffs from before migration `0126` with the verified per-resource windows and shared ceiling.
+
+People choose the credit type in the Conversation confirmation or on their Spending Authorization. External callers cannot change the type in a grant. Existing grants remain Test Credit grants in the pilot.
 
 ### Verify on the target deployment before opening sales
 
 1. Read back the running API and Worker images. Link their digests to the build and source commit. Verify the controlled entry, credential isolation, account allowlist, maximum order size, and provider-cost caps on that build. Record the readback in `deploymentRef`.
-2. For each supplier and resource type, confirm the cost boundary and reconciliation window. Attach that evidence to the corresponding route revision. Capture path-specific evidence for the application. Use the separate WeKnora evidence from [#110](https://github.com/1123786563/OpenBot/issues/110) for chat, reranking, and maintenance. Verify each independent application under the contract in [#111](https://github.com/1123786563/OpenBot/issues/111). Paid routing here covers the existing chat paths.
+2. For each supplier and resource type, confirm the cost boundary and reconciliation window. Attach that evidence to the corresponding route revision. Capture path-specific evidence for the application. Use the separate WeKnora evidence from [#110](https://github.com/1123786563/OpenBot/issues/110) for chat, reranking, and maintenance. Verify each independent application under the contract in [#111](https://github.com/1123786563/OpenBot/issues/111).
 3. For each proposed channel, verify its merchant, applicable refund rules, financial reconciliation procedure, and channel limits. Complete a small real payment and a refund through the original channel. Reconcile the order, the channel's funds, and the resulting Credits and entitlement. Store the four references in that channel's record. Real merchant checkout requires the target payment integration.
 4. Rerun the concurrency, failure, and account isolation cases on the deployed entry. Pause one application and check that new reservations and undispatched work stop. Verify another signed path still runs, and that in-flight payments, original-channel refunds, and dispatched usage still complete. Pause each proposed channel and verify new checkout stops while earlier payments and refunds reconcile. Link the results in `rampRef` before the pilot lead signs off.
 

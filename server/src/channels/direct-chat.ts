@@ -103,6 +103,7 @@ function creditReceiptEvent(
       operationId: receipt.operationId,
       userMessageId: run.userMessageId,
       state: receipt.state,
+      creditType: receipt.creditType,
       heldMicrocredits: receipt.heldMicrocredits,
       hasReply,
       chargedMicrocredits: receipt.chargedMicrocredits,
@@ -744,7 +745,14 @@ export function createDirectChatRoutes(deps: {
             emit({
               type: EventType.RUN_ERROR,
               code: result.state,
-              message: result.reason ?? managedRunError[result.state],
+              message:
+                result.reason ??
+                (confirmation.data?.creditType === "paid"
+                  ? managedRunError[result.state].replace(
+                      /Test Credit/g,
+                      "Paid Credit",
+                    )
+                  : managedRunError[result.state]),
             });
           }
           return;

@@ -103,6 +103,7 @@ function modelState(conversation: boolean) {
       ? {
           quote: {
             ...creditQuote,
+            paidAvailable: paidChatAvailable,
             route: route.id,
             model: route.model,
             provider: route.provider,
@@ -112,6 +113,7 @@ function modelState(conversation: boolean) {
   };
 }
 let managedChat = false;
+let paidChatAvailable = false;
 let requestedRuns: RunAgentInput[] = [];
 
 /** Every event the runtime has streamed for a thread, run after run: what `/connect` replays. */
@@ -395,6 +397,7 @@ afterEach(() => {
   queryClient.clear();
   plans = [];
   managedChat = false;
+  paidChatAvailable = false;
   botModel = null;
   conversationModel = null;
   revoked = false;
@@ -622,6 +625,26 @@ test("a managed turn confirms its quote before sending and retries an uncertain 
   expect(requestedRuns[1]?.messages.at(-1)?.id).toBe(
     requestedRuns[0]?.messages.at(-1)?.id,
   );
+});
+
+test("a signed paid Conversation sends the credit type the user confirmed", async () => {
+  managedChat = true;
+  paidChatAvailable = true;
+  plans = [{ kind: "answers", text: "Paid reply" }];
+  const view = open();
+  const user = await send(view, "Paid turn");
+  await user.click(await view.findByRole("radio", { name: "Paid Credits" }));
+  expect(view.getByText("Send using Paid Credits?")).toBeTruthy();
+  expect(requestedRuns).toHaveLength(0);
+  await user.click(view.getByRole("button", { name: "Confirm and send" }));
+  await settled(view, "Paid reply");
+  expect(requestedRuns[0]?.forwardedProps).toMatchObject({
+    testCreditQuote: {
+      route: creditQuote.route,
+      priceVersion: creditQuote.priceVersion,
+      creditType: "paid",
+    },
+  });
 });
 
 test("an explicit managed rerun confirms a fresh reservation linked to the original message", async () => {

@@ -12,6 +12,7 @@ import {
 export const testCreditConfirmation = z.strictObject({
   route: z.string().min(1).max(64),
   priceVersion: z.uuid(),
+  creditType: z.enum(["test", "paid"]).optional(),
 });
 
 export type CasdoorBillingProvider = { issuer: string; providerId: string };
@@ -75,8 +76,17 @@ export function createDirectChatTestCredit(
       preferences: Parameters<TestCreditLedger["resolveQuote"]>[0],
     ) {
       const identity = await identityOf(personId);
-      if (identity && (await ledger.accountOf(identity)))
-        return ledger.resolveQuote(preferences);
+      const accountId = identity && (await ledger.accountOf(identity));
+      if (!accountId) return;
+      const resolved = await ledger.resolveQuote(preferences);
+      if ("reason" in resolved) return resolved;
+      const paidAvailable = await ledger.paidChatAvailable(
+        accountId,
+        resolved.quote,
+      );
+      return paidAvailable
+        ? { ...resolved, quote: { ...resolved.quote, paidAvailable } }
+        : resolved;
     },
     async receipt(id: string, personId: string) {
       const identity = await identityOf(personId);
@@ -111,10 +121,20 @@ export function createDirectChatTestCredit(
             "The model route or price changed. Review the current quote and confirm again.",
         };
 
+      const creditType = input.confirmation.creditType ?? "test";
+      if (creditType === "paid") {
+        const accountId = await ledger.accountOf(identity);
+        if (
+          !accountId ||
+          !(await ledger.paidChatAvailable(accountId, resolved.quote))
+        )
+          return { state: "route_unavailable" };
+      }
+
       const held = await ledger.reserve(identity, {
         operationId: input.id,
         ...input.confirmation,
-        creditType: "test",
+        creditType,
         applicationId: "openbot",
         resumable: false,
         rerunOfOperationId: input.rerunOfOperationId,

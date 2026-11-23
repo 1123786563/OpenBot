@@ -196,7 +196,8 @@ export function createWeKnoraRoutes({
         stepId,
         route: route.id,
         priceVersion: quote.priceVersion,
-        creditType: "test",
+        creditType: grant.creditType,
+        resumable: grant.creditType === "test",
       },
       { embedding: true },
     );
@@ -390,7 +391,7 @@ export function createWeKnoraRoutes({
         stepId,
         route: selected.route.id,
         priceVersion: selected.quote.priceVersion,
-        creditType: "test",
+        creditType: grant.creditType,
         resumable: false,
       },
       { weknoraWork: kind },

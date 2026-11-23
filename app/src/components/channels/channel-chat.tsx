@@ -1151,7 +1151,11 @@ export function ChannelChat({
     sent?: Message,
     beforeFirstSend?: () => Promise<void>,
     credit?: {
-      testCreditQuote?: { route: string; priceVersion: string };
+      testCreditQuote?: {
+        route: string;
+        priceVersion: string;
+        creditType?: "paid";
+      };
       rerunOfMessageId?: string;
     },
   ) => {
@@ -1427,12 +1431,13 @@ export function ChannelChat({
               );
               throw error;
             });
-          if (!(await confirmCredit(quote, rerun)))
-            throw new Error("Send cancelled.");
+          const creditType = await confirmCredit(quote, rerun);
+          if (!creditType) throw new Error("Send cancelled.");
           credit = {
             testCreditQuote: {
               route: quote.route,
               priceVersion: quote.priceVersion,
+              ...(creditType === "paid" ? { creditType } : {}),
             },
             rerunOfMessageId: rerun ? creditAction.message.id : undefined,
           };

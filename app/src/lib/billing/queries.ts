@@ -15,6 +15,7 @@ export type BillingBalance = {
 /** The model route a task runs on, what it costs, and the most one request can charge. */
 export type BillingQuote = {
   creditType: "test";
+  paidAvailable?: boolean;
   priceVersion: string;
   route: string;
   tools?: boolean;
@@ -126,6 +127,7 @@ export type BillingApplication = {
 
 /** A person's explicit grant to an app (#111): what it may spend, on which resources, and until when. */
 export type SpendingAuthorization = {
+  creditType?: "test" | "paid";
   authorizationId: string;
   applicationId: string;
   /** A background grant is for one task. */
