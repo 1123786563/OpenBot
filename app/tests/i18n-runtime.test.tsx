@@ -1,8 +1,28 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
-import { Trans, i18n, t, useTranslation } from "@/i18n";
-import { pinLocale } from "./i18n";
+import { useLocale, useTranslator } from "@astryxdesign/core/i18n";
+import {
+  I18nProvider,
+  Trans,
+  formatDate,
+  formatNumber,
+  formatRelativeTime,
+  i18n,
+  initI18n,
+  readLocalePreference,
+  t,
+  useLocalePreference,
+  useTranslation,
+} from "@/i18n";
+import { pinLocale, withStorage } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -38,6 +58,7 @@ afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
 });
+beforeEach(() => localStorage.clear());
 afterEach(async () => {
   cleanup();
   await pinLocale("en");
@@ -54,7 +75,11 @@ function Notice({ product }: { product: string }) {
       <Trans
         i18nKey="test.notice"
         values={{ product }}
-        components={[<a href="/notes">release notes</a>]}
+        components={[
+          <a href="/notes" key="notes">
+            release notes
+          </a>,
+        ]}
       />
     </p>
   );
@@ -129,3 +154,116 @@ function EnglishOnly() {
   const { t } = useTranslation();
   return <p>{t("test.englishOnly")}</p>;
 }
+
+/** Makes the browser ask for `languages`, most preferred first, until the returned function runs. */
+function browserSpeaks(languages: string[]): () => void {
+  const asked = Object.getOwnPropertyDescriptor(navigator, "languages");
+  Object.defineProperty(navigator, "languages", {
+    configurable: true,
+    get: () => languages,
+  });
+  return () => {
+    if (asked) Object.defineProperty(navigator, "languages", asked);
+    else Reflect.deleteProperty(navigator, "languages");
+  };
+}
+
+test("the interface speaks the browser's language from its very first frame", () => {
+  const unSpeak = browserSpeaks(["zh-Hans-CN"]);
+  try {
+    initI18n();
+
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(render(<Items count={3} />).getByRole("paragraph").textContent).toBe(
+      "Ada 有 3 项",
+    );
+  } finally {
+    unSpeak();
+  }
+});
+
+test("a language this browser was told to keep beats what the browser asks for", () => {
+  localStorage.setItem("openbot-locale", "en");
+  const unSpeak = browserSpeaks(["zh-Hans-CN"]);
+  try {
+    initI18n();
+  } finally {
+    unSpeak();
+  }
+
+  expect(document.documentElement.lang).toBe("en");
+});
+
+test("choosing a language tells the document, and this browser keeps the choice", async () => {
+  const unSpeak = browserSpeaks(["en-GB"]);
+  try {
+    await pinLocale("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(readLocalePreference()).toBe("zh-CN");
+
+    await pinLocale("browser");
+    expect(document.documentElement.lang).toBe("en");
+    expect(readLocalePreference()).toBe("browser");
+  } finally {
+    unSpeak();
+  }
+});
+
+test("a language can still be chosen where the browser refuses to keep it", async () => {
+  const refused = (): never => {
+    throw new DOMException(
+      "Access is denied for this document.",
+      "SecurityError",
+    );
+  };
+  await withStorage({ getItem: refused, setItem: refused }, async () => {
+    await pinLocale("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(t("test.englishOnly")).toBe("Only ever written in English.");
+  });
+});
+
+function PreferenceProbe() {
+  return <p>{useLocalePreference() ?? "none"}</p>;
+}
+
+test("what was chosen is visible to the interface while it runs", async () => {
+  const view = render(<PreferenceProbe />);
+  await pinLocale("browser");
+  expect(view.getByRole("paragraph").textContent).toBe("browser");
+  await pinLocale("zh-CN");
+  expect(view.getByRole("paragraph").textContent).toBe("zh-CN");
+});
+
+function AstryxProbe() {
+  const locale = useLocale();
+  const translate = useTranslator();
+  return <p>{`${locale} ${translate("@astryx.dialog.close")}`}</p>;
+}
+
+test("Astryx components speak the same language as OpenBot's own strings", async () => {
+  await pinLocale("zh-CN");
+  const view = render(
+    <I18nProvider>
+      <AstryxProbe />
+    </I18nProvider>,
+  );
+  expect(view.getByRole("paragraph").textContent).toBe("zh-CN 关闭");
+
+  await pinLocale("en");
+  expect(view.getByRole("paragraph").textContent).toBe("en Close");
+});
+
+test("dates, numbers and relative times come out in the language in force", async () => {
+  const march = new Date(2026, 2, 5);
+  expect(formatDate(march, { dateStyle: "long" })).toBe("March 5, 2026");
+  expect(formatNumber(12345, { notation: "compact" })).toBe("12K");
+  expect(formatRelativeTime(-3, "day")).toBe("3 days ago");
+
+  await pinLocale("zh-CN");
+  expect(formatDate(march, { dateStyle: "long" })).toBe("2026年3月5日");
+  expect(formatNumber(12345, { notation: "compact" })).toBe("1.2万");
+  expect(formatRelativeTime(-3, "day")).toBe("3天前");
+
+  await pinLocale("en");
+});
