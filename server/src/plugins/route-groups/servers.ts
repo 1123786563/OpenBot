@@ -4,6 +4,7 @@ import { BROKERED_PROFILE } from "../access";
 import { brokerSentence, schemeKind } from "../broker";
 import { CATALOGUE, summaryFor } from "../catalogue";
 import { vendorSentence } from "../composio";
+import { RevocationRefusal } from "../corsair/revocation";
 import { redirectUriFor } from "../oauth";
 import { ALWAYS_ON_REFUSAL, isAlwaysOn } from "../personal-defaults";
 import { asAccountMode } from "../shared-accounts";
@@ -417,6 +418,8 @@ export function mountServerRoutes({
     try {
       await store.removeServer(serverId, actorEmail(context));
     } catch (error) {
+      if (error instanceof RevocationRefusal)
+        return context.json({ error: error.message }, 409);
       if (isDeploymentFault(error)) {
         return context.json({ error: deploymentFaultSentence(error) }, 409);
       }

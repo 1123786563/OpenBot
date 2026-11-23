@@ -147,7 +147,12 @@ function SkillsPage() {
            * screen through a failed refetch, because `data` is still there.
            */}
           {loading ? (
-            <div aria-busy="true" aria-label="Loading skills" className="mt-4" role="status">
+            <div
+              aria-busy="true"
+              aria-label="Loading skills"
+              className="mt-4"
+              role="status"
+            >
               <PageRows>
                 {LOADING_ROWS.map((key, index) => (
                   <StaggerItem index={index} key={key}>

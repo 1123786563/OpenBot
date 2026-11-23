@@ -103,6 +103,13 @@ function deployment(provider: BrokerProvider, wiring: Wiring = {}) {
     // The routes take the provider from the store rather than deciding a second
     // time, so a stand-in store has to name it like the real one does.
     brokerProvider: provider,
+    // Every connect route passes through the Corsair cutover guard; none here is cut over.
+    withLegacyAuthorization: async <T>(
+      _input: { serverId: string; actor: string; callback?: string },
+      run: () => Promise<T>,
+    ) => run(),
+    recordLegacyAuthorizationStart: async () => {},
+    recordUnmatchedLegacyReturn: async () => {},
     serverAddress: async (serverId: string) =>
       serverId === SERVER_ID
         ? {

@@ -599,7 +599,11 @@ function ProposedSkills({ agentId }: { agentId?: string }) {
         </p>
       )}
       {proposals.isPending ? (
-        <div aria-busy="true" aria-label="Loading proposed skills" role="status">
+        <div
+          aria-busy="true"
+          aria-label="Loading proposed skills"
+          role="status"
+        >
           <PageRows>
             {LOADING_ROWS.map((key, index) => (
               <Fragment key={key}>
@@ -822,7 +826,11 @@ function PublishedSkills({ agentId }: { agentId?: string }) {
       description="Bots on this container use these skills. Open one to read it."
     >
       {skills.isPending ? (
-        <div aria-busy="true" aria-label="Loading published skills" role="status">
+        <div
+          aria-busy="true"
+          aria-label="Loading published skills"
+          role="status"
+        >
           <PageRows>
             {LOADING_ROWS.map((key, index) => (
               <Fragment key={key}>

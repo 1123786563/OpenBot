@@ -74,6 +74,11 @@ const RUNTIME_RUN: Rule = {
 
 export const GATED_ROUTES: Rule[] = [
   {
+    method: ["GET", "POST", "PUT"],
+    path: /^\/api\/corsair\/(github|slack)\/(bots|approvals)(\/.*)?$/,
+    needs: async () => ["useBots"],
+  },
+  {
     method: ["POST", "PATCH"],
     path: /^\/api\/agents(\/[^/]+)?$/,
     needs: async (context) =>
