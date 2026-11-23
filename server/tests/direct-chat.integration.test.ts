@@ -2517,7 +2517,7 @@ test("an open replay stream closes when the reader loses access", async () => {
   }
 });
 
-test("Conversation and voice turns share Test Credits, reconcile uncertain dispatch, and keep history readable during an outage", async () => {
+test("Conversation and voice turns share Test Credits, reconcile uncertain dispatch, and keep history and basic Memory available during an outage", async () => {
   const alice = await person();
   const bots: string[] = [];
   const conversations: string[] = [];
@@ -2532,10 +2532,12 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
   let dispatches = 0;
   let legacyCalls = 0;
   let outage = false;
+  let billingRequests = 0;
   const control = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
+      billingRequests++;
       const path = new URL(request.url).pathname;
       expect(request.headers.get("authorization")).toBe("Bearer test-token");
       if (path === "/v1/quote")
@@ -2607,6 +2609,19 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
     OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "pilot-text-v1",
   });
   try {
+    const memory = createMemoryStore(database);
+    const ingestion = createMemoryIngestion({
+      store: memory,
+      plugins: createPluginStore({
+        brokerProvider: "composio",
+        database,
+        auditStore: createAuditStore(database),
+        credentials: createCredentialStore(database),
+        encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+        policy: () => ({ mode: "enforce", deny: [], allow: [] }),
+      }),
+      canUseBot: async () => false,
+    });
     const product = await Promise.all(
       ["One", "Two"].map(async (name) => {
         const bot = await profiles.create(alice, {
@@ -2631,6 +2646,13 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
             },
           },
         );
+        app.route(
+          "/api/memory",
+          createMemoryRoutes(memory, ingestion, async (context, next) => {
+            context.set("actor", alice);
+            await next();
+          }),
+        );
         const opened = await app.request(
           "/api/channels",
           post({ agentIds: [bot.id] }),
@@ -2639,6 +2661,7 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
         const { channel } = await opened.json();
         conversations.push(channel.id);
         return {
+          app,
           threadId: channel.threadId,
           voice: (request: string) => voiceTurn(app, channel, bot.id, request),
           resume: async (runId: string, cursor: number) =>
@@ -2707,6 +2730,19 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
     expect(calls).toHaveLength(callsBeforeResume);
     expect(await winner.run("new-id")).toContain("unavailable");
     expect(await (await winner.history()).text()).toContain("Managed answer.");
+    const callsBeforeMemory = billingRequests;
+    const content = "A manual Memory saved during the ledger outage.";
+    const savedMemory = await winner.app.request(
+      "/api/memory",
+      post({ content }),
+    );
+    expect(savedMemory.status).toBe(201);
+    const listedMemory = await winner.app.request("/api/memory");
+    expect(listedMemory.status).toBe(200);
+    expect(await listedMemory.json()).toEqual({
+      memories: expect.arrayContaining([expect.objectContaining({ content })]),
+    });
+    expect(billingRequests).toBe(callsBeforeMemory);
     expect(dispatches).toBe(1);
     expect(legacyCalls).toBe(0);
 
