@@ -6512,7 +6512,8 @@ test("a pre-closure restore fences sessions, exports and dispatch before worker 
     action: "assistant.read",
   };
   expect(await integrations.execute(access)).toBeDefined();
-  const queued = await send("/api/workspace/bot-runs", {
+  const botApp = newApp(database, async () => ({ replyText: "" }));
+  const queued = await botApp.request("/api/workspace/bot-runs", {
     method: "POST",
     headers: {
       origin,
