@@ -351,3 +351,26 @@ test("sidebar and the open account menu switch language without remounting", asy
   expect(view.getByRole("navigation", { name: "Workspace" })).toBe(workspace);
   expect(within(menu).getByRole("menuitem", { name: "Sign out" })).toBeTruthy();
 });
+
+test("the sidebar rail speaks the language and keeps the pane's state", async () => {
+  const { view, user } = renderSidebar("user");
+  await view.findByRole("navigation", { name: "Workspace" });
+  const rail = view.getByRole("button", { name: "Toggle Sidebar" });
+  expect(rail.getAttribute("title")).toBe("Drag to resize, click to hide");
+  await act(() => setLocalePreference("zh-CN"));
+  const zhRail = view.getByRole("button", { name: "切换侧栏" });
+  expect(zhRail).toBe(rail);
+  expect(zhRail.getAttribute("title")).toBe("拖动调整宽度，点击隐藏侧栏");
+  // Clicking without dragging hides the pane; the language switch must not bring it back.
+  const pane = () =>
+    view.container.querySelector<HTMLDivElement>(
+      '[data-slot="sidebar"]:not([data-mobile="true"])',
+    );
+  await user.click(zhRail);
+  expect(pane()?.getAttribute("data-state")).toBe("collapsed");
+  await act(() => setLocalePreference("en"));
+  expect(pane()?.getAttribute("data-state")).toBe("collapsed");
+  expect(view.getByRole("button", { name: "Toggle Sidebar" })).toBe(rail);
+  await user.click(rail);
+  expect(pane()?.getAttribute("data-state")).toBe("expanded");
+});
