@@ -14,6 +14,7 @@ export type BudgetInput = {
   creditType: "test" | "paid";
   /** In credits, as the person typed it. Sent as whole microcredits. */
   limitCredits: string;
+  modelQuote?: { route: string; priceVersion: string };
 };
 
 const FALLBACK = "Could not set the budget";
@@ -39,6 +40,7 @@ export function createBudgetMutationOptions(queryClient: QueryClient) {
           body: {
             budgetId: `budget-${crypto.randomUUID()}`,
             creditType: input.creditType,
+            modelQuote: input.modelQuote,
             limitMicrocredits: microcreditsFromCredits(input.limitCredits),
           },
           fallback: FALLBACK,

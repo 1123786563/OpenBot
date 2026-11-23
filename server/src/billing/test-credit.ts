@@ -144,12 +144,24 @@ const operationFilter = (accountId: string, id: string) =>
 const ingestionPointKey = (authorizationId: string, operationId: string) =>
   `weknora:${authorizationId}:${operationId}`;
 
+const trialEndKey = (accountId: string) =>
+  `billing.test-credit-ended.${accountId}`;
+
+async function trialEnded(tx: Transaction, accountId: string) {
+  const [row] = await tx
+    .select({ key: enterpriseSettings.key })
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, trialEndKey(accountId)));
+  return row !== undefined;
+}
+
 const denied = (
   reason:
     | "not_authorized"
     | "route_unavailable"
     | "insufficient_credits"
     | "execution_limit"
+    | "trial_ended"
     | "pilot_closed"
     | "unavailable",
 ) => ({ state: "denied", reason }) as const;
@@ -244,7 +256,20 @@ async function totals(database: Database | Transaction, accountId: string) {
   return { granted, held, spent, available: granted - held - spent };
 }
 
-function operationReceipt(operation: Operation, verified?: Evidence) {
+function receiptCreditType(row: Operation) {
+  const paid =
+    row.charged === null
+      ? row.paidHoldMicrocredits
+      : (row.paidChargeMicrocredits ?? 0n);
+  if (paid === 0n) return "test";
+  return paid === (row.charged ?? row.reserved) ? "paid" : "mixed";
+}
+
+function operationReceipt(
+  operation: Operation,
+  verified?: Evidence,
+  creditType = receiptCreditType(operation),
+) {
   const {
     id,
     state,
@@ -288,7 +313,7 @@ function operationReceipt(operation: Operation, verified?: Evidence) {
     route: route.id,
     provider: route.provider,
     model: route.model,
-    creditType: "test",
+    creditType,
     price: route.price,
     reservedMicrocredits: reserved.toString(),
     chargedMicrocredits: charged?.toString() ?? null,
@@ -468,6 +493,20 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     await resolveProviderCostHold(tx, row.route.id, row.accountId, row.id, {
       state: "released",
     });
+  }
+
+  async function receiptFor(
+    tx: Transaction,
+    row: Operation,
+    verified?: Evidence,
+  ) {
+    const bound =
+      row.budgetId && (await budget(row.accountId, row.budgetId, tx));
+    return operationReceipt(
+      row,
+      verified,
+      bound ? bound.creditType : undefined,
+    );
   }
 
   async function budget(accountId: string, id: string, tx: Transaction) {
@@ -1096,6 +1135,18 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       return row?.id;
     },
 
+    async endTrial(accountId: string, endedBy: string) {
+      return database.transaction(async (tx) => {
+        if (!(await lockAccount(tx, accountId))) return false;
+        const endedAt = await currentTime(tx);
+        await tx
+          .insert(enterpriseSettings)
+          .values({ key: trialEndKey(accountId), value: { endedAt, endedBy } })
+          .onConflictDoNothing();
+        return true;
+      });
+    },
+
     async balance(identity: VerifiedBillingIdentity) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -1104,6 +1155,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         const { granted, held, spent, available } = await totals(tx, accountId);
         return {
           creditType: "test" as const,
+          trialEnded: await trialEnded(tx, accountId),
           grantedMicrocredits: granted.toString(),
           reservedMicrocredits: held.toString(),
           chargedMicrocredits: spent.toString(),
@@ -1118,7 +1170,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         if (!accountId) return undefined;
         await applyCutoff(tx, accountId, await currentTime(tx));
         const row = await operation(accountId, id, tx);
-        return row && operationReceipt(row, await eligibleEvidence(tx, row));
+        return (
+          row && (await receiptFor(tx, row, await eligibleEvidence(tx, row)))
+        );
       });
     },
 
@@ -1233,7 +1287,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // credits or budget room, so it waits here until the person sets a
         // budget (#107 安全续做点).
         const pause = async (
-          reason: "insufficient_credits" | "execution_limit",
+          reason: (typeof resumePoints.$inferInsert)["reason"],
         ) => {
           // A step nothing will retry cannot continue, so it waits nowhere.
           if (request.resumable === false) return denied(reason);
@@ -1251,14 +1305,15 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             .onConflictDoUpdate({
               target: [resumePoints.accountId, resumePoints.operationId],
               set: {
-                reason,
+                reason:
+                  paused?.reason === "trial_ended" ? paused.reason : reason,
                 applicationId:
                   input.applicationId ?? under?.held?.applicationId ?? null,
                 // A confirmed budget with no room for the step cannot
                 // continue it: the step waits again for the person to pick
                 // another.
                 ...((request.cumulativeExecution ||
-                  reason === "execution_limit") &&
+                  reason !== "insufficient_credits") &&
                 paused?.budgetId
                   ? { budgetId: null, confirmedAt: null }
                   : {}),
@@ -1294,7 +1349,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             return denied("not_authorized");
           return {
             state: "existing",
-            operation: operationReceipt(
+            operation: await receiptFor(
+              tx,
               existing,
               await eligibleEvidence(tx, existing),
             ),
@@ -1310,7 +1366,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             ?.dispatchedAt
         )
           return denied("not_authorized");
-        // Pilot wind-down (#107 trial end, #109): no new reservations of
+        // Permanent pilot wind-down (#109): no new reservations of
         // either Credit type. Dispatched work above keeps its replay.
         if (await pilotReservesStoppedAt(tx, accountId))
           return denied("pilot_closed");
@@ -1378,6 +1434,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           executionBudget?.creditType !== (input.creditType ?? "test")
         )
           return denied("not_authorized");
+        if (input.creditType !== "paid" && (await trialEnded(tx, accountId)))
+          return embedding ? denied("trial_ended") : pause("trial_ended");
         const limits = executionBudget
           ? await budgetChain(tx, executionBudget)
           : [];
@@ -1535,7 +1593,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         return {
           state: "reserved",
           permit: row.permit,
-          operation: operationReceipt(row),
+          operation: operationReceipt(
+            row,
+            undefined,
+            executionBudget?.creditType,
+          ),
         } as const;
       });
       return reservation.catch((error: unknown) => {
@@ -1850,7 +1912,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         await applyCutoff(tx, step.accountId, await currentTime(tx));
         const record = await operation(step.accountId, step.id, tx);
         return (
-          record && operationReceipt(record, await eligibleEvidence(tx, record))
+          record &&
+          (await receiptFor(tx, record, await eligibleEvidence(tx, record)))
         );
       });
     },
@@ -1980,6 +2043,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             point.requiredBudgetId !== budgetId) ||
           target?.state !== "active" ||
           target.confirmedAt === null ||
+          (target.creditType === "test" && (await trialEnded(tx, accountId))) ||
+          (point.reason === "trial_ended" &&
+            (target.creditType !== "paid" ||
+              target.createdAt < point.createdAt ||
+              (point.applicationId === "openbot" &&
+                !target.modelPriceVersion))) ||
           (authorizationId
             ? target.creditType !== "test" || point.reason !== "execution_limit"
             : point.reason === "insufficient_credits" &&
@@ -2061,7 +2130,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         if (row.state !== "reserved")
           return {
             state: "existing",
-            operation: operationReceipt(row, await eligibleEvidence(tx, row)),
+            operation: await receiptFor(
+              tx,
+              row,
+              await eligibleEvidence(tx, row),
+            ),
           } as const;
         const filter = operationFilter(row.accountId, row.id);
         if (await pilotReservesStoppedAt(tx, accountId)) {
@@ -2298,7 +2371,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           .returning();
         return (
           updated &&
-          operationReceipt(updated, await eligibleEvidence(tx, updated))
+          (await receiptFor(tx, updated, await eligibleEvidence(tx, updated)))
         );
       });
     },
@@ -2530,7 +2603,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         costMicrocredits: cost,
       });
       return {
-        operation: operationReceipt(row, eligible),
+        operation: await receiptFor(tx, row, eligible),
         platformMicrocredits: await platformCost(tx, row, eligible),
       };
     });
@@ -2568,7 +2641,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     if (!row) return undefined;
     const verified = await eligibleEvidence(tx, row);
     if (row.state !== "pending" || !verified)
-      return operationReceipt(row, verified);
+      return receiptFor(tx, row, verified);
     const charged = eligibleCharge(row, verified);
     // The Test Credit share of the charge is its head; the paid tail consumes
     // the operation's paid allocations in source order and returns the rest.
@@ -2630,7 +2703,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         state: "pending",
       });
     }
-    return settled && operationReceipt(settled, verified);
+    return settled && (await receiptFor(tx, settled, verified));
   }
 }
 

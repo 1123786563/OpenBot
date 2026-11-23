@@ -344,7 +344,7 @@ export const testCreditResumePoints = pgTable(
     operationId: text("operation_id").notNull(),
     applicationId: text("application_id"),
     reason: text({
-      enum: ["insufficient_credits", "execution_limit"],
+      enum: ["insufficient_credits", "execution_limit", "trial_ended"],
     }).notNull(),
     // The budget the person confirmed for this step, once they have.
     requiredBudgetId: text("required_budget_id"),

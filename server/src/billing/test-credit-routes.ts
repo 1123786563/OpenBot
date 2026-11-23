@@ -2,6 +2,7 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
+import { type AppVariables, requireAdmin } from "../auth/guards";
 import {
   type CoordinationToolSpec,
   coordinationCalls,
@@ -95,6 +96,25 @@ type Dependencies = {
     applicationId: string,
   ): Promise<boolean>;
 };
+
+export function createTrialAdminRoutes(
+  ledger: TestCreditLedger,
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+) {
+  const api = new Hono<{ Variables: AppVariables }>();
+  api.post("/trials/:accountId/end", requireUser, async (context) => {
+    const denied = requireAdmin(context);
+    if (denied) return denied;
+    const accountId = z.uuid().safeParse(context.req.param("accountId"));
+    if (!accountId.success)
+      return context.json({ error: "Invalid Billing Account." }, 400);
+    const ended = await ledger.endTrial(accountId.data, context.var.actor.id);
+    return ended
+      ? context.json({ state: "trial_ended" })
+      : context.json({ error: "Billing Account unavailable." }, 404);
+  });
+  return api;
+}
 
 export function createTestCreditRoutes({
   ledger,

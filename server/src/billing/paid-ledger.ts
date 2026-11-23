@@ -2112,7 +2112,7 @@ export function createPaidCreditLedger(
       .where(eq(billingRestore.id, "ledger"));
   }
 
-  // ── Pilot wind-down (#107 trial end, #109 shutdown) ──────────────────
+  // ── Pilot wind-down (#109 shutdown) ──────────────────
 
   /**
    * The wind-down switch. Stopping sales refuses new orders; stopping

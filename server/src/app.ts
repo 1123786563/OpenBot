@@ -67,6 +67,7 @@ import type {
 } from "./billing/test-credit";
 import {
   createTestCreditRoutes,
+  createTrialAdminRoutes,
   type TestCreditExecutor,
 } from "./billing/test-credit-routes";
 import {
@@ -977,6 +978,10 @@ export function createApp(
     app.route(
       "/api/admin/billing",
       createPaidCorrectionRoutes(billing.paidLedger, requireUser),
+    );
+    app.route(
+      "/api/admin/billing",
+      createTrialAdminRoutes(billing.testLedger, requireUser),
     );
     if (billing.weknora && billing.casdoorIdentityOf)
       app.route(

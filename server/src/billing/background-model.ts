@@ -46,9 +46,11 @@ export class BackgroundModelWaiting extends Error {
     super(
       reason === "reconciling"
         ? "This step is waiting for billing reconciliation."
-        : reason === "execution_limit" || reason === "insufficient_credits"
-          ? "This step is paused. Review its Credits and confirm to continue."
-          : "This step cannot run under its current billing authorization or confirmed price.",
+        : reason === "trial_ended"
+          ? "The Test Credit trial has ended. Confirm a Paid Credit budget to continue."
+          : reason === "execution_limit" || reason === "insufficient_credits"
+            ? "This step is paused. Review its Credits and confirm to continue."
+            : "This step cannot run under its current billing authorization or confirmed price.",
     );
     this.name = "BackgroundModelWaiting";
   }

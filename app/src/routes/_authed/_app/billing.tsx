@@ -184,7 +184,11 @@ function TestCreditsSection() {
       ) : (
         <PageRows>
           <ValueRow
-            description="What your Bots can spend now."
+            description={
+              balance.data.trialEnded
+                ? "Trial ended. Remaining Test credits can no longer be used."
+                : "What your Bots can spend now."
+            }
             icon={IconWallet}
             title="Available"
             value={creditsText(balance.data.availableMicrocredits)}
@@ -716,13 +720,15 @@ function WaitingSection({
                       ? "Limit confirmed. Retry the paused upload in WeKnora."
                       : point.budgetId
                         ? `Continues on a ${point.creditType === "paid" ? "Paid" : "Test"} budget.`
-                        : point.reason === "insufficient_credits"
-                          ? point.authorizationId
-                            ? "Add Test credits, then retry the upload."
-                            : "Its Test credits ran out."
-                          : point.authorizationId
-                            ? "It reached the upload spending limit."
-                            : "It reached its budget."}
+                        : point.reason === "trial_ended"
+                          ? "The trial ended. Confirm a Paid Credit budget to continue."
+                          : point.reason === "insufficient_credits"
+                            ? point.authorizationId
+                              ? "Add Test credits, then retry the upload."
+                              : "Its Test credits ran out."
+                            : point.authorizationId
+                              ? "It reached the upload spending limit."
+                              : "It reached its budget."}
                 </ItemDescription>
               </ItemContent>
               {point.requiredBudgetId ||
@@ -764,9 +770,20 @@ function SetBudgetDialog({
   returnFocus: React.RefObject<HTMLButtonElement | null>;
 }) {
   const formId = useId();
-  // A task out of Test credits continues on paid credits.
+  const paidContinuation = resume?.reason === "trial_ended";
+  const needsQuote = resume?.applicationId === "openbot";
+  const quote = useQuery({
+    ...billingQuoteQueryOptions(),
+    enabled: needsQuote,
+  });
+  const modelQuote =
+    needsQuote && quote.data
+      ? { route: quote.data.route, priceVersion: quote.data.priceVersion }
+      : undefined;
   const [creditType, setCreditType] = useState<"test" | "paid">(
-    resume?.reason === "insufficient_credits" ? "paid" : "test",
+    paidContinuation || resume?.reason === "insufficient_credits"
+      ? "paid"
+      : "test",
   );
   const [limitCredits, setLimitCredits] = useState("");
   const limit = microcreditsFromCredits(limitCredits);
@@ -780,6 +797,7 @@ function SetBudgetDialog({
   );
   const ready = Boolean(
     limit &&
+      (!needsQuote || modelQuote) &&
       (!authorizationId ||
         (grant?.state === "active" &&
           BigInt(limit) > BigInt(grant.limitMicrocredits))),
@@ -813,7 +831,7 @@ function SetBudgetDialog({
               event.preventDefault();
               if (!ready || !limit) return;
               create.mutate(
-                { creditType, limitCredits },
+                { creditType, limitCredits, modelQuote },
                 {
                   // The budget alone continues nothing: the person's confirmation
                   // is what lets the paused step reserve on it.
@@ -836,7 +854,11 @@ function SetBudgetDialog({
             }}
           >
             <FieldGroup>
-              {!authorizationId ? (
+              {paidContinuation ? (
+                <FieldDescription>
+                  The trial ended. This budget uses Paid Credits.
+                </FieldDescription>
+              ) : !authorizationId ? (
                 <Field>
                   <FieldLabel htmlFor={`${formId}-type`}>
                     Credit type
@@ -861,6 +883,18 @@ function SetBudgetDialog({
                     or a Credit Pack you bought.
                   </FieldDescription>
                 </Field>
+              ) : null}
+              {needsQuote && quote.error ? (
+                <p role="alert">{quote.error.message}</p>
+              ) : null}
+              {needsQuote && quote.data ? (
+                <FieldDescription>
+                  {quote.data.model} costs {quote.data.price.inputPerMillion}{" "}
+                  microcredits per million input tokens and{" "}
+                  {quote.data.price.outputPerMillion} per million output tokens.
+                  Each request can reserve up to{" "}
+                  {quote.data.maxChargeMicrocredits} microcredits.
+                </FieldDescription>
               ) : null}
               <Field>
                 <FieldLabel htmlFor={`${formId}-limit`}>
@@ -903,7 +937,9 @@ function SetBudgetDialog({
               ? "Saving…"
               : authorizationId
                 ? "Confirm new limit"
-                : "Set budget"}
+                : paidContinuation
+                  ? "Confirm Paid Credit budget"
+                  : "Set budget"}
           </Button>
         </DialogFooter>
       </DialogContent>

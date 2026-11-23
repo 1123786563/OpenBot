@@ -390,6 +390,48 @@ test("a paused task continues on the budget the person sets for it", async () =>
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
 });
 
+test("an ended trial requires a quoted Paid Credit budget before confirming a paused step", async () => {
+  const user = userEvent.setup({ document });
+  const queryClient = answered();
+  queryClient.setQueryData(billingKeys.resumePoints, [
+    {
+      operationId: "op-1",
+      applicationId: "openbot",
+      reason: "trial_ended",
+      createdAt: "2026-02-16T05:00:00.000Z",
+      budgetId: null,
+      confirmedAt: null,
+      creditType: null,
+    } satisfies ResumePoint,
+  ]);
+  const view = renderCredits(queryClient);
+  await user.click(
+    await view.findByRole("button", { name: "Set a budget to continue" }),
+  );
+  const dialog = within(await view.findByRole("dialog"));
+  expect(dialog.getByText(/model-a costs/)).toBeTruthy();
+  const confirm = dialog.getByRole("button", {
+    name: "Confirm Paid Credit budget",
+  });
+  expect(confirm.hasAttribute("disabled")).toBe(true);
+  expect(posts).toHaveLength(0);
+  await user.type(dialog.getByLabelText("Limit"), "3");
+  await user.click(confirm);
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[0]).toMatchObject({
+    path: "/api/billing/budgets",
+    body: {
+      creditType: "paid",
+      limitMicrocredits: "3000000",
+      modelQuote: {
+        route: "route-a",
+        priceVersion: "11111111-1111-4111-8111-111111111111",
+      },
+    },
+  });
+  expect(posts[1]).toEqual({ path: CONFIRM, body: { budgetId: "budget-1" } });
+});
+
 test("a budget is set under the Credit type the person picks", async () => {
   const user = userEvent.setup({ document });
   const view = renderCredits(answered());

@@ -1,6 +1,9 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Selector } from "@astryxdesign/core/Selector";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@astryxdesign/core/SegmentedControl";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,12 +33,14 @@ export function ExecutionBudgetDialog({
     enabled: !!operationId,
   });
   const point = points.data?.find((entry) => entry.operationId === operationId);
+  const paidContinuation = point?.reason === "trial_ended";
   const chooseBudget = !operationId || !!(point && !point.confirmedAt);
   const quote = useQuery({
     ...billingQuoteQueryOptions(),
     enabled: chooseBudget,
   });
-  const [creditType, setCreditType] = useState<"test" | "paid">("test");
+  const [choice, setChoice] = useState<"test" | "paid">("test");
+  const creditType = paidContinuation ? "paid" : choice;
   const [limit, setLimit] = useState("");
   const max = limit.length <= 19 ? microcreditsFromCredits(limit) : undefined;
   const currentQuote = quote.data;
@@ -114,18 +119,24 @@ export function ExecutionBudgetDialog({
                 cancelled, or failed requests can still use Credits.
               </p>
             ) : null}
-            <Selector
-              label="Credit type"
-              options={[
-                { value: "test", label: "Test Credits" },
-                { value: "paid", label: "Paid Credits" },
-              ]}
-              value={creditType}
-              onChange={(value) =>
-                setCreditType(value === "paid" ? "paid" : "test")
-              }
-              isDisabled={review.isPending}
-            />
+            {paidContinuation ? (
+              <p>
+                The trial has ended. Confirm a new Paid Credit budget to
+                continue.
+              </p>
+            ) : (
+              <SegmentedControl
+                label="Credit type"
+                value={choice}
+                onChange={(value) =>
+                  setChoice(value === "paid" ? "paid" : "test")
+                }
+                isDisabled={review.isPending}
+              >
+                <SegmentedControlItem value="test" label="Test Credits" />
+                <SegmentedControlItem value="paid" label="Paid Credits" />
+              </SegmentedControl>
+            )}
             <TextInput
               label="Cumulative cap in Credits"
               value={limit}
@@ -141,8 +152,9 @@ export function ExecutionBudgetDialog({
           </>
         ) : !checking && !fetchError ? (
           <p>
-            OpenBot will check the existing operation. Work can continue when
-            its billing outcome is known.
+            {point?.confirmedAt
+              ? `Continue with the confirmed ${point.creditType === "paid" ? "Paid" : "Test"} Credit budget.`
+              : "OpenBot will check the existing operation. Work can continue when its billing outcome is known."}
           </p>
         ) : null}
         {fetchError ? <p role="alert">{fetchError.message}</p> : null}
@@ -158,7 +170,9 @@ export function ExecutionBudgetDialog({
               review.isPending
                 ? "Confirming…"
                 : chooseBudget
-                  ? "Confirm and continue"
+                  ? paidContinuation
+                    ? "Confirm Paid Credits and continue"
+                    : "Confirm and continue"
                   : "Recheck and continue"
             }
             variant="primary"

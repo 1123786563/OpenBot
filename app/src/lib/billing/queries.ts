@@ -5,6 +5,7 @@ import { client } from "@/lib/client";
 /** A person's Test Credit balance, counted in microcredits. */
 export type BillingBalance = {
   creditType: "test";
+  trialEnded?: boolean;
   grantedMicrocredits: string;
   reservedMicrocredits: string;
   chargedMicrocredits: string;
@@ -91,7 +92,7 @@ export type ResumePoint = {
   operationId: string;
   authorizationId?: string;
   applicationId: string | null;
-  reason: "insufficient_credits" | "execution_limit";
+  reason: "insufficient_credits" | "execution_limit" | "trial_ended";
   createdAt: string;
   /** The budget the person confirmed for this step, once they have. */
   requiredBudgetId?: string | null;

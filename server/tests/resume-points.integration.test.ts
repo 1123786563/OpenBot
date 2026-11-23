@@ -18,6 +18,10 @@ import {
 import { budgetedTurn } from "../src/billing/background-model-turn";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import {
+  createTestCreditRoutes,
+  createTrialAdminRoutes,
+} from "../src/billing/test-credit-routes";
 import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { createDatabase } from "../src/db/client";
@@ -718,7 +722,8 @@ test("a background execution keeps completed steps, waits for evidence, and appl
 });
 
 test("a real Routine and Task keep their execution IDs and continue only after billing confirmation", async () => {
-  const { identity } = await enrolled("runner", 10n);
+  const { identity, accountId } = await enrolled("runner", 100n);
+  await boughtPack(accountId, 100n, `ali-runner-${run}`);
   const modelQuote = { route: routeId, priceVersion };
   for (const [budgetId, limitMicrocredits] of [
     ["runner-tiny", 5n],
@@ -736,6 +741,18 @@ test("a real Routine and Task keep their execution IDs and continue only after b
     ledger,
     identityOf: async (id) => (id === owner.id ? identity : undefined),
     execute: async ({ operationId }) => {
+      if (calls.length === 1) {
+        expect(await paidLedger.paidBalance(accountId)).toMatchObject({
+          availableMicrocredits: "90",
+          reservedMicrocredits: "10",
+          chargedMicrocredits: "0",
+        });
+        expect(await ledger.balance(identity)).toMatchObject({
+          availableMicrocredits: "95",
+          reservedMicrocredits: "0",
+          chargedMicrocredits: "5",
+        });
+      }
       calls.push(operationId);
       return {
         text: "Fixture reply.",
@@ -917,6 +934,50 @@ test("a real Routine and Task keep their execution IDs and continue only after b
           runTurn: turnFor("task"),
         }),
       });
+    const inFlight = await ledger.reserve(identity, {
+      operationId: "trial-in-flight",
+      route: routeId,
+      priceVersion,
+      creditType: "test",
+      applicationId: "openbot",
+    });
+    if (inFlight.state !== "reserved")
+      throw new Error("Fixture reserve failed");
+    await ledger.beginDispatch(identity, {
+      operationId: "trial-in-flight",
+      permit: inFlight.permit,
+    });
+    const endTrial = createTrialAdminRoutes(ledger, async (context, next) => {
+      context.set("actor", {
+        id: owner.id,
+        email: `${owner.id}@example.test`,
+        role: context.req.header("x-fixture-admin") ? "admin" : "user",
+      });
+      await next();
+    });
+    const endPath = `/trials/${accountId}/end`;
+    expect((await endTrial.request(endPath, { method: "POST" })).status).toBe(
+      403,
+    );
+    const end = () =>
+      endTrial.request(endPath, {
+        method: "POST",
+        headers: { "x-fixture-admin": "yes" },
+      });
+    expect((await end()).status).toBe(200);
+    expect((await end()).status).toBe(200);
+    expect(await ledger.balance(identity)).toMatchObject({ trialEnded: true });
+    const settled = await ledger.settle(accountId, "trial-in-flight", {
+      inputTokens: 3n,
+      outputTokens: 0n,
+    });
+    expect(settled).toMatchObject({ state: "settled", creditType: "test" });
+    expect(await ledger.balance(identity)).toMatchObject({
+      availableMicrocredits: "95",
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "5",
+    });
+
     const originalTaskWorker = tasks();
     const task = await originalTaskWorker.startFromItem({
       ownerUserId: owner.id,
@@ -931,21 +992,59 @@ test("a real Routine and Task keep their execution IDs and continue only after b
     expect(await ledger.resumePoints(identity)).toMatchObject([
       {
         operationId: paused.billingOperationId,
-        reason: "insufficient_credits",
+        reason: "trial_ended",
       },
     ]);
-    const refill = crypto.randomUUID();
-    batchIds.push(refill);
-    await ledger.enroll({ identity, batchId: refill, amount: 20n });
-    await ledger.claim(identity, refill);
     const replacementTaskWorker = tasks();
     await replacementTaskWorker.sweep();
     expect(calls).toHaveLength(1);
-    await ledger.confirmResumePoint(
-      identity,
-      paused.billingOperationId,
-      "runner-raised",
+    expect(await paidLedger.paidBalance(accountId)).toMatchObject({
+      availableMicrocredits: "100",
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "0",
+    });
+    expect(
+      await ledger.confirmResumePoint(
+        identity,
+        paused.billingOperationId,
+        "runner-raised",
+      ),
+    ).toEqual({ state: "denied" });
+    const paidBudget = await budgetOf(identity, {
+      budgetId: "runner-paid",
+      limitMicrocredits: 30n,
+      creditType: "paid",
+      modelQuote,
+    });
+    expect(calls).toHaveLength(1);
+    expect(
+      await ledger.reserve(identity, {
+        operationId: paused.billingOperationId,
+        route: routeId,
+        priceVersion,
+        creditType: "paid",
+        budgetId: paidBudget.budgetId,
+        applicationId: "openbot",
+      }),
+    ).toEqual({ state: "denied", reason: "trial_ended" });
+    const api = createTestCreditRoutes({
+      ledger,
+      paid: { ledger: paidLedger },
+      authenticate: async () => identity,
+    });
+    const confirmation = await api.request(
+      `/resume-points/${paused.billingOperationId}/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ budgetId: paidBudget.budgetId }),
+      },
     );
+    expect(confirmation.status).toBe(200);
+    expect(await confirmation.json()).toMatchObject({
+      state: "confirmed",
+      creditType: "paid",
+    });
     await replacementTaskWorker.continueBudgeted(owner.id, task.id);
     await replacementTaskWorker.idle();
     expect(await taskStore.get(owner.id, task.id)).toMatchObject({
@@ -956,7 +1055,50 @@ test("a real Routine and Task keep their execution IDs and continue only after b
       routinePoint.operationId,
       paused.billingOperationId,
     ]);
+    expect(await ledger.balance(identity)).toMatchObject({
+      availableMicrocredits: "95",
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "5",
+    });
+    expect(await paidLedger.paidBalance(accountId)).toMatchObject({
+      availableMicrocredits: "98",
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "2",
+    });
+    expect(
+      await ledger.receipt(identity, paused.billingOperationId),
+    ).toMatchObject({
+      creditType: "paid",
+      budgetId: paidBudget.budgetId,
+    });
+    const bill = await api.request("/paid/bill");
+    expect(await bill.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: "trial-in-flight",
+          applicationId: "openbot",
+          source: "test",
+          amountMicrocredits: "3",
+        }),
+        expect.objectContaining({
+          operationId: paused.billingOperationId,
+          applicationId: "openbot",
+          source: "credit_pack",
+          amountMicrocredits: "2",
+        }),
+      ]),
+    );
+    await expect(
+      paidLedger.requestRefund(batchIds.at(-1) ?? ""),
+    ).rejects.toMatchObject({
+      code: "order_unknown",
+    });
   } finally {
+    await database
+      .delete(enterpriseSettings)
+      .where(
+        eq(enterpriseSettings.key, `billing.test-credit-ended.${accountId}`),
+      );
     if (taskRun) {
       await database
         .delete(workItems)
