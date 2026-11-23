@@ -125,20 +125,6 @@ server/tests/enterprise-controls.integration.test.ts: error TS2769: No overload 
 server/tests/group-conversations.integration.test.ts: error TS2339: Property 'serverId' does not exist on type 'object'.
 server/tests/headless-components.integration.test.ts: error TS2352: Conversion of type 'BaseEvent' to type '{ delta: string; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
 server/tests/headless-components.integration.test.ts: error TS2741: Property 'preconnect' is missing in type '(url: URL | RequestInfo, init: RequestInit | BunFetchRequestInit | undefined) => Promise<Response>' but required in type 'typeof fetch'.
-server/tests/headless-components.integration.test.ts: error TS6142: Module '../../app/src/components/gallery/charts' was resolved to 'app/src/components/gallery/charts.tsx', but '--jsx' is not set.
-server/tests/headless-components.integration.test.ts: error TS7006: Parameter 'entry' implicitly has an 'any' type.
-server/tests/headless-components.integration.test.ts: error TS7031: Binding element 'description' implicitly has an 'any' type.
-server/tests/headless-components.integration.test.ts: error TS7031: Binding element 'kind' implicitly has an 'any' type.
-server/tests/headless-components.integration.test.ts: error TS7031: Binding element 'name' implicitly has an 'any' type.
-server/tests/headless-components.integration.test.ts: error TS7031: Binding element 'title' implicitly has an 'any' type.
-server/tests/headless-components.test.ts: error TS6142: Module '../../app/src/components/gallery/activity' was resolved to 'app/src/components/gallery/activity.tsx', but '--jsx' is not set.
-server/tests/headless-components.test.ts: error TS6142: Module '../../app/src/components/gallery/cards' was resolved to 'app/src/components/gallery/cards.tsx', but '--jsx' is not set.
-server/tests/headless-components.test.ts: error TS6142: Module '../../app/src/components/gallery/charts' was resolved to 'app/src/components/gallery/charts.tsx', but '--jsx' is not set.
-server/tests/headless-components.test.ts: error TS6142: Module '../../app/src/components/gallery/decisions' was resolved to 'app/src/components/gallery/decisions.tsx', but '--jsx' is not set.
-server/tests/headless-components.test.ts: error TS6142: Module '../../app/src/components/gallery/form' was resolved to 'app/src/components/gallery/form.tsx', but '--jsx' is not set.
-server/tests/headless-components.test.ts: error TS6142: Module '../../app/src/components/gallery/quote' was resolved to 'app/src/components/gallery/quote.tsx', but '--jsx' is not set.
-server/tests/headless-components.test.ts: error TS6142: Module '../../app/src/components/gallery/table' was resolved to 'app/src/components/gallery/table.tsx', but '--jsx' is not set.
-server/tests/headless-components.test.ts: error TS7006: Parameter 'entry' implicitly has an 'any' type.
 server/tests/headless-tools.test.ts: error TS2322: Type '(context: { ownerUserId: string; agentId: string; initiator: { kind: string; id?: string | undefined; }; }) => Promise<unknown[]>' is not assignable to type '(input: { ownerUserId: string; agentId: string; initiator: AuditInitiator; threadId: string; runId: string; }) => Promise<HeadlessTool[]>'.
 server/tests/headless-tools.test.ts: error TS2741: Property 'preconnect' is missing in type '(url: URL | RequestInfo, init: RequestInit | BunFetchRequestInit | undefined) => Promise<Response>' but required in type 'typeof fetch'.
 server/tests/health.test.ts: error TS2345: Argument of type '{ handler: () => Response; }' is not assignable to parameter of type 'AuthService'.

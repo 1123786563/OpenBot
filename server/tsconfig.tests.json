@@ -16,5 +16,11 @@
   // see `scripts/typecheck-tests.ts`.
   "extends": "./tsconfig.json",
   "compilerOptions": { "paths": { "@/*": ["../app/src/*"] } },
-  "include": ["src", "scripts", "../scripts/composio-smoke.ts", "tests"]
+  "include": [
+    "src",
+    "scripts",
+    "../scripts/composio-smoke.ts",
+    "../app/src/vite-env.d.ts",
+    "tests"
+  ]
 }

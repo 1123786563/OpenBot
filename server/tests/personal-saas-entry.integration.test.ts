@@ -5632,17 +5632,15 @@ async function verifyBackgroundCutoff(
   );
 }
 
-test.each(automationCutoffs)(
-  "the mounted workspace stops and recovers background capabilities after %s",
-  async (cutoff) => {
+for (const cutoff of automationCutoffs) {
+  test(`the mounted workspace stops and recovers background capabilities after ${cutoff}`, async () => {
     try {
       await verifyBackgroundCutoff(cutoff);
     } finally {
       clockTime = undefined;
     }
-  },
-  60_000,
-);
+  }, 60_000);
+}
 
 test("workspace closure requires fresh verification and revokes existing workspace access", async () => {
   const owner = await isolationOwner();
