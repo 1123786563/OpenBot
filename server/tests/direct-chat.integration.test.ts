@@ -1529,8 +1529,18 @@ test("a granted cloud Chat tool waits for approval and resumes the original Run 
     } finally {
       await run.body?.cancel();
     }
-    const [request] = await store.list(actor.id);
-    if (!request) throw new Error("Missing notes approval.");
+    const mobileInbox = await restarted.request(
+      `/api/approvals?threadId=${encodeURIComponent(channel.threadId)}`,
+    );
+    expect(mobileInbox.status).toBe(200);
+    const { requests } = await mobileInbox.json();
+    expect(requests).toMatchObject([
+      {
+        status: "pending",
+        action: { threadId: channel.threadId, toolRef: "notes/post" },
+      },
+    ]);
+    const [request] = requests;
     expect(
       (
         await restarted.request(
