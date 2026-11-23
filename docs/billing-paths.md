@@ -82,10 +82,10 @@ version. Send the grant, operation ID, returned permit, and text messages to
 `spending-authorizations/<id>/operations/<operation-id>` for the receipt.
 The named application's account access is separate from the user's bill.
 
-This entry spends Test Credits. Paid enablement needs independent path
-evidence and deployment signoff. The local test in
-`server/tests/billing-routes.integration.test.ts` uses a real PostgreSQL
-ledger, loopback application HTTP, and a simulated meter and gateway.
+This entry spends the Credit type in the person's grant. Paid Credits
+require an explicit Paid Credit grant and a signoff for the selected path.
+Local PostgreSQL and HTTP fixtures cover the application credential,
+scoped authorization, metered dispatch, and paid receipt.
 
 
 ## Set the shared provider-cost ceiling
