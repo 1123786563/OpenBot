@@ -7,21 +7,21 @@ import {
   type RunAgentInput,
 } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
-import {
-  type RunContextVersion,
-  runContextVersions,
-} from "@openbot/toolkit/run-context";
-import { z } from "zod";
 import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import { answerMessageId } from "@openbot/shared/handoff-markers";
 import {
   HeadlessToolSuspension,
   HeadlessToolsMiddleware,
 } from "@openbot/toolkit/headless-tools";
+import {
+  type RunContextVersion,
+  runContextVersions,
+} from "@openbot/toolkit/run-context";
 import { and, eq, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
+import { z } from "zod";
 import {
   askChannelAgent,
   messageText,
@@ -37,6 +37,7 @@ import { createHandoffRunner } from "../src/agents/handoff-runner";
 import { handoffTool } from "../src/agents/handoff-tool";
 import { createOpenBotHandoffDelivery } from "../src/agents/handoff-wiring";
 import { createAgentProfileStore } from "../src/agents/profile-store";
+import { createApp } from "../src/app";
 import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
 import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
@@ -90,8 +91,8 @@ import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createMemoryRoutes } from "../src/memory/routes";
-import { createPluginStore } from "../src/plugins/store";
 import { createMemoryStore } from "../src/memory/store";
+import { createPluginStore } from "../src/plugins/store";
 import { createRecorderConnectionStore } from "../src/recorder/connections";
 import { createOpenBotRecordings } from "../src/recorder/openbot-recordings";
 import { createRecorderRoutes } from "../src/recorder/routes";
@@ -1743,6 +1744,31 @@ test("Web direct chat persists messages and one run per send, with only its Pers
   }
 });
 
+function traceOperatorApp(operators?: string) {
+  // createApp takes attachmentDatabase as its 26th argument.
+  const args = new Array(createApp.length) as Parameters<typeof createApp>;
+  args[0] = loadConfig({
+    DATABASE_URL: databaseUrl,
+    OPENBOT_ORGANIZATION_AUTH_URL: "https://example.test",
+    KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    OPENBOT_OPIK_TRACE_OPERATORS: operators,
+  });
+  args[1] = {
+    handler: () => new Response(null, { status: 404 }),
+    api: {
+      getSession: async ({ headers }) => {
+        const id = headers.get("x-test-actor");
+        return id ? { user: { id, email: `${id}@example.test` } } : null;
+      },
+    },
+  };
+  args[2] = {
+    rolesForUser: async (id) => [id === "member" ? "user" : "admin"],
+  };
+  args[25] = database;
+  return createApp(...args);
+}
+
 test(
   "Run feedback survives an Opik outage and scores an incomplete Run once after recovery",
   async () => {
@@ -1870,6 +1896,35 @@ test(
         await createOpikDelivery(database, config, options).drain();
         expect(dropped).toEqual([1]);
         expect(scores.size).toBe(0);
+        const tracePath = "/api/admin/opik/traces";
+        const operator = { headers: { "x-test-actor": "operator" } };
+        const traceApp = traceOperatorApp(" operator , member ");
+        expect((await traceApp.request(tracePath)).status).toBe(401);
+        for (const actor of ["member", "other-admin"]) {
+          expect(
+            (
+              await traceApp.request(tracePath, {
+                headers: { "x-test-actor": actor },
+              })
+            ).status,
+          ).toBe(403);
+        }
+        expect(
+          (await traceOperatorApp().request(tracePath, operator)).status,
+        ).toBe(403);
+        expect(
+          (await traceApp.request(`${tracePath}?after=invalid`, operator))
+            .status,
+        ).toBe(400);
+        const duringOutage = await traceApp.request(tracePath, operator);
+        expect(duringOutage.status).toBe(200);
+        expect((await duringOutage.json()).traces).toContainEqual(
+          expect.objectContaining({
+            state: "dropped",
+            traceId: null,
+            score: null,
+          }),
+        );
         const restarted = createDatabase(databaseUrl, TEST_POOL);
         try {
           const aliceReplica = web(restarted, alice, bot.id, async () => {}, {
@@ -1941,6 +1996,33 @@ test(
           name: "OpenBot Run",
           metadata: { incomplete: false, status: "completed" },
         });
+        const view = await traceApp.request(tracePath, operator);
+        expect(view.status).toBe(200);
+        expect(view.headers.get("cache-control")).toBe("no-store");
+        expect(await view.json()).toEqual({
+          traces: expect.arrayContaining([
+            {
+              recordId: expect.any(String),
+              traceId: ordinaryTrace?.id,
+              state: "complete",
+              status: "completed",
+              startedAt: expect.any(String),
+              finishedAt: expect.any(String),
+              durationMs: ordinaryTrace?.metadata.duration_ms,
+              score: null,
+            },
+            {
+              recordId: expect.any(String),
+              traceId: incompleteTrace?.id,
+              state: "incomplete",
+              status: "completed",
+              startedAt: expect.any(String),
+              finishedAt: expect.any(String),
+              durationMs: incompleteTrace?.metadata.duration_ms,
+              score: 1,
+            },
+          ]),
+        });
         if (realApi) {
           const base = new URL(realApi.endsWith("/") ? realApi : `${realApi}/`);
           for (const trace of [incompleteTrace, ordinaryTrace]) {
@@ -1976,7 +2058,7 @@ test(
       await database.delete(users).where(eq(users.id, bob.id));
     }
   },
-  process.env.TEST_OPIK_API_URL ? 300_000 : 30_000,
+  process.env.TEST_OPIK_API_URL ? 300_000 : 120_000,
 );
 
 test("archiving hides only the list entry; deletion withdraws direct history, attachments and an active stream", async () => {
