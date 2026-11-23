@@ -12,12 +12,15 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables, AuthenticatedActor } from "../auth/guards";
+import type { Database } from "../db/client";
 import { currentEdition } from "../edition";
 import {
   recordApprovalBefore,
   type SkillApprovalStore,
   UnnamedSkillError,
 } from "./approvals";
+import { setPersonalLearningAutoApproval } from "./direct-chat";
+import type { LearningModelCalls } from "./model-endpoint";
 import {
   CANDIDATE_ID,
   type LearningManagement,
@@ -31,7 +34,6 @@ import {
   reviewProposal,
   runSummary,
 } from "./review";
-import type { LearningModelCalls } from "./model-endpoint";
 import type { LearningSettingsStore } from "./settings";
 import type { LearningSharingStore } from "./sharing";
 
@@ -77,6 +79,8 @@ export type PersonalLearningRouteDeps = {
   settings: LearningSettingsStore;
   /** Approves what is pending in the person's Learning spaces; run when automatic approval is switched on. */
   autoApprover?: { sweep(): Promise<{ approved: number }> };
+  /** OpenBot stores automatic approval per person, independently of legacy container settings. */
+  openbotDatabase?: Database;
   /** The Learning spaces this person reviews (learning/scopes.ts). */
   scopesFor: (actor: AuthenticatedActor) => Promise<LearningSource[]>;
   /** The titles of this person's own recordings by id; an id they don't own is left out. */
@@ -761,6 +765,14 @@ export function createPersonalLearningRoutes(
     }
     const autoApprove = body.autoApprove;
     const userId = context.var.actor.id;
+    if (deps.openbotDatabase) {
+      await setPersonalLearningAutoApproval(
+        deps.openbotDatabase,
+        userId,
+        autoApprove,
+      );
+      return context.json({ autoApprove });
+    }
     await deps.settings.setAutoApprove(autoApprove);
     await audit({
       eventType: "configuration.changed",
