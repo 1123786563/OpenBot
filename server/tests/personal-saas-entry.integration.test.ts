@@ -1192,11 +1192,13 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     expect(retried.status).toBe(303);
     const retryPath = retried.headers.get("location");
     if (!retryPath) throw new Error("Missing retry status page");
+    const retryRunId = retryPath.split("/").at(-1);
+    if (!retryRunId) throw new Error("Missing retry run ID");
     expect(retryPath).not.toBe(runPath);
     expect(replayedRetry.headers.get("location")).toBe(retryPath);
     expect(await app.sweepBotWork()).toBe(true);
     expect(await app.sweepBotWork()).toBe(false);
-    expect(requests[1]?.operationId).toBe(retryPath.split("/").at(-1));
+    expect(requests[1]?.operationId).toBe(retryRunId);
     expect(
       await (
         await send(`/api/workspace/bot-runs/${originalRunId}`, {
@@ -1205,12 +1207,12 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       ).json(),
     ).toMatchObject({
       state: "stopped",
-      recovery: { action: "retry", key: requests[1]?.operationId },
+      recovery: { action: "retry", key: retryRunId },
       testCredit: { state: "released", dispatchedAt: null },
     });
     expect(
       await (
-        await send(`/api/workspace/bot-runs/${retryPath.split("/").at(-1)}`, {
+        await send(`/api/workspace/bot-runs/${retryRunId}`, {
           headers: browserNative,
         })
       ).json(),
