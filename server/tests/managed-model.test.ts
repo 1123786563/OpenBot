@@ -278,12 +278,16 @@ test("a receipt for a dispatched or different operation cannot clear the Run hol
       url: control.url,
       credentials,
     });
-    expect(await model.reconcileOutcome({ scope, step: "answer" })).toEqual({
+    expect(
+      await model.reconcileOutcome({ scope, step: "answer" }),
+    ).toStrictEqual({
       state: "released",
       outcome: undefined,
     });
     dispatchedAt = null;
-    expect(await model.reconcileOutcome({ scope, step: "answer" })).toEqual({
+    expect(
+      await model.reconcileOutcome({ scope, step: "answer" }),
+    ).toStrictEqual({
       state: "released",
       outcome: undefined,
     });
