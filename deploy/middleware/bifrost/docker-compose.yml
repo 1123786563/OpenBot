@@ -2,7 +2,7 @@ name: openbot-bifrost
 
 services:
   bifrost:
-    image: ${BIFROST_IMAGE:-maximhq/bifrost:v2.4.0}
+    image: ${BIFROST_IMAGE:-maximhq/bifrost:v2.6.0@sha256:5968d007ba4f74ee01bc4ceb071decb9927a0b7bb43dbb9072208f75e2d522e3}
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
