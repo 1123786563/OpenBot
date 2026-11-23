@@ -59,6 +59,7 @@ import {
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import type { CreditPackTestChannel } from "./billing/credit-pack-test-channel";
+import { createPaidCorrectionRoutes } from "./billing/paid-correction-routes";
 import type { PaidCreditLedger } from "./billing/paid-ledger";
 import type {
   TestCreditLedger,
@@ -973,6 +974,10 @@ export function createApp(
   );
   app.route("/api/me/profile", createProfileRoutes(requireUser, profileStore));
   if (billing) {
+    app.route(
+      "/api/admin/billing",
+      createPaidCorrectionRoutes(billing.paidLedger, requireUser),
+    );
     if (billing.weknora && billing.casdoorIdentityOf)
       app.route(
         "/api/weknora",

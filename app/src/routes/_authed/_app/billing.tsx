@@ -105,6 +105,7 @@ const SOURCES: Record<BillLine["source"], string> = {
   test: "Test credits",
   subscription: "Monthly plan",
   credit_pack: "Credit pack",
+  correction_credit: "Correction Credits",
   correction: "Correction",
   dispute: "Payment dispute",
 };
@@ -257,11 +258,7 @@ function PaidCreditsSection() {
                   <IconCoins />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle>
-                    {source.kind === "subscription"
-                      ? "Monthly plan"
-                      : "Credit pack"}
-                  </ItemTitle>
+                  <ItemTitle>{SOURCES[source.kind]}</ItemTitle>
                   <ItemDescription>
                     Added {onDate(source.arrivedAt)}.
                   </ItemDescription>
@@ -525,61 +522,118 @@ function UsageSection() {
         <PageEmpty icon={IconSearch} title="No matches" />
       ) : (
         <PageRows>
-          {shown.map((line, index) => (
-            <Fragment
-              key={`${line.orderId ?? ""}|${line.operationId}|${line.source}|${line.entitlementId ?? ""}|${line.at ?? ""}|${line.amountMicrocredits}`}
-            >
-              {index > 0 ? <Separator /> : null}
-              <Item size="sm">
-                <ItemContent>
-                  <ItemTitle>{SOURCES[line.source]}</ItemTitle>
-                  {line.operationId ? (
-                    <ItemDescription>
-                      {line.reason ??
-                        `${line.applicationId ? `${appLabel(line.applicationId)}, ` : ""}${line.operationId} on ${onDate(line.at)}`}
-                    </ItemDescription>
-                  ) : line.reason ? (
-                    <ItemDescription>{line.reason}</ItemDescription>
-                  ) : null}
-                  {line.orderId && (
-                    <ItemDescription>Order {line.orderId}</ItemDescription>
-                  )}
-                  {line.dispute && (
-                    <PaymentDisputeDetails dispute={line.dispute} />
-                  )}
-                  {line.periodStart && line.periodEnd ? (
-                    <ItemDescription>
-                      Original period {beijingBillingTime(line.periodStart)} to{" "}
-                      {beijingBillingTime(line.periodEnd)} (Beijing time)
-                    </ItemDescription>
-                  ) : null}
-                  {line.arrivedAt && line.at ? (
-                    <ItemDescription>
-                      Credits received {beijingBillingTime(line.arrivedAt)}.
-                      Charge posted {beijingBillingTime(line.at)} (Beijing
-                      time).
-                    </ItemDescription>
-                  ) : null}
-                </ItemContent>
-                <ItemActions>
-                  {line.source !== "dispute" &&
-                    creditsText(line.amountMicrocredits)}
-                  {line.source === "test" && line.operationId ? (
-                    <Button
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        setOperationId(line.operationId ?? undefined)
-                      }
-                    >
-                      View receipt
-                    </Button>
-                  ) : null}
-                </ItemActions>
-              </Item>
-            </Fragment>
-          ))}
+          {shown.map((line, index) => {
+            const originalOperation = line.operationId;
+            const correction = line.correction;
+            const added = correction?.correctionCreditsMicrocredits;
+            const returned =
+              added == null
+                ? null
+                : (BigInt(line.amountMicrocredits) - BigInt(added)).toString();
+            return (
+              <Fragment
+                key={
+                  correction?.id ??
+                  `${line.orderId ?? ""}|${line.operationId}|${line.source}|${line.entitlementId ?? ""}|${line.at ?? ""}|${line.amountMicrocredits}`
+                }
+              >
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemContent>
+                    <ItemTitle>
+                      {correction?.kind === "fault_compensation"
+                        ? "Platform fault compensation"
+                        : SOURCES[line.source]}
+                    </ItemTitle>
+                    {line.reason || originalOperation ? (
+                      <ItemDescription className="line-clamp-none">
+                        {line.reason ??
+                          `${line.applicationId ? `${appLabel(line.applicationId)}, ` : ""}${originalOperation} on ${onDate(line.at)}`}
+                      </ItemDescription>
+                    ) : null}
+                    {line.orderId && (
+                      <ItemDescription>Order {line.orderId}</ItemDescription>
+                    )}
+                    {line.dispute && (
+                      <PaymentDisputeDetails dispute={line.dispute} />
+                    )}
+                    {correction ? (
+                      <>
+                        {originalOperation ? (
+                          <ItemDescription className="line-clamp-none">
+                            Original operation {originalOperation}
+                          </ItemDescription>
+                        ) : null}
+                        <ItemDescription className="line-clamp-none">
+                          Evidence {correction.evidence}. Recorded by{" "}
+                          {correction.operator}.
+                        </ItemDescription>
+                        {returned && returned !== "0" ? (
+                          <ItemDescription>
+                            {creditsText(returned)} credits returned to the
+                            original source.
+                          </ItemDescription>
+                        ) : null}
+                        {added && added !== "0" ? (
+                          <ItemDescription>
+                            {creditsText(added)} non-expiring Correction Credits
+                            added.
+                          </ItemDescription>
+                        ) : null}
+                        {correction.availableBeforeMicrocredits !== null &&
+                        correction.availableAfterMicrocredits !== null ? (
+                          <ItemDescription>
+                            Available credits changed from{" "}
+                            {creditsText(
+                              correction.availableBeforeMicrocredits,
+                            )}{" "}
+                            to{" "}
+                            {creditsText(correction.availableAfterMicrocredits)}
+                            .
+                          </ItemDescription>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {line.periodStart && line.periodEnd ? (
+                      <ItemDescription>
+                        Original period {beijingBillingTime(line.periodStart)}{" "}
+                        to {beijingBillingTime(line.periodEnd)} (Beijing time)
+                      </ItemDescription>
+                    ) : null}
+                    {line.arrivedAt && line.at ? (
+                      <ItemDescription>
+                        Credits received {beijingBillingTime(line.arrivedAt)}.
+                        Charge posted {beijingBillingTime(line.at)} (Beijing
+                        time).
+                      </ItemDescription>
+                    ) : null}
+                  </ItemContent>
+                  <ItemActions>
+                    {line.source !== "dispute" &&
+                      creditsText(line.amountMicrocredits)}
+                    {originalOperation &&
+                    (line.source === "test" || line.source === "correction") ? (
+                      <Button
+                        aria-label={
+                          line.source === "correction"
+                            ? `View original operation ${originalOperation}`
+                            : undefined
+                        }
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        onClick={() => setOperationId(originalOperation)}
+                      >
+                        {line.source === "correction"
+                          ? "View original operation"
+                          : "View receipt"}
+                      </Button>
+                    ) : null}
+                  </ItemActions>
+                </Item>
+              </Fragment>
+            );
+          })}
         </PageRows>
       )}
       <Dialog

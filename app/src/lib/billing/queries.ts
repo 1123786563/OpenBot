@@ -26,7 +26,7 @@ export type BillingQuote = {
 /** One paid source of credits, in the order a task spends them. */
 export type PaidSource = {
   entitlementId: string;
-  kind: "subscription" | "credit_pack";
+  kind: "subscription" | "credit_pack" | "correction_credit";
   arrivedAt: string;
   remainingMicrocredits: string;
 };
@@ -54,7 +54,13 @@ export type BillLine = {
   dispute?: PaymentDispute | null;
   /** The app the step ran for, where the caller named one. */
   applicationId: string | null;
-  source: "test" | "subscription" | "credit_pack" | "correction" | "dispute";
+  source:
+    | "test"
+    | "subscription"
+    | "credit_pack"
+    | "correction_credit"
+    | "correction"
+    | "dispute";
   entitlementId: string | null;
   periodStart: string | null;
   periodEnd: string | null;
@@ -62,6 +68,15 @@ export type BillLine = {
   amountMicrocredits: string;
   at: string | null;
   reason: string | null;
+  correction?: {
+    id: string;
+    kind: "overcharge_refund" | "fault_compensation";
+    evidence: string;
+    operator: string;
+    availableBeforeMicrocredits: string | null;
+    availableAfterMicrocredits: string | null;
+    correctionCreditsMicrocredits: string | null;
+  };
 };
 
 /** The paid side of a person's balance: what can be spent, what running steps hold, and what finished steps charged. */

@@ -92,3 +92,14 @@ bun test --no-env-file --env-file=.env.test server/tests/bifrost-evidence.test.t
 ```
 
 The test drops the completed inference reply, reads the actual gateway log through the scoped proxy, and verifies that recovery leaves the inference dispatch count at one.
+
+## Record a verified paid correction
+
+After verifying the case, submit it to `POST /api/admin/billing/corrections` with a signed-in administrator session. Send `accountId`, a positive decimal string in `amountMicrocredits`, a customer-visible `reason`, and a customer-visible case reference in `evidence`. The server records the signed-in administrator's ID.
+
+- Use `kind: "overcharge_refund"` and the charged `operationId` to correct a settled paid charge. The ledger restores credits to a source that can still be spent and issues non-expiring Correction Credits for the portion that cannot return. A verified case can be corrected after the execution reconciliation deadline.
+- Use `kind: "fault_compensation"` to book separately approved compensation as non-expiring Correction Credits. Include `operationId` when the case concerns a specific operation. The original Billing Period and renewal anchor still apply.
+
+Reuse the same case reference, operation, kind, amount and reason when retrying a submission. A successful response contains the original correction ID on retry. A conflicting retry or an amount larger than the remaining settled charge returns `409`.
+
+The customer can see the correction under **Billing → Usage**, alongside the original charge. The correction shows the original operation and Billing Period where applicable, the case reference, the operator and the available balance before and after booking. For an RMB return, use the original order's refund flow.

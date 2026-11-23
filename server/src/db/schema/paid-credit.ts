@@ -298,9 +298,9 @@ export const paidCorrections = pgTable(
     accountId: uuid("account_id")
       .notNull()
       .references(() => testCreditAccounts.id),
-    // The overcharged operation; null for fault compensation.
+    // The original operation, when the verified case concerns one.
     operationId: text("operation_id"),
-    // The source the correction returned credits to, when it did.
+    // The first restored source or the compensation entitlement.
     entitlementId: uuid("entitlement_id").references(() => paidEntitlements.id),
     kind: text({ enum: paidCorrectionKinds }).notNull(),
     amountMicrocredits: bigint("amount_microcredits", {
@@ -309,6 +309,15 @@ export const paidCorrections = pgTable(
     reason: text().notNull(),
     evidence: text().notNull(),
     by: text().notNull(),
+    availableBeforeMicrocredits: bigint("available_before_microcredits", {
+      mode: "bigint",
+    }),
+    availableAfterMicrocredits: bigint("available_after_microcredits", {
+      mode: "bigint",
+    }),
+    correctionCreditsMicrocredits: bigint("correction_credits_microcredits", {
+      mode: "bigint",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -160,6 +160,15 @@ const lines: BillLine[] = [
     amountMicrocredits: "10000000",
     at: "2026-02-16T05:00:00.000Z",
     reason: "metered double count",
+    correction: {
+      id: "correction-1",
+      kind: "overcharge_refund",
+      evidence: "case-42",
+      operator: "staff-a",
+      availableBeforeMicrocredits: "0",
+      availableAfterMicrocredits: "10000000",
+      correctionCreditsMicrocredits: "10000000",
+    },
   },
 ];
 
@@ -219,6 +228,22 @@ test("the Test Credit balance and the paid side are in view together", async () 
   // Every charge names the source that paid, and a correction its reason.
   expect(view.getByText("Correction")).toBeTruthy();
   expect(view.getByText("metered double count")).toBeTruthy();
+});
+
+test("the correction links to the original operation and explains the balance change", async () => {
+  const view = renderCredits(answered());
+  expect(
+    await view.findByText("Evidence case-42. Recorded by staff-a."),
+  ).toBeTruthy();
+  expect(
+    view.getByText("10 non-expiring Correction Credits added."),
+  ).toBeTruthy();
+  expect(
+    view.getByText("Available credits changed from 0 to 10."),
+  ).toBeTruthy();
+  expect(
+    view.getByRole("button", { name: "View original operation op-3" }),
+  ).toBeTruthy();
 });
 
 test("each charge is listed by the source that paid for it", async () => {
