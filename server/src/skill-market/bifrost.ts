@@ -1,21 +1,25 @@
+import { createHash } from "node:crypto";
 import { Zip, ZipPassThrough } from "fflate";
 import postgres from "postgres";
 import { stringify } from "yaml";
 import { z } from "zod";
 import { CatalogEntryUnavailable } from "./catalog";
-import { type BifrostMarketConfig, exactVersion } from "./config";
+import {
+  type BifrostMarketConfig,
+  bifrostNamespace,
+  bifrostSlug,
+  exactVersion,
+} from "./config";
 import { decodeImportedSkillDocument } from "./imported-document";
 
-export const bifrostSkillName = z
-  .string()
-  .max(64)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+export { bifrostSlug as bifrostSkillName } from "./config";
+
 const pageSize = 20;
 export const maxFiles = 256;
 export const maxPackageBytes = 32 * 1024 * 1024;
 
 const summaryRow = z.object({
-  name: bifrostSkillName,
+  name: bifrostSlug,
   description: z.string(),
   latest_version: exactVersion,
 });
@@ -26,6 +30,7 @@ const fileRow = z.object({
 });
 const versionRow = z.object({
   id: z.uuid(),
+  skill_id: z.uuid(),
   version: exactVersion,
   skill_md_body: z.string().refine((body) => body.trim().length > 0),
   frontmatter_snapshot: z
@@ -37,6 +42,54 @@ const versionRow = z.object({
     .catchall(z.json()),
 });
 const storedFile = z.object({ path: z.string(), data: z.instanceof(Buffer) });
+const compatibilityDeclaration = z.object({
+  metadata: z
+    .object({
+      "openbot-compatibility": z.preprocess(
+        (value) => {
+          if (typeof value !== "string") return value;
+          try {
+            return JSON.parse(value);
+          } catch {
+            return value;
+          }
+        },
+        z
+          .object({
+            scripts: z.boolean(),
+            supportingFiles: z.boolean(),
+            dedicatedRuntime: z.boolean(),
+          })
+          .optional(),
+      ),
+    })
+    .optional(),
+});
+
+export const bifrostPackageIdentity = z.object({
+  namespace: z.literal(bifrostNamespace),
+  slug: bifrostSlug,
+  version: exactVersion,
+  skillId: z.uuid(),
+  versionId: z.uuid(),
+  fingerprint: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+});
+
+export type BifrostPackageIdentity = z.infer<typeof bifrostPackageIdentity>;
+
+export function bifrostPackageFingerprint(
+  files: ReadonlyMap<string, Uint8Array>,
+) {
+  const hash = createHash("sha256");
+  const entries = [...files].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  for (const [path, bytes] of entries) {
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    hash.update(`${path}:${digest}\n`);
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
 
 export class IncompleteBifrostPackage extends Error {
   constructor() {
@@ -56,8 +109,6 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
       application_name: "openbot-skill-market",
     },
   });
-  const installationReason =
-    "Bifrost versions are available to preview and download. Installation approval is unavailable.";
 
   function summary(row: z.infer<typeof summaryRow>) {
     return {
@@ -71,11 +122,18 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
   }
 
   function checkScope(namespace: string, slug: string) {
-    if (
-      namespace !== config.namespace ||
-      !bifrostSkillName.safeParse(slug).success
-    )
+    if (namespace !== config.namespace || !bifrostSlug.safeParse(slug).success)
       throw new CatalogEntryUnavailable();
+  }
+
+  async function scopedSummary(namespace: string, slug: string) {
+    checkScope(namespace, slug);
+    const [row] = await sql`
+      select name, description, latest_version
+      from openbot_skill_market.catalog where name = ${slug}
+    `;
+    if (!row) throw new CatalogEntryUnavailable();
+    return summary(summaryRow.parse(row));
   }
 
   async function findVersion(
@@ -84,9 +142,10 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
     version: string,
   ) {
     const rows = await connection`
-      select id, version, skill_md_body, frontmatter_snapshot
+      select id, skill_id, version, skill_md_body, frontmatter_snapshot
       from openbot_skill_market.versions
       where name = ${slug} and version = ${version}
+      limit 2
     `;
     if (!rows.length) throw new CatalogEntryUnavailable();
     const selected = versionRow.safeParse(rows[0]);
@@ -161,14 +220,28 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
             throw new IncompleteBifrostPackage();
           entries.set(file.path, data);
         }
-        return { versionId: selected.id, files: entries };
+        return {
+          versionId: selected.id,
+          packageIdentity: bifrostPackageIdentity.parse({
+            namespace,
+            slug,
+            version: selected.version,
+            skillId: selected.skill_id,
+            versionId: selected.id,
+            fingerprint: bifrostPackageFingerprint(entries),
+          }),
+          frontmatter: selected.frontmatter_snapshot,
+          instructions: selected.skill_md_body,
+          files: entries,
+        };
       },
     );
   }
 
   return {
     namespace: config.namespace,
-    installationReason,
+    readExactPackage,
+    close: () => sql.end(),
 
     async search(q: string, page: number) {
       const rows = await sql`
@@ -186,12 +259,7 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
     },
 
     async detail(namespace: string, slug: string, page: number) {
-      checkScope(namespace, slug);
-      const [row] = await sql`
-        select name, description, latest_version
-        from openbot_skill_market.catalog where name = ${slug}
-      `;
-      if (!row) throw new CatalogEntryUnavailable();
+      const skill = await scopedSummary(namespace, slug);
       const versions = await sql`
         select version from openbot_skill_market.versions
         where name = ${slug}
@@ -199,7 +267,7 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
         limit ${pageSize + 1} offset ${page * pageSize}
       `;
       return {
-        ...summary(summaryRow.parse(row)),
+        ...skill,
         versions: z
           .array(z.object({ version: exactVersion }))
           .parse(versions.slice(0, pageSize))
@@ -208,28 +276,55 @@ export function createBifrostMarket(config: BifrostMarketConfig) {
       };
     },
 
-    async preview(namespace: string, slug: string, version: string) {
-      checkScope(namespace, slug);
-      if (!exactVersion.safeParse(version).success)
-        throw new CatalogEntryUnavailable();
-      const selected = await findVersion(sql, slug, version);
-      return {
-        registry: "bifrost",
-        source: "Bifrost",
-        namespace,
-        slug,
-        version,
-        publisher: null,
-        instructions: selected.skill_md_body,
-        runtimeRequirements:
-          selected.frontmatter_snapshot.compatibility ?? null,
-        installable: false,
-        reasons: [installationReason],
-      };
+    async commandSource(namespace: string, slug: string) {
+      const skill = await scopedSummary(namespace, slug);
+      return { source: bifrostNamespace, namespace, slug, title: skill.title };
     },
 
-    readExactPackage,
-    close: () => sql.end(),
+    async preview(namespace: string, slug: string, version: string) {
+      const { packageIdentity, frontmatter, instructions, files } =
+        await readExactPackage(namespace, slug, version);
+      const runtimeRequirements = frontmatter.compatibility?.trim() || null;
+      const reasons: string[] = [];
+      if (files.size > 1)
+        reasons.push(
+          "This package includes scripts or supporting files. OpenBot only installs self-contained SKILL.md packages.",
+        );
+      if (runtimeRequirements)
+        reasons.push("This version declares additional runtime requirements.");
+      const declaration = compatibilityDeclaration.safeParse(frontmatter);
+      if (!declaration.success) {
+        reasons.push(
+          "This version has an invalid OpenBot compatibility declaration.",
+        );
+      } else {
+        const compatibility =
+          declaration.data.metadata?.["openbot-compatibility"];
+        if (
+          compatibility?.scripts ||
+          compatibility?.supportingFiles ||
+          compatibility?.dedicatedRuntime
+        )
+          reasons.push(
+            "The publisher declares that this version requires scripts, supporting files, or a dedicated runtime.",
+          );
+      }
+      return {
+        registry: "bifrost",
+        source: bifrostNamespace,
+        namespace: packageIdentity.namespace,
+        slug,
+        title: slug,
+        summary: frontmatter.description,
+        version,
+        publisher: null,
+        instructions,
+        runtimeRequirements,
+        packageIdentity,
+        fingerprint: packageIdentity.fingerprint,
+        reasons,
+      };
+    },
 
     async download(namespace: string, slug: string, version: string) {
       const { files } = await readExactPackage(namespace, slug, version);

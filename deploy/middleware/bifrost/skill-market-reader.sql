@@ -10,7 +10,7 @@ FROM public.skills;
 
 CREATE OR REPLACE VIEW openbot_skill_market.versions AS
 SELECT version.id, skill.name, version.version, version.created_at,
-       version.skill_md_body, version.frontmatter_snapshot
+       version.skill_md_body, version.frontmatter_snapshot, skill.id AS skill_id
 FROM public.skill_versions AS version
 JOIN public.skills AS skill ON skill.id = version.skill_id;
 

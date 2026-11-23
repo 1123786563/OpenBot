@@ -10,11 +10,32 @@ import {
   skills,
 } from "../db/schema";
 import { registeredBotProfiles } from "../plugins/plugin-store/skills";
-import type { MarketPreview, QualifiedMarketVersion } from "./catalog";
+import type { BifrostPackageIdentity } from "./bifrost";
+import type { MarketPreview } from "./catalog";
+import { bifrostNamespace } from "./config";
 import {
   marketVersionMethods,
   qualifyMarketVersionForWrite,
 } from "./disablements";
+import { bifrostReviewMethods, lockActiveBifrostReview } from "./reviews";
+
+type InstallablePreview = Pick<
+  MarketPreview,
+  | "source"
+  | "namespace"
+  | "slug"
+  | "title"
+  | "summary"
+  | "version"
+  | "versionId"
+  | "registrySkillId"
+  | "fingerprint"
+  | "instructions"
+>;
+type InstallQualification = {
+  kind: "qualified";
+  preview: InstallablePreview;
+} & ({ packageIdentity: BifrostPackageIdentity } | { packageIdentity?: never });
 
 type Actor = AppVariables["actor"];
 type Source = Pick<MarketPreview, "source" | "namespace" | "slug">;
@@ -105,6 +126,7 @@ async function reserveCommand(
 export function marketSkillMethods(database: Database) {
   return {
     ...marketVersionMethods(database),
+    ...bifrostReviewMethods(database),
 
     async marketInstallTargets(actor: Actor, agentId?: string) {
       return registeredBotProfiles(database)
@@ -184,7 +206,7 @@ export function marketSkillMethods(database: Database) {
     async installMarketSkill(
       actor: Actor,
       agentId: string,
-      { preview }: QualifiedMarketVersion,
+      { preview, packageIdentity }: InstallQualification,
       expectedVersionId?: number,
     ) {
       return database.transaction(async (transaction) => {
@@ -196,6 +218,20 @@ export function marketSkillMethods(database: Database) {
         const reason = await qualifyMarketVersionForWrite(transaction, preview);
         if (reason !== null)
           return { kind: "version-disabled", reason } as const;
+
+        if (preview.source === bifrostNamespace) {
+          const review =
+            packageIdentity &&
+            (await lockActiveBifrostReview(transaction, packageIdentity));
+          if (
+            review?.id !== preview.versionId ||
+            review.skillId !== preview.registrySkillId ||
+            review.slug !== preview.slug ||
+            review.version !== preview.version ||
+            review.fingerprint !== preview.fingerprint
+          )
+            return { kind: "review-unavailable" } as const;
+        }
 
         const reservation =
           expectedVersionId === undefined

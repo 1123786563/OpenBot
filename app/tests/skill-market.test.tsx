@@ -463,3 +463,89 @@ test("lets only the administrator resolve a command conflict and retry a taken n
   expect(view.getByText("/market-notes")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Assign command" })).toBeNull();
 });
+
+test("an administrator reviews and withdraws the exact Bifrost package shown in the preview", async () => {
+  const skill = {
+    namespace: "bifrost",
+    slug: "notes",
+    title: "Notes",
+    summary: "Organize notes",
+    latestVersion: "1.0.0",
+  };
+  const versionPath = "/api/skill-market/bifrost/notes/versions/1.0.0";
+  const packageIdentity = {
+    namespace: "bifrost",
+    slug: "notes",
+    version: "1.0.0",
+    skillId: "20000000-0000-4000-8000-000000000001",
+    versionId: "20000000-0000-4000-8000-000000000002",
+    fingerprint: `sha256:${"a".repeat(64)}`,
+  };
+  let reviewStatus = "unreviewed";
+  const writes: Array<{ method: string | undefined; body: unknown }> = [];
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (path === "/api/skill-market")
+        return Response.json({ items: [skill], hasMore: false });
+      if (path.endsWith("/install-targets")) return Response.json({ bots: [] });
+      if (path.endsWith("/version-disablements"))
+        return Response.json({ versions: [] });
+      if (path === "/api/skill-market/bifrost/notes")
+        return Response.json({ versions: ["1.0.0"] });
+      if (path === `${versionPath}/review`) {
+        writes.push({
+          method: init?.method,
+          body: JSON.parse(String(init?.body)),
+        });
+        reviewStatus = init?.method === "PUT" ? "approved" : "withdrawn";
+        return new Response(null, { status: 204 });
+      }
+      if (path !== versionPath)
+        throw new Error(`Unexpected market URL ${path}`);
+      return Response.json({
+        ...skill,
+        registry: "bifrost",
+        source: "bifrost",
+        version: "1.0.0",
+        packageIdentity,
+        reviewedFingerprint:
+          reviewStatus === "unreviewed"
+            ? undefined
+            : packageIdentity.fingerprint,
+        reviewStatus,
+        reviewable: true,
+        instructions: "Review these instructions.",
+        installable: reviewStatus === "approved",
+        reasons:
+          reviewStatus === "withdrawn"
+            ? ["This exact version was withdrawn."]
+            : [],
+      });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SkillMarket isAdmin />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await view.findByRole("button", { name: "Preview Notes" }));
+  expect(await view.findByText(packageIdentity.fingerprint)).toBeTruthy();
+  fireEvent.click(
+    await view.findByRole("button", { name: "Approve exact package" }),
+  );
+  await view.findByText("Confirmed for OpenBot. Requires only SKILL.md.");
+  fireEvent.click(
+    await view.findByRole("button", { name: "Withdraw approval" }),
+  );
+  const dialog = await view.findByRole("alertdialog");
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Withdraw version" }),
+  );
+  await view.findByText("This exact version was withdrawn.");
+  expect(writes).toEqual([
+    { method: "PUT", body: packageIdentity },
+    { method: "DELETE", body: packageIdentity },
+  ]);
+});

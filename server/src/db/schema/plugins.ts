@@ -958,6 +958,27 @@ export const skillMarketInstallations = pgTable(
   (table) => [primaryKey({ columns: [table.agentId, table.command] })],
 );
 
+// Keep the existing numeric version keys used by Bot installations and approval snapshots.
+export const bifrostMarketSkills = pgTable("bifrost_market_skills", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  skillUuid: uuid("skill_uuid").notNull().unique(),
+});
+
+export const bifrostMarketReviews = pgTable("bifrost_market_reviews", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  skillId: integer("skill_id")
+    .notNull()
+    .references(() => bifrostMarketSkills.id),
+  versionUuid: uuid("version_uuid").notNull().unique(),
+  slug: text("slug").notNull(),
+  version: text("version").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  reviewedBy: text("reviewed_by").notNull(),
+  reviewedAt: createdAt(),
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  withdrawnBy: text("withdrawn_by"),
+});
+
 export const skillMarketVersionDisablements = pgTable(
   "skill_market_version_disablements",
   {

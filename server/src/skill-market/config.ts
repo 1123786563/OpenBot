@@ -43,6 +43,10 @@ export function skillHubOrigin(value: string): string | undefined {
 }
 
 export const bifrostNamespace = "bifrost";
+export const bifrostSlug = z
+  .string()
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
 export type BifrostMarketConfig = {
   kind: "bifrost";

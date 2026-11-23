@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { client } from "@/lib/client";
 import { pluginKeys } from "@/lib/plugins/queries";
 import {
+  BifrostReviewControl,
+  type BifrostReviewPreview,
   MarketVersionAdministration,
   MarketVersionControl,
   type MarketVersionIdentity,
@@ -30,14 +32,7 @@ type Skill = {
   latestVersion: string;
 };
 
-type VersionPreview = (
-  | MarketVersionIdentity
-  | {
-      registry: "bifrost";
-      source: string;
-      version: string;
-    }
-) & {
+type VersionPreview = (MarketVersionIdentity | BifrostReviewPreview) & {
   publisher: string | null;
   disableReason?: string;
   instructions: string;
@@ -220,6 +215,20 @@ function MarketPreview({
     retry: false,
   });
   const versions = new Set([version, ...(detail.data?.versions ?? [])]);
+  const bifrost =
+    preview.data && "registry" in preview.data ? preview.data : undefined;
+  const emergencyVersion = bifrost
+    ? bifrost.registrySkillId !== undefined && bifrost.versionId !== undefined
+      ? {
+          ...skill,
+          ...bifrost,
+          registrySkillId: bifrost.registrySkillId,
+          versionId: bifrost.versionId,
+        }
+      : undefined
+    : preview.data && !("registry" in preview.data)
+      ? preview.data
+      : undefined;
   return (
     <section id={id} aria-labelledby={`${id}-heading`}>
       <Section variant="muted" padding={3}>
@@ -266,7 +275,8 @@ function MarketPreview({
                   </dt>
                   <dd>
                     <Text type="supporting" wordBreak="break-word">
-                      {preview.data.source} · {skill.namespace}/{skill.slug}
+                      {bifrost ? "Bifrost" : preview.data.source} ·{" "}
+                      {skill.namespace}/{skill.slug}
                     </Text>
                   </dd>
                 </VStack>
@@ -316,10 +326,10 @@ function MarketPreview({
                   </>
                 )}
               </VStack>
-              {isAdmin && !("registry" in preview.data) && (
+              {isAdmin && emergencyVersion && (
                 <MarketVersionControl
                   key={versionPath}
-                  version={preview.data}
+                  version={emergencyVersion}
                   disableReason={preview.data.disableReason ?? null}
                 />
               )}
@@ -367,6 +377,13 @@ function MarketPreview({
                   width="100%"
                 />
               </VStack>
+              {isAdmin && bifrost && (
+                <BifrostReviewControl
+                  key={`review:${versionPath}`}
+                  value={bifrost}
+                  versionPath={versionPath}
+                />
+              )}
             </>
           )}
         </VStack>

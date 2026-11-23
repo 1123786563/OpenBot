@@ -7,25 +7,42 @@ import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
+  bifrostMarketReviews,
   skillMarketVersionDisablements as disablements,
   skillMarketInstallations,
   skillMarketRuns,
   skillMarketSources,
 } from "../db/schema";
-import { catalogSegment, exactVersion, skillHubOrigin } from "./config";
+import {
+  bifrostNamespace,
+  bifrostSlug,
+  catalogSegment,
+  exactVersion,
+  skillHubOrigin,
+} from "./config";
 
-export const marketVersionIdentity = z.object({
-  source: z.string().refine((value) => skillHubOrigin(value) === value),
-  namespace: catalogSegment,
-  slug: catalogSegment,
+const versionIdentityFields = z.object({
   registrySkillId: z.number().int().min(1).max(2147483647),
   versionId: z.number().int().min(1).max(2147483647),
   version: exactVersion,
 });
-
-export const disableMarketVersion = marketVersionIdentity.extend({
-  reason: z.string().trim().min(1).max(500),
+const skillHubVersion = versionIdentityFields.extend({
+  source: z.string().refine((value) => skillHubOrigin(value) === value),
+  namespace: catalogSegment,
+  slug: catalogSegment,
 });
+const bifrostVersion = versionIdentityFields.extend({
+  source: z.literal(bifrostNamespace),
+  namespace: z.literal(bifrostNamespace),
+  slug: bifrostSlug,
+});
+export const marketVersionIdentity = z.union([skillHubVersion, bifrostVersion]);
+
+const disableReason = { reason: z.string().trim().min(1).max(500) };
+export const disableMarketVersion = z.union([
+  skillHubVersion.extend(disableReason),
+  bifrostVersion.extend(disableReason),
+]);
 
 export type MarketVersionIdentity = z.infer<typeof marketVersionIdentity>;
 type MarketVersionKey = Pick<
@@ -342,6 +359,16 @@ export function marketVersionMethods(database: Database) {
           skillMarketSources,
           eq(skillMarketSources.command, skillMarketInstallations.command),
         );
+      const reviewed = await database
+        .select({
+          source: sql<string>`${bifrostNamespace}::text`,
+          namespace: sql<string>`${bifrostNamespace}::text`,
+          slug: bifrostMarketReviews.slug,
+          registrySkillId: bifrostMarketReviews.skillId,
+          versionId: bifrostMarketReviews.id,
+          version: bifrostMarketReviews.version,
+        })
+        .from(bifrostMarketReviews);
       const pinned = await database
         .selectDistinct({
           source: skillMarketRuns.source,
@@ -358,7 +385,7 @@ export function marketVersionMethods(database: Database) {
         string,
         MarketVersionIdentity & { reason: string | null }
       >(
-        installed.map((version) => [
+        [...installed, ...reviewed].map((version) => [
           versionKey(version),
           { ...version, reason: null },
         ]),
