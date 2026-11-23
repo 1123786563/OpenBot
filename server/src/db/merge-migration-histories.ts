@@ -2,7 +2,12 @@ import type { AppliedMigration, FolderMigration } from "./migration-reach";
 
 // The two histories that diverged immediately after 0089_direct_chat_runs.
 // Pin hash and timestamp so the exception cannot authorize a modified SQL file.
-const [intelligenceMigrations, skillMarketMigrations, corsairMigrations] = [
+const [
+  intelligenceMigrations,
+  skillMarketMigrations,
+  corsairMigrations,
+  bifrostMigrations,
+] = [
   [
     [
       "0090_direct_chat_replay",
@@ -109,6 +114,18 @@ const [intelligenceMigrations, skillMarketMigrations, corsairMigrations] = [
       1795189761199,
     ],
   ],
+  [
+    [
+      "0097_bifrost_market_reviews",
+      "8b27189a3b516e22a7be0a9d56f89bb3b707a66824f8841f41241f14b729abe0",
+      1795410635032,
+    ],
+    [
+      "0098_skill_market_equivalences",
+      "3ef8a33465c6a3813284e1c4a7a4cfc6b50690f0813815d9bed9a528618060a9",
+      1795415414731,
+    ],
+  ],
 ] as const;
 
 export function canMergeMigrationHistories(
@@ -125,6 +142,7 @@ export function canMergeMigrationHistories(
     ...intelligenceMigrations,
     ...skillMarketMigrations,
     ...corsairMigrations,
+    ...bifrostMigrations,
   ].map(([tag, hash, when]) => ({ tag, hash, when }));
   const byTag = new Map(folder.map((entry) => [entry.tag, entry]));
   if (
@@ -143,7 +161,7 @@ export function canMergeMigrationHistories(
   const histories = [
     intelligenceMigrations,
     skillMarketMigrations,
-    [...skillMarketMigrations, ...corsairMigrations],
+    [...skillMarketMigrations, ...corsairMigrations, ...bifrostMigrations],
     [...intelligenceMigrations, ...skillMarketMigrations],
   ];
   const prefixLength = applied.length - base.length;

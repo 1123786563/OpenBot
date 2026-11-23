@@ -121,18 +121,20 @@ async function checkForUpdates() {
 test("on the newest release it says this version is up to date", async () => {
   found = { found: "upToDate", current: "0.3.2" };
   const view = await checkForUpdates();
-  expect((await view.findByRole("status")).textContent).toBe(
-    "OpenBot 0.3.2 is up to date.",
-  );
+  expect(
+    (await view.findByText("OpenBot 0.3.2 is up to date.")).getAttribute(
+      "role",
+    ),
+  ).toBe("status");
   expect(commands).toContain("plugin:openbot-desktop|check_update");
 });
 
 test("a newer version is offered with Update and restart, which installs it", async () => {
   found = { found: "available", version: "0.3.3", current: "0.3.2" };
   const view = await checkForUpdates();
-  expect((await view.findByRole("status")).textContent).toBe(
-    "OpenBot 0.3.3 is available.",
-  );
+  expect(
+    (await view.findByText("OpenBot 0.3.3 is available.")).getAttribute("role"),
+  ).toBe("status");
   fireEvent.click(view.getByRole("button", { name: "Update and restart" }));
   await waitFor(() =>
     expect(commands).toContain("plugin:openbot-desktop|install_update"),
@@ -189,8 +191,10 @@ test("an older desktop app that doesn't say up front still answers the check in 
   offer = { version: null, current: "0.3.2", installing: null };
   found = { found: "notOffered", current: "0.3.2-internal.731.gabc1234" };
   const view = await checkForUpdates();
-  const said = (await view.findByRole("status")).textContent ?? "";
-  expect(said).toBe(DOESNT_UPDATE_ITSELF);
+  const result = await view.findByText(DOESNT_UPDATE_ITSELF, {
+    selector: "[role=status]",
+  });
+  const said = result.textContent ?? "";
   expect(said).not.toMatch(/configured|feature|shell/i);
 });
 
@@ -204,19 +208,17 @@ test("a newer version says it is downloading in the background, then that it is 
     ready: { state: "preparing", done: 300, total: 1000 },
   };
   const view = await checkForUpdates();
-  await waitFor(async () =>
-    expect((await view.findByRole("status")).textContent).toBe(
-      "OpenBot 0.3.3 is downloading in the background (30%).",
-    ),
+  await view.findByText(
+    "OpenBot 0.3.3 is downloading in the background (30%).",
+    { selector: "[role=status]" },
   );
   // Nothing waits for it: Update and restart works now.
   expect(view.getByRole("button", { name: "Update and restart" })).toBeTruthy();
   // The app finishes, and the next ask of its offer says so.
   offer = { ...offer, ready: { state: "ready" } };
   await queryClient.invalidateQueries({ queryKey: desktopKeys.appUpdate });
-  await waitFor(() =>
-    expect(view.getByRole("status").textContent).toBe(
-      "OpenBot 0.3.3 is ready to install. It takes a few minutes.",
-    ),
+  await view.findByText(
+    "OpenBot 0.3.3 is ready to install. It takes a few minutes.",
+    { selector: "[role=status]" },
   );
 });

@@ -256,6 +256,33 @@ test("deny blocks the click and tells the conversation", async () => {
   expect(DECLINED_BY_PERSON).toContain("not a policy or a boundary");
 });
 
+test("the Thread inbox keeps completed decisions free of spurious pause reasons", async () => {
+  const threadId = `${prefix}-inbox-${randomUUID()}`;
+  for (let index = 0; index < 2; index++) {
+    const bot = `${prefix}-bot-${randomUUID()}`;
+    const pending = await call(
+      owner,
+      `/computer/${bot}`,
+      snapshot({ threadId }),
+    );
+    expect(pending.status).toBe(202);
+    const { approvalId } = (await pending.json()) as { approvalId: string };
+    const decision = await call(owner, `/${approvalId}/decision`, {
+      decision: "deny",
+    });
+    expect(decision.status).toBe(200);
+    await resume(approvalId);
+  }
+
+  const response = await call(owner, `?threadId=${threadId}`);
+  expect(response.status).toBe(200);
+  const inbox: { requests: { result: unknown }[] } = await response.json();
+  expect(inbox.requests.map(({ result }) => result)).toEqual([
+    { error: DECLINED_BY_PERSON },
+    { error: DECLINED_BY_PERSON },
+  ]);
+});
+
 test("always allow runs this one and saves a rule, so the next click in this place does not ask", async () => {
   clicks.length = 0;
   const pending = await call(owner, `/computer/${botId}`, snapshot());

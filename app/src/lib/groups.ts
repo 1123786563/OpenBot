@@ -80,7 +80,7 @@ export function groupQueryOptions(channelId: string) {
       query.state.data?.backgroundRuns?.some(
         ({ status }) => status === "running",
       ) ||
-      awaitingFirstReply(query.state.data)
+      awaitingFirstReply(query.state.data?.messages.at(-1))
         ? 1_500
         : false,
   });
@@ -90,8 +90,7 @@ export function groupQueryOptions(channelId: string) {
  * The last line is still a person's: the server has queued it but no Bot has started yet. Bounded,
  * so a turn the server gave up on before any Bot started does not poll for ever.
  */
-function awaitingFirstReply(data: GroupConversation | undefined) {
-  const last = data?.messages.at(-1);
+export function awaitingFirstReply(last: GroupMessage | undefined) {
   return (
     last !== undefined &&
     last.agentId === null &&

@@ -516,6 +516,8 @@ describe("the migration journal", () => {
       [107, "0095_corsair_shared_storage"],
       [108, "0096_corsair_revocation"],
       [109, "0102_background_conversation_runs"],
+      [110, "0097_bifrost_market_reviews"],
+      [111, "0098_skill_market_equivalences"],
     ]);
     const mislabelled = entries
       .filter((entry, index) => {

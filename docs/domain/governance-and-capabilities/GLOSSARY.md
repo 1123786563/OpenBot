@@ -20,6 +20,10 @@ A service that catalogs published Skill versions and makes them available for in
 
 A fixed release of a market Skill that a person can choose to install.
 
+## Market Skill package
+
+The contents of one market Skill version in the Agent Skills format. A package contains `SKILL.md` and can include scripts, references, and other assets.
+
 ## Skill installation
 
 A Bot's selection of a specific Skill version from the market.

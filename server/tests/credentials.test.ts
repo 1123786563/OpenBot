@@ -596,6 +596,44 @@ describe("one live credential per key", () => {
       "credential.rotated",
     ]);
   });
+
+  test("concurrent create-only saves leave the winning credential active", async () => {
+    const events: string[] = [];
+    const store = createCredentialStore(database);
+    const service = {
+      encryptionKey: key,
+      store,
+      auditStore: {
+        insert: async (event: { eventType: string }) => {
+          events.push(event.eventType);
+        },
+      },
+    };
+    const input = {
+      kind: "model",
+      provider: "openai",
+      keyId: randomUUID(),
+      metadata: {},
+      plaintext: "fixture-secret",
+      createOnly: true,
+    } as const;
+
+    const results = await Promise.allSettled([
+      createCredential(service, input),
+      createCredential(service, input),
+    ]);
+    for (const result of results) {
+      if (result.status === "fulfilled") credentialIds.push(result.value.id);
+    }
+    expect(credentialIds).toHaveLength(1);
+    expect(
+      results.find((result) => result.status === "rejected"),
+    ).toMatchObject({
+      reason: { status: 409 },
+    });
+    expect(await store.findLiveByKey(input)).toEqual({ id: credentialIds[0] });
+    expect(events).toEqual(["credential.created"]);
+  });
 });
 
 /**
@@ -751,6 +789,11 @@ describe("admin credential API", () => {
       undefined,
       {
         list: async () => [],
+        // Only create is exercised here; the rest satisfy CredentialAdminService.
+        rotate: async () => {
+          throw new Error("rotate is not used in this test");
+        },
+        revoke: async (id) => ({ id, revokedAt: new Date() }),
         create: async (input) => {
           created.push(input);
           return {

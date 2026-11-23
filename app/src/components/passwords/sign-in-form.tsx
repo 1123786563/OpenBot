@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import {
   IconKey,
   IconLock,
@@ -6,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,7 +16,6 @@ import {
   Item,
   ItemActions,
   ItemContent,
-  ItemDescription,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -30,6 +30,7 @@ import {
 } from "@/lib/passwords/mutations";
 import {
   FINAL_SIGN_IN,
+  type SignInRequest,
   signInRequestQueryOptions,
 } from "@/lib/passwords/queries";
 import { queryClient } from "@/query-client";
@@ -64,6 +65,33 @@ export function SignInForm({
         ? false
         : 3_000,
   });
+  if (request.isPending) return null;
+  if (request.error)
+    return (
+      <p className="text-destructive text-sm" role="alert">
+        {request.error.message}
+      </p>
+    );
+
+  return (
+    <SignInFields
+      key={requestId}
+      requestId={requestId}
+      data={request.data}
+      inDialog={inDialog}
+    />
+  );
+}
+
+export function SignInFields({
+  requestId,
+  data,
+  inDialog = false,
+}: {
+  requestId: string;
+  data: SignInRequest;
+  inDialog?: boolean;
+}) {
   const submit = useMutation(submitSignInMutationOptions(queryClient));
   const submitCode = useMutation(submitSignInCodeMutationOptions(queryClient));
   const confirmSaved = useMutation(
@@ -77,21 +105,23 @@ export function SignInForm({
   const [code, setCode] = useState("");
   const [save, setSave] = useState(false);
   const id = useId();
+  const codeField = useRef<HTMLInputElement>(null);
+  const browserLink = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (document.activeElement === document.body) {
+      if (data.status === "code_required") codeField.current?.focus();
+      if (data.status === "taken_over") browserLink.current?.focus();
+    }
+  }, [data.status]);
   /*
    * In a dialog the sections stack in its body's own 16px rhythm. The 48px a page puts above each
    * section, to keep unrelated decisions apart, left the dialog mostly empty space above each heading.
    */
-  const section = inDialog ? "mt-0" : undefined;
+  const section = inDialog ? "mt-0" : "mt-6";
+  const touchTarget = inDialog ? undefined : "min-h-11";
 
-  if (request.isPending) return null;
-  if (request.error)
-    return (
-      <p className="text-destructive text-sm" role="alert">
-        {request.error.message}
-      </p>
-    );
-  const data = request.data;
   const busy =
+    data.status === "filling" ||
     submit.isPending ||
     submitCode.isPending ||
     confirmSaved.isPending ||
@@ -131,7 +161,7 @@ export function SignInForm({
           onSubmit={(event) => {
             event.preventDefault();
             const value = code.trim();
-            if (!value) return;
+            if (busy || !value) return;
             submitCode.mutate(
               { id: requestId, code: value },
               // Cleared whatever happened: a code is good once, and a wrong one is retyped.
@@ -143,11 +173,12 @@ export function SignInForm({
             Verification code
             <Input
               id={`${id}-code`}
+              className={touchTarget}
               autoComplete="one-time-code"
               inputMode="numeric"
               name="code"
               required
-              autoFocus
+              ref={codeField}
               value={code}
               onChange={(event) => setCode(event.target.value)}
             />
@@ -157,8 +188,9 @@ export function SignInForm({
               {failure?.message ?? data.outcome}
             </p>
           ) : null}
-          <div className="flex flex-wrap justify-end gap-2">
+          <HStack gap={2} hAlign="end" wrap="wrap">
             <Button
+              className={touchTarget}
               size="sm"
               type="button"
               variant="ghost"
@@ -168,6 +200,7 @@ export function SignInForm({
               Cancel
             </Button>
             <Button
+              className={touchTarget}
               size="sm"
               type="button"
               variant="outline"
@@ -177,11 +210,16 @@ export function SignInForm({
               <IconPointer />
               Take over to finish
             </Button>
-            <Button size="sm" type="submit" disabled={busy || !code.trim()}>
+            <Button
+              className={touchTarget}
+              size="sm"
+              type="submit"
+              disabled={busy || !code.trim()}
+            >
               <IconShieldCheck />
               {submitCode.isPending ? "Checking…" : "Finish signing in"}
             </Button>
-          </div>
+          </HStack>
         </form>
       </PageSection>
     );
@@ -193,8 +231,9 @@ export function SignInForm({
         title="Sign in by hand"
         description="Open the Bot's browser and sign in yourself. Then choose I've signed in and the Bot carries on."
       >
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <HStack gap={2} hAlign="end" paddingBlockStart={4} wrap="wrap">
           <Button
+            className={touchTarget}
             size="sm"
             variant="ghost"
             disabled={busy}
@@ -203,22 +242,28 @@ export function SignInForm({
             Cancel
           </Button>
           <Button
+            className={touchTarget}
             size="sm"
             variant="outline"
             render={
-              <Link to="/bot" search={{ agent: data.botId, watch: true }} />
+              <Link
+                ref={browserLink}
+                to="/bot"
+                search={{ agent: data.botId, watch: true }}
+              />
             }
           >
             Open the Bot's browser
           </Button>
           <Button
+            className={touchTarget}
             size="sm"
             disabled={busy}
             onClick={() => finish.mutate(requestId)}
           >
             {finish.isPending ? "Finishing…" : "I've signed in"}
           </Button>
-        </div>
+        </HStack>
         {failure ? (
           <p className="mt-2 text-destructive text-sm" role="alert">
             {failure.message}
@@ -229,6 +274,9 @@ export function SignInForm({
 
   return (
     <>
+      {data.status === "filling" ? (
+        <p role="status">Your Bot is checking the sign-in in its browser.</p>
+      ) : null}
       {data.outcome ? (
         <p className="text-destructive text-sm" role="alert">
           {data.outcome}
@@ -238,22 +286,24 @@ export function SignInForm({
         <PageSection
           className={section}
           title="Use a saved login"
-          description={`Pick one to use it for this sign-in to ${data.origin}.`}
+          description="Choose the account you want the Bot to use."
         >
           <PageRows>
             {data.savedLogins.map((login, index) => (
-              <div key={login.id}>
+              <Fragment key={login.id}>
                 {index > 0 ? <Separator /> : null}
-                <Item size="sm">
+                <Item className="flex-wrap" size="sm">
                   <ItemMedia variant="icon">
                     <IconKey />
                   </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>{login.username}</ItemTitle>
-                    <ItemDescription>{data.origin}</ItemDescription>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="min-w-0 break-all">
+                      {login.username}
+                    </ItemTitle>
                   </ItemContent>
-                  <ItemActions>
+                  <ItemActions className="w-full sm:w-auto">
                     <Button
+                      className={touchTarget}
                       size="sm"
                       disabled={busy}
                       onClick={() =>
@@ -267,7 +317,7 @@ export function SignInForm({
                     </Button>
                   </ItemActions>
                 </Item>
-              </div>
+              </Fragment>
             ))}
           </PageRows>
         </PageSection>
@@ -282,7 +332,7 @@ export function SignInForm({
           autoComplete="off"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!password) return;
+            if (busy || !password) return;
             submit.mutate(
               {
                 id: requestId,
@@ -306,6 +356,7 @@ export function SignInForm({
             Username or email
             <Input
               id={`${id}-username`}
+              className={touchTarget}
               autoComplete="username"
               name="username"
               value={username}
@@ -319,6 +370,7 @@ export function SignInForm({
             Password
             <Input
               id={`${id}-password`}
+              className={touchTarget}
               autoComplete="current-password"
               name="password"
               type="password"
@@ -345,8 +397,9 @@ export function SignInForm({
               {failure.message}
             </p>
           ) : null}
-          <div className="flex flex-wrap justify-end gap-2">
+          <HStack gap={2} hAlign="end" wrap="wrap">
             <Button
+              className={touchTarget}
               size="sm"
               type="button"
               variant="ghost"
@@ -356,6 +409,7 @@ export function SignInForm({
               Decline
             </Button>
             <Button
+              className={touchTarget}
               size="sm"
               type="button"
               variant="outline"
@@ -365,11 +419,16 @@ export function SignInForm({
               <IconPointer />
               Take over to sign in
             </Button>
-            <Button size="sm" type="submit" disabled={busy || !password}>
+            <Button
+              className={touchTarget}
+              size="sm"
+              type="submit"
+              disabled={busy || !password}
+            >
               <IconLock />
               {submit.isPending ? "Signing in…" : "Sign in"}
             </Button>
-          </div>
+          </HStack>
         </form>
       </PageSection>
     </>

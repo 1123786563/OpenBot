@@ -100,11 +100,15 @@ const inbox = {
 let inboxOverride: Record<string, unknown> = {};
 /** A refusal the server gives the next time a rule is added, or none. */
 let refuseRule: string | null = null;
+let failInbox = false;
+let failClear = false;
 
 beforeEach(() => {
   sent.length = 0;
   inboxOverride = {};
   refuseRule = null;
+  failInbox = false;
+  failClear = false;
   role = "user";
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -120,10 +124,14 @@ beforeEach(() => {
           refuseRule = null;
           return Response.json({ error }, { status: 400 });
         }
+        if (url === "/api/team-bots/consents" && failClear)
+          return Response.json({ error: "Unavailable" }, { status: 503 });
         return Response.json({ ok: true });
       }
       if (url === "/api/approvals")
-        return Response.json({ ...inbox, ...inboxOverride });
+        return failInbox
+          ? Response.json({ error: "Unavailable" }, { status: 503 })
+          : Response.json({ ...inbox, ...inboxOverride });
       if (url.startsWith("/api/agents"))
         return Response.json({ agents: [{ id: "shopper-bot", name: "Shop" }] });
       if (url === "/api/me")
@@ -482,10 +490,54 @@ test("personal approvals keep the person's controls without team-only explanatio
   expect(view.getByRole("switch", { name: "Extra vigilant" })).toBeTruthy();
   expect(view.getByRole("switch", { name: "Auto-review" })).toBeTruthy();
 });
-test("team approvals still show the shared Bot account controls", async () => {
+test("the first failed approval settings read offers retry without presenting defaults", async () => {
+  failInbox = true;
+  const view = draw();
+  const retry = await view.findByRole("button", { name: "Retry" });
+  expect(view.queryByRole("switch")).toBeNull();
+  expect(view.queryByText("No rules yet")).toBeNull();
+  failInbox = false;
+  fireEvent.click(retry);
+  expect(
+    await view.findByRole("switch", { name: "Extra vigilant" }),
+  ).toBeTruthy();
+  expect(view.queryByText("Couldn't load your approval settings.")).toBeNull();
+  expect(sent).toHaveLength(0);
+});
+
+test("resetting shared Bot permissions requires confirmation and retries within the dialog", async () => {
+  failClear = true;
   const view = draw(<TeamBotConsents />);
-  expect(await view.findByText("Shared Bots")).toBeTruthy();
-  expect(view.getByRole("button", { name: "Reset" })).toBeTruthy();
+  const reset = await view.findByRole("button", { name: "Reset permissions" });
+  fireEvent.click(reset);
+  await view.findByRole("alertdialog", {
+    name: "Reset all shared Bot permissions?",
+  });
+  expect(sent).toHaveLength(0);
+  fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(sent).toHaveLength(0);
+
+  fireEvent.click(reset);
+  fireEvent.click(
+    await view.findByRole("button", { name: "Reset all permissions" }),
+  );
+  expect(
+    await view.findByText("Couldn't reset shared Bot permissions. Try again."),
+  ).toBeTruthy();
+  expect(sent).toHaveLength(1);
+  failClear = false;
+  fireEvent.click(view.getByRole("button", { name: "Try again" }));
+  expect(
+    await view.findByText(
+      "Shared Bot permissions reset. Each shared Bot will ask again.",
+    ),
+  ).toBeTruthy();
+  expect(view.queryByRole("alertdialog")).toBeNull();
+  expect(sent.map(({ path, method }) => ({ path, method }))).toEqual([
+    { path: "/api/team-bots/consents", method: "DELETE" },
+    { path: "/api/team-bots/consents", method: "DELETE" },
+  ]);
 });
 
 /*

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -45,6 +45,7 @@ test("searches the shared market and shows the selected version's instructions a
     summary: "Summarize meeting notes",
     latestVersion: "2.0.0",
   };
+  const downloadPaths: string[] = [];
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(init?.credentials).toBe("include");
@@ -58,6 +59,18 @@ test("searches the shared market and shows the selected version's instructions a
       }
       if (url.pathname === "/api/skill-market/catalog/summarize") {
         return Response.json({ versions: ["2.0.0", "1.0.0"], hasMore: false });
+      }
+      if (url.pathname.endsWith("/download")) {
+        downloadPaths.push(url.pathname);
+        if (downloadPaths.length === 1) {
+          return Response.json(
+            { error: "This Bifrost package is incomplete." },
+            { status: 502 },
+          );
+        }
+        return new Response(new Uint8Array([80, 75, 3, 4]), {
+          headers: { "Content-Type": "application/zip" },
+        });
       }
       const version = url.pathname.split("/").at(-1);
       return Response.json({
@@ -99,6 +112,27 @@ test("searches the shared market and shows the selected version's instructions a
       "A reviewer has not confirmed OpenBot compatibility for this package.",
     ),
   ).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Download 1.0.0 ZIP" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "This Bifrost package is incomplete.",
+  );
+  const filenames: string[] = [];
+  const save = spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+    function (this: HTMLAnchorElement) {
+      filenames.push(this.download);
+    },
+  );
+  try {
+    fireEvent.click(view.getByRole("button", { name: "Download 1.0.0 ZIP" }));
+    await waitFor(() => expect(filenames).toEqual(["summarize-1.0.0.zip"]));
+    expect(view.queryByRole("alert")).toBeNull();
+    expect(downloadPaths).toEqual([
+      "/api/skill-market/catalog/summarize/versions/1.0.0/download",
+      "/api/skill-market/catalog/summarize/versions/1.0.0/download",
+    ]);
+  } finally {
+    save.mockRestore();
+  }
 });
 
 test("installs the previewed version only on a Bot the server offers to manage", async () => {
@@ -216,13 +250,16 @@ test("manages a Bot's saved installation even when the catalog is offline", asyn
   await view.findByText("Installed version 1.0.0");
   fireEvent.click(view.getByRole("button", { name: "Uninstall Summarize" }));
   await view.findByText("This Bot has no installed market skills.");
-  expect(removals).toEqual([{ expectedVersionId: 3 }]);
+  expect(removals).toEqual([
+    { expectedVersionId: 3, expectedRegistry: "https://registry.example" },
+  ]);
 });
 
-test("uses the published version picker to upgrade and roll back a single Bot", async () => {
+test("uses the Bifrost picker to upgrade a migrated command and roll back a single Bot", async () => {
   const snapshot = {
     command: "summarize",
     namespace: "catalog",
+    catalogSlug: "summarize",
     slug: "summarize",
     registry: "https://registry.example",
     title: "Summarize",
@@ -230,7 +267,7 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
     versionId: 3,
   };
   const changes: unknown[] = [];
-  const source = "/api/skill-market/catalog/summarize";
+  const source = "/api/skill-market/bifrost/summarize";
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const { pathname } = new URL(String(input), "http://localhost");
@@ -253,7 +290,7 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
           return Response.json({
             ...snapshot,
             version: pathname.endsWith("1.0.0") ? "1.0.0" : "2.0.0",
-            source: snapshot.registry,
+            source: "bifrost",
             installable: true,
             instructions: "Summarize the notes.",
           });
@@ -262,7 +299,9 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
           expect(init?.method).toBe("POST");
           changes.push(JSON.parse(String(init?.body)));
           snapshot.version = pathname.includes("/1.0.0/") ? "1.0.0" : "2.0.0";
-          snapshot.versionId = snapshot.version === "1.0.0" ? 3 : 4;
+          snapshot.versionId = snapshot.version === "1.0.0" ? 103 : 104;
+          snapshot.registry = "bifrost";
+          snapshot.namespace = "bifrost";
           return Response.json({
             command: snapshot.command,
             version: snapshot.version,
@@ -290,8 +329,12 @@ test("uses the published version picker to upgrade and roll back a single Bot", 
   fireEvent.click(await view.findByRole("button", { name: "Switch to 1.0.0" }));
   await view.findByText("Installed version 1.0.0");
   expect(changes).toEqual([
-    { agentId: "managed", expectedVersionId: 3 },
-    { agentId: "managed", expectedVersionId: 4 },
+    {
+      agentId: "managed",
+      expectedVersionId: 3,
+      expectedRegistry: "https://registry.example",
+    },
+    { agentId: "managed", expectedVersionId: 104, expectedRegistry: "bifrost" },
   ]);
 });
 
@@ -428,4 +471,90 @@ test("lets only the administrator resolve a command conflict and retry a taken n
   await view.findByRole("button", { name: "Install on Bot" });
   expect(view.getByText("/market-notes")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Assign command" })).toBeNull();
+});
+
+test("an administrator reviews and withdraws the exact Bifrost package shown in the preview", async () => {
+  const skill = {
+    namespace: "bifrost",
+    slug: "notes",
+    title: "Notes",
+    summary: "Organize notes",
+    latestVersion: "1.0.0",
+  };
+  const versionPath = "/api/skill-market/bifrost/notes/versions/1.0.0";
+  const packageIdentity = {
+    namespace: "bifrost",
+    slug: "notes",
+    version: "1.0.0",
+    skillId: "20000000-0000-4000-8000-000000000001",
+    versionId: "20000000-0000-4000-8000-000000000002",
+    fingerprint: `sha256:${"a".repeat(64)}`,
+  };
+  let reviewStatus = "unreviewed";
+  const writes: Array<{ method: string | undefined; body: unknown }> = [];
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (path === "/api/skill-market")
+        return Response.json({ items: [skill], hasMore: false });
+      if (path.endsWith("/install-targets")) return Response.json({ bots: [] });
+      if (path.endsWith("/version-disablements"))
+        return Response.json({ versions: [] });
+      if (path === "/api/skill-market/bifrost/notes")
+        return Response.json({ versions: ["1.0.0"] });
+      if (path === `${versionPath}/review`) {
+        writes.push({
+          method: init?.method,
+          body: JSON.parse(String(init?.body)),
+        });
+        reviewStatus = init?.method === "PUT" ? "approved" : "withdrawn";
+        return new Response(null, { status: 204 });
+      }
+      if (path !== versionPath)
+        throw new Error(`Unexpected market URL ${path}`);
+      return Response.json({
+        ...skill,
+        registry: "bifrost",
+        source: "bifrost",
+        version: "1.0.0",
+        packageIdentity,
+        reviewedFingerprint:
+          reviewStatus === "unreviewed"
+            ? undefined
+            : packageIdentity.fingerprint,
+        reviewStatus,
+        reviewable: true,
+        instructions: "Review these instructions.",
+        installable: reviewStatus === "approved",
+        reasons:
+          reviewStatus === "withdrawn"
+            ? ["This exact version was withdrawn."]
+            : [],
+      });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SkillMarket isAdmin />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await view.findByRole("button", { name: "Preview Notes" }));
+  expect(await view.findByText(packageIdentity.fingerprint)).toBeTruthy();
+  fireEvent.click(
+    await view.findByRole("button", { name: "Approve exact package" }),
+  );
+  await view.findByText("Confirmed for OpenBot. Requires only SKILL.md.");
+  fireEvent.click(
+    await view.findByRole("button", { name: "Withdraw approval" }),
+  );
+  const dialog = await view.findByRole("alertdialog");
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Withdraw version" }),
+  );
+  await view.findByText("This exact version was withdrawn.");
+  expect(writes).toEqual([
+    { method: "PUT", body: packageIdentity },
+    { method: "DELETE", body: packageIdentity },
+  ]);
 });

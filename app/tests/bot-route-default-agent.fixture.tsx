@@ -2,21 +2,43 @@ import { mock } from "bun:test";
 import { useState } from "react";
 
 mock.module("@copilotkit/react-core/v2", () => ({
+  CopilotChatInput: ({
+    value,
+    onChange,
+  }: {
+    value?: string;
+    onChange?: (value: string) => void;
+  }) => (
+    <textarea
+      aria-label="Message"
+      value={value}
+      onInput={(event) => onChange?.(event.currentTarget.value)}
+      onChange={() => {}}
+    />
+  ),
   CopilotChat: ({
     agentId,
+    input: Input,
     threadId,
   }: {
     agentId: string;
+    input: React.ComponentType<{
+      value: string;
+      onChange: (value: string) => void;
+    }>;
     threadId?: string;
-  }) => (
-    <div
-      data-agent-id={agentId}
-      data-thread-id={threadId}
-      data-testid="copilot-chat"
-    >
-      <textarea aria-label="Chat draft" />
-    </div>
-  ),
+  }) => {
+    const [value, setValue] = useState("");
+    return (
+      <div
+        data-agent-id={agentId}
+        data-thread-id={threadId}
+        data-testid="copilot-chat"
+      >
+        <Input value={value} onChange={setValue} />
+      </div>
+    );
+  },
 }));
 
 /*

@@ -1,18 +1,23 @@
 import { Badge } from "@astryxdesign/core/Badge";
-import { Card } from "@astryxdesign/core/Card";
-import { Text } from "@astryxdesign/core/Text";
-import { IconBolt, IconChevronRight, IconShare } from "@tabler/icons-react";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { HStack } from "@astryxdesign/core/HStack";
+import { LinkProvider } from "@astryxdesign/core/Link";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
+import { IconChevronRight, IconShare } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type MouseEventHandler, useState } from "react";
+import { useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
-import { NewBotAction } from "@/components/astryx-pilot/bot-actions";
-
 import {
   attentionSummary,
   waitingOnYou,
 } from "@/components/bot-profile/attention";
 import { PageEmpty, PageSection } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { NeedsYouBoard } from "@/components/needs-you/board";
 import { DoneTasks, useNeedsYou } from "@/components/needs-you/needs-you";
 import { Button } from "@/components/ui/button";
@@ -23,7 +28,9 @@ import {
   type BotAttention,
   botAttentionQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
+import { ClientError } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
+import { appConfig } from "@/lib/generated/application-config";
 
 /**
  * Every Bot the person can reach, in the one place they are listed: what needs the person first,
@@ -36,31 +43,58 @@ import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
  *
  * This replaces three screens (Bots, Agents and Team Bots) that listed the same Bots three ways.
  */
-export function BotRoster({
-  onNewBotClick,
-}: {
-  onNewBotClick?: MouseEventHandler<HTMLElement>;
-}) {
+export function BotRoster() {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const [search, setSearch] = useState("");
   const agents = useQuery(agentListQueryOptions());
   const hidden = useQuery(agentListQueryOptions(true));
   const attention = useQuery(botAttentionQueryOptions());
   const list = useNeedsYou();
   const byId = new Map((attention.data ?? []).map((bot) => [bot.agentId, bot]));
 
-  if (agents.isPending) return null;
-  // Only when nothing ever loaded: a failed background refetch keeps the roster it had.
-  if (agents.data === undefined) {
+  if (agents.isPending) {
     return (
-      <p className="mt-6 text-destructive text-sm" role="alert">
-        Couldn't load your Bots. Reload the page.
-      </p>
+      <section role="status" aria-label="Loading Bots">
+        <VStack gap={2}>
+          {[1, 2, 3].map((row) => (
+            <Skeleton key={row} height="3rem" />
+          ))}
+        </VStack>
+      </section>
     );
   }
-  // Every Bot stays in its own section; what it waits on is on the board above, by name.
-  const { pinned, yours, shared } = groupRoster(agents.data);
-  const yoursPinned = pinned.some((agent) => agent.mine);
+  if (agents.data === undefined) {
+    const denied =
+      agents.error instanceof ClientError && agents.error.status === 403;
+    return denied ? (
+      <Banner
+        status="error"
+        role="alert"
+        title="You can’t view Bots in this workspace"
+        description="Ask a workspace administrator for access."
+        endContent={
+          <AstryxButton as={Link} href="/" label="Back to workspace" />
+        }
+      />
+    ) : (
+      <ReadError
+        message="Couldn’t load Bots"
+        description="Try loading the list again."
+        retry={() => agents.refetch()}
+        retryBelow
+        retryLabel="Retry"
+        retrying={agents.isFetching}
+      />
+    );
+  }
+  const term = search.trim().toLocaleLowerCase();
+  const visible = agents.data.filter((bot) =>
+    [bot.name, bot.title].some((text) =>
+      text.toLocaleLowerCase().includes(term),
+    ),
+  );
+  const { pinned, yours, shared } = groupRoster(visible);
 
   return (
     <>
@@ -69,40 +103,48 @@ export function BotRoster({
        * A Bot waiting on them stays in its own section below too, with its badge.
        */}
       <NeedsYouBoard />
+      {agents.data.length > 1 ? (
+        <section>
+          <TextInput
+            label="Find a visible Bot"
+            onChange={setSearch}
+            size="lg"
+            controlStyle={{ minBlockSize: "var(--spacing-11, 2.75rem)" }}
+            value={search}
+          />
+        </section>
+      ) : null}
+      {term && visible.length === 0 ? (
+        <p role="status">No Bots match “{search.trim()}”.</p>
+      ) : null}
       {pinned.length ? (
         <PageSection title="Pinned">
           <RosterRows agents={pinned} byId={byId} />
         </PageSection>
       ) : null}
-      <PageSection title="Yours">
-        {yours.length ? (
+      {yours.length > 0 ? (
+        <PageSection title="Yours">
           <RosterRows agents={yours} byId={byId} />
-        ) : (
-          <PageEmpty
-            action={
-              yoursPinned ? undefined : <NewBotAction onClick={onNewBotClick} />
-            }
-            icon={IconBolt}
-            title={yoursPinned ? "All pinned" : "No Bots yet"}
-          >
-            {yoursPinned
-              ? "Your Bots are all pinned above."
-              : "Bots you create show up here."}
-          </PageEmpty>
-        )}
-      </PageSection>
-      {shared.length > 0 || !personal ? (
-        <PageSection
-          title={personal ? "Included with OpenBot" : "Shared with you"}
-        >
-          {shared.length ? (
-            <RosterRows agents={shared} byId={byId} />
-          ) : (
-            <PageEmpty icon={IconShare} title="Nothing shared yet">
-              Bots somebody shares with you show up here.
-            </PageEmpty>
-          )}
         </PageSection>
+      ) : null}
+      {!term && yours.length === 0 && pinned.some((bot) => bot.mine) ? (
+        <p>Your Bots are all pinned above.</p>
+      ) : null}
+      {shared.length > 0 ? (
+        <PageSection
+          title={
+            personal
+              ? `Included with ${appConfig.brand.productName}`
+              : "Shared with you"
+          }
+        >
+          <RosterRows agents={shared} byId={byId} />
+        </PageSection>
+      ) : null}
+      {agents.data.length === 0 ? (
+        <PageEmpty icon={IconShare} title="No Bots available yet">
+          Create a Bot to start working with it.
+        </PageEmpty>
       ) : null}
       <DoneTasks done={list.done} />
       {hidden.data?.length ? (
@@ -150,11 +192,13 @@ function RosterRows({
   byId: Map<string, BotAttention>;
 }) {
   return (
-    <Card className="astryx-bot-rows mt-2" padding={4}>
-      {agents.map((agent) => (
-        <RosterRow agent={agent} key={agent.id} state={byId.get(agent.id)} />
-      ))}
-    </Card>
+    <LinkProvider component={Link}>
+      <List density="balanced" hasDividers>
+        {agents.map((agent) => (
+          <RosterRow key={agent.id} agent={agent} state={byId.get(agent.id)} />
+        ))}
+      </List>
+    </LinkProvider>
   );
 }
 
@@ -177,20 +221,19 @@ function RosterRow({
     : "";
   const waiting = state ? waitingOnYou(state) : 0;
   return (
-    <Link
-      className="astryx-bot-row"
-      params={{ agentId: agent.id }}
-      to="/bots/$agentId"
-    >
-      <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={32} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Text weight="semibold">{agent.name}</Text>
-        <Text color="secondary" size="sm">
-          {summary || shownSubtitle(agent.title)}
-        </Text>
-      </div>
-      {waiting > 0 ? <Badge label={waiting} /> : null}
-      <IconChevronRight aria-hidden className="size-4 shrink-0" />
-    </Link>
+    <ListItem
+      href={`/bots/${encodeURIComponent(agent.id)}`}
+      label={agent.name}
+      description={summary || shownSubtitle(agent.title)}
+      startContent={
+        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={28} />
+      }
+      endContent={
+        <HStack gap={2} vAlign="center">
+          {waiting > 0 ? <Badge label={String(waiting)} /> : null}
+          <IconChevronRight size="1em" aria-hidden="true" />
+        </HStack>
+      }
+    />
   );
 }

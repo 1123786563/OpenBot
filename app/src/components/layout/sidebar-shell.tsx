@@ -103,6 +103,13 @@ export function SidebarShell({
         } as CSSProperties
       }
     >
+      {/* #main-content carries tabIndex={-1}, so the browser's own anchor navigation moves focus to it. */}
+      <a
+        className="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:inset-s-4 focus:top-4 focus:rounded-md focus:bg-background focus:p-3 focus:text-foreground focus:outline focus:outline-ring"
+        href="#main-content"
+      >
+        Skip to content
+      </a>
       <SidebarResizeProvider value={resize}>{children}</SidebarResizeProvider>
     </SidebarProvider>
   );

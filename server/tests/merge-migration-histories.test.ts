@@ -10,9 +10,23 @@ const folder = await readMigrationFolder(
   fileURLToPath(new URL("../drizzle/", import.meta.url)),
 );
 const mainTags = /^(?:009[012]_skill_market|009[3456]_corsair)/;
+const bifrostTags =
+  /^009[78]_(?:bifrost_market_reviews|skill_market_equivalences)$/;
 const integrations = [
   ["Corsair main", (tag: string) => mainTags.test(tag)],
-  ["intelligence integration", (tag: string) => !tag.includes("_corsair")],
+  [
+    "Bifrost main",
+    (tag: string) => mainTags.test(tag) || bifrostTags.test(tag),
+  ],
+  [
+    "main with Bifrost reviews only",
+    (tag: string) =>
+      mainTags.test(tag) || tag === "0097_bifrost_market_reviews",
+  ],
+  [
+    "intelligence integration",
+    (tag: string) => !tag.includes("_corsair") && !bifrostTags.test(tag),
+  ],
 ] as const;
 
 describe("reconciling the published intelligence and Corsair journals", () => {

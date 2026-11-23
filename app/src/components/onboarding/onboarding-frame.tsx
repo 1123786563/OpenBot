@@ -210,6 +210,12 @@ export function OnboardingFrame({
             ) : null}
             {primary && !desktopShell() ? (
               <AstryxButton
+                className={cn(
+                  "min-h-11 rounded-lg! px-4! font-semibold!",
+                  "bg-primary! text-primary-foreground! hover:bg-primary/90!",
+                  "aria-disabled:bg-muted! aria-disabled:text-muted-foreground!",
+                  "focus-visible:outline-2! focus-visible:outline-offset-2! focus-visible:outline-ring!",
+                )}
                 data-onboarding-primary=""
                 form={primary.form}
                 icon={
@@ -218,6 +224,7 @@ export function OnboardingFrame({
                 isDisabled={primary.disabled && !primary.pending}
                 isLoading={primary.pending}
                 label={primary.label}
+                name={primary.form ? "finish-setup" : undefined}
                 onClick={primary.form ? undefined : primary.onClick}
                 size="lg"
                 type={primary.form ? "submit" : "button"}
@@ -239,6 +246,7 @@ export function OnboardingFrame({
                 data-pending={primary.pending ? "" : undefined}
                 disabled={primary.disabled}
                 form={primary.form}
+                name={primary.form ? "finish-setup" : undefined}
                 onClick={primary.form ? undefined : primary.onClick}
                 type={primary.form ? "submit" : "button"}
               >
@@ -417,21 +425,25 @@ export function StepDashes({ index, total }: { index: number; total: number }) {
       aria-valuemin={1}
       aria-valuenow={index + 1}
       aria-valuetext={`Step ${index + 1} of ${total}`}
-      className="flex w-full min-w-0 max-w-[228px] items-center gap-[6px]"
+      className="flex w-full min-w-0 flex-col items-center gap-2"
       role="progressbar"
     >
-      {Array.from({ length: total }, (_, at) => (
-        <span
-          aria-hidden
-          className={cn(
-            "h-1 min-w-0 flex-1 rounded-full transition-colors duration-300 motion-reduce:transition-none",
-            at === index ? "bg-foreground" : "bg-muted-foreground/35",
-          )}
-          data-current={at === index ? "" : undefined}
-          // biome-ignore lint/suspicious/noArrayIndexKey: the dashes are positions, fixed in order.
-          key={at}
-        />
-      ))}
+      <span aria-hidden className="text-sm text-muted-foreground">
+        Step {index + 1} of {total}
+      </span>
+      <div aria-hidden className="flex w-full max-w-32 items-center gap-1.5">
+        {Array.from({ length: total }, (_, at) => (
+          <span
+            className={cn(
+              "h-1 min-w-0 flex-1 rounded-full transition-colors duration-300 motion-reduce:transition-none",
+              at === index ? "bg-foreground" : "bg-muted-foreground/35",
+            )}
+            data-current={at === index ? "" : undefined}
+            // biome-ignore lint/suspicious/noArrayIndexKey: steps have stable positions.
+            key={at}
+          />
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,8 +1,12 @@
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { Heading } from "@astryxdesign/core/Heading";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { desktopShell } from "@/lib/desktop/shell";
 import { confirmBrokeredConnectionMutationOptions } from "@/lib/plugins/mutations";
 
@@ -21,7 +25,7 @@ export const DESKTOP_LINK = "openbot://open";
  * The Desktop window opens every site outside OpenBot in the browser, so the vendor's redirect lands
  * there as well (`desktopReturnUrlFor` on the server). This page does what the account's page does on
  * arrival, asking the server to confirm the account so it is recorded, and then hands the person back
- * to the window through `openbot://`. The window refreshes its apps when it has the focus again.
+ * to the window through `openbot://` when confirmed. The window refreshes its apps on focus.
  *
  * Loaded in the Desktop window itself, it goes to the account's page instead, which confirms on its
  * own.
@@ -36,10 +40,15 @@ export function DesktopReturn({
   openDesktop?: (link: string) => void;
 }) {
   const navigate = useNavigate();
-  const { mutate: confirm } = useMutation(
+  const confirmation = useMutation(
     confirmBrokeredConnectionMutationOptions(useQueryClient()),
   );
+  const confirm = confirmation.mutate;
   const started = useRef(false);
+  const launched = useRef(false);
+  const [checked, setChecked] = useState(false);
+  const connected = confirmation.data?.connected === true;
+  const canHandBack = !app || connected;
 
   useEffect(() => {
     if (started.current) return;
@@ -52,32 +61,75 @@ export function DesktopReturn({
       );
       return;
     }
-    // Handed back once the account is recorded, or once that failed: the window shows either.
-    const handBack = () => openDesktop(DESKTOP_LINK);
-    if (!app) {
-      handBack();
-      return;
-    }
-    confirm(app, { onSettled: handBack });
-  }, [app, confirm, navigate, openDesktop]);
+    if (app) confirm(app, { onSettled: () => setChecked(true) });
+  }, [app, confirm, navigate]);
+
+  useEffect(() => {
+    if (!canHandBack || desktopShell() || launched.current) return;
+    launched.current = true;
+    openDesktop(DESKTOP_LINK);
+  }, [canHandBack, openDesktop]);
 
   return (
     <AstryxSurface className="min-h-svh">
-      <main className="grid min-h-svh place-items-center bg-background p-6 text-foreground">
-        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-          <h1 className="text-xl font-semibold">Back to OpenBot</h1>
-          <p className="text-sm text-muted-foreground">
-            OpenBot opens on its own. You can close this tab.
-          </p>
-          {/* An anchor rather than Button: Base UI gives a rendered anchor role="button", and this is a link. */}
-          <AstryxButton
-            as="a"
-            href={DESKTOP_LINK}
-            label="Open OpenBot"
-            variant="primary"
-          />
-        </div>
-      </main>
+      <Stack
+        as="main"
+        align="center"
+        justify="center"
+        minHeight="100svh"
+        style={{ padding: "var(--spacing-6, 1.5rem)" }}
+      >
+        <Stack align="center" gap={4} maxWidth="26rem" width="100%">
+          <Heading
+            level={1}
+            weight="semibold"
+            style={{ fontSize: "var(--text-xl, 1.25rem)" }}
+          >
+            Back to OpenBot
+          </Heading>
+          {canHandBack ? (
+            <>
+              <Text as="p" justify="center" role="status" type="supporting">
+                {app ? "Account connected. " : ""}
+                If the OpenBot Desktop window is still closed, open it below.
+              </Text>
+              <AstryxButton
+                as="a"
+                href={DESKTOP_LINK}
+                label="Open OpenBot Desktop"
+                size="lg"
+                className="conversation-recovery-action"
+                variant="primary"
+              />
+            </>
+          ) : !checked ? (
+            <ReadStatus kind="loading" message="Checking your connection…" />
+          ) : (
+            <ReadError
+              message="Couldn't confirm your connection."
+              description="Check again here, or open Connections in your browser to check the account."
+              retry={() =>
+                app ? confirmation.mutateAsync(app).catch(() => {}) : undefined
+              }
+              retryBelow
+              retrying={confirmation.isPending}
+            />
+          )}
+          {app ? (
+            <Link
+              className="recovery-link"
+              params={{ key: app }}
+              to="/connections/$key"
+            >
+              View connection in browser
+            </Link>
+          ) : (
+            <Link className="recovery-link" to="/connections">
+              View connections in browser
+            </Link>
+          )}
+        </Stack>
+      </Stack>
     </AstryxSurface>
   );
 }

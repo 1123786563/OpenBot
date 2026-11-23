@@ -40,9 +40,7 @@ test("Admin navigation identifies the current page and preserves the child outle
   await router.load();
   const page = render(<RouterProvider router={router} />);
 
-  const toggle = page.getByRole("button", { name: "Close Admin navigation" });
-  const nav = page.getByRole("navigation", { name: "Admin navigation" });
-  expect(toggle.getAttribute("aria-controls")).toBe(nav.id);
+  const nav = page.getByRole("navigation", { name: "Admin" });
   expect(
     within(nav)
       .getByRole("link", { name: "Providers" })

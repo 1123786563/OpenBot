@@ -18,11 +18,12 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -30,6 +31,7 @@ import {
   withoutRule,
   withRuleReplaced,
 } from "@/lib/boundaries/rules";
+import { ClientError } from "@/lib/client";
 import { saveActionPolicyMutationOptions } from "@/lib/computers/mutations";
 import {
   type ActionPolicy,
@@ -62,17 +64,25 @@ function RulePage() {
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
-  const policy = stored.data;
+  const denied =
+    stored.error instanceof ClientError &&
+    (stored.error.status === 401 || stored.error.status === 403);
+  const policy = denied ? undefined : stored.data;
   const rule = policy?.deny[Number(index)];
 
   if (!policy) {
     return (
       <PageShell backButton={BACK} title="Rule">
         {stored.error ? (
-          <p className="text-destructive text-sm" role="alert">
-            {stored.error.message}
-          </p>
-        ) : null}
+          <ReadError
+            message="Couldn't load this boundary."
+            retry={stored.refetch}
+            retryBelow
+            retrying={stored.isFetching}
+          />
+        ) : (
+          <ReadStatus kind="loading" message="Loading boundary…" />
+        )}
       </PageShell>
     );
   }
@@ -151,11 +161,7 @@ function RuleDetail({
 }) {
   const label = ruleLabel(policy, rule);
 
-  /*
-   * What this rule has stopped, read as the difference it makes: the policy without it, replayed
-   * over recent actions, would have allowed exactly the ones it stopped. A Bot's computer actions
-   * and its app calls alike, so a rule about an app shows the calls it stopped.
-   */
+  // Replay the current policy without this rule against recorded decisions, including trial refusals.
   const reach = useQuery(policyDryRunQueryOptions(withoutRule(policy, rule)));
 
   return (
@@ -178,29 +184,37 @@ function RuleDetail({
         <RuleEditor policy={policy} rule={rule} />
       </PageSection>
 
-      <PageSection title="Recently stopped">
-        {reach.isPending ? null : reach.error ? (
-          <p className="mt-4 text-muted-foreground text-sm">
-            {reach.error.message}
-          </p>
+      <PageSection
+        description="Compare recent decisions against the current policy with this rule removed. Trial mode can record a refusal while allowing the action to continue."
+        title="Replay without this rule"
+      >
+        {reach.isPending ? (
+          <ReadStatus kind="loading" message="Replaying recent decisions…" />
+        ) : reach.error ? (
+          <ReadError
+            message="Couldn't replay recent decisions."
+            retry={reach.refetch}
+            retryBelow
+            retrying={reach.isFetching}
+          />
         ) : reach.data.scanned === 0 ? (
           <p className="mt-4 text-muted-foreground text-sm">
-            No recorded actions yet. What this rule stops will show here once
-            Bots have acted.
+            No recorded actions to replay yet.
           </p>
         ) : (
           <>
             <p className="mt-4 text-muted-foreground text-sm">
               {reach.data.wouldAllow === 0
-                ? `It stopped none of the last ${reach.data.scanned} recorded actions.`
-                : `It stopped ${reach.data.wouldAllow} of the last ${reach.data.scanned} recorded actions.`}
+                ? `None of the last ${reach.data.scanned} recorded decisions would change from refused to allowed.`
+                : `${reach.data.wouldAllow} of the last ${reach.data.scanned} recorded decisions would change from refused to allowed.`}
             </p>
             <DryRunChanges
               changes={reach.data.changes.filter(
                 (change) => change.would === "allowed",
               )}
               total={reach.data.wouldAllow}
-              verdict="Stopped"
+              verdict="Would allow"
+              verdictClassName="text-foreground"
             />
           </>
         )}
@@ -211,7 +225,7 @@ function RuleDetail({
         title="Remove"
       >
         <Button
-          className="mt-4"
+          className="mt-4 min-h-11"
           onClick={(event) => onRemove(event.currentTarget)}
           variant="destructive"
         >

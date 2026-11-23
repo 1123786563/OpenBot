@@ -75,29 +75,42 @@ export function queryClientWithAgents(
 
 export function renderHome(queryClient: QueryClient, entry = "/") {
   const rootRoute = createRootRoute({ component: Outlet });
+  const authedRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    id: "_authed",
+    component: Outlet,
+  });
+  const appRoute = createRoute({
+    getParentRoute: () => authedRoute,
+    id: "_app",
+    component: Outlet,
+  });
   const startRouteOptions = {
     path: "/start/$startId",
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     component: StartRoute.options.component,
   };
-  const routeTree = rootRoute.addChildren([
+  const destinations = appRoute.addChildren([
     createRoute({
-      getParentRoute: () => rootRoute,
+      getParentRoute: () => appRoute,
       path: "/",
       validateSearch: HomeRoute.options.validateSearch,
       component: HomeRoute.options.component,
     }),
     StartRoute.update(startRouteOptions),
     createRoute({
-      getParentRoute: () => rootRoute,
+      getParentRoute: () => appRoute,
       path: "/channel/$channelId",
       component: () => <p>The conversation</p>,
     }),
     createRoute({
-      getParentRoute: () => rootRoute,
+      getParentRoute: () => appRoute,
       path: "/channel/new",
       component: () => <p>New conversation destination</p>,
     }),
+  ]);
+  const routeTree = rootRoute.addChildren([
+    authedRoute.addChildren([destinations]),
   ]);
   const router = createRouter({
     routeTree,

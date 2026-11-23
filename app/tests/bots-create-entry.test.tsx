@@ -121,25 +121,21 @@ test("the Bots header creates a Bot, opens its profile, and Back returns to a cl
   expect(view.queryByRole("dialog", { name: "New Bot" })).toBeNull();
 });
 
-test("Escape returns focus to the empty roster action that opened the sheet", async () => {
+test("Escape returns focus to New Bot on the empty roster", async () => {
   const view = renderEntry("/bots");
-  const newBotLinks = await view.findAllByRole(rosterActionRole, {
+  expect(await view.findByText("No Bots available yet")).toBeTruthy();
+  const newBot = view.getByRole(rosterActionRole, {
     name: "New Bot",
   });
-  const header = view.getByRole("banner");
-  expect(view.getByText("No Bots yet")).toBeTruthy();
-  expect(newBotLinks).toHaveLength(2);
-  const emptyAction = newBotLinks.find((link) => !header.contains(link));
-  if (!emptyAction) throw new Error("Missing empty roster action");
 
   const user = userEvent.setup({ document });
-  await user.click(emptyAction);
+  await user.click(newBot);
   expect(await view.findByRole("dialog", { name: "New Bot" })).toBeTruthy();
   await user.keyboard("{Escape}");
   await waitFor(() =>
     expect(view.queryByRole("dialog", { name: "New Bot" })).toBeNull(),
   );
-  await waitFor(() => expect(document.activeElement).toBe(emptyAction));
+  await waitFor(() => expect(document.activeElement).toBe(newBot));
 });
 
 test("dismissing a directly opened creation sheet focuses the Bots header action", async () => {

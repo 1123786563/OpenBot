@@ -10,6 +10,8 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { appPageTitle } from "@/components/manage/plugin-page";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -73,6 +75,12 @@ export function PluginToolPage({
       (one) => one.id === bot.id,
     )?.hasCallbackToken === true;
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Granting an action the vendor marks destructive lets a Bot do things that do not come back,
+   * so that one direction of the switch asks first. Everything else stays immediate.
+   */
+  const { requestConfirmation, confirmation: grantConfirmation } =
+    useActionConfirmation();
   /**
    * Narrows the Bot list by name. Shown only when the roster is long, which is when finding one in
    * it stops being a scan. shortcut: fixed threshold of 8, raise it when a real roster complains.
@@ -88,14 +96,15 @@ export function PluginToolPage({
   const tool = server?.tools.find((row) => row.name === toolName);
 
   const back = {
-    label: server?.title ?? "Plugin",
+    // The app's name in every state: a "Plugin" back-trail appears exactly when the read failed.
+    label: server?.title ?? appPageTitle(key),
     linkProps: paths.plugin(key),
   };
 
   /* Placeholder rows while the fetch is open, so no sentence asserts anything mid-read. */
   if (plugins.isPending) {
     return (
-      <ConnectionPage title="Tool">
+      <ConnectionPage title={appPageTitle(key)}>
         <div aria-busy="true" aria-label="Loading" role="status">
           <PageRows>
             {LOADING_ROWS.map((key, index) => (
@@ -225,7 +234,7 @@ export function PluginToolPage({
                     : "text-muted-foreground text-xs"
                 }
               >
-                {tool.effect === "write" ? "changes things" : "reads"}
+                {tool.effect === "write" ? "Changes things" : "Reads"}
               </span>
             </ItemActions>
           </Item>
@@ -293,6 +302,25 @@ export function PluginToolPage({
                             }
                             onCheckedChange={(next) => {
                               setError(null);
+                              if (next && tool.destructive) {
+                                requestConfirmation({
+                                  title: `Let ${bot.name} call ${toolName}?`,
+                                  description: `The vendor warns this action destroys things: what it changes does not come back. ${bot.name} could call it without asking each time.`,
+                                  confirmLabel: "Allow",
+                                  pendingLabel: "Allowing…",
+                                  failureMessage: `Couldn't let ${bot.name} call ${toolName}. Try again.`,
+                                  variant: "destructive",
+                                  run: async () => {
+                                    await setGrant.mutateAsync({
+                                      agentId: bot.id,
+                                      granted: true,
+                                      kind: "mcp",
+                                      ref: tool.ref,
+                                    });
+                                  },
+                                });
+                                return;
+                              }
                               setGrant.mutate({
                                 agentId: bot.id,
                                 granted: next,
@@ -312,6 +340,7 @@ export function PluginToolPage({
           </>
         )}
       </PageSection>
+      {grantConfirmation}
     </ConnectionPage>
   );
 }

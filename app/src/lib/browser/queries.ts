@@ -55,8 +55,10 @@ export function browserStateQueryOptions(options?: { poll?: boolean }) {
           fallback: "Couldn't load your browser.",
         })
       ).json(),
-    refetchInterval: options?.poll
-      ? BROWSER_POLL_MS
-      : (query) => sidebarInterval(query.state.data),
+    refetchInterval: (query) => {
+      if (!options?.poll) return sidebarInterval(query.state.data);
+      if (query.state.status === "error" && !query.state.data) return false;
+      return BROWSER_POLL_MS;
+    },
   });
 }

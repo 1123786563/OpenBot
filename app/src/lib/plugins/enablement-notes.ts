@@ -68,14 +68,14 @@ export function consentBreadth(
       ? "This app has a single action, and approving it approves the app."
       : `Approving any action in this app approves all ${actionCount} of them.`;
   }
-  const permissions = `${permissionCount} separate ${permissionCount === 1 ? "permission" : "permissions"}`;
+  const permissions = `${permissionCount} ${permissionCount === 1 ? "permission" : "permissions"}`;
   const actions = `${actionCount} ${actionCount === 1 ? "action" : "actions"}`;
-  const base = `This app uses ${permissions} across ${actions}.`;
+  const base = `Approving this app grants ${permissions} that ${permissionCount === 1 ? "covers" : "cover"} ${actions}.`;
   const unscoped = actionCount - scopedActionCount;
   if (unscoped <= 0) return base;
   return unscoped === 1
-    ? `${base} A further 1 requests no permission of its own and becomes callable with any approval here.`
-    : `${base} A further ${unscoped} request no permission of their own and become callable with any approval here.`;
+    ? `${base} One more action needs no permission of its own: approving any action here also lets a Bot call it.`
+    : `${base} ${unscoped} more actions need no permission of their own: approving any action here also lets a Bot call them.`;
 }
 
 /**

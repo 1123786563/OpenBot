@@ -9,6 +9,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import {
   ActionUnavailable,
@@ -35,6 +36,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   deleteIdentityProviderMutationOptions,
   type IdentityProviderInput,
@@ -60,6 +62,9 @@ const EMPTY = {
 
 function IdentityProvidersPage() {
   const providers = useQuery(identityProviderListQueryOptions());
+  const registered = canKeepCachedRead(providers.error)
+    ? providers.data
+    : undefined;
   const addButton = useRef<HTMLButtonElement>(null);
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const register = useMutation(
@@ -104,7 +109,12 @@ function IdentityProvidersPage() {
   return (
     <PageShell
       action={
-        <Button onClick={() => setOpen(true)} ref={addButton} size="lg">
+        <Button
+          className="min-h-11"
+          onClick={() => setOpen(true)}
+          ref={addButton}
+          size="lg"
+        >
           Add a provider
         </Button>
       }
@@ -117,21 +127,26 @@ function IdentityProvidersPage() {
       >
         {confirmation}
         {providers.isPending ? (
-          <p role="status">Loading identity providers…</p>
-        ) : providers.error && !providers.data ? (
-          <>
-            <p className="mt-4 text-destructive text-sm" role="alert">
-              Couldn't load identity providers.
-            </p>
-            <Button
-              onClick={() => void providers.refetch()}
-              size="sm"
-              variant="outline"
-            >
-              Try again
-            </Button>
-          </>
-        ) : providers.data?.length === 0 ? (
+          <ReadStatus kind="loading" message="Loading identity providers…" />
+        ) : null}
+        {providers.error ? (
+          <ReadError
+            description={
+              registered?.length
+                ? "Showing the last loaded providers."
+                : undefined
+            }
+            message={
+              registered?.length
+                ? "Couldn't refresh identity providers."
+                : "Couldn't load identity providers."
+            }
+            retry={providers.refetch}
+            retryBelow
+            retrying={providers.isFetching}
+          />
+        ) : null}
+        {registered?.length === 0 && !providers.error ? (
           <PageEmpty
             action={
               <Button onClick={() => setOpen(true)} size="sm" variant="outline">
@@ -143,24 +158,27 @@ function IdentityProvidersPage() {
           >
             Use the metadata from your identity team.
           </PageEmpty>
-        ) : (
+        ) : registered?.length ? (
           <PageRows>
-            {providers.data?.map((provider, index) => (
+            {registered.map((provider, index) => (
               <StaggerItem index={index} key={provider.providerId}>
                 <Item size="sm">
                   <ItemMedia variant="icon">
                     <IconBuildingBank />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{provider.providerId}</ItemTitle>
-                    <ItemDescription>
+                    <ItemTitle className="line-clamp-none [overflow-wrap:anywhere]">
+                      {provider.providerId}
+                    </ItemTitle>
+                    <ItemDescription className="line-clamp-none text-sm [overflow-wrap:anywhere]">
                       {provider.protocol.toUpperCase()} · {provider.domain} ·{" "}
                       {provider.issuer}
                     </ItemDescription>
                   </ItemContent>
-                  <ItemActions>
+                  <ItemActions className="max-sm:basis-full">
                     <Button
                       aria-label={`Remove identity provider ${provider.providerId}`}
+                      className="min-h-11"
                       onClick={(event) =>
                         requestConfirmation({
                           title: `Remove ${provider.providerId}?`,
@@ -203,11 +221,11 @@ function IdentityProvidersPage() {
                     </Button>
                   </ItemActions>
                 </Item>
-                {index !== (providers.data?.length ?? 0) - 1 && <Separator />}
+                {index !== registered.length - 1 && <Separator />}
               </StaggerItem>
             ))}
           </PageRows>
-        )}
+        ) : null}
       </PageSection>
       <SignInSection />
 

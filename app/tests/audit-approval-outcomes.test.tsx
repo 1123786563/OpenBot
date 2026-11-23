@@ -9,11 +9,13 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, render } from "@testing-library/react";
+import { decisionText } from "@/components/audit/audit-cells";
 import { AuditPage } from "@/components/manage/audit-page";
 import { agentKeys } from "@/lib/agents/queries";
 import {
   COMPUTER_ACTION_EVENT_TYPES,
   eventTypeFilter,
+  outcomeOf,
   REFUSED_EVENT_TYPES,
 } from "@/lib/audit/outcome";
 import { seedAuditPage } from "./seed-audit-page";
@@ -196,8 +198,8 @@ test("a denied write reads as refused, and the person's answer as a denial", asy
       what: "Save a file",
       on: "refused.txt",
       decision:
-        "Asked a person firstYou asked to review changes before they happen.",
-      outcome: "allowed",
+        "Approval requestedYou asked to review changes before they happen.",
+      outcome: "no-verdict",
     },
   ]);
 });
@@ -209,7 +211,7 @@ test("an allowed write reads as allowed once, after the person allowed it", asyn
   expect(rows.map((entry) => entry.decision)).toEqual([
     "Allowed",
     "Allowed once by a person",
-    "Asked a person firstYou asked to review changes before they happen.",
+    "Approval requestedYou asked to review changes before they happen.",
   ]);
 });
 
@@ -235,4 +237,52 @@ test("the Blocked view asks for the denied write, and Computer actions for every
   expect(eventTypeFilter(COMPUTER_ACTION_EVENT_TYPES)).toBe(
     "?eventType=computer.action_allowed,computer.action_refused,computer.action_failed,computer.action_stopped",
   );
+});
+
+test("approval records distinguish hand-offs, withdrawal and missing decisions from permission", () => {
+  const examples = [
+    [
+      row("approval.evaluated", "approval", {
+        outcome: { behaviour: "hand_off" },
+      }),
+      "Handed to a person",
+      "no-verdict",
+    ],
+    [
+      row("approval.person_decided", "approval", { decision: "handled" }),
+      "Done by a person",
+      "no-verdict",
+    ],
+    [
+      row("approval.withdrawn", "approval", {}),
+      "Approval request withdrawn",
+      "no-verdict",
+    ],
+    [
+      row("approval.evaluated", "approval", {}),
+      "No decision recorded",
+      "no-verdict",
+    ],
+    [
+      row("approval.requested", "approval_request", {}),
+      "No decision recorded",
+      "no-verdict",
+    ],
+    [
+      row("approval.evaluated", "approval", {
+        outcome: { behaviour: "allow", source: "conversation" },
+      }),
+      "Allowed for this conversation",
+      "allowed",
+    ],
+    [
+      row("approval.evaluated", "approval", { outcome: { behaviour: "deny" } }),
+      "Blocked",
+      "refused",
+    ],
+  ] as const;
+  for (const [event, decision, outcome] of examples) {
+    expect(decisionText(event)).toBe(decision);
+    expect(outcomeOf(event)).toBe(outcome);
+  }
 });

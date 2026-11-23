@@ -71,6 +71,7 @@ function useWaiting(agentId: string | undefined) {
   return {
     error: inbox.error,
     isPending: inbox.isPending,
+    refetch: inbox.refetch,
     questions: (inbox.data?.questions ?? []).filter((question) =>
       ours(question.conversationBotId ?? question.botId),
     ),
@@ -591,6 +592,7 @@ export function useWaitingRows(agentId: string | undefined) {
   return {
     error: waiting.error,
     isPending: waiting.isPending,
+    refetch: waiting.refetch,
     rows: [
       ...waiting.questions.map((question) => (
         <QuestionRow

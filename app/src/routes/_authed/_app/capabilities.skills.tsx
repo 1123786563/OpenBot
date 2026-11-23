@@ -5,6 +5,7 @@ import { z } from "zod";
 import { CapabilitiesShell } from "@/components/capabilities/capabilities-shell";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
@@ -31,6 +32,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { ClientError } from "@/lib/client";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
 
@@ -68,18 +70,21 @@ function SkillsPage() {
   const showEdit = !showCreate && editingSlug !== undefined;
   const {
     data,
+    error: skillsError,
     isPending: skillsPending,
     isFetching: skillsFetching,
     refetch: refetchSkills,
   } = useQuery(pluginsPageQueryOptions());
-  const { data: me, isPending: mePending } = useQuery(
-    currentUserQueryOptions(),
-  );
+  const profile = useQuery(currentUserQueryOptions());
+  const me = profile.data;
   /*
    * Both, because `mine` is the intersection of the two: until the person is known, nothing matches
    * them and the list is empty for a reason that is not "you have no skills".
    */
-  const loading = skillsPending || mePending;
+  const loading = skillsPending || profile.isPending;
+  const denied =
+    skillsError instanceof ClientError &&
+    (skillsError.status === 401 || skillsError.status === 403);
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const removeSkill = useMutation(removeSkillMutationOptions(queryClient));
 
@@ -92,7 +97,7 @@ function SkillsPage() {
    * another person's lands in neither list. Not a leak, but an administrator cannot see here what
    * they are entitled to. Worth an owner column or a third section before this page is called done.
    */
-  const skills = data?.skills ?? [];
+  const skills = denied || !me ? [] : (data?.skills ?? []);
   const mine = skills.filter((skill) => skill.ownerUserId === me?.id);
   const deployment = skills.filter((skill) => skill.ownerUserId === null);
 
@@ -114,6 +119,7 @@ function SkillsPage() {
         <PageSection
           action={
             <Button
+              className="min-h-11"
               id="new-personal-skill"
               render={(props) => (
                 <Link
@@ -166,21 +172,15 @@ function SkillsPage() {
                 ))}
               </PageRows>
             </div>
-          ) : !data ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <p className="text-destructive text-sm" role="alert">
-                Couldn't load your skills.
-              </p>
-              <Button
-                disabled={skillsFetching}
-                onClick={() => void refetchSkills()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {skillsFetching ? "Retrying…" : "Retry"}
-              </Button>
-            </div>
+          ) : !data || !me || denied ? (
+            <section className="mt-4">
+              <ReadError
+                message="Couldn't load your skills."
+                retry={() => (!me ? profile.refetch() : refetchSkills())}
+                retryBelow
+                retrying={!me ? profile.isFetching : skillsFetching}
+              />
+            </section>
           ) : mine.length === 0 ? (
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>
@@ -195,13 +195,17 @@ function SkillsPage() {
                 <StaggerItem index={index} key={skill.id}>
                   <Item size="sm">
                     <ItemContent>
-                      <ItemTitle>{skill.title}</ItemTitle>
+                      <ItemTitle className="line-clamp-none [overflow-wrap:anywhere]">
+                        {skill.title}
+                      </ItemTitle>
                       {/*
                        * The name and what it is for. Not the command: the `/` menu finds a skill by
                        * its name, so the command is the skill's key rather than something to read.
                        */}
                       {skill.summary ? (
-                        <ItemDescription>{skill.summary}</ItemDescription>
+                        <ItemDescription className="line-clamp-none text-sm [overflow-wrap:anywhere]">
+                          {skill.summary}
+                        </ItemDescription>
                       ) : null}
                     </ItemContent>
                     <ItemActions>
@@ -210,6 +214,7 @@ function SkillsPage() {
                           render={
                             <Button
                               aria-label={`Actions for ${skill.title}`}
+                              className="min-h-11 min-w-11"
                               id={`skill-actions-${skill.id}`}
                               variant="ghost"
                               size="icon-sm"
@@ -218,9 +223,10 @@ function SkillsPage() {
                             </Button>
                           }
                         ></DropdownMenuTrigger>
-                        <DropdownMenuContent>
+                        <DropdownMenuContent align="end">
                           <DropdownMenuGroup>
                             <DropdownMenuItem
+                              className="min-h-11"
                               onClick={() =>
                                 navigate({ search: { edit: skill.slug } })
                               }
@@ -228,6 +234,8 @@ function SkillsPage() {
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              aria-label={`Delete ${skill.title}`}
+                              className="min-h-11"
                               onClick={() => {
                                 requestConfirmation({
                                   title: `Delete ${skill.title}?`,
@@ -273,7 +281,7 @@ function SkillsPage() {
                               }}
                               variant="destructive"
                             >
-                              Delete {skill.title}
+                              Delete
                             </DropdownMenuItem>
                           </DropdownMenuGroup>
                         </DropdownMenuContent>
@@ -307,13 +315,17 @@ function SkillsPage() {
                 <StaggerItem index={index} key={skill.id}>
                   <Item size="sm">
                     <ItemContent>
-                      <ItemTitle>{skill.title}</ItemTitle>
+                      <ItemTitle className="line-clamp-none [overflow-wrap:anywhere]">
+                        {skill.title}
+                      </ItemTitle>
                       {/*
                        * The name and what it is for. Not the command: the `/` menu finds a skill by
                        * its name, so the command is the skill's key rather than something to read.
                        */}
                       {skill.summary ? (
-                        <ItemDescription>{skill.summary}</ItemDescription>
+                        <ItemDescription className="line-clamp-none text-sm [overflow-wrap:anywhere]">
+                          {skill.summary}
+                        </ItemDescription>
                       ) : null}
                     </ItemContent>
                   </Item>
