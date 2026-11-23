@@ -30,6 +30,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useTranslation } from "@/i18n";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { useSignOutOffered } from "@/lib/auth/sign-out-offered";
 import { untitledLine } from "@/lib/channels/label";
@@ -168,6 +169,8 @@ function ChannelRow({
   emphasis: MessageListEmphasis;
 }) {
   const shouldReduceMotion = useReducedMotion();
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   // Whether this row is unread, as a boolean, for the same reason `Channel` computes `isOpen`
   // that way: navigating re-renders the rows whose answer changed, not the whole roster.
   const unread = useParams({

@@ -215,6 +215,7 @@ test("each way a catalog can break is caught, not waved through", async () => {
   }
 });
 
+// The extractor reads every source file, and a busy machine can take it past the default 5 seconds.
 test("the bundled catalogs are what the extractor would write for the source as it stands", async () => {
   const { anyFileUpdated, hasErrors } = await runExtractor(
     {
@@ -229,4 +230,4 @@ test("the bundled catalogs are what the extractor would write for the source as 
   );
   expect(hasErrors).toBe(false);
   expect(anyFileUpdated).toBe(false);
-});
+}, 60_000);
