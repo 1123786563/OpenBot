@@ -37,7 +37,7 @@ in the same transaction. An unrecognized journal with unreachable migrations
 still requires operator review. Keep the existing trial database and use the
 migration command above during rollout.
 
-The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Bot execution is opt-in for private acceptance. Connections and Computers remain disabled in this trial entry point.
+The landing page sends participants to Casdoor for registration, verification, sign-in and account recovery. OpenBot uses the issuer and stable subject to retain ownership after a verified email change. Returning participants see their existing workspace. An interrupted setup can be retried from the preparation page. First entry creates the workspace and its default Personal Assistant Bot in one transaction. The workspace owns the Bot through `personal_workspace_default_bots`, and `/api/workspace` returns the canonical Bot ID. Enable Bot execution and the managed Computer separately for private acceptance. Workspace preparation does not start a Computer.
 
 When the three Test Credit settings are present, first workspace preparation creates one issuance record per Casdoor issuer and subject. The issuance locks the configured amount to the stable identity and atomically consumes the global budget. A budget shortage leaves the issuance pending and does not block workspace preparation. The next workspace entry retries the same issuance after the operator restores the budget. The Web workspace shows the grant and balance, and `GET /api/workspace` returns the same `testCredits` object for Web and native clients. Issuances remain attached to the billing account after workspace closure, so reprovisioning cannot create another grant.
 
@@ -400,3 +400,17 @@ choose **Open a new workspace** and sign in again. An active Workspace
 Suspension continues to block reopening. Backup expiration follows the old
 workspace's original schedule, and provisioning retains the same OpenBot
 account ID and Casdoor issuer and subject for the shared billing boundary.
+
+## Run target-cloud acceptance
+
+Use a private ingress on the target cloud for all acceptance runs in [#74](https://github.com/1123786563/OpenBot/issues/74). Record the candidate commit, installed build versions, service revisions, replica counts, and configured quota values. Use dedicated trial accounts and disposable workspace data.
+
+1. Build the Web candidate and install the iOS, Android, macOS Apple silicon, macOS Intel, and Windows x64 candidates. Set the desktop signing workflows' `OPENBOT_PERSONAL_SAAS_URL` repository variable and the mobile build's `EXPO_PUBLIC_SERVER_URL` to the same trial origin. Use the signed builds intended for distribution.
+2. Register one account through Casdoor. Use that identity on each client. Compare the workspace and Assistant identifiers, and verify the same conversation history. Verify that Desktop Local continues to use its own data.
+3. Exercise sign-out, session revocation, and workspace suspension. For each installed client, leave protected content open, disconnect the client, and bring it to the foreground. Verify that the client hides expired content and checks authorization again before restoring it.
+4. With two or more accounts, start Bot runs and managed Computers before each fault. Exercise brief Casdoor disablement, late account status, loss of Casdoor connectivity, loss of the Computer control plane, and new work racing suspension. For each account, record the cutoff origin and deadline, stream closure, dispatch refusal, Bot terminal time, and confirmed Computer process exit. A cancellation request alone does not establish the terminal time.
+5. Restore access. Verify that old work stays stopped, then recover each item explicitly. Check that retries use current authorization and that the Computer keeps its files after a manual restart. Use WeKnora to verify that OpenBot suspension leaves permitted external work available, and that Casdoor cutoff blocks new external dispatch while previously dispatched usage still settles.
+6. Download a readable export. Confirm closure after fresh Casdoor authentication. Record access cutoff, terminal execution, online cleanup, dedicated provider revocation, and backup retention. Restore a disposable backup and prove that replay blocks old workspace access before the service accepts traffic.
+7. Repeat the Casdoor outage at the planned launch concurrency. Increase concurrency against the trial's configured quotas until you have a measured passing capacity. Use that result to set the initial limits. Keep participant-only ingress until the release matrix and capacity checks pass.
+
+Save per-platform and per-account timestamps with the acceptance record. Link the evidence and any failing scenarios from #74.

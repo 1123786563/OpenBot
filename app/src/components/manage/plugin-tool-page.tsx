@@ -1,12 +1,16 @@
 import { IconBolt, IconPlugOff, IconTool } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ConnectionPage } from "@/components/connections/connection-surface";
+import {
+  ConnectionAction,
+  ConnectionPage,
+} from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -15,6 +19,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -35,6 +40,9 @@ import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
  * Its routes use `$key_`, which opts them out of nesting under the connector page, so that page stays
  * a page rather than becoming a layout with an outlet.
  */
+
+/** Placeholder rows while the page loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 export function PluginToolPage({
   pluginKey: key,
   toolName,
@@ -65,6 +73,11 @@ export function PluginToolPage({
       (one) => one.id === bot.id,
     )?.hasCallbackToken === true;
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Narrows the Bot list by name. Shown only when the roster is long, which is when finding one in
+   * it stops being a scan. shortcut: fixed threshold of 8, raise it when a real roster complains.
+   */
+  const [botSearch, setBotSearch] = useState("");
 
   const setGrant = useMutation({
     ...setPluginGrantMutationOptions(queryClient),
@@ -79,9 +92,27 @@ export function PluginToolPage({
     linkProps: paths.plugin(key),
   };
 
-  /* Nothing rather than a placeholder, so no sentence asserts anything while the fetch is open. */
+  /* Placeholder rows while the fetch is open, so no sentence asserts anything mid-read. */
   if (plugins.isPending) {
-    return <ConnectionPage title="Tool">{null}</ConnectionPage>;
+    return (
+      <ConnectionPage title="Tool">
+        <div aria-busy="true" aria-label="Loading" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <div key={key}>
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-64" />
+                  </ItemContent>
+                </Item>
+                {index !== LOADING_ROWS.length - 1 && <Separator />}
+              </div>
+            ))}
+          </PageRows>
+        </div>
+      </ConnectionPage>
+    );
   }
 
   /*
@@ -93,9 +124,19 @@ export function PluginToolPage({
   if (!plugins.data) {
     return (
       <ConnectionPage backButton={back} title={toolName}>
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          Couldn't load plugins. Reload the page.
-        </p>
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load plugins.
+          </p>
+          <ConnectionAction
+            disabled={plugins.isFetching}
+            onClick={() => void plugins.refetch()}
+            type="button"
+            variant="outline"
+          >
+            {plugins.isFetching ? "Retrying…" : "Retry"}
+          </ConnectionAction>
+        </div>
       </ConnectionPage>
     );
   }
@@ -137,6 +178,10 @@ export function PluginToolPage({
     name: agent.name,
     hidden: agent.hidden,
   }));
+  const botNeedle = botSearch.trim().toLowerCase();
+  const shownBots = botNeedle
+    ? bots.filter((bot) => bot.name.toLowerCase().includes(botNeedle))
+    : bots;
 
   return (
     <ConnectionPage
@@ -176,7 +221,7 @@ export function PluginToolPage({
               <span
                 className={
                   tool.effect === "write"
-                    ? "text-amber-600 text-xs dark:text-amber-500"
+                    ? "text-amber-700 text-xs dark:text-amber-400"
                     : "text-muted-foreground text-xs"
                 }
               >
@@ -195,25 +240,39 @@ export function PluginToolPage({
           <PageEmpty icon={IconBolt} title="No Bots yet">
             Create one to give it this tool.
           </PageEmpty>
+        ) : shownBots.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground" role="status">
+            Nothing matches “{botSearch.trim()}”.
+          </p>
         ) : (
-          <PageRows>
-            {bots.map((bot, index) => {
-              const held = tool.grantedTo.includes(bot.id);
-              return (
-                <div key={bot.id}>
-                  <Item size="sm">
-                    <ItemContent>
-                      <ItemTitle>{bot.name}</ItemTitle>
-                      <ItemDescription>
-                        {bot.hidden ? "Hidden from your roster. " : ""}
-                        {held
-                          ? canCallBack(bot)
-                            ? `Can call this tool. Every call is still checked against boundaries and logged in ${paths.auditLabel}.`
-                            : "Allowed, but this Bot has no callback token. Every call is refused. Issue one on its page, or set AGENT_TOOL_TOKEN."
-                          : "Can't call this tool. The Bot never sees it."}
-                      </ItemDescription>
-                    </ItemContent>
-                    <ItemActions>
+          <>
+            {bots.length > 8 ? (
+              <Input
+                aria-label="Search Bots"
+                className="mb-4"
+                onChange={(event) => setBotSearch(event.target.value)}
+                placeholder="Search by Bot name"
+                value={botSearch}
+              />
+            ) : null}
+            <PageRows>
+              {shownBots.map((bot, index) => {
+                const held = tool.grantedTo.includes(bot.id);
+                return (
+                  <div key={bot.id}>
+                    <Item size="sm">
+                      <ItemContent>
+                        <ItemTitle>{bot.name}</ItemTitle>
+                        <ItemDescription>
+                          {bot.hidden ? "Hidden from your roster. " : ""}
+                          {held
+                            ? canCallBack(bot)
+                              ? `Can call this tool. Every call is still checked against boundaries and logged in ${paths.auditLabel}.`
+                              : "Allowed, but this Bot has no callback token. Every call is refused. Issue one on its page, or set AGENT_TOOL_TOKEN."
+                            : "Can't call this tool. The Bot never sees it."}
+                        </ItemDescription>
+                      </ItemContent>
+                      <ItemActions>
                       {/*
                        * Binary and immediate, which is what a Switch is for: it takes effect when
                        * switched and there is no save. Disabled only while its own write is in
@@ -245,11 +304,12 @@ export function PluginToolPage({
                       )}
                     </ItemActions>
                   </Item>
-                  {index !== bots.length - 1 && <Separator />}
-                </div>
-              );
-            })}
-          </PageRows>
+                    {index !== shownBots.length - 1 && <Separator />}
+                  </div>
+                );
+              })}
+            </PageRows>
+          </>
         )}
       </PageSection>
     </ConnectionPage>

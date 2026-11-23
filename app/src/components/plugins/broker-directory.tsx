@@ -304,15 +304,25 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
             </PageRows>
           </div>
         ) : apps.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            {/*
-             * The server's own sentence, as the enable failure above already does. A keyless
-             * deployment is refused with one naming the key's environment variable, and that name is
-             * the single thing an operator who reached this URL needs to read; the derived line
-             * stays as the fallback for a failure that arrived carrying no message of its own.
-             */}
-            {apps.error.message || directoryReadFailure(provider)}
-          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              {/*
+               * The server's own sentence, as the enable failure above already does. A keyless
+               * deployment is refused with one naming the key's environment variable, and that name
+               * is the single thing an operator who reached this URL needs to read; the derived line
+               * stays as the fallback for a failure that arrived carrying no message of its own.
+               */}
+              {apps.error.message || directoryReadFailure(provider)}
+            </p>
+            <ConnectionAction
+              disabled={apps.isFetching}
+              onClick={() => void apps.refetch()}
+              type="button"
+              variant="outline"
+            >
+              {apps.isFetching ? "Retrying…" : "Retry"}
+            </ConnectionAction>
+          </div>
         ) : listed.length === 0 ? (
           <PageEmpty
             icon={query ? IconSearch : IconPlug}

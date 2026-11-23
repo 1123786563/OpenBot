@@ -42,6 +42,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -95,18 +96,39 @@ function RouteComponent() {
   const component = components.data?.find((entry) => entry.name === name);
 
   /*
-   * Pending first and drawing nothing: there is no loading placeholder in this app, and the
-   * alternative here is worse than a blank — "no such component" while the list is still in flight
-   * says something false about a component that is about to appear.
+   * Pending first, as the list page's own placeholder shape: the alternative is worse than a
+   * blank — "no such component" while the list is still in flight says something false about a
+   * component that is about to appear.
    */
-  if (components.isPending) return null;
+  if (components.isPending) {
+    return (
+      <CapabilityPage backButton={BACK} title="Components">
+        <div aria-busy="true" aria-label="Loading" className="mt-8" role="status">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="mt-3 h-3 w-72" />
+          <Skeleton className="mt-8 aspect-square w-full rounded-lg border border-border" />
+        </div>
+      </CapabilityPage>
+    );
+  }
 
   if (components.error) {
     return (
       <CapabilityPage backButton={BACK} title="Components">
-        <p className="mt-8 text-destructive text-sm" role="alert">
-          Couldn't load components. Reload the page.
-        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load components.
+          </p>
+          <Button
+            disabled={components.isFetching}
+            onClick={() => void components.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {components.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       </CapabilityPage>
     );
   }

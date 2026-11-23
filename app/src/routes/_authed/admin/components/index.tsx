@@ -1,14 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { AdminComponentPreview } from "@/components/component-preview";
 import { SettingsItemBackground } from "@/components/settings/background";
+import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { componentListQueryOptions } from "@/lib/components/queries";
 import { cn } from "@/lib/utils";
 
@@ -21,8 +25,17 @@ export const Route = createFileRoute("/_authed/admin/components/")({
   component: RouteComponent,
 });
 
+/** Placeholder tiles while the list loads: the grid's own shape, claiming nothing. */
+const LOADING_TILES = ["a", "b", "c", "d"];
+
 function RouteComponent() {
   const components = useQuery(componentListQueryOptions());
+  /** Narrows the tiles by title. Shown only once the list is long enough to need it. */
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+  const listed = (components.data ?? []).filter((component) =>
+    `${component.title} ${component.name}`.toLowerCase().includes(needle),
+  );
 
   return (
     <CapabilityPage
@@ -30,14 +43,48 @@ function RouteComponent() {
       title="UI components"
     >
       {/*
-       * Pending, error, empty, rows — in that order. Pending draws nothing rather than a
-       * placeholder, and it has to come first: the empty sentence would otherwise stand there
-       * asserting there are no components for as long as the fetch takes.
+       * Pending, error, empty, rows — in that order. Pending draws the grid's own shape as
+       * placeholder tiles rather than nothing, and it has to come first: the empty sentence
+       * would otherwise stand there asserting there are no components for as long as the
+       * fetch takes.
        */}
-      {components.isPending ? null : components.error ? (
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          Couldn't load components. Reload the page.
-        </p>
+      {components.isPending ? (
+        <div
+          aria-busy="true"
+          aria-label="Loading components"
+          className="mt-12 grid w-full grid-cols-1 gap-4 md:grid-cols-2"
+          role="status"
+        >
+          {LOADING_TILES.map((key) => (
+            <div
+              className="aspect-square rounded-lg border border-border"
+              key={key}
+            >
+              <div className="min-h-28 p-4">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="mt-2 h-3 w-48" />
+              </div>
+              <div className="p-3">
+                <Skeleton className="h-[calc(100%-4rem)] w-full rounded-md" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : components.error ? (
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load components.
+          </p>
+          <Button
+            disabled={components.isFetching}
+            onClick={() => void components.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {components.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : components.data?.length === 0 ? (
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
           <EmptyHeader>
@@ -48,8 +95,23 @@ function RouteComponent() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="mt-12 grid w-full grid-cols-1 gap-4 md:grid-cols-2">
-          {components.data?.map((component) => (
+        <>
+          {(components.data?.length ?? 0) > 8 ? (
+            <Input
+              aria-label="Search components"
+              className="mt-12"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by component name"
+              value={search}
+            />
+          ) : null}
+          {listed.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground" role="status">
+              Nothing matches “{search.trim()}”.
+            </p>
+          ) : (
+            <div className="mt-4 grid w-full grid-cols-1 gap-4 md:grid-cols-2">
+              {listed.map((component) => (
             /*
              * A real link rather than a button, so a component can be opened in a new tab the way
              * anything else addressable can. Its name comes from the title and description below:
@@ -97,8 +159,10 @@ function RouteComponent() {
                 </div>
               </div>
             </Link>
-          ))}
-        </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </CapabilityPage>
   );
