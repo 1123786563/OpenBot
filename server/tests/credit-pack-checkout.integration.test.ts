@@ -50,13 +50,23 @@ const alice = crypto.randomUUID();
 const bob = crypto.randomUUID();
 const outsider = crypto.randomUUID();
 const subscriber = crypto.randomUUID();
-const fixtureSubjects = new Set<string>([alice, bob, outsider, subscriber]);
+const switcher = crypto.randomUUID();
+const fixtureSubjects = new Set<string>([
+  alice,
+  bob,
+  outsider,
+  subscriber,
+  switcher,
+]);
 type RefundTerms = ReturnType<typeof testRefundTerms.parse>;
 const refundStarts = new Map<string, RefundTerms>();
+const refundChannels = new Map<string, string>();
 let refundUnavailable = false;
 let accountIds: string[] = [];
 const payments = new Map<string, object>();
 const starts = new Map<string, unknown>();
+const switchCalls: string[] = [];
+const closeResults = new Map<string, object>();
 let onQuery: (() => Promise<void>) | undefined;
 const openbotApp = `checkout-openbot-${alice}`;
 const secondApp = `checkout-second-${alice}`;
@@ -74,6 +84,7 @@ function startControlledFixture(credential: string) {
           return Response.json({ state: "unknown" });
         const terms = testRefundTerms.parse(await request.json());
         refundStarts.set(id, terms);
+        refundChannels.set(id, credential);
         return Response.json({ ...terms, state: "processing" });
       }
       if (request.method === "PUT") {
@@ -82,6 +93,13 @@ function startControlledFixture(credential: string) {
           checkoutUrl: `${server.url.origin}/checkout/${id}`,
         });
       }
+      if (request.method === "DELETE") {
+        switchCalls.push(`close:${id}`);
+        return Response.json(
+          payments.get(id) ?? closeResults.get(id) ?? { state: "unknown" },
+        );
+      }
+      switchCalls.push(`query:${id}`);
       await onQuery?.();
       return Response.json(payments.get(id) ?? { state: "unknown" });
     },
@@ -1574,5 +1592,311 @@ test("a customer can renew a Beijing month, replace a future plan after refund, 
     time = undefined;
     api = previous;
     await restoreCatalog();
+  }
+});
+
+test("switching a renewal queries and closes the old order, and late payment refunds through its original channel", async () => {
+  await approvePaths();
+  const previous = api;
+  api = mount(fixture.url.origin, undefined, alipayFixture.url.origin);
+  const alipayPlans = "/paid/subscription/alipay";
+  const monthlyPlan = await paid.upsertProduct({
+    code: monthly,
+    kind: "subscription",
+    priceCents: 1250,
+    creditsMicrocredits: 100n,
+  });
+  const accountId = accountIds[4];
+  const orderInput = (orderId: string) => ({
+    orderId,
+    productCode: monthlyPlan.code,
+    version: monthlyPlan.version,
+  });
+  const payment = (id: string, at: Date) => ({
+    orderId: id,
+    merchantId: "fixture-merchant",
+    currency: "CNY",
+    amountCents: 1250,
+    paidAt: at.toISOString(),
+    channelOrderRef: id,
+    state: "paid",
+  });
+  const placeWeChat = async () => {
+    const id = crypto.randomUUID();
+    expect(
+      (await call(`${plans}/orders`, switcher, orderInput(id))).status,
+    ).toBe(201);
+    expect(
+      (await call(`${plans}/orders/${id}/checkout`, switcher, {})).status,
+    ).toBe(200);
+    return id;
+  };
+  try {
+    time = new Date("2027-04-12T10:00:00Z");
+    const first = await placeWeChat();
+    expect(
+      (await call(callback, undefined, payment(first, time), true)).status,
+    ).toBe(200);
+    time = new Date("2027-04-15T10:00:00Z");
+    const original = await placeWeChat();
+    const replacement = crypto.randomUUID();
+    const switchBody = { orderId: replacement };
+    const switchPath = `${alipayPlans}/orders/switch/${original}`;
+    expect((await call(switchPath, bob, switchBody)).status).toBe(404);
+    closeResults.set(original, {
+      orderId: original,
+      merchantId: "fixture-merchant",
+      currency: "CNY",
+      amountCents: 1250,
+      state: "failed",
+    });
+    const concurrentSwitch = await Promise.all([
+      call(switchPath, switcher, switchBody),
+      call(switchPath, switcher, { orderId: crypto.randomUUID() }),
+    ]);
+    expect(concurrentSwitch.map(({ status }) => status).sort()).toEqual([
+      200, 201,
+    ]);
+    const choices = await Promise.all(
+      concurrentSwitch.map((response) => response.json()),
+    );
+    expect(choices[0].id).toBe(choices[1].id);
+    const switchedId = choices[0].id;
+    expect((await call(switchPath, switcher, switchBody)).status).toBe(200);
+    const oldChannelCalls = switchCalls.filter((entry) =>
+      entry.endsWith(original),
+    );
+    expect(oldChannelCalls[0]).toBe(`query:${original}`);
+    expect(oldChannelCalls).toContain(`close:${original}`);
+    expect(
+      (await call(`${alipayPlans}/orders/${switchedId}/checkout`, switcher, {}))
+        .status,
+    ).toBe(200);
+    const replacementPayment = payment(switchedId, time);
+    expect(
+      (
+        await call(
+          "/credit-pack-test/alipay/callback",
+          undefined,
+          replacementPayment,
+          alipayToken,
+        )
+      ).status,
+    ).toBe(200);
+    // A channel can report money after saying the order was closed, including
+    // after the intended next period starts.
+    time = new Date("2027-05-15T10:00:00Z");
+    const late = payment(original, time);
+    const accepted = await Promise.all([
+      call(callback, undefined, late, true),
+      call(callback, undefined, late, true),
+      call(callback, undefined, closeResults.get(original), true),
+    ]);
+    expect(accepted.map(({ status }) => status)).toEqual([200, 200, 200]);
+    expect(await paid.entitlements(accountId)).toHaveLength(2);
+    const refunds = await paid.refunds(accountId);
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]).toMatchObject({
+      orderId: original,
+      amountCents: 1250,
+      channel: "wechat",
+      reason: "duplicate_future_period",
+    });
+    expect(refundStarts.get(refunds[0].id)).toMatchObject({
+      orderId: original,
+      amountCents: 1250,
+    });
+    const refundId = refunds[0].id;
+    expect(await paid.requestRefund(original)).toMatchObject({
+      id: refundId,
+      state: "processing",
+      reason: "duplicate_future_period",
+    });
+
+    const refundTerms = refundStarts.get(refundId);
+    expect(refundChannels.get(refundId)).toBe(token);
+    const confirmed = { ...refundTerms, state: "confirmed" };
+    expect(
+      (
+        await call(
+          "/credit-pack-test/alipay/refund-callback",
+          undefined,
+          confirmed,
+          alipayToken,
+        )
+      ).status,
+    ).toBe(409);
+    for (const state of ["confirmed", "processing", "confirmed"]) {
+      expect(
+        (await call(refundCallback, undefined, { ...confirmed, state }, true))
+          .status,
+      ).toBe(200);
+    }
+    expect(await paid.refunds(accountId)).toEqual([
+      expect.objectContaining({
+        id: refundId,
+        state: "confirmed",
+        orderId: original,
+        amountCents: 1250,
+      }),
+    ]);
+    // The channel can decline to close. Both checkouts can then report
+    // payment, even with repeated callbacks arriving concurrently.
+    const openOriginal = await placeWeChat();
+    const openReplacement = crypto.randomUUID();
+    expect(
+      (
+        await call(`${alipayPlans}/orders/switch/${openOriginal}`, switcher, {
+          orderId: openReplacement,
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await call(
+          `${alipayPlans}/orders/${openReplacement}/checkout`,
+          switcher,
+          {},
+        )
+      ).status,
+    ).toBe(200);
+
+    const suspendedOrder = await placeWeChat();
+    const bothPaid = time;
+    time = new Date(+bothPaid + 1000);
+    await paid.suspendAccount(accountId, true);
+    expect(
+      (
+        await call(
+          `${alipayPlans}/orders`,
+          switcher,
+          orderInput(crypto.randomUUID()),
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await call(
+          `${alipayPlans}/orders/${openReplacement}/checkout`,
+          switcher,
+          {},
+        )
+      ).status,
+    ).toBe(409);
+    const concurrentPayments = await Promise.all([
+      call(callback, undefined, payment(openOriginal, bothPaid), true),
+      call(
+        "/credit-pack-test/alipay/callback",
+        undefined,
+        payment(openReplacement, bothPaid),
+        alipayToken,
+      ),
+      call(
+        "/credit-pack-test/alipay/callback",
+        undefined,
+        payment(openReplacement, bothPaid),
+        alipayToken,
+      ),
+    ]);
+    expect(concurrentPayments.map(({ status }) => status)).toEqual([
+      200, 200, 200,
+    ]);
+    expect(await paid.entitlements(accountId)).toHaveLength(3);
+    const finalRefunds = (await paid.refunds(accountId)).filter(
+      ({ id }) => id !== refundId,
+    );
+    expect(finalRefunds).toHaveLength(1);
+    expect(finalRefunds[0]).toMatchObject({
+      reason: "duplicate_future_period",
+      amountCents: 1250,
+    });
+    const losingChannel = finalRefunds[0].channel;
+    const losingTerms = refundStarts.get(finalRefunds[0].id);
+    const losingToken = losingChannel === "alipay" ? alipayToken : token;
+    expect(refundChannels.get(finalRefunds[0].id)).toBe(losingToken);
+    expect(
+      (
+        await call(
+          losingChannel === "alipay"
+            ? "/credit-pack-test/alipay/refund-callback"
+            : refundCallback,
+          undefined,
+          { ...losingTerms, state: "confirmed" },
+          losingToken,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await paid.refunds(accountId)).every(
+        ({ state }) => state === "confirmed",
+      ),
+    ).toBe(true);
+    const suspendedPayment = payment(suspendedOrder, time);
+    time = new Date(+time + 1000);
+    await paid.suspendAccount(accountId, false);
+    expect(
+      (await call(callback, undefined, suspendedPayment, true)).status,
+    ).toBe(200);
+    const suspendedRefund = (await paid.refunds(accountId)).find(
+      ({ orderId }) => orderId === suspendedOrder,
+    );
+    expect(suspendedRefund).toMatchObject({
+      reason: "account_suspended",
+      amountCents: 1250,
+      channel: "wechat",
+      state: "processing",
+    });
+    expect(await paid.entitlements(accountId)).toHaveLength(3);
+  } finally {
+    time = undefined;
+    api = previous;
+  }
+});
+
+test("a switch reconciles an already paid order and the runnable fixture closes a payable link", async () => {
+  await approvePaths();
+  const previous = api;
+  const localWeChat = startCreditPackFixture({
+    port: 0,
+    token,
+    notify: async () => new Response(null, { status: 503 }),
+  });
+  api = mount(localWeChat.url.origin, undefined, alipayFixture.url.origin);
+  const alipayOrders = "/paid/credit-pack/alipay/orders";
+  const { version } = await publish(2500, 25_000_000n);
+  const prepare = async () => {
+    const orderId = crypto.randomUUID();
+    expect((await call(orders, switcher, { orderId, version })).status).toBe(
+      201,
+    );
+    const checkout = await call(`${orders}/${orderId}/checkout`, switcher, {});
+    expect(checkout.status).toBe(200);
+    const { checkoutUrl } = await checkout.json();
+    return { orderId, checkoutUrl };
+  };
+  const switchToAlipay = (orderId: string) =>
+    call(`${alipayOrders}/switch/${orderId}`, switcher, {
+      orderId: crypto.randomUUID(),
+    });
+  try {
+    const alreadyPaid = await prepare();
+    expect((await fetch(alreadyPaid.checkoutUrl, { method: "POST" })).ok).toBe(
+      true,
+    );
+    expect((await switchToAlipay(alreadyPaid.orderId)).status).toBe(409);
+    expect(await (await call(orders, switcher)).json()).toContainEqual(
+      expect.objectContaining({ id: alreadyPaid.orderId, state: "verified" }),
+    );
+    const unpaid = await prepare();
+    expect((await switchToAlipay(unpaid.orderId)).status).toBe(201);
+    expect((await fetch(unpaid.checkoutUrl, { method: "POST" })).status).toBe(
+      409,
+    );
+    expect(await (await call(orders, switcher)).json()).toContainEqual(
+      expect.objectContaining({ id: unpaid.orderId, state: "failed" }),
+    );
+  } finally {
+    await localWeChat.stop(true);
+    api = previous;
   }
 });

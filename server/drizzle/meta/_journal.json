@@ -841,6 +841,13 @@
       "when": 1795422552671,
       "tag": "0119_paid_order_disputes",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1795424497937,
+      "tag": "0120_checkout_switch_and_suspension_history",
+      "breakpoints": true
     }
   ]
 }

@@ -160,7 +160,15 @@ export function createTestCreditRoutes({
       if (channel)
         api.route(
           "/",
-          createCreditPackCheckout({ channel, ledger, paid: paid.ledger }),
+          createCreditPackCheckout({
+            channel,
+            ledger,
+            paid: paid.ledger,
+            otherChannel:
+              channel.kind === "wechat"
+                ? paid.alipayCreditPackTestChannel
+                : paid.creditPackTestChannel,
+          }),
         );
     }
   }

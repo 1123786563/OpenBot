@@ -15,6 +15,7 @@ import type { Database } from "../db/client";
 import {
   billingApplications,
   billingRestore,
+  billingSuspensionHistory,
   paidCorrections,
   paidCreditAllocations,
   paidEntitlements,
@@ -39,7 +40,32 @@ import type {
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 const customerRefund = "customer";
+const automaticFixtureRefund = "fixture-automatic";
+const fixtureRefundActors = [customerRefund, automaticFixtureRefund];
 type Refund = typeof paidRefunds.$inferSelect;
+type OrderVerification = { order: typeof paidOrders.$inferSelect } & (
+  | {
+      replayed: true;
+      claimed: boolean;
+      refunded?: true;
+      entitlement?: never;
+      refund?: never;
+    }
+  | {
+      replayed: false;
+      claimed: true;
+      entitlement: typeof paidEntitlements.$inferSelect;
+      refunded?: never;
+      refund?: never;
+    }
+  | {
+      replayed: false;
+      claimed: false;
+      refunded: true;
+      refund: Refund;
+      entitlement?: never;
+    }
+);
 
 const isDispute = or(
   isNotNull(paidRefunds.dispute),
@@ -474,8 +500,9 @@ export function createPaidCreditLedger(
             ? "The offer changed. Review the current Subscription Plan before placing an order."
             : "The offer changed. Review the current Credit Pack before placing an order.",
         );
+      await lockAccount(tx, input.accountId);
+      let renewsOrderId: string | undefined;
       if (testPack?.kind === "subscription") {
-        await lockAccount(tx, input.accountId);
         const concurrent = await replay();
         if (concurrent) return { ...concurrent, replayed: true };
         const at = now();
@@ -485,6 +512,8 @@ export function createPaidCreditLedger(
             "subscription_slot_taken",
             subscriptionSlotMessage,
           );
+        // Keep late payments attached to the renewal the buyer originally ordered.
+        renewsOrderId = period?.id;
       }
       await checkSales(tx, input.accountId, testPack?.applicationIds);
       const [order] = await tx
@@ -496,6 +525,7 @@ export function createPaidCreditLedger(
           productVersion: product.version,
           priceCents: product.priceCents,
           lockedKind: product.kind,
+          renewsOrderId,
           lockedMicrocredits: product.creditsMicrocredits,
           testMerchant: testPack?.merchant,
           channel: input.channel,
@@ -509,6 +539,116 @@ export function createPaidCreditLedger(
         "order_conflict",
         "This order identifier is unavailable.",
       );
+    });
+  }
+
+  async function checkTestCheckout(
+    accountId: string,
+    applicationIds: string[],
+  ) {
+    await database.transaction((tx) =>
+      checkSales(tx, accountId, applicationIds),
+    );
+  }
+
+  async function switchOrder(input: {
+    accountId: string;
+    originalId: string;
+    id: string;
+    source: { channel: CreditPackChannel; merchant: string };
+    target: {
+      channel: CreditPackChannel;
+      merchant: string;
+      applicationIds: string[];
+    };
+    kind?: "subscription";
+    reconcile: (id: string) => Promise<void>;
+  }) {
+    const { accountId, originalId, id, source, target } = input;
+    const findSource = async (tx: Transaction) => {
+      const [order] = await tx
+        .select()
+        .from(paidOrders)
+        .where(
+          and(
+            eq(paidOrders.id, originalId),
+            eq(paidOrders.accountId, accountId),
+            eq(paidOrders.channel, source.channel),
+            eq(paidOrders.testMerchant, source.merchant),
+            eq(paidOrders.lockedKind, input.kind ?? "credit_pack"),
+          ),
+        );
+      if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
+      return order;
+    };
+    const findSwitch = async (tx: Transaction) => {
+      const [existing] = await tx
+        .select()
+        .from(paidOrders)
+        .where(eq(paidOrders.switchedFromOrderId, originalId));
+      if (!existing) return;
+      if (
+        existing.channel !== target.channel ||
+        existing.testMerchant !== target.merchant
+      )
+        throw new PaidLedgerError(
+          "order_conflict",
+          "This order has already switched channels.",
+        );
+      return { ...existing, replayed: true };
+    };
+    const original = await database.transaction(async (tx) => {
+      const order = await findSource(tx);
+      const replay = await findSwitch(tx);
+      if (replay) return replay;
+      if (order.state !== "pending" && order.state !== "failed")
+        throw new PaidLedgerError(
+          "order_conflict",
+          "The original order already received a payment.",
+        );
+      await checkSales(tx, accountId, target.applicationIds);
+      return { ...order, replayed: false };
+    });
+    if (original.replayed) return original;
+
+    // Channel I/O can itself discover and verify a payment. Re-read under
+    // the account lock before creating the replacement.
+    await input.reconcile(original.id);
+    return database.transaction(async (tx) => {
+      await lockAccount(tx, accountId);
+      const order = await findSource(tx);
+      const replay = await findSwitch(tx);
+      if (replay) return replay;
+      if (order.state !== "pending" && order.state !== "failed")
+        throw new PaidLedgerError(
+          "order_conflict",
+          "The original order already received a payment.",
+        );
+      await checkSales(tx, accountId, target.applicationIds);
+      const [replacement] = await tx
+        .insert(paidOrders)
+        .values({
+          id,
+          accountId,
+          productCode: order.productCode,
+          productVersion: order.productVersion,
+          priceCents: order.priceCents,
+          lockedKind: order.lockedKind,
+          lockedMicrocredits: order.lockedMicrocredits,
+          renewsOrderId: order.renewsOrderId,
+          switchedFromOrderId: order.id,
+          checkoutAttemptId: order.checkoutAttemptId ?? order.id,
+          channel: target.channel,
+          testMerchant: target.merchant,
+        })
+        .onConflictDoNothing({ target: paidOrders.id })
+        .returning();
+      if (!replacement)
+        throw new PaidLedgerError(
+          "order_conflict",
+          "This order identifier is unavailable.",
+        );
+      return { ...replacement, replayed: false };
     });
   }
 
@@ -527,6 +667,10 @@ export function createPaidCreditLedger(
         priceCents: paidOrders.priceCents,
         creditsMicrocredits: sql<string>`${paidOrders.lockedMicrocredits}::text`,
         state: paidOrders.state,
+        switchedFromOrderId: paidOrders.switchedFromOrderId,
+        switchOrderId: sql<
+          string | null
+        >`(select replacement.id from paid_orders replacement where replacement.switched_from_order_id = ${paidOrders.id})`,
         createdAt: paidOrders.createdAt,
         verifiedAt: paidOrders.verifiedAt,
         entitlementId: paidEntitlements.id,
@@ -539,6 +683,7 @@ export function createPaidCreditLedger(
           state: paidRefunds.state,
           amountCents: paidRefunds.amountCents,
           confirmedAt: paidRefunds.confirmedAt,
+          reason: paidRefunds.reason,
         },
       })
       .from(paidOrders)
@@ -605,7 +750,7 @@ export function createPaidCreditLedger(
     currency?: string;
     testChannel?: true;
   }) {
-    const result = await database.transaction(async (tx) => {
+    const result = await database.transaction<OrderVerification>(async (tx) => {
       // Serialize period claims with order placement and account consumption.
       await tx
         .select({ id: testCreditAccounts.id })
@@ -673,13 +818,13 @@ export function createPaidCreditLedger(
           "The ledger is being restored; verification is paused.",
         );
 
-      // A payment that lands while the account is suspended never grants:
-      // it refunds in full through the channel that took it (#103).
-      const [account] = await tx
-        .select({ suspendedAt: testCreditAccounts.suspendedAt })
-        .from(testCreditAccounts)
-        .where(eq(testCreditAccounts.id, order.accountId));
-      if (account?.suspendedAt) {
+      const refundPayment = async (
+        reason:
+          | "account_suspended"
+          | "pilot_closure"
+          | "duplicate_future_period"
+          | "duplicate_checkout_attempt",
+      ) => {
         const [owed] = await tx
           .update(paidOrders)
           .set({
@@ -692,8 +837,11 @@ export function createPaidCreditLedger(
         const refund = await recordRefundWithin(
           tx,
           owed,
-          "account_suspended",
+          reason,
           now(),
+          order.testMerchant && reason !== "pilot_closure"
+            ? automaticFixtureRefund
+            : "channel",
         );
         return {
           order: owed,
@@ -702,7 +850,27 @@ export function createPaidCreditLedger(
           refunded: true as const,
           refund,
         };
-      }
+      };
+      const [account] = await tx
+        .select({ suspendedAt: testCreditAccounts.suspendedAt })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.id, order.accountId));
+      const [pastSuspension] = await tx
+        .select({ startedAt: billingSuspensionHistory.startedAt })
+        .from(billingSuspensionHistory)
+        .where(
+          and(
+            eq(billingSuspensionHistory.accountId, order.accountId),
+            lte(billingSuspensionHistory.startedAt, input.paidAt),
+            gt(billingSuspensionHistory.endedAt, input.paidAt),
+          ),
+        )
+        .limit(1);
+      if (
+        pastSuspension ||
+        (account?.suspendedAt && input.paidAt >= account.suspendedAt)
+      )
+        return refundPayment("account_suspended");
 
       // A payment confirmed at or after the pilot's reserve cutoff never
       // grants: it refunds in full through its own channel (#109 截止时及
@@ -714,30 +882,24 @@ export function createPaidCreditLedger(
       if (
         closure?.reservesStoppedAt &&
         input.paidAt >= closure.reservesStoppedAt
-      ) {
-        const [owed] = await tx
-          .update(paidOrders)
-          .set({
-            state: "refund_pending",
-            channelOrderRef: input.channelOrderRef,
-            verifiedAt: input.paidAt,
-          })
-          .where(eq(paidOrders.id, order.id))
-          .returning();
-        const cutoffRefund = await recordRefundWithin(
-          tx,
-          owed,
-          "pilot_closure",
-          now(),
-        );
-        return {
-          order: owed,
-          replayed: false as const,
-          claimed: false as const,
-          refunded: true as const,
-          refund: cutoffRefund,
-        };
-      }
+      )
+        return refundPayment("pilot_closure");
+
+      const attemptId = order.checkoutAttemptId ?? order.id;
+      const [claimedAttempt] = await tx
+        .select({ id: paidEntitlements.id })
+        .from(paidEntitlements)
+        .innerJoin(paidOrders, eq(paidOrders.id, paidEntitlements.orderId))
+        .where(
+          and(
+            eq(paidOrders.accountId, order.accountId),
+            or(
+              eq(paidOrders.id, attemptId),
+              eq(paidOrders.checkoutAttemptId, attemptId),
+            ),
+          ),
+        )
+        .limit(1);
 
       // Legacy orders predate snapshots and retain their original lookup behavior.
       const [product] =
@@ -750,59 +912,70 @@ export function createPaidCreditLedger(
       let period: BillingPeriod | undefined;
       let state: "granted" | "future" = "granted";
       const kind = order.lockedKind ?? product?.kind;
+      if (claimedAttempt)
+        return refundPayment(
+          kind === "subscription"
+            ? "duplicate_future_period"
+            : "duplicate_checkout_attempt",
+        );
+
       if (kind === "subscription") {
         const [latest] = await subscriptionPeriods(
           tx,
           order.accountId,
           input.paidAt,
         );
-        if (subscriptionSlotTaken(latest, input.paidAt)) {
-          const [owed] = await tx
-            .update(paidOrders)
-            .set({
-              state: "refund_pending",
-              channelOrderRef: input.channelOrderRef,
-              verifiedAt: input.paidAt,
-            })
-            .where(eq(paidOrders.id, order.id))
-            .returning();
-          const refund = await recordRefundWithin(
-            tx,
-            owed,
-            "duplicate_future_period",
-            now(),
-          );
-          return {
-            order: owed,
-            replayed: false as const,
-            claimed: false as const,
-            refunded: true as const,
-            refund,
-          };
+        let previous:
+          | Pick<typeof latest, "periodStart" | "periodEnd" | "anchorDay">
+          | undefined = latest;
+        if (order.renewsOrderId) {
+          const [renewed] = await tx
+            .select()
+            .from(paidEntitlements)
+            .where(eq(paidEntitlements.orderId, order.renewsOrderId));
+          previous = renewed;
+        } else if (subscriptionSlotTaken(latest, input.paidAt)) {
+          return refundPayment("duplicate_future_period");
         }
         if (
-          latest?.periodStart &&
-          latest.periodEnd &&
-          latest.anchorDay !== null
+          previous?.periodStart &&
+          previous.periodEnd &&
+          previous.anchorDay !== null
         ) {
           period = advancePurchasePeriod({
-            start: latest.periodStart,
-            end: latest.periodEnd,
-            anchorDay: latest.anchorDay,
+            start: previous.periodStart,
+            end: previous.periodEnd,
+            anchorDay: previous.anchorDay,
           });
-          state = "future";
-          // Release the unique future slot once its previous period starts.
-          await tx
-            .update(paidEntitlements)
-            .set({ state: "granted" })
+          const [occupied] = await tx
+            .select({ id: paidEntitlements.id })
+            .from(paidEntitlements)
             .where(
               and(
                 eq(paidEntitlements.accountId, order.accountId),
                 eq(paidEntitlements.kind, "subscription"),
-                eq(paidEntitlements.state, "future"),
-                lte(paidEntitlements.periodStart, input.paidAt),
+                eq(paidEntitlements.periodStart, period.start),
+                ne(paidEntitlements.state, "revoked"),
               ),
-            );
+            )
+            .limit(1);
+          if (occupied) return refundPayment("duplicate_future_period");
+
+          const effectiveAt = new Date(Math.max(+input.paidAt, +now()));
+          if (period.start > effectiveAt) {
+            state = "future";
+            await tx
+              .update(paidEntitlements)
+              .set({ state: "granted" })
+              .where(
+                and(
+                  eq(paidEntitlements.accountId, order.accountId),
+                  eq(paidEntitlements.kind, "subscription"),
+                  eq(paidEntitlements.state, "future"),
+                  lte(paidEntitlements.periodStart, effectiveAt),
+                ),
+              );
+          }
         }
         period ??= firstBillingPeriod(input.paidAt);
       }
@@ -1035,7 +1208,7 @@ export function createPaidCreditLedger(
       .onConflictDoUpdate({
         target: paidRefunds.orderId,
         set: { state: "requested", reason, openedBy: by, requestedAt: at },
-        setWhere: sql`${paidRefunds.state} <> 'confirmed' AND ${paidRefunds.openedBy} <> ${customerRefund}`,
+        setWhere: sql`${paidRefunds.state} <> 'confirmed' AND ${paidRefunds.openedBy} not in (${customerRefund}, ${automaticFixtureRefund})`,
       })
       .returning();
     return row;
@@ -1236,9 +1409,10 @@ export function createPaidCreditLedger(
       const order = await lockRefundOrder(tx, orderId);
       const existing = await findRefund(tx, orderId);
       if (
-        existing?.state === "confirmed" ||
-        existing?.dispute ||
-        existing?.openedBy === customerRefund
+        existing &&
+        (existing.state === "confirmed" ||
+          existing.dispute ||
+          fixtureRefundActors.includes(existing.openedBy))
       )
         return existing;
       if (order.state !== "verified" && order.state !== "refund_pending")
@@ -1384,7 +1558,7 @@ export function createPaidCreditLedger(
           eq(paidOrders.id, input.orderId),
           eq(paidOrders.testMerchant, input.merchant),
           eq(paidOrders.channel, input.channel),
-          eq(paidRefunds.openedBy, customerRefund),
+          inArray(paidRefunds.openedBy, fixtureRefundActors),
         ),
       );
     if (row?.channelOrderRef)
@@ -1397,7 +1571,11 @@ export function createPaidCreditLedger(
     return database.transaction(async (tx) => {
       const order = await lockRefundOrder(tx, input.orderId);
       const refund = await findRefund(tx, order.id);
-      if (!refund || refund.openedBy !== customerRefund || !order.testMerchant)
+      if (
+        !refund ||
+        !fixtureRefundActors.includes(refund.openedBy) ||
+        !order.testMerchant
+      )
         throw new PaidLedgerError("order_unknown", "Unknown test refund.");
       if (
         refund.id !== input.refundId ||
@@ -1461,7 +1639,8 @@ export function createPaidCreditLedger(
           "not_verified",
           "No refund has been requested for this order.",
         );
-      if (refund.dispute || refund.openedBy === customerRefund) return refund;
+      if (refund.dispute || fixtureRefundActors.includes(refund.openedBy))
+        return refund;
       return settleRefundWithin(tx, refund, succeeded);
     });
   }
@@ -1474,7 +1653,11 @@ export function createPaidCreditLedger(
     return database.transaction(async (tx) => {
       const order = await lockRefundOrder(tx, input.orderId);
       const refund = await findRefund(tx, order.id);
-      if (!order.testMerchant || !refund || refund.openedBy !== customerRefund)
+      if (
+        !order.testMerchant ||
+        !refund ||
+        !fixtureRefundActors.includes(refund.openedBy)
+      )
         throw new PaidLedgerError("order_unknown", "Unknown test refund.");
       if (input.returnedCents !== refund.amountCents)
         throw new PaidLedgerError(
@@ -1742,13 +1925,37 @@ export function createPaidCreditLedger(
    * refunds and dispatched settlements continue.
    */
   async function suspendAccount(accountId: string, suspended: boolean) {
-    const [row] = await database
-      .update(testCreditAccounts)
-      .set({ suspendedAt: suspended ? now() : null })
-      .where(eq(testCreditAccounts.id, accountId))
-      .returning({ id: testCreditAccounts.id });
-    if (!row) throw new PaidLedgerError("order_unknown", "Unknown account.");
-    return suspended;
+    return database.transaction(async (tx) => {
+      await lockAccount(tx, accountId);
+      const [account] = await tx
+        .select({ suspendedAt: testCreditAccounts.suspendedAt })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.id, accountId));
+      if (!account)
+        throw new PaidLedgerError("order_unknown", "Unknown account.");
+      if (Boolean(account.suspendedAt) === suspended) return suspended;
+      const at = now();
+      if (account.suspendedAt)
+        await tx
+          .insert(billingSuspensionHistory)
+          .values({
+            accountId,
+            startedAt: account.suspendedAt,
+            endedAt: at,
+          })
+          .onConflictDoUpdate({
+            target: [
+              billingSuspensionHistory.accountId,
+              billingSuspensionHistory.startedAt,
+            ],
+            set: { endedAt: at },
+          });
+      await tx
+        .update(testCreditAccounts)
+        .set({ suspendedAt: suspended ? at : null })
+        .where(eq(testCreditAccounts.id, accountId));
+      return suspended;
+    });
   }
 
   // ── Restore from backup (#108) ───────────────────────────────────────
@@ -2208,6 +2415,8 @@ export function createPaidCreditLedger(
   return {
     upsertProduct,
     createOrder,
+    switchOrder,
+    checkTestCheckout,
     creditPackOffer,
     subscriptionOffer,
     testPackOrders,

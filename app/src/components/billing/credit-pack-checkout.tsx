@@ -30,6 +30,7 @@ const pack = z.object({
   priceCents: z.number().int().positive(),
   creditsMicrocredits: z.string().regex(/^\d+$/),
 });
+const subscriptionPath = "/api/billing/paid/subscription";
 const offerProduct = pack.extend({
   version: z.number().int().positive(),
   currency: z.literal("CNY"),
@@ -37,6 +38,7 @@ const offerProduct = pack.extend({
 const availability = z.object({
   available: z.boolean(),
   blockedReason: z.string().nullable(),
+  canSwitchChannel: z.boolean().optional(),
 });
 const packOffer = availability.extend({
   product: offerProduct.nullable(),
@@ -78,6 +80,7 @@ const orderSchema = pack.extend({
   id: z.uuid(),
   productCode: z.string().optional(),
   canRefundFuture: z.boolean().optional(),
+  switchOrderId: z.uuid().nullable().optional(),
   state: z.enum([
     "pending",
     "verified",
@@ -92,6 +95,7 @@ const orderSchema = pack.extend({
     .object({
       id: z.uuid(),
       amountCents: z.number().int().positive(),
+      reason: z.string().optional(),
       state: z.enum([
         "requested",
         "processing",
@@ -120,11 +124,13 @@ function OrderRow({
   channel,
   path,
   subscription,
+  canSwitchChannel,
 }: {
   order: Order;
   channel: Channel;
   path: string;
   subscription: boolean;
+  canSwitchChannel?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [confirmRefund, setConfirmRefund] = useState(false);
@@ -151,6 +157,7 @@ function OrderRow({
       [
         checkoutKeys(path).orders,
         checkoutKeys(path).offer,
+        checkoutKeys(otherPath).offer,
         billingKeys.paidBalance,
         billingKeys.paidSources,
         billingKeys.bill,
@@ -162,6 +169,24 @@ function OrderRow({
         await (await client(`${orderPath}/verify`, { method: "POST" })).json(),
       ),
     onSuccess: refreshCredits,
+  });
+  const otherChannel = channel === "WeChat" ? "Alipay" : "WeChat";
+  const otherPath =
+    channel === "WeChat" ? `${path}/alipay` : path.replace(/\/alipay$/, "");
+  const switchId = useRef<string | undefined>(undefined);
+  const switchChannel = useMutation({
+    mutationFn: async () => {
+      switchId.current ??= crypto.randomUUID();
+      await client(
+        `${otherPath}/orders/switch/${encodeURIComponent(order.id)}`,
+        {
+          method: "POST",
+          body: { orderId: switchId.current },
+        },
+      );
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: billingKeys.all }),
   });
   const refundAction = useMutation({
     mutationFn: (action: "request" | "verify") =>
@@ -205,6 +230,7 @@ function OrderRow({
         ) : null}
         <HStack gap={2} wrap="wrap">
           {order.state === "pending" &&
+            !order.switchOrderId &&
             (checkout.data ? (
               <Link href={checkout.data} isExternalLink>
                 Open test checkout
@@ -216,6 +242,16 @@ function OrderRow({
                 onClick={() => checkout.mutate()}
               />
             ))}
+          {(order.state === "pending" || order.state === "failed") &&
+            !order.switchOrderId &&
+            canSwitchChannel && (
+              <Button
+                isLoading={switchChannel.isPending}
+                isDisabled={checkout.isPending || verify.isPending}
+                label={`Switch to ${otherChannel}`}
+                onClick={() => switchChannel.mutate()}
+              />
+            )}
           {(order.state === "pending" || order.state === "failed") && (
             <Button
               isDisabled={verify.isPending}
@@ -251,6 +287,21 @@ function OrderRow({
             />
           ) : null}
         </HStack>
+        {order.refund?.reason === "account_suspended" ? (
+          <Text>Payment was confirmed while this account was suspended.</Text>
+        ) : order.refund?.reason === "duplicate_future_period" ||
+          order.refund?.reason === "duplicate_checkout_attempt" ? (
+          <Text>Another order already covered this purchase.</Text>
+        ) : null}
+        {order.switchOrderId &&
+        (order.state === "pending" || order.state === "failed") ? (
+          <Text role="status">
+            Switched to {otherChannel}. Continue from the new order.
+          </Text>
+        ) : null}
+        {switchChannel.error ? (
+          <Text role="alert">{switchChannel.error.message}</Text>
+        ) : null}
         {verify.data?.state === "pending" && order.state === "pending" ? (
           <Text role="status">
             The channel has yet to confirm this payment.
@@ -310,33 +361,11 @@ function checkoutKeys(path: string) {
   };
 }
 
-export function CreditPackCheckout() {
-  return (
-    <>
-      <PaidCheckout kind="credit-pack" channel="WeChat" />
-      <PaidCheckout kind="credit-pack" channel="Alipay" />
-    </>
-  );
-}
-
-export function SubscriptionCheckout() {
-  return <PaidCheckout kind="subscription" channel="WeChat" />;
-}
-
-function PaidCheckout({
-  kind,
-  channel,
-}:
-  | { kind: "credit-pack"; channel: Channel }
-  | { kind: "subscription"; channel: "WeChat" }) {
-  const subscription = kind === "subscription";
-  const path = `/api/billing/paid/${kind}${channel === "Alipay" ? "/alipay" : ""}`;
-  const { offer: offerKey, orders: ordersKey } = checkoutKeys(path);
-  const queryClient = useQueryClient();
-  const offer = useQuery({
-    queryKey: offerKey,
+function checkoutOffer(path: string, subscription: boolean) {
+  return {
+    queryKey: checkoutKeys(path).offer,
     retry: false,
-    queryFn: async ({ signal }) => {
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
       try {
         const data: unknown = await (await client(path, { signal })).json();
         if (subscription) return subscriptionOffer.parse(data);
@@ -347,7 +376,46 @@ function PaidCheckout({
         throw error;
       }
     },
-  });
+  };
+}
+
+export function CreditPackCheckout() {
+  return (
+    <>
+      <PaidCheckout kind="credit-pack" channel="WeChat" />
+      <PaidCheckout kind="credit-pack" channel="Alipay" />
+    </>
+  );
+}
+
+export function SubscriptionCheckout() {
+  const wechatOffer = useQuery(checkoutOffer(subscriptionPath, true));
+  return (
+    <>
+      <PaidCheckout kind="subscription" channel="WeChat" />
+      <PaidCheckout
+        kind="subscription"
+        channel="Alipay"
+        hidePeriods={Boolean(wechatOffer.data)}
+      />
+    </>
+  );
+}
+
+function PaidCheckout({
+  kind,
+  channel,
+  hidePeriods = false,
+}: {
+  kind: "credit-pack" | "subscription";
+  channel: Channel;
+  hidePeriods?: boolean;
+}) {
+  const subscription = kind === "subscription";
+  const path = `/api/billing/paid/${kind}${channel === "Alipay" ? "/alipay" : ""}`;
+  const { offer: offerKey, orders: ordersKey } = checkoutKeys(path);
+  const queryClient = useQueryClient();
+  const offer = useQuery(checkoutOffer(path, subscription));
   const orders = useQuery({
     queryKey: ordersKey,
     enabled: Boolean(offer.data) || offer.isError,
@@ -382,19 +450,21 @@ function PaidCheckout({
     <PageSection
       description={
         subscription
-          ? "Periods use Beijing time. A renewal or plan change takes effect when your current period ends. Payments use the WeChat test channel."
+          ? `Periods use Beijing time. A renewal or plan change takes effect when your current period ends. Payments use the ${channel} test channel.`
           : `${channel} test channel. Orders use simulated payments and add long-lived paid credits.`
       }
       title={
         subscription
-          ? "Test Monthly Subscription"
+          ? channel === "Alipay"
+            ? "Alipay Test Monthly Subscription"
+            : "Test Monthly Subscription"
           : channel === "Alipay"
             ? "Alipay Test Credit Pack"
             : "Test Credit Pack"
       }
     >
       <PageRows>
-        {periods ? (
+        {periods && !hidePeriods ? (
           <>
             <PeriodRow label="Current period" period={periods.current} />
             <PeriodRow label="Next period" period={periods.next} />
@@ -413,7 +483,9 @@ function PaidCheckout({
                     isDisabled={place.isPending}
                     label={
                       subscription
-                        ? `Place test order for ${product.code}`
+                        ? channel === "Alipay"
+                          ? `Place Alipay test order for ${product.code}`
+                          : `Place test order for ${product.code}`
                         : channel === "Alipay"
                           ? "Place Alipay test order"
                           : "Place test order"
@@ -476,6 +548,9 @@ function PaidCheckout({
               channel={channel}
               path={path}
               subscription={subscription}
+              canSwitchChannel={
+                offer.data?.available && offer.data.canSwitchChannel
+              }
             />
           </Fragment>
         ))}

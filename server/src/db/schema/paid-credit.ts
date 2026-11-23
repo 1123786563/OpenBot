@@ -6,6 +6,7 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -73,6 +74,9 @@ export const paidOrders = pgTable(
     // The channel's own order reference, unique per channel once verified, so
     // replayed callbacks can never grant twice.
     channelOrderRef: text("channel_order_ref"),
+    switchedFromOrderId: uuid("switched_from_order_id"),
+    checkoutAttemptId: uuid("checkout_attempt_id"),
+    renewsOrderId: uuid("renews_order_id"),
     state: text({ enum: paidOrderStates }).notNull().default("pending"),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
     // Set when the channel closed an order nobody had paid (#109 截点关闭可关订单).
@@ -84,6 +88,8 @@ export const paidOrders = pgTable(
       .defaultNow(),
   },
   (table) => [
+    uniqueIndex("paid_orders_switch_once").on(table.switchedFromOrderId),
+    index("paid_orders_checkout_attempt").on(table.checkoutAttemptId),
     uniqueIndex("paid_orders_channel_ref").on(
       table.channel,
       table.channelOrderRef,
@@ -95,6 +101,24 @@ export const paidOrders = pgTable(
     check(
       "paid_orders_closed",
       sql`(${table.closedAt} is null) = (${table.closedBy} is null)`,
+    ),
+  ],
+);
+
+export const billingSuspensionHistory = pgTable(
+  "billing_suspension_history",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.startedAt] }),
+    check(
+      "billing_suspension_history_time",
+      sql`${table.endedAt} >= ${table.startedAt}`,
     ),
   ],
 );

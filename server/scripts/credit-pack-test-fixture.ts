@@ -38,6 +38,7 @@ export function startCreditPackFixture({
       terms: z.infer<typeof checkoutTerms>;
       key: string;
       payment?: Payment;
+      closed?: true;
     }
   >();
   const refunds = new Map<string, Refund>();
@@ -53,14 +54,23 @@ export function startCreditPackFixture({
         if (request.headers.get("authorization") !== `Bearer ${token}`)
           return new Response(null, { status: 401 });
         const existing = orders.get(key);
-        if (request.method === "GET")
-          return Response.json(existing?.payment ?? { state: "unknown" });
+        if (request.method === "GET" || request.method === "DELETE") {
+          if (!existing) return Response.json({ state: "unknown" });
+          if (existing.payment) return Response.json(existing.payment);
+          if (request.method === "DELETE") existing.closed = true;
+          return Response.json(
+            existing.closed
+              ? { ...existing.terms, state: "failed" }
+              : { state: "unknown" },
+          );
+        }
         if (request.method === "PUT") {
           const parsed = checkoutTerms.safeParse(
             await request.json().catch(() => undefined),
           );
           if (!parsed.success || parsed.data.orderId !== key)
             return new Response(null, { status: 400 });
+          if (existing?.closed) return new Response(null, { status: 409 });
           if (
             existing &&
             (existing.terms.amountCents !== parsed.data.amountCents ||
@@ -120,6 +130,8 @@ export function startCreditPackFixture({
         const orderId = checkouts.get(key);
         const order = orderId && orders.get(orderId);
         if (!order) return new Response(null, { status: 404 });
+        if (order.closed)
+          return new Response("This test order is closed.", { status: 409 });
         if (request.method === "GET")
           return new Response(
             `<!doctype html>

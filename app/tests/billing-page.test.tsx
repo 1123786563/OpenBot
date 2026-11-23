@@ -903,3 +903,87 @@ test("a reversed order and statement share the dispute reference and retain the 
   expect(view.getByText(/op-2 on/)).toBeTruthy();
   expect(view.queryByText(/Funds returned/)).toBeNull();
 });
+
+test("a pending monthly order can switch to Alipay and continue from the replacement", async () => {
+  const wechat = "/api/billing/paid/subscription";
+  const alipay = `${wechat}/alipay`;
+  const original = "4a06fd08-73e4-472c-824e-4077bed08946";
+  const plan = {
+    code: "Monthly Basic",
+    version: 1,
+    currency: "CNY",
+    priceCents: 1000,
+    creditsMicrocredits: "10000000",
+  };
+  const order = {
+    ...plan,
+    id: original,
+    productCode: plan.code,
+    state: "pending",
+    entitlementId: null,
+  };
+  let replacement: string | undefined;
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const path = String(input);
+      if (path === wechat || path === alipay)
+        return Response.json({
+          products: [plan],
+          current: null,
+          next: null,
+          pausedApplications: [],
+          available: true,
+          blockedReason: null,
+          canSwitchChannel: true,
+        });
+      if (path === `${wechat}/orders`)
+        return Response.json([
+          {
+            ...order,
+            state: replacement ? "failed" : "pending",
+            switchOrderId: replacement,
+          },
+        ]);
+      if (
+        path === `${alipay}/orders/switch/${original}` &&
+        init?.method === "POST"
+      ) {
+        replacement = JSON.parse(String(init.body)).orderId;
+        return Response.json(
+          { id: replacement, state: "pending" },
+          { status: 201 },
+        );
+      }
+      if (path === `${alipay}/orders`)
+        return Response.json(
+          replacement ? [{ ...order, id: replacement }] : [],
+        );
+      if (
+        path === `${alipay}/orders/${replacement}/checkout` &&
+        init?.method === "POST"
+      )
+        return Response.json({ checkoutUrl: "http://127.0.0.1:9179/checkout" });
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const user = userEvent.setup({ document });
+  const view = renderCredits(answered());
+  await user.click(
+    await view.findByRole("button", { name: "Switch to Alipay" }),
+  );
+  expect(
+    await view.findByText("Switched to Alipay. Continue from the new order."),
+  ).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Switch to Alipay" })).toBeNull();
+  await user.click(
+    await view.findByRole("button", { name: "Prepare test checkout" }),
+  );
+  expect(
+    (
+      await view.findByRole("link", { name: /Open test checkout/ })
+    ).getAttribute("href"),
+  ).toBe("http://127.0.0.1:9179/checkout");
+});

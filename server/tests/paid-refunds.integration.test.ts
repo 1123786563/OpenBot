@@ -146,6 +146,11 @@ test("a lost future-period claim is owed its refund per order", async () => {
     productCode: "plan-refund-monthly",
     channel: "wechat",
   });
+  const loser = await ledger().createOrder({
+    accountId: account,
+    productCode: "plan-refund-monthly",
+    channel: "alipay",
+  });
   const claimed = await ledger().verifyOrder({
     orderId: second.id,
     channel: "wechat",
@@ -154,11 +159,6 @@ test("a lost future-period claim is owed its refund per order", async () => {
     paidAt,
   });
   expect(claimed.claimed).toBe(true);
-  const loser = await ledger().createOrder({
-    accountId: account,
-    productCode: "plan-refund-monthly",
-    channel: "alipay",
-  });
   const lost = await ledger().verifyOrder({
     orderId: loser.id,
     channel: "alipay",
@@ -395,4 +395,46 @@ afterAll(async () => {
       ]),
     );
   await database.$client.close();
+});
+
+test("suspension is attributed to the channel timestamp even across repeated suspension and resume", async () => {
+  const accountId = await freshAccount("suspension-clock");
+  let at = paidAt;
+  const service = createPaidCreditLedger(database, () => at);
+  await service.upsertProduct({
+    code: "pack-refund-pilot",
+    kind: "credit_pack",
+    priceCents: 9900,
+    creditsMicrocredits: 50n,
+  });
+  const place = () =>
+    service.createOrder({
+      accountId,
+      productCode: "pack-refund-pilot",
+      channel: "alipay",
+    });
+  const before = await place();
+  const during = await place();
+  const verify = (id: string, time: Date) =>
+    service.verifyOrder({
+      orderId: id,
+      channel: "alipay",
+      channelOrderRef: id,
+      amountCents: 9900,
+      paidAt: time,
+    });
+  const start = new Date(+paidAt + 1000);
+  at = start;
+  await service.suspendAccount(accountId, true);
+  at = new Date(+start + 1000);
+  await service.suspendAccount(accountId, true);
+  expect((await verify(before.id, paidAt)).claimed).toBe(true);
+  await service.suspendAccount(accountId, false);
+  expect((await verify(during.id, start)).refund).toMatchObject({
+    orderId: during.id,
+    reason: "account_suspended",
+    amountCents: 9900,
+    channel: "alipay",
+  });
+  expect(await service.entitlements(accountId)).toHaveLength(1);
 });

@@ -179,6 +179,11 @@ export function loadCreditPackTestChannel(
     async queryRefund(id: string) {
       return refundQueryResult.parse(await request("refunds", id));
     },
+    async close(id: string) {
+      return channelResult.parse(
+        await request("orders", id, { method: "DELETE" }),
+      );
+    },
     async query(id: string) {
       return channelResult.parse(await request("orders", id));
     },
