@@ -18,11 +18,7 @@
  * each hop is one deeper), the same fan-out cap per reply, the same durable leased queue, and the same
  * `agent.handoff_*` audit rows. Nothing here orchestrates beyond that one rule.
  */
-import {
-  CHANNEL_START_ID,
-  ChannelNotFoundError,
-  ChannelStartConflictError,
-} from "./routes";
+
 import { createHash } from "node:crypto";
 import type { Message } from "@ag-ui/client";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
@@ -53,6 +49,11 @@ import type { CheckPrivateShare } from "../proactive/private-share";
 import { isMarketVersionPause } from "../skill-market/disablements";
 import { runAuthorizedWork } from "../work/execution";
 import { createWorkQueue, type WorkQueue } from "../work/queue";
+import {
+  CHANNEL_START_ID,
+  ChannelNotFoundError,
+  ChannelStartConflictError,
+} from "./routes";
 
 export const GROUP_TURN_KIND = "group.turn";
 

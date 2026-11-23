@@ -611,9 +611,7 @@ function RouteComponent() {
               type="button"
               variant="outline"
             >
-              {links.isFetching || providers.isFetching
-                ? "Retrying…"
-                : "Retry"}
+              {links.isFetching || providers.isFetching ? "Retrying…" : "Retry"}
             </ConnectionAction>
           </div>
         ) : null}

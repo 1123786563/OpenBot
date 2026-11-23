@@ -24,8 +24,8 @@ import {
   channels,
   intelligenceChannelMappings,
   personalSaasAccounts,
-  personalWorkspaces,
   personalWorkspaceSuspensions,
+  personalWorkspaces,
   users,
   workItems,
 } from "../src/db/schema";

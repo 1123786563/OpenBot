@@ -176,11 +176,7 @@ export function ModelChoiceSection() {
         const listing = available.data;
         if (!listing)
           return available.isError ? null : (
-            <div
-              aria-busy="true"
-              aria-label="Loading models"
-              role="status"
-            >
+            <div aria-busy="true" aria-label="Loading models" role="status">
               <PageRows>
                 <Item size="sm">
                   <ItemMedia variant="icon">
@@ -535,11 +531,7 @@ export function ModelUsageSection({ team }: { team: boolean }) {
     >
       {() =>
         usage.isPending ? (
-          <div
-            aria-busy="true"
-            aria-label="Loading model usage"
-            role="status"
-          >
+          <div aria-busy="true" aria-label="Loading model usage" role="status">
             <PageRows>
               {LOADING_ROWS.map((key, index) => (
                 <Fragment key={key}>

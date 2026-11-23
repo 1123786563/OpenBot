@@ -267,9 +267,7 @@ export function PluginBotPage({
           </p>
           <ConnectionAction
             disabled={
-              plugins.isFetching ||
-              agents.isFetching ||
-              hiddenAgents.isFetching
+              plugins.isFetching || agents.isFetching || hiddenAgents.isFetching
             }
             onClick={() => {
               void plugins.refetch();
