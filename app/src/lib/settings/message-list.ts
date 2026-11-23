@@ -55,7 +55,10 @@ export function dismissSelfHostBannerMutationOptions(
     mutationFn: (): Promise<UserPreferences> => {
       if (!userId)
         throw new Error(
-          t("settings.messageList.signInToSave", "Sign in to save your preferences."),
+          t(
+            "settings.messageList.signInToSave",
+            "Sign in to save your preferences.",
+          ),
         );
       return client("/api/settings/preferences", "preferences", {
         method: "PATCH",
@@ -94,7 +97,10 @@ export function saveUserPreferencesMutationOptions(
     ): Promise<UserPreferences> => {
       if (!userId)
         throw new Error(
-          t("settings.messageList.signInToSave", "Sign in to save your preferences."),
+          t(
+            "settings.messageList.signInToSave",
+            "Sign in to save your preferences.",
+          ),
         );
       return client("/api/settings/preferences", "preferences", {
         method: "PATCH",

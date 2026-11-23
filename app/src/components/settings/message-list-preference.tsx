@@ -129,10 +129,7 @@ export function MessageListPreference() {
             <ChannelItemContent
               participantIds={["message-list-preview"]}
               name={t("settings.messageList.sampleName", "General Assistant")}
-              title={t(
-                "settings.messageList.sampleTitle",
-                "Plan next week",
-              )}
+              title={t("settings.messageList.sampleTitle", "Plan next week")}
               lastMessageAt={t("settings.messageList.sampleTime", "2h")}
               emphasis={emphasis}
             />

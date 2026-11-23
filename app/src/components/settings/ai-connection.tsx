@@ -75,7 +75,8 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
         </ItemMedia>
         <ItemContent>
           <ItemTitle>
-            {described?.provider ?? t("settings.ai.notChosen", "Not chosen yet")}
+            {described?.provider ??
+              t("settings.ai.notChosen", "Not chosen yet")}
           </ItemTitle>
           <ItemDescription>
             {described?.summary ??
@@ -89,7 +90,9 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("settings.ai.dialogTitle", "AI connection")}</DialogTitle>
+            <DialogTitle>
+              {t("settings.ai.dialogTitle", "AI connection")}
+            </DialogTitle>
             <DialogDescription>
               {described
                 ? t(
@@ -135,7 +138,10 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
             </p>
             {change.error ? (
               <p className="text-destructive" role="alert">
-                {t("settings.ai.openFailed", "Couldn't open the setup window. Try again.")}
+                {t(
+                  "settings.ai.openFailed",
+                  "Couldn't open the setup window. Try again.",
+                )}
               </p>
             ) : null}
           </DialogBody>

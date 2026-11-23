@@ -162,7 +162,9 @@ test("in Chinese the privacy section speaks the interface language, doc link unc
   const toggle = view.getByRole("switch", { name: "共享使用数据" });
   expect(toggle.getAttribute("aria-checked")).toBe("true");
   expect(
-    view.getByText(/绝不会发送你的对话、文件或密钥。更改将在下次 OpenBot 启动时生效。/),
+    view.getByText(
+      /绝不会发送你的对话、文件或密钥。更改将在下次 OpenBot 启动时生效。/,
+    ),
   ).toBeTruthy();
   expect(
     view.getByRole("link", { name: "OpenBot 发送的内容" }).getAttribute("href"),

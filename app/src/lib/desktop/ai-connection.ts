@@ -62,7 +62,10 @@ function signedIn(
         provider: "Anthropic",
         signIn: t("settings.ai.signIn.apiKey", "API key"),
         signInIsHost: false,
-        said: t("settings.ai.said.anthropicApiKey", "Uses your Anthropic API key."),
+        said: t(
+          "settings.ai.said.anthropicApiKey",
+          "Uses your Anthropic API key.",
+        ),
       };
     case "open-ai-api-key":
       return {

@@ -129,7 +129,9 @@ export function NameRow() {
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("settings.name.dialogTitle", "Your name")}</DialogTitle>
+            <DialogTitle>
+              {t("settings.name.dialogTitle", "Your name")}
+            </DialogTitle>
             <DialogDescription>
               {t(
                 "settings.name.description",
