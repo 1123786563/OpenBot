@@ -1,4 +1,3 @@
-import { productHeadlessBoundary } from "../telemetry/product-boundaries";
 import { buildResponsibilityTurn } from "@openbot/shared/responsibility-turn";
 import type { ComponentCatalog } from "@openbot/toolkit/ports";
 import {
@@ -22,6 +21,7 @@ import { createHeadlessComputerTools } from "../computer/headless-tools";
 import type { mountCopilotRuntime } from "../copilot";
 import type { Database } from "../db/client";
 import type { DeliveryScope } from "../delivery/types";
+import { productHeadlessBoundary } from "../telemetry/product-boundaries";
 import { markUntrusted } from "../untrusted-content";
 import { createWorkQueue } from "../work/queue";
 import {

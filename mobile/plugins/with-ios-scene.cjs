@@ -5,10 +5,12 @@ const { withAppDelegate, withInfoPlist } = require("expo/config-plugins");
 const sceneManifest = {
   UIApplicationSupportsMultipleScenes: false,
   UISceneConfigurations: {
-    UIWindowSceneSessionRoleApplication: [{
-      UISceneConfigurationName: "Default Configuration",
-      UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate",
-    }],
+    UIWindowSceneSessionRoleApplication: [
+      {
+        UISceneConfigurationName: "Default Configuration",
+        UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate",
+      },
+    ],
   },
 };
 
@@ -30,18 +32,28 @@ module.exports = function withIOSScene(config) {
 
   return withAppDelegate(config, (config) => {
     const appDelegate = config.modResults;
-    const sceneDelegate = readFileSync(join(__dirname, "SceneDelegate.swift"), "utf8");
+    const sceneDelegate = readFileSync(
+      join(__dirname, "SceneDelegate.swift"),
+      "utf8",
+    );
     if (appDelegate.contents.endsWith(sceneDelegate)) {
       return config;
     }
 
-    if (appDelegate.language !== "swift" || !appDelegate.contents.includes(legacyStartup)) {
-      throw new Error("with-ios-scene expects the Expo SDK 55 Swift AppDelegate template. Review scene support before upgrading Expo.");
+    if (
+      appDelegate.language !== "swift" ||
+      !appDelegate.contents.includes(legacyStartup)
+    ) {
+      throw new Error(
+        "with-ios-scene expects the Expo SDK 55 Swift AppDelegate template. Review scene support before upgrading Expo.",
+      );
     }
 
     // Keep the delegate in AppDelegate.swift so prebuild reuses the existing target membership.
-    appDelegate.contents = appDelegate.contents.replace(legacyStartup, "").trimEnd() +
-      "\n\n" + sceneDelegate;
+    appDelegate.contents =
+      appDelegate.contents.replace(legacyStartup, "").trimEnd() +
+      "\n\n" +
+      sceneDelegate;
     return config;
   });
 };

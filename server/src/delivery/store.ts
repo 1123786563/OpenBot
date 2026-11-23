@@ -38,6 +38,7 @@ import {
   type DeliveryState,
   type PushDevice,
 } from "./types";
+
 const {
   personalResumeEpoch: _personalResumeEpoch,
   personalResumedAt: _personalResumedAt,

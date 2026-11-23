@@ -15,7 +15,6 @@
 import { HANDED_OVER } from "@openbot/shared/handoff-markers";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { createWorkQueue } from "../work/queue";
 import { z } from "zod";
 import {
   type ApprovalGate,
@@ -31,6 +30,7 @@ import type {
   PrivateShareInput,
   ShareAudience,
 } from "../proactive/private-share";
+import { createWorkQueue } from "../work/queue";
 import type { RunAssertion } from "./callback-token";
 import {
   ESCALATE_TOOL,
