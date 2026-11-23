@@ -1,4 +1,4 @@
-import { afterAll, expect, spyOn, test } from "bun:test";
+import { afterAll, expect, onTestFinished, spyOn, test } from "bun:test";
 import {
   AbstractAgent,
   type BaseEvent,
@@ -1148,8 +1148,13 @@ test("Routine recovery checks an unknown model outcome without dispatching again
   }
 }, 60_000);
 
-for (const shared of [false, true]) {
-  test(`a redelivered handoff appears once in its ${shared ? "shared" : "direct"} Conversation`, async () => {
+for (const scenario of [
+  "direct",
+  "shared",
+  "shared with Test Credit",
+] as const) {
+  test(`a redelivered handoff appears once in its ${scenario} Conversation`, async () => {
+    const shared = scenario !== "direct";
     const actor = await person();
     const asker = await profiles.create(actor, {
       name: "Asker",
@@ -1164,10 +1169,58 @@ for (const shared of [false, true]) {
       visibility: "private",
     });
     let dispatches = 0;
+    let deployment = config;
+    if (scenario === "shared with Test Credit") {
+      const control = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        async fetch(request) {
+          switch (new URL(request.url).pathname) {
+            case "/v1/quote":
+              return Response.json({
+                route: "pilot-text-v1",
+                priceVersion: trialPriceVersion,
+              });
+            case "/v1/reserve":
+              expect(await request.json()).toMatchObject({
+                creditType: "test",
+              });
+              return Response.json({
+                state: "reserved",
+                permit: "test-permit",
+              });
+            case "/v1/dispatch":
+              dispatches++;
+              return Response.json({
+                state: "completed",
+                text: "Offline answer.",
+              });
+            case "/v1/reconcile":
+              return Response.json({ state: "settled" });
+            default:
+              return new Response(null, { status: 404 });
+          }
+        },
+      });
+      onTestFinished(() => {
+        control.stop(true);
+      });
+      deployment = loadConfig({
+        DATABASE_URL: databaseUrl,
+        OPENBOT_ORGANIZATION_AUTH_URL: "https://example.test",
+        KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        OPENBOT_MANAGED_MODEL_TRIAL_URL: control.url.href,
+        OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS: JSON.stringify({
+          [actor.id]: "test-token",
+        }),
+        OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "pilot-text-v1",
+      });
+    }
     const answer = async () => {
+      expect(scenario).not.toBe("shared with Test Credit");
       dispatches++;
     };
-    const app = web(database, actor, target.id, answer);
+    const app = web(database, actor, target.id, answer, { deployment });
     const created = await app.request(
       "/api/channels",
       post({ agentIds: shared ? [asker.id, target.id] : [asker.id] }),
@@ -1295,7 +1348,7 @@ for (const shared of [false, true]) {
       key: offered.key,
       payload: offered.payload,
     });
-    const restarted = web(database, actor, target.id, answer);
+    const restarted = web(database, actor, target.id, answer, { deployment });
     const recovered = createHandoffRunner({
       queue,
       auditStore,
