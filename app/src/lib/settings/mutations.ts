@@ -1,4 +1,5 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { t } from "@/i18n";
 import { client } from "@/lib/client";
 import { settingsKeys } from "./queries";
 
@@ -16,7 +17,11 @@ export function saveInstructionsMutationOptions(queryClient: QueryClient) {
       client("/api/settings/instructions", "instructions", {
         method: "PUT",
         body: { instructions },
-        fallback: "Your standing instructions could not be saved",
+        // Read when the mutation runs, in the language in force then.
+        fallback: t(
+          "settings.instructions.saveFailed",
+          "Your standing instructions could not be saved",
+        ),
       }),
     onSuccess: (saved) =>
       queryClient.setQueryData(settingsKeys.instructions(), saved),

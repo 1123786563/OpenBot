@@ -23,6 +23,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import type { DesktopAiConnection } from "@/lib/desktop/queries";
 import { queryClient } from "@/query-client";
 import { Route as GeneralRoute } from "@/routes/_authed/settings/index";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 let connection: DesktopAiConnection;
@@ -55,8 +56,9 @@ beforeEach(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
   queryClient.clear();
   global.fetch = originalFetch;
   delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -147,4 +149,52 @@ test("outside the desktop app there is no AI model section", async () => {
   await settleReactWork();
   expect(view.queryByRole("heading", { name: "AI model" })).toBeNull();
   expect(calls).toEqual([]);
+});
+
+test("in Chinese the AI row and dialog speak the interface language, providers unchanged", async () => {
+  connection = {
+    kind: "compatible-endpoint",
+    model: "gemini-3.8-flash",
+    endpointHost: "generativelanguage.googleapis.com",
+  };
+  await pinLocale("zh-CN");
+  const view = renderGeneral();
+  const row = await view.findByRole("button", {
+    name: /已使用|使用你的|已连接/,
+  });
+  expect(row.textContent).toBe(
+    "Google Gemini使用你的 Google Gemini API 密钥。模型：gemini-3.8-flash",
+  );
+  await userEvent.click(row);
+  const dialog = await view.findByRole("dialog");
+  expect(within(dialog).getByText("AI 连接")).toBeTruthy();
+  expect(
+    within(dialog).getByText(
+      "你的 Bot 使用 Google Gemini。你的密钥或登录信息只保存在这台电脑上。",
+    ),
+  ).toBeTruthy();
+  expect(within(dialog).getByText("提供方")).toBeTruthy();
+  expect(within(dialog).getByText("登录方式")).toBeTruthy();
+  expect(within(dialog).getByText("API 密钥")).toBeTruthy();
+  expect(within(dialog).getByText("模型")).toBeTruthy();
+  expect(within(dialog).getByText("gemini-3.8-flash")).toBeTruthy();
+  expect(
+    within(dialog).getByText(
+      "更改时，OpenBot 会停止并打开设置窗口。OpenBot 会以你在那里选择的连接重新启动。",
+    ),
+  ).toBeTruthy();
+  expect(within(dialog).getByRole("button", { name: "取消" })).toBeTruthy();
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "更改 AI 连接" }),
+  );
+  await waitFor(() =>
+    expect(calls).toContain("plugin:openbot-desktop|change_ai_connection"),
+  );
+  expect(
+    (
+      within(dialog).getByRole("button", {
+        name: "正在停止 OpenBot…",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
