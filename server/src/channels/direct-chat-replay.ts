@@ -1,5 +1,8 @@
 import { type BaseEvent, EventType, type Message } from "@ag-ui/client";
-import { CONTEXT_REVOKED_MESSAGE } from "@openbot/toolkit/run-context";
+import {
+  CONTEXT_REVOKED,
+  CONTEXT_REVOKED_MESSAGE,
+} from "@openbot/toolkit/run-context";
 import { and, asc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import type { ProfileReadExecutor } from "../agents/profile-store";
 import type { Database } from "../db/client";
@@ -142,7 +145,10 @@ export async function stopDirectChatRun(
   key: RunKey,
   reason: NonNullable<Run["stopReason"]>,
   traceRuns: boolean,
-  waitingApprovalId?: string,
+  {
+    waitingApprovalId,
+    externalOutcome,
+  }: { waitingApprovalId?: string; externalOutcome?: "executed" } = {},
 ) {
   const [run] = await tx
     .update(directChatRuns)
@@ -150,7 +156,9 @@ export async function stopDirectChatRun(
       status: "failed",
       stopReason: reason,
       eventCursor: sql`${directChatRuns.eventCursor} + 1`,
-      externalOutcome: sql`case when ${directChatRuns.externalOutcome} = 'dispatching' then 'unknown' else ${directChatRuns.externalOutcome} end`,
+      externalOutcome:
+        externalOutcome ??
+        sql`case when ${directChatRuns.externalOutcome} = 'dispatching' then 'unknown' else ${directChatRuns.externalOutcome} end`,
     })
     .where(
       and(
@@ -284,7 +292,9 @@ export async function readDirectChatReplay(
   const hasGap = events.some((row, index) => row.cursor !== cursor + index + 1);
   // A verified result can amend a failed Run after its terminal event was recorded.
   const recovered =
-    run.status === "failed" && run.externalOutcome === "executed";
+    run.status === "failed" &&
+    run.externalOutcome === "executed" &&
+    run.stopReason !== CONTEXT_REVOKED;
   if (
     !recovered &&
     !hasGap &&

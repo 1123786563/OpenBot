@@ -502,6 +502,7 @@ export function createDirectChatRoutes(deps: {
       if (currentEdition() === "personal") return true;
       return (
         review.mode === "manual" &&
+        (await accountIsActive(tx, review.reviewerId)) &&
         (
           await createRoleRepository(tx).rolesForUser(review.reviewerId)
         ).includes("admin")
@@ -957,6 +958,13 @@ export function createDirectChatRoutes(deps: {
     };
   }
 
+  function recoveredManagedReply(id: string, text: string) {
+    return {
+      assistantMessageId: sql`case when ${directChatRuns.stopReason} is distinct from ${CONTEXT_REVOKED} then ${id} else ${directChatRuns.assistantMessageId} end`,
+      reply: sql`case when ${directChatRuns.stopReason} is distinct from ${CONTEXT_REVOKED} then ${text} else ${directChatRuns.reply} end`,
+    };
+  }
+
   routes.post("/threads/:threadId/runs/:runId/reconcile", async (context) => {
     const key = context.req.param();
     const agentId = context.req.query("agentId");
@@ -1023,10 +1031,11 @@ export function createDirectChatRoutes(deps: {
           .update(directChatRuns)
           .set({
             externalOutcome: evidence.outcome,
-            ...(evidence.outcome === "executed" && {
-              assistantMessageId: run.assistantMessageId ?? crypto.randomUUID(),
-              reply: evidence.text,
-            }),
+            ...(evidence.outcome === "executed" &&
+              recoveredManagedReply(
+                run.assistantMessageId ?? crypto.randomUUID(),
+                evidence.text,
+              )),
           })
           .where(
             and(
@@ -1757,13 +1766,13 @@ export function createDirectChatRoutes(deps: {
                 .update(directChatRuns)
                 .set({
                   externalOutcome: evidence.outcome,
-                  ...(evidence.outcome === "executed" && {
-                    assistantMessageId:
+                  ...(evidence.outcome === "executed" &&
+                    recoveredManagedReply(
                       input.source === "handoff"
                         ? answerMessageId(input.agentId, key.runId)
                         : crypto.randomUUID(),
-                    reply: evidence.text,
-                  }),
+                      evidence.text,
+                    )),
                 })
                 .where(
                   and(
@@ -1959,6 +1968,27 @@ export function createDirectChatRoutes(deps: {
     }
     watcher = setTimeout(() => void watchAuthorization(), 250);
     const runContext = createRunContext();
+    let learnedVersions: RunContextVersion[] | undefined;
+    let learnedContextRevoked = false;
+    async function learnedContextIsCurrent() {
+      if (learnedContextRevoked) return false;
+      if (!learnedVersions?.length) return true;
+      const current = await currentGuidance().catch(() => null);
+      if (
+        current === null ||
+        !versionsMatch(learnedSkillVersions(current), learnedVersions)
+      ) {
+        learnedContextRevoked = true;
+        runContext.revoked = true;
+      }
+      return !learnedContextRevoked;
+    }
+    const stopRevokedContext = (externalOutcome?: "executed") =>
+      database.transaction((tx) =>
+        stopDirectChatRun(tx, key, CONTEXT_REVOKED, traceRuns, {
+          externalOutcome,
+        }),
+      );
     let writes = Promise.resolve();
     let writeFailed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2033,6 +2063,7 @@ export function createDirectChatRoutes(deps: {
             if (!usesLearningGuidance) return conversation;
             const current = await currentGuidance();
             if (!current) return false;
+            learnedVersions ??= learnedSkillVersions(current);
             const instructions = learningInstructions(current);
             return instructions
               ? [{ role: "system", content: instructions }, ...conversation]
@@ -2040,6 +2071,12 @@ export function createDirectChatRoutes(deps: {
           },
         });
         if (!(await shouldContinue())) return;
+        if (!(await learnedContextIsCurrent())) {
+          await stopRevokedContext(
+            result.state === "completed" ? "executed" : undefined,
+          );
+          return;
+        }
         if (result.state === "completed") {
           await appendDirectChatEvent(
             database,
@@ -2083,14 +2120,12 @@ export function createDirectChatRoutes(deps: {
       const versions = continuation
         ? (continuation.snapshot.sourceVersions ?? [])
         : learnedSkillVersions(skills);
+      learnedVersions = versions.filter(({ kind }) => kind === "learned_skill");
       if (
         versions.length ||
         continuation?.result.error === CONTEXT_REVOKED_MESSAGE
       ) {
         const memories = versions.filter(({ kind }) => kind === "memory");
-        const learnedSkills = versions.filter(
-          ({ kind }) => kind === "learned_skill",
-        );
         withRunContext(runContext, () =>
           trackRunContext(async () => {
             if (continuation?.result.error === CONTEXT_REVOKED_MESSAGE)
@@ -2100,12 +2135,7 @@ export function createDirectChatRoutes(deps: {
               !(await deps.memoryVersionsCurrent?.(actor.id, agentId, memories))
             )
               return false;
-            if (!learnedSkills.length) return true;
-            const current = await currentGuidance();
-            return (
-              current !== null &&
-              versionsMatch(learnedSkillVersions(current), learnedSkills)
-            );
+            return learnedContextIsCurrent();
           }, versions),
         );
       }
@@ -2159,9 +2189,14 @@ export function createDirectChatRoutes(deps: {
             } else if (event.type !== EventType.RUN_FINISHED) {
               writes = writes
                 .then(async () => {
+                  if (!runnable || writeFailed) return;
+                  if (!(await learnedContextIsCurrent())) {
+                    if (await shouldContinue()) await stopRevokedContext();
+                    abort();
+                    return;
+                  }
                   if (
                     runnable &&
-                    !writeFailed &&
                     !(await appendDirectChatEvent(database, key, event))
                   )
                     writeFailed = true;
@@ -2200,7 +2235,10 @@ export function createDirectChatRoutes(deps: {
         );
       await writes;
       if (!(await shouldContinue())) return;
-      if (runContext.revoked) throw new Error(CONTEXT_REVOKED_MESSAGE);
+      if (!(await learnedContextIsCurrent()) || runContext.revoked) {
+        await stopRevokedContext();
+        return;
+      }
       if (waitingApprovalId && !writeFailed && !failure) {
         const approval = await approvalCheckpoint(
           key,
@@ -2255,10 +2293,8 @@ export function createDirectChatRoutes(deps: {
     } catch {
       await writes;
       if (!(await shouldContinue())) return;
-      if (runContext.revoked) {
-        await database.transaction((tx) =>
-          stopDirectChatRun(tx, key, CONTEXT_REVOKED, traceRuns),
-        );
+      if (runContext.revoked || !(await learnedContextIsCurrent())) {
+        await stopRevokedContext();
         return;
       }
       await appendDirectChatEvent(database, key, terminal(key, "failed"), {
