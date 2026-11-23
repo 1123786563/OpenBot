@@ -92,6 +92,7 @@ import { createLearningSettingsStore } from "../src/learning/settings";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createMemoryRoutes } from "../src/memory/routes";
 import { createMemoryStore } from "../src/memory/store";
+import { createPeopleStore } from "../src/people/store";
 import { createPluginStore } from "../src/plugins/store";
 import { createRecorderConnectionStore } from "../src/recorder/connections";
 import { createOpenBotRecordings } from "../src/recorder/openbot-recordings";
@@ -198,7 +199,7 @@ function web(
     partial?: string;
     learningClock?: () => Date;
     prepare?: () => Promise<void>;
-    authorized?: () => boolean;
+    authorized?: () => boolean | Promise<boolean>;
     reflect?: DirectChatReflect;
     makeAgent?: () => Promise<AbstractAgent>;
     buildAgent?: () => AbstractAgent;
@@ -244,7 +245,8 @@ function web(
       resolveAgentForActor: agentFor,
     },
     async () => ({ id: actor.id, name: actor.id }),
-    async () => (authorized?.() === false ? { id: "", role: "user" } : actor),
+    async () =>
+      (await authorized?.()) === false ? { id: "", role: "user" } : actor,
     {
       directChat: {
         database: db,
@@ -293,7 +295,8 @@ function web(
         (() =>
           Promise.reject(new Error("OpenBot background runs unavailable."))),
       async () => {
-        if (authorized?.() === false) throw new Error("Account disabled.");
+        if ((await authorized?.()) === false)
+          throw new Error("Account disabled.");
         return actor;
       },
     ),
@@ -782,6 +785,7 @@ for (const outcome of [
   "stop",
   "revoke",
   "lose the worker during",
+  "save a successful result after stopping",
   "pause a disabled SkillHub version in",
 ] as const) {
   test(`a background approval can ${outcome} the original Routine Run`, async () => {
@@ -930,6 +934,55 @@ for (const outcome of [
           approval.action.actionDigest,
         ),
       ).toBe(true);
+    }
+    if (outcome === "save a successful result after stopping") {
+      expect(
+        await approvals.consume(
+          actor.id,
+          approval.id,
+          approval.action.actionDigest,
+        ),
+      ).toBe(true);
+      expect(
+        await (
+          await app.request(
+            `${thread}/runs/${runId}/stop?agentId=${bot.id}`,
+            post({}),
+          )
+        ).json(),
+      ).toEqual({ stopped: true });
+      const reconcile = async () =>
+        (
+          await restarted.request(
+            `${thread}/runs/${runId}/reconcile?agentId=${bot.id}`,
+            post({}),
+          )
+        ).json();
+      expect(await reconcile()).toEqual({ externalOutcome: "unknown" });
+      const blocked = await restarted.request(
+        `/api/copilotkit/agent/${bot.id}/run`,
+        post({
+          threadId: channel.threadId,
+          runId: "new-turn",
+          messages: [{ id: "new-turn", role: "user", content: "Try again." }],
+        }),
+      );
+      expect(blocked.status).toBe(409);
+      expect(await blocked.json()).toEqual({
+        error: "The previous Run has an unverified external outcome.",
+      });
+      await approvals.saveResult(actor.id, approval.id, { content: "done" });
+      expect(await reconcile()).toEqual({ externalOutcome: "executed" });
+      expect(await history()).toMatchObject({
+        runs: [
+          {
+            id: runId,
+            status: "failed",
+            stopReason: "stopped",
+            externalOutcome: "executed",
+          },
+        ],
+      });
     }
     const tick = createApprovalResumeTick({
       approvalQueue: createWorkQueue(database),
@@ -3131,7 +3184,7 @@ test("a revoked account loses its live Run and a restored account must start a n
   );
   const [aliceBot, bobBot] = bots;
   if (!aliceBot || !bobBot) throw new Error("Missing test Bots.");
-  let authorized = true;
+  const people = createPeopleStore(database, []);
   let dispatches = 0;
   const aliceApp = web(
     database,
@@ -3141,7 +3194,10 @@ test("a revoked account loses its live Run and a restored account must start a n
       dispatches++;
       await release.promise;
     },
-    { authorized: () => authorized, partial: "Before revocation." },
+    {
+      authorized: async () => !(await people.isRevoked(alice.email)),
+      partial: "Before revocation.",
+    },
   );
   const bobApp = web(database, bob, bobBot.id, async () => {});
   const [aliceChannel, bobChannel] = await Promise.all(
@@ -3175,7 +3231,7 @@ test("a revoked account loses its live Run and a restored account must start a n
       if (read.done) throw new Error("Missing partial output.");
       partial += new TextDecoder().decode(read.value);
     }
-    authorized = false;
+    await people.revoke(alice.id, bob.id);
     const revokedAt = Date.now();
     let tail = "";
     for (
@@ -3201,7 +3257,7 @@ test("a revoked account loses its live Run and a restored account must start a n
         )
       ).text(),
     ).toContain("Offline answer.");
-    authorized = true;
+    await people.restore(alice.id);
     release.resolve();
     const original = await aliceApp.request(`${path}/run`, post(payload));
     expect(await original.text()).toContain("access_revoked");
@@ -3218,6 +3274,7 @@ test("a revoked account loses its live Run and a restored account must start a n
     expect(dispatches).toBe(2);
   } finally {
     release.resolve();
+    await people.restore(alice.id);
     for (const channel of [aliceChannel, bobChannel])
       await database.delete(channels).where(eq(channels.id, channel.id));
     for (const bot of bots)
