@@ -139,7 +139,17 @@ Approve each registered paid application with the existing `approve` command. Th
 3. For each proposed channel, verify its merchant, applicable refund rules, financial reconciliation procedure, and channel limits. Complete a small real payment and a refund through the original channel. Reconcile the order, the channel's funds, and the resulting Credits and entitlement. Store the four references in that channel's record. Real merchant checkout requires the target payment integration.
 4. Rerun the concurrency, failure, and account isolation cases on the deployed entry. Pause one application and check that new reservations and undispatched work stop. Verify another signed path still runs, and that in-flight payments, original-channel refunds, and dispatched usage still complete. Pause each proposed channel and verify new checkout stops while earlier payments and refunds reconcile. Link the results in `rampRef` before the pilot lead signs off.
 
-The local PostgreSQL tests in `server/tests/billing-paths.integration.test.ts` use fixture signoffs and payment results. Target deployment acceptance remains open for all four steps.
+The local PostgreSQL tests in `server/tests/billing-paths.integration.test.ts`
+use fixture signoffs and payment results. They check that a mismatched build,
+image, account allowlist, order maximum, or provider-cost ceiling prevents
+admission. Pausing one application stops its held and metering work while the
+other signed application can dispatch and settle. Pausing Alipay leaves
+WeChat available. After switching the pause to WeChat, Alipay can open new
+orders. In-flight fixture orders on both channels still verify and refund on
+their original channel. Signoff readback includes the path, rollout, payment,
+refund, reconciliation, and rules references.
+
+Target deployment acceptance remains open for all four steps.
 
 ## Still gated on a deployment
 

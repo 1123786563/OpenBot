@@ -1293,6 +1293,13 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
   await expect(fixtureOrder(staleBuild)).rejects.toMatchObject({
     code: "no_paid_path",
   });
+  const staleImage = createPaidCreditLedger(database, undefined, undefined, {
+    ...scope,
+    imageDigest: `sha256:${"b".repeat(64)}`,
+  });
+  await expect(fixtureOrder(staleImage)).rejects.toMatchObject({
+    code: "no_paid_path",
+  });
   await signoffs.record({ ...channelRecord, maxOrderCents: 9899 });
   await expect(fixtureOrder()).rejects.toMatchObject({
     code: "channel_unavailable",
@@ -1312,16 +1319,16 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
   const paidAt = new Date();
   const verified = await fixtureOrder();
   const pending = await fixtureOrder();
-  async function verify(id: string) {
+  async function verify(id: string, channel: "alipay" | "wechat" = "alipay") {
     expect(
       (
         await paid.verifyOrder({
           orderId: id,
-          channel: "alipay",
+          channel,
           channelOrderRef: `fixture:${id}`,
           amountCents: 9900,
           paidAt,
-          merchantId: testMerchant.merchant,
+          merchantId: `fixture-${channel}`,
           currency: "CNY",
           testChannel: true,
         })
@@ -1412,11 +1419,46 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
   expect(await operationRow(accountId, "signed-held")).toMatchObject({
     state: "released",
   });
-  await reservedAs(credit, identity, step("signed-alternative", alternative));
+  const alternativePermit = await reservedAs(
+    credit,
+    identity,
+    step("signed-alternative", alternative),
+  );
+  expect(
+    await dispatchTestCredit({
+      ledger: credit,
+      identity,
+      input: {
+        operationId: "signed-alternative",
+        permit: alternativePermit,
+        messages: [{ role: "user", content: "Fixture alternative route." }],
+      },
+      execute: async ({ bindGatewayRequest }) => {
+        expect(
+          await bindGatewayRequest({
+            requestId: crypto.randomUUID(),
+            digest: "a".repeat(64),
+          }),
+        ).toBe(true);
+        return {
+          text: "Fixture alternative reply.",
+          usage: { inputTokens: 2, outputTokens: 0 },
+        };
+      },
+    }),
+  ).toMatchObject({
+    state: "completed",
+    operation: {
+      applicationId: alternative,
+      creditType: "paid",
+      chargedMicrocredits: "2",
+    },
+  });
   expect((await fixtureOrder()).state).toBe("pending");
   await signoffs.setChannelPause("alipay", "fixture", "fixture-ops");
   await signoffs.record(channelRecord);
-  expect((await fixtureOrder(paid, "wechat")).state).toBe("pending");
+  const wechatPending = await fixtureOrder(paid, "wechat");
+  expect(wechatPending.state).toBe("pending");
   await expect(
     paid.checkTestCheckout(
       accountId,
@@ -1451,6 +1493,55 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
       state: "confirmed",
     }),
   ).toMatchObject({ state: "confirmed" });
+  await signoffs.setChannelPause("wechat", "fixture", "fixture-ops");
+  await expect(fixtureOrder(paid, "wechat")).rejects.toMatchObject({
+    code: "channel_unavailable",
+  });
+  await signoffs.setChannelPause("alipay", "fixture", null);
+  expect((await fixtureOrder()).state).toBe("pending");
+  await verify(wechatPending.id, "wechat");
+  const wechatRefund = await paid.requestTestPackRefund({
+    orderId: wechatPending.id,
+    accountId,
+    channel: "wechat",
+    merchant: "fixture-wechat",
+  });
+  await expect(
+    paid.applyTestPackRefundResult({
+      orderId: wechatPending.id,
+      refundId: wechatRefund.id,
+      merchantId: "fixture-wechat",
+      channel: "wechat",
+      channelOrderRef: `fixture:${wechatPending.id}`,
+      currency: "CNY",
+      amountCents: 9900,
+      state: "confirmed",
+    }),
+  ).resolves.toMatchObject({ state: "confirmed" });
+  expect(await signoffs.list()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: alternative,
+        record: expect.objectContaining({
+          pathRef: `fixture:${alternative}`,
+          rampRef: "fixture:ramp",
+          deploymentRef: "fixture:build",
+          accountIds: [accountId],
+          pauseOwner: "fixture-ops",
+        }),
+      }),
+      expect.objectContaining({
+        id: "wechat",
+        record: expect.objectContaining({
+          paymentRef: "fixture:payment",
+          refundRef: "fixture:refund",
+          reconciliationRef: "fixture:reconciliation",
+          rulesRef: "fixture:rules",
+          maxOrderCents: 9900,
+        }),
+      }),
+    ]),
+  );
   expect(
     await credit.settle(accountId, "signed-sent", {
       inputTokens: 7n,
