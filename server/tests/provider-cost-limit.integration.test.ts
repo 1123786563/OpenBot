@@ -508,9 +508,12 @@ test("the shared pilot ceiling follows confirmed and unknown cost across routes"
   ).toEqual({ state: "denied", reason: "route_unavailable" });
 
   // A route cap can independently deny a reservation that fits the pilot.
+  const routeExposure = BigInt(
+    (await ledger.providerCost(loser.route)).outstandingMicrocredits,
+  );
   await ledger.setProviderCostLimit({
     path: loser.route,
-    limitMicrocredits: 0n,
+    limitMicrocredits: routeExposure,
     by: "pilot-lead",
   });
   expect(await ledger.reserve(loser.identity, terminalInput)).toEqual({
@@ -519,7 +522,7 @@ test("the shared pilot ceiling follows confirmed and unknown cost across routes"
   });
   await ledger.setProviderCostLimit({
     path: loser.route,
-    limitMicrocredits: 5n,
+    limitMicrocredits: routeExposure + 5n,
     by: "pilot-lead",
   });
   const terminal = await ledger.reserve(loser.identity, terminalInput);
@@ -577,7 +580,7 @@ test("the shared pilot ceiling follows confirmed and unknown cost across routes"
   await setLimit(exposure(11n), "second-admin");
   await ledger.setProviderCostLimit({
     path: loser.route,
-    limitMicrocredits: 10n,
+    limitMicrocredits: routeExposure + 10n,
     by: "pilot-lead",
   });
   const settlingInput = { ...terminalInput, operationId: "shared-settling" };
