@@ -262,9 +262,7 @@ function renderScreen(queryClient: QueryClient) {
 test("a failed plugin read reports the failure instead of claiming the app is not enabled", async () => {
   const view = renderScreen(failingQueryClient());
 
-  expect(
-    await view.findByText("Couldn't load plugins."),
-  ).toBeTruthy();
+  expect(await view.findByText("Couldn't load plugins.")).toBeTruthy();
   // And a way to try again without leaving the page.
   expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
 

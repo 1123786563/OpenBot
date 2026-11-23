@@ -103,7 +103,12 @@ function RouteComponent() {
   if (components.isPending) {
     return (
       <CapabilityPage backButton={BACK} title="Components">
-        <div aria-busy="true" aria-label="Loading" className="mt-8" role="status">
+        <div
+          aria-busy="true"
+          aria-label="Loading"
+          className="mt-8"
+          role="status"
+        >
           <Skeleton className="h-4 w-48" />
           <Skeleton className="mt-3 h-3 w-72" />
           <Skeleton className="mt-8 aspect-square w-full rounded-lg border border-border" />

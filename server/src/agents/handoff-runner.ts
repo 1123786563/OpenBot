@@ -1,4 +1,3 @@
-import { runAuthorizedWork } from "../work/execution";
 /**
  * Delivering a hop: running the Bot that was addressed, and putting its answer in the conversation.
  *
@@ -17,6 +16,7 @@ import {
   recordAuditEvent,
 } from "../audit";
 import { cutAtCodeUnits } from "../channels/text";
+import { runAuthorizedWork } from "../work/execution";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { isEndpointRefusal } from "./endpoint";
 import { HANDOFF_KIND } from "./handoff";
