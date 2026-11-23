@@ -9,7 +9,7 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, within } from "@testing-library/react";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType } from "react";
 import { LanguageRow } from "@/components/settings/language-row";
@@ -167,9 +167,7 @@ describe("the General page speaks the interface language", () => {
     expect(view.getByRole("heading", { name: "关于你" })).toBeTruthy();
     expect(rowTitle(view, "深色主题")).toBeTruthy();
     expect(view.getByText("在 OpenBot 中使用深色外观。")).toBeTruthy();
-    expect(
-      view.getByRole("heading", { name: "键盘快捷键" }),
-    ).toBeTruthy();
+    expect(view.getByRole("heading", { name: "键盘快捷键" })).toBeTruthy();
     expect(rowTitle(view, "新对话")).toBeTruthy();
     expect(
       view.getByText("在 OpenBot 的任何地方开始一个新对话。"),
@@ -214,13 +212,65 @@ describe("the General page speaks the interface language", () => {
       ),
     ).toBeTruthy();
     expect(within(dialog).getByText("已用 25 / 4000 个字符")).toBeTruthy();
-    expect(
-      within(dialog).getByRole("button", { name: "保存" }),
-    ).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "保存" })).toBeTruthy();
     expect(
       within(dialog).getByText(
         "适用于每个对话中的每个 Bot。Bot 的角色说明它做什么；这里说明你希望它怎么做，比如你的写作风格。",
       ),
+    ).toBeTruthy();
+  });
+
+  test("in Chinese a read that fails speaks the fallback in Chinese, on the row and in the editor", async () => {
+    await pinLocale("zh-CN");
+    global.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0]) => {
+        if (String(input) === "/api/settings/instructions")
+          return new Response(null, { status: 500 });
+        return new Response(null, { status: 404 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const view = drawPage();
+    const row = view.getByRole("button", { name: /^常设指令/ });
+    await waitFor(
+      () => expect(row.textContent).toContain("无法加载你的指令。"),
+      { timeout: 3000 },
+    );
+    await userEvent.setup({ document }).click(row);
+    const dialog = await view.findByRole("dialog");
+    expect(
+      await within(dialog).findByText("无法加载你的常设指令"),
+    ).toBeTruthy();
+  });
+
+  test("in Chinese a save that fails speaks the fallback in Chinese", async () => {
+    await pinLocale("zh-CN");
+    global.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        if (String(input) === "/api/settings/instructions") {
+          if (init?.method === "PUT")
+            return new Response(null, { status: 500 });
+          return Response.json({ instructions: "" });
+        }
+        return new Response(null, { status: 404 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const view = drawPage();
+    await view.findByRole("button", { name: /^常设指令/ });
+    await userEvent
+      .setup({ document })
+      .click(view.getByRole("button", { name: /^常设指令/ }));
+    const dialog = await view.findByRole("dialog");
+    const box = await within(dialog).findByRole("textbox", {
+      name: "常设指令",
+    });
+    await userEvent.setup({ document }).type(box, "先简后繁。");
+    await userEvent
+      .setup({ document })
+      .click(within(dialog).getByRole("button", { name: "保存" }));
+    expect(
+      await within(dialog).findByText("无法保存你的常设指令"),
     ).toBeTruthy();
   });
 });
