@@ -31,6 +31,23 @@ test("the setup window and Settings say it only through the shared sentence", as
   expect(spelled).toEqual([]);
 });
 
+test("a surface in another language hands in its sentences, and the state and share are still decided here", () => {
+  const said = {
+    available: (version: string) => `A ${version}`,
+    downloading: (version: string, share: number) => `D ${version} ${share}`,
+    ready: (version: string) => `R ${version}`,
+  };
+  expect(updateOffered("1.0.1", null, said)).toBe("A 1.0.1");
+  expect(updateOffered("1.0.1", { state: "ready" }, said)).toBe("R 1.0.1");
+  expect(
+    updateOffered(
+      "1.0.1",
+      { state: "preparing", done: 999, total: 1000 },
+      said,
+    ),
+  ).toBe("D 1.0.1 99");
+});
+
 test("a newer version says how ready it is, in one plain sentence", () => {
   expect(updateOffered("1.0.1")).toBe("OpenBot 1.0.1 is available.");
   expect(updateOffered("1.0.1", null)).toBe("OpenBot 1.0.1 is available.");
