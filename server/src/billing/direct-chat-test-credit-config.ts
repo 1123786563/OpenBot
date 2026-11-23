@@ -50,11 +50,15 @@ export function directChatCasdoorProvider(
   if (!mode || mode === "disabled") return undefined;
   if (mode !== "enabled")
     throw new Error("Invalid OPENBOT_TEST_CREDIT_CONVERSATIONS mode.");
+  return requireBillingCasdoorProvider(environment);
+}
+
+export function requireBillingCasdoorProvider(
+  environment: Record<string, string | undefined>,
+): CasdoorBillingProvider {
   const parsed = provider.safeParse(environment);
   if (!parsed.success)
-    throw new Error(
-      "Test Credit Conversations require a Casdoor issuer and provider ID.",
-    );
+    throw new Error("Test Credit requires a Casdoor issuer and provider ID.");
   return {
     issuer: parsed.data.TEST_CREDIT_CASDOOR_ISSUER,
     providerId: parsed.data.TEST_CREDIT_CASDOOR_PROVIDER_ID,

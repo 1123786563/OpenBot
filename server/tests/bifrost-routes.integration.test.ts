@@ -6,7 +6,10 @@ import { eq, like, or } from "drizzle-orm";
 import { createBifrostAdminRoutes } from "../src/admin/bifrost-routes";
 import { createDatabase } from "../src/db/client";
 import { enterpriseSettings } from "../src/db/schema";
-import { fixtureTraceReport } from "./support/bifrost-evidence";
+import {
+  fixtureEmbeddingReport,
+  fixtureTraceReport,
+} from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 test("admin verification imports trusted evidence and publishes durable Price Versions", async () => {
@@ -125,6 +128,54 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     expect(
       await (await request(`/price-versions/${release.id}`)).json(),
     ).toEqual(release);
+
+    const embed = {
+      ...a,
+      purpose: "embedding",
+      maxOutputTokens: 0,
+      price: { inputPerMillion: 500_000, outputPerMillion: 0 },
+    };
+    const configured = await request("/configuration", "PUT", {
+      harnessImage,
+      routes: { embed },
+    });
+    expect(configured.status).toBe(200);
+    const embedding = await configured.json();
+    const embeddingRevision = embedding.catalog.routes.embed.revision;
+    const embeddingReport = fixtureEmbeddingReport(harnessImage, {
+      ...embed,
+      revision: embeddingRevision,
+    });
+    await Bun.write(
+      join(dir, `${embeddingRevision}.json`),
+      JSON.stringify(embeddingReport),
+    );
+    expect(
+      (
+        await request("/routes/embed/verify", "POST", {
+          revision: embeddingRevision,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request("/publication", "POST", {
+          routes: ["embed"],
+          defaultRoute: "embed",
+        })
+      ).status,
+    ).toBe(409);
+    const embeddingPublication = await request("/publication", "POST", {
+      routes: ["embed"],
+      defaultRoute: null,
+    });
+    expect(embeddingPublication.status).toBe(201);
+    expect(await embeddingPublication.json()).toMatchObject({
+      active: {
+        defaultRoute: null,
+        options: [{ purpose: "embedding", maxChargeMicrocredits: "50" }],
+      },
+    });
   } finally {
     await database.delete(enterpriseSettings).where(rows);
     await database.$client.close();

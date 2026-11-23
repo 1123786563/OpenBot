@@ -5,6 +5,8 @@ import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
 import type { PaidCreditLedger } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
+import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
+import { weknoraResourceId } from "./weknora-routes";
 
 const operationId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const operation = z.strictObject({ operationId });
@@ -69,6 +71,7 @@ type Dependencies = {
     intent: "account" | "execution",
   ): Promise<VerifiedBillingIdentity | undefined>;
   execute?: TestCreditExecutor;
+  weknoraRouteId?: string;
   // The paid ledger's read views (#107): absent, `/paid/*` answers 503.
   paid?: { ledger: PaidCreditLedger };
   // Whether the caller holds an application's own credential (#111). Absent,
@@ -85,6 +88,7 @@ export function createTestCreditRoutes({
   execute,
   paid,
   authenticateApplication,
+  weknoraRouteId,
 }: Dependencies) {
   const api = new Hono<{ Variables: Variables }>();
   api.use("*", async (context, next) => {
@@ -122,6 +126,7 @@ export function createTestCreditRoutes({
     await next();
   });
   api.use("/quote", authorize("account"));
+  api.use("/weknora/preview", authorize("account"));
   api.use("/balance", authorize("account"));
   api.use("/claim", authorize("account"));
   api.use("/operations/*", authorize("account"));
@@ -196,6 +201,24 @@ export function createTestCreditRoutes({
     return budget
       ? context.json(budget)
       : context.json({ error: "Execution budget unavailable." }, 404);
+  });
+
+  api.get("/weknora/preview", async (context) => {
+    const quote =
+      weknoraRouteId && (await ledger.embeddingQuote(weknoraRouteId));
+    if (!quote) return context.json({ code: "route_unavailable" }, 503);
+    const grants = await ledger.authorizations(context.var.identity);
+    if (!grants)
+      return context.json({ code: "billing_account_unavailable" }, 404);
+    const authorizationId = context.req.query("authorizationId");
+    const authorization = grants.find(
+      (grant) =>
+        grant.authorizationId === authorizationId &&
+        grant.applicationId === WEKNORA_APPLICATION_ID,
+    );
+    if (authorizationId && !authorization)
+      return context.json({ code: "authorization_unavailable" }, 404);
+    return context.json({ ...quote.quote, authorization });
   });
 
   api.get("/quote", async (context) => {
@@ -273,7 +296,19 @@ export function createTestCreditRoutes({
   api.post("/resume-points/:operationId/confirm", async (context) => {
     const id = operationId.safeParse(context.req.param("operationId"));
     const body = z
-      .strictObject({ budgetId: operationId })
+      .strictObject({
+        budgetId: operationId,
+        authorizationId: z.uuid().optional(),
+        limitMicrocredits: z
+          .string()
+          .regex(/^[1-9]\d{0,18}$/)
+          .refine((limit) => BigInt(limit) <= 9_223_372_036_854_775_807n)
+          .optional(),
+      })
+      .refine(
+        ({ authorizationId, limitMicrocredits }) =>
+          limitMicrocredits === undefined || authorizationId !== undefined,
+      )
       .safeParse(await context.req.json().catch(() => undefined));
     if (!id.success || !body.success)
       return context.json({ error: "Invalid resume confirmation." }, 400);
@@ -281,6 +316,10 @@ export function createTestCreditRoutes({
       context.var.identity,
       id.data,
       body.data.budgetId,
+      body.data.authorizationId,
+      body.data.limitMicrocredits === undefined
+        ? undefined
+        : BigInt(body.data.limitMicrocredits),
     );
     if (!confirmed)
       return context.json({ error: "Resume point unavailable." }, 404);
@@ -314,7 +353,13 @@ export function createTestCreditRoutes({
         limitMicrocredits: z.string().regex(/^[1-9]\d*$/),
       })
       .safeParse(await context.req.json().catch(() => undefined));
-    if (!input.success)
+    if (
+      !input.success ||
+      (input.data.applicationId === WEKNORA_APPLICATION_ID &&
+        (input.data.kind !== "background" ||
+          !z.uuid().safeParse(input.data.authorizationId).success ||
+          !weknoraResourceId.safeParse(input.data.resourcePrefix).success))
+    )
       return context.json({ error: "Invalid Spending Authorization." }, 400);
     const granted = await ledger.authorize(context.var.identity, {
       ...input.data,
@@ -499,6 +544,7 @@ export function createTestCreditRoutes({
     const receipt = await ledger.reconcile(
       acting.identity,
       input.data.operationId,
+      input.data.authorizationId,
     );
     return context.json({
       state:

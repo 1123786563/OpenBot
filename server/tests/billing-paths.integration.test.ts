@@ -562,6 +562,7 @@ test("an application spends from a person's account only under the authorization
   await timed.beginDispatch(identity, {
     operationId: "app-op-1",
     permit: first,
+    authorizationId: online.authorizationId,
   });
   const second = await reservedAs(timed, identity, step("app-op-2", online));
   expect(await timed.reserve(identity, step("app-op-3", online))).toEqual({
@@ -650,6 +651,7 @@ test("an application spends from a person's account only under the authorization
     await timed.beginDispatch(identity, {
       operationId: "app-task-op-1",
       permit: taskPermit,
+      authorizationId: background.authorizationId,
     }),
   ).toEqual({ state: "denied", reason: "not_authorized" });
   expect(await operationRow(accountId, "app-task-op-1")).toMatchObject({
@@ -679,6 +681,7 @@ test("an application spends from a person's account only under the authorization
     await timed.beginDispatch(identity, {
       operationId: "app-op-2",
       permit: second,
+      authorizationId: online.authorizationId,
     }),
   ).toEqual({ state: "denied", reason: "route_unavailable" });
   expect(await operationRow(accountId, "app-op-2")).toMatchObject({

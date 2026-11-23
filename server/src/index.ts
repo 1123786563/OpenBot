@@ -98,6 +98,7 @@ import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit"
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
 import { createTestCreditLedger } from "./billing/test-credit";
+import { loadWeKnoraBilling } from "./billing/weknora-config";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
 import { personBrowserEgressPolicy } from "./browser/egress";
@@ -670,18 +671,20 @@ const auth: AuthService | undefined =
   organizationAuth ??
   (betterAuth && entra ? withEntraBearer(betterAuth, entra) : betterAuth);
 const directChatTestCredit = loadDirectChatTestCredit(process.env);
+const weknoraBilling = loadWeKnoraBilling(process.env);
+const billingCasdoor = (directChatTestCredit ?? weknoraBilling)?.casdoor;
 if (
-  directChatTestCredit &&
+  billingCasdoor &&
   (!betterAuth ||
     organizationAuth ||
     config.singleUser ||
     config.runtime.mode !== "openbot")
 )
   throw new Error(
-    "Test Credit Conversations require OpenBot with local OIDC session authentication.",
+    "Test Credit requires OpenBot with local OIDC session authentication.",
   );
-const casdoorBillingIdentity = directChatTestCredit
-  ? createCasdoorBillingIdentity(database, directChatTestCredit.casdoor)
+const casdoorBillingIdentity = billingCasdoor
+  ? createCasdoorBillingIdentity(database, billingCasdoor)
   : undefined;
 const { resolveRequestActor, identifyUser, identifyActor } = createRequestActor(
   {
@@ -3800,6 +3803,8 @@ const app = createApp(
     testLedger: testCreditLedger,
     paidLedger: createPaidCreditLedger(database),
     casdoorIdentityOf: casdoorBillingIdentity,
+    weknora: weknoraBilling,
+    testCreditConversations: directChatTestCredit !== undefined,
   },
 );
 

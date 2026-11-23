@@ -53,10 +53,13 @@ beforeEach(() => {
       const path = String(input).split("?")[0];
       if (init?.method === "POST") {
         // A revoke sends no body.
-        posts.push({
-          path,
-          body: init.body ? JSON.parse(String(init.body)) : undefined,
-        });
+        const body = init.body ? JSON.parse(String(init.body)) : undefined;
+        posts.push({ path, body });
+        if (
+          path === "/api/billing/authorizations" &&
+          body?.applicationId === "weknora"
+        )
+          return Response.json({ authorizationId: body.authorizationId });
         return new Response(
           JSON.stringify(
             path === CONFIRM
@@ -482,4 +485,119 @@ test("credits read as people write them, and typed limits become microcredits", 
   expect(microcreditsFromCredits("0")).toBeUndefined();
   expect(microcreditsFromCredits("abc")).toBeUndefined();
   expect(microcreditsFromCredits("1.1234567")).toBeUndefined();
+});
+
+test("WeKnora consent shows the Test Credit rate and creates an upload grant", async () => {
+  const queryClient = answered();
+  queryClient.setQueryData(billingKeys.applications, [
+    {
+      id: "weknora",
+      name: "WeKnora",
+      operator: "platform",
+      resourcePrefix: "weknora:",
+      approvedAt: "2026-02-01",
+      pausedAt: null,
+    },
+  ]);
+  queryClient.setQueryData(["billing", "weknora-preview"], {
+    creditType: "test",
+    price: { inputPerMillion: 500_000, outputPerMillion: 0 },
+    maxChargeMicrocredits: "64",
+  });
+  const user = userEvent.setup({ document: globalThis.document });
+  const view = renderCredits(queryClient);
+  await user.click(
+    await view.findByRole("button", { name: "Authorize an app" }),
+  );
+  const dialog = within(await view.findByRole("dialog"));
+  expect(
+    dialog.getByText(/0.5 Test credits per million input tokens/),
+  ).toBeDefined();
+  await user.type(
+    dialog.getByRole("textbox", { name: "Knowledge base resource ID" }),
+    "tenant:1:kb:kb-1",
+  );
+  await user.type(
+    dialog.getByRole("textbox", { name: "Upload spending limit" }),
+    "2",
+  );
+  await user.click(dialog.getByRole("button", { name: "Authorize" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  const body = posts[0]?.body as { authorizationId: string };
+  expect(body).toMatchObject({
+    applicationId: "weknora",
+    kind: "background",
+    taskId: body.authorizationId,
+    resourcePrefix: "weknora:tenant:1:kb:kb-1",
+    limitMicrocredits: "2000000",
+  });
+  expect(body.authorizationId).toMatch(/^[a-f0-9-]{36}$/);
+  const saved = await dialog.findByRole("textbox", {
+    name: "Authorization ID",
+  });
+  expect(saved.getAttribute("value")).toBe(body.authorizationId);
+});
+
+test("a paused WeKnora upload asks the owner to confirm a higher Test Credit limit", async () => {
+  const queryClient = answered();
+  const authorizationId = "11000000-0000-4000-8000-000000000093";
+  queryClient.setQueryData(billingKeys.resumePoints, [
+    {
+      operationId: "op-1",
+      applicationId: "weknora",
+      authorizationId,
+      reason: "execution_limit",
+      budgetId: null,
+      confirmedAt: null,
+      creditType: null,
+    },
+  ]);
+  queryClient.setQueryData(billingKeys.authorizations, [
+    {
+      authorizationId,
+      applicationId: "weknora",
+      kind: "background",
+      taskId: authorizationId,
+      resourcePrefix: "weknora:tenant:1:kb:kb-1",
+      expiresAt: "2030-01-01",
+      limitMicrocredits: "2000000",
+      spentMicrocredits: "1999999",
+      state: "active",
+    },
+  ]);
+  const view = renderCredits(queryClient);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", { name: "Raise upload limit" }),
+  );
+  const dialog = within(await view.findByRole("dialog"));
+  expect(dialog.queryByRole("combobox", { name: "Credit type" })).toBeNull();
+  const cap = dialog.getByRole("textbox", {
+    name: "New upload spending limit",
+  });
+  const confirm = dialog.getByRole("button", { name: "Confirm new limit" });
+  await user.type(cap, "2");
+  expect(confirm.hasAttribute("disabled")).toBe(true);
+  await user.clear(cap);
+  await user.type(cap, "3");
+  await user.click(confirm);
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts).toEqual([
+    {
+      path: "/api/billing/budgets",
+      body: {
+        budgetId: expect.any(String),
+        creditType: "test",
+        limitMicrocredits: "3000000",
+      },
+    },
+    {
+      path: CONFIRM,
+      body: {
+        budgetId: createdBudget.budgetId,
+        authorizationId,
+        limitMicrocredits: "3000000",
+      },
+    },
+  ]);
 });

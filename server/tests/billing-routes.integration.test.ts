@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import {
   configure,
@@ -10,11 +11,14 @@ import {
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
+import { loadWeKnoraBilling } from "../src/billing/weknora-config";
+import { createWeKnoraRoutes } from "../src/billing/weknora-routes";
 import { createDatabase } from "../src/db/client";
 import {
   billingApplications,
   billingSpendingAuthorizations,
   enterpriseSettings,
+  lagoUsageEvents,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
@@ -27,7 +31,10 @@ import {
   testCreditOperations,
   testCreditResumePoints,
 } from "../src/db/schema";
-import { fixtureTraceReport } from "./support/bifrost-evidence";
+import {
+  fixtureEmbeddingReport,
+  fixtureTraceReport,
+} from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
@@ -68,10 +75,22 @@ const applications = createTestCreditRoutes({
 });
 
 const routeId = "billing-routes";
+const embeddingRouteId = "routes-embedding";
 const harnessImage = `agent-langgraph-agui@sha256:${"a".repeat(64)}`;
 const drafted = configure(emptyCatalog, {
   harnessImage,
   routes: {
+    [embeddingRouteId]: {
+      purpose: "embedding",
+      provider: "fixture-embedding",
+      model: "model-embedding",
+      gatewayRevision: "routes-r1",
+      meteringRevision: "routes-m1",
+      maxInputTokens: 10,
+      maxOutputTokens: 0,
+      tools: false,
+      price: { inputPerMillion: 1_000_000, outputPerMillion: 0 },
+    },
     [routeId]: {
       provider: "fixture-routes",
       model: "model-routes",
@@ -85,10 +104,22 @@ const drafted = configure(emptyCatalog, {
   },
 });
 const proposed = drafted.routes[routeId];
-if (!proposed) throw new Error("fixture route missing");
+const embeddingProposal = drafted.routes[embeddingRouteId];
+if (!proposed || !embeddingProposal) throw new Error("fixture route missing");
+const embeddingReport = fixtureEmbeddingReport(harnessImage, embeddingProposal);
 const { catalog } = publish(
-  verify(drafted, routeId, fixtureTraceReport(harnessImage, proposed), "test"),
-  [routeId],
+  verify(
+    verify(
+      drafted,
+      routeId,
+      fixtureTraceReport(harnessImage, proposed),
+      "test",
+    ),
+    embeddingRouteId,
+    embeddingReport,
+    "test",
+  ),
+  [routeId, embeddingRouteId],
   routeId,
   "test",
 );
@@ -537,6 +568,59 @@ test("an application reserves and reads only through a person's authorization", 
     (await call(`${scoped}/operations/routes-app-op-1`, "routes-other")).status,
   ).toBe(404);
 
+  const backgroundId = "routes-background";
+  const taskId = "routes-ingestion";
+  expect(
+    (
+      await grant({
+        ...authorization,
+        authorizationId: backgroundId,
+        kind: "background",
+        taskId,
+      })
+    ).status,
+  ).toBe(200);
+  const background = {
+    ...step,
+    authorizationId: backgroundId,
+    operationId: "routes-background-op",
+    taskId,
+  };
+  const hold = await (await call("/v1/reserve", app, background)).json();
+  expect(hold.state).toBe("reserved");
+  expect(
+    await (
+      await call("/v1/reserve", app, {
+        ...background,
+        authorizationId: step.authorizationId,
+        taskId: undefined,
+      })
+    ).json(),
+  ).toEqual({ state: "denied", reason: "not_authorized" });
+  expect(
+    await (
+      await call("/v1/reconcile", app, {
+        authorizationId: step.authorizationId,
+        operationId: background.operationId,
+      })
+    ).json(),
+  ).toEqual({ state: "absent" });
+  expect(
+    await ledger.beginDispatch(identity, {
+      operationId: background.operationId,
+      permit: hold.permit,
+      authorizationId: backgroundId,
+    }),
+  ).toMatchObject({ state: "dispatch" });
+  await ledger.settle(
+    (await ledger.accountOf(identity)) ?? "",
+    background.operationId,
+    {
+      inputTokens: 1n,
+      outputTokens: 0n,
+    },
+  );
+
   // The person revokes it: nothing new reserves, and the reservation already
   // made does not run (验证撤销).
   expect(
@@ -589,6 +673,359 @@ test("an application reserves and reads only through a person's authorization", 
   ).toBe(200);
 });
 
+test("WeKnora worker requests retain uploader attribution after sign-out and share durable limits", async () => {
+  let now = new Date();
+  const ledger = createTestCreditLedger(database, () => now);
+  const uploader = { ...identity, subject: crypto.randomUUID() };
+  const contender = { ...identity, subject: crypto.randomUUID() };
+  for (const [owner, amount] of [
+    [uploader, 60n],
+    [contender, 19n],
+  ] as const) {
+    const batchId = crypto.randomUUID();
+    batchIds.push(batchId);
+    await ledger.enroll({ identity: owner, batchId, amount });
+    await ledger.claim(owner, batchId);
+  }
+  const otherApp = "routes-competing-app";
+  applicationIds.push("weknora", otherApp);
+  for (const [id, resourcePrefix] of [
+    ["weknora", "weknora:"],
+    [otherApp, "kb-"],
+  ]) {
+    if (!id || !resourcePrefix) throw new Error("Missing fixture app");
+    await ledger.registerApplication({
+      id,
+      name: id,
+      operator: "platform",
+      resourcePrefix,
+    });
+    await ledger.approveApplication(id, "fixture");
+  }
+
+  let session: typeof uploader | undefined = uploader;
+  const accountApi = createTestCreditRoutes({
+    ledger,
+    weknoraRouteId: embeddingRouteId,
+    authenticate: async () => session,
+  });
+  const accountPost = (path: string, input: unknown) =>
+    accountApi.request(path, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  const resourceId = "weknora:tenant:1:kb:docs";
+  const authorizationId = crypto.randomUUID();
+  const expiresAt = new Date(now.getTime() + 60_000).toISOString();
+  const grant = {
+    authorizationId,
+    applicationId: "weknora",
+    kind: "background",
+    taskId: authorizationId,
+    resourcePrefix: resourceId,
+    expiresAt,
+    limitMicrocredits: "10",
+  };
+  expect((await accountPost("/authorizations", grant)).status).toBe(200);
+  expect(
+    await (
+      await accountApi.request(
+        `/weknora/preview?authorizationId=${authorizationId}`,
+      )
+    ).json(),
+  ).toMatchObject({
+    creditType: "test",
+    price: { inputPerMillion: 1_000_000 },
+    maxChargeMicrocredits: "10",
+    authorization: { limitMicrocredits: "10" },
+  });
+  session = undefined;
+  expect((await accountApi.request("/balance")).status).toBe(401);
+
+  let gatewayCalls = 0;
+  let gatewayUnavailable = false;
+  let beforeMeter: (() => Promise<void>) | undefined;
+  let beforeReply: (() => Promise<void>) | undefined;
+  const local = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const body = await request.text();
+      if (new URL(request.url).pathname === "/meter") {
+        await beforeMeter?.();
+        return Response.json({
+          requestId: request.headers.get("x-request-id"),
+          requestSha256: createHash("sha256").update(body).digest("hex"),
+          gatewayRevision: "routes-r1",
+          meteringRevision: "routes-m1",
+          inputTokenUpperBound: 2,
+        });
+      }
+      gatewayCalls++;
+      if (gatewayUnavailable) return new Response(null, { status: 503 });
+      await beforeReply?.();
+      return Response.json({
+        object: "list",
+        model: "model-embedding",
+        usage: { prompt_tokens: 2, total_tokens: 2 },
+        data: [{ index: 0, embedding: [1, 0] }],
+      });
+    },
+  });
+  try {
+    const token = crypto.randomUUID();
+    const runtime = loadWeKnoraBilling({
+      OPENBOT_TEST_CREDIT_WEKNORA: "enabled",
+      OPENBOT_WEKNORA_SERVICE_TOKEN: token,
+      OPENBOT_WEKNORA_ROUTE: embeddingRouteId,
+      TEST_CREDIT_EMBEDDINGS_BIFROST_URL: new URL("/v1/embeddings", local.url)
+        .href,
+      TEST_CREDIT_INPUT_METER_URL: new URL("/meter", local.url).href,
+      TEST_CREDIT_INPUT_METER_TOKEN: "fixture",
+      TEST_CREDIT_BIFROST_TOKEN: "fixture",
+      TEST_CREDIT_GATEWAY_IMAGE_DIGEST: embeddingReport.gatewayImageDigest,
+      TEST_CREDIT_GATEWAY_REVISION: "routes-r1",
+      TEST_CREDIT_METERING_REVISION: "routes-m1",
+      TEST_CREDIT_CASDOOR_ISSUER: "https://casdoor.invalid",
+      TEST_CREDIT_CASDOOR_PROVIDER_ID: "fixture",
+    });
+    if (!runtime) throw new Error("Expected enabled WeKnora billing");
+    const fixtureRuntime = { ...runtime, issuer: identity.issuer };
+    const worker = createWeKnoraRoutes({ ...fixtureRuntime, ledger });
+    const headers = { authorization: `Bearer ${token}` };
+    const scope = {
+      authorizationId,
+      resourceId,
+      subject: uploader.subject,
+      input: ["fixture"],
+    };
+    const original = { ...scope, operationId: crypto.randomUUID() };
+    const request = (input: typeof original, credential = headers) =>
+      worker.request("/embeddings", {
+        method: "POST",
+        body: JSON.stringify(input),
+        headers: credential,
+      });
+    expect(
+      (await request(original, { authorization: "Bearer nope" })).status,
+    ).toBe(401);
+    expect(
+      (await request({ ...original, subject: contender.subject })).status,
+    ).toBe(403);
+    expect(
+      (await request({ ...original, resourceId: `${resourceId}-other` }))
+        .status,
+    ).toBe(403);
+    const completed = await request(original);
+    expect(completed.status).toBe(200);
+    expect(await completed.json()).toMatchObject({
+      vectors: [[1, 0]],
+      receipt: { applicationId: "weknora", chargedMicrocredits: "2" },
+    });
+    expect((await request(original)).status).toBe(200);
+    expect(gatewayCalls).toBe(1);
+    expect((await request({ ...original, input: ["different"] })).status).toBe(
+      409,
+    );
+    session = contender;
+    expect(
+      (await accountApi.request(`/operations/${original.operationId}`)).status,
+    ).toBe(404);
+    const statusPath = `/authorizations/${authorizationId}/operations/${original.operationId}`;
+    expect(
+      await (await worker.request(statusPath, { headers })).json(),
+    ).toMatchObject({ state: "settled" });
+    expect(
+      (
+        await worker.request(
+          statusPath.replace(authorizationId, crypto.randomUUID()),
+          { headers },
+        )
+      ).status,
+    ).toBe(404);
+
+    const paused = { ...scope, operationId: crypto.randomUUID() };
+    expect((await request(paused)).status).toBe(429);
+    const pausedPath = `/authorizations/${authorizationId}/operations/${paused.operationId}`;
+    expect(
+      await (await worker.request(pausedPath, { headers })).json(),
+    ).toMatchObject({ state: "paused", code: "execution_limit" });
+    session = uploader;
+    expect(
+      (
+        await accountPost(`/authorizations/${authorizationId}/amend`, {
+          limitMicrocredits: "30",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await request(paused)).status).toBe(429);
+    expect(
+      (await request({ ...paused, operationId: crypto.randomUUID() })).status,
+    ).toBe(429);
+    expect(
+      (
+        await accountPost("/budgets", {
+          budgetId: "weknora-resume",
+          creditType: "test",
+          limitMicrocredits: "30",
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await accountPost(`/resume-points/${paused.operationId}/confirm`, {
+          budgetId: "weknora-resume",
+          authorizationId,
+          limitMicrocredits: "31",
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      await (await worker.request(pausedPath, { headers })).json(),
+    ).toMatchObject({ state: "confirmed", code: "execution_limit" });
+    expect(
+      (await request({ ...paused, operationId: crypto.randomUUID() })).status,
+    ).toBe(429);
+    expect((await request(paused)).status).toBe(200);
+    const grants = await ledger.authorizations(uploader);
+    expect(
+      grants?.find((grant) => grant.authorizationId === authorizationId),
+    ).toMatchObject({ limitMicrocredits: "31" });
+
+    const uncertain = { ...scope, operationId: crypto.randomUUID() };
+    gatewayUnavailable = true;
+    expect(await (await request(uncertain)).json()).toMatchObject({
+      code: "reconciling",
+    });
+    gatewayUnavailable = false;
+    const callsAfterFailure = gatewayCalls;
+    expect(await (await request(uncertain)).json()).toMatchObject({
+      code: "reconciling",
+    });
+    expect(gatewayCalls).toBe(callsAfterFailure);
+    const uncertainStatus = await worker.request(
+      `/authorizations/${authorizationId}/operations/${uncertain.operationId}`,
+      { headers },
+    );
+    expect(await uncertainStatus.json()).toMatchObject({
+      state: "pending",
+      outcome: "unknown",
+    });
+
+    const revoke = () => ledger.revokeAuthorization(uploader, authorizationId);
+    beforeReply = async () => {
+      await revoke();
+    };
+    expect(
+      (await request({ ...scope, operationId: crypto.randomUUID() })).status,
+    ).toBe(200);
+    beforeReply = undefined;
+    expect(
+      (await request({ ...scope, operationId: crypto.randomUUID() })).status,
+    ).toBe(410);
+
+    const expiryId = crypto.randomUUID();
+    await ledger.authorize(uploader, {
+      ...grant,
+      authorizationId: expiryId,
+      taskId: expiryId,
+      expiresAt: new Date(expiresAt),
+      limitMicrocredits: 20n,
+    });
+    beforeMeter = async () => {
+      now = new Date(expiresAt);
+    };
+    const expiresWhileMetering = {
+      ...scope,
+      authorizationId: expiryId,
+      operationId: crypto.randomUUID(),
+    };
+    const before = gatewayCalls;
+    expect(await (await request(expiresWhileMetering)).json()).toEqual({
+      code: "authorization_expired",
+    });
+    expect(gatewayCalls).toBe(before);
+    expect(
+      (
+        await request({
+          ...expiresWhileMetering,
+          operationId: crypto.randomUUID(),
+        })
+      ).status,
+    ).toBe(410);
+    beforeMeter = undefined;
+
+    const contenderGrant = crypto.randomUUID();
+    const competitorGrant = crypto.randomUUID();
+    const later = new Date(now.getTime() + 60_000);
+    await ledger.authorize(contender, {
+      ...grant,
+      authorizationId: contenderGrant,
+      taskId: contenderGrant,
+      expiresAt: later,
+      limitMicrocredits: 19n,
+    });
+    await ledger.authorize(contender, {
+      ...grant,
+      authorizationId: competitorGrant,
+      taskId: undefined,
+      applicationId: otherApp,
+      kind: "online",
+      resourcePrefix: "kb-",
+      expiresAt: later,
+      limitMicrocredits: 19n,
+    });
+    // Keep the winning worker's hold in flight until the other reservation has run.
+    const winnerMaySettle = Promise.withResolvers<void>();
+    beforeReply = () => winnerMaySettle.promise;
+    const contestedUpload = {
+      ...scope,
+      authorizationId: contenderGrant,
+      subject: contender.subject,
+      operationId: crypto.randomUUID(),
+    };
+    const embedding = request(contestedUpload);
+    const competitor = await ledger.reserve(contender, {
+      operationId: "competing-app-op",
+      route: routeId,
+      priceVersion,
+      applicationId: otherApp,
+      authorizationId: competitorGrant,
+      resourceId: "kb-docs",
+      creditType: "test",
+    });
+    winnerMaySettle.resolve();
+    const embeddingResponse = await embedding;
+    if (competitor.state === "reserved") {
+      expect(embeddingResponse.status).toBe(402);
+      const status = await worker.request(
+        `/authorizations/${contenderGrant}/operations/${contestedUpload.operationId}`,
+        { headers },
+      );
+      expect(await status.json()).toMatchObject({
+        state: "paused",
+        code: "insufficient_credits",
+      });
+    } else {
+      expect(competitor).toEqual({
+        state: "denied",
+        reason: "insufficient_credits",
+      });
+      expect(embeddingResponse.status).toBe(200);
+    }
+    expect(
+      (
+        await worker.request(
+          `/authorizations/${competitorGrant}/operations/competing-app-op`,
+          { headers },
+        )
+      ).status,
+    ).toBe(404);
+  } finally {
+    await local.stop(true);
+  }
+});
+
 afterAll(async () => {
   const accounts = await database
     .select({ id: testCreditAccounts.id })
@@ -596,6 +1033,9 @@ afterAll(async () => {
     .where(inArray(testCreditAccounts.issuer, [identity.issuer]));
   const ids = accounts.map(({ id }) => id);
   if (ids.length > 0) {
+    await database
+      .delete(lagoUsageEvents)
+      .where(inArray(lagoUsageEvents.accountId, ids));
     await database
       .delete(testCreditEvidence)
       .where(inArray(testCreditEvidence.accountId, ids));

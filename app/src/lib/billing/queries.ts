@@ -55,6 +55,7 @@ export type PaidBalance = {
 /** A step that stopped for want of credits or budget room, waiting on the person. */
 export type ResumePoint = {
   operationId: string;
+  authorizationId?: string;
   applicationId: string | null;
   reason: "insufficient_credits" | "execution_limit";
   createdAt: string;
@@ -107,6 +108,7 @@ export const billingKeys = {
   authorizations: ["billing", "authorizations"] as const,
   balance: ["billing", "balance"] as const,
   quote: ["billing", "quote"] as const,
+  weknoraPreview: ["billing", "weknora-preview"] as const,
   paidSources: ["billing", "paid-sources"] as const,
   paidBalance: ["billing", "paid-balance"] as const,
   bill: ["billing", "bill"] as const,
@@ -162,6 +164,14 @@ export function conversationCreditQuoteQueryOptions(
         `/api/copilotkit/agent/${encodeURIComponent(agentId)}/test-credit-quote?${new URLSearchParams({ threadId })}`,
         { fallback: "Could not get a Test Credit quote", signal },
       ).then((response) => response.json()),
+    retry: false,
+  });
+}
+
+export function weknoraPreviewQueryOptions() {
+  return queryOptions({
+    queryKey: billingKeys.weknoraPreview,
+    queryFn: (): Promise<BillingQuote> => read("/api/billing/weknora/preview"),
     retry: false,
   });
 }

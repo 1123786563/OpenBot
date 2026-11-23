@@ -1,8 +1,8 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
 import {
-  billingKeys,
   type BudgetRecord,
+  billingKeys,
   type SpendingAuthorization,
 } from "./queries";
 
@@ -67,15 +67,17 @@ export function authorizeApplicationMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: async (
       input: AuthorizationInput,
-    ): Promise<SpendingAuthorization> =>
-      (
+    ): Promise<SpendingAuthorization> => {
+      const ingestion = input.applicationId === "weknora";
+      const uuid = crypto.randomUUID();
+      return (
         await client("/api/billing/authorizations", {
           method: "POST",
           body: {
-            authorizationId: `authorization-${crypto.randomUUID()}`,
+            authorizationId: ingestion ? uuid : `authorization-${uuid}`,
             applicationId: input.applicationId,
-            kind: input.kind,
-            ...(input.taskId ? { taskId: input.taskId } : {}),
+            kind: ingestion ? "background" : input.kind,
+            taskId: ingestion ? uuid : input.taskId,
             resourcePrefix: input.resourcePrefix,
             expiresAt: new Date(
               Date.now() + input.days * 86_400_000,
@@ -84,7 +86,8 @@ export function authorizeApplicationMutationOptions(queryClient: QueryClient) {
           },
           fallback: "Could not authorize the app",
         })
-      ).json(),
+      ).json();
+    },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: billingKeys.all }),
   });
@@ -113,13 +116,19 @@ export function confirmResumePointMutationOptions(queryClient: QueryClient) {
     mutationFn: async (input: {
       operationId: string;
       budgetId: string;
+      authorizationId?: string;
+      limitMicrocredits?: string;
     }): Promise<{ state: "confirmed"; creditType: "test" | "paid" }> =>
       (
         await client(
           `/api/billing/resume-points/${input.operationId}/confirm`,
           {
             method: "POST",
-            body: { budgetId: input.budgetId },
+            body: {
+              budgetId: input.budgetId,
+              authorizationId: input.authorizationId,
+              limitMicrocredits: input.limitMicrocredits,
+            },
             fallback: "Could not continue the step",
           },
         )

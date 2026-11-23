@@ -65,6 +65,10 @@ import type {
 } from "./billing/test-credit";
 import { createTestCreditRoutes } from "./billing/test-credit-routes";
 import {
+  createWeKnoraRoutes,
+  type WeKnoraRuntime,
+} from "./billing/weknora-routes";
+import {
   type BotBrowserRouteDeps,
   createBotBrowser,
 } from "./browser/bot-browser";
@@ -624,6 +628,8 @@ export function createApp(
    */
   billing?: {
     testLedger: TestCreditLedger;
+    weknora?: WeKnoraRuntime;
+    testCreditConversations?: boolean;
     paidLedger: PaidCreditLedger;
     /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
     identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
@@ -661,7 +667,10 @@ export function createApp(
     context.json({
       mode: config.runtime.mode,
       durableHistory: config.runtime.durableHistory,
-      ...(billing?.casdoorIdentityOf ? { testCreditConversations: true } : {}),
+      ...((billing?.testCreditConversations ??
+      Boolean(billing?.casdoorIdentityOf))
+        ? { testCreditConversations: true }
+        : {}),
       /*
        * Whether a Bot may answer with an interface it wrote itself.
        *
@@ -947,10 +956,19 @@ export function createApp(
   );
   app.route("/api/me/profile", createProfileRoutes(requireUser, profileStore));
   if (billing) {
+    if (billing.weknora && billing.casdoorIdentityOf)
+      app.route(
+        "/api/weknora",
+        createWeKnoraRoutes({
+          ...billing.weknora,
+          ledger: billing.testLedger,
+        }),
+      );
     app.route(
       "/api/billing",
       createTestCreditRoutes({
         ledger: billing.testLedger,
+        weknoraRouteId: billing.weknora?.routeId,
         paid: { ledger: billing.paidLedger },
         authenticate: async (request, intent) => {
           if (intent === "execution") return undefined;

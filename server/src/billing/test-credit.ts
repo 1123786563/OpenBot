@@ -1,4 +1,14 @@
-import { and, eq, isNull, lte, notExists, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  isNull,
+  like,
+  lte,
+  ne,
+  notExists,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import {
   catalogSchema,
@@ -30,6 +40,7 @@ import {
   releasePaidAllocations,
   restoreHolds,
 } from "./paid-ledger";
+import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -109,6 +120,11 @@ const identityFilter = ({ issuer, subject }: VerifiedBillingIdentity) =>
   and(eq(accounts.issuer, issuer), eq(accounts.subject, subject));
 const operationFilter = (accountId: string, id: string) =>
   and(eq(operations.accountId, accountId), eq(operations.id, id));
+
+// The account already partitions resume points. An ingestion point also
+// needs its immutable grant ID before an operation row (and its FK) exists.
+const ingestionPointKey = (authorizationId: string, operationId: string) =>
+  `weknora:${authorizationId}:${operationId}`;
 
 const denied = (
   reason:
@@ -263,6 +279,7 @@ function operationReceipt(operation: Operation, verified?: Evidence) {
     outputTokens: (outputTokens ?? verified?.outputTokens)?.toString() ?? null,
     budgetId,
     stepId,
+    applicationId: operation.applicationId,
     resultText,
   };
 }
@@ -483,10 +500,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     return row;
   }
 
-  async function application(id: string, tx: Transaction) {
-    return (
-      await tx.select().from(applications).where(eq(applications.id, id))
-    )[0];
+  async function application(id: string, tx: Transaction, lock = false) {
+    const query = tx.select().from(applications).where(eq(applications.id, id));
+    return (await (lock ? query.for("share") : query))[0];
   }
 
   async function authorizationRecord(
@@ -567,7 +583,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     at: Date,
   ) {
     const held = await authorization(accountId, input.authorizationId, tx);
-    const path = held ? await application(held.applicationId, tx) : undefined;
+    const path = held
+      ? await application(held.applicationId, tx, true)
+      : undefined;
     if (
       !held ||
       !path ||
@@ -807,7 +825,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
 
     async modelOptions() {
       const active = await activeRoutes(database);
-      return active?.options.map(modelOption) ?? [];
+      return (
+        active?.options
+          .filter(({ purpose }) => purpose !== "embedding")
+          .map(modelOption) ?? []
+      );
     },
 
     async resolveQuote(
@@ -821,10 +843,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           ? "bot"
           : "harness";
       const saved = preferences.conversation ?? preferences.bot;
-      const route = active?.options.find(({ id, revision }) =>
-        saved
-          ? id === saved.id && revision === saved.revision
-          : id === active.defaultRoute,
+      const route = active?.options.find(
+        ({ id, revision, purpose }) =>
+          purpose !== "embedding" &&
+          (saved
+            ? id === saved.id && revision === saved.revision
+            : id === active.defaultRoute),
       );
       const options = active?.options.map(modelOption) ?? [];
       if (route && active?.priceVersion)
@@ -837,6 +861,15 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         ? `Saved ${source === "bot" ? "Bot default" : "Conversation override"} is no longer verified for this Harness. Choose another verified model or clear the saved selection.`
         : "No verified administrator default is available for this Harness. Ask an administrator to publish a default.";
       return { source, options, reason } as const;
+    },
+
+    async embeddingQuote(routeId: string) {
+      const active = await activeRoutes(database);
+      const route = active?.options.find(
+        ({ id, purpose }) => id === routeId && purpose === "embedding",
+      );
+      if (route && active?.priceVersion)
+        return { route, quote: quoteFor(route, active.priceVersion) };
     },
 
     async quote() {
@@ -906,10 +939,18 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // False for a caller that will not retry this operation by its ID.
         resumable?: boolean;
       },
+      { embedding = false } = {},
     ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
+        if (
+          embedding &&
+          (request.applicationId !== WEKNORA_APPLICATION_ID ||
+            !request.authorizationId ||
+            request.creditType !== "test")
+        )
+          return denied("not_authorized");
         const now = await currentTime(tx);
         await applyCutoff(tx, accountId, now);
         const expired = new Date(now.getTime() - reservationMilliseconds);
@@ -934,13 +975,19 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // A step that stopped for want of credits or budget room resumes on
         // the budget the person confirmed for it (#107 安全续做点): that one
         // confirmation is the entry for this step, whatever the runner asks.
+        const ingestionAuthorizationId = embedding
+          ? request.authorizationId
+          : undefined;
+        const pointId = ingestionAuthorizationId
+          ? ingestionPointKey(ingestionAuthorizationId, request.operationId)
+          : request.operationId;
         const [paused] = await tx
           .select()
           .from(resumePoints)
           .where(
             and(
               eq(resumePoints.accountId, accountId),
-              eq(resumePoints.operationId, request.operationId),
+              eq(resumePoints.operationId, pointId),
             ),
           )
           .for("update");
@@ -966,7 +1013,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             .insert(resumePoints)
             .values({
               accountId,
-              operationId: input.operationId,
+              operationId: pointId,
               applicationId:
                 input.applicationId ?? under?.held?.applicationId ?? null,
               reason,
@@ -990,17 +1037,25 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         };
         const existing = await operation(accountId, input.operationId, tx);
         if (existing) {
+          if (
+            existing.authorizationId !== (input.authorizationId ?? null) ||
+            (existing.route.purpose === "embedding") !== embedding ||
+            (embedding && existing.stepId !== input.stepId) ||
+            (input.applicationId !== undefined &&
+              existing.applicationId !== input.applicationId)
+          )
+            return denied("not_authorized");
           const sameQuote =
             existing.route.id === input.route &&
             existing.priceVersion === input.priceVersion &&
             existing.rerunOfOperationId ===
               (input.rerunOfOperationId ?? null) &&
-            existing.budgetId === (input.budgetId ?? null) &&
+            (embedding || existing.budgetId === (input.budgetId ?? null)) &&
             existing.stepId === (input.stepId ?? null);
           if (
             existing.rerunOfOperationId !==
               (input.rerunOfOperationId ?? null) ||
-            existing.budgetId !== (input.budgetId ?? null) ||
+            (!embedding && existing.budgetId !== (input.budgetId ?? null)) ||
             existing.stepId !== (input.stepId ?? null)
           )
             return denied("not_authorized");
@@ -1042,13 +1097,41 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             )
           : undefined;
         if (under?.refusal) return denied(under.refusal);
+        if (!embedding && under?.held.applicationId === WEKNORA_APPLICATION_ID)
+          return denied("not_authorized");
         // Within the resource scope the person granted, which every step of
         // an application names (#111 资源范围).
         if (
           under?.held &&
-          !request.resourceId?.startsWith(under.held.resourcePrefix)
+          (embedding
+            ? under.held.kind !== "background" ||
+              request.resourceId !== under.held.resourcePrefix
+            : !request.resourceId?.startsWith(under.held.resourcePrefix))
         )
           return denied("not_authorized");
+        if (ingestionAuthorizationId) {
+          if (
+            paused?.reason === "execution_limit" &&
+            continued?.creditType !== "test"
+          )
+            return denied("execution_limit");
+          const [priorPause] = await tx
+            .select({ operationId: resumePoints.operationId })
+            .from(resumePoints)
+            .where(
+              and(
+                eq(resumePoints.accountId, accountId),
+                like(
+                  resumePoints.operationId,
+                  ingestionPointKey(ingestionAuthorizationId, "%"),
+                ),
+                ne(resumePoints.operationId, pointId),
+                eq(resumePoints.reason, "execution_limit"),
+              ),
+            )
+            .limit(1);
+          if (priorPause) return denied("execution_limit");
+        }
         const executionBudget = input.budgetId
           ? await budget(accountId, input.budgetId, tx)
           : undefined;
@@ -1067,7 +1150,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           return pause("execution_limit");
         const active = await activeRoutes(tx, true);
         const route = active?.options.find(({ id }) => id === input.route);
-        if (!route || active?.priceVersion !== input.priceVersion)
+        if (
+          !route ||
+          (route.purpose === "embedding") !== embedding ||
+          active?.priceVersion !== input.priceVersion
+        )
           return denied("route_unavailable");
         const balance = await totals(tx, accountId);
         const reserved = BigInt(route.maxChargeMicrocredits);
@@ -1120,12 +1207,14 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           if (used + reserved > executionBudget.limitMicrocredits)
             return pause("execution_limit");
         }
-        // The application's own ceiling is the person's to raise (#111 限额),
-        // not a budget to set, so this one is not a resume point.
+        // Ingestion waits at its original operation until the person raises
+        // the grant ceiling and confirms a Test Credit continuation budget.
         if (under?.held) {
           const used = await authorizationUsage(tx, accountId, under.held.id);
           if (used + reserved > under.held.limitMicrocredits)
-            return denied("execution_limit");
+            return embedding
+              ? pause("execution_limit")
+              : denied("execution_limit");
         }
         // The pilot-wide provider-cost ceiling is acquired in the same
         // transaction as the user reservation: both hold or neither does.
@@ -1176,6 +1265,15 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         }
         if (!row)
           throw new Error("Test Credit reservation could not be created");
+        if (ingestionAuthorizationId && paused)
+          await tx
+            .delete(resumePoints)
+            .where(
+              and(
+                eq(resumePoints.accountId, accountId),
+                eq(resumePoints.operationId, pointId),
+              ),
+            );
         return {
           state: "reserved",
           permit: row.permit,
@@ -1484,11 +1582,39 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           )
           .limit(1);
         const step = row?.test_credit_operations;
-        const record = step && (await operation(step.accountId, step.id, tx));
+        if (!step || !(await lockAccount(tx, step.accountId))) return undefined;
+        if (step.route.purpose === "embedding")
+          return settlePending(tx, step.accountId, step.id);
+        await applyCutoff(tx, step.accountId, await currentTime(tx));
+        const record = await operation(step.accountId, step.id, tx);
         return (
           record && operationReceipt(record, await eligibleEvidence(tx, record))
         );
       });
+    },
+
+    async ingestionPause(authorizationId: string, operationId: string) {
+      const [row] = await database
+        .select({
+          reason: resumePoints.reason,
+          confirmedAt: resumePoints.confirmedAt,
+        })
+        .from(resumePoints)
+        .innerJoin(
+          authorizations,
+          eq(authorizations.accountId, resumePoints.accountId),
+        )
+        .where(
+          and(
+            eq(authorizations.id, authorizationId),
+            eq(authorizations.applicationId, WEKNORA_APPLICATION_ID),
+            eq(
+              resumePoints.operationId,
+              ingestionPointKey(authorizationId, operationId),
+            ),
+          ),
+        );
+      return row;
     },
 
     /**
@@ -1535,7 +1661,13 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             ),
           )
           .orderBy(resumePoints.createdAt);
-        return rows;
+        return rows.map((row) => {
+          const [application, authorizationId, operationId] =
+            row.operationId.split(":");
+          return application === "weknora" && authorizationId && operationId
+            ? { ...row, authorizationId, operationId }
+            : row;
+        });
       });
     },
 
@@ -1548,17 +1680,32 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       identity: VerifiedBillingIdentity,
       operationId: string,
       budgetId: string,
+      authorizationId?: string,
+      newLimit?: bigint,
     ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return undefined;
+        const pointId = authorizationId
+          ? ingestionPointKey(authorizationId, operationId)
+          : operationId;
+        const grant = authorizationId
+          ? await authorization(accountId, authorizationId, tx)
+          : undefined;
+        if (
+          authorizationId &&
+          (grant?.applicationId !== WEKNORA_APPLICATION_ID ||
+            grant.revokedAt ||
+            grant.expiresAt <= (await currentTime(tx)))
+        )
+          return undefined;
         const [point] = await tx
           .select()
           .from(resumePoints)
           .where(
             and(
               eq(resumePoints.accountId, accountId),
-              eq(resumePoints.operationId, operationId),
+              eq(resumePoints.operationId, pointId),
             ),
           )
           .for("update");
@@ -1568,10 +1715,29 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         if (
           target?.state !== "active" ||
           target.confirmedAt === null ||
-          (point.reason === "insufficient_credits" &&
-            target.creditType !== "paid")
+          (authorizationId
+            ? target.creditType !== "test" || point.reason !== "execution_limit"
+            : point.reason === "insufficient_credits" &&
+              target.creditType !== "paid")
         )
           return { state: "denied" as const };
+        if (newLimit !== undefined) {
+          if (
+            !grant ||
+            newLimit < grant.limitMicrocredits ||
+            (newLimit === grant.limitMicrocredits && point.confirmedAt === null)
+          )
+            return { state: "denied" as const };
+          await tx
+            .update(authorizations)
+            .set({ limitMicrocredits: newLimit })
+            .where(
+              and(
+                eq(authorizations.accountId, accountId),
+                eq(authorizations.id, grant.id),
+              ),
+            );
+        }
         const confirmedAt = await currentTime(tx);
         await tx
           .update(resumePoints)
@@ -1579,7 +1745,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           .where(
             and(
               eq(resumePoints.accountId, accountId),
-              eq(resumePoints.operationId, operationId),
+              eq(resumePoints.operationId, pointId),
             ),
           );
         return {
@@ -1598,15 +1764,20 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
 
     async beginDispatch(
       identity: VerifiedBillingIdentity,
-      input: { operationId: string; permit: string },
-      { executorAvailable = true } = {},
+      input: { operationId: string; permit: string; authorizationId?: string },
+      { executorAvailable = true, embedding = false } = {},
     ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
         await applyCutoff(tx, accountId, await currentTime(tx));
         const row = await operation(accountId, input.operationId, tx);
-        if (!row || row.permit !== input.permit)
+        if (
+          !row ||
+          row.permit !== input.permit ||
+          (row.route.purpose === "embedding") !== embedding ||
+          row.authorizationId !== (input.authorizationId ?? null)
+        )
           return denied("not_authorized");
         if (row.state !== "reserved")
           return {
@@ -1623,19 +1794,30 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           await releaseReservation(tx, row);
           return denied("not_authorized");
         }
+        let deadline: Date | undefined;
         if (row.authorizationId) {
           // Revoked, expired or paused since the reservation: it does not
           // run (#111 在派发前复查, #112).
+          // The reservation already matched the immutable task of this grant.
+          const grant = await authorization(
+            row.accountId,
+            row.authorizationId,
+            tx,
+          );
           const under = await underAuthorization(
             tx,
             row.accountId,
-            { authorizationId: row.authorizationId },
+            {
+              authorizationId: row.authorizationId,
+              taskId: grant?.taskId ?? undefined,
+            },
             await currentTime(tx),
           );
           if (under.refusal) {
             await releaseReservation(tx, row);
             return denied(under.refusal);
           }
+          deadline = under.held.expiresAt;
         }
         if (row.budgetId) {
           // The budget's Credit type was matched to the entry at reservation
@@ -1660,6 +1842,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         const active = await activeRoutes(tx, true);
         const eligible = routeEligible(active, row.route);
         const dispatchedAt = await currentTime(tx);
+        if (deadline && dispatchedAt >= deadline) {
+          await releaseReservation(tx, row);
+          return denied("not_authorized");
+        }
         if (
           !eligible ||
           dispatchedAt.getTime() - row.createdAt.getTime() >=
@@ -1799,6 +1985,18 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     },
 
     recordEvidence,
+    async settleEmbedding(
+      accountId: string,
+      id: string,
+      verified: Evidence,
+      vectors?: number[][],
+    ) {
+      const recorded = await recordEvidence(accountId, id, {
+        ...verified,
+        resultText: vectors === undefined ? undefined : JSON.stringify(vectors),
+      });
+      return recorded && settleRecorded(accountId, id);
+    },
     async recordResult(accountId: string, id: string, text: string) {
       if (!text.trim()) throw new Error("Test Credit result must not be empty");
       return database.transaction(async (tx) => {
@@ -1889,10 +2087,17 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       };
     },
 
-    async reconcile(identity: VerifiedBillingIdentity, id: string) {
+    async reconcile(
+      identity: VerifiedBillingIdentity,
+      id: string,
+      authorizationId?: string,
+    ) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return undefined;
+        const row = await operation(accountId, id, tx);
+        if (!row || row.authorizationId !== (authorizationId ?? null))
+          return undefined;
         return settlePending(tx, accountId, id);
       });
     },

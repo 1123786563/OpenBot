@@ -75,6 +75,7 @@ import {
   type ResumePoint,
   resumePointsQueryOptions,
   type SpendingAuthorization,
+  weknoraPreviewQueryOptions,
 } from "@/lib/billing/queries";
 import { queryClient } from "@/query-client";
 
@@ -401,7 +402,9 @@ function AppAccessSection({
                 <ItemContent>
                   <ItemTitle>{nameOf(held.applicationId)}</ItemTitle>
                   <ItemDescription className="line-clamp-none">
-                    {`${held.kind === "background" ? `For task ${held.taskId}. ` : ""}Limit ${creditsText(held.limitMicrocredits)} credits. Used ${creditsText(held.spentMicrocredits)}. Until ${onDate(held.expiresAt)}.`}
+                    {held.applicationId === "weknora"
+                      ? `Upload authorization ID ${held.authorizationId}. Limit ${creditsText(held.limitMicrocredits)} Test credits. Used ${creditsText(held.spentMicrocredits)}. Until ${onDate(held.expiresAt)}.`
+                      : `${held.kind === "background" ? `For task ${held.taskId}. ` : ""}Limit ${creditsText(held.limitMicrocredits)} credits. Used ${creditsText(held.spentMicrocredits)}. Until ${onDate(held.expiresAt)}.`}
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
@@ -614,14 +617,22 @@ function WaitingSection({
                     : "A task"}
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  {point.budgetId
-                    ? `Continues on a ${point.creditType === "paid" ? "Paid" : "Test"} budget.`
-                    : point.reason === "insufficient_credits"
-                      ? "Its Test credits ran out."
-                      : "It reached its budget."}
+                  {point.budgetId && point.authorizationId
+                    ? "Limit confirmed. Retry the paused upload in WeKnora."
+                    : point.budgetId
+                      ? `Continues on a ${point.creditType === "paid" ? "Paid" : "Test"} budget.`
+                      : point.reason === "insufficient_credits"
+                        ? point.authorizationId
+                          ? "Add Test credits, then retry the upload."
+                          : "Its Test credits ran out."
+                        : point.authorizationId
+                          ? "It reached the upload spending limit."
+                          : "It reached its budget."}
                 </ItemDescription>
               </ItemContent>
-              {point.budgetId ? null : (
+              {point.budgetId ||
+              (point.authorizationId &&
+                point.reason === "insufficient_credits") ? null : (
                 <ItemActions>
                   <Button
                     onClick={(event) => onContinue(point, event.currentTarget)}
@@ -629,7 +640,9 @@ function WaitingSection({
                     type="button"
                     variant="outline"
                   >
-                    Set a budget to continue
+                    {point.authorizationId
+                      ? "Raise upload limit"
+                      : "Set a budget to continue"}
                   </Button>
                 </ItemActions>
               )}
@@ -661,6 +674,21 @@ function SetBudgetDialog({
   );
   const [limitCredits, setLimitCredits] = useState("");
   const limit = microcreditsFromCredits(limitCredits);
+  const authorizationId = resume?.authorizationId;
+  const grants = useQuery({
+    ...authorizationsQueryOptions(),
+    enabled: Boolean(authorizationId),
+  });
+  const grant = grants.data?.find(
+    (item) => item.authorizationId === authorizationId,
+  );
+  const ready = Boolean(
+    limit &&
+      (!authorizationId ||
+        (grant?.state === "active" &&
+          BigInt(limit) > BigInt(grant.limitMicrocredits))),
+  );
+
   const create = useMutation(createBudgetMutationOptions(queryClient));
   const confirm = useMutation(confirmResumePointMutationOptions(queryClient));
   const saving = create.isPending || confirm.isPending;
@@ -669,11 +697,15 @@ function SetBudgetDialog({
     <Dialog onOpenChange={(next) => !next && onClose()} open>
       <DialogContent {...astryxScope} finalFocus={returnFocus}>
         <DialogHeader>
-          <DialogTitle>Set a budget</DialogTitle>
+          <DialogTitle>
+            {authorizationId ? "Raise upload limit" : "Set a budget"}
+          </DialogTitle>
           <DialogDescription>
-            {resume
-              ? "This task continues on the budget you set here. It stops when it has spent this many credits."
-              : "A task stops when it has spent this many credits. The Credit type is fixed when the task starts."}
+            {authorizationId
+              ? "Confirm a higher Test Credit limit, then retry the paused upload in WeKnora."
+              : resume
+                ? "This task continues on the budget you set here. It stops when it has spent this many credits."
+                : "A task stops when it has spent this many credits. The Credit type is fixed when the task starts."}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="mt-4 overflow-y-auto">
@@ -683,7 +715,7 @@ function SetBudgetDialog({
             id={formId}
             onSubmit={(event) => {
               event.preventDefault();
-              if (!limit) return;
+              if (!ready || !limit) return;
               create.mutate(
                 { creditType, limitCredits },
                 {
@@ -695,6 +727,10 @@ function SetBudgetDialog({
                           {
                             operationId: resume.operationId,
                             budgetId: budget.budgetId,
+                            authorizationId,
+                            limitMicrocredits: authorizationId
+                              ? limit
+                              : undefined,
                           },
                           { onSuccess: onClose },
                         )
@@ -704,30 +740,36 @@ function SetBudgetDialog({
             }}
           >
             <FieldGroup>
+              {!authorizationId ? (
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-type`}>
+                    Credit type
+                  </FieldLabel>
+                  <Select
+                    items={CREDIT_TYPES}
+                    onValueChange={(value) =>
+                      setCreditType(value === "paid" ? "paid" : "test")
+                    }
+                    value={creditType}
+                  >
+                    <SelectTrigger className="w-full" id={`${formId}-type`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="test">Test credits</SelectItem>
+                      <SelectItem value="paid">Paid credits</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    Test credits are free to try. Paid credits come from a plan
+                    or a Credit Pack you bought.
+                  </FieldDescription>
+                </Field>
+              ) : null}
               <Field>
-                <FieldLabel htmlFor={`${formId}-type`}>Credit type</FieldLabel>
-                <Select
-                  items={CREDIT_TYPES}
-                  onValueChange={(value) =>
-                    setCreditType(value === "paid" ? "paid" : "test")
-                  }
-                  value={creditType}
-                >
-                  <SelectTrigger className="w-full" id={`${formId}-type`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="test">Test credits</SelectItem>
-                    <SelectItem value="paid">Paid credits</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  Test credits are free to try. Paid credits come from a plan or
-                  a Credit Pack you bought.
-                </FieldDescription>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={`${formId}-limit`}>Limit</FieldLabel>
+                <FieldLabel htmlFor={`${formId}-limit`}>
+                  {authorizationId ? "New upload spending limit" : "Limit"}
+                </FieldLabel>
                 <Input
                   id={`${formId}-limit`}
                   inputMode="decimal"
@@ -736,6 +778,12 @@ function SetBudgetDialog({
                   required
                   value={limitCredits}
                 />
+                {grant ? (
+                  <FieldDescription>
+                    Current limit {creditsText(grant.limitMicrocredits)} Test
+                    credits.
+                  </FieldDescription>
+                ) : null}
                 {limitCredits && !limit ? (
                   <FieldDescription>
                     Enter a positive amount of credits, with up to six decimals.
@@ -754,8 +802,12 @@ function SetBudgetDialog({
           <Button onClick={onClose} type="button" variant="outline">
             Cancel
           </Button>
-          <Button disabled={!limit || saving} type="submit" form={formId}>
-            {saving ? "Setting…" : "Set budget"}
+          <Button disabled={!ready || saving} type="submit" form={formId}>
+            {saving
+              ? "Saving…"
+              : authorizationId
+                ? "Confirm new limit"
+                : "Set budget"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -789,8 +841,48 @@ function AuthorizeAppDialog({
   const authorize = useMutation(
     authorizeApplicationMutationOptions(queryClient),
   );
-  // A background grant is bound to one task, so it has to name it.
-  const ready = Boolean(limit && resources && (kind === "online" || taskId));
+  const ingestion = applicationId === "weknora";
+  const preview = useQuery({
+    ...weknoraPreviewQueryOptions(),
+    enabled: ingestion,
+  });
+  const grantId = ingestion ? authorize.data?.authorizationId : undefined;
+  const ready = Boolean(
+    limit &&
+      (ingestion
+        ? preview.data &&
+          /^weknora:tenant:[0-9]+:kb:[a-zA-Z0-9_-]{1,128}$/.test(resources)
+        : resources && (kind === "online" || taskId)),
+  );
+
+  if (grantId)
+    return (
+      <Dialog onOpenChange={(next) => !next && onClose()} open>
+        <DialogContent {...astryxScope} finalFocus={returnFocus}>
+          <DialogHeader>
+            <DialogTitle>WeKnora is authorized</DialogTitle>
+            <DialogDescription>
+              Send this ID in the openbot_authorization_id field when you upload
+              to WeKnora.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-authorization`}>
+                Authorization ID
+              </FieldLabel>
+              <Input id={`${formId}-authorization`} value={grantId} readOnly />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={onClose} type="button">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
       <DialogContent {...astryxScope} finalFocus={returnFocus}>
@@ -818,7 +910,11 @@ function AuthorizeAppDialog({
                   limitCredits,
                   days: Number(days),
                 },
-                { onSuccess: onClose },
+                {
+                  onSuccess: () => {
+                    if (!ingestion) onClose();
+                  },
+                },
               );
             }}
           >
@@ -860,7 +956,7 @@ function AuthorizeAppDialog({
               </Field>
               <Field>
                 <FieldLabel htmlFor={`${formId}-resources`}>
-                  Resources
+                  {ingestion ? "Knowledge base resource ID" : "Resources"}
                 </FieldLabel>
                 <Input
                   id={`${formId}-resources`}
@@ -869,32 +965,37 @@ function AuthorizeAppDialog({
                   value={resources}
                 />
                 <FieldDescription>
-                  The app can spend only on resources whose names start with
-                  this.
+                  {ingestion
+                    ? "Enter the exact knowledge base resource ID for this upload."
+                    : "The app can spend only on resources whose names start with this."}
                 </FieldDescription>
               </Field>
-              <Field>
-                <FieldLabel htmlFor={`${formId}-kind`}>Kind</FieldLabel>
-                <Select
-                  items={CALL_KINDS}
-                  onValueChange={(next) =>
-                    setKind(next === "background" ? "background" : "online")
-                  }
-                  value={kind}
-                >
-                  <SelectTrigger className="w-full" id={`${formId}-kind`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="online">Online</SelectItem>
-                    <SelectItem value="background">Background task</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  A background grant is for one task.
-                </FieldDescription>
-              </Field>
-              {kind === "background" ? (
+              {!ingestion ? (
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-kind`}>Kind</FieldLabel>
+                  <Select
+                    items={CALL_KINDS}
+                    onValueChange={(next) =>
+                      setKind(next === "background" ? "background" : "online")
+                    }
+                    value={kind}
+                  >
+                    <SelectTrigger className="w-full" id={`${formId}-kind`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="background">
+                        Background task
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    A background grant is for one task.
+                  </FieldDescription>
+                </Field>
+              ) : null}
+              {!ingestion && kind === "background" ? (
                 <Field>
                   <FieldLabel htmlFor={`${formId}-task`}>Task</FieldLabel>
                   <Input
@@ -906,7 +1007,18 @@ function AuthorizeAppDialog({
                 </Field>
               ) : null}
               <Field>
-                <FieldLabel htmlFor={`${formId}-limit`}>Limit</FieldLabel>
+                <FieldLabel htmlFor={`${formId}-limit`}>
+                  {ingestion ? "Upload spending limit" : "Limit"}
+                </FieldLabel>
+                {ingestion ? (
+                  <FieldDescription>
+                    {preview.data
+                      ? `${creditsText(preview.data.price.inputPerMillion)} Test credits per million input tokens. Each batch can reserve up to ${creditsText(preview.data.maxChargeMicrocredits)} Test credits.`
+                      : preview.error
+                        ? "The WeKnora price is unavailable."
+                        : "Loading the WeKnora price…"}
+                  </FieldDescription>
+                ) : null}
                 <Input
                   id={`${formId}-limit`}
                   inputMode="decimal"
@@ -921,7 +1033,9 @@ function AuthorizeAppDialog({
                   </FieldDescription>
                 ) : (
                   <FieldDescription>
-                    The most it can spend, in credits.
+                    {ingestion
+                      ? "The total this upload can spend, in Test credits."
+                      : "The most it can spend, in credits."}
                   </FieldDescription>
                 )}
               </Field>

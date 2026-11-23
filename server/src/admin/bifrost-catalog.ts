@@ -10,12 +10,13 @@ const price = z.strictObject({
   outputPerMillion: z.number().int().nonnegative().max(1_000_000_000_000),
 });
 const route = z.strictObject({
+  purpose: z.literal("embedding").optional(),
   provider: id,
   model: reference,
   gatewayRevision: reference,
   meteringRevision: reference,
   maxInputTokens: tokens,
-  maxOutputTokens: tokens,
+  maxOutputTokens: z.number().int().nonnegative().max(10_000_000),
   tools: z.boolean(),
   price,
 });
@@ -31,6 +32,13 @@ export const configuration = z
     const entries = Object.values(routes);
     return (
       entries.length <= 2 &&
+      entries.every((entry) =>
+        entry.purpose === "embedding"
+          ? entry.maxOutputTokens === 0 &&
+            entry.price.outputPerMillion === 0 &&
+            !entry.tools
+          : entry.maxOutputTokens > 0,
+      ) &&
       new Set(entries.map(({ provider }) => provider)).size ===
         entries.length &&
       new Set(entries.map(({ model }) => model)).size === entries.length
@@ -177,11 +185,32 @@ export const qualificationReport = traceEvidenceV2.extend({
   }),
 });
 
+export const embeddingEvidence = evidenceIdentity.extend({
+  version: z.literal(3),
+  completed: z.strictObject({
+    requestSha256: meterProof.shape.requestSha256,
+    meter: meterProof,
+    gateway: gatewayTrace.extend({
+      inputTokens: tokens,
+      vectors: z.number().int().positive(),
+    }),
+    upstream: providerTrace.omit({ outputCap: true }).extend({
+      inputTokens: tokens,
+    }),
+  }),
+  inputLimit: traceEvidenceV2.shape.inputLimit,
+});
+
 const configuredRoute = route.extend({
   revision: z.uuid(),
   verification: z
     .strictObject({
-      report: z.union([qualificationReport, traceEvidenceV2, legacyEvidence]),
+      report: z.union([
+        qualificationReport,
+        embeddingEvidence,
+        traceEvidenceV2,
+        legacyEvidence,
+      ]),
       by: z.string(),
       at: z.iso.datetime(),
     })
@@ -197,7 +226,7 @@ export const releaseSchema = z.strictObject({
   by: z.string(),
   at: z.iso.datetime(),
   harnessImage: harness,
-  defaultRoute: id,
+  defaultRoute: id.nullable(),
   routes: z.array(releasedRoute).min(1).max(2),
 });
 export const catalogSchema = z.strictObject({
@@ -287,6 +316,7 @@ function matchesTrace(
     meter.meteringRevision === entry.meteringRevision;
 
   return (
+    entry.purpose !== "embedding" &&
     report.revision === entry.revision &&
     report.harnessImage === harnessImage &&
     report.provider === entry.provider &&
@@ -329,6 +359,59 @@ function matchesTrace(
   );
 }
 
+function matchesEmbedding(
+  report: z.infer<typeof embeddingEvidence>,
+  entry: ConfiguredRoute,
+  harnessImage: Catalog["harnessImage"],
+) {
+  const { completed, inputLimit } = report;
+  const { gateway, meter, upstream } = completed;
+  return (
+    entry.purpose === "embedding" &&
+    entry.maxOutputTokens === 0 &&
+    entry.price.outputPerMillion === 0 &&
+    !entry.tools &&
+    report.revision === entry.revision &&
+    report.harnessImage === harnessImage &&
+    report.provider === entry.provider &&
+    report.model === entry.model &&
+    report.gatewayRevision === entry.gatewayRevision &&
+    report.meteringRevision === entry.meteringRevision &&
+    gateway.provider === entry.provider &&
+    gateway.model === entry.model &&
+    upstream.provider === entry.provider &&
+    upstream.model === entry.model &&
+    upstream.gatewayRequestId === gateway.requestId &&
+    gateway.requestId !== inputLimit.requestId &&
+    gateway.runId !== inputLimit.runId &&
+    meter.requestId === gateway.requestId &&
+    meter.requestSha256 === completed.requestSha256 &&
+    inputLimit.meter.requestId === inputLimit.requestId &&
+    inputLimit.meter.requestSha256 === inputLimit.requestSha256 &&
+    [meter, inputLimit.meter].every(
+      (proof) =>
+        proof.gatewayRevision === entry.gatewayRevision &&
+        proof.meteringRevision === entry.meteringRevision,
+    ) &&
+    upstream.inputTokens === gateway.inputTokens &&
+    gateway.inputTokens <= meter.inputTokenUpperBound &&
+    meter.inputTokenUpperBound <= entry.maxInputTokens &&
+    inputLimit.meter.inputTokenUpperBound > entry.maxInputTokens
+  );
+}
+
+const currentEvidence = z.union([qualificationReport, embeddingEvidence]);
+
+function matchesEvidence(
+  report: z.infer<typeof currentEvidence>,
+  entry: ConfiguredRoute,
+  harnessImage: Catalog["harnessImage"],
+) {
+  return "completed" in report
+    ? matchesEmbedding(report, entry, harnessImage)
+    : matchesTrace(report, entry, harnessImage);
+}
+
 export function verify(
   current: Catalog,
   id: string,
@@ -338,11 +421,11 @@ export function verify(
   const entry = Object.hasOwn(current.routes, id)
     ? current.routes[id]
     : undefined;
-  const parsed = qualificationReport.safeParse(input);
+  const parsed = currentEvidence.safeParse(input);
   if (!entry || !parsed.success)
     throw new CatalogConflict("Missing valid live-provider evidence.");
   const report = parsed.data;
-  if (!matchesTrace(report, entry, current.harnessImage)) {
+  if (!matchesEvidence(report, entry, current.harnessImage)) {
     throw new CatalogConflict(
       "Live-provider evidence does not match the configured route and capabilities.",
     );
@@ -362,17 +445,18 @@ export function verify(
 export const publication = z
   .strictObject({
     routes: z.array(id).min(1).max(2),
-    defaultRoute: id,
+    defaultRoute: id.nullable(),
   })
   .refine(
     ({ routes, defaultRoute }) =>
-      new Set(routes).size === routes.length && routes.includes(defaultRoute),
+      new Set(routes).size === routes.length &&
+      (defaultRoute === null || routes.includes(defaultRoute)),
   );
 
 export function publish(
   current: Catalog,
   ids: string[],
-  defaultRoute: string,
+  defaultRoute: string | null,
   by: string,
 ) {
   if (
@@ -391,7 +475,7 @@ export function publish(
       !entry?.verification ||
       !("version" in entry.verification.report) ||
       entry.verification.report.version !== 3 ||
-      !matchesTrace(entry.verification.report, entry, current.harnessImage)
+      !matchesEvidence(entry.verification.report, entry, current.harnessImage)
     )
       throw new CatalogConflict("Each published route requires verification.");
     const million = 1_000_000n;
@@ -409,6 +493,15 @@ export function publish(
       verification: entry.verification,
     };
   });
+  const chat = routes.filter(({ purpose }) => purpose !== "embedding");
+  if (
+    chat.length > 0
+      ? !chat.some(({ id }) => id === defaultRoute)
+      : defaultRoute !== null
+  )
+    throw new CatalogConflict(
+      "Choose a chat default when publishing chat routes.",
+    );
   const release = {
     id: randomUUID(),
     by,
@@ -427,14 +520,16 @@ export function view(current: Catalog) {
       current.routes[option.id]?.revision === option.revision &&
       "version" in option.verification.report &&
       option.verification.report.version === 3 &&
-      matchesTrace(option.verification.report, option, current.harnessImage),
+      matchesEvidence(option.verification.report, option, current.harnessImage),
   );
   const defaultRoute = current.publication?.defaultRoute;
   return {
     harnessImage: current.harnessImage,
     priceVersion: current.publication?.id ?? null,
     options,
-    defaultRoute: options.some(({ id }) => id === defaultRoute)
+    defaultRoute: options.some(
+      ({ id, purpose }) => id === defaultRoute && purpose !== "embedding",
+    )
       ? defaultRoute
       : null,
   };

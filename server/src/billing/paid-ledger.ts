@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   billingApplications,
@@ -16,9 +16,16 @@ import {
 } from "../db/schema";
 import {
   advancePurchasePeriod,
-  firstBillingPeriod,
   type BillingPeriod,
+  firstBillingPeriod,
 } from "./billing-period";
+
+import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
+
+const paidPathFilter = and(
+  isNotNull(billingApplications.approvedAt),
+  ne(billingApplications.id, WEKNORA_APPLICATION_ID),
+);
 
 /**
  * Paid credit ledger (#99–#101): orders that lock the purchased product
@@ -171,7 +178,7 @@ export function createPaidCreditLedger(
       const paths = await tx
         .select({ pausedAt: billingApplications.pausedAt })
         .from(billingApplications)
-        .where(isNotNull(billingApplications.approvedAt));
+        .where(paidPathFilter);
       if (paths.length > 0 && paths.every(({ pausedAt }) => pausedAt !== null))
         throw new PaidLedgerError(
           "no_paid_path",
@@ -493,7 +500,7 @@ export function createPaidCreditLedger(
         pausedAt: billingApplications.pausedAt,
       })
       .from(billingApplications)
-      .where(isNotNull(billingApplications.approvedAt))
+      .where(paidPathFilter)
       .orderBy(billingApplications.name);
   }
 

@@ -4,6 +4,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { type AppVariables, requireAdmin } from "../auth/guards";
+import { createTestCreditLedger } from "../billing/test-credit";
+import { WEKNORA_APPLICATION_ID } from "../billing/weknora-ingestion";
 import type { Database } from "../db/client";
 import { enterpriseSettings } from "../db/schema";
 import {
@@ -11,6 +13,7 @@ import {
   catalogSchema,
   configuration,
   configure,
+  embeddingEvidence,
   emptyCatalog,
   pilotCatalogKey,
   providerCancellationRecord,
@@ -120,38 +123,40 @@ export function createBifrostAdminRoutes(
     const file = Bun.file(
       join(evidenceDirectory, `${input.data.revision}.json`),
     );
-    const report = qualificationReport.safeParse(
+    const evidence =
       file.size <= 32_768
         ? await file.json().catch(() => undefined)
-        : undefined,
-    );
-    if (!report.success)
-      throw new CatalogConflict("Missing valid live-provider evidence.");
-
-    const terminalFile = Bun.file(
-      join(evidenceDirectory, `${input.data.revision}.cancel.json`),
-    );
-    const terminalRecord =
-      terminalFile.size > 0 && terminalFile.size <= 32_768
-        ? await terminalFile.arrayBuffer().catch(() => undefined)
         : undefined;
-    const terminal = report.data.cancellation.upstream.terminal;
-    const record = providerCancellationRecord.safeParse(
-      terminalRecord
-        ? await new Response(terminalRecord).json().catch(() => undefined)
-        : undefined,
-    );
-    if (
-      !terminalRecord ||
-      !record.success ||
-      record.data.requestId !== terminal.requestId ||
-      record.data.terminatedAt !== terminal.terminatedAt ||
-      `sha256:${Bun.CryptoHasher.hash("sha256", terminalRecord, "hex")}` !==
-        terminal.recordDigest
-    ) {
-      throw new CatalogConflict(
-        "Missing matching provider cancellation record.",
+    const chat = qualificationReport.safeParse(evidence);
+    const embedding = embeddingEvidence.safeParse(evidence);
+    if (!chat.success && !embedding.success)
+      throw new CatalogConflict("Missing valid live-provider evidence.");
+    if (chat.success) {
+      const terminalFile = Bun.file(
+        join(evidenceDirectory, `${input.data.revision}.cancel.json`),
       );
+      const terminalRecord =
+        terminalFile.size > 0 && terminalFile.size <= 32_768
+          ? await terminalFile.arrayBuffer().catch(() => undefined)
+          : undefined;
+      const terminal = chat.data.cancellation.upstream.terminal;
+      const record = providerCancellationRecord.safeParse(
+        terminalRecord
+          ? await new Response(terminalRecord).json().catch(() => undefined)
+          : undefined,
+      );
+      if (
+        !terminalRecord ||
+        !record.success ||
+        record.data.requestId !== terminal.requestId ||
+        record.data.terminatedAt !== terminal.terminatedAt ||
+        `sha256:${Bun.CryptoHasher.hash("sha256", terminalRecord, "hex")}` !==
+          terminal.recordDigest
+      ) {
+        throw new CatalogConflict(
+          "Missing matching provider cancellation record.",
+        );
+      }
     }
     const by = context.var.actor.id;
     const result = await update(by, async (current) => {
@@ -161,10 +166,25 @@ export function createBifrostAdminRoutes(
       ) {
         throw new CatalogConflict("Bifrost route revision changed.");
       }
-      const catalog = verify(current, id, report.data, by);
+      const catalog = verify(current, id, evidence, by);
       return { catalog, result: { catalog, active: view(catalog) } };
     });
     return context.json(result);
+  });
+
+  api.post("/applications/weknora/approve", async (context) => {
+    const ledger = createTestCreditLedger(database);
+    const registered = await ledger.registerApplication({
+      id: WEKNORA_APPLICATION_ID,
+      name: "WeKnora",
+      operator: "platform",
+      resourcePrefix: "weknora:",
+    });
+    return context.json(
+      registered.approvedAt
+        ? registered
+        : await ledger.approveApplication(registered.id, context.var.actor.id),
+    );
   });
 
   api.post("/publication", async (context) => {
