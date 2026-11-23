@@ -757,3 +757,23 @@ test("a language this browser kept decides the sign page's first frame over the 
     unSpeak();
   }
 });
+
+test("an English this browser kept decides the sign page's first frame over a Chinese ask", async () => {
+  localStorage.setItem("openbot-locale", "en");
+  const unSpeak = browserSpeaks(["zh-Hans-CN"]);
+  try {
+    initI18n();
+
+    const { view } = renderSignScreen({
+      providers: ["google"],
+      sso: false,
+      ssoRequired: false,
+    });
+    expect(
+      await view.findByRole("heading", { name: "Sign in to OpenBot" }),
+    ).toBeTruthy();
+    expect(document.title).toBe("Sign in · OpenBot");
+  } finally {
+    unSpeak();
+  }
+});
