@@ -374,3 +374,70 @@ test("the sidebar rail speaks the language and keeps the pane's state", async ()
   await user.click(rail);
   expect(pane()?.getAttribute("data-state")).toBe("expanded");
 });
+
+/*
+ * The whole matrix in Chinese, written out by hand rather than read back from the list: the words
+ * in Chinese, and the addresses exactly as they are in English. A destination that changed its
+ * address, its order or who may see it when the language changed fails here.
+ */
+const TEAM_PRIMARY = [
+  ["Bot", "/bots"],
+  ["例行任务", "/routines"],
+  ["目标", "/responsibilities?view=goals"],
+  ["能力", "/capabilities"],
+  ["连接", "/connections"],
+] as const;
+const PERSONAL_PRIMARY = [
+  ["Bot", "/bots"],
+  ["例行任务", "/routines"],
+  ["目标", "/responsibilities?view=goals"],
+  ["连接", "/connections"],
+] as const;
+const BUSINESS_THEN_SETTINGS = [
+  // Not a page: a button that opens the list of team features.
+  ["OpenBot for Business™", null],
+  ["设置", "/settings"],
+] as const;
+
+/** `[label, address]` of the pages in `root`, in document order; the Bots badge's count is left off. */
+function pages(root: HTMLElement) {
+  return links(root).map(({ label, to }) => [label.replace(/\d+$/, ""), to]);
+}
+
+test.each([
+  [
+    "admin",
+    "team",
+    TEAM_PRIMARY,
+    [
+      ["管理", "/admin"],
+      ["设置", "/settings"],
+    ],
+    true,
+  ],
+  ["user", "team", TEAM_PRIMARY, [["设置", "/settings"]], true],
+  ["admin", "personal", PERSONAL_PRIMARY, BUSINESS_THEN_SETTINGS, false],
+  ["user", "personal", PERSONAL_PRIMARY, BUSINESS_THEN_SETTINGS, false],
+] as const)(
+  "a %s on the %s edition reaches the same destinations in Chinese",
+  async (role, edition, primary, account, signOut) => {
+    const { view, user } = renderSidebar(role, edition);
+    await view.findByRole("navigation", { name: "Workspace" });
+    await act(() => setLocalePreference("zh-CN"));
+    const workspace = view.getByRole("navigation", { name: "工作区" });
+    expect(pages(workspace)).toEqual(primary.map(([label, to]) => [label, to]));
+    await user.click(view.getByRole("button", { name: /Maya Chen/ }));
+    const menu = await view.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent?.trim()),
+    ).toEqual([
+      ...account.map(([label]) => label),
+      ...(signOut ? ["退出登录"] : []),
+    ]);
+    expect(pages(menu)).toEqual(
+      account.filter(([, to]) => to).map(([label, to]) => [label, to]),
+    );
+  },
+);
