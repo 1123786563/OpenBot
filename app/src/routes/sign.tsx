@@ -274,8 +274,14 @@ function SignScreen() {
         >
           {!options && (
             <ReadError
-              message="Couldn't load sign-in options."
-              description="Check your connection and try again."
+              description={t(
+                "sign.options.loadFailedDescription",
+                "Check your connection and try again.",
+              )}
+              message={t(
+                "sign.options.loadFailed",
+                "Couldn't load sign-in options.",
+              )}
               retry={reloadOptions}
               retryBelow
               retrying={checkingOptions}

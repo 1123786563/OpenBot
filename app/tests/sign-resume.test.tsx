@@ -165,11 +165,23 @@ function renderSignScreen(
     providers: string[];
     sso: boolean;
     ssoRequired: boolean;
+    /**
+     * The options read fails, the way it does behind `beforeLoad`'s swallow. The test stubs
+     * `fetch` itself, so the failure is the real one — no server is listening on the fake origin.
+     */
+    failed?: boolean;
   },
   initialEntry = "/sign?flow_id=h1",
 ) {
-  const queryClient = new QueryClient();
-  queryClient.setQueryData(authKeys.providers(), options);
+  const queryClient = new QueryClient({
+    // A seeded read never retries; only the failed read does, and once is what the screen gets.
+    defaultOptions: { queries: { retry: false } },
+  });
+  if (options.failed) {
+    // No data: the screen renders its read-error, not a deployment with no provider.
+  } else {
+    queryClient.setQueryData(authKeys.providers(), options);
+  }
 
   queryClient.setQueryData(authKeys.currentUser(), null);
   const root = createRootRoute();
@@ -594,4 +606,30 @@ test("a refused company sign-in keeps the server's words and guides in the inter
   expect((await view.findByRole("alert")).textContent).toBe(
     "无法打开公司登录。 请检查你的公司邮箱后重试。如果问题仍然存在，请联系你的 OpenBot 管理员。",
   );
+});
+
+test("a failed read of the sign-in options speaks the interface language", async () => {
+  // The read fails for real — no server listens on the fake origin — so the screen renders from
+  // the failure `beforeLoad` swallowed, not from seeded options.
+  const realFetch = window.fetch;
+  window.fetch = () => Promise.reject(new TypeError("offline"));
+  try {
+    const { view } = renderSignScreen({
+      providers: [],
+      sso: false,
+      ssoRequired: false,
+      failed: true,
+    });
+    await view.findByText("Couldn't load sign-in options.");
+    expect(view.getByText("Check your connection and try again.")).toBeTruthy();
+    // The retry comes from the shared frame vocabulary, not a second catalog.
+    expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
+
+    await pinLocale("zh-CN");
+    expect(view.getByText("无法加载登录选项。")).toBeTruthy();
+    expect(view.getByText("请检查你的网络连接后重试。")).toBeTruthy();
+    expect(view.getByRole("button", { name: "重试" })).toBeTruthy();
+  } finally {
+    window.fetch = realFetch;
+  }
 });

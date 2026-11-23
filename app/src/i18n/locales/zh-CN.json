@@ -76,6 +76,8 @@
   "settings.language.title": "语言",
   "sign.admin.signIn": "管理员登录",
   "sign.heading": "登录 {product}",
+  "sign.options.loadFailed": "无法加载登录选项。",
+  "sign.options.loadFailedDescription": "请检查你的网络连接后重试。",
   "sign.provider.continue": "使用 {provider} 继续",
   "sign.provider.failed": "无法打开 {provider} 登录。请重试。",
   "sign.provider.opening": "正在打开 {provider}…",

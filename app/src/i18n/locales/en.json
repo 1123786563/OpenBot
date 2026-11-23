@@ -76,6 +76,8 @@
   "settings.language.title": "Language",
   "sign.admin.signIn": "Admin sign-in",
   "sign.heading": "Sign in to {product}",
+  "sign.options.loadFailed": "Couldn't load sign-in options.",
+  "sign.options.loadFailedDescription": "Check your connection and try again.",
   "sign.provider.continue": "Continue with {provider}",
   "sign.provider.failed": "Couldn't open {provider} sign-in. Try again.",
   "sign.provider.opening": "Opening {provider}…",
