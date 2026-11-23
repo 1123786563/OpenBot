@@ -292,7 +292,7 @@ export function createWakeUpStore(
       await database
         .update(workItems)
         .set({
-          payload: sql`${workItems.payload} || ${JSON.stringify({ outcome })}::jsonb`,
+          payload: sql`${workItems.payload} || ${JSON.stringify({ outcome })}::text::jsonb`,
           updatedAt: sql`now()`,
         })
         .where(and(eq(workItems.kind, WAKE_UP_KIND), eq(workItems.key, id)));

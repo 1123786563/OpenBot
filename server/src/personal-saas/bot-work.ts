@@ -11,6 +11,7 @@ import {
 import { createHeadlessComputerTools } from "../computer/headless-tools";
 import type { ActionPolicy } from "../computer/policy";
 import type { Database } from "../db/client";
+import { localAbortLeadMs } from "../work/execution";
 import { createWorkQueue } from "../work/queue";
 import { readExecutionAccess } from "./account-access";
 import { PERSONAL_BOT_WORK, type workspaceQuotas } from "./quotas";
@@ -32,10 +33,6 @@ export const botWorkInput = assistantTarget.extend({
 export const queuedBotWorkInput = botWorkInput.extend({
   testCredit: botRunCreditQuote.optional(),
 });
-
-// Give local timers and abort propagation time before the grant expires.
-// Request cancellation early enough for Intelligence stop and lease release.
-const localAbortLeadMs = 3_000;
 
 const workspaceFileTools = [
   "computer_list_files",

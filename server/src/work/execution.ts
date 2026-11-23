@@ -10,6 +10,7 @@ type ExecutionQueue = Pick<WorkQueue, "executionExpiry"> &
   >;
 
 type Grant = NonNullable<WorkItem["authorization"]>;
+export const localAbortLeadMs = 3_000;
 const active = new AsyncLocalStorage<Grant & { signal: AbortSignal }>();
 
 export function currentWorkGrant() {
@@ -51,8 +52,9 @@ export async function runAuthorizedWork<T>(
 
   function deadline() {
     clearTimeout(timer);
-    if (Date.now() >= expiresAt) expire();
-    else timer = setTimeout(expire, expiresAt - Date.now());
+    const remainingMs = expiresAt - localAbortLeadMs - Date.now();
+    if (remainingMs <= 0) expire();
+    else timer = setTimeout(expire, remainingMs);
   }
 
   function beforeDispatch() {

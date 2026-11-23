@@ -821,7 +821,7 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
     async runNow(
       ownerUserId: string,
       id: string,
-      freshKey?: string,
+      recovery?: { key: string; interruptedRunId: string },
     ): Promise<RunNowResponse> {
       const setting = await deps.store.get(ownerUserId, id);
       if (!setting.enabled)
@@ -831,7 +831,10 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
       const latest = await deps.store.latestRun(setting.id);
       if (latest?.outcome === "running")
         throw new ProactiveRefusedError("This Bot is checking in now.");
-      const last = await deps.store.lastCheckIn(setting.id);
+      const last = await deps.store.lastCheckIn(
+        setting.id,
+        recovery?.interruptedRunId,
+      );
       const wait = last
         ? RUN_NOW_GAP_MS - (now().getTime() - last.startedAt.getTime())
         : 0;
@@ -859,7 +862,7 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
       };
       const offered = await deps.queue.offer({
         kind: PROACTIVE_RUN_KIND,
-        key: freshKey ?? `${setting.id}:now:${latest?.id ?? "first"}`,
+        key: recovery?.key ?? `${setting.id}:now:${latest?.id ?? "first"}`,
         payload,
       });
       /*

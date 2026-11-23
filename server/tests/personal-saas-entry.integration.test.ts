@@ -5140,8 +5140,13 @@ test("a stopped running Bot holds its slot until the worker exits", async () => 
   expect((await create()).status).toBe(202);
 });
 
-test("the mounted workspace recovers each stopped background capability as fresh work", async () => {
+async function verifyBackgroundCutoff(
+  cutoff: (typeof automationCutoffs)[number],
+) {
+  const { createHandoffDesk } = await import("../src/agents/handoff");
+  const { createAuditStore } = await import("../src/audit");
   const { createGroupStore } = await import("../src/channels/group");
+  const { createProactiveEngine } = await import("../src/proactive/engine");
   const { createProactiveStore } = await import("../src/proactive/store");
   const { createResponsibilityStore } = await import(
     "../src/responsibilities/store"
@@ -5149,16 +5154,8 @@ test("the mounted workspace recovers each stopped background capability as fresh
   const { intelligenceChannelMappings, pluginGrants } = await import(
     "../src/db/schema"
   );
-  const account: Account = {
-    sub: crypto.randomUUID(),
-    email: "background-recovery@example.com",
-    verified: true,
-    active: true,
-  };
-  const login = async () =>
-    cookie(await authenticate(account), "__Host-openbot-personal=");
-  const initial = await login();
-  await enter(initial);
+  const owner = await isolationOwner();
+  const initial = owner.session;
   const target = await workspace(initial);
   const ownerUserId = workspaceResourceOwner(target.id);
   const agentId = target.personalAssistant.id;
@@ -5213,7 +5210,8 @@ test("the mounted workspace recovers each stopped background capability as fresh
     .values({ kind: "bot", agentId: sourceBotId, ref: agentId });
 
   const groups = createGroupStore(database, () => crypto.randomUUID());
-  const setting = await createProactiveStore(database).create(
+  const proactiveStore = createProactiveStore(database);
+  const setting = await proactiveStore.create(
     ownerUserId,
     {
       agentId,
@@ -5243,22 +5241,29 @@ test("the mounted workspace recovers each stopped background capability as fresh
     })
   ).runIds;
   if (!responsibility) throw new Error("Expected a queued responsibility");
-  const checkIn = `${setting.id}:scheduled`;
+  const checkIn = `${setting.id}:now:first`;
   const group = `message:${crypto.randomUUID()}`;
-  const handoff = `hop:${crypto.randomUUID()}:${crypto.randomUUID()}`;
   const queue = createWorkQueue(database, now);
-  expect(
-    await queue.offer({
-      kind: "proactive.run",
-      key: checkIn,
-      payload: {
-        settingId: setting.id,
-        ownerUserId,
-        runId: crypto.randomUUID(),
-        trigger: "schedule",
-      },
+  const checkIns = createProactiveEngine({
+    store: proactiveStore,
+    queue,
+    owner: crypto.randomUUID(),
+    resolveScope: async () => ({
+      ownerUserId,
+      agentId,
+      channelId,
+      threadId: channelId,
     }),
-  ).toBe("queued");
+    runTurn: async () => {
+      throw new Error("The mounted worker runs the check-in");
+    },
+    attention: { notifyAttention: async () => {} },
+    catalogue: { listServers: async () => [] },
+    mintThreadId: () => crypto.randomUUID(),
+  });
+  expect(await checkIns.runNow(ownerUserId, setting.id)).toEqual({
+    queued: true,
+  });
   await groups.submit({
     ownerUserId,
     channelId: groupId,
@@ -5266,65 +5271,103 @@ test("the mounted workspace recovers each stopped background capability as fresh
     agentIds: [agentId],
     text: "Check the group update",
   });
+  const handoffRunId = crypto.randomUUID();
+  const desk = createHandoffDesk({
+    queue,
+    profiles: botProfiles,
+    actorFor: async () => profileReader,
+    mayAddress: async (fromBotId, toBotId) => {
+      const [grant] = await database
+        .select({ ref: pluginGrants.ref })
+        .from(pluginGrants)
+        .where(
+          and(
+            eq(pluginGrants.kind, "bot"),
+            eq(pluginGrants.agentId, fromBotId),
+            eq(pluginGrants.ref, toBotId),
+          ),
+        );
+      return Boolean(grant);
+    },
+    auditStore: createAuditStore(database),
+    caps: { maxDepth: 2, maxPerRun: 2 },
+  });
   expect(
-    await queue.offer({
-      kind: "bot.message",
-      key: handoff,
-      payload: {
+    await desk.send({
+      from: {
         actorId: ownerUserId,
-        fromBotId: sourceBotId,
-        toBotId: agentId,
+        botId: sourceBotId,
         threadId: await groups.thread(ownerUserId, groupId, sourceBotId),
-        runId: crypto.randomUUID(),
-        depth: 1,
-        task: "Check the handoff",
+        runId: handoffRunId,
+        depth: 0,
       },
+      target: agentId,
+      envelope: { task: "Check the handoff" },
     }),
-  ).toBe("queued");
-  expect(
-    (
-      await queue.claim({
-        kind: "bot.message",
-        owner: "interrupted-worker",
-        leaseMs: 60_000,
-      })
-    )[0]?.key,
-  ).toBe(handoff);
-
+  ).toMatchObject({ ok: true, to: agentId });
+  const [hop] = await database
+    .select({ key: workItems.key })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.kind, "bot.message"),
+        sql`${workItems.payload}->>'runId' = ${handoffRunId}`,
+      ),
+    );
+  if (!hop) throw new Error("Expected a queued handoff");
+  const handoff = hop.key;
   const directHandoff = `hop:${crypto.randomUUID()}:${crypto.randomUUID()}`;
-  expect(
-    await queue.offer({
-      kind: "bot.message",
-      key: directHandoff,
-      payload: {
-        actorId: ownerUserId,
-        fromBotId: sourceBotId,
-        toBotId: agentId,
-        threadId: directThreadId,
-        runId: crypto.randomUUID(),
-        depth: 1,
-        task: "Check the direct handoff",
-      },
-    }),
-  ).toBe("queued");
-
   const relay = `relay:${directHandoff}`;
-  expect(
-    await queue.offer({
-      kind: "bot.message",
-      key: relay,
-      payload: {
-        actorId: ownerUserId,
-        fromBotId: agentId,
-        toBotId: sourceBotId,
-        threadId: directThreadId,
-        answerIn: directThreadId,
-        runId: crypto.randomUUID(),
-        depth: 1,
-        task: "Relay the recorded answer",
-      },
-    }),
-  ).toBe("queued");
+  const offerAdditionalHandoffs = async () => {
+    expect(
+      await queue.offer({
+        kind: "bot.message",
+        key: directHandoff,
+        payload: {
+          actorId: ownerUserId,
+          fromBotId: sourceBotId,
+          toBotId: agentId,
+          threadId: directThreadId,
+          runId: crypto.randomUUID(),
+          depth: 1,
+          task: "Check the direct handoff",
+        },
+      }),
+    ).toBe("queued");
+
+    expect(
+      await queue.offer({
+        kind: "bot.message",
+        key: relay,
+        payload: {
+          actorId: ownerUserId,
+          fromBotId: agentId,
+          toBotId: sourceBotId,
+          threadId: directThreadId,
+          answerIn: directThreadId,
+          runId: crypto.randomUUID(),
+          depth: 1,
+          task: "Relay the recorded answer",
+        },
+      }),
+    ).toBe("queued");
+  };
+  const wakeUp = await createWakeUpStore(database, {
+    now: () => new Date(now()),
+  }).schedule({
+    ownerUserId,
+    agentId,
+    channelId,
+    dueAt: new Date(now() + 120_000),
+    reason: "Check again",
+  });
+  const makeWakeUpDue = (id: string) =>
+    database
+      .update(workItems)
+      .set({ runAt: new Date(0) })
+      .where(and(eq(workItems.kind, "bot.wakeup"), eq(workItems.key, id)));
+  await makeWakeUpDue(wakeUp.id);
+
   const notification = crypto.randomUUID();
   const session = await personalSaasStore(database).session(
     initial.split("=")[1],
@@ -5339,13 +5382,45 @@ test("the mounted workspace recovers each stopped background capability as fresh
   ).toBe("queued");
 
   const calls: string[] = [];
-  const runApp = newApp(database, async ({ routineId, beforeDispatch }) => {
+  const activeKeys = [checkIn, responsibility, group, handoff, wakeUp.id];
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const aborted = new Map<string, number>();
+  const runner: TurnRunner = async ({
+    routineId,
+    beforeDispatch,
+    signal,
+    onText,
+  }) => {
     await beforeDispatch?.();
     calls.push(routineId);
-    return { replyText: "Fresh response" };
-  });
+    if (calls.length > activeKeys.length)
+      return { replyText: "Fresh response" };
+    onText?.(`Partial response from ${routineId}`);
+    if (calls.length === activeKeys.length) started.resolve();
+    if (!signal) throw new Error("Expected a guarded background run");
+    const stop = Promise.withResolvers<void>();
+    const onAbort = () => {
+      aborted.set(routineId, Date.now());
+      stop.resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    try {
+      await Promise.race([stop.promise, release.promise]);
+      if (signal.aborted) await expect(beforeDispatch?.()).rejects.toThrow();
+      signal.throwIfAborted();
+      return { replyText: "Released by test cleanup" };
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  };
+  const runApp = newApp(database, runner, undefined, { bot: 10 });
   const workers = runApp.backgroundWorkers;
-  if (!workers) throw new Error("Expected trial workers");
+  const replica = newApp(database, runner, undefined, {
+    bot: 10,
+  }).backgroundWorkers;
+  if (!workers || !replica) throw new Error("Expected trial workers");
   const request = (path: string, session: string, body?: object) =>
     runApp.fetch(
       new Request(new URL(path, origin), {
@@ -5358,21 +5433,13 @@ test("the mounted workspace recovers each stopped background capability as fresh
         body: body ? JSON.stringify(body) : undefined,
       }),
     );
-  const operate = (action: "pause" | "resume") =>
-    send(`/api/operator/workspaces/${target.id}/suspension`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${operatorToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ action, reason: "Test suspension" }),
-    });
-  const sweep = () =>
+  const sweep = (worker: typeof workers) =>
     Promise.all([
-      workers.checkIn(),
-      workers.responsibility(),
-      workers.group(),
-      workers.handoff(),
+      worker.checkIn(),
+      worker.responsibility(),
+      worker.group(),
+      worker.handoff(),
+      worker.wakeUp(),
     ]);
   const retry = (key: string, session: string, acknowledged = false) =>
     request(`/api/workspace/recovery/${encodeURIComponent(key)}`, session, {
@@ -5380,16 +5447,78 @@ test("the mounted workspace recovers each stopped background capability as fresh
       acknowledged,
     });
 
-  expect((await operate("pause")).status).toBe(201);
-  expect((await retry(handoff, initial, true)).status).toBe(403);
-  await sweep();
-  const resumedWorkspace = await operate("resume");
-  expect(resumedWorkspace.status).toBe(201);
-  const resumedAt = new Date(
-    (await resumedWorkspace.json()).effectiveAt,
-  ).getTime();
-  while (Date.now() <= resumedAt) await Bun.sleep(1);
-  const restored = await login();
+  let knownDeadline: number | undefined;
+  if (cutoff === "account_status_unconfirmed") {
+    // Seed a still-valid but nearly expired provider observation. Workers use wall-clock timers.
+    knownDeadline = Date.now() + 8_000;
+    const [record] = await database
+      .select({ status: personalSaasAccounts.status })
+      .from(personalSaasAccounts)
+      .where(eq(personalSaasAccounts.id, session.accountId));
+    if (record?.status?.source !== "active")
+      throw new Error("Expected confirmed access");
+    await database
+      .update(personalSaasAccounts)
+      .set({
+        status: { ...record.status, confirmedAt: knownDeadline - 60_000 },
+      })
+      .where(eq(personalSaasAccounts.id, session.accountId));
+    owner.account.active = undefined;
+  }
+
+  const running = Promise.allSettled([
+    workers.checkIn(),
+    workers.responsibility(),
+    workers.group(),
+    workers.handoff(),
+    workers.wakeUp(),
+  ]);
+  try {
+    expect(
+      await Promise.race([
+        started.promise.then(() => "running"),
+        running.then(() => "finished"),
+        Bun.sleep(10_000).then(() => "timed out"),
+      ]),
+    ).toBe("running");
+    await offerAdditionalHandoffs();
+    // A second replica claimed the direct handoff but disappeared before dispatch.
+    expect(
+      (
+        await queue.claim({
+          kind: "bot.message",
+          owner: "interrupted-worker",
+          leaseMs: 60_000,
+        })
+      )[0]?.key,
+    ).toBe(directHandoff);
+    if (knownDeadline === undefined)
+      await cutOffAutomation(owner, runApp, cutoff);
+    expect(
+      await Promise.race([
+        running.then(() => "stopped"),
+        Bun.sleep(10_000).then(() => "timed out"),
+      ]),
+    ).toBe("stopped");
+    for (const result of await running) {
+      if (result.status === "rejected")
+        expect(result.reason).toMatchObject({
+          message: "Bot work authorization ended.",
+        });
+    }
+    expect([...aborted.keys()].sort()).toEqual([...calls].sort());
+    if (knownDeadline !== undefined) {
+      for (const endedAt of aborted.values())
+        expect(endedAt).toBeLessThan(knownDeadline - 1_000);
+      clockTime = knownDeadline + 1;
+      await runApp.refreshAccounts();
+    }
+  } finally {
+    release.resolve();
+    await running;
+  }
+  const originalCalls = [...calls];
+  const restored = await restoreAutomation(owner, cutoff);
   const state = await (await request("/api/workspace", restored)).json();
   expect(
     state.interruptedBackgroundWork
@@ -5404,8 +5533,21 @@ test("the mounted workspace recovers each stopped background capability as fresh
       directHandoff,
       relay,
       notification,
+      wakeUp.id,
     ].sort(),
   );
+  for (const key of activeKeys) {
+    expect(state.interruptedBackgroundWork).toContainEqual(
+      expect.objectContaining({
+        key,
+        reason: cutoff,
+        outcomeUnknown: true,
+        output: expect.stringMatching(/^Partial response from /),
+        endedAt: expect.any(Number),
+      }),
+    );
+    expect((await retry(key, restored)).status).toBe(409);
+  }
   for (const key of [relay, notification]) {
     expect(state.interruptedBackgroundWork).toContainEqual(
       expect.objectContaining({ key, recoveryCanRetry: false }),
@@ -5419,11 +5561,11 @@ test("the mounted workspace recovers each stopped background capability as fresh
     expect(cancelled.status).toBe(200);
     expect(await cancelled.json()).toEqual({ action: "cancel" });
   }
-  await sweep();
-  expect(calls).toEqual([]);
+  await sweep(replica);
+  expect(calls).toEqual(originalCalls);
   expect((await retry(handoff, restored)).status).toBe(409);
   const other = cookie(
-    await authenticate({ ...account, sub: crypto.randomUUID() }),
+    await authenticate({ ...owner.account, sub: crypto.randomUUID() }),
     "__Host-openbot-personal=",
   );
   expect((await retry(handoff, other, true)).status).toBe(404);
@@ -5437,9 +5579,12 @@ test("the mounted workspace recovers each stopped background capability as fresh
     .insert(pluginGrants)
     .values({ kind: "bot", agentId: sourceBotId, ref: agentId });
   const fresh = new Map<string, string>();
-  for (const key of [checkIn, responsibility, group, handoff, directHandoff]) {
+  for (const key of [...activeKeys, directHandoff]) {
     const response = await retry(key, restored, true);
-    expect(response.status).toBe(200);
+    expect(
+      response.status,
+      `Recovery for ${key} (index ${[...activeKeys, directHandoff].indexOf(key)})`,
+    ).toBe(200);
     const recovery = await response.json();
     expect(recovery.action).toBe("retry");
     const newKey = recovery.key;
@@ -5448,38 +5593,52 @@ test("the mounted workspace recovers each stopped background capability as fresh
     expect(await (await retry(key, restored, true)).json()).toEqual(recovery);
     fresh.set(key, newKey);
   }
-  await workers.checkIn();
-  await workers.responsibility();
-  await workers.group();
-  await workers.handoff();
+  const recoveredWakeUp = fresh.get(wakeUp.id);
+  if (!recoveredWakeUp) throw new Error("Expected a fresh wake-up ID");
+  await makeWakeUpDue(recoveredWakeUp);
+  await sweep(replica);
+  await replica.handoff();
   const recoveredHandoff = fresh.get(handoff);
   const recoveredDirectHandoff = fresh.get(directHandoff);
   if (!recoveredHandoff || !recoveredDirectHandoff)
     throw new Error("Expected fresh handoff IDs");
-  expect(calls.sort()).toEqual(
+  expect(calls.slice(originalCalls.length).sort()).toEqual(
     [
       `proactive:${setting.id}`,
       goal.id,
       `group:${groupId}`,
       recoveredHandoff,
       recoveredDirectHandoff,
+      `follow-up:${recoveredWakeUp}`,
     ].sort(),
   );
-  await sweep();
-  expect(calls).toHaveLength(5);
+  await sweep(replica);
+  expect(calls).toHaveLength(originalCalls.length + 6);
   const after = await (await request("/api/workspace", restored)).json();
   expect(after.interruptedBackgroundWork).toEqual(
     expect.arrayContaining(
       [...fresh].map(([key, newKey]) =>
         expect.objectContaining({
           key,
-          reason: "workspace_paused",
+          reason: cutoff,
           recovery: { action: "retry", key: newKey },
         }),
       ),
     ),
   );
-}, 60_000);
+}
+
+test.each(automationCutoffs)(
+  "the mounted workspace stops and recovers background capabilities after %s",
+  async (cutoff) => {
+    try {
+      await verifyBackgroundCutoff(cutoff);
+    } finally {
+      clockTime = undefined;
+    }
+  },
+  60_000,
+);
 
 test("workspace closure requires fresh verification and revokes existing workspace access", async () => {
   const owner = await isolationOwner();
