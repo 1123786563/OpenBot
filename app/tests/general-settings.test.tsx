@@ -11,13 +11,16 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ComponentType } from "react";
 import { LanguageRow } from "@/components/settings/language-row";
 import { NameRow } from "@/components/settings/profile";
 import { StandingInstructionsRow } from "@/components/settings/standing-instructions";
+import { ThemeProvider } from "@/components/theme-provider";
 import { initI18n } from "@/i18n";
 import { authKeys } from "@/lib/auth/queries";
 import { settingsKeys } from "@/lib/settings/queries";
 import { queryClient } from "@/query-client";
+import { Route as generalSettingsRoute } from "@/routes/_authed/settings/index";
 import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
@@ -107,6 +110,71 @@ test("standing instructions are a row that says what they are, or that there are
   expect(
     await written.findByRole("button", { name: /Write in British English\./ }),
   ).toBeTruthy();
+});
+
+/*
+ * The page itself: its title, its sections, the dark theme row and the shortcut rows all speak the
+ * interface language, and the document title follows. Drawn through the real route, with the
+ * desktop-only sections absent because no desktop shell is standing in here.
+ */
+describe("the General page speaks the interface language", () => {
+  afterEach(async () => {
+    cleanup();
+    await pinLocale("en");
+  });
+
+  function drawPage() {
+    queryClient.setQueryData(authKeys.currentUser(), {
+      id: "ada",
+      email: "ada@example.com",
+      name: "Ada",
+      needsName: false,
+    } as never);
+    const Page = generalSettingsRoute.options.component as ComponentType;
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <Page />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  const rowTitle = (view: ReturnType<typeof render>, name: string) =>
+    view.getByText(name, { selector: '[data-slot="item-title"]' });
+
+  test("in English it reads General, with its sections and the one shortcut", async () => {
+    const view = drawPage();
+    expect(document.title).toBe("General · OpenBot");
+    expect(view.getByRole("heading", { name: "About you" })).toBeTruthy();
+    expect(rowTitle(view, "Dark theme")).toBeTruthy();
+    expect(
+      view.getByText("Use the dark appearance across OpenBot."),
+    ).toBeTruthy();
+    expect(
+      view.getByRole("heading", { name: "Keyboard shortcuts" }),
+    ).toBeTruthy();
+    expect(rowTitle(view, "New conversation")).toBeTruthy();
+    expect(
+      view.getByText("Start a new conversation from anywhere in OpenBot."),
+    ).toBeTruthy();
+  });
+
+  test("in Simplified Chinese the page, its sections and its shortcuts read in Chinese", async () => {
+    await pinLocale("zh-CN");
+    const view = drawPage();
+    expect(document.title).toBe("通用 · OpenBot");
+    expect(view.getByRole("heading", { name: "关于你" })).toBeTruthy();
+    expect(rowTitle(view, "深色主题")).toBeTruthy();
+    expect(view.getByText("在 OpenBot 中使用深色外观。")).toBeTruthy();
+    expect(
+      view.getByRole("heading", { name: "键盘快捷键" }),
+    ).toBeTruthy();
+    expect(rowTitle(view, "新对话")).toBeTruthy();
+    expect(
+      view.getByText("在 OpenBot 的任何地方开始一个新对话。"),
+    ).toBeTruthy();
+  });
 });
 
 /*

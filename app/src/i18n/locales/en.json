@@ -71,7 +71,15 @@
   "nav.working": "Working",
   "nav.workspace": "Workspace",
   "relativeTime.now": "now",
+  "settings.aboutYou": "About you",
+  "settings.appearance": "Appearance",
+  "settings.darkTheme": "Dark theme",
+  "settings.darkThemeDescription": "Use the dark appearance across OpenBot.",
+  "settings.description": "Set your name, how OpenBot looks, and the instructions every Bot follows.",
   "settings.language.browser": "Follow the browser",
   "settings.language.description": "Choose the language OpenBot uses for its own text.",
-  "settings.language.title": "Language"
+  "settings.language.title": "Language",
+  "settings.shortcuts": "Keyboard shortcuts",
+  "settings.shortcuts.newConversation.description": "Start a new conversation from anywhere in OpenBot.",
+  "settings.title": "General"
 }

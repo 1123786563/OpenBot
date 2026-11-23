@@ -24,14 +24,39 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { formatHotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
+import { useTranslation } from "@/i18n";
+import { formatHotkey, type Hotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
 });
 
+/** Marks a message for extraction without translating it at module scope. */
+function navigationMessage(messageId: string, label: string) {
+  return { messageId, label };
+}
+
+/*
+ * The shortcut registry keeps its words as identity strings, because the keys they describe are the
+ * same in every language; the words a person reads are chosen here, at render, in the language in
+ * force. Every id in `HOTKEYS` must have an entry, or this stops compiling.
+ */
+const SHORTCUT_MESSAGES = {
+  "new-chat": {
+    label: navigationMessage("nav.newConversation", "New conversation"),
+    description: navigationMessage(
+      "settings.shortcuts.newConversation.description",
+      "Start a new conversation from anywhere in OpenBot.",
+    ),
+  },
+} as const satisfies Record<
+  Hotkey["id"],
+  Record<"label" | "description", ReturnType<typeof navigationMessage>>
+>;
+
 function RouteComponent() {
   const { dark, setDark } = useTheme();
+  const { t } = useTranslation();
 
   /*
    * The measurements that used to be written out here now live in `PageShell`, which Skills, Admin
@@ -43,14 +68,17 @@ function RouteComponent() {
    */
   return (
     <PageShell
-      description="Set your name, how OpenBot looks, and the instructions every Bot follows."
-      title="General"
+      description={t(
+        "settings.description",
+        "Set your name, how OpenBot looks, and the instructions every Bot follows.",
+      )}
+      title={t("settings.title", "General")}
     >
       {/*
        * What OpenBot and every Bot know of the person, first: their name and how they want things done. Both are free
        * text, so both are a summary that opens a dialog.
        */}
-      <PageSection title="About you">
+      <PageSection title={t("settings.aboutYou", "About you")}>
         <PageRows>
           <NameRow />
           <Separator />
@@ -62,21 +90,24 @@ function RouteComponent() {
       {/* Only in OpenBot Desktop, which sends usage data and keeps this choice. */}
       <UsageDataSection />
       <AstryxSurface className="min-w-0 rounded-[var(--radius-container)]">
-        <PageSection title="Appearance">
+        <PageSection title={t("settings.appearance", "Appearance")}>
           <PageRows>
             <Item size="sm">
               <ItemMedia variant="icon">
                 <IconMoon />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Dark theme</ItemTitle>
+                <ItemTitle>{t("settings.darkTheme", "Dark theme")}</ItemTitle>
                 <ItemDescription>
-                  Use the dark appearance across OpenBot.
+                  {t(
+                    "settings.darkThemeDescription",
+                    "Use the dark appearance across OpenBot.",
+                  )}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <AstryxSwitch
-                  label="Dark theme"
+                  label={t("settings.darkTheme", "Dark theme")}
                   isLabelHidden
                   value={dark}
                   onChange={setDark}
@@ -94,31 +125,38 @@ function RouteComponent() {
        * actually do rather than what somebody remembered they did. Read-only on purpose: these
        * are not rebindable, and a row with nothing to click says so by having nothing to click.
        */}
-      <PageSection title="Keyboard shortcuts">
+      <PageSection title={t("settings.shortcuts", "Keyboard shortcuts")}>
         <PageRows>
-          {HOTKEYS.map((hotkey, index) => (
-            <React.Fragment key={hotkey.id}>
-              <Item size="sm">
-                <ItemContent>
-                  <ItemTitle>{hotkey.label}</ItemTitle>
-                  <ItemDescription>{hotkey.description}</ItemDescription>
-                </ItemContent>
-                <ItemActions>
-                  <span className="flex gap-1">
-                    {formatHotkey(hotkey.combo).map((part) => (
-                      <kbd
-                        className="rounded-md border bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground"
-                        key={part}
-                      >
-                        {part}
-                      </kbd>
-                    ))}
-                  </span>
-                </ItemActions>
-              </Item>
-              {index !== HOTKEYS.length - 1 && <Separator />}
-            </React.Fragment>
-          ))}
+          {HOTKEYS.map((hotkey, index) => {
+            const copy = SHORTCUT_MESSAGES[hotkey.id];
+            return (
+              <React.Fragment key={hotkey.id}>
+                <Item size="sm">
+                  <ItemContent>
+                    <ItemTitle>
+                      {t(copy.label.messageId, copy.label.label)}
+                    </ItemTitle>
+                    <ItemDescription>
+                      {t(copy.description.messageId, copy.description.label)}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <span className="flex gap-1">
+                      {formatHotkey(hotkey.combo).map((part) => (
+                        <kbd
+                          className="rounded-md border bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground"
+                          key={part}
+                        >
+                          {part}
+                        </kbd>
+                      ))}
+                    </span>
+                  </ItemActions>
+                </Item>
+                {index !== HOTKEYS.length - 1 && <Separator />}
+              </React.Fragment>
+            );
+          })}
         </PageRows>
       </PageSection>
     </PageShell>

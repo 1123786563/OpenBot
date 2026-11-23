@@ -71,7 +71,15 @@
   "nav.working": "处理中",
   "nav.workspace": "工作区",
   "relativeTime.now": "刚刚",
+  "settings.aboutYou": "关于你",
+  "settings.appearance": "外观",
+  "settings.darkTheme": "深色主题",
+  "settings.darkThemeDescription": "在 OpenBot 中使用深色外观。",
+  "settings.description": "设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。",
   "settings.language.browser": "跟随浏览器",
   "settings.language.description": "选择 OpenBot 界面文字使用的语言。",
-  "settings.language.title": "语言"
+  "settings.language.title": "语言",
+  "settings.shortcuts": "键盘快捷键",
+  "settings.shortcuts.newConversation.description": "在 OpenBot 的任何地方开始一个新对话。",
+  "settings.title": "通用"
 }
