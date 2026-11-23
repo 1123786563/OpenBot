@@ -14,8 +14,8 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider, initI18n } from "@/i18n";
 import { authKeys } from "@/lib/auth/queries";
-import { pinLocale } from "./i18n";
 import { appReturnPath, resumeUrlFor } from "@/lib/auth/resume";
+import { pinLocale } from "./i18n";
 
 /*
  * The Better Auth client is replaced at the module boundary: its fetch is captured when it is built,
@@ -170,8 +170,8 @@ function renderSignScreen(
     sso: boolean;
     ssoRequired: boolean;
     /**
-     * The options read fails, the way it does behind `beforeLoad`'s swallow. The test stubs
-     * `fetch` itself, so the failure is the real one — no server is listening on the fake origin.
+     * The options read fails, the way it does behind `beforeLoad`'s swallow. The test makes `fetch`
+     * refuse, so the failure is a real one and nothing is sent to the fake origin.
      */
     failed?: boolean;
   },
@@ -614,14 +614,15 @@ test("a refused company sign-in keeps the server's words and guides in the inter
   );
 });
 
-test("a failed read of the sign-in options speaks the interface language", async () => {
-  // The read fails for real — no server listens on the fake origin — so the screen renders from
-  // the failure `beforeLoad` swallowed, not from seeded options.
+test("a failed read of the sign-in options speaks the interface language, retry included", async () => {
+  // `fetch` refuses, the way a dropped connection makes it. Nothing is sent to the fake origin —
+  // whose port may be somebody's live server — and the screen renders from the failure `beforeLoad`
+  // swallowed, not from seeded options.
   const realFetch = window.fetch;
   const offline = () => Promise.reject(new TypeError("offline"));
   window.fetch = Object.assign(offline, { preconnect: realFetch.preconnect });
   try {
-    const { view } = renderSignScreen({
+    const { view, user } = renderSignScreen({
       providers: [],
       sso: false,
       ssoRequired: false,
@@ -635,7 +636,22 @@ test("a failed read of the sign-in options speaks the interface language", async
     await pinLocale("zh-CN");
     expect(view.getByText("无法加载登录选项。")).toBeTruthy();
     expect(view.getByText("请检查你的网络连接后重试。")).toBeTruthy();
-    expect(view.getByRole("button", { name: "重试" })).toBeTruthy();
+
+    // That retry is wired: once the connection answers, pressing it brings the ways in, in that language.
+    const back = () =>
+      Promise.resolve(
+        Response.json({
+          authProviders: ["google"],
+          ssoConfigured: false,
+          ssoRequired: false,
+        }),
+      );
+    window.fetch = Object.assign(back, { preconnect: realFetch.preconnect });
+    await user.click(view.getByRole("button", { name: "重试" }));
+    expect(
+      await view.findByRole("button", { name: "使用 Google 继续" }),
+    ).toBeTruthy();
+    expect(view.queryByText("无法加载登录选项。")).toBeNull();
   } finally {
     window.fetch = realFetch;
   }
