@@ -75,6 +75,18 @@ export async function handleFileRequest(
         }),
       );
     } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error.code === "ENOSPC" || error.code === "EDQUOT")
+      )
+        return json(
+          {
+            error:
+              "workspace_storage_quota_exceeded: The workspace file storage limit has been reached. Remove files before writing more.",
+          },
+          400,
+        );
       return json(
         { error: describe(error, "The file could not be written.") },
         fileStatus(error),

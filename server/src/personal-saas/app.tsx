@@ -1060,6 +1060,21 @@ export function createPersonalSaasApp(
                       </VStack>
                     }
                   />
+                  {usage.storage.attachmentUsed !== undefined && (
+                    <ListItem
+                      label={
+                        <VStack gap={2}>
+                          Attachments: {usage.storage.attachmentUsed} bytes ·
+                          Computer files:{" "}
+                          {usage.storage.computerUsed === null
+                            ? "Unavailable"
+                            : `${usage.storage.computerUsed} bytes`}{" "}
+                          · Computer reservation:{" "}
+                          {usage.storage.computerReserved} bytes
+                        </VStack>
+                      }
+                    />
+                  )}
                   <ListItem
                     label={
                       <VStack gap={2}>

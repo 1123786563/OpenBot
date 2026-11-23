@@ -53,7 +53,14 @@ export type AgentSandboxBinding = {
  */
 export type AgentSandboxProvider = {
   allocationScope?: string;
-  prepare?(binding: AgentSandboxBinding): Promise<void>;
+  // storageBytes is the account's Computer reservation. prepare refuses before
+  // allocating unless the durable storage is confirmed to be exactly that size;
+  // storageUsage reports its used bytes, or null when they cannot be confirmed.
+  storageUsage?(
+    storage: typeof spaces.$inferSelect,
+    storageBytes: number,
+  ): Promise<number | null>;
+  prepare?(binding: AgentSandboxBinding, storageBytes: number): Promise<void>;
   start(binding: AgentSandboxBinding, lease: ComputerLease): Promise<void>;
   renew(binding: AgentSandboxBinding, lease: ComputerLease): Promise<void>;
   destroy(binding: AgentSandboxBinding): Promise<void>;
@@ -197,9 +204,13 @@ export function agentSandboxComputer(
 
   return {
     read,
-    // Cloud usage accounting is tracked in #145.
-    async storageUsage() {
-      return 0;
+    async storageUsage(workspaceId: string, storageBytes: number) {
+      const [storage] = await database
+        .select()
+        .from(spaces)
+        .where(eq(spaces.workspaceId, workspaceId));
+      if (!storage) return 0;
+      return provider.storageUsage?.(storage, storageBytes) ?? null;
     },
     async eraseStorage(workspaceId: string) {
       const result = await read(workspaceId);
@@ -217,7 +228,7 @@ export function agentSandboxComputer(
     async start(
       workspaceId: string,
       lease: ComputerLease,
-      _storageBytes: number,
+      storageBytes: number,
       refresh?: () => Promise<ComputerLease | undefined>,
     ) {
       if (now() >= lease.expiresAt || (provider.prepare && !refresh))
@@ -264,7 +275,7 @@ export function agentSandboxComputer(
         }
         let workLease = lease;
         if (provider.prepare && refresh) {
-          await provider.prepare(binding(row));
+          await provider.prepare(binding(row), storageBytes);
           const authorized = await refresh();
           if (
             !authorized ||

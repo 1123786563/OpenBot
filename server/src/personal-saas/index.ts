@@ -7,6 +7,7 @@ import { createDatabase } from "../db/client";
 import { personalWorkspaceClosures } from "../db/schema";
 import { repeatAfterEach } from "../work/loop";
 import { createAgentSandboxProvider } from "./agent-sandbox-provider";
+import { createNasClient } from "./nas";
 import { createPersonalSaasApp } from "./app";
 import {
   cleanupSteps,
@@ -71,6 +72,8 @@ const trial = z.object({
     .regex(/^cn-[a-z0-9-]+$/)
     .optional(),
   OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE: z.string().trim().min(1).optional(),
+  OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_ID: z.string().trim().min(1).optional(),
+  OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_SECRET: z.string().min(1).optional(),
   OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_CLEANUP_URL: httpsUrl.optional(),
   OPENBOT_CLOSURE_CLEANUP_TOKEN: z.string().trim().min(1).optional(),
@@ -177,12 +180,21 @@ const flashRegion = env.OPENBOT_AGENT_SANDBOX_FLASH_REGION;
 const flashTemplate = env.OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE;
 const flashArtifactPath = env.OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT;
 const flashKey = process.env.E2B_API_KEY?.trim();
+const nasKey = env.OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_ID;
+const nasSecret = env.OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_SECRET;
 if (
-  (flashRegion || flashTemplate || flashArtifactPath) &&
-  !(flashRegion && flashTemplate && flashArtifactPath && flashKey)
+  (flashRegion || flashTemplate || flashArtifactPath || nasKey || nasSecret) &&
+  !(
+    flashRegion &&
+    flashTemplate &&
+    flashArtifactPath &&
+    flashKey &&
+    nasKey &&
+    nasSecret
+  )
 )
   throw new Error(
-    "Configure the Flash region, template, worker artifact and E2B API key together",
+    "Configure the Flash region, template, worker artifact, E2B API key and NAS access key pair together",
   );
 if (flashRegion && supervisorUrl)
   throw new Error("Configure one workspace Computer provider per deployment");
@@ -209,7 +221,12 @@ async function loadFlashWorkerArtifact(path: string) {
 
 const database = createDatabase(env.DATABASE_URL);
 const sandbox =
-  flashRegion && flashTemplate && flashKey && flashArtifactPath
+  flashRegion &&
+  flashTemplate &&
+  flashKey &&
+  flashArtifactPath &&
+  nasKey &&
+  nasSecret
     ? createAgentSandboxProvider(
         {
           apiUrl: `https://api.${flashRegion}.sandbox.aliyuncs.com`,
@@ -218,6 +235,11 @@ const sandbox =
           apiKey: flashKey,
           encryptionKey: env.KEY_ENCRYPTION_KEY,
           artifact: await loadFlashWorkerArtifact(flashArtifactPath),
+          nas: createNasClient({
+            region: flashRegion,
+            accessKeyId: nasKey,
+            accessKeySecret: nasSecret,
+          }),
         },
         database,
       )

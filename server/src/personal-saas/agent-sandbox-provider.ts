@@ -17,6 +17,7 @@ import {
   flashConnection,
   flashWorkspaceMount,
 } from "./flash-sandbox-api";
+import { type NasAgenticSpace, type NasClient, NasError } from "./nas";
 import {
   type ComputerLease,
   workspaceComputerLeaseMs,
@@ -137,6 +138,7 @@ export function createAgentSandboxProvider(
     provision?: typeof installWorker;
     invoke?: typeof invokeWatchdog;
     fetchWorker?: (url: string, init: RequestInit) => Promise<Response>;
+    nas: NasClient;
   },
   database: Database,
   now: () => number = Date.now,
@@ -254,9 +256,39 @@ export function createAgentSandboxProvider(
       );
   }
 
+  // NAS holds the Workspace quota. A space smaller than the reservation
+  // drops writes the account reserved; a larger one is unreserved storage.
+  function reservationMismatch(
+    space: NasAgenticSpace,
+    storage: typeof spaces.$inferSelect,
+    storageBytes: number,
+  ): string | undefined {
+    if (space.FileSystemId !== storage.fileSystemId)
+      return "another file system";
+    if (space.AgenticSpaceId !== storage.agenticSpaceId)
+      return "another AgenticSpace";
+    if (space.Status !== "Running") return `status ${space.Status}`;
+    if (space.Quota.SizeLimit !== storageBytes)
+      return `quota ${space.Quota.SizeLimit} bytes, reservation ${storageBytes}`;
+    return undefined;
+  }
+
+  async function boundSpace(storage: typeof spaces.$inferSelect) {
+    return config.nas.getAgenticSpace({
+      fileSystemId: storage.fileSystemId,
+      agenticSpaceId: storage.agenticSpaceId,
+    });
+  }
+
   return {
     allocationScope,
-    async prepare(binding) {
+    async storageUsage(storage, storageBytes) {
+      const space = await boundSpace(storage);
+      return reservationMismatch(space, storage, storageBytes)
+        ? null
+        : space.SpaceUsage;
+    },
+    async prepare(binding, storageBytes) {
       const [storage] = await database
         .select()
         .from(spaces)
@@ -264,6 +296,37 @@ export function createAgentSandboxProvider(
       if (!storage)
         throw new Error("Workspace AgenticFS has not been provisioned");
       const mount = api.workspaceMount(storage);
+      // start() answers only a refusal, so the reason is logged here.
+      const warn = (reason: string) =>
+        console.warn(
+          JSON.stringify({
+            type: "agent-sandbox-quota-refused",
+            ...binding,
+            storageBytes,
+            reason,
+          }),
+        );
+      let mismatch: string | undefined;
+      try {
+        mismatch = reservationMismatch(
+          await boundSpace(storage),
+          storage,
+          storageBytes,
+        );
+      } catch (error) {
+        // A transport error may quote its request, so only the client's
+        // summary is logged.
+        warn(
+          error instanceof NasError
+            ? error.message
+            : "NAS GetAgenticSpace unanswered",
+        );
+        throw error;
+      }
+      if (mismatch) {
+        warn(mismatch);
+        throw new Error(`Workspace AgenticFS ${mismatch}`);
+      }
       const [intent] = await database
         .update(sandboxes)
         .set({

@@ -289,6 +289,14 @@ filesystem blocks. When Computer storage is configured, the response also includ
 sets `used` and `computerUsed` to `null`. Upload admission counts the full Computer reservation
 so filesystem writes and uploads can proceed concurrently within the combined limit.
 
+With the Flash provider, NAS enforces the reservation as the AgenticSpace quota and OpenBot
+keeps no byte counter. A start is refused with HTTP 409 unless NAS confirms that the bound space
+is `Running` and sized exactly like `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES`. `computerUsed`
+is the NAS `SpaceUsage` of that space, which NAS updates after about 15 minutes. A workspace
+without an AgenticSpace binding reports `0`. Admission never reads this figure, so the configured
+limits keep admitting capacity and attachments while usage is unknown. See
+[enforce the quota and read usage](personal-saas-agenticfs.md#enforce-the-quota-and-read-usage).
+
 #### Provision Computer storage
 
 1. Set the same positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` on the API replicas and

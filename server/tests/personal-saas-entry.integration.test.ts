@@ -58,6 +58,10 @@ import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
 import { closureRestoreJournal } from "../src/personal-saas/closure-cleanup-contract";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
+import {
+  createNasClient,
+  type NasAgenticSpace,
+} from "../src/personal-saas/nas";
 import { personalSaasStore } from "../src/personal-saas/store";
 import { loadPersonalTestCreditExecutor } from "../src/personal-saas/test-credit-config";
 import { workspaceBots } from "../src/personal-saas/workspace-bots";
@@ -5052,6 +5056,60 @@ test("manual and scheduled automation share the trigger limit and retain history
   expect(calls).toEqual([manual.routineId, manual.routineId]);
 });
 
+// Offline NAS control plane. GetAgenticSpace answers from this table, keyed by
+// the AgenticSpaceId asked about; a missing space is refused. Nothing here
+// reaches the network.
+function nasFixture() {
+  const spaces = new Map<string, NasAgenticSpace>();
+  let offline = false;
+  let reads = 0;
+  const client = createNasClient({
+    region: "cn-hangzhou",
+    accessKeyId: "fixture-nas-key",
+    accessKeySecret: "fixture-nas-secret",
+    async fetch(input, init) {
+      reads++;
+      // A transport failure may quote the request it was sending.
+      if (offline)
+        throw new TypeError(
+          `fetch failed: ${input} ${new Headers(init?.headers).get("authorization")}`,
+        );
+      const request = new Request(input, init);
+      expect(request.headers.get("x-acs-action")).toBe("GetAgenticSpace");
+      const space = spaces.get(
+        new URL(request.url).searchParams.get("AgenticSpaceId") ?? "",
+      );
+      return space
+        ? Response.json({
+            RequestId: "fixture-nas-request",
+            AgenticSpace: space,
+          })
+        : Response.json(
+            { Code: "fixture-not-found", RequestId: "fixture-nas-request" },
+            { status: 404 },
+          );
+    },
+  });
+  return {
+    spaces,
+    client,
+    reads: () => reads,
+    // newApp reserves 8 bytes of Computer storage.
+    running: (fileSystemId: string, agenticSpaceId: string) =>
+      spaces.set(agenticSpaceId, {
+        FileSystemId: fileSystemId,
+        AgenticSpaceId: agenticSpaceId,
+        Status: "Running",
+        Quota: { SizeLimit: 8, FileCountLimit: 10_000 },
+        SpaceUsage: 0,
+        FileCountUsage: 0,
+      }),
+    set offline(value: boolean) {
+      offline = value;
+    },
+  };
+}
+
 test("Flash keeps one workspace slot after worker exit until Alibaba confirms deletion", async () => {
   const owner = await isolationOwner();
   const other = await isolationOwner();
@@ -5073,6 +5131,8 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
     vSwitchId: "vsw-fixture",
     securityGroupId: "sg-fixture",
   });
+  const nas = nasFixture();
+  nas.running("fs144", `agentic-${owner.workspaceId}`);
   let creates = 0;
   let provisions = 0;
   let deletes = 0;
@@ -5175,6 +5235,7 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
       );
       return new Response(null, { status: 200 });
     },
+    nas: nas.client,
   };
   const replica = (config = options) =>
     newApp(database, {
@@ -5313,6 +5374,9 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     other.workspaceId.replaceAll("-", ""),
   );
   const storages = [ownerStorage, otherStorage];
+  const nas = nasFixture();
+  for (const { fileSystemId, agenticSpaceId } of storages)
+    nas.running(fileSystemId, agenticSpaceId);
   await Promise.all(
     storages.map(({ agenticSpaceId }) => mkdir(join(dir, agenticSpaceId))),
   );
@@ -5336,6 +5400,9 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
   const allocations: { id: string; mount: string }[] = [];
   const destroyed: string[] = [];
   let failSetup = false;
+  let quotaCode = "ENOSPC";
+  let refusal =
+    "workspace_storage_quota_exceeded: The workspace file storage limit has been reached. Remove files before writing more.";
 
   using cloud = Bun.serve({
     hostname: "127.0.0.1",
@@ -5426,8 +5493,16 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     const root = roots.get(instance.storageId);
     if (!root) throw new Error("Mount missing in fixture");
     return (
-      (await handleFileRequest(request, url, async () => root)) ??
-      new Response(null, { status: 404 })
+      (await handleFileRequest(request, url, async () => ({
+        ...root,
+        async write(file, contents, options) {
+          if (file === "notes/full.txt")
+            throw Object.assign(new Error("native filesystem refusal"), {
+              code: quotaCode,
+            });
+          return root.write(file, contents, options);
+        },
+      }))) ?? new Response(null, { status: 404 })
     );
   };
   const runtime = jest
@@ -5464,6 +5539,7 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
         },
       };
     },
+    nas: nas.client,
   };
   const replica = () =>
     newApp(
@@ -5502,6 +5578,14 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
             bytes: Buffer.byteLength(appendix),
             appended: true,
           });
+        }
+        if (instruction === "Refuse full fixture") {
+          await expect(
+            tool("computer_write_file", {
+              path: "notes/full.txt",
+              contents: "over quota",
+            }),
+          ).rejects.toThrow(refusal);
         }
         if (instruction === "Check isolation") {
           await expect(tool("computer_read_file", { path })).rejects.toThrow(
@@ -5542,6 +5626,14 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
       headers: { origin, cookie: session },
     });
   }
+  const usage = async (session: string) =>
+    (
+      await (
+        await service.request("/api/workspace", {
+          headers: { cookie: session },
+        })
+      ).json()
+    ).quotas.storage;
   async function run(bot: typeof owner, instruction: string) {
     // The queue timestamps the submission in PostgreSQL.
     const startTime = now();
@@ -5582,6 +5674,14 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     clockTime += 10;
     expect((await computer(owner.session, "/start")).status).toBe(202);
     await run(owner, "Write fixture");
+    for (const code of ["ENOSPC", "EDQUOT"]) {
+      quotaCode = code;
+      await run(owner, "Refuse full fixture");
+    }
+    // Any other filesystem failure is not a full Workspace.
+    quotaCode = "EIO";
+    refusal = "native filesystem refusal";
+    await run(owner, "Refuse full fixture");
     const { events } = await createAuditReader(database).list({
       targetId: owner.botId,
       limit: 20,
@@ -5608,6 +5708,21 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
       cutoff: "confirmed",
     });
     expect(destroyed).toEqual(["fixture-1"]);
+
+    // The retained file still counts while no Computer exists.
+    const retained = nas.spaces.get(ownerStorage.agenticSpaceId);
+    if (!retained) throw new Error("Expected the bound NAS space");
+    nas.spaces.set(ownerStorage.agenticSpaceId, {
+      ...retained,
+      SpaceUsage: bytes,
+      FileCountUsage: 1,
+    });
+    expect(await usage(owner.session)).toMatchObject({
+      used: bytes,
+      attachmentUsed: 0,
+      computerUsed: bytes,
+      computerReserved: 8,
+    });
 
     service = replica();
     clockTime += 10;
@@ -5649,6 +5764,171 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     clockTime = undefined;
     runtime.mockRestore();
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Flash allocates only when NAS confirms the bound space is sized like the Computer reservation", async () => {
+  const owner = await isolationOwner();
+  const domain = "cn-hangzhou.sandbox.aliyuncs.com";
+  const space: NasAgenticSpace = {
+    FileSystemId: "fs145",
+    AgenticSpaceId: `agentic-${owner.workspaceId.replaceAll("-", "")}`,
+    Status: "Running",
+    Quota: { SizeLimit: 8, FileCountLimit: 10_000 },
+    SpaceUsage: 0,
+    FileCountUsage: 0,
+  };
+  const nas = nasFixture();
+  nas.spaces.set(space.AgenticSpaceId, space);
+  let creates = 0;
+  using cloud = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const { pathname } = new URL(request.url);
+      if (request.method === "POST" && pathname === "/sandboxes") {
+        creates++;
+        return Response.json(
+          {
+            sandboxID: `fixture-${creates}`,
+            templateID: "fixture-template",
+            domain,
+            envdVersion: "0.6.1",
+            envdAccessToken: "fixture-envd",
+            trafficAccessToken: "fixture-traffic",
+          },
+          { status: 201 },
+        );
+      }
+      return new Response(null, { status: 500 });
+    },
+  });
+  const service = newApp(database, {
+    agentSandbox: createAgentSandboxProvider(
+      {
+        apiUrl: cloud.url.origin,
+        apiKey: "fixture-key",
+        domain,
+        template: "fixture-template",
+        encryptionKey: Buffer.alloc(32, 35).toString("base64"),
+        artifact: { archive: new Blob(["fixture"]), sha256: "a".repeat(64) },
+        async provision() {},
+        async invoke(_sandbox, message) {
+          if (message.action !== "start" && message.action !== "renew")
+            throw new Error("Unexpected fixture control request");
+          return {
+            binding: message.binding,
+            observation: {
+              kind: "running",
+              issuedAt: message.issuedAt,
+              leaseExpiresAt: message.expiresAt,
+              pid: 123,
+              bootId: crypto.randomUUID(),
+            },
+          };
+        },
+        nas: nas.client,
+      },
+      database,
+      now,
+    ),
+  });
+  const start = async () => {
+    // A start only replaces a stopped generation with a newer lease.
+    clockTime = (clockTime ?? now()) + 1_000;
+    return service.request("/api/workspace/computer/start", {
+      method: "POST",
+      headers: { origin, cookie: owner.session },
+    });
+  };
+  const usage = async () => {
+    const response = await service.request("/api/workspace", {
+      headers: { cookie: owner.session },
+    });
+    return (await response.json()).quotas.storage;
+  };
+  // No durable space exists yet to hold Computer files.
+  expect(await usage()).toMatchObject({ used: 0, computerUsed: 0 });
+  await database.insert(personalWorkspaceAgenticSpaces).values({
+    workspaceId: owner.workspaceId,
+    agenticSpaceId: space.AgenticSpaceId,
+    fileSystemId: space.FileSystemId,
+    accessPointId: `ap-${owner.workspaceId.replaceAll("-", "")}`,
+    accessPointDomain: `ap-${owner.workspaceId.replaceAll("-", "")}.fs145-fixture.cn-hangzhou.nas.aliyuncs.com`,
+    roleArn: `acs:ram::1234567890123456:role/${space.AgenticSpaceId}`,
+    storageEgressIps: ["10.12.0.2"],
+    vpcId: "vpc-fixture",
+    vSwitchId: "vsw-fixture",
+    securityGroupId: "sg-fixture",
+  });
+  const warned = jest.spyOn(console, "warn").mockImplementation(() => {});
+  clockTime = now();
+  try {
+    // NAS holds the quota, so every start asks it about the bound space first.
+    const refusals: NasAgenticSpace[] = [
+      { ...space, Quota: { SizeLimit: 16, FileCountLimit: 10_000 } },
+      { ...space, Quota: { SizeLimit: 4, FileCountLimit: 10_000 } },
+      { ...space, Status: "Creating" },
+      { ...space, AgenticSpaceId: "agentic-other" },
+      { ...space, FileSystemId: "fs-other" },
+    ];
+    for (const refusal of refusals) {
+      nas.spaces.set(space.AgenticSpaceId, refusal);
+      expect(await start()).toMatchObject({ status: 409 });
+    }
+    // A space NAS cannot confirm, or cannot be asked about, is no confirmation.
+    nas.spaces.set(space.AgenticSpaceId, space);
+    nas.offline = true;
+    expect(await start()).toMatchObject({ status: 409 });
+    nas.spaces.delete(space.AgenticSpaceId);
+    nas.offline = false;
+    expect(await start()).toMatchObject({ status: 409 });
+    expect(creates).toBe(0);
+    expect(nas.reads()).toBe(refusals.length + 2);
+    // start() answers only a refusal, so the log says why and never what the transport quoted.
+    const logged = warned.mock.calls.map(([line]) => JSON.parse(line));
+    expect(logged).toMatchObject(
+      Array.from({ length: refusals.length + 2 }, () => ({
+        type: "agent-sandbox-quota-refused",
+        workspaceId: owner.workspaceId,
+        storageBytes: 8,
+      })),
+    );
+    expect(logged.map(({ reason }) => reason)).toEqual([
+      "quota 16 bytes, reservation 8",
+      "quota 4 bytes, reservation 8",
+      "status Creating",
+      "another AgenticSpace",
+      "another file system",
+      "NAS GetAgenticSpace unanswered",
+      "NAS GetAgenticSpace unconfirmed: HTTP 404 fixture-not-found, RequestId fixture-nas-request",
+    ]);
+    expect(JSON.stringify(logged)).not.toMatch(
+      /fixture-nas-(key|secret)|Signature=/,
+    );
+
+    nas.spaces.set(space.AgenticSpaceId, { ...space, SpaceUsage: 3 });
+    expect(await usage()).toMatchObject({
+      computerUsed: 3,
+      computerReserved: 8,
+      attachmentUsed: 0,
+    });
+    // Usage of anything other than the bound space at its reserved size is unknown.
+    for (const refusal of refusals) {
+      nas.spaces.set(space.AgenticSpaceId, { ...refusal, SpaceUsage: 3 });
+      expect(await usage()).toMatchObject({ used: null, computerUsed: null });
+    }
+    nas.offline = true;
+    expect(await usage()).toMatchObject({ used: null, computerUsed: null });
+    nas.offline = false;
+    const reads = nas.reads();
+    nas.spaces.set(space.AgenticSpaceId, space);
+    expect(await start()).toMatchObject({ status: 202 });
+    expect(creates).toBe(1);
+    expect(nas.reads()).toBe(reads + 1);
+  } finally {
+    clockTime = undefined;
+    warned.mockRestore();
   }
 });
 
@@ -6072,6 +6352,12 @@ test("Computer storage counts in workspace usage and reserves room against concu
     computerUsed: 2,
     computerReserved: 8,
   });
+  const markup = await (
+    await service.request("/workspace", { headers })
+  ).text();
+  expect(markup).toContain(
+    "Attachments: 8 bytes · Computer files: 2 bytes · Computer reservation: 8 bytes",
+  );
   const upload = (target: typeof app) => {
     const body = new FormData();
     body.set("conversationId", fixture.channelId);
@@ -6095,7 +6381,34 @@ test("Computer storage counts in workspace usage and reserves room against concu
     computerUsed: null,
     computerReserved: 8,
   });
+  // An unknown reading is named, not shown as a number of bytes.
+  expect(
+    await (await service.request("/workspace", { headers })).text(),
+  ).toContain(
+    "Attachments: 12 bytes · Computer files: Unavailable · Computer reservation: 8 bytes",
+  );
   expect((await upload(replica)).status).toBe(429);
+  // Unknown usage still admits a write the reservation leaves room for.
+  const accepted = concurrent.find((response) => response.status === 201);
+  if (!accepted) throw new Error("Expected one uploaded attachment");
+  const { id } = await accepted.json();
+  expect(
+    (
+      await service.request(`/api/workspace/attachments/${id}/withdraw`, {
+        method: "POST",
+        headers,
+      })
+    ).status,
+  ).toBe(204);
+  expect((await upload(replica)).status).toBe(201);
+  expect(
+    (await (await service.request("/api/workspace", { headers })).json()).quotas
+      .storage,
+  ).toMatchObject({
+    used: null,
+    attachmentUsed: 12,
+    computerUsed: null,
+  });
 });
 
 test("stopping queued work preserves recovery and retry checks the current Bot limit", async () => {
