@@ -10,6 +10,7 @@ type ExecutionQueue = Pick<WorkQueue, "executionExpiry"> &
   >;
 
 type Grant = NonNullable<WorkItem["authorization"]>;
+// Leave time for cancellation to reach the execution runtime before the grant expires.
 export const localAbortLeadMs = 3_000;
 const active = new AsyncLocalStorage<Grant & { signal: AbortSignal }>();
 
@@ -50,9 +51,13 @@ export async function runAuthorizedWork<T>(
     controller.abort(reason);
   }
 
+  function timeBeforeStop() {
+    return expiresAt - localAbortLeadMs - Date.now();
+  }
+
   function deadline() {
     clearTimeout(timer);
-    const remainingMs = expiresAt - localAbortLeadMs - Date.now();
+    const remainingMs = timeBeforeStop();
     if (remainingMs <= 0) expire();
     else timer = setTimeout(expire, remainingMs);
   }
@@ -65,11 +70,11 @@ export async function runAuthorizedWork<T>(
   }
 
   async function check() {
-    if (Date.now() >= expiresAt) expire();
+    if (timeBeforeStop() <= 0) expire();
     signal.throwIfAborted();
     const next = await queue.executionExpiry?.(held);
     if (ended) return;
-    if (Date.now() >= expiresAt) expire();
+    if (timeBeforeStop() <= 0) expire();
     if (next === undefined) controller.abort(reason);
     signal.throwIfAborted();
     if (next !== undefined) expiresAt = next;
@@ -110,7 +115,7 @@ export async function runAuthorizedWork<T>(
     );
     ended = true;
     await saving;
-    if (Date.now() >= expiresAt) expire();
+    if (timeBeforeStop() <= 0) expire();
     signal.throwIfAborted();
     return result;
   } catch (error) {

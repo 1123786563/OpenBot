@@ -5518,6 +5518,12 @@ async function verifyBackgroundCutoff(
     await running;
   }
   const originalCalls = [...calls];
+  await database
+    .update(workItems)
+    .set({ leaseUntil: new Date(0) })
+    .where(
+      and(eq(workItems.kind, "bot.message"), eq(workItems.key, directHandoff)),
+    );
   const restored = await restoreAutomation(owner, cutoff);
   const state = await (await request("/api/workspace", restored)).json();
   expect(
@@ -5581,10 +5587,7 @@ async function verifyBackgroundCutoff(
   const fresh = new Map<string, string>();
   for (const key of [...activeKeys, directHandoff]) {
     const response = await retry(key, restored, true);
-    expect(
-      response.status,
-      `Recovery for ${key} (index ${[...activeKeys, directHandoff].indexOf(key)})`,
-    ).toBe(200);
+    expect(response.status, `Recovery for ${key}`).toBe(200);
     const recovery = await response.json();
     expect(recovery.action).toBe("retry");
     const newKey = recovery.key;
