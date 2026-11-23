@@ -50,6 +50,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
   setCapabilityMutationOptions,
@@ -64,6 +65,9 @@ import {
   enterpriseOverviewQueryOptions,
 } from "@/lib/enterprise/queries";
 import { queryClient } from "@/query-client";
+
+/** Placeholder rows while the activity loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d"];
 
 export const Route = createFileRoute("/_authed/admin/proactive")({
   component: CheckInsPage,
@@ -127,10 +131,36 @@ export function CheckInsPage() {
         description="Bots check the apps people connected and tell them when something needs them, at most once an hour. They never act without asking."
         title="Check-ins"
       >
-        {overview.isPending ? null : overview.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            Couldn't load check-in settings. Reload the page.
-          </p>
+        {overview.isPending ? (
+          <div
+            aria-busy="true"
+            aria-label="Loading check-in settings"
+            role="status"
+          >
+            <PageRows>
+              <Item size="sm">
+                <ItemContent className="gap-1.5">
+                  <Skeleton className="h-3.5 w-40" />
+                  <Skeleton className="h-3 w-64" />
+                </ItemContent>
+              </Item>
+            </PageRows>
+          </div>
+        ) : overview.error ? (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <p className="text-destructive text-sm" role="alert">
+              Couldn't load check-in settings.
+            </p>
+            <Button
+              disabled={overview.isFetching}
+              onClick={() => void overview.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {overview.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
         ) : (
           <CheckInSettings data={overview.data} />
         )}
@@ -292,10 +322,44 @@ function Activity({
       description="Acceptance is how many items people started, out of the ones they started or hid."
       title="Activity"
     >
-      {metrics.isPending ? null : metrics.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't load check-in activity. Reload the page.
-        </p>
+      {metrics.isPending ? (
+        <div
+          aria-busy="true"
+          aria-label="Loading check-in activity"
+          role="status"
+        >
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <div key={key}>
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <Skeleton className="size-full" />
+                  </ItemMedia>
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-56" />
+                  </ItemContent>
+                </Item>
+                {index !== LOADING_ROWS.length - 1 && <Separator />}
+              </div>
+            ))}
+          </PageRows>
+        </div>
+      ) : metrics.error ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load check-in activity.
+          </p>
+          <Button
+            disabled={metrics.isFetching}
+            onClick={() => void metrics.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {metrics.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : (
         <>
           <PageRows>

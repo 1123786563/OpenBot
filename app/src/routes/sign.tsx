@@ -48,11 +48,14 @@ export const Route = createFileRoute("/sign")({
    */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { flow_id?: string; openfuse_request?: string; returnTo?: string } => ({
-    ...searchTextEntry("flow_id", search.flow_id),
-    ...searchTextEntry("openfuse_request", search.openfuse_request),
-    ...("returnTo" in search ? { returnTo: appReturnPath(search.returnTo) } : {}),
-  }),
+  ): { flow_id?: string; openfuse_request?: string; returnTo?: string } => {
+    const returnTo = appReturnPath(search.returnTo);
+    return {
+      ...searchTextEntry("flow_id", search.flow_id),
+      ...searchTextEntry("openfuse_request", search.openfuse_request),
+      ...(returnTo ? { returnTo } : {}),
+    };
+  },
   beforeLoad: async ({ context, search }) => {
     const user = await context.queryClient.ensureQueryData(
       currentUserQueryOptions(),
@@ -74,11 +77,10 @@ export const Route = createFileRoute("/sign")({
       const verifier =
         openFuseResumePath(search.openfuse_request) ??
         verifierPathFor(search.flow_id);
-      throw verifier
-        ? redirect({ href: verifier, reloadDocument: true })
-        : search.returnTo
-          ? redirect({ href: search.returnTo, replace: true })
-          : redirect({ to: "/" });
+      if (verifier) throw redirect({ href: verifier, reloadDocument: true });
+      if (search.returnTo)
+        throw redirect({ href: search.returnTo, replace: true });
+      throw redirect({ to: "/" });
     }
     // Loaded here so the screen paints with its buttons rather than painting empty and then
     // growing them, which reads as "no providers" for exactly as long as the request takes.
