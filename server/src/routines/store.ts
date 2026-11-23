@@ -200,6 +200,7 @@ export type RoutineInput = {
  * told whose they were would be a runner that could be told the wrong answer.
  */
 export type RoutineRunContext = {
+  status?: RoutineRunOutcome | null;
   source?: "schedule" | "run_now" | "trigger";
   routineId: string;
   ownerUserId: string;
@@ -292,7 +293,8 @@ export type RoutineStore = {
    */
   advanceNextRun(id: string, from: Date, computeFrom?: Date): Promise<boolean>;
   /** Open a run row. Its status stays null until something finishes it. */
-  insertRun(routineId: string): Promise<{ runId: string }>;
+  insertRun(routineId: string, firingId?: string): Promise<{ runId: string }>;
+  reopenBillingRun?(runId: string): Promise<boolean>;
   /**
    * The runner's read: an opened run row, joined to the routine it fires.
    *
@@ -310,7 +312,7 @@ export type RoutineStore = {
    */
   routineForFiring(
     id: string,
-  ): Promise<{ id: string; enabled: boolean } | null>;
+  ): Promise<{ id: string; enabled: boolean; budgetId?: string | null } | null>;
   /** Close a run row with its outcome, and the capped error when there was one. */
   finishRun(
     runId: string,
@@ -1149,14 +1151,16 @@ export function createRoutineStore(database: Database): RoutineStore {
       return moved.length > 0;
     },
 
-    async insertRun(routineId) {
-      const runId = `routine_run_${crypto.randomUUID()}`;
+    async insertRun(routineId, firingId) {
+      const runId = `routine_run_${firingId ?? crypto.randomUUID()}`;
       // `startedAt` defaults to the database's now, and `status` stays null: null is the in-flight
       // state, which is the reason that column is nullable rather than defaulted to something.
       const [row] = await database
         .insert(routineRuns)
         .values({ id: runId, routineId })
+        .onConflictDoNothing({ target: routineRuns.id })
         .returning({ id: routineRuns.id });
+      if (!row && firingId) return { runId };
       if (!row) throw new Error("inserting a routine run returned no row");
       return { runId: row.id };
     },
@@ -1171,6 +1175,7 @@ export function createRoutineStore(database: Database): RoutineStore {
         .select({
           routineId: routines.id,
           source: routineRuns.source,
+          status: routineRuns.status,
           ownerUserId: routines.ownerUserId,
           agentId: routines.agentId,
           channelId: routines.channelId,
@@ -1189,11 +1194,35 @@ export function createRoutineStore(database: Database): RoutineStore {
       // A single select, not owner-scoped — the sweep's read, like `dueRoutines`. A routine id here
       // comes from a work item's own payload, not from a person, so there is no owner to check.
       const [row] = await database
-        .select({ id: routines.id, enabled: routines.enabled })
+        .select({
+          id: routines.id,
+          enabled: routines.enabled,
+          budgetId: routines.budgetId,
+        })
         .from(routines)
         .where(eq(routines.id, id))
         .limit(1);
       return row ?? null;
+    },
+
+    async reopenBillingRun(runId) {
+      const [row] = await database
+        .update(routineRuns)
+        .set({
+          status: null,
+          error: null,
+          finishedAt: null,
+          startedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(routineRuns.id, runId),
+            sql`(${routineRuns.status} = 'skipped' or
+            (${routineRuns.status} = 'waiting' and ${routineRuns.error} ~ ' Operation [0-9a-f]{64}$'))`,
+          ),
+        )
+        .returning({ id: routineRuns.id });
+      return Boolean(row);
     },
 
     async finishRun(runId, status, error, waiting) {

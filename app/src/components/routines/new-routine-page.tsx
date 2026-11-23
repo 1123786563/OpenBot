@@ -1,8 +1,10 @@
 import { useForm } from "@tanstack/react-form";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
+import { ExecutionBudgetDialog } from "@/components/billing/execution-budget-dialog";
 import { PageCard, PageShell } from "@/components/layout/page-shell";
 import { RoutineAction } from "@/components/routines/routine-action";
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,7 @@ import {
   type ChannelSummary,
   channelListQueryOptions,
 } from "@/lib/channels/queries";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
   browserTimeZone,
   cronFrom,
@@ -42,7 +45,10 @@ import {
   scheduleSentence,
   WEEKDAY_LABEL,
 } from "@/lib/routines/form";
-import { createRoutineMutationOptions } from "@/lib/routines/mutations";
+import {
+  createRoutineMutationOptions,
+  type RoutineInput,
+} from "@/lib/routines/mutations";
 import { openingOf } from "@/lib/voice/cut";
 import { queryClient } from "@/query-client";
 
@@ -97,6 +103,12 @@ function RoutineCreateForm({
   const agents = useQuery(agentListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
   const createRoutine = useMutation(createRoutineMutationOptions(queryClient));
+  const { data: capabilities } = useQuery(deploymentCapabilitiesQueryOptions());
+  const [budgetedInput, setBudgetedInput] = useState<RoutineInput>();
+  async function create(input: RoutineInput) {
+    await createRoutine.mutateAsync(input);
+    await navigate({ to: "/routines" });
+  }
   const timeZone = browserTimeZone();
 
   const defaultValues: RoutineFormValues = {
@@ -114,16 +126,18 @@ function RoutineCreateForm({
   const form = useForm({
     defaultValues,
     validators: { onSubmit: routineFormSchema },
-    onSubmit: async ({ value }) => {
-      await createRoutine.mutateAsync({
+    onSubmitMeta: { useCredits: false },
+    onSubmit: async ({ value, meta }) => {
+      const input: RoutineInput = {
         agentId: value.agentId,
         instruction: value.instruction.trim(),
         ...(value.title.trim() ? { title: value.title.trim() } : {}),
         cron: cronFrom(value),
         timezone: timeZone,
         channelId: value.channelId,
-      });
-      await navigate({ to: "/routines" });
+      };
+      if (meta.useCredits) setBudgetedInput(input);
+      else await create(input);
     },
   });
 
@@ -137,6 +151,13 @@ function RoutineCreateForm({
       description="Pick a Bot, say what it should do, and choose when. It posts what it did in a conversation with you."
       title="New routine"
     >
+      {budgetedInput ? (
+        <ExecutionBudgetDialog
+          title="Set a Routine budget"
+          onClose={() => setBudgetedInput(undefined)}
+          submit={(budgetId) => create({ ...budgetedInput, budgetId })}
+        />
+      ) : null}
       <form
         noValidate
         onSubmit={(event) => {
@@ -155,6 +176,16 @@ function RoutineCreateForm({
               >
                 Cancel
               </Button>
+              {capabilities?.testCreditConversations ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={createRoutine.isPending}
+                  onClick={() => void form.handleSubmit({ useCredits: true })}
+                >
+                  Create using Credits
+                </Button>
+              ) : null}
               <form.Subscribe
                 selector={(state) => [state.canSubmit, state.isSubmitting]}
               >

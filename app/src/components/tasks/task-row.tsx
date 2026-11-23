@@ -7,6 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { ContinueBudgetedWork } from "@/components/billing/execution-budget-dialog";
 import { BoardRow } from "@/components/needs-you/board-row";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import {
   couldNotFinish,
   TASK_STATUS_LABEL,
   type TaskStatus,
+  taskKeys,
 } from "@/lib/tasks/queries";
 import { cn } from "@/lib/utils";
 import { queryClient } from "@/query-client";
@@ -110,6 +112,13 @@ export function TaskRow({
           <ItemDescription className="text-foreground">{next}</ItemDescription>
         ) : null}
         <ItemFooter className="mt-2 flex-wrap justify-start">
+          {task.billingOperationId ? (
+            <ContinueBudgetedWork
+              operationId={task.billingOperationId}
+              path={`/api/tasks/${encodeURIComponent(task.id)}/continue`}
+              queryKey={taskKeys.all}
+            />
+          ) : null}
           {status === "failed" ? (
             <Button
               disabled={busy}
@@ -177,6 +186,13 @@ export function TaskBoardRow({ listed }: { listed: ListedTask }) {
     <BoardRow
       actions={
         <>
+          {task.billingOperationId ? (
+            <ContinueBudgetedWork
+              operationId={task.billingOperationId}
+              path={`/api/tasks/${encodeURIComponent(task.id)}/continue`}
+              queryKey={taskKeys.all}
+            />
+          ) : null}
           {status === "failed" ? (
             <Button
               disabled={busy}

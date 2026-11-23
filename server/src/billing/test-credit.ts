@@ -6,6 +6,7 @@ import {
   lte,
   ne,
   notExists,
+  or,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -443,6 +444,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         row.id,
         await currentTime(tx),
       );
+    await resolveProviderCostHold(tx, row.route.id, row.accountId, row.id, {
+      state: "released",
+    });
   }
 
   async function budget(accountId: string, id: string, tx: Transaction) {
@@ -699,6 +703,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         creditType: "test" | "paid";
         limitMicrocredits: bigint;
         confirmed?: boolean;
+        modelQuote?: { route: string; priceVersion: string };
       },
     ) {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.budgetId))
@@ -708,10 +713,24 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return undefined;
+        if (input.modelQuote) {
+          const active = await activeRoutes(tx, true);
+          if (
+            active?.defaultRoute !== input.modelQuote.route ||
+            active.priceVersion !== input.modelQuote.priceVersion
+          )
+            return undefined;
+        }
         const existing = await budget(accountId, input.budgetId, tx);
         if (existing) {
           if (existing.creditType !== input.creditType)
             throw new Error("Execution budget Credit type differs");
+          if (
+            existing.modelRoute !== (input.modelQuote?.route ?? null) ||
+            existing.modelPriceVersion !==
+              (input.modelQuote?.priceVersion ?? null)
+          )
+            throw new Error("Execution budget quote differs");
           if (existing.limitMicrocredits !== input.limitMicrocredits)
             throw new Error("Execution budget limit differs");
           return {
@@ -730,6 +749,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             creditType: input.creditType,
             limitMicrocredits: input.limitMicrocredits,
             confirmedAt: input.confirmed === false ? null : new Date(),
+            modelRoute: input.modelQuote?.route,
+            modelPriceVersion: input.modelQuote?.priceVersion,
           })
           .returning();
         if (!row) throw new Error("Execution budget could not be created");
@@ -820,6 +841,36 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           state: row.state,
           confirmed: row.confirmedAt !== null,
         };
+      });
+    },
+
+    async backgroundModelBudget(
+      identity: VerifiedBillingIdentity,
+      budgetId: string,
+      operationId?: string,
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const [point] = operationId
+          ? await tx
+              .select({ budgetId: resumePoints.budgetId })
+              .from(resumePoints)
+              .where(
+                and(
+                  eq(resumePoints.accountId, accountId),
+                  eq(resumePoints.operationId, operationId),
+                ),
+              )
+          : [];
+        const row = await budget(accountId, point?.budgetId ?? budgetId, tx);
+        if (row?.modelRoute && row.modelPriceVersion)
+          return {
+            modelQuote: {
+              route: row.modelRoute,
+              priceVersion: row.modelPriceVersion,
+            },
+          };
       });
     },
 
@@ -938,6 +989,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         taskId?: string;
         // False for a caller that will not retry this operation by its ID.
         resumable?: boolean;
+        // Host-owned execution identity. Include earlier charges if the person
+        // moved this execution to another budget while it was paused.
+        cumulativeExecution?: boolean;
       },
       { embedding = false } = {},
     ) {
@@ -955,23 +1009,16 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         await applyCutoff(tx, accountId, now);
         const expired = new Date(now.getTime() - reservationMilliseconds);
         const stale = await tx
-          .update(operations)
-          .set({ state: "released", paidHoldMicrocredits: 0n })
+          .select()
+          .from(operations)
           .where(
             and(
               eq(operations.accountId, accountId),
               eq(operations.state, "reserved"),
               lte(operations.createdAt, expired),
             ),
-          )
-          .returning({
-            id: operations.id,
-            paidHold: operations.paidHoldMicrocredits,
-          });
-        for (const row of stale) {
-          if (row.paidHold > 0n)
-            await releasePaidAllocations(tx, accountId, row.id, now);
-        }
+          );
+        for (const row of stale) await releaseReservation(tx, row);
         // A step that stopped for want of credits or budget room resumes on
         // the budget the person confirmed for it (#107 安全续做点): that one
         // confirmation is the entry for this step, whatever the runner asks.
@@ -1028,7 +1075,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
                 // A confirmed budget with no room for the step cannot
                 // continue it: the step waits again for the person to pick
                 // another.
-                ...(reason === "execution_limit" && paused?.budgetId
+                ...((request.cumulativeExecution ||
+                  reason === "execution_limit") &&
+                paused?.budgetId
                   ? { budgetId: null, confirmedAt: null }
                   : {}),
               },
@@ -1132,6 +1181,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             .limit(1);
           if (priorPause) return denied("execution_limit");
         }
+        if (!embedding && paused && !continued) return denied(paused.reason);
         const executionBudget = input.budgetId
           ? await budget(accountId, input.budgetId, tx)
           : undefined;
@@ -1156,8 +1206,59 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           active?.priceVersion !== input.priceVersion
         )
           return denied("route_unavailable");
-        const balance = await totals(tx, accountId);
         const reserved = BigInt(route.maxChargeMicrocredits);
+        if (executionBudget) {
+          const used =
+            input.cumulativeExecution && input.stepId
+              ? await chargedOrHeld(
+                  tx,
+                  and(
+                    eq(operations.accountId, accountId),
+                    or(
+                      eq(operations.budgetId, executionBudget.id),
+                      and(
+                        eq(operations.applicationId, "openbot"),
+                        eq(operations.stepId, input.stepId),
+                      ),
+                    ),
+                  ),
+                )
+              : await budgetUsage(accountId, executionBudget.id, tx);
+          if (used + reserved > executionBudget.limitMicrocredits)
+            return pause("execution_limit");
+        }
+        // Ingestion waits at its original operation until the person raises
+        // the grant ceiling and confirms a Test Credit continuation budget.
+        if (under?.held) {
+          const used = await authorizationUsage(tx, accountId, under.held.id);
+          if (used + reserved > under.held.limitMicrocredits)
+            return embedding
+              ? pause("execution_limit")
+              : denied("execution_limit");
+        }
+        // The pilot-wide provider-cost ceiling is acquired in the same
+        // transaction as the user reservation: both hold or neither does.
+        const costLimit = (
+          await tx
+            .select()
+            .from(pilotProviderCostLimits)
+            .where(eq(pilotProviderCostLimits.path, route.id))
+        )[0];
+        if (costLimit) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${route.id}))`,
+          );
+          const outstanding = await providerCostOutstanding(tx, route.id);
+          if (outstanding + reserved > costLimit.limitMicrocredits)
+            return denied("route_unavailable");
+        }
+        if (
+          input.cumulativeExecution &&
+          (executionBudget?.modelRoute !== input.route ||
+            executionBudget?.modelPriceVersion !== input.priceVersion)
+        )
+          return denied("route_unavailable");
+        const balance = await totals(tx, accountId);
         // The two entries choose their Credit type (#107 试用与付费入口分
         // 开选择): "test" spends Test Credit only, "paid" funds the whole
         // bound from paid sources only, and the default spans both — the
@@ -1201,36 +1302,6 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
                 : pause("insufficient_credits");
             paidHold = paid.amount;
           }
-        }
-        if (executionBudget) {
-          const used = await budgetUsage(accountId, executionBudget.id, tx);
-          if (used + reserved > executionBudget.limitMicrocredits)
-            return pause("execution_limit");
-        }
-        // Ingestion waits at its original operation until the person raises
-        // the grant ceiling and confirms a Test Credit continuation budget.
-        if (under?.held) {
-          const used = await authorizationUsage(tx, accountId, under.held.id);
-          if (used + reserved > under.held.limitMicrocredits)
-            return embedding
-              ? pause("execution_limit")
-              : denied("execution_limit");
-        }
-        // The pilot-wide provider-cost ceiling is acquired in the same
-        // transaction as the user reservation: both hold or neither does.
-        const costLimit = (
-          await tx
-            .select()
-            .from(pilotProviderCostLimits)
-            .where(eq(pilotProviderCostLimits.path, route.id))
-        )[0];
-        if (costLimit) {
-          await tx.execute(
-            sql`select pg_advisory_xact_lock(hashtext(${route.id}))`,
-          );
-          const outstanding = await providerCostOutstanding(tx, route.id);
-          if (outstanding + reserved > costLimit.limitMicrocredits)
-            return denied("route_unavailable");
         }
         const [row] = await tx
           .insert(operations)
@@ -1718,7 +1789,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           (authorizationId
             ? target.creditType !== "test" || point.reason !== "execution_limit"
             : point.reason === "insufficient_credits" &&
-              target.creditType !== "paid")
+              target.creditType !== "paid" &&
+              !(point.applicationId === "openbot" && target.modelPriceVersion))
         )
           return { state: "denied" as const };
         if (newLimit !== undefined) {
@@ -1760,6 +1832,19 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
 
     async routeStillEligible(route: ReleasedBifrostRoute) {
       return routeEligible(await activeRoutes(database), route);
+    },
+
+    async discardReservation(
+      identity: VerifiedBillingIdentity,
+      input: { operationId: string; permit: string },
+    ) {
+      await database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return;
+        const row = await operation(accountId, input.operationId, tx);
+        if (row?.state === "reserved" && row.permit === input.permit)
+          await releaseReservation(tx, row);
+      });
     },
 
     async beginDispatch(
@@ -1907,11 +1992,28 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       accountId: string,
       id: string,
       { requestId, digest }: { requestId: string; digest: string },
+      { recheckAdmission = false } = {},
     ) {
       return database.transaction(async (tx) => {
         if (!(await lockAccount(tx, accountId))) return false;
         const now = await currentTime(tx);
         await applyCutoff(tx, accountId, now);
+        if (recheckAdmission) {
+          const operationRow = await operation(accountId, id, tx);
+          const executionBudget = operationRow?.budgetId
+            ? await budget(accountId, operationRow.budgetId, tx)
+            : undefined;
+          if (
+            !operationRow ||
+            executionBudget?.state !== "active" ||
+            executionBudget.confirmedAt === null ||
+            (await suspended(tx, accountId)) ||
+            (await restoreHolds(tx, accountId)) ||
+            (await pilotReservesStoppedAt(tx)) ||
+            !routeEligible(await activeRoutes(tx, true), operationRow.route)
+          )
+            return false;
+        }
         const [bound] = await tx
           .update(operations)
           .set({

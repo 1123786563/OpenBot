@@ -182,6 +182,7 @@ export type TaskPayload = {
   suggestionId: string | null;
   sourceApp: string | null;
   sourceLink: string | null;
+  billingOperationId?: string;
   status: TaskStatus;
   /** Why its turn couldn't finish, in plain words, while `failed`. Null otherwise. */
   failure: string | null;
@@ -217,6 +218,7 @@ export type TaskService = {
    */
   startFromItem(input: {
     ownerUserId: string;
+    budgetId?: string;
     item: {
       id: string;
       agentId: string;

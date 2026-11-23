@@ -705,6 +705,37 @@ describe("consuming a claimed firing", () => {
     expect(again?.attempts).toBe(2);
   });
 
+  test("a budgeted firing keeps its run ID after a Worker redelivery", async () => {
+    const { routine } = await makeRoutine();
+    await database
+      .update(routines)
+      .set({ budgetId: "fixture-budget" })
+      .where(eq(routines.id, routine.id));
+    const due = new Date("2001-01-01T09:25:00Z");
+    await offerFiring(routine.id, due, new Date("2001-01-01T09:26:00Z"));
+    await dispatchClaimedRoutines(
+      sweepOptions({
+        now: at("2001-01-01T09:26:00Z"),
+        dispatch: async (runId: string) => {
+          dispatched.push(runId);
+          throw new Error("The first worker lost its dispatch response.");
+        },
+      }),
+    );
+    const [work] = await firingsFor(routine.id);
+    if (!work) throw new Error("The firing was never queued");
+    await backdate(work.key, { runAt: due });
+    await dispatchClaimedRoutines(
+      sweepOptions({
+        now: at("2001-01-01T09:27:00Z"),
+        owner: "replacement-worker",
+      }),
+    );
+    expect(dispatched).toHaveLength(2);
+    expect(dispatched[1]).toBe(dispatched[0]);
+    expect(await runsFor(routine.id)).toHaveLength(1);
+  });
+
   test("a routine switched off between the offer and the firing is finished without dispatching", async () => {
     const { owner, routine } = await makeRoutine();
     await offerFiring(

@@ -2,8 +2,15 @@ import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import type { AgentActor } from "../agents/profile-types";
 import { PERSON_INITIATOR } from "../audit";
+import { BackgroundModelWaiting } from "../billing/background-model";
 import type { ChannelStore } from "../channels/routes";
-import { ASK_LINE, FAILED_LINE, plainFailure, replyTail } from "./state";
+import {
+  ASK_LINE,
+  BILLING_LINE,
+  FAILED_LINE,
+  plainFailure,
+  replyTail,
+} from "./state";
 
 /** A task's conversation, as its turn runs in it. */
 export type TaskScope = {
@@ -35,7 +42,7 @@ export type TaskTurnInput = {
 export type TaskTurn = (
   scope: TaskScope,
   input: TaskTurnInput,
-) => Promise<void>;
+) => Promise<void> | Promise<{ billingOperationId: string } | undefined>;
 
 /**
  * A task's turn: the person's ask as their message in the task's conversation, a person-started turn
@@ -95,7 +102,7 @@ export function createTaskTurn(deps: {
         initiator: PERSON_INITIATOR,
         signal: input.signal,
         ...(input.budgetId
-          ? { budget: { id: input.budgetId, stepId: input.runId } }
+          ? { budget: { id: input.budgetId, stepId: input.askId } }
           : {}),
       });
       /*
@@ -108,9 +115,17 @@ export function createTaskTurn(deps: {
         await record(
           replyTail(result.replyText) ?? result.replyText,
           scope.agentId,
-          `${input.runId}:reply`,
+          `${input.budgetId ? input.askId : input.runId}:reply`,
         );
     } catch (error) {
+      if (error instanceof BackgroundModelWaiting) {
+        await record(
+          error.message,
+          scope.agentId,
+          `${input.askId}${BILLING_LINE}`,
+        );
+        return { billingOperationId: error.operationId };
+      }
       if (!(error instanceof HeadlessToolSuspension)) {
         if (input.final)
           await record(

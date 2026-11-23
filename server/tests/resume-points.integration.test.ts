@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, eq, inArray } from "drizzle-orm";
+import { EventType, type Message } from "@ag-ui/client";
+import { createTurnRunner } from "@openbot/toolkit/run-turn";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { tap } from "rxjs";
 import {
   configure,
   emptyCatalog,
@@ -7,23 +10,43 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
+import { createAgentProfileStore } from "../src/agents/profile-store";
+import {
+  backgroundModelOperationId,
+  createBackgroundModel,
+} from "../src/billing/background-model";
+import { budgetedTurn } from "../src/billing/background-model-turn";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import { createChannelStore } from "../src/channels/routes";
+import { createThreadIdentity } from "../src/channels/thread-identity";
 import { createDatabase } from "../src/db/client";
 import {
+  agents,
+  channels,
   enterpriseSettings,
   lagoUsageEvents,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
   paidProducts,
+  proactiveSettings,
+  proactiveSuggestions,
   testCreditAccounts,
   testCreditBatches,
   testCreditBudgets,
   testCreditEnrollments,
   testCreditEvidence,
   testCreditOperations,
+  users,
+  workItems,
 } from "../src/db/schema";
+import { createRoutineRunner } from "../src/routines/runner";
+import { createRoutineStore } from "../src/routines/store";
+import { createTaskRunner } from "../src/tasks/runner";
+import { createTaskStore } from "../src/tasks/store";
+import { createTaskTurn } from "../src/tasks/turn";
+import { createWorkQueue } from "../src/work/queue";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -159,7 +182,15 @@ afterAll(async () => {
       .where(
         inArray(
           testCreditAccounts.issuer,
-          ["pause", "limit", "hold"].map((tag) => `resume-point-${tag}`),
+          [
+            "pause",
+            "limit",
+            "hold",
+            "paid-limit",
+            "background",
+            "runner",
+            "late-auth",
+          ].map((tag) => `resume-point-${tag}`),
         ),
       );
     const ids = rows.map(({ id }) => id);
@@ -500,6 +531,46 @@ test("a step over its budget continues on a new budget the person confirms", asy
   });
 });
 
+test("a paid step over its cap holds nothing and needs explicit continuation after a cap increase", async () => {
+  const { identity, accountId } = await enrolled("paid-limit", 6n);
+  await boughtPack(accountId, 100n, `ali-resume-4-${run}`);
+  const budget = await budgetOf(identity, {
+    budgetId: "paid-cap",
+    creditType: "paid",
+    limitMicrocredits: 5n,
+  });
+  const request = {
+    operationId: "paid-cap-step",
+    route: routeId,
+    priceVersion,
+    budgetId: budget.budgetId,
+    creditType: "paid" as const,
+  };
+  expect(await ledger.reserve(identity, request)).toEqual({
+    state: "denied",
+    reason: "execution_limit",
+  });
+  expect(await paidLedger.paidBalance(accountId)).toMatchObject({
+    availableMicrocredits: "100",
+    reservedMicrocredits: "0",
+  });
+  await ledger.confirmBudget(identity, budget.budgetId, 20n);
+  expect(await ledger.reserve(identity, request)).toEqual({
+    state: "denied",
+    reason: "execution_limit",
+  });
+  expect(
+    await ledger.confirmResumePoint(
+      identity,
+      request.operationId,
+      budget.budgetId,
+    ),
+  ).toMatchObject({ state: "confirmed" });
+  expect(await ledger.reserve(identity, request)).toMatchObject({
+    state: "reserved",
+  });
+});
+
 test("a reservation that is refused at dispatch gives its paid hold back", async () => {
   const { identity, accountId } = await enrolled("hold", 6n);
   await boughtPack(accountId, 100n, `ali-resume-3-${run}`);
@@ -542,4 +613,408 @@ test("a reservation that is refused at dispatch gives its paid hold back", async
     reservedMicrocredits: "0",
     chargedMicrocredits: "0",
   });
+});
+
+test("a background execution keeps completed steps, waits for evidence, and applies one cumulative cap after continuation", async () => {
+  const { identity, accountId } = await enrolled("background", 100n);
+  const modelQuote = { route: routeId, priceVersion };
+  await budgetOf(identity, {
+    budgetId: "background-original",
+    creditType: "test",
+    limitMicrocredits: 17n,
+    modelQuote,
+  });
+  const scope = {
+    kind: "task" as const,
+    personId: "fixture-person",
+    executionId: "fixture-task",
+    budgetId: "background-original",
+  };
+  const dispatched: string[] = [];
+  const worker = () =>
+    createBackgroundModel({
+      ledger,
+      identityOf: async () => identity,
+      execute: async ({ operationId }) => {
+        dispatched.push(operationId);
+        if (operationId === backgroundModelOperationId(scope, "second"))
+          throw new Error("The provider's reply was lost");
+        return {
+          text: "First result",
+          usage: { inputTokens: 7, outputTokens: 0 },
+        };
+      },
+    });
+  const step = (name: string, previousSteps?: string[]) => ({
+    step: name,
+    previousSteps,
+    messages: [{ role: "user" as const, content: name }],
+    authorize: async () => {},
+  });
+  expect(await worker().complete(scope, step("first"))).toBe("First result");
+  expect(await worker().complete(scope, step("first"))).toBe("First result");
+  await expect(
+    worker().complete(scope, step("second", ["first"])),
+  ).rejects.toMatchObject({
+    reason: "reconciling",
+  });
+  await expect(
+    worker().complete(scope, step("third", ["first", "second"])),
+  ).rejects.toMatchObject({
+    reason: "reconciling",
+  });
+  const pending = backgroundModelOperationId(scope, "second");
+  expect(
+    await ledger.confirmResumePoint(identity, pending, scope.budgetId),
+  ).toBeUndefined();
+  await ledger.recordEvidence(accountId, pending, {
+    evidenceId: "fixture-recovery",
+    outcome: "completed",
+    inputTokens: 5n,
+    outputTokens: 0n,
+    resultText: "Recovered second result",
+  });
+  expect(await worker().complete(scope, step("second", ["first"]))).toBe(
+    "Recovered second result",
+  );
+  const third = backgroundModelOperationId(scope, "third");
+  await expect(
+    worker().complete(scope, step("third", ["first", "second"])),
+  ).rejects.toMatchObject({
+    operationId: third,
+    reason: "execution_limit",
+  });
+  await budgetOf(identity, {
+    budgetId: "background-continuation",
+    creditType: "test",
+    limitMicrocredits: 20n,
+    modelQuote,
+  });
+  expect(
+    await ledger.confirmResumePoint(identity, third, "background-continuation"),
+  ).toMatchObject({
+    state: "confirmed",
+  });
+  await expect(
+    worker().complete(scope, step("third", ["first", "second"])),
+  ).rejects.toMatchObject({
+    reason: "execution_limit",
+  });
+  await ledger.confirmBudget(identity, "background-continuation", 22n);
+  await expect(
+    worker().complete(scope, step("third", ["first", "second"])),
+  ).rejects.toMatchObject({
+    reason: "execution_limit",
+  });
+  await ledger.confirmResumePoint(identity, third, "background-continuation");
+  expect(
+    await worker().complete(scope, step("third", ["first", "second"])),
+  ).toBe("First result");
+  expect(dispatched).toEqual([
+    backgroundModelOperationId(scope, "first"),
+    pending,
+    third,
+  ]);
+});
+
+test("a real Routine and Task keep their execution IDs and continue only after billing confirmation", async () => {
+  const { identity } = await enrolled("runner", 10n);
+  const modelQuote = { route: routeId, priceVersion };
+  for (const [budgetId, limitMicrocredits] of [
+    ["runner-tiny", 5n],
+    ["runner-raised", 30n],
+  ] as const)
+    await budgetOf(identity, {
+      budgetId,
+      limitMicrocredits,
+      creditType: "test",
+      modelQuote,
+    });
+  const owner = { id: crypto.randomUUID(), role: "user" as const };
+  const calls: string[] = [];
+  const model = createBackgroundModel({
+    ledger,
+    identityOf: async (id) => (id === owner.id ? identity : undefined),
+    execute: async ({ operationId }) => {
+      calls.push(operationId);
+      return {
+        text: "Fixture reply.",
+        usage: { inputTokens: 2, outputTokens: 0 },
+      };
+    },
+  });
+  const history = new Map<string, Message[]>();
+  const turnFor = (kind: "routine" | "task") =>
+    budgetedTurn(
+      model,
+      kind,
+      (agent) =>
+        createTurnRunner({
+          admission: async () => undefined,
+          buildAgentFor: async () => agent,
+          intelligence: {
+            getOrCreateThread: async ({ threadId }) => ({
+              thread: { id: threadId },
+              created: false,
+            }),
+            getThreadMessages: async ({ threadId }) => ({
+              messages: history.get(threadId) ?? [],
+            }),
+            ɵacquireThreadLock: async () => undefined,
+            ɵrenewThreadLock: async () => undefined,
+            ɵcleanupThreadLock: async () => {},
+          },
+          runner: {
+            run: ({ agent, input, persistedInputMessages, threadId }) => {
+              const messages = [
+                ...(history.get(threadId) ?? []),
+                ...(persistedInputMessages ?? []),
+              ];
+              history.set(threadId, messages);
+              return agent.run(input).pipe(
+                tap((event) => {
+                  if (event.type !== EventType.TEXT_MESSAGE_CONTENT) return;
+                  const reply = {
+                    id: event.messageId,
+                    role: "assistant" as const,
+                    content: event.delta,
+                  };
+                  agent.messages = [...agent.messages, reply];
+                  messages.push(reply);
+                }),
+              );
+            },
+            stop: async () => true,
+          },
+        }),
+      async () => {},
+      async () => {
+        throw new Error("Budgeted work reached the legacy runner");
+      },
+    );
+  await database.insert(users).values({
+    id: owner.id,
+    email: `${owner.id}@example.test`,
+    name: "Billing fixture",
+  });
+  const profiles = createAgentProfileStore(
+    database,
+    new URL("https://fixture.example.test/ag-ui"),
+  );
+  const channelStore = createChannelStore(
+    database,
+    profiles,
+    createThreadIdentity("billing-fixture"),
+  );
+  const routineStore = createRoutineStore(database);
+  const taskStore = createTaskStore(database);
+  const bot = await profiles.create(owner, {
+    name: "Billing fixture Bot",
+    title: "Fixture",
+    roleDescription: "Return text",
+    visibility: "private",
+  });
+  const channel = await channelStore.create(owner, [bot.id]);
+  let taskRun: { id: string; channelId: string } | undefined;
+  try {
+    const routine = await routineStore.create({
+      ownerUserId: owner.id,
+      agentId: bot.id,
+      channelId: channel.id,
+      cron: "0 9 * * *",
+      instruction: "Summarize today's notes.",
+      budgetId: "runner-tiny",
+    });
+    const routineRunner = () =>
+      createRoutineRunner({
+        routineStore,
+        channelStore,
+        runTurn: turnFor("routine"),
+      });
+    const { runId } = await routineStore.insertRun(
+      routine.id,
+      "fixture-replayed-firing",
+    );
+    expect(
+      await routineStore.insertRun(routine.id, "fixture-replayed-firing"),
+    ).toEqual({ runId });
+    await routineRunner().run(runId);
+    expect(await routineStore.listRuns(owner.id, routine.id)).toMatchObject([
+      { id: runId, status: "waiting" },
+    ]);
+    expect(calls).toHaveLength(0);
+    const [routinePoint] = (await ledger.resumePoints(identity)) ?? [];
+    if (!routinePoint) throw new Error("No Routine resume point");
+    await ledger.confirmResumePoint(
+      identity,
+      routinePoint.operationId,
+      "runner-raised",
+    );
+    await routineRunner().run(runId);
+    expect(calls).toHaveLength(0);
+    await routineRunner().run(runId, {
+      ownerUserId: owner.id,
+      routineId: routine.id,
+    });
+    await routineRunner().run(runId);
+    expect(await routineStore.listRuns(owner.id, routine.id)).toMatchObject([
+      { id: runId, status: "succeeded" },
+    ]);
+    expect(calls).toEqual([routinePoint.operationId]);
+
+    const settingId = crypto.randomUUID();
+    const suggestionId = crypto.randomUUID();
+    await database.insert(proactiveSettings).values({
+      id: settingId,
+      ownerUserId: owner.id,
+      agentId: bot.id,
+      channelId: channel.id,
+      threadId: crypto.randomUUID(),
+    });
+    const item = {
+      id: suggestionId,
+      agentId: bot.id,
+      title: "Summarize my notes",
+      detail: "Notes were updated.",
+      sourceApp: "Fixture",
+      sourceLink: null,
+    };
+    await database.insert(proactiveSuggestions).values({
+      ...item,
+      ownerUserId: owner.id,
+      settingId,
+      runId: "billing-fixture-checkin",
+      sourceRef: "fixture/search",
+    });
+    const tasks = () =>
+      createTaskRunner({
+        database,
+        store: taskStore,
+        channels: channelStore,
+        actorFor: async () => owner,
+        queue: createWorkQueue(database),
+        owner: "billing-fixture-task",
+        scopeFor: async (ownerUserId, channelId, agentId) => {
+          const found = await channelStore.get(owner, channelId);
+          return found
+            ? { ownerUserId, channelId, agentId, threadId: found.threadId }
+            : null;
+        },
+        canStartBudget: model.canStart,
+        runTask: createTaskTurn({
+          channels: channelStore,
+          actorFor: async () => owner,
+          runTurn: turnFor("task"),
+        }),
+      });
+    const originalTaskWorker = tasks();
+    const task = await originalTaskWorker.startFromItem({
+      ownerUserId: owner.id,
+      item,
+      budgetId: "runner-raised",
+    });
+    taskRun = task;
+    await originalTaskWorker.idle();
+    const paused = await taskStore.get(owner.id, task.id);
+    expect(paused.status).toBe("needs_input");
+    if (!paused.billingOperationId) throw new Error("No Task resume point");
+    expect(await ledger.resumePoints(identity)).toMatchObject([
+      {
+        operationId: paused.billingOperationId,
+        reason: "insufficient_credits",
+      },
+    ]);
+    const refill = crypto.randomUUID();
+    batchIds.push(refill);
+    await ledger.enroll({ identity, batchId: refill, amount: 20n });
+    await ledger.claim(identity, refill);
+    const replacementTaskWorker = tasks();
+    await replacementTaskWorker.sweep();
+    expect(calls).toHaveLength(1);
+    await ledger.confirmResumePoint(
+      identity,
+      paused.billingOperationId,
+      "runner-raised",
+    );
+    await replacementTaskWorker.continueBudgeted(owner.id, task.id);
+    await replacementTaskWorker.idle();
+    expect(await taskStore.get(owner.id, task.id)).toMatchObject({
+      status: "ready_for_review",
+      next: "Fixture reply.",
+    });
+    expect(calls).toEqual([
+      routinePoint.operationId,
+      paused.billingOperationId,
+    ]);
+  } finally {
+    if (taskRun) {
+      await database
+        .delete(workItems)
+        .where(sql`${workItems.payload}->>'taskId' = ${taskRun.id}`);
+      await database.delete(channels).where(eq(channels.id, taskRun.channelId));
+    }
+    await database.delete(users).where(eq(users.id, owner.id));
+    await database.delete(channels).where(eq(channels.id, channel.id));
+    await database.delete(agents).where(eq(agents.id, bot.id));
+  }
+});
+
+test("a revoked owner cannot send a reserved step after the input meter finishes", async () => {
+  const { identity } = await enrolled("late-auth", 100n);
+  const budget = await budgetOf(identity, {
+    budgetId: "late-auth",
+    modelQuote: { route: routeId, priceVersion },
+    creditType: "test",
+    limitMicrocredits: 20n,
+  });
+  const scope = {
+    kind: "routine" as const,
+    personId: "fixture-owner",
+    executionId: "fixture-late-auth",
+    budgetId: budget.budgetId,
+  };
+  let authorized = true;
+  let sent = false;
+  const makeWorker = () =>
+    createBackgroundModel({
+      ledger,
+      identityOf: async () => identity,
+      execute: async ({ bindGatewayRequest }) => {
+        authorized = false;
+        await bindGatewayRequest({
+          requestId: crypto.randomUUID(),
+          digest: "a".repeat(64),
+        });
+        sent = true;
+        return {
+          text: "Should not reach the provider",
+          usage: { inputTokens: 2, outputTokens: 0 },
+        };
+      },
+    });
+  const step = {
+    step: "reply",
+    messages: [{ role: "user" as const, content: "Fixture prompt" }],
+    authorize: async () => {
+      if (!authorized) throw new Error("The owner's access expired");
+    },
+  };
+  const operationId = backgroundModelOperationId(scope, step.step);
+  await expect(makeWorker().complete(scope, step)).rejects.toMatchObject({
+    reason: "route_unavailable",
+  });
+  expect(sent).toBe(false);
+  expect(await ledger.receipt(identity, operationId)).toMatchObject({
+    state: "released",
+    dispatchedAt: null,
+    heldMicrocredits: "0",
+  });
+  expect(await ledger.balance(identity)).toMatchObject({
+    reservedMicrocredits: "0",
+  });
+  authorized = true;
+  await expect(makeWorker().complete(scope, step)).rejects.toMatchObject({
+    reason: "route_unavailable",
+  });
+  expect(sent).toBe(false);
 });

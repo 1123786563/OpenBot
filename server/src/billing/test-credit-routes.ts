@@ -146,6 +146,29 @@ export function createTestCreditRoutes({
     context.json(await ledger.budgets(context.var.identity)),
   );
 
+  api.post("/budgets/preview", async (context) => {
+    const input = z
+      .strictObject({
+        creditType: z.enum(["test", "paid"]),
+        limitMicrocredits: z.string().regex(/^[1-9]\d{0,17}$/),
+      })
+      .safeParse(await context.req.json().catch(() => undefined));
+    if (!input.success)
+      return context.json({ error: "Invalid execution budget." }, 400);
+    const [account, quote] = await Promise.all([
+      ledger.accountOf(context.var.identity),
+      ledger.quote(),
+    ]);
+    return account && quote
+      ? context.json({
+          ...quote,
+          ...input.data,
+          usageDisclosure:
+            "Interrupted, cancelled, or failed requests may still use Credits.",
+        })
+      : context.json({ error: "Billing quote unavailable." }, 404);
+  });
+
   api.post("/budgets", async (context) => {
     const input = z
       .strictObject({
@@ -153,6 +176,12 @@ export function createTestCreditRoutes({
         creditType: z.enum(["test", "paid"]),
         limitMicrocredits: z.string().regex(/^[1-9]\d*$/),
         confirmed: z.boolean().optional(),
+        modelQuote: z
+          .strictObject({
+            route: z.string().min(1).max(64),
+            priceVersion: z.uuid(),
+          })
+          .optional(),
       })
       .safeParse(await context.req.json().catch(() => undefined));
     if (!input.success)
@@ -575,11 +604,13 @@ export async function dispatchTestCredit({
   execute,
   identity,
   input,
+  authorizeDispatch,
 }: {
   ledger: TestCreditLedger;
   execute?: TestCreditExecutor;
   identity: VerifiedBillingIdentity;
   input: z.infer<typeof dispatch>;
+  authorizeDispatch?: () => Promise<boolean>;
 }) {
   const admission = await ledger.beginDispatch(identity, input, {
     executorAvailable: execute !== undefined,
@@ -595,12 +626,22 @@ export async function dispatchTestCredit({
         operationId: input.operationId,
         route: admission.route,
         recheckRoute: () => ledger.routeStillEligible(admission.route),
-        bindGatewayRequest: (request) =>
-          ledger.bindGatewayRequest(
+        bindGatewayRequest: async (request) => {
+          if (
+            authorizeDispatch &&
+            !(await authorizeDispatch().catch(() => false))
+          )
+            throw new UnsentBifrostRequest("route_unavailable");
+          const bound = await ledger.bindGatewayRequest(
             admission.accountId,
             input.operationId,
             request,
-          ),
+            { recheckAdmission: authorizeDispatch !== undefined },
+          );
+          if (!bound && authorizeDispatch)
+            throw new UnsentBifrostRequest("route_unavailable");
+          return bound;
+        },
         messages: input.messages,
       }),
     );

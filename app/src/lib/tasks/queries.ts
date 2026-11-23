@@ -36,6 +36,7 @@ export type BotTask = {
   sourceApp: string | null;
   sourceLink: string | null;
   status: TaskStatus;
+  billingOperationId?: string;
   /** Why its turn couldn't finish, in plain words, while `failed`. Null otherwise. */
   failure: string | null;
   failedAt: string | null;

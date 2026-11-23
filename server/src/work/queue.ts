@@ -138,6 +138,8 @@ export type WorkQueue = {
     kind: string;
     key: string;
     owner: string;
+    /** Result fields written under the same lease as the finished outcome. */
+    payload?: Record<string, unknown>;
   }) => Promise<boolean>;
   /** Not done, and worth another go after `delayMs`. False means it was no longer ours. */
   release: (input: {
@@ -354,7 +356,7 @@ export function createWorkQueue(database: Database): WorkQueue {
       return Boolean(renewed);
     },
 
-    async finish({ kind, key, owner }) {
+    async finish({ kind, key, owner, payload }) {
       const [finished] = await database
         .update(workItems)
         /*
@@ -364,6 +366,11 @@ export function createWorkQueue(database: Database): WorkQueue {
          */
         .set({
           finishedAt: sql`now()`,
+          ...(payload
+            ? {
+                payload: sql`${workItems.payload} || ${JSON.stringify(payload)}::text::jsonb`,
+              }
+            : {}),
           claimedBy: null,
           leaseUntil: null,
           updatedAt: sql`now()`,

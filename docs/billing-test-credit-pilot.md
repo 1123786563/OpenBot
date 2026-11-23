@@ -38,9 +38,15 @@ A retry keeps the operation ID and returns the existing receipt without sending 
 
 ## Cumulative execution budgets
 
-Routine and persistent Task rows may bind to a confirmed Test Credit execution budget. Each managed-model step carries the budget ID and a stable step ID into reservation and dispatch. The ledger counts reserved, pending, and settled operations against the same budget, rejects unconfirmed or exhausted budgets, and rechecks the cumulative limit immediately before dispatch. Repeating one step with the same operation and step identity is idempotent. A managed-model result is stored on the operation so a paused task can resume from its completed result after the user confirms a larger limit.
+Choose **Create using Credits** on the Routine form or **Use Credits** on a check-in item to start a text-only execution. The dialog shows the model rate and maximum hold per request. Choose Test Credits or Paid Credits, then confirm the cumulative cap in Credits. The server binds the budget to the published route and Price Version. API callers can get the same fields from `POST /api/billing/budgets/preview` with a Credit type and a limit in microcredits.
 
-The focused verification covers budget confirmation, cumulative-limit refusal, dispatch-time revalidation, repeated-step binding, and result preservation. The database-backed execution-budget test runs against an isolated PostgreSQL database and verifies that a budget can be confirmed and enlarged before the next step.
+Each billed step uses the same reservation, dispatch, and reconciliation functions as Conversations. The step ID stays the same when a worker reclaims the execution. Before dispatch, the API checks the current Person, Bot, conversation, Billing Account, and effective budget. The executor checks access again before it binds the gateway request. A settled step reuses its saved result.
+
+A balance or cap refusal records a resume point without placing a hold. Choose **Continue** on the original Routine run or Task and confirm the updated budget. The new cap includes earlier charges from that execution. If a request is still under reconciliation, **Continue** checks the original request and waits for a usable result. Adding Credits by itself leaves paused work waiting. Scheduled occurrences outside the grace period remain skipped.
+
+The isolated PostgreSQL tests in `server/tests/resume-points.integration.test.ts` exercise the Routine store, durable Task queue, and fixture executor. They verify cumulative spend, explicit continuation, lost replies, and access revocation after reservation. The scheduler test in `server/tests/routine-sweep.integration.test.ts` verifies that a replacement worker reuses the same run ID.
+
+Full #94 acceptance still requires a verified dispatch contract for tool-bearing Routine and Task runs, including connected-app actions and model calls after a tool result. The current Web flow meters the text reply. An unknown result without a recoverable reply stays blocked, and a released, unsent operation has no automatic replacement. Live acceptance requires the controlled #89 gateway, approved input meter, read-only evidence proxy, and pre-enrolled Casdoor identity.
 
 ## Integration gates
 

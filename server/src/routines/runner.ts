@@ -26,10 +26,19 @@ import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import type { AgentActor } from "../agents/profile-types";
+import {
+  BackgroundModelWaiting,
+  backgroundModelOperationId,
+} from "../billing/background-model";
 import type { ChannelStore } from "../channels/routes";
 import type { RoutineStore } from "./store";
 
-export type RoutineRunner = { run(routineRunId: string): Promise<void> };
+export type RoutineRunner = {
+  run(
+    routineRunId: string,
+    continuation?: { ownerUserId: string; routineId: string },
+  ): Promise<void>;
+};
 
 /**
  * How much of a failure's reason the channel notification carries.
@@ -65,7 +74,10 @@ export function createRoutineRunner(options: {
 }): RoutineRunner {
   const { routineStore, channelStore, runTurn } = options;
 
-  async function runOnce(routineRunId: string): Promise<void> {
+  async function runOnce(
+    routineRunId: string,
+    continuation?: { ownerUserId: string; routineId: string },
+  ): Promise<void> {
     const context = await routineStore.runContext(routineRunId);
     /*
      * A deleted routine's queued run is nobody's problem. The routine is gone, its runs cascaded
@@ -73,6 +85,16 @@ export function createRoutineRunner(options: {
      * say to anybody. The firing is dropped on the floor deliberately.
      */
     if (!context) return;
+    if (continuation) {
+      if (
+        context.ownerUserId !== continuation.ownerUserId ||
+        context.routineId !== continuation.routineId ||
+        !context.budgetId ||
+        (context.status !== "waiting" && context.status !== "skipped")
+      )
+        return;
+      if (!(await routineStore.reopenBillingRun?.(routineRunId))) return;
+    } else if (context.status) return;
     /*
      * PAUSED NEVER RUNS, checked here at the moment of running rather than only when the firing was
      * offered: a person who switched the routine off after the dispatch, or a Run now that raced a
@@ -100,13 +122,18 @@ export function createRoutineRunner(options: {
     const owner: AgentActor = { id: ownerUserId, role: "user" };
 
     /** One activity record, from the routine's Bot, or a logged miss. Never a throw. */
-    async function say(text: string): Promise<void> {
+    async function say(text: string, phase = "reply"): Promise<void> {
       try {
-        await channelStore.recordActivity(owner, channelId, {
-          text,
-          agentId,
-          at: new Date(),
-        });
+        await channelStore.recordActivity(
+          owner,
+          channelId,
+          {
+            text,
+            agentId,
+            at: new Date(),
+          },
+          budgetId ? { id: `${routineRunId}:${phase}` } : undefined,
+        );
       } catch (error) {
         /*
          * A channel that cannot be written to must not turn a recorded outcome into an unrecorded
@@ -176,10 +203,49 @@ export function createRoutineRunner(options: {
           threadId,
           instruction,
           ...(budgetId
-            ? { budget: { id: budgetId, stepId: routineRunId } }
+            ? {
+                budget: { id: budgetId, stepId: routineRunId },
+                userMessage: {
+                  id: routineRunId,
+                  role: "user",
+                  content: instruction,
+                },
+              }
             : {}),
         }));
       } catch (error) {
+        if (
+          budgetId &&
+          error instanceof Error &&
+          error.name === "PlatformRequestError" &&
+          "status" in error &&
+          error.status === 409
+        )
+          return;
+        if (budgetId) {
+          const waiting =
+            error instanceof BackgroundModelWaiting
+              ? error
+              : new BackgroundModelWaiting(
+                  backgroundModelOperationId(
+                    {
+                      kind: "routine",
+                      executionId: routineRunId,
+                      personId: ownerUserId,
+                      budgetId,
+                    },
+                    "reply",
+                  ),
+                  "reconciling",
+                );
+          await routineStore.finishRun(
+            routineRunId,
+            "waiting",
+            `${waiting.message} Operation ${waiting.operationId}`,
+          );
+          await say(waiting.message, "billing");
+          return;
+        }
         if (error instanceof HeadlessToolSuspension) {
           await routineStore.finishRun(
             routineRunId,
@@ -239,7 +305,7 @@ export function createRoutineRunner(options: {
   }
 
   return {
-    async run(routineRunId) {
+    async run(routineRunId, continuation) {
       /*
        * `run` never throws. Every outcome a routine can have — a gone channel, a refused model, a
        * routine deleted underneath the firing — is recorded on the run row above rather than raised
@@ -248,7 +314,7 @@ export function createRoutineRunner(options: {
        * alternative is a firing that vanishes without a line anywhere.
        */
       try {
-        await runOnce(routineRunId);
+        await runOnce(routineRunId, continuation);
       } catch (error) {
         console.error(
           JSON.stringify({

@@ -10,6 +10,7 @@ import { Link } from "@tanstack/react-router";
 import { Fragment, useId, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { astryxScope } from "@/components/astryx-pilot/theme";
+import { ContinueBudgetedWork } from "@/components/billing/execution-budget-dialog";
 import {
   PageEmpty,
   PageRows,
@@ -47,6 +48,7 @@ import {
   nothingIsFiring,
   type RoutineRecord,
   type RoutineRunRecord,
+  routineKeys,
   routineRunsQueryOptions,
   routinesQueryOptions,
 } from "@/lib/routines/queries";
@@ -213,6 +215,13 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
                 Open conversation
               </Link>
             )}
+            {run.billingOperationId && !routine.channel.gone ? (
+              <ContinueBudgetedWork
+                operationId={run.billingOperationId}
+                path={`/api/routines/${encodeURIComponent(routine.id)}/runs/${encodeURIComponent(run.id)}/continue`}
+                queryKey={routineKeys.all}
+              />
+            ) : null}
             {run.error ? (
               <span className="basis-full text-muted-foreground">
                 {run.error}

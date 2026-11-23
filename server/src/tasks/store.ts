@@ -127,6 +127,9 @@ export function createTaskStore(
       sourceApp: row.sourceApp,
       sourceLink: row.sourceLink,
       status,
+      ...(state?.billingOperationId
+        ? { billingOperationId: state.billingOperationId }
+        : {}),
       // Kept while it is marked done, too: Reopen brings the failure back.
       failure: failedOrDone ? (state?.failure ?? null) : null,
       failedAt: failedOrDone ? (state?.failedAt?.toISOString() ?? null) : null,
@@ -258,6 +261,19 @@ export function createTaskStore(
      * A task marked done after it failed is taken too. Its "done" is superseded only once the retry
      * is queued; reading the ask leaves it alone.
      */
+    async billingContinuation(owner: string, id: string) {
+      const { row, state } = await oneWithState(owner, id);
+      const ask = askIn(state.turnInput);
+      if (
+        !row.budgetId ||
+        row.resolvedAt ||
+        state.working ||
+        !ask ||
+        (!state.billingOperationId && !state.failure)
+      )
+        throw new TaskRefusedError("This task cannot be continued.");
+      return { ask, turns: state.turns };
+    },
     async failedTurn(
       owner: string,
       id: string,

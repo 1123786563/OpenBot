@@ -630,6 +630,10 @@ export function createApp(
     testLedger: TestCreditLedger;
     weknora?: WeKnoraRuntime;
     testCreditConversations?: boolean;
+    canStartBackgroundBudget?: (
+      personId: string,
+      budgetId: string,
+    ) => Promise<boolean>;
     paidLedger: PaidCreditLedger;
     /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
     identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
@@ -2150,6 +2154,7 @@ export function createApp(
       createRoutineRoutes(routineStore, requireUser, {
         runner: routineRunner,
         auditStore,
+        canStartBudget: billing?.canStartBackgroundBudget,
       }),
     );
   }

@@ -164,6 +164,8 @@ export const testCreditBudgets = pgTable(
     state: text({ enum: ["active", "paused", "completed"] })
       .notNull()
       .default("active"),
+    modelRoute: text("model_route"),
+    modelPriceVersion: uuid("model_price_version"),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

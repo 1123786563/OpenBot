@@ -94,6 +94,8 @@ import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
+import { createBackgroundModel } from "./billing/background-model";
+import { budgetedTurn } from "./billing/background-model-turn";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
@@ -811,7 +813,9 @@ const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
     role: roles.includes("admin") ? "admin" : "user",
   };
 };
-const channelSourceForRun = async (run: RunAssertion) => {
+const channelSourceForRun = async (
+  run: Pick<RunAssertion, "actorId" | "threadId" | "botId" | "handoff">,
+) => {
   if (!run.threadId) return null;
   const sources = await database
     .select({ channelId: channels.id, botId: channelAgents.agentId })
@@ -1845,6 +1849,14 @@ const recorderExtension = createRecorderExtension({
   auditFor: createAuditStore,
 });
 const testCreditLedger = createTestCreditLedger(database);
+const backgroundModel =
+  directChatTestCredit && casdoorBillingIdentity
+    ? createBackgroundModel({
+        ledger: testCreditLedger,
+        identityOf: casdoorBillingIdentity,
+        execute: directChatTestCredit.execute,
+      })
+    : undefined;
 const testCreditCutoffSweep = repeatAfterEach(async () => {
   try {
     await testCreditLedger.sweepCutoffs();
@@ -2380,36 +2392,88 @@ const routineAgentRunner = new IntelligenceAgentRunner({
   authToken: routineIntelligence.ɵgetRunnerAuthToken(),
 });
 
+const meteredTurn = (
+  kind: "routine" | "task",
+  fallback: Parameters<typeof budgetedTurn>[4],
+) =>
+  budgetedTurn(
+    backgroundModel,
+    kind,
+    (agent) =>
+      createTurnRunner({
+        prepareRunInput: prepareProductRunInput,
+        onKnownStop: productTelemetry.stopKnown,
+        admission: serverTurnAdmission,
+        intelligence: routineIntelligence,
+        runner: routineAgentRunner,
+        buildAgentFor: async () => agent,
+      }),
+    async ({ ownerUserId, routineId, threadId, agentId, signal, budget }) => {
+      const actor = await actorFor(ownerUserId);
+      const source = await channelSourceForRun({
+        actorId: ownerUserId,
+        threadId,
+        botId: agentId,
+      });
+      if (!source || !(await agentProfileStore.get(actor, agentId)))
+        throw new Error("The Bot or conversation is no longer available.");
+      if (
+        kind === "routine" &&
+        !(await routineStore.routineForFiring(routineId))?.enabled
+      )
+        throw new Error("This routine is paused.");
+      if (kind === "task") {
+        const taskId = budget?.stepId?.slice("task-".length);
+        const task = taskId && (await taskStore.locate(ownerUserId, taskId));
+        if (!task || task.resolvedAt)
+          throw new Error("This task is no longer open.");
+      }
+      const admitted = await serverTurnAdmission({
+        ownerUserId,
+        agentId,
+        threadId,
+        signal,
+      });
+      if (admitted?.aborted)
+        throw new Error("The headless turn was cancelled.");
+    },
+    fallback,
+  );
+
 const routineRunner = createRoutineRunner({
   routineStore,
   channelStore,
-  runTurn: createTurnRunner({
-    prepareRunInput: prepareProductRunInput,
-    onKnownStop: productTelemetry.stopKnown,
-    admission: serverTurnAdmission,
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
-    components: componentCatalog,
-    buildAgentFor,
-    toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-      if (!computerGateway) return [];
-      const actor = await actorFor(ownerUserId);
-      const profile = await agentProfileStore.get(actor, agentId);
-      if (!profile) throw new Error("That Bot is not available to this owner.");
-      // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-      if (!canUseComputer(profile, actor)) return [];
-      return createHeadlessComputerTools({
-        gateway: computerGateway,
-        seat: await computerGateway.seatFor(agentId, actor.id),
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      });
-    },
-    learningContainerForThread: (input) =>
-      copilotRuntime.learning?.containerForThread(input) ??
-      Promise.resolve(undefined),
-  }),
+  runTurn: meteredTurn(
+    "routine",
+    createTurnRunner({
+      prepareRunInput: prepareProductRunInput,
+      onKnownStop: productTelemetry.stopKnown,
+      admission: serverTurnAdmission,
+      intelligence: routineIntelligence,
+      runner: routineAgentRunner,
+      components: componentCatalog,
+      buildAgentFor,
+      toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
+        if (!computerGateway) return [];
+        const actor = await actorFor(ownerUserId);
+        const profile = await agentProfileStore.get(actor, agentId);
+        if (!profile)
+          throw new Error("That Bot is not available to this owner.");
+        // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
+        if (!canUseComputer(profile, actor)) return [];
+        return createHeadlessComputerTools({
+          gateway: computerGateway,
+          seat: await computerGateway.seatFor(agentId, actor.id),
+          actor: { id: actor.id, userId: actor.id, initiator },
+          auditStore: bootAuditStore,
+          ...(signInService ? { signIn: signInService } : {}),
+        });
+      },
+      learningContainerForThread: (input) =>
+        copilotRuntime.learning?.containerForThread(input) ??
+        Promise.resolve(undefined),
+    }),
+  ),
 });
 
 /**
@@ -2996,10 +3060,11 @@ const taskRunner = createTaskRunner({
   queue: createWorkQueue(database),
   owner: workOwner("tasks"),
   scopeFor: deliveryScopeFor,
+  canStartBudget: backgroundModel?.canStart,
   runTask: createTaskTurn({
     channels: channelStore,
     actorFor,
-    runTurn: approvalContinuationRunner,
+    runTurn: meteredTurn("task", approvalContinuationRunner),
   }),
 });
 // The backstop for a task's turn a crash or a restart left behind; Start runs one at once.
@@ -3805,6 +3870,7 @@ const app = createApp(
     casdoorIdentityOf: casdoorBillingIdentity,
     weknora: weknoraBilling,
     testCreditConversations: directChatTestCredit !== undefined,
+    canStartBackgroundBudget: backgroundModel?.canStart,
   },
 );
 
