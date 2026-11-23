@@ -985,6 +985,8 @@ for (const outcome of [
   }, 60_000);
 }
 
+const trialPriceVersion = "a6000000-0000-4000-8000-000000000001";
+
 test("Routine recovery checks an unknown model outcome without dispatching again", async () => {
   const actor = await person();
   const bot = await profiles.create(actor, {
@@ -1000,10 +1002,15 @@ test("Routine recovery checks an unknown model outcome without dispatching again
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/v1/quote")
+        return Response.json({
+          route: "pilot-text-v1",
+          priceVersion: trialPriceVersion,
+        });
       paths.push(path);
       const call = await request.json();
       if (path === "/v1/reserve") {
-        expect(call.scope.personId).toBe(actor.id);
+        expect(call.priceVersion).toBe(trialPriceVersion);
         reconciledOperation = call.operationId;
         return Response.json({ state: "reserved", permit: "test-permit" });
       }
@@ -2529,12 +2536,22 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
     async fetch(request) {
       const path = new URL(request.url).pathname;
       expect(request.headers.get("authorization")).toBe("Bearer test-token");
+      if (path === "/v1/quote")
+        return Response.json({
+          route: "pilot-text-v1",
+          priceVersion: trialPriceVersion,
+        });
       const call = await request.json();
       calls.push({ path, operationId: call.operationId });
       if (path === "/v1/reserve") {
-        expect(call.scope.personId).toBe(alice.id);
-        expect(call.route).toBe("pilot-text-v1");
-        expect(call.creditType).toBe("test");
+        expect(call).toEqual({
+          operationId: expect.any(String),
+          route: "pilot-text-v1",
+          priceVersion: trialPriceVersion,
+          creditType: "test",
+          applicationId: "openbot",
+          resumable: false,
+        });
         if (outage) return new Response(null, { status: 503 });
         if (!available)
           return Response.json({
@@ -2556,17 +2573,24 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
         return Response.json({ state: "completed", text: "Managed answer." });
       }
       expect(path).toBe("/v1/reconcile");
+      if (call.operationId === uncertainOperation) {
+        return Response.json({
+          state: uncertainState,
+          operation: {
+            operationId: call.operationId,
+            state: uncertainState,
+            outcome: confirmedUnsent
+              ? null
+              : verifiedText
+                ? "completed"
+                : "unknown",
+            dispatchedAt: confirmedUnsent ? null : "2026-11-23T00:00:00.000Z",
+            resultText: verifiedText ?? null,
+          },
+        });
+      }
       return Response.json({
-        ...(call.operationId === uncertainOperation &&
-          (confirmedUnsent
-            ? { outcome: "not_dispatched" }
-            : verifiedText && { outcome: "executed", text: verifiedText })),
-        state:
-          call.operationId === uncertainOperation
-            ? uncertainState
-            : ids.has(call.operationId)
-              ? "settled"
-              : "absent",
+        state: ids.has(call.operationId) ? "settled" : "absent",
       });
     },
   });
@@ -3370,6 +3394,7 @@ async function exerciseLearning(scheduled: boolean) {
   });
   const reservations: unknown[] = [];
   const managedPrompts: string[] = [];
+  let pauseDuringAdmission = false;
   let insufficient = false;
   let dispatched = Promise.withResolvers<void>();
   let release = Promise.withResolvers<void>();
@@ -3394,10 +3419,16 @@ async function exerciseLearning(scheduled: boolean) {
     port: 0,
     async fetch(request) {
       switch (new URL(request.url).pathname) {
+        case "/v1/quote":
+          return Response.json({
+            route: "pilot-text-v1",
+            priceVersion: trialPriceVersion,
+          });
         case "/v1/reserve": {
           const reservation = await request.json();
           reservations.push(reservation);
-          if (reservation.scope.runId === "pause-during-admission") {
+          if (pauseDuringAdmission) {
+            pauseDuringAdmission = false;
             const paused = await admin.request("/settings", settings(false));
             expect(paused.status).toBe(200);
           }
@@ -3567,14 +3598,14 @@ async function exerciseLearning(scheduled: boolean) {
       ],
     });
     expect(reservations).toEqual([
-      expect.objectContaining({
+      {
+        operationId: expect.any(String),
         creditType: "test",
-        scope: expect.objectContaining({
-          personId: alice.id,
-          conversationId: channel.id,
-          source: "learning",
-        }),
-      }),
+        route: "pilot-text-v1",
+        priceVersion: trialPriceVersion,
+        applicationId: "openbot",
+        resumable: false,
+      },
     ]);
     const proposal = (await waitFor("proposed")).proposals[0];
     const reviewPath = path.replace(
@@ -3956,6 +3987,7 @@ async function exerciseLearning(scheduled: boolean) {
       expect(
         await current(alice, channel.threadId, bot.id, loadedSkillVersions),
       ).toBe(true);
+      pauseDuringAdmission = true;
       const afterPause = await managedDelivery("pause-during-admission");
       expect(
         await current(alice, channel.threadId, bot.id, loadedSkillVersions),

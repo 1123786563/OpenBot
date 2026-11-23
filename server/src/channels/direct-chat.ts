@@ -110,6 +110,7 @@ const managedRunError: Record<
   not_authorized:
     "This account is not authorized to spend Test Credits on this run.",
   route_unavailable: "This model route is unavailable.",
+  pilot_closed: "The Test Credit pilot is closed.",
   reconciling: "The model outcome is being reconciled.",
   unavailable: "Test Credit admission is temporarily unavailable.",
   settled: "The previous model call settled, but its reply is unavailable.",

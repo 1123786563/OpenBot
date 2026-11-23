@@ -1171,6 +1171,7 @@ test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
   async () => {
     if (!managedReflectUrl || !syntheticModelUrl)
       throw new Error("Missing managed Reflect fixture URL");
+    const priceVersion = "a6000000-0000-4000-8000-000000000001";
     const operations = new Map<string, "reserved" | "dispatched" | "settled">();
     const scope = {
       personId: owner,
@@ -1183,13 +1184,17 @@ test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
       port: 0,
       async fetch(request) {
         const path = new URL(request.url).pathname;
+        if (path === "/v1/quote")
+          return Response.json({ route: "fixture-approved-v1", priceVersion });
         const body = await request.json();
         if (path === "/v1/reserve") {
-          expect(body).toMatchObject({
-            application: "openbot",
+          expect(body).toEqual({
+            operationId: expect.any(String),
+            applicationId: "openbot",
             creditType: "test",
-            scope: { ...scope, source: "hindsight" },
             route: "fixture-approved-v1",
+            priceVersion,
+            resumable: false,
           });
           expect(operations.has(body.operationId)).toBe(false);
           operations.set(body.operationId, "reserved");

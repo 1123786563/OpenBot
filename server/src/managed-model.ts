@@ -6,6 +6,8 @@ const denial = z.enum([
   "execution_limit",
   "not_authorized",
   "route_unavailable",
+  "pilot_closed",
+  "unavailable",
 ]);
 const denied = z.object({ state: z.literal("denied"), reason: denial });
 const reservation = z.discriminatedUnion("state", [
@@ -18,6 +20,17 @@ const dispatch = z.discriminatedUnion("state", [
   denied,
   z.object({ state: z.literal("reconciling") }),
 ]);
+const publication = z.object({
+  route: z.string().min(1),
+  priceVersion: z.uuid(),
+});
+const operationReceipt = z.object({
+  operationId: z.string(),
+  state: z.enum(["settled", "released"]),
+  outcome: z.string().nullable(),
+  dispatchedAt: z.iso.datetime().nullable(),
+  resultText: z.string().nullable(),
+});
 const settlement = z.enum(["pending", "settled", "released", "absent"]);
 const reconciliation = z.union([
   z.object({
@@ -29,7 +42,11 @@ const reconciliation = z.union([
     state: z.enum(["released", "absent"]),
     outcome: z.literal("not_dispatched"),
   }),
-  z.object({ state: settlement, outcome: z.undefined().optional() }),
+  z.object({
+    state: settlement,
+    outcome: z.undefined().optional(),
+    operation: z.unknown().optional(),
+  }),
 ]);
 
 type ModelScope = {
@@ -64,12 +81,7 @@ function operationId({ scope, step }: ModelOperation) {
 export type ManagedModelResult =
   | { state: "completed"; text: string }
   | {
-      state:
-        | z.infer<typeof denial>
-        | "reconciling"
-        | "unavailable"
-        | "settled"
-        | "released";
+      state: z.infer<typeof denial> | "reconciling" | "settled" | "released";
     };
 
 export function createManagedModel({
@@ -79,6 +91,8 @@ export function createManagedModel({
   url: URL;
   token: string;
 }) {
+  const headers = { authorization: `Bearer ${token}` };
+
   async function post(
     path: string,
     body: object,
@@ -87,10 +101,7 @@ export function createManagedModel({
     const response = await fetch(new URL(`v1/${path}`, url), {
       method: "POST",
       redirect: "error",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
+      headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
@@ -99,10 +110,43 @@ export function createManagedModel({
     return response.json();
   }
 
+  async function readPriceVersion() {
+    const response = await fetch(new URL("v1/quote", url), {
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw new Error("Managed model quote unavailable.");
+    // The quote describes the default route. Its Price Version covers the
+    // publication, and reserve checks the configured route against it.
+    return publication.parse(await response.json()).priceVersion;
+  }
+
   async function reconcileOutcome(operation: ModelOperation) {
-    return reconciliation.parse(
-      await post("reconcile", { operationId: operationId(operation) }, 5_000),
+    const id = operationId(operation);
+    const result = reconciliation.parse(
+      await post("reconcile", { operationId: id }, 5_000),
     );
+    if (!("operation" in result)) return result;
+    const receipt = operationReceipt.safeParse(result.operation);
+    if (
+      receipt.success &&
+      receipt.data.operationId === id &&
+      receipt.data.state === result.state
+    ) {
+      const { state, outcome, dispatchedAt, resultText } = receipt.data;
+      const text = resultText?.trim();
+      if (
+        state === "settled" &&
+        outcome === "completed" &&
+        dispatchedAt &&
+        text
+      )
+        return { state, outcome: "executed" as const, text };
+      if (state === "released" && outcome === null && dispatchedAt === null)
+        return { state, outcome: "not_dispatched" as const };
+    }
+    return { state: result.state, outcome: undefined };
   }
 
   async function reconcile(operation: ModelOperation) {
@@ -120,6 +164,13 @@ export function createManagedModel({
       },
     ): Promise<ManagedModelResult> {
       const id = operationId(input);
+      let priceVersion: string;
+      try {
+        priceVersion = await readPriceVersion();
+      } catch {
+        return { state: "unavailable" };
+      }
+
       let admission: z.infer<typeof reservation>;
       try {
         admission = reservation.parse(
@@ -127,11 +178,11 @@ export function createManagedModel({
             "reserve",
             {
               operationId: id,
-              application: "openbot",
+              applicationId: "openbot",
               creditType: "test",
-              scope: input.scope,
-              step: input.step,
               route: input.route,
+              priceVersion,
+              resumable: false,
             },
             5_000,
           ),

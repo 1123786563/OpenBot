@@ -11,12 +11,100 @@ const scope = {
 const route = "pilot-text-v1";
 const messages = [{ role: "user", content: "One question" }] as const;
 
+const priceVersion = "a6000000-0000-4000-8000-000000000001";
+
+test("reserves on the quoted Price Version using the billing execution contract", async () => {
+  const paths: string[] = [];
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      expect(request.headers.get("authorization")).toBe("Bearer test-token");
+      if (path === "/v1/quote") {
+        expect(request.method).toBe("GET");
+        return Response.json({ route, priceVersion });
+      }
+      if (path === "/v1/reserve") {
+        const body = await request.json();
+        expect(body).toEqual({
+          operationId: expect.stringMatching(/^[a-f0-9]{64}$/),
+          route,
+          priceVersion,
+          creditType: "test",
+          applicationId: "openbot",
+          resumable: false,
+        });
+        return Response.json({ state: "reserved", permit: "fixture-permit" });
+      }
+      if (path === "/v1/dispatch")
+        return Response.json({ state: "completed", text: "Answer" });
+      return Response.json({ state: "settled" });
+    },
+  });
+  try {
+    const model = createManagedModel({ url: control.url, token: "test-token" });
+    expect(
+      await model.complete({ scope, step: "answer", route, messages }),
+    ).toEqual({
+      state: "completed",
+      text: "Answer",
+    });
+    expect(paths).toEqual([
+      "/v1/quote",
+      "/v1/reserve",
+      "/v1/dispatch",
+      "/v1/reconcile",
+    ]);
+  } finally {
+    await control.stop(true);
+  }
+});
+
+test.each([
+  new Response(null, { status: 503 }),
+  Response.json({ route, priceVersion: "invalid" }),
+])(
+  "fails closed before reservation when the quote is unusable",
+  async (quote) => {
+    const paths: string[] = [];
+    const control = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const path = new URL(request.url).pathname;
+        paths.push(path);
+        return path === "/v1/quote"
+          ? quote
+          : new Response(null, { status: 503 });
+      },
+    });
+    try {
+      const model = createManagedModel({
+        url: control.url,
+        token: "test-token",
+      });
+      expect(
+        await model.complete({ scope, step: "answer", route, messages }),
+      ).toEqual({
+        state: "unavailable",
+      });
+      expect(paths).toEqual(["/v1/quote"]);
+    } finally {
+      await control.stop(true);
+    }
+  },
+);
+
 test("a product model call requires a confirmed Test Credit reservation", async () => {
   const control = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
-      if (new URL(request.url).pathname === "/v1/reserve") {
+      const path = new URL(request.url).pathname;
+      if (path === "/v1/quote") return Response.json({ route, priceVersion });
+      if (path === "/v1/reserve") {
         return Response.json({
           state: "denied",
           reason: "insufficient_credits",
@@ -44,6 +132,7 @@ test("losing a reservation response fails closed and reconciles only the origina
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/v1/quote") return Response.json({ route, priceVersion });
       const { operationId } = await request.json();
       calls.push({ path, operationId });
       if (path === "/v1/reserve") return new Response(null, { status: 503 });
@@ -76,6 +165,7 @@ test.each(["settled", "released"] as const)(
       port: 0,
       async fetch(request) {
         const path = new URL(request.url).pathname;
+        if (path === "/v1/quote") return Response.json({ route, priceVersion });
         const { operationId } = await request.json();
         calls.push({ path, operationId });
         if (path === "/v1/reserve") {
@@ -126,6 +216,7 @@ test("a lost authorization at dispatch returns a refusal and reconciles the rese
     port: 0,
     fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/v1/quote") return Response.json({ route, priceVersion });
       paths.push(path);
       if (path === "/v1/reserve") {
         return Response.json({ state: "reserved", permit: "trial-permit" });
@@ -142,6 +233,41 @@ test("a lost authorization at dispatch returns a refusal and reconciles the rese
       await model.complete({ scope, step: "answer", route, messages }),
     ).toEqual({ state: "not_authorized" });
     expect(paths).toEqual(["/v1/reserve", "/v1/dispatch", "/v1/reconcile"]);
+  } finally {
+    await control.stop(true);
+  }
+});
+
+test("a receipt for a dispatched or different operation cannot clear the Run hold", async () => {
+  let dispatchedAt: string | null = "2026-11-23T00:00:00.000Z";
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const { operationId } = await request.json();
+      return Response.json({
+        state: "released",
+        operation: {
+          operationId: dispatchedAt ? operationId : "a-different-operation",
+          state: "released",
+          outcome: dispatchedAt ? "unknown" : null,
+          dispatchedAt,
+          resultText: null,
+        },
+      });
+    },
+  });
+  try {
+    const model = createManagedModel({ url: control.url, token: "test-token" });
+    expect(await model.reconcileOutcome({ scope, step: "answer" })).toEqual({
+      state: "released",
+      outcome: undefined,
+    });
+    dispatchedAt = null;
+    expect(await model.reconcileOutcome({ scope, step: "answer" })).toEqual({
+      state: "released",
+      outcome: undefined,
+    });
   } finally {
     await control.stop(true);
   }

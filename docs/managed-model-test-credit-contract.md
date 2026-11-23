@@ -1,6 +1,6 @@
 # Managed model Test Credit contract
 
-The OpenBot runtime can send Web direct-chat text turns through a single versioned model route using Test Credits. With the trial enabled, the authenticated Person, persisted Conversation and original Run determine the operation ID. The same server client can be used by Learning and Hindsight with a stable execution ID and step for each model call.
+The OpenBot runtime can send direct-chat text turns and voice requests delegated to the Conversation Bot through a versioned model route using Test Credits. The authenticated Person, persisted Conversation and original Run determine the operation ID. Direct-chat Learning and Hindsight Reflect use the same client with a stable execution ID and step for each model call.
 
 ## Deployment settings
 
@@ -8,34 +8,35 @@ The OpenBot runtime can send Web direct-chat text turns through a single version
 | --- | --- |
 | `OPENBOT_MANAGED_MODEL_TRIAL_URL` | HTTPS origin of the internal controlled entry point. Loopback HTTP is allowed for local contract tests. |
 | `OPENBOT_MANAGED_MODEL_TRIAL_TOKEN` | Service credential scoped to OpenBot's Test Credit trial. |
-| `OPENBOT_MANAGED_MODEL_TRIAL_ROUTE` | Published route key for one verified text model, including its Harness and Price Version. |
+| `OPENBOT_MANAGED_MODEL_TRIAL_ROUTE` | Published route key for one verified text model. The client reads the active Price Version before each reservation. |
 
 Set all three values on the OpenBot runtime deployment to enable the trial. The route applies to direct chat in that deployment. Account eligibility is checked by the controlled entry point. Chat sends server-persisted user and assistant text and returns the completed reply using the existing AG-UI stream. Other execution paths require their own integration with this client before they can use platform credentials.
 
-These settings select the service-token contract below. The billed Conversation pilot (#90) uses an execution identity bound to the persisted Conversation and an explicit Price Version. Its entry point expects a different reservation request. Use the #90 adapter when connecting that entry point.
+The configured origin must expose the billing execution routes and authenticate the bearer credential as a verified billing identity for the Person whose account funds the request. The static deployment credential selects the billing identity. OpenBot derives the operation ID from the persisted Person and Run scope. A multi-Person deployment needs an execution identity that binds each request to the authenticated Person.
 
 ## HTTP contract
 
-OpenBot posts JSON with the configured service bearer token. Return typed business outcomes as HTTP success responses. An unsuccessful HTTP status, timeout or invalid response cannot grant a dispatch permit.
+OpenBot sends the configured bearer token on every request. The control plane returns typed business outcomes as HTTP success responses. An unsuccessful HTTP status, timeout or invalid response cannot grant a dispatch permit.
 
-| Endpoint | Request | Response `state` |
+| Endpoint | Request | Response |
 | --- | --- | --- |
-| `POST /v1/reserve` | `operationId`, `application: "openbot"`, `creditType: "test"`, `scope` (`personId`, `conversationId`, `botId`, `runId`, `source`), `step`, `route` | `reserved` with an opaque `permit`, `existing` for a recorded operation, or `denied` with `reason` |
+| `GET /v1/quote` | No body | Published default `route` and publication `priceVersion`. The ledger checks the configured route against that version at reservation. |
+| `POST /v1/reserve` | `operationId`, `applicationId: "openbot"`, `creditType: "test"`, `route`, `priceVersion`, `resumable: false` | `reserved` with an opaque `permit`, `existing` for a recorded operation, or `denied` with `reason` |
 | `POST /v1/dispatch` | `operationId`, `permit`, `messages` (roles and text) | `completed` with `text`, `reconciling` if the supplier may have been reached, or `denied` with `reason` |
 | `POST /v1/reconcile` | `operationId` | `pending`, `settled`, `released` or `absent` |
 
-Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized` and `route_unavailable`. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
+Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized`, `route_unavailable`, `pilot_closed` and `unavailable`. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
 
 ## Direct-chat Run recovery
 
 OpenBot stores a dispatch checkpoint on the Run before it calls the controlled entry point. An authorized replay request can resume a Run that has yet to cross that checkpoint. If dispatch might have occurred and the outcome is unknown, OpenBot blocks fresh turns in the Thread.
 
-`POST /api/copilotkit/threads/:threadId/runs/:runId/reconcile?agentId=:agentId` checks the original operation. The control plane can include conclusive outcome evidence in its existing `/v1/reconcile` response.
+`POST /api/copilotkit/threads/:threadId/runs/:runId/reconcile?agentId=:agentId` checks the original operation. The ledger can include conclusive outcome evidence in the `operation` receipt returned by `/v1/reconcile`. OpenBot checks that the receipt belongs to the original operation and agrees with the response state.
 
 | Response fields | OpenBot behavior |
 | --- | --- |
-| `state: "settled"`, `outcome: "executed"`, `text` | Records the verified reply in the original Run. |
-| `state: "released"` or `"absent"`, `outcome: "not_dispatched"` | Clears the hold when the control plane guarantees the original operation never reached the supplier and can no longer dispatch. A new send creates a new Run and checks Test Credit admission again. |
+| Settled receipt with a dispatch timestamp, `outcome: "completed"` and `resultText` | Records the verified reply in the original Run. |
+| Released receipt with null `outcome` and null `dispatchedAt` | Clears the hold when the control plane guarantees the original operation never reached the supplier and can no longer dispatch. A new send creates a new Run and checks Test Credit admission again. |
 | `state` alone | Reports settlement and keeps the unknown outcome. A released reservation can also represent an expired dispatched operation. |
 
 `POST /api/copilotkit/threads/:threadId/runs/:runId/stop?agentId=:agentId` ends an active Run for the authorized owner. History preserves partial output and any outstanding unknown outcome.

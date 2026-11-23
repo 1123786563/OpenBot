@@ -10,12 +10,15 @@ test("a Hindsight model callback uses authenticated run scope and Test Credit ad
     runId: "run",
   };
   const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const priceVersion = "a6000000-0000-4000-8000-000000000001";
   let denied = false;
   const control = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/v1/quote")
+        return Response.json({ route: "approved-v1", priceVersion });
       const body = await request.json();
       calls.push({ path, body });
       switch (path) {
@@ -91,12 +94,13 @@ test("a Hindsight model callback uses authenticated run scope and Test Credit ad
       "/v1/reconcile",
     ]);
     const operationId = calls[0]?.body.operationId;
-    expect(calls[0]?.body).toMatchObject({
+    expect(calls[0]?.body).toEqual({
       operationId: expect.any(String),
-      application: "openbot",
+      applicationId: "openbot",
       creditType: "test",
-      scope: { ...scope, source: "hindsight" },
       route: "approved-v1",
+      priceVersion,
+      resumable: false,
     });
     expect(calls[1]?.body).toMatchObject({
       operationId,
