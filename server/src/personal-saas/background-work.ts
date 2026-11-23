@@ -279,9 +279,15 @@ export async function retryBackgroundWork(
         return fresh.id;
       }
       case PROACTIVE_RUN_KIND: {
-        const settingId = z.string().min(1).safeParse(payload.settingId);
-        if (!settingId.success) return;
-        const setting = await createProactiveStore(tx).byId(settingId.data);
+        const original = z
+          .object({
+            settingId: z.string().min(1),
+            runId: z.string().min(1),
+          })
+          .safeParse(payload);
+        if (!original.success) return;
+        const { settingId, runId } = original.data;
+        const setting = await createProactiveStore(tx).byId(settingId);
         if (
           !setting ||
           !(await authorizedBot(
@@ -296,7 +302,7 @@ export async function retryBackgroundWork(
         const result = await checkIns(tx, now, () => accountId, runTurn).runNow(
           setting.ownerUserId,
           setting.id,
-          key,
+          { key, interruptedRunId: runId },
         );
         return result.queued ? key : undefined;
       }

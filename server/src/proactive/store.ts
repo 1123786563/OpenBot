@@ -802,7 +802,10 @@ export function createProactiveStore(
       return row?.startedAt ?? null;
     },
     /** The setting's last check-in that reached the model and ended, for Run now's ten minutes. */
-    async lastCheckIn(settingId: string): Promise<LastCheckIn | null> {
+    async lastCheckIn(
+      settingId: string,
+      excludeRunId?: string,
+    ): Promise<LastCheckIn | null> {
       const [row] = await database
         .select({
           outcome: proactiveRuns.outcome,
@@ -813,6 +816,9 @@ export function createProactiveStore(
           and(
             eq(proactiveRuns.settingId, settingId),
             inArray(proactiveRuns.outcome, ["quiet", "raised", "failed"]),
+            excludeRunId === undefined
+              ? undefined
+              : ne(proactiveRuns.id, excludeRunId),
           ),
         )
         .orderBy(desc(proactiveRuns.startedAt))
