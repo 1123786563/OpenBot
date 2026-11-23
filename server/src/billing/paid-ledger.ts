@@ -2456,6 +2456,7 @@ export function createPaidCreditLedger(
       })),
       ...paidLines.map(({ orderId, ...line }) => ({
         ...line,
+        orderId,
         source: orderId === null ? ("correction_credit" as const) : line.source,
         amountMicrocredits: (line.amountMicrocredits ?? 0n).toString(),
         reason: null as string | null,
