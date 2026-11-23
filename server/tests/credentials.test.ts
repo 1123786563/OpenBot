@@ -800,6 +800,12 @@ describe("admin credential API", () => {
             revokedAt: null,
           };
         },
+        rotate: async () => {
+          throw new Error("Credential creation must not rotate a credential");
+        },
+        revoke: async () => {
+          throw new Error("Credential creation must not revoke a credential");
+        },
       },
     );
 
