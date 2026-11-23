@@ -297,16 +297,21 @@ function SignScreen() {
               {providers.length > 0 && !options.ssoRequired ? (
                 <div className="mb-3 flex items-center gap-3">
                   <Separator className="flex-1" />
-                  <span className="text-muted-foreground text-xs">or</span>
+                  <span className="text-muted-foreground text-xs">
+                    {t("sign.sso.or", "or")}
+                  </span>
                   <Separator className="flex-1" />
                 </div>
               ) : null}
               <TextInput
                 autoComplete="email"
                 controlClassName="sign-in-email"
-                description="Use the email address issued by your organization."
+                description={t(
+                  "sign.sso.description",
+                  "Use the email address issued by your organization.",
+                )}
                 isRequired
-                label="Company email"
+                label={t("sign.sso.label", "Company email")}
                 onChange={setEmail}
                 placeholder="you@company.com"
                 type="email"
@@ -320,8 +325,11 @@ function SignScreen() {
                 variant="outline"
               >
                 {opening === "sso"
-                  ? "Opening…"
-                  : "Continue with your company account"}
+                  ? t("sign.sso.opening", "Opening…")
+                  : t(
+                      "sign.sso.continue",
+                      "Continue with your company account",
+                    )}
               </Button>
             </Stack>
           ) : null}

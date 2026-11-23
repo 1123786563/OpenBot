@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { I18nProvider } from "@/i18n";
 import { authKeys } from "@/lib/auth/queries";
 import { pinLocale } from "./i18n";
 import { appReturnPath, resumeUrlFor } from "@/lib/auth/resume";
@@ -183,10 +184,14 @@ function renderSignScreen(
     context: { queryClient },
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
   } as never) as never;
+  // The real tree order from main.tsx: Astryx's language bridge sits above the app, so its own
+  // words (a required marker) follow the interface language along with OpenBot's.
   const view = render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </I18nProvider>,
   );
   return {
     view,
@@ -213,6 +218,36 @@ test("the sign page translates its heading, title and provider action in place",
     view.getByRole("button", { name: "Continue with Google" }),
   ).toBeTruthy();
   expect(document.title).toBe("Sign in · OpenBot");
+});
+
+test("the company form speaks the interface language, required marker included", async () => {
+  const { view, user } = renderSignScreen({
+    providers: ["google"],
+    sso: true,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  expect(view.getByRole("textbox", { name: /公司邮箱/ })).toBeTruthy();
+  // Astryx draws its own required marker through the same bridge, not in a second language.
+  expect(view.getByText("必填")).toBeTruthy();
+  expect(view.getByText("请使用你的组织发放的邮箱地址。")).toBeTruthy();
+  expect(view.getByText("或")).toBeTruthy();
+  const submit = view.getByRole("button", {
+    name: "使用公司账号继续",
+  }) as HTMLElement;
+  // This screen disables with the native attribute, not Astryx's isDisabled.
+  expect(submit.getAttribute("disabled")).toBe(""); // nothing typed yet
+  await user.type(view.getByPlaceholderText("you@company.com"), "ada@corp.cn");
+  expect(submit.getAttribute("disabled")).toBeNull();
+  await user.click(submit);
+  expect(view.getByRole("button", { name: "正在打开…" })).toBeTruthy();
+
+  await pinLocale("en");
+  expect(view.getByRole("textbox", { name: /Company email/ })).toBeTruthy();
+  // The press above succeeded, so the button is still in its opening state — now in English.
+  expect(view.getByRole("button", { name: "Opening…" })).toBeTruthy();
 });
 
 /** Where a press on this screen has to send the browser back to, with `?flow_id=h1` carried in. */

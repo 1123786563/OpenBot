@@ -76,5 +76,10 @@
   "settings.language.title": "语言",
   "sign.heading": "登录 {product}",
   "sign.provider.continue": "使用 {provider} 继续",
+  "sign.sso.continue": "使用公司账号继续",
+  "sign.sso.description": "请使用你的组织发放的邮箱地址。",
+  "sign.sso.label": "公司邮箱",
+  "sign.sso.opening": "正在打开…",
+  "sign.sso.or": "或",
   "sign.title": "登录"
 }

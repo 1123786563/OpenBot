@@ -76,5 +76,10 @@
   "settings.language.title": "Language",
   "sign.heading": "Sign in to {product}",
   "sign.provider.continue": "Continue with {provider}",
+  "sign.sso.continue": "Continue with your company account",
+  "sign.sso.description": "Use the email address issued by your organization.",
+  "sign.sso.label": "Company email",
+  "sign.sso.opening": "Opening…",
+  "sign.sso.or": "or",
   "sign.title": "Sign in"
 }
