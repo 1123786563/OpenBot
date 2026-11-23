@@ -222,6 +222,68 @@ test.each(["settled", "released"] as const)(
   },
 );
 
+test("retry returns the verified reply after losing the dispatch response", async () => {
+  let dispatchedOperation: string | undefined;
+  let recovered = false;
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/v1/quote") return Response.json({ route, priceVersion });
+      const { operationId } = await request.json();
+      if (path === "/v1/reserve") {
+        return Response.json(
+          dispatchedOperation
+            ? { state: "existing" }
+            : { state: "reserved", permit: "pilot-permit" },
+        );
+      }
+      if (path === "/v1/dispatch") {
+        expect(dispatchedOperation).toBeUndefined();
+        dispatchedOperation = operationId;
+        return new Response(null, { status: 504 });
+      }
+      expect(path).toBe("/v1/reconcile");
+      expect(operationId).toBe(dispatchedOperation);
+      return Response.json(
+        recovered
+          ? {
+              state: "settled",
+              operation: {
+                operationId,
+                state: "settled",
+                outcome: "completed",
+                dispatchedAt: "2026-11-23T00:00:00.000Z",
+                resultText: "Original answer",
+              },
+            }
+          : { state: "pending" },
+      );
+    },
+  });
+  try {
+    const config = { url: control.url, credentials };
+    const input = { scope, step: "answer", route, messages };
+    expect(await createManagedModel(config).complete(input)).toEqual({
+      state: "reconciling",
+    });
+    recovered = true;
+    expect(
+      await createManagedModel(config).complete({
+        ...input,
+        beforeDispatch: async () => false,
+      }),
+    ).toEqual({ state: "not_authorized" });
+    expect(await createManagedModel(config).complete(input)).toEqual({
+      state: "completed",
+      text: "Original answer",
+    });
+  } finally {
+    await control.stop(true);
+  }
+});
+
 test("a lost authorization at dispatch returns a refusal and reconciles the reservation", async () => {
   const paths: string[] = [];
   const control = Bun.serve({

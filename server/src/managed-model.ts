@@ -66,6 +66,7 @@ type ModelMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
+type BeforeDispatch = () => Promise<boolean | readonly ModelMessage[]>;
 
 function operationId({ scope, step }: ModelOperation) {
   return createHash("sha256")
@@ -164,6 +165,21 @@ export function createManagedModel({
     return (await reconcileOutcome(operation)).state;
   }
 
+  async function recoverCompletion(
+    operation: ModelOperation,
+    beforeDispatch?: BeforeDispatch,
+  ): Promise<ManagedModelResult> {
+    const receipt = await reconcileOutcome(operation).catch(() => undefined);
+    if (receipt?.outcome === "executed") {
+      const authorized = await beforeDispatch?.().catch(() => false);
+      if (authorized === false) return { state: "not_authorized" };
+      return { state: "completed", text: receipt.text };
+    }
+    if (receipt?.state === "settled" || receipt?.state === "released")
+      return { state: receipt.state };
+    return { state: "reconciling" };
+  }
+
   return {
     reconcile,
     reconcileOutcome,
@@ -171,7 +187,7 @@ export function createManagedModel({
       input: ModelOperation & {
         route: string;
         messages: readonly ModelMessage[];
-        beforeDispatch?: () => Promise<boolean | readonly ModelMessage[]>;
+        beforeDispatch?: BeforeDispatch;
       },
     ): Promise<ManagedModelResult> {
       const token = credentialsByPerson.get(input.scope.personId);
@@ -206,13 +222,8 @@ export function createManagedModel({
         return { state: "unavailable" };
       }
       if (admission.state === "denied") return { state: admission.reason };
-      if (!admission.permit) {
-        const state = await reconcile(input).catch(() => undefined);
-        return {
-          state:
-            state === "settled" || state === "released" ? state : "reconciling",
-        };
-      }
+      if (!admission.permit)
+        return recoverCompletion(input, input.beforeDispatch);
 
       try {
         const prepared = await input.beforeDispatch?.();
@@ -234,15 +245,8 @@ export function createManagedModel({
           ),
         );
         if (result.state === "denied") return { state: result.reason };
-        if (result.state === "existing") {
-          const state = await reconcile(input);
-          return {
-            state:
-              state === "settled" || state === "released"
-                ? state
-                : "reconciling",
-          };
-        }
+        if (result.state === "existing")
+          return await recoverCompletion(input, input.beforeDispatch);
         return result;
       } catch {
         return { state: "reconciling" };
