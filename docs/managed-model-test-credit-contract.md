@@ -27,7 +27,7 @@ OpenBot posts JSON with the configured service bearer token. Return typed busine
 | `POST /v1/dispatch` | `operationId`, `permit`, `messages` (roles and text) | `completed` with `text`, `reconciling` if the supplier may have been reached, or `denied` with `reason` |
 | `POST /v1/reconcile` | `operationId` | `pending`, `settled`, `released` or `absent` |
 
-Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized` and `route_unavailable`. The ledger also refuses a new reservation with `pilot_closed` and `unavailable`; the client reports both as `unavailable`. `resumable: false` tells the ledger that nothing retries this operation by its ID, so a refusal leaves no resume point behind: a person who was refused sends again, as a new operation. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
+Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized` and `route_unavailable`. A new reservation is also refused with `pilot_closed` once the trial's wind-down switch is set, and with `unavailable` while a restore from backup holds the account. `resumable: false` tells the ledger that nothing retries this operation by its ID, so a refusal leaves no resume point behind: a person who was refused sends again, as a new operation. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
 
 ## Service requirements for acceptance
 

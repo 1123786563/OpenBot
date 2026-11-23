@@ -127,6 +127,26 @@ test("a product model call requires a confirmed Test Credit reservation", async 
   }
 });
 
+test("a closed trial is reported as closed, not as an outage", async () => {
+  const control = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      return new URL(request.url).pathname === "/v1/quote"
+        ? Response.json(publication)
+        : Response.json({ state: "denied", reason: "pilot_closed" });
+    },
+  });
+  try {
+    const model = createManagedModel({ url: control.url, token: "test-token" });
+    expect(
+      await model.complete({ scope, step: "answer", route, messages }),
+    ).toEqual({ state: "pilot_closed" });
+  } finally {
+    await control.stop(true);
+  }
+});
+
 test("losing a reservation response fails closed and reconciles only the original operation", async () => {
   const calls: { path: string; operationId: string }[] = [];
   const control = Bun.serve({

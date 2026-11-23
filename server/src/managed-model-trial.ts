@@ -6,6 +6,8 @@ const denial = z.enum([
   "execution_limit",
   "not_authorized",
   "route_unavailable",
+  // The wind-down switch: no new reservation of either Credit type.
+  "pilot_closed",
 ]);
 const denied = z.object({ state: z.literal("denied"), reason: denial });
 const reservation = z.discriminatedUnion("state", [
