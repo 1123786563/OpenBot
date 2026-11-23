@@ -13,7 +13,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, useId, useRef, useState } from "react";
 import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
-import { CreditPackCheckout } from "@/components/billing/credit-pack-checkout";
+import {
+  CreditPackCheckout,
+  SubscriptionCheckout,
+} from "@/components/billing/credit-pack-checkout";
 import {
   PageEmpty,
   PageRows,
@@ -66,6 +69,7 @@ import {
   authorizationsQueryOptions,
   type BillingApplication,
   type BillLine,
+  beijingBillingTime,
   billingBalanceQueryOptions,
   billingOperationQueryOptions,
   billingQuoteQueryOptions,
@@ -531,6 +535,19 @@ function UsageSection() {
                     {line.reason ??
                       `${line.applicationId ? `${appLabel(line.applicationId)}, ` : ""}${line.operationId} on ${onDate(line.at)}`}
                   </ItemDescription>
+                  {line.periodStart && line.periodEnd ? (
+                    <ItemDescription>
+                      Original period {beijingBillingTime(line.periodStart)} to{" "}
+                      {beijingBillingTime(line.periodEnd)} (Beijing time)
+                    </ItemDescription>
+                  ) : null}
+                  {line.arrivedAt && line.at ? (
+                    <ItemDescription>
+                      Credits received {beijingBillingTime(line.arrivedAt)}.
+                      Charge posted {beijingBillingTime(line.at)} (Beijing
+                      time).
+                    </ItemDescription>
+                  ) : null}
                 </ItemContent>
                 <ItemActions>
                   {creditsText(line.amountMicrocredits)}
@@ -1126,6 +1143,7 @@ function CreditsPage() {
           }
         />
         <TestCreditsSection />
+        <SubscriptionCheckout />
         <CreditPackCheckout />
         <PaidCreditsSection />
         <RateSection />

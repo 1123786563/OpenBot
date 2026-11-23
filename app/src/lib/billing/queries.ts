@@ -243,3 +243,13 @@ export function creditsText(microcredits: string | number) {
   const decimals = fraction.toString().padStart(6, "0").replace(/0+$/, "");
   return `${whole.toLocaleString("en-US")}.${decimals}`;
 }
+
+const beijingTimeFormat = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Asia/Shanghai",
+});
+
+export function beijingBillingTime(iso: string) {
+  return beijingTimeFormat.format(new Date(iso));
+}

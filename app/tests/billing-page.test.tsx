@@ -55,6 +55,7 @@ beforeEach(() => {
         [
           "/api/billing/paid/credit-pack",
           "/api/billing/paid/credit-pack/alipay",
+          "/api/billing/paid/subscription",
         ].includes(path)
       )
         return new Response(null, { status: 404 });
@@ -729,3 +730,104 @@ async function verifyCreditPackCheckout(
     await view.findByText("Refund confirmed. Funds returned."),
   ).toBeTruthy();
 }
+
+test("monthly checkout shows paid Beijing periods and submits the selected plan version", async () => {
+  const path = "/api/billing/paid/subscription";
+  const id = "4a06fd08-73e4-472c-824e-4077bed08946";
+  const basic = {
+    code: "Monthly Basic",
+    version: 1,
+    currency: "CNY",
+    priceCents: 1000,
+    creditsMicrocredits: "10000000",
+  };
+  const plus = {
+    ...basic,
+    code: "Monthly Plus",
+    version: 4,
+    priceCents: 2000,
+    creditsMicrocredits: "20000000",
+  };
+  const current = {
+    ...basic,
+    id,
+    productCode: basic.code,
+    periodStart: "2027-01-30T20:00:00.000Z",
+    periodEnd: "2027-02-27T16:00:00.000Z",
+    state: "granted",
+  };
+  const next = {
+    ...plus,
+    id,
+    productCode: plus.code,
+    periodStart: current.periodEnd,
+    periodEnd: "2027-03-30T16:00:00.000Z",
+    state: "future",
+  };
+  let placed = false;
+  let verified = false;
+  const order = () => ({
+    ...plus,
+    id,
+    productCode: plus.code,
+    state: verified ? "verified" : "pending",
+    canRefundFuture: verified,
+    entitlementId: null,
+  });
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      if (url === path)
+        return Response.json({
+          products: [basic, plus],
+          current,
+          next: verified ? next : null,
+          pausedApplications: [],
+          available: !verified,
+          blockedReason: verified
+            ? "A paid period is already scheduled."
+            : null,
+        });
+      if (url === `${path}/orders` && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toMatchObject({
+          productCode: plus.code,
+          version: 4,
+        });
+        placed = true;
+        return Response.json({ id, state: "pending" }, { status: 201 });
+      }
+      if (url === `${path}/orders`)
+        return Response.json(placed ? [order()] : []);
+      if (url === `${path}/orders/${id}/verify`) {
+        verified = true;
+        return Response.json(order());
+      }
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const user = userEvent.setup({ document });
+  const view = renderCredits(answered());
+  expect(await view.findByText("Current period")).toBeTruthy();
+  expect(
+    view.getByText(/Jan 31, 2027 at 4:00 AM to Feb 28, 2027 at 12:00 AM/),
+  ).toBeTruthy();
+  expect(view.getByText("No paid period")).toBeTruthy();
+  await user.click(
+    view.getByRole("button", { name: "Place test order for Monthly Plus" }),
+  );
+  await user.click(await view.findByRole("button", { name: "Check payment" }));
+  expect(
+    await view.findByText(
+      /Feb 28, 2027 at 12:00 AM to Mar 31, 2027 at 12:00 AM/,
+    ),
+  ).toBeTruthy();
+  expect(
+    view.queryByRole("button", { name: "Place test order for Monthly Basic" }),
+  ).toBeNull();
+  expect(
+    view.getByRole("button", { name: "Refund future period" }),
+  ).toBeTruthy();
+});

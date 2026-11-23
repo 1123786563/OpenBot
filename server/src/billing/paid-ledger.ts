@@ -1,4 +1,14 @@
-import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   billingApplications,
@@ -56,6 +66,7 @@ export class PaidLedgerError extends Error {
       | "verification_mismatch"
       | "not_verified"
       | "refund_held"
+      | "subscription_slot_taken"
       | "account_suspended"
       | "pilot_closed"
       | "no_paid_path"
@@ -224,6 +235,112 @@ export function createPaidCreditLedger(
     });
   }
 
+  function subscriptionPeriods(tx: Transaction, accountId: string, at: Date) {
+    return tx
+      .select({
+        id: paidOrders.id,
+        productCode: paidOrders.productCode,
+        priceCents: paidOrders.priceCents,
+        creditsMicrocredits: sql<string>`${paidEntitlements.creditsMicrocredits}::text`,
+        periodStart: paidEntitlements.periodStart,
+        periodEnd: paidEntitlements.periodEnd,
+        anchorDay: paidEntitlements.anchorDay,
+        state: paidEntitlements.state,
+        arrivedAt: paidEntitlements.arrivedAt,
+      })
+      .from(paidEntitlements)
+      .innerJoin(paidOrders, eq(paidOrders.id, paidEntitlements.orderId))
+      .where(
+        and(
+          eq(paidEntitlements.accountId, accountId),
+          eq(paidEntitlements.kind, "subscription"),
+          ne(paidEntitlements.state, "revoked"),
+          gt(paidEntitlements.periodEnd, at),
+        ),
+      )
+      .orderBy(desc(paidEntitlements.periodStart));
+  }
+
+  function subscriptionSlotTaken(
+    period: Awaited<ReturnType<typeof subscriptionPeriods>>[number] | undefined,
+    at: Date,
+  ) {
+    return (
+      period?.state === "frozen" ||
+      Boolean(period?.periodStart && period.periodStart > at)
+    );
+  }
+
+  const subscriptionSlotMessage =
+    "A paid subscription period is already scheduled or awaiting a refund. Complete its refund before replacing it.";
+
+  async function subscriptionOffer(
+    accountId: string,
+    applicationIds: string[],
+    eligible: boolean,
+  ) {
+    return database.transaction(async (tx) => {
+      const at = now();
+      const periods = await subscriptionPeriods(tx, accountId, at);
+      const current =
+        periods.find(({ periodStart }) => periodStart && periodStart <= at) ??
+        null;
+      const next =
+        periods.find(({ periodStart }) => periodStart && periodStart > at) ??
+        null;
+      const products = eligible
+        ? await tx
+            .select({
+              code: paidProducts.code,
+              version: paidProducts.version,
+              priceCents: paidProducts.priceCents,
+              creditsMicrocredits: sql<string>`${paidProducts.creditsMicrocredits}::text`,
+              currency: sql<"CNY">`'CNY'`,
+            })
+            .from(paidProducts)
+            .where(
+              and(
+                eq(paidProducts.kind, "subscription"),
+                eq(paidProducts.active, true),
+              ),
+            )
+            .orderBy(paidProducts.priceCents, paidProducts.code)
+        : [];
+      let blockedReason = subscriptionSlotTaken(periods[0], at)
+        ? subscriptionSlotMessage
+        : null;
+      const paths = eligible ? await readPaidPaths(tx, applicationIds) : [];
+      if (!eligible) {
+        blockedReason = "New test orders are unavailable for this account.";
+      } else {
+        try {
+          await checkSales(tx, accountId, applicationIds, paths);
+        } catch (error) {
+          if (!(error instanceof PaidLedgerError)) throw error;
+          blockedReason = error.message;
+        }
+      }
+      return {
+        products,
+        current,
+        next,
+        available: blockedReason === null && products.length > 0,
+        blockedReason,
+        pausedApplications: paths
+          .filter(({ pausedAt }) => pausedAt !== null)
+          .map(({ name }) => name),
+      };
+    });
+  }
+
+  async function lockAccount(tx: Transaction, accountId: string) {
+    await tx
+      .select({ id: testCreditAccounts.id })
+      .from(testCreditAccounts)
+      .where(eq(testCreditAccounts.id, accountId))
+      .for("no key update");
+  }
+
   async function createOrder(input: {
     accountId: string;
     productCode: string;
@@ -233,6 +350,7 @@ export function createPaidCreditLedger(
       merchant: string;
       version: number;
       applicationIds: string[];
+      kind?: "subscription";
     };
   }) {
     const { testPack } = input;
@@ -248,6 +366,7 @@ export function createPaidCreditLedger(
           existing.accountId !== input.accountId ||
           existing.testMerchant !== testPack.merchant ||
           existing.channel !== input.channel ||
+          existing.lockedKind !== (testPack.kind ?? "credit_pack") ||
           existing.productCode !== input.productCode ||
           existing.productVersion !== testPack.version
         )
@@ -263,13 +382,27 @@ export function createPaidCreditLedger(
       if (
         !product ||
         (testPack &&
-          (product.kind !== "credit_pack" ||
+          (product.kind !== (testPack.kind ?? "credit_pack") ||
             product.version !== testPack.version))
       )
         throw new PaidLedgerError(
           "product_unavailable",
-          "The offer changed. Review the current Credit Pack before placing an order.",
+          testPack?.kind === "subscription"
+            ? "The offer changed. Review the current Subscription Plan before placing an order."
+            : "The offer changed. Review the current Credit Pack before placing an order.",
         );
+      if (product.kind === "subscription") {
+        await lockAccount(tx, input.accountId);
+        const concurrent = await replay();
+        if (concurrent) return { ...concurrent, replayed: true };
+        const at = now();
+        const [period] = await subscriptionPeriods(tx, input.accountId, at);
+        if (subscriptionSlotTaken(period, at))
+          throw new PaidLedgerError(
+            "subscription_slot_taken",
+            subscriptionSlotMessage,
+          );
+      }
       await checkSales(tx, input.accountId, testPack?.applicationIds);
       const [order] = await tx
         .insert(paidOrders)
@@ -301,10 +434,12 @@ export function createPaidCreditLedger(
     channel: CreditPackChannel;
     accountId: string;
     id?: string;
+    kind?: "subscription";
   }) {
     return database
       .select({
         id: paidOrders.id,
+        productCode: paidOrders.productCode,
         productVersion: paidOrders.productVersion,
         priceCents: paidOrders.priceCents,
         creditsMicrocredits: sql<string>`${paidOrders.lockedMicrocredits}::text`,
@@ -312,6 +447,8 @@ export function createPaidCreditLedger(
         createdAt: paidOrders.createdAt,
         verifiedAt: paidOrders.verifiedAt,
         entitlementId: paidEntitlements.id,
+        periodStart: paidEntitlements.periodStart,
+        canRefundFuture: sql<boolean>`coalesce(${paidEntitlements.state} in ('granted', 'future') and ${paidEntitlements.periodStart} > ${now().toISOString()}::timestamptz, false)`,
         creditsFrozen: sql<boolean>`coalesce(${paidEntitlements.state} = 'frozen', false)`,
         refund: {
           id: paidRefunds.id,
@@ -327,6 +464,7 @@ export function createPaidCreditLedger(
         and(
           eq(paidOrders.testMerchant, input.merchant),
           eq(paidOrders.channel, input.channel),
+          eq(paidOrders.lockedKind, input.kind ?? "credit_pack"),
           eq(paidOrders.accountId, input.accountId),
           input.id ? eq(paidOrders.id, input.id) : undefined,
         ),
@@ -363,6 +501,13 @@ export function createPaidCreditLedger(
     testChannel?: true;
   }) {
     const result = await database.transaction(async (tx) => {
+      // Serialize period claims with order placement and account consumption.
+      await tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .innerJoin(paidOrders, eq(paidOrders.accountId, testCreditAccounts.id))
+        .where(eq(paidOrders.id, input.orderId))
+        .for("no key update", { of: testCreditAccounts });
       const [order] = await tx
         .select()
         .from(paidOrders)
@@ -497,87 +642,23 @@ export function createPaidCreditLedger(
               .from(paidProducts)
               .where(eq(paidProducts.code, order.productCode))
           : [];
-      const [latest] = await tx
-        .select()
-        .from(paidEntitlements)
-        .where(
-          and(
-            eq(paidEntitlements.accountId, order.accountId),
-            eq(paidEntitlements.kind, "subscription"),
-            inArray(paidEntitlements.state, ["granted", "future"]),
-          ),
-        )
-        .orderBy(desc(paidEntitlements.periodStart))
-        .limit(1);
-
       let period: BillingPeriod | undefined;
       let state: "granted" | "future" = "granted";
       const kind = order.lockedKind ?? product?.kind;
       if (kind === "subscription") {
-        if (latest) {
-          // Advance purchase: effective exactly when the current period ends.
-          period = advancePurchasePeriod({
-            start: latest.periodStart ?? input.paidAt,
-            end: latest.periodEnd ?? input.paidAt,
-            anchorDay: latest.anchorDay ?? 1,
-          });
-          state = "future";
-        } else {
-          period = firstBillingPeriod(input.paidAt);
-        }
-      }
-
-      try {
-        // A savepoint keeps a lost future-period claim recoverable: the
-        // unique violation rolls back to here, leaving the transaction usable
-        // for the refund-pending transition below.
-        const [entitlement] = await tx.transaction(async (claim) =>
-          claim
-            .insert(paidEntitlements)
-            .values({
-              accountId: order.accountId,
-              orderId: order.id,
-              kind: kind ?? "credit_pack",
-              periodStart: period?.start,
-              periodEnd: period?.end,
-              anchorDay: period?.anchorDay,
-              creditsMicrocredits:
-                order.lockedMicrocredits ?? product?.creditsMicrocredits ?? 0n,
-              state,
-              arrivedAt: input.paidAt,
-            })
-            .returning(),
+        const [latest] = await subscriptionPeriods(
+          tx,
+          order.accountId,
+          input.paidAt,
         );
-        const [verified] = await tx
-          .update(paidOrders)
-          .set({
-            state: "verified",
-            channelOrderRef: input.channelOrderRef,
-            verifiedAt: input.paidAt,
-          })
-          .where(eq(paidOrders.id, order.id))
-          .returning();
-        return {
-          order: verified,
-          entitlement,
-          replayed: false as const,
-          claimed: true as const,
-        };
-      } catch (error) {
-        const violation = [
-          (error as { constraint?: string }).constraint,
-          (error as { cause?: { constraint?: string } }).cause?.constraint,
-          error instanceof Error ? error.message : "",
-        ].join(" ");
-        if (
-          state === "future" &&
-          violation.includes("paid_entitlements_one_future")
-        ) {
-          // Another verified order already claimed the future period: this
-          // payment is owed a refund, not a second claim.
+        if (subscriptionSlotTaken(latest, input.paidAt)) {
           const [owed] = await tx
             .update(paidOrders)
-            .set({ state: "refund_pending", verifiedAt: input.paidAt })
+            .set({
+              state: "refund_pending",
+              channelOrderRef: input.channelOrderRef,
+              verifiedAt: input.paidAt,
+            })
             .where(eq(paidOrders.id, order.id))
             .returning();
           const refund = await recordRefundWithin(
@@ -594,8 +675,63 @@ export function createPaidCreditLedger(
             refund,
           };
         }
-        throw error;
+        if (
+          latest?.periodStart &&
+          latest.periodEnd &&
+          latest.anchorDay !== null
+        ) {
+          period = advancePurchasePeriod({
+            start: latest.periodStart,
+            end: latest.periodEnd,
+            anchorDay: latest.anchorDay,
+          });
+          state = "future";
+          // Release the unique future slot once its previous period starts.
+          await tx
+            .update(paidEntitlements)
+            .set({ state: "granted" })
+            .where(
+              and(
+                eq(paidEntitlements.accountId, order.accountId),
+                eq(paidEntitlements.kind, "subscription"),
+                eq(paidEntitlements.state, "future"),
+                lte(paidEntitlements.periodStart, input.paidAt),
+              ),
+            );
+        }
+        period ??= firstBillingPeriod(input.paidAt);
       }
+
+      const [entitlement] = await tx
+        .insert(paidEntitlements)
+        .values({
+          accountId: order.accountId,
+          orderId: order.id,
+          kind: kind ?? "credit_pack",
+          periodStart: period?.start,
+          periodEnd: period?.end,
+          anchorDay: period?.anchorDay,
+          creditsMicrocredits:
+            order.lockedMicrocredits ?? product?.creditsMicrocredits ?? 0n,
+          state,
+          arrivedAt: input.paidAt,
+        })
+        .returning();
+      const [verified] = await tx
+        .update(paidOrders)
+        .set({
+          state: "verified",
+          channelOrderRef: input.channelOrderRef,
+          verifiedAt: input.paidAt,
+        })
+        .where(eq(paidOrders.id, order.id))
+        .returning();
+      return {
+        order: verified,
+        entitlement,
+        replayed: false as const,
+        claimed: true as const,
+      };
     });
     return result;
   }
@@ -866,20 +1002,16 @@ export function createPaidCreditLedger(
     merchant: string;
     channel: CreditPackChannel;
     amountCents?: number;
+    kind?: "subscription";
   }) {
     return database.transaction(async (tx) => {
-      // Reservations lock the account before its sources. This lock also
-      // leaves foreign-key checks by the standalone allocator compatible.
-      await tx
-        .select({ id: testCreditAccounts.id })
-        .from(testCreditAccounts)
-        .where(eq(testCreditAccounts.id, input.accountId))
-        .for("no key update");
+      await lockAccount(tx, input.accountId);
       const order = await lockRefundOrder(tx, input.orderId);
       if (
         order.accountId !== input.accountId ||
         order.testMerchant !== input.merchant ||
-        order.channel !== input.channel
+        order.channel !== input.channel ||
+        order.lockedKind !== (input.kind ?? "credit_pack")
       )
         throw new PaidLedgerError("order_unknown", "Unknown order.");
       const existing = await findRefund(tx, order.id);
@@ -905,6 +1037,27 @@ export function createPaidCreditLedger(
         .from(paidEntitlements)
         .where(eq(paidEntitlements.orderId, order.id))
         .for("update");
+      if (input.kind === "subscription") {
+        const [source] = sources;
+        if (
+          !source?.periodStart ||
+          source.periodStart <= now() ||
+          amount !== order.priceCents
+        )
+          throw new PaidLedgerError(
+            "not_verified",
+            "Only a paid future period can be refunded in full for replacement.",
+          );
+        const refund = await recordRefundWithin(
+          tx,
+          order,
+          "replace_future_subscription",
+          now(),
+          customerRefund,
+        );
+        await freezeForRefund(tx, order.id);
+        return refund;
+      }
       if (!sources.length || sources.some(({ state }) => state !== "granted"))
         throw new PaidLedgerError(
           "not_verified",
@@ -1130,9 +1283,8 @@ export function createPaidCreditLedger(
         .returning();
       return row;
     }
-    // A failed refund restores the grant. shortcut: a frozen future claim
-    // comes back as granted (still not spendable before its period), so a
-    // concurrent re-claim of that future slot is not re-checked here.
+    // A failed refund restores the grant. Period bounds also protect a
+    // restored subscription claim and control when its credits can be spent.
     await tx
       .update(paidEntitlements)
       .set({ state: "granted" })
@@ -1779,6 +1931,7 @@ export function createPaidCreditLedger(
     upsertProduct,
     createOrder,
     creditPackOffer,
+    subscriptionOffer,
     testPackOrders,
     closeTestPackOrder,
     verifyOrder,

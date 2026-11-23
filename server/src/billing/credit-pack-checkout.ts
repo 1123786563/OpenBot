@@ -13,6 +13,10 @@ const orderInput = z.strictObject({
   version: z.number().int().positive(),
 });
 
+const subscriptionOrderInput = orderInput.extend({
+  productCode: z.string().min(1).optional(),
+});
+
 export function createCreditPackCheckout({
   channel,
   ledger,
@@ -137,69 +141,30 @@ export function createCreditPackCheckout({
     );
   });
 
-  api.get(`${path}/orders`, async (context) => {
-    const accountId = await ledger.accountOf(context.var.identity);
-    return context.json(
-      accountId
-        ? await paid.testPackOrders({ ...channelScope, accountId })
-        : [],
-    );
-  });
-
-  api.post(`${path}/orders`, async (context) => {
-    const accountId = await ledger.accountOf(context.var.identity);
-    if (!accountId || !channel.allows(accountId)) return notFound(context);
-    const input = orderInput.safeParse(
-      await context.req.json().catch(() => undefined),
-    );
-    if (!input.success)
-      return context.json({ error: "Invalid test order." }, 400);
-    const order = await paid.createOrder({
-      accountId,
-      productCode: channel.productCode,
-      channel: kind,
-      testPack: {
-        id: input.data.orderId,
-        merchant,
-        version: input.data.version,
-        applicationIds: channel.applicationIds,
-      },
+  if (kind === "wechat")
+    api.get("/paid/subscription", async (context) => {
+      const accountId = await ledger.accountOf(context.var.identity);
+      if (!accountId) return notFound(context);
+      const eligible = channel.allows(accountId);
+      if (
+        !eligible &&
+        !(
+          await paid.testPackOrders({
+            ...channelScope,
+            accountId,
+            kind: "subscription",
+          })
+        ).length
+      )
+        return notFound(context);
+      return context.json(
+        await paid.subscriptionOffer(
+          accountId,
+          channel.applicationIds,
+          eligible,
+        ),
+      );
     });
-    return context.json(
-      { id: order.id, state: order.state },
-      order.replayed ? 200 : 201,
-    );
-  });
-
-  api.post(`${path}/orders/:id/checkout`, async (context) => {
-    const id = z.uuid().safeParse(context.req.param("id"));
-    const accountId = await ledger.accountOf(context.var.identity);
-    if (!id.success || !accountId) return notFound(context);
-    const [order] = await paid.testPackOrders({
-      ...channelScope,
-      accountId,
-      id: id.data,
-    });
-    if (!order) return notFound(context);
-    if (order.state !== "pending")
-      return context.json({ error: "This order is no longer pending." }, 409);
-    return context.json({ checkoutUrl: await channel.checkout(order) });
-  });
-
-  api.post(`${path}/orders/:id/verify`, async (context) => {
-    const id = z.uuid().safeParse(context.req.param("id"));
-    const accountId = await ledger.accountOf(context.var.identity);
-    if (!id.success || !accountId) return notFound(context);
-    const scope = { ...channelScope, accountId, id: id.data };
-    const [order] = await paid.testPackOrders(scope);
-    if (!order) return notFound(context);
-    if (order.state !== "pending" && order.state !== "failed")
-      return context.json(order);
-    const result = await channel.query(order.id);
-    if (result.state !== "unknown") await verify(result, order.id);
-    const [updated] = await paid.testPackOrders(scope);
-    return context.json(updated);
-  });
 
   async function refreshRefund(orderId: string, query: boolean) {
     const refund = await paid.testPackRefundDispatch({
@@ -223,42 +188,116 @@ export function createCreditPackCheckout({
     }
   }
 
-  api.post(`${path}/orders/:id/refund`, async (context) => {
-    const id = z.uuid().safeParse(context.req.param("id"));
-    const accountId = await ledger.accountOf(context.var.identity);
-    if (!id.success || !accountId) return notFound(context);
-    const body = await context.req.text();
-    const input = z
-      .strictObject({ amountCents: z.number().int().positive().optional() })
-      .safeParse(body ? await context.req.json().catch(() => undefined) : {});
-    if (!input.success)
-      return context.json({ error: "Invalid refund request." }, 400);
-    await paid.requestTestPackRefund({
-      orderId: id.data,
-      accountId,
-      ...channelScope,
-      ...input.data,
+  const checkouts: { path: string; productKind?: "subscription" }[] = [
+    { path },
+  ];
+  if (kind === "wechat")
+    checkouts.push({ path: "/paid/subscription", productKind: "subscription" });
+  for (const { path, productKind } of checkouts) {
+    const scope = { ...channelScope, kind: productKind };
+    api.get(`${path}/orders`, async (context) => {
+      const accountId = await ledger.accountOf(context.var.identity);
+      return context.json(
+        accountId ? await paid.testPackOrders({ ...scope, accountId }) : [],
+      );
     });
-    await refreshRefund(id.data, false);
-    const [order] = await paid.testPackOrders({
-      ...channelScope,
-      accountId,
-      id: id.data,
-    });
-    return context.json(order);
-  });
 
-  api.post(`${path}/orders/:id/refund/verify`, async (context) => {
-    const id = z.uuid().safeParse(context.req.param("id"));
-    const accountId = await ledger.accountOf(context.var.identity);
-    if (!id.success || !accountId) return notFound(context);
-    const scope = { ...channelScope, accountId, id: id.data };
-    const [order] = await paid.testPackOrders(scope);
-    if (!order) return notFound(context);
-    await refreshRefund(order.id, true);
-    const [updated] = await paid.testPackOrders(scope);
-    return context.json(updated);
-  });
+    api.post(`${path}/orders`, async (context) => {
+      const accountId = await ledger.accountOf(context.var.identity);
+      if (!accountId || !channel.allows(accountId)) return notFound(context);
+      const input = subscriptionOrderInput.safeParse(
+        await context.req.json().catch(() => undefined),
+      );
+      if (
+        !input.success ||
+        Boolean(input.data.productCode) !== Boolean(productKind)
+      )
+        return context.json({ error: "Invalid test order." }, 400);
+      const order = await paid.createOrder({
+        accountId,
+        productCode: input.data.productCode ?? channel.productCode,
+        channel: kind,
+        testPack: {
+          id: input.data.orderId,
+          merchant,
+          version: input.data.version,
+          applicationIds: channel.applicationIds,
+          kind: productKind,
+        },
+      });
+      return context.json(
+        { id: order.id, state: order.state },
+        order.replayed ? 200 : 201,
+      );
+    });
+
+    api.post(`${path}/orders/:id/checkout`, async (context) => {
+      const id = z.uuid().safeParse(context.req.param("id"));
+      const accountId = await ledger.accountOf(context.var.identity);
+      if (!id.success || !accountId) return notFound(context);
+      const [order] = await paid.testPackOrders({
+        ...scope,
+        accountId,
+        id: id.data,
+      });
+      if (!order) return notFound(context);
+      if (order.state !== "pending")
+        return context.json({ error: "This order is no longer pending." }, 409);
+      return context.json({ checkoutUrl: await channel.checkout(order) });
+    });
+
+    api.post(`${path}/orders/:id/verify`, async (context) => {
+      const id = z.uuid().safeParse(context.req.param("id"));
+      const accountId = await ledger.accountOf(context.var.identity);
+      if (!id.success || !accountId) return notFound(context);
+      const orderScope = { ...scope, accountId, id: id.data };
+      const [order] = await paid.testPackOrders(orderScope);
+      if (!order) return notFound(context);
+      if (order.state !== "pending" && order.state !== "failed")
+        return context.json(order);
+      const result = await channel.query(order.id);
+      if (result.state !== "unknown") await verify(result, order.id);
+      const [updated] = await paid.testPackOrders(orderScope);
+      return context.json(updated);
+    });
+
+    api.post(`${path}/orders/:id/refund`, async (context) => {
+      const id = z.uuid().safeParse(context.req.param("id"));
+      const accountId = await ledger.accountOf(context.var.identity);
+      if (!id.success || !accountId) return notFound(context);
+      const body = await context.req.text();
+      const input = z
+        .strictObject({ amountCents: z.number().int().positive().optional() })
+        .safeParse(body ? await context.req.json().catch(() => undefined) : {});
+      if (!input.success)
+        return context.json({ error: "Invalid refund request." }, 400);
+      await paid.requestTestPackRefund({
+        orderId: id.data,
+        accountId,
+        ...scope,
+        ...input.data,
+      });
+      await refreshRefund(id.data, false);
+      const [order] = await paid.testPackOrders({
+        ...scope,
+        accountId,
+        id: id.data,
+      });
+      return context.json(order);
+    });
+
+    api.post(`${path}/orders/:id/refund/verify`, async (context) => {
+      const id = z.uuid().safeParse(context.req.param("id"));
+      const accountId = await ledger.accountOf(context.var.identity);
+      if (!id.success || !accountId) return notFound(context);
+      const orderScope = { ...scope, accountId, id: id.data };
+      const [order] = await paid.testPackOrders(orderScope);
+      if (!order) return notFound(context);
+      await refreshRefund(order.id, true);
+      const [updated] = await paid.testPackOrders(orderScope);
+      return context.json(updated);
+    });
+  }
 
   return api;
 }

@@ -23,12 +23,14 @@ import { createDatabase } from "../src/db/client";
 import {
   billingApplications,
   enterpriseSettings,
+  lagoUsageEvents,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
   paidProducts,
   paidRefunds,
   testCreditAccounts,
+  testCreditEvidence,
   testCreditOperations,
   testCreditResumePoints,
 } from "../src/db/schema";
@@ -36,8 +38,10 @@ import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-const ledger = createTestCreditLedger(database);
-const paid = createPaidCreditLedger(database);
+let time: Date | undefined;
+const clock = () => time ?? new Date();
+const ledger = createTestCreditLedger(database, clock);
+const paid = createPaidCreditLedger(database, clock);
 const code = "fixture-credit-pack";
 const token = "fixture-credit-pack-token-for-local-test";
 const alipayToken = "fixture-alipay-token-for-local-test";
@@ -45,7 +49,8 @@ const issuer = "credit-pack-fixture";
 const alice = crypto.randomUUID();
 const bob = crypto.randomUUID();
 const outsider = crypto.randomUUID();
-const fixtureSubjects = new Set<string>([alice, bob, outsider]);
+const subscriber = crypto.randomUUID();
+const fixtureSubjects = new Set<string>([alice, bob, outsider, subscriber]);
 type RefundTerms = ReturnType<typeof testRefundTerms.parse>;
 const refundStarts = new Map<string, RefundTerms>();
 let refundUnavailable = false;
@@ -105,8 +110,9 @@ beforeAll(async () => {
 
 function mount(
   origin: string,
-  eligible = accountIds.slice(0, 2),
+  eligible = accountIds.filter((_, index) => index !== 2),
   alipayOrigin?: string,
+  execute?: Parameters<typeof createTestCreditRoutes>[0]["execute"],
 ) {
   const app = new Hono();
   const env = {
@@ -129,6 +135,7 @@ function mount(
     "/api/billing",
     createTestCreditRoutes({
       ledger,
+      execute,
       paid: {
         ledger: paid,
         creditPackTestChannel: loadCreditPackTestChannel(env),
@@ -163,7 +170,15 @@ afterAll(async () => {
   await database
     .delete(paidOrders)
     .where(inArray(paidOrders.accountId, accountIds));
-  await database.delete(paidProducts).where(eq(paidProducts.code, code));
+  await database
+    .delete(paidProducts)
+    .where(inArray(paidProducts.code, [code, monthly, plus]));
+  await database
+    .delete(lagoUsageEvents)
+    .where(inArray(lagoUsageEvents.accountId, accountIds));
+  await database
+    .delete(testCreditEvidence)
+    .where(inArray(testCreditEvidence.accountId, accountIds));
   await database
     .delete(testCreditOperations)
     .where(inArray(testCreditOperations.accountId, accountIds));
@@ -556,9 +571,7 @@ async function verifiedPack(channel: CreditPackChannel = "wechat") {
   };
 }
 
-test("a concurrent reservation and refund can never both claim the same source", async () => {
-  const pack = await verifiedPack();
-  const route = "checkout-refund-race";
+async function installFixtureCatalog(route: string, maxInputTokens: number) {
   const harnessImage = `agent-langgraph-agui@sha256:${"a".repeat(64)}`;
   const draft = configure(emptyCatalog, {
     harnessImage,
@@ -568,7 +581,7 @@ test("a concurrent reservation and refund can never both claim the same source",
         model: "refund-fixture",
         gatewayRevision: "refund-fixture-v1",
         meteringRevision: "refund-fixture-v1",
-        maxInputTokens: 10,
+        maxInputTokens,
         maxOutputTokens: 2,
         tools: false,
         price: { inputPerMillion: 1_000_000, outputPerMillion: 0 },
@@ -601,6 +614,19 @@ test("a concurrent reservation and refund can never both claim the same source",
       });
   };
   await install(catalog);
+  return async () => {
+    if (previous) await install(previous.value);
+    else
+      await database
+        .delete(enterpriseSettings)
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  };
+}
+
+test("a concurrent reservation and refund can never both claim the same source", async () => {
+  const pack = await verifiedPack();
+  const route = "checkout-refund-race";
+  const restoreCatalog = await installFixtureCatalog(route, 10);
   try {
     const operationId = crypto.randomUUID();
     const quote = await ledger.quote();
@@ -651,11 +677,7 @@ test("a concurrent reservation and refund can never both claim the same source",
       reason: "insufficient_credits",
     });
   } finally {
-    if (previous) await install(previous.value);
-    else
-      await database
-        .delete(enterpriseSettings)
-        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    await restoreCatalog();
   }
 });
 
@@ -1025,5 +1047,272 @@ test("Alipay checkout reconciles missed callbacks and refunds only through the o
   } finally {
     api = previous;
     await checkoutFixture.stop(true);
+  }
+});
+
+const monthly = "fixture-monthly";
+const plus = "fixture-monthly-plus";
+const plans = "/paid/subscription";
+
+test("a customer can renew a Beijing month, replace a future plan after refund, and restart after a gap", async () => {
+  await approvePaths();
+  const previous = api;
+  const route = "subscription-cross-period";
+  const restoreCatalog = await installFixtureCatalog(route, 150);
+  const boundary = new Date("2027-02-27T16:00:00Z");
+  api = mount(fixture.url.origin, undefined, undefined, async () => {
+    time = boundary;
+    return {
+      text: "completed after renewal",
+      usage: { inputTokens: 145, outputTokens: 0 },
+    };
+  });
+  const publishPlan = (
+    productCode: string,
+    priceCents: number,
+    credits: bigint,
+  ) =>
+    paid.upsertProduct({
+      code: productCode,
+      kind: "subscription",
+      priceCents,
+      creditsMicrocredits: credits,
+    });
+  const basic = await publishPlan(monthly, 1000, 100n);
+  const upgrade = await publishPlan(plus, 2000, 200n);
+  const view = async () => {
+    const response = await call(plans, subscriber);
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const place = async (product = basic, path = plans) => {
+    const id = crypto.randomUUID();
+    const response = await call(`${path}/orders`, subscriber, {
+      orderId: id,
+      ...(path === plans ? { productCode: product.code } : {}),
+      version: product.version,
+    });
+    expect(response.status).toBe(201);
+    expect(
+      (await call(`${path}/orders/${id}/checkout`, subscriber, {})).status,
+    ).toBe(200);
+    expect(starts.get(id)).toMatchObject({ amountCents: product.priceCents });
+    payments.set(id, {
+      orderId: id,
+      state: "paid",
+      merchantId: "fixture-merchant",
+      currency: "CNY",
+      channelOrderRef: crypto.randomUUID(),
+      amountCents: product.priceCents,
+      paidAt: clock().toISOString(),
+    });
+    return id;
+  };
+  const verify = async (id: string, path = plans) => {
+    const response = await call(`${path}/orders/${id}/verify`, subscriber, {});
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  try {
+    time = new Date("2027-01-30T20:00:00Z"); // Jan 31 in Beijing
+    expect((await call(plans, outsider)).status).toBe(404);
+    expect(await view()).toMatchObject({
+      products: expect.arrayContaining([
+        {
+          code: monthly,
+          version: basic.version,
+          priceCents: 1000,
+          creditsMicrocredits: "100",
+          currency: "CNY",
+        },
+      ]),
+      current: null,
+      next: null,
+    });
+    const first = await place();
+    expect(await verify(first)).toMatchObject({ state: "verified" });
+    expect(await view()).toMatchObject({
+      current: {
+        id: first,
+        anchorDay: 31,
+        periodEnd: "2027-02-27T16:00:00.000Z",
+      },
+    });
+
+    time = new Date("2027-02-14T20:00:00Z");
+    const renewals = [await place(upgrade), await place(upgrade)];
+    await publishPlan(plus, 3000, 300n);
+    const verified = await Promise.all(renewals.map((id) => verify(id)));
+    expect(verified.map(({ state }) => state).sort()).toEqual([
+      "refund_pending",
+      "verified",
+    ]);
+    const winner = verified.find(({ state }) => state === "verified").id;
+    expect(await view()).toMatchObject({
+      current: { id: first, creditsMicrocredits: "100", priceCents: 1000 },
+      next: {
+        id: winner,
+        creditsMicrocredits: "200",
+        priceCents: 2000,
+        periodStart: "2027-02-27T16:00:00.000Z",
+        periodEnd: "2027-03-30T16:00:00.000Z",
+      },
+    });
+    const replacement = () =>
+      call(`${plans}/orders`, subscriber, {
+        orderId: crypto.randomUUID(),
+        productCode: monthly,
+        version: basic.version,
+      });
+    expect((await replacement()).status).toBe(409);
+    expect(
+      (await call(`${plans}/orders/${first}/refund`, subscriber, {})).status,
+    ).toBe(409);
+    const refund = await call(
+      `${plans}/orders/${winner}/refund`,
+      subscriber,
+      {},
+    );
+    expect(refund.status).toBe(200);
+    const {
+      refund: { id: refundId },
+    } = await refund.json();
+    const terms = refundStarts.get(refundId);
+    expect(terms?.amountCents).toBe(2000);
+    expect((await replacement()).status).toBe(409);
+    expect(
+      (
+        await call(
+          refundCallback,
+          undefined,
+          { ...terms, state: "confirmed", returnedCents: 2000 },
+          true,
+        )
+      ).status,
+    ).toBe(200);
+    const next = await place();
+    expect(await verify(next)).toMatchObject({ state: "verified" });
+
+    const pack = await publish(500, 50n);
+    const packPath = "/paid/credit-pack";
+    const purchasePack = async () => {
+      const id = await place(pack, packPath);
+      expect(await verify(id, packPath)).toMatchObject({ state: "verified" });
+      return id;
+    };
+    const packA = await purchasePack();
+    expect(
+      await (await call(`${plans}/orders`, subscriber)).json(),
+    ).not.toContainEqual(expect.objectContaining({ id: packA }));
+    expect(await (await call(orders, subscriber)).json()).not.toContainEqual(
+      expect.objectContaining({ id: first }),
+    );
+    expect(
+      (await call(`${plans}/orders/${packA}/refund`, subscriber, {})).status,
+    ).toBe(404);
+    expect(
+      (await call(`${orders}/${next}/refund`, subscriber, {})).status,
+    ).toBe(404);
+    time = new Date("2027-02-15T20:01:00Z");
+    const packB = await purchasePack();
+    const currentOrder = await verify(first);
+    const firstPackOrder = await verify(packA, packPath);
+    const secondPackOrder = await verify(packB, packPath);
+    const accountId = await ledger.accountOf({ issuer, subject: subscriber });
+    if (!accountId) throw new Error("Missing subscriber account");
+    const reserve = (operationId: string, amountMicrocredits: bigint) =>
+      paid.allocate({ accountId, operationId, amountMicrocredits });
+    const released = crypto.randomUUID();
+    const settled = crypto.randomUUID();
+    expect(await reserve(released, 15n)).toMatchObject({ state: "allocated" });
+    time = new Date(boundary.getTime() - 1_000);
+    const quote = await ledger.quote();
+    const hold = await (
+      await call("/v1/reserve", subscriber, {
+        operationId: settled,
+        route,
+        priceVersion: quote?.priceVersion,
+        creditType: "paid",
+        resumable: false,
+      })
+    ).json();
+    expect(hold).toMatchObject({ state: "reserved" });
+    const dispatch = await call("/v1/dispatch", subscriber, {
+      operationId: settled,
+      permit: hold.permit,
+      messages: [{ role: "user", content: "Finish after renewal" }],
+    });
+    expect(await dispatch.json()).toMatchObject({
+      state: "completed",
+      operation: { chargedMicrocredits: "145" },
+    });
+    expect(await view()).toMatchObject({
+      current: { id: next, anchorDay: 31 },
+      next: null,
+    });
+    await paid.releaseAllocation(accountId, released);
+    expect(await (await call("/paid/bill", subscriber)).json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: settled,
+          source: "subscription",
+          entitlementId: currentOrder.entitlementId,
+          amountMicrocredits: "85",
+          periodStart: "2027-01-30T20:00:00.000Z",
+          periodEnd: "2027-02-27T16:00:00.000Z",
+          arrivedAt: "2027-01-30T20:00:00.000Z",
+          at: boundary.toISOString(),
+        }),
+        expect.objectContaining({
+          operationId: settled,
+          source: "credit_pack",
+          entitlementId: firstPackOrder.entitlementId,
+          amountMicrocredits: "50",
+        }),
+        expect.objectContaining({
+          operationId: settled,
+          source: "credit_pack",
+          entitlementId: secondPackOrder.entitlementId,
+          amountMicrocredits: "10",
+        }),
+      ]),
+    );
+    expect(
+      await (await call("/paid/balance", subscriber)).json(),
+    ).toMatchObject({ availableMicrocredits: "140" });
+    expect(await reserve(crypto.randomUUID(), 141n)).toMatchObject({
+      state: "denied",
+      reason: "insufficient_credits",
+    });
+
+    const newUpgrade = await publishPlan(plus, 3000, 300n);
+    const following = await place(newUpgrade);
+    expect(await verify(following)).toMatchObject({ state: "verified" });
+    expect(await view()).toMatchObject({
+      next: { id: following, periodEnd: "2027-04-29T16:00:00.000Z" },
+    });
+
+    time = new Date("2027-03-30T16:00:00Z");
+    expect(await view()).toMatchObject({
+      current: { id: following, creditsMicrocredits: "300", priceCents: 3000 },
+      next: null,
+    });
+
+    time = new Date("2027-06-04T20:00:00Z");
+    expect(await view()).toMatchObject({ current: null, next: null });
+    const restarted = await place();
+    expect(await verify(restarted)).toMatchObject({ state: "verified" });
+    expect(await view()).toMatchObject({
+      current: {
+        id: restarted,
+        anchorDay: 5,
+        periodStart: time.toISOString(),
+        periodEnd: "2027-07-04T16:00:00.000Z",
+      },
+    });
+  } finally {
+    time = undefined;
+    api = previous;
+    await restoreCatalog();
   }
 });

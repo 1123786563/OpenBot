@@ -15,39 +15,45 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import {
+  beijingBillingTime,
   billingKeys,
   creditsText,
   paidSourcesQueryOptions,
 } from "@/lib/billing/queries";
 import { ClientError, client } from "@/lib/client";
 
-const channels = {
-  WeChat: "/api/billing/paid/credit-pack",
-  Alipay: "/api/billing/paid/credit-pack/alipay",
-};
-type Channel = keyof typeof channels;
-
-const orderListKey = (channel: Channel) => [
-  ...billingKeys.all,
-  "credit-pack-orders",
-  channel,
-];
+type Channel = "WeChat" | "Alipay";
 
 const pack = z.object({
   priceCents: z.number().int().positive(),
   creditsMicrocredits: z.string().regex(/^\d+$/),
 });
-const offerSchema = z.object({
-  product: pack
-    .extend({
-      version: z.number().int().positive(),
-      currency: z.literal("CNY"),
-    })
-    .nullable(),
+const offerProduct = pack.extend({
+  version: z.number().int().positive(),
+  currency: z.literal("CNY"),
+});
+const availability = z.object({
   available: z.boolean(),
   blockedReason: z.string().nullable(),
+});
+const packOffer = availability.extend({
+  product: offerProduct.nullable(),
   pausedApplications: z.array(z.string()),
 });
+const periodSchema = pack.extend({
+  id: z.uuid(),
+  productCode: z.string(),
+  periodStart: z.iso.datetime(),
+  periodEnd: z.iso.datetime(),
+  state: z.enum(["granted", "future", "frozen"]),
+});
+const subscriptionOffer = availability.extend({
+  products: z.array(offerProduct.extend({ code: z.string() })),
+  current: periodSchema.nullable(),
+  next: periodSchema.nullable(),
+  pausedApplications: z.array(z.string()),
+});
+type Product = z.infer<typeof offerProduct> & { code?: string };
 
 const states = {
   pending: "Awaiting payment confirmation",
@@ -68,6 +74,8 @@ const refundStatuses = (channel: Channel) => ({
 
 const orderSchema = pack.extend({
   id: z.uuid(),
+  productCode: z.string().optional(),
+  canRefundFuture: z.boolean().optional(),
   state: z.enum([
     "pending",
     "verified",
@@ -104,14 +112,24 @@ function packText({
   return `CN¥${(priceCents / 100).toFixed(2)} · ${creditsText(creditsMicrocredits)} credits`;
 }
 
-function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
+function OrderRow({
+  order,
+  channel,
+  path,
+  subscription,
+}: {
+  order: Order;
+  channel: Channel;
+  path: string;
+  subscription: boolean;
+}) {
   const queryClient = useQueryClient();
   const [confirmRefund, setConfirmRefund] = useState(false);
   const sources = useQuery(paidSourcesQueryOptions());
   const source = sources.data?.find(
     ({ entitlementId }) => entitlementId === order.entitlementId,
   );
-  const orderPath = `${channels[channel]}/orders/${encodeURIComponent(order.id)}`;
+  const orderPath = `${path}/orders/${encodeURIComponent(order.id)}`;
   const checkout = useMutation({
     mutationFn: async () => {
       const url = z.url().parse(
@@ -128,7 +146,8 @@ function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
   const refreshCredits = () =>
     Promise.all(
       [
-        orderListKey(channel),
+        checkoutKeys(path).orders,
+        checkoutKeys(path).offer,
         billingKeys.paidBalance,
         billingKeys.paidSources,
       ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
@@ -151,7 +170,10 @@ function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
   return (
     <Item>
       <ItemContent>
-        <ItemTitle>{packText(order)}</ItemTitle>
+        <ItemTitle>
+          {subscription && order.productCode ? `${order.productCode} · ` : ""}
+          {packText(order)}
+        </ItemTitle>
         <ItemDescription>Order {order.id}</ItemDescription>
         {order.refund ? (
           <>
@@ -164,7 +186,11 @@ function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
             </Text>
           </>
         ) : (
-          <Text role="status">{states[order.state]}</Text>
+          <Text role="status">
+            {subscription && order.state === "verified"
+              ? "Payment confirmed"
+              : states[order.state]}
+          </Text>
         )}
         {source ? (
           <Link href={`#paid-source-${source.entitlementId}`}>
@@ -191,15 +217,17 @@ function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
               onClick={() => verify.mutate()}
             />
           )}
-          {order.state === "verified" && !order.refund && (
-            <Button
-              label="Request refund"
-              onClick={() => {
-                refundAction.reset();
-                setConfirmRefund(true);
-              }}
-            />
-          )}
+          {order.state === "verified" &&
+            !order.refund &&
+            (!subscription || order.canRefundFuture) && (
+              <Button
+                label={subscription ? "Refund future period" : "Request refund"}
+                onClick={() => {
+                  refundAction.reset();
+                  setConfirmRefund(true);
+                }}
+              />
+            )}
           {order.refund &&
             order.refund.state !== "confirmed" &&
             order.refund.state !== "failed" && (
@@ -233,9 +261,10 @@ function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
               <DialogHeader title={`Request ${channel} refund`} />
               <Text>
                 Request CN¥{(order.priceCents / 100).toFixed(2)} back through
-                the {channel} test channel. If eligible, this order’s credits
-                will be frozen while the refund is processed. Used credits
-                require manual review.
+                the {channel} test channel.{" "}
+                {subscription
+                  ? "You can buy a replacement after the refund is confirmed."
+                  : "If eligible, this order’s credits will be frozen while the refund is processed. Used credits require manual review."}
               </Text>
               {refundAction.error ? (
                 <Text role="alert">{refundAction.error.message}</Text>
@@ -261,26 +290,45 @@ function OrderRow({ order, channel }: { order: Order; channel: Channel }) {
   );
 }
 
+function checkoutKeys(path: string) {
+  return {
+    offer: [...billingKeys.all, path, "offer"],
+    orders: [...billingKeys.all, path, "orders"],
+  };
+}
+
 export function CreditPackCheckout() {
   return (
     <>
-      <ChannelCheckout channel="WeChat" />
-      <ChannelCheckout channel="Alipay" />
+      <PaidCheckout kind="credit-pack" channel="WeChat" />
+      <PaidCheckout kind="credit-pack" channel="Alipay" />
     </>
   );
 }
 
-function ChannelCheckout({ channel }: { channel: Channel }) {
-  const path = channels[channel];
-  const offerKey = [...billingKeys.all, "credit-pack-offer", channel];
-  const ordersKey = orderListKey(channel);
+export function SubscriptionCheckout() {
+  return <PaidCheckout kind="subscription" channel="WeChat" />;
+}
+
+function PaidCheckout({
+  kind,
+  channel,
+}:
+  | { kind: "credit-pack"; channel: Channel }
+  | { kind: "subscription"; channel: "WeChat" }) {
+  const subscription = kind === "subscription";
+  const path = `/api/billing/paid/${kind}${channel === "Alipay" ? "/alipay" : ""}`;
+  const { offer: offerKey, orders: ordersKey } = checkoutKeys(path);
   const queryClient = useQueryClient();
   const offer = useQuery({
     queryKey: offerKey,
     retry: false,
     queryFn: async ({ signal }) => {
       try {
-        return offerSchema.parse(await (await client(path, { signal })).json());
+        const data: unknown = await (await client(path, { signal })).json();
+        if (subscription) return subscriptionOffer.parse(data);
+        const { product, ...status } = packOffer.parse(data);
+        return { ...status, products: product ? [product] : [] };
       } catch (error) {
         if (error instanceof ClientError && error.status === 404) return null;
         throw error;
@@ -296,72 +344,107 @@ function ChannelCheckout({ channel }: { channel: Channel }) {
         .array(orderSchema)
         .parse(await (await client(`${path}/orders`, { signal })).json()),
   });
-  const attempt = useRef<{ orderId: string; version: number }>(null);
+  const attempts = useRef(new Map<string, string>());
   const place = useMutation({
-    mutationFn: async (version: number) => {
-      if (attempt.current?.version !== version)
-        attempt.current = { version, orderId: crypto.randomUUID() };
-      await client(`${path}/orders`, { method: "POST", body: attempt.current });
+    mutationFn: async ({ code, version }: Product) => {
+      const key = JSON.stringify([code, version]);
+      const orderId = attempts.current.get(key) ?? crypto.randomUUID();
+      attempts.current.set(key, orderId);
+      await client(`${path}/orders`, {
+        method: "POST",
+        body: { version, orderId, ...(code ? { productCode: code } : {}) },
+      });
+      attempts.current.delete(key);
     },
-    onSuccess: async () => {
-      attempt.current = null;
-      await queryClient.invalidateQueries({ queryKey: ordersKey });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ordersKey }),
     onError: async (error) => {
       if (error instanceof ClientError && error.status === 409)
         await queryClient.invalidateQueries({ queryKey: offerKey });
     },
   });
   if (!offer.data && !offer.isError) return null;
-  const product = offer.data?.product;
+  const periods = offer.data && "current" in offer.data ? offer.data : null;
+  const paused = offer.data?.pausedApplications ?? [];
   return (
     <PageSection
-      description={`${channel} test channel. Orders use simulated payments and add long-lived paid credits.`}
+      description={
+        subscription
+          ? "Periods use Beijing time. A renewal or plan change takes effect when your current period ends. Payments use the WeChat test channel."
+          : `${channel} test channel. Orders use simulated payments and add long-lived paid credits.`
+      }
       title={
-        channel === "WeChat" ? "Test Credit Pack" : "Alipay Test Credit Pack"
+        subscription
+          ? "Test Monthly Subscription"
+          : channel === "Alipay"
+            ? "Alipay Test Credit Pack"
+            : "Test Credit Pack"
       }
     >
       <PageRows>
-        <Item>
-          <ItemContent>
-            {product ? <ItemTitle>{packText(product)}</ItemTitle> : null}
-            {offer.data?.pausedApplications.length ? (
-              <Text>
-                Paused application paths:{" "}
-                {offer.data.pausedApplications.join(", ")}
-              </Text>
-            ) : null}
-            {offer.data?.blockedReason ? (
-              <Text>{offer.data.blockedReason}</Text>
-            ) : null}
-            {offer.error ? (
-              <HStack gap={2} wrap="wrap" align="center">
-                <Text role="alert">{offer.error.message}</Text>
-                <Button
-                  isDisabled={offer.isFetching}
-                  label="Retry offer"
-                  onClick={() => void offer.refetch()}
-                />
-              </HStack>
-            ) : null}
-            {product && offer.data?.available && (
-              <HStack>
-                <Button
-                  isDisabled={place.isPending}
-                  label={
-                    channel === "WeChat"
-                      ? "Place test order"
-                      : "Place Alipay test order"
-                  }
-                  onClick={() => place.mutate(product.version)}
-                />
-              </HStack>
-            )}
-            {place.error ? (
-              <Text role="alert">{place.error.message}</Text>
-            ) : null}
-          </ItemContent>
-        </Item>
+        {periods ? (
+          <>
+            <PeriodRow label="Current period" period={periods.current} />
+            <PeriodRow label="Next period" period={periods.next} />
+          </>
+        ) : null}
+        {offer.data?.products.map((product: Product) => (
+          <Item key={product.code ?? kind}>
+            <ItemContent>
+              <ItemTitle>
+                {product.code ? `${product.code} · ` : ""}
+                {packText(product)}
+              </ItemTitle>
+              {offer.data?.available ? (
+                <HStack>
+                  <Button
+                    isDisabled={place.isPending}
+                    label={
+                      subscription
+                        ? `Place test order for ${product.code}`
+                        : channel === "Alipay"
+                          ? "Place Alipay test order"
+                          : "Place test order"
+                    }
+                    onClick={() => place.mutate(product)}
+                  />
+                </HStack>
+              ) : null}
+            </ItemContent>
+          </Item>
+        ))}
+        {periods && !periods.products.length && !periods.blockedReason ? (
+          <Item>
+            <Text>No monthly plans are available.</Text>
+          </Item>
+        ) : null}
+        {paused.length ||
+        offer.data?.blockedReason ||
+        offer.error ||
+        place.error ? (
+          <Item>
+            <ItemContent>
+              {paused.length ? (
+                <Text>Paused application paths: {paused.join(", ")}</Text>
+              ) : null}
+              {offer.data?.blockedReason ? (
+                <Text>{offer.data.blockedReason}</Text>
+              ) : null}
+              {offer.error ? (
+                <HStack gap={2} wrap="wrap" align="center">
+                  <Text role="alert">{offer.error.message}</Text>
+                  <Button
+                    isDisabled={offer.isFetching}
+                    label="Retry offer"
+                    onClick={() => void offer.refetch()}
+                  />
+                </HStack>
+              ) : null}
+              {place.error ? (
+                <Text role="alert">{place.error.message}</Text>
+              ) : null}
+            </ItemContent>
+          </Item>
+        ) : null}
         {orders.isError ? (
           <Item>
             <Text role="alert">{orders.error.message}</Text>
@@ -375,10 +458,47 @@ function ChannelCheckout({ channel }: { channel: Channel }) {
         {orders.data?.map((order) => (
           <Fragment key={order.id}>
             <Separator />
-            <OrderRow order={order} channel={channel} />
+            <OrderRow
+              order={order}
+              channel={channel}
+              path={path}
+              subscription={subscription}
+            />
           </Fragment>
         ))}
       </PageRows>
     </PageSection>
+  );
+}
+
+function PeriodRow({
+  label,
+  period,
+}: {
+  label: string;
+  period: z.infer<typeof periodSchema> | null;
+}) {
+  return (
+    <Item>
+      <ItemContent>
+        <ItemTitle>{label}</ItemTitle>
+        {period ? (
+          <>
+            <ItemDescription>
+              {period.productCode} · {packText(period)}
+            </ItemDescription>
+            <Text>
+              {beijingBillingTime(period.periodStart)} to{" "}
+              {beijingBillingTime(period.periodEnd)} (Beijing time)
+            </Text>
+            {period.state === "frozen" ? (
+              <Text role="status">Refund pending</Text>
+            ) : null}
+          </>
+        ) : (
+          <ItemDescription>No paid period</ItemDescription>
+        )}
+      </ItemContent>
+    </Item>
   );
 }
