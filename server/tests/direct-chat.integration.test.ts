@@ -29,6 +29,7 @@ import {
 } from "../../app/src/lib/voice/agent-bridge";
 import { VoiceSession } from "../../app/src/lib/voice/session";
 import type { VoiceEvent } from "../../app/src/lib/voice/types";
+import { createEnterpriseStore } from "../src/admin/settings-store";
 import {
   type ActorAgentResolver,
   createActorAgentResolver,
@@ -77,6 +78,7 @@ import {
   auditEvents,
   channelMemberships,
   channels,
+  directChatAnalyses,
   directChatRunEvents,
   directChatRuns,
   learningSettings,
@@ -90,6 +92,7 @@ import {
 } from "../src/db/schema";
 import { currentEdition, setEdition } from "../src/edition";
 import { createSkillApprovalStore } from "../src/learning/approvals";
+import { readLearningSource } from "../src/learning/evidence";
 import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
 import { createLearningSharingStore } from "../src/learning/sharing";
@@ -3695,6 +3698,220 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
     await database.delete(users).where(eq(users.id, actor.id));
   }
 }, 20_000);
+
+test("published skill catalog shares approved guidance only with a currently authorized recipient and revokes it", async () => {
+  const alice = await person();
+  const bob = await person();
+  const outsider = await person();
+  await database.insert(userRoles).values({ userId: bob.id, role: "admin" });
+  const botDetails = {
+    name: "Packing Bot",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+  };
+  const bot = await profiles.create(alice, {
+    ...botDetails,
+    visibility: "public",
+  });
+  const second = await profiles.create(alice, {
+    ...botDetails,
+    name: "Second Bot",
+    visibility: "public",
+  });
+  const channelIds: string[] = [];
+  const enterprise = createEnterpriseStore(database);
+  const previousSharing = (await enterprise.settings()).skillSharing;
+  const runInputs: RunAgentInput[] = [];
+  let sharedVersions: RunContextVersion[] | undefined;
+  const capture = async (input: RunAgentInput) => {
+    runInputs.push(input);
+    if (input.runId === "shared-skill") sharedVersions = runContextVersions();
+  };
+  const aliceChat = web(database, alice, bot.id, capture);
+  const bobChat = web(database, bob, bot.id, capture);
+  const outsiderChat = web(database, outsider, bot.id, capture);
+  const admin = web(database, { ...bob, role: "admin" }, bot.id, capture);
+  try {
+    await enterprise.setSetting("skillSharing", true, bob.id);
+    async function open(app: typeof aliceChat, ids: string[]) {
+      const result = await app.request(
+        "/api/channels",
+        post({ agentIds: ids }),
+      );
+      expect(result.status).toBe(201);
+      const data = z
+        .object({ channel: z.object({ id: z.string(), threadId: z.string() }) })
+        .parse(await result.json());
+      channelIds.push(data.channel.id);
+      return data.channel;
+    }
+    const aliceChannel = await open(aliceChat, [bot.id]);
+    const bobChannel = await open(bobChat, [bot.id]);
+    await open(outsiderChat, [bot.id]);
+    const source = await open(aliceChat, [bot.id, second.id]);
+    const groups = createGroupStore(database, () => crypto.randomUUID());
+    await groups.seedOrder(alice.id, source.id, [bot.id, second.id]);
+    await groups.addMember(alice.id, source.id, bob.email);
+    await groups.append({
+      id: crypto.randomUUID(),
+      ownerUserId: alice.id,
+      channelId: source.id,
+      agentId: bot.id,
+      threadId: "shared-fixture",
+      text: "Check the shipping label.",
+      details: {},
+    });
+    const permission = `/api/copilotkit/conversations/${source.id}/learning-evidence`;
+    const grant = { ...post({ allowed: true }), method: "PUT" };
+    expect((await aliceChat.request(permission, grant)).status).toBe(200);
+    expect((await bobChat.request(permission, grant)).status).toBe(200);
+    const scope = {
+      personId: alice.id,
+      botId: bot.id,
+      threadId: aliceChannel.threadId,
+    };
+    const locator = { kind: "conversation", id: source.id } as const;
+    const cutoff = new Date();
+    const evidence = await database.transaction((tx) =>
+      readLearningSource(tx, scope, locator, cutoff),
+    );
+    if (!evidence) throw new Error("Expected eligible shared evidence.");
+    const id = crypto.randomUUID();
+    await database.insert(directChatAnalyses).values({
+      id,
+      threadId: scope.threadId,
+      botId: scope.botId,
+      state: "proposed",
+      evidenceRunIds: [],
+      evidenceSources: [
+        { ...locator, digest: evidence.digest, cutoff: cutoff.toISOString() },
+      ],
+      proposal: {
+        title: "Pack a shipment",
+        instructions: "List the steps in order.",
+      },
+    });
+    const catalog = "/api/copilotkit/learning/skills";
+    expect((await aliceChat.request(`${catalog}/${id}`)).status).toBe(404);
+    expect(
+      (
+        await admin.request(
+          `/api/copilotkit/admin/learning/proposals/${id}`,
+          post({ decision: "approve" }),
+        )
+      ).status,
+    ).toBe(200);
+    const detail = `${catalog}/${id}`;
+    const share = (recipient: string) => post({ email: recipient });
+    expect(await (await aliceChat.request(catalog)).json()).toMatchObject({
+      skills: [expect.objectContaining({ id: id, access: "owned" })],
+    });
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect(
+      (await bobChat.request(`${detail}/shares`, share(alice.email))).status,
+    ).toBe(404);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(alice.email))).status,
+    ).toBe(404);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(outsider.email)))
+        .status,
+    ).toBe(404);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(bob.email))).status,
+    ).toBe(200);
+    expect(await (await bobChat.request(detail)).json()).toMatchObject({
+      id: id,
+      access: "shared",
+      instructions: "List the steps in order.",
+    });
+    const bobTurn = async (runId: string) => {
+      const response = await bobChat.request(
+        `/api/copilotkit/agent/${bot.id}/run`,
+        post({
+          threadId: bobChannel.threadId,
+          runId,
+          messages: [
+            { id: runId, role: "user", content: "Show the procedure." },
+          ],
+        }),
+      );
+      expect(response.status).toBe(200);
+      await response.text();
+      return runInputs.at(-1)?.messages[0]?.content;
+    };
+    const guidance = await bobTurn("shared-skill");
+    expect(guidance).toContain(id);
+    expect(guidance).toContain(
+      "Follow existing instructions, tool permissions, and approval requirements.",
+    );
+    const versionsCurrent = bobChat.learnedSkillVersionsCurrent;
+    if (!versionsCurrent || !sharedVersions)
+      throw new Error("Expected versioned shared guidance.");
+    expect(sharedVersions).toEqual([
+      { kind: "learned_skill", id, version: expect.any(String) },
+    ]);
+    expect(
+      await versionsCurrent(bob, bobChannel.threadId, bot.id, sharedVersions),
+    ).toBe(true);
+    const revoke = `${detail}/shares/${encodeURIComponent(bob.id)}`;
+    expect((await bobChat.request(revoke, { method: "DELETE" })).status).toBe(
+      404,
+    );
+    expect((await aliceChat.request(revoke, { method: "DELETE" })).status).toBe(
+      200,
+    );
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect(await bobTurn("unshared-skill")).not.toContain(id);
+    expect(
+      await versionsCurrent(bob, bobChannel.threadId, bot.id, sharedVersions),
+    ).toBe(false);
+    expect(
+      (await aliceChat.request(`${detail}/shares`, share(bob.email))).status,
+    ).toBe(200);
+
+    expect(await (await bobChat.request(catalog)).json()).toMatchObject({
+      skills: [{ id, access: "shared" }],
+    });
+    await enterprise.setSetting("skillSharing", false, bob.id);
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect((await aliceChat.request(detail)).status).toBe(200);
+    await enterprise.setSetting("skillSharing", true, bob.id);
+    await profiles.update(alice, bot.id, {
+      ...botDetails,
+      visibility: "private",
+    });
+    expect((await bobChat.request(detail)).status).toBe(404);
+    await profiles.update(alice, bot.id, {
+      ...botDetails,
+      visibility: "public",
+    });
+    expect(
+      (
+        await bobChat.request(permission, {
+          ...post({ allowed: false }),
+          method: "PUT",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await bobChat.request(detail)).status).toBe(404);
+    expect(await (await aliceChat.request(catalog)).json()).toEqual({
+      skills: [],
+    });
+    expect(await bobTurn("withdrawn-shared-skill")).not.toContain(id);
+    expect((await aliceChat.request(revoke, { method: "DELETE" })).status).toBe(
+      200,
+    );
+  } finally {
+    await enterprise.setSetting("skillSharing", previousSharing, bob.id);
+    for (const id of channelIds)
+      await database.delete(channels).where(eq(channels.id, id));
+    for (const id of [bot.id, second.id])
+      await database.delete(agents).where(eq(agents.id, id));
+    for (const { id } of [alice, bob, outsider])
+      await database.delete(users).where(eq(users.id, id));
+  }
+}, 90_000);
 
 test.each([
   { feature: "scheduled analysis", scheduled: true },

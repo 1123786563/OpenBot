@@ -366,6 +366,7 @@ function NativeLearningPolicy() {
         )}
       </PageSection>
       <NativeLearningHistory />
+      <SkillSharingSection native />
     </PageShell>
   );
 }

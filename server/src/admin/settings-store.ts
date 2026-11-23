@@ -200,6 +200,19 @@ async function writeCapability(
     });
 }
 
+export async function readSkillSharingAllowed(
+  executor: Pick<Database, "select">,
+) {
+  if (currentEdition() === "personal")
+    return PERSONAL_ENTERPRISE_SETTINGS.skillSharing;
+  if (fixed.skillSharing !== undefined) return fixed.skillSharing;
+  const [row] = await executor
+    .select({ value: enterpriseSettings.value })
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, SETTING_KEYS.skillSharing));
+  return unwrap("skillSharing", row?.value);
+}
+
 export function createEnterpriseStore(database: Database) {
   return {
     async settings(): Promise<EnterpriseSettings> {

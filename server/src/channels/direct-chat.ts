@@ -5,11 +5,13 @@ import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import {
   adminLearningDecision,
   type DirectChatLearningScope,
+  type DirectChatReview,
   directChatAutoApproval,
   directChatDecision,
   learningEvidencePermission,
   learningRequest,
   learningScheduleSettings,
+  publishedSkillShare,
 } from "@openbot/shared/direct-chat-learning";
 import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
 import { answerMessageId } from "@openbot/shared/handoff-markers";
@@ -31,8 +33,10 @@ import {
 import { and, eq, exists, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
+import { readSkillSharingAllowed } from "../admin/settings-store";
 import { isBotPaused } from "../agents/lifecycle";
 import type {
   AgentProfileStore,
@@ -63,6 +67,7 @@ import {
   userRoles,
   users,
 } from "../db/schema";
+import { currentEdition } from "../edition";
 import {
   createDirectChatLearning,
   LearningEvidenceUnavailable,
@@ -365,7 +370,7 @@ export function createDirectChatRoutes(deps: {
     if (!row) return null;
     const profile = await profiles.getWithin(executor, actor, agentId);
     return profile && !profile.deletedAt && !profile.hidden
-      ? { channelId: row.channelId }
+      ? { channelId: row.channelId, botName: profile.name }
       : null;
   }
 
@@ -478,6 +483,126 @@ export function createDirectChatRoutes(deps: {
     request.headers.get("sec-fetch-site") !== "cross-site" &&
     request.headers.get("content-type")?.split(";")[0]?.trim() ===
       "application/json";
+
+  const skillPolicy = {
+    async authorize(tx: ProfileReadExecutor, scope: DirectChatLearningScope) {
+      if (!(await accountIsActive(tx, scope.personId))) return null;
+      if (!deps.singleUser) {
+        const roles = await createRoleRepository(tx).rolesForUser(
+          scope.personId,
+        );
+        if (!roles.includes("admin") && !roles.includes("user")) return null;
+      }
+      // Publication grants follow the Person's Bot access, including for administrators.
+      const owner = { id: scope.personId, role: "user" } satisfies AgentActor;
+      return threadFor(tx, owner, scope.threadId, scope.botId);
+    },
+    enabled: readSkillSharingAllowed,
+    async reviewerMayShare(tx: ProfileReadExecutor, review: DirectChatReview) {
+      if (currentEdition() === "personal") return true;
+      return (
+        review.mode === "manual" &&
+        (
+          await createRoleRepository(tx).rolesForUser(review.reviewerId)
+        ).includes("admin")
+      );
+    },
+  };
+  const skillPath = "/learning/skills";
+  const skillAbsent = { error: "Published skill not found." };
+
+  routes.get(skillPath, async (context) => {
+    context.header("Cache-Control", "no-store");
+    const actor = await actorFor(context.req.raw);
+    if (!actor?.id)
+      return context.json({ error: "Sign in to view skills." }, 401);
+    const { skills } = await learning.catalog(actor.id, skillPolicy);
+    return context.json({ skills });
+  });
+
+  routes.get(`${skillPath}/:id`, async (context) => {
+    context.header("Cache-Control", "no-store");
+    const actor = await actorFor(context.req.raw);
+    const id = z.uuid().safeParse(context.req.param("id"));
+    if (!actor?.id || !id.success) return context.json(skillAbsent, 404);
+    const { detail } = await learning.catalog(actor.id, skillPolicy, id.data);
+    return detail ? context.json(detail) : context.json(skillAbsent, 404);
+  });
+
+  routes.post(
+    `${skillPath}/:id/shares`,
+    bodyLimit({ maxSize: 2048 }),
+    async (context) => {
+      const request = context.req.raw;
+      const actor = await actorFor(request);
+      const id = z.uuid().safeParse(context.req.param("id"));
+      if (!actor?.id || !id.success) return context.json(skillAbsent, 404);
+      if (!sameOriginJson(request))
+        return context.json({ error: "Use a same-origin JSON request." }, 403);
+      const input = publishedSkillShare.safeParse(
+        await request.json().catch(() => null),
+      );
+      if (!input.success)
+        return context.json({ error: "Enter a valid email address." }, 400);
+      const shared = await learning.shareSkill(
+        actor.id,
+        id.data,
+        skillPolicy,
+        async (tx, botId) => {
+          const recipients = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(sql`lower(trim(${users.email}))`, input.data.email))
+            .limit(2);
+          const [recipient] = recipients;
+          if (
+            recipients.length !== 1 ||
+            !recipient ||
+            recipient.id === actor.id
+          )
+            return null;
+          const threads = await directThreadQuery(
+            tx,
+            recipient.id,
+            undefined,
+            botId,
+          ).limit(2);
+          const [thread] = threads;
+          return threads.length === 1 && thread
+            ? learningScope(thread.threadId, botId, recipient.id)
+            : null;
+        },
+      );
+      return shared
+        ? context.json({ ok: true })
+        : context.json(
+            { error: "This skill or recipient is unavailable for sharing." },
+            404,
+          );
+    },
+  );
+
+  routes.delete(`${skillPath}/:id/shares/:recipientId`, async (context) => {
+    const request = context.req.raw;
+    if (request.headers.get("sec-fetch-site") === "cross-site")
+      return context.json({ error: "Use a same-origin request." }, 403);
+    const actor = await actorFor(request);
+    const id = z.uuid().safeParse(context.req.param("id"));
+    if (
+      !actor?.id ||
+      !id.success ||
+      !(await accountIsActive(database, actor.id))
+    )
+      return context.json(skillAbsent, 404);
+    const removed = await learning.revokeSkillShare(
+      actor.id,
+      id.data,
+      context.req.param("recipientId"),
+    );
+    return removed
+      ? context.json({ ok: true })
+      : context.json(skillAbsent, 404);
+  });
 
   function authorizeAdminLearning(reviewerId: string) {
     return async (tx: ProfileReadExecutor, scope: DirectChatLearningScope) => {
@@ -1717,6 +1842,7 @@ export function createDirectChatRoutes(deps: {
           currentActor?.id === actor.id
             ? threadFor(tx, currentActor, threadId, scopeBot, true)
             : Promise.resolve(null),
+        skillPolicy,
       );
     };
     const previous = await history(database, threadId);
@@ -2160,6 +2286,7 @@ export function createDirectChatRoutes(deps: {
       const current = await learning.guidance(
         learningScope(threadId, agentId, actor.id),
         (tx) => threadFor(tx, actor, threadId, agentId, true),
+        skillPolicy,
       );
       return (
         current !== null &&

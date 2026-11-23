@@ -247,3 +247,29 @@ export const personalLearningAutoApproval = pgTable(
     enabled: boolean("enabled").notNull(),
   },
 );
+
+export const directChatSkillShares = pgTable(
+  "direct_chat_skill_shares",
+  {
+    proposalId: uuid("proposal_id")
+      .notNull()
+      .references(() => directChatProposalReviews.proposalId, {
+        onDelete: "cascade",
+      }),
+    recipientId: text("recipient_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => intelligenceChannelMappings.threadId, {
+        onDelete: "cascade",
+      }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.proposalId, table.recipientId] }),
+    index("direct_chat_skill_shares_recipient_idx").on(
+      table.recipientId,
+      table.threadId,
+    ),
+  ],
+);

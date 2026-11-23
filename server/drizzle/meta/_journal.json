@@ -785,6 +785,13 @@
       "when": 1795415414731,
       "tag": "0098_skill_market_equivalences",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1795444185213,
+      "tag": "0112_direct_chat_skill_shares",
+      "breakpoints": true
     }
   ]
 }
