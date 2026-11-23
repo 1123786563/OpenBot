@@ -1,6 +1,12 @@
 {
+  "frame.openWorkspace": "Open workspace",
+  "frame.pageLoadFailed": "This page couldn’t load",
+  "frame.pageLoadFailedDescription": "Try loading this page again, or return to your workspace to keep working.",
+  "frame.pageNotFound": "Page not found",
+  "frame.pageNotFoundDescription": "Check the address or open your workspace to find your conversations and Bots.",
   "frame.requestFailed": "That request failed.",
   "frame.retry": "Retry",
+  "frame.tryAgain": "Try again",
   "settings.language.browser": "Follow the browser",
   "settings.language.description": "Choose the language OpenBot uses for its own text.",
   "settings.language.title": "Language"

@@ -1,6 +1,18 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  MissingPage,
+  RouteLoadError,
+} from "@/components/layout/route-recovery";
 import { ReadError } from "@/components/layout/read-status";
 import { client } from "@/lib/client";
 import { pinLocale } from "./i18n";
@@ -118,4 +130,72 @@ test("a page's own sentences and retry label are left as the page wrote them", a
   expect(view.getByRole("button", { name: "Retry preview" })).toBeTruthy();
   expect(view.getByText("Loading the roster failed")).toBeTruthy();
   expect(view.getByText("OpenBot kept your last view.")).toBeTruthy();
+});
+
+/**
+ * The app's own wiring: an unknown address is the root route's missing page, a load that throws is
+ * the router's own error screen.
+ */
+function theAppAt(address: string, broken: () => boolean = () => false) {
+  const root = createRootRoute({
+    notFoundComponent: () => <MissingPage standalone />,
+  });
+  const page = createRoute({
+    getParentRoute: () => root,
+    path: "/page",
+    loader: () => {
+      if (broken()) throw new Error("The loader broke.");
+    },
+    component: () => <p>The page loaded.</p>,
+  });
+  const router = createRouter({
+    routeTree: root.addChildren([page]),
+    history: createMemoryHistory({ initialEntries: [address] }),
+    defaultErrorComponent: RouteLoadError,
+  });
+  return render(<RouterProvider router={router} />);
+}
+
+test("the missing-page screen speaks the interface language", async () => {
+  const view = theAppAt("/nowhere");
+  const before = await view.findByRole("link", { name: "Open workspace" });
+  view.getByRole("main", { name: "Page not found" });
+  view.getByText(
+    "Check the address or open your workspace to find your conversations and Bots.",
+  );
+
+  await pinLocale("zh-CN");
+
+  expect(view.getByRole("link", { name: "打开工作区" })).toBe(before);
+  expect(before.getAttribute("href")).toBe("/");
+  view.getByRole("main", { name: "页面不存在" });
+  view.getByRole("heading", { name: "页面不存在" });
+  view.getByText("请检查地址，或打开工作区查找你的对话和 Bot。");
+  expect(view.queryByRole("heading", { name: "Page not found" })).toBeNull();
+});
+
+test("the failed-load screen speaks the interface language, and its retry still loads the page", async () => {
+  let broken = true;
+  const view = theAppAt("/page", () => broken);
+  const user = userEvent.setup({ document });
+  await view.findByRole("heading", { name: "This page couldn’t load" });
+  view.getByRole("region", { name: "This page couldn’t load" });
+  view.getByText(
+    "Try loading this page again, or return to your workspace to keep working.",
+  );
+  const retry = view.getByRole("button", { name: "Try again" });
+
+  await pinLocale("zh-CN");
+
+  expect(view.getByRole("button", { name: "重试" })).toBe(retry);
+  view.getByRole("region", { name: "此页面未能加载" });
+  view.getByRole("heading", { name: "此页面未能加载" });
+  view.getByText("请重新加载此页面，或返回工作区继续工作。");
+  view.getByRole("link", { name: "打开工作区" });
+
+  broken = false;
+  await user.click(retry);
+
+  await view.findByText("The page loaded.");
+  expect(view.queryByRole("button", { name: "重试" })).toBeNull();
 });

@@ -1,6 +1,12 @@
 {
+  "frame.openWorkspace": "打开工作区",
+  "frame.pageLoadFailed": "此页面未能加载",
+  "frame.pageLoadFailedDescription": "请重新加载此页面，或返回工作区继续工作。",
+  "frame.pageNotFound": "页面不存在",
+  "frame.pageNotFoundDescription": "请检查地址，或打开工作区查找你的对话和 Bot。",
   "frame.requestFailed": "请求失败。",
   "frame.retry": "重试",
+  "frame.tryAgain": "重试",
   "settings.language.browser": "跟随浏览器",
   "settings.language.description": "选择 OpenBot 界面文字使用的语言。",
   "settings.language.title": "语言"

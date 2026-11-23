@@ -7,6 +7,7 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { type ComponentProps, useEffect, useRef } from "react";
+import { useTranslation } from "@/i18n";
 
 function WorkspaceLink({ href: _href, ...props }: ComponentProps<"a">) {
   return <Link {...props} replace to="/" />;
@@ -17,13 +18,16 @@ type Recovery =
   | { kind: "error"; retry: () => Promise<void> };
 
 function RouteRecovery(recovery: Recovery) {
+  const { t } = useTranslation();
   const surface = useRef<HTMLElement>(null);
   useEffect(() => {
     surface.current?.focus();
   }, []);
 
   const title =
-    recovery.kind === "error" ? "This page couldn’t load" : "Page not found";
+    recovery.kind === "error"
+      ? t("frame.pageLoadFailed", "This page couldn’t load")
+      : t("frame.pageNotFound", "Page not found");
 
   return (
     <VStack
@@ -43,7 +47,7 @@ function RouteRecovery(recovery: Recovery) {
             {recovery.kind === "error" && (
               <Button
                 clickAction={recovery.retry}
-                label="Try again"
+                label={t("frame.tryAgain", "Try again")}
                 size="lg"
                 variant="primary"
               />
@@ -51,7 +55,7 @@ function RouteRecovery(recovery: Recovery) {
             <Button
               as={WorkspaceLink}
               href="/"
-              label="Open workspace"
+              label={t("frame.openWorkspace", "Open workspace")}
               size="lg"
               variant={recovery.kind === "error" ? "secondary" : "primary"}
             />
@@ -59,8 +63,14 @@ function RouteRecovery(recovery: Recovery) {
         }
         description={
           recovery.kind === "error"
-            ? "Try loading this page again, or return to your workspace to keep working."
-            : "Check the address or open your workspace to find your conversations and Bots."
+            ? t(
+                "frame.pageLoadFailedDescription",
+                "Try loading this page again, or return to your workspace to keep working.",
+              )
+            : t(
+                "frame.pageNotFoundDescription",
+                "Check the address or open your workspace to find your conversations and Bots.",
+              )
         }
         headingLevel={1}
         title={title}
