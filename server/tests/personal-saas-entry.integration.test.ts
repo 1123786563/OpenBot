@@ -5417,10 +5417,7 @@ async function verifyBackgroundCutoff(
   };
   const runApp = newApp(database, runner, undefined, { bot: 10 });
   const workers = runApp.backgroundWorkers;
-  const replica = newApp(database, runner, undefined, {
-    bot: 10,
-  }).backgroundWorkers;
-  if (!workers || !replica) throw new Error("Expected trial workers");
+  if (!workers) throw new Error("Expected trial workers");
   const request = (path: string, session: string, body?: object) =>
     runApp.fetch(
       new Request(new URL(path, origin), {
@@ -5525,6 +5522,12 @@ async function verifyBackgroundCutoff(
       and(eq(workItems.kind, "bot.message"), eq(workItems.key, directHandoff)),
     );
   const restored = await restoreAutomation(owner, cutoff);
+  const replica = newApp(database, runner, undefined, {
+    bot: 10,
+  }).backgroundWorkers;
+  if (!replica) throw new Error("Expected restarted workers");
+  await sweep(replica);
+  expect(calls).toEqual(originalCalls);
   const state = await (await request("/api/workspace", restored)).json();
   expect(
     state.interruptedBackgroundWork
@@ -5567,8 +5570,6 @@ async function verifyBackgroundCutoff(
     expect(cancelled.status).toBe(200);
     expect(await cancelled.json()).toEqual({ action: "cancel" });
   }
-  await sweep(replica);
-  expect(calls).toEqual(originalCalls);
   expect((await retry(handoff, restored)).status).toBe(409);
   const other = cookie(
     await authenticate({ ...owner.account, sub: crypto.randomUUID() }),
