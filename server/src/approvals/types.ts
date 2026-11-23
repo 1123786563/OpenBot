@@ -10,6 +10,7 @@ import { runContextVersion } from "@openbot/toolkit/run-context";
 import { z } from "zod";
 import type { AuditEventInput, AuditInitiator } from "../audit";
 import { cutAtCodeUnits } from "../channels/text";
+import type { Database } from "../db/client";
 
 /**
  * `handled` answers a hand-off: the person did it themselves, so it is never executed for them.
@@ -136,6 +137,9 @@ export type ApprovalCandidate = {
    * Not part of what the person approves, so not in the action's digest.
    */
   ownConnectionRead?: true;
+  /** The caller requires a fresh one-time answer even when a standing rule would allow the write. */
+  requireOneTime?: true;
+  dispatch?: "explicit" | "corsair-slack-goal" | "corsair-shared-goal";
   /**
    * The app marks this tool as destroying something: MCP's `destructiveHint`, or a broker's
    * destructive flag, as recorded when the app was listed (`mcpTools.destructive`). It asks as
@@ -379,6 +383,8 @@ export type ApprovalPolicyStore = {
   }): Promise<void>;
 };
 export type ApprovalPermit = {
+  approvalDigest?: string;
+  approvalId?: string;
   replay?: unknown;
   complete(result: unknown): Promise<void>;
 };
@@ -396,7 +402,14 @@ export type ApprovalStore = {
     id: string,
     decision: ApprovalDecision,
   ): Promise<ApprovalRecord>;
-  consume(ownerUserId: string, id: string, digest: string): Promise<boolean>;
+  consume(
+    ownerUserId: string,
+    id: string,
+    digest: string,
+    beforeConsume?: (
+      tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
+    ) => Promise<void>,
+  ): Promise<boolean>;
   saveResult(
     ownerUserId: string,
     id: string,
@@ -602,6 +615,7 @@ export function approvalAction(candidate: ApprovalCandidate): ApprovalAction {
         scope: candidate.scope,
         args: candidate.args,
         target: candidate.target,
+        ...(candidate.requireOneTime ? { requireOneTime: true } : {}),
         // Only where there is one, so a request opened before accounts were named keeps its digest.
         ...(candidate.account ? { account: candidate.account } : {}),
       }),

@@ -44,6 +44,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
 
   const hasStart = start?.state === "pending";
   useEffect(() => {
+    // This state is intentionally a retry trigger. The effect must restart when the user taps Retry.
     void attempt;
     if (!hasStart) return;
     let current = true;

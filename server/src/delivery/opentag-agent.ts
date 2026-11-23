@@ -6,6 +6,7 @@
  * only their own Bot in their own canonical thread. Everyone else is told how to link, and nothing
  * runs.
  */
+
 import { randomUUID } from "node:crypto";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import type { DrawnComponent } from "@openbot/toolkit/run-turn";
@@ -20,6 +21,7 @@ import {
   ingestSlackEvent,
   type SlackTriggerEvent,
 } from "../responsibilities/slack";
+import { LINK_CODE, LINK_CODES } from "./link-code";
 import {
   agUiStream,
   approvalFields,
@@ -102,6 +104,8 @@ export type OpenTagAgentDeps = {
     agentId: string,
   ): Promise<DeliveryScope | null>;
   approvals?: PairedApprovals;
+  /** Channel events for this team dispatch Goals through the Corsair Events API. */
+  corsairSlackTeamId?: string;
   /** Slack trigger ingest; defaults to the responsibilities lane's `ingestSlackEvent`. */
   ingestSlack?: (event: SlackTriggerEvent) => Promise<unknown>;
   /**
@@ -123,10 +127,6 @@ export type OpenTagAgentDeps = {
   };
 };
 
-const LINK =
-  /\blink\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i;
-const LINKS = new RegExp(LINK.source, "gi");
-
 /**
  * A channel post the app was not mentioned in: everyone there has seen any link code in it,
  * Reachability or account, so on Slack each one is cancelled, quietly (an observe run never
@@ -139,7 +139,7 @@ async function withoutLinkCodes(
   sender: { transport: ChatTransport },
   text: string,
 ) {
-  const codes = [...text.matchAll(LINKS)].map((m) => m[1]?.toLowerCase());
+  const codes = [...text.matchAll(LINK_CODES)].map((m) => m[1]?.toLowerCase());
   if (!codes.length) return text;
   for (const code of codes) {
     if (!code) continue;
@@ -150,7 +150,7 @@ async function withoutLinkCodes(
     const identity = deps.identity;
     if (identity) await logFailure(() => identity.discard(code));
   }
-  return text.replace(LINKS, "link [code removed]");
+  return text.replace(LINK_CODES, "link [code removed]");
 }
 
 async function logFailure(cancel: () => Promise<unknown>) {
@@ -309,7 +309,7 @@ async function answer(
   if (!message?.text)
     return { text: "Send me a message and I'll pass it to your Bot." };
 
-  const code = LINK.exec(message.text)?.[1];
+  const code = LINK_CODE.exec(message.text)?.[1];
   if (code) return link(deps, sender, code.toLowerCase());
 
   // One event per Slack message: a mention is `app_mention` only, never also a `message`. Fed
@@ -618,7 +618,9 @@ async function feedSlackTriggers(
     sender.transport !== "slack" ||
     !sender.event ||
     !sender.conversationId ||
-    !/^[A-Z0-9]{2,32}$/.test(sender.realm)
+    !/^[A-Z0-9]{2,32}$/.test(sender.realm) ||
+    (sender.realm === deps.corsairSlackTeamId &&
+      /^[CG]/.test(sender.conversationId))
   )
     return;
   // The managed Channel does not expose Slack's own `ts`, so the delivery time stands in for it.

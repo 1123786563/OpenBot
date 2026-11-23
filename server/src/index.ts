@@ -270,6 +270,29 @@ import { assertActivatable, providerDecision } from "./plugins/broker";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
+import { createCorsairCloudClient } from "./plugins/corsair/cloud";
+import { createGithubEventDispatch } from "./plugins/corsair/event-dispatch";
+import { createCorsairEventOperations } from "./plugins/corsair/event-operations";
+import { createGithubEventReader } from "./plugins/corsair/event-reader";
+import { createGithubEventTriggers } from "./plugins/corsair/event-triggers";
+import {
+  createGithubPilotProvider,
+  githubPilotRegistration,
+} from "./plugins/corsair/github";
+import { readVerifiedLegacyGithubDefaults } from "./plugins/corsair/legacy-defaults";
+import { readSlackLegacyDefaults } from "./plugins/corsair/slack/accounts";
+import { createSlackEventReader } from "./plugins/corsair/slack/event-reader";
+import { createSlackEventPilot } from "./plugins/corsair/slack/events";
+import { createSlackGoalAction } from "./plugins/corsair/slack/goal-action";
+import {
+  createSlackPilotProvider,
+  slackPilotRegistration,
+} from "./plugins/corsair/slack/provider";
+import {
+  createSharedSlackProvider,
+  sharedSlackRegistration,
+} from "./plugins/corsair/slack/shared-provider";
+import { useCorsairCloudClient } from "./plugins/corsair/transport";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -1375,7 +1398,116 @@ startPersonalDefaultApps(
  * above, and it keeps trying until every app is listed.
  */
 startBrokeredRelist(pluginStore);
+const githubPilot = githubPilotRegistration(process.env, config.publicUrl);
+const corsairCloud = process.env.CORSAIR_CLOUD_KEY?.trim()
+  ? createCorsairCloudClient({
+      apiKey: process.env.CORSAIR_CLOUD_KEY.trim(),
+      baseUrl: process.env.CORSAIR_CLOUD_BASE_URL?.trim(),
+      instanceKey: process.env.CORSAIR_CLOUD_INSTANCE?.trim(),
+    })
+  : undefined;
+useCorsairCloudClient(corsairCloud ?? null);
+if (corsairCloud) {
+  try {
+    await pluginStore.addServer({
+      key: "corsair-cloud",
+      by: "openbot:deployment",
+    });
+    await pluginStore.refreshTools("corsair-cloud");
+  } catch (error) {
+    console.warn(
+      `Corsair Cloud operation discovery failed; existing tools were kept. ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+const githubEventSecret = process.env.CORSAIR_GITHUB_WEBHOOK_SECRET?.trim();
+const githubEventScope =
+  githubPilot && githubEventSecret
+    ? {
+        workspaceId: deploymentId,
+        registration: `${githubPilot.appId}/${githubPilot.clientId}`,
+      }
+    : null;
+const githubEventTriggers =
+  githubEventScope && githubPilot
+    ? createGithubEventTriggers({
+        ...githubEventScope,
+        database,
+        encryptionKey: config.keyEncryptionKey,
+        checkRepository: createGithubEventReader(githubPilot.appId),
+      })
+    : undefined;
+const githubIsolatedSources = (
+  process.env.CORSAIR_GITHUB_ISOLATED_EVENT_SOURCES ?? ""
+)
+  .split(",")
+  .map((source) => source.trim())
+  .filter(Boolean);
+if (
+  githubIsolatedSources.some((source) => !/^[1-9]\d*\/[1-9]\d*$/.test(source))
+)
+  throw new Error(
+    "CORSAIR_GITHUB_ISOLATED_EVENT_SOURCES requires installationId/repositoryId pairs.",
+  );
+const sharedSlack = sharedSlackRegistration(process.env);
+const sharedSlackProvider =
+  sharedSlack && createSharedSlackProvider(sharedSlack);
+const slackEventSecret =
+  process.env.CORSAIR_SLACK_EVENTS_SIGNING_SECRET?.trim();
+if (slackEventSecret && !sharedSlack)
+  throw new Error(
+    "Slack Events API requires a shared Slack installation registration.",
+  );
+const corsairEventOperations =
+  githubEventScope || slackEventSecret
+    ? createCorsairEventOperations(database, deploymentId, {
+        githubRegistration: githubEventScope?.registration,
+        rawEvidence: {
+          encryptionKey: config.keyEncryptionKey,
+          deliveries: new Set(
+            (process.env.CORSAIR_EVENT_RAW_EVIDENCE_DELIVERIES ?? "")
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean),
+          ),
+        },
+        slackRegistration:
+          sharedSlackProvider && slackEventSecret
+            ? [
+                sharedSlackProvider.identity.appId,
+                sharedSlackProvider.identity.teamId,
+                sharedSlackProvider.identity.botId,
+                sharedSlackProvider.identity.botUserId,
+              ].join("/")
+            : undefined,
+      })
+    : undefined;
+const githubEventDispatch =
+  githubEventScope && githubEventTriggers
+    ? createGithubEventDispatch({
+        ...githubEventScope,
+        database,
+        triggers: githubEventTriggers,
+        operations: corsairEventOperations,
+        isolatedSources: new Set(githubIsolatedSources),
+      })
+    : null;
+const slackEvents =
+  slackEventSecret && sharedSlack && sharedSlackProvider
+    ? createSlackEventPilot({
+        database,
+        workspaceId: deploymentId,
+        identity: sharedSlackProvider.identity,
+        secret: slackEventSecret,
+        checkMember: createSlackEventReader(sharedSlack),
+        operations: corsairEventOperations,
+      })
+    : undefined;
+
 const responsibilityStore = createResponsibilityStore(database, {
+  deploymentId,
+  slackEventAccess: slackEvents,
+  githubEventAccess: githubEventTriggers,
   resolveTarget: async (ownerUserId, agentId, channelId) => {
     const actor = await actorFor(ownerUserId);
     const [bot, channel] = await Promise.all([
@@ -1429,6 +1561,7 @@ const triggerIngressDeps = {
   directory: responsibilityTriggerStore.directory,
   ingest: (event: unknown) => responsibilityEngine.ingest(event),
   auditStore: bootAuditStore,
+  corsairEvents: corsairEventOperations,
 };
 const inboundEmail = inboundEmailConfigFromEnv(process.env);
 const responsibilityTriggers = {
@@ -2465,7 +2598,39 @@ const skillIn = async (containerId: string, name: string) => {
   return read.skills.find((skill) => skill.name === name) ?? null;
 };
 
+const slackPilot = slackPilotRegistration(process.env, config.publicUrl);
+const slackPilotOptions = slackPilot
+  ? {
+      workspaceId: deploymentId,
+      registration: slackPilot.registration,
+      allowedChannels: slackPilot.allowedChannels,
+      legacyPolicy: () => policyStore.get(),
+      enforceCutover: true,
+      provider: createSlackPilotProvider({
+        ...slackPilot.config,
+        reconcileGoalWrites: !!githubEventTriggers,
+      }),
+      legacyDefaults: readSlackLegacyDefaults(
+        process.env.CORSAIR_SLACK_VERIFIED_LEGACY_DEFAULTS,
+      ),
+      database,
+      approvals: storedApprovals,
+      audit: bootAuditStore,
+      encryptionKey: config.keyEncryptionKey,
+    }
+  : undefined;
+const slackGoalAction = slackPilotOptions
+  ? createSlackGoalAction({
+      ...slackPilotOptions,
+      githubEventAccess: githubEventTriggers,
+      actorFor,
+      canUseBot: async (actor, botId) =>
+        (await agentProfileStore.get(actor, botId)) !== null,
+    })
+  : undefined;
+
 const responsibilityEngine = createServerResponsibilityEngine({
+  slackGoalAction,
   productTelemetry,
   database,
   responsibilityStore,
@@ -2535,6 +2700,57 @@ const responsibilityAnswerTurn = ({
       Promise.resolve(undefined),
   });
 };
+const githubEventSweep = githubEventDispatch
+  ? repeatAfterEach(async () => {
+      try {
+        await githubEventDispatch.sweep();
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            type: "corsair-github-event-dispatch-failed",
+            errorType: error instanceof Error ? error.name : "unknown",
+          }),
+        );
+      }
+    }, 2_000)
+  : null;
+const slackEventSweep = slackEvents
+  ? repeatAfterEach(async () => {
+      try {
+        await slackEvents.sweep();
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            type: "corsair-slack-event-dispatch-failed",
+            errorType: error instanceof Error ? error.name : "unknown",
+          }),
+        );
+      }
+    }, 2_000)
+  : null;
+const eventMaintenance =
+  corsairEventOperations ??
+  createCorsairEventOperations(database, deploymentId);
+const corsairEventOperationsSweep = repeatAfterEach(async () => {
+  try {
+    for (const alert of await eventMaintenance.alert()) {
+      console.warn(
+        JSON.stringify({
+          type: "corsair-event-dispatch-overdue",
+          ...alert,
+        }),
+      );
+    }
+    await eventMaintenance.expireEvidence();
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        type: "corsair-event-operations-sweep-failed",
+        errorType: error instanceof Error ? error.name : "unknown",
+      }),
+    );
+  }
+}, 5_000);
 const responsibilitySweep = repeatAfterEach(async () => {
   try {
     const report = await responsibilityEngine.dispatch({
@@ -2690,6 +2906,7 @@ const approvalSweep = repeatAfterEach(
   createApprovalResumeTick({
     approvalQueue,
     approvalOwner,
+    slackGoalAction,
     approvalService,
     executeApprovedAction,
     traceRuns: Boolean(config.opik),
@@ -3362,6 +3579,76 @@ const app = createApp(
   {
     productTelemetry,
     approvals: approvalService,
+    corsairEventOperations,
+    ...(githubEventScope && githubEventSecret && githubEventTriggers
+      ? {
+          githubEvents: {
+            ...githubEventScope,
+            database,
+            secret: githubEventSecret,
+            operations: corsairEventOperations,
+            planAccepted: githubEventDispatch?.planAccepted,
+            isolatedSources: new Set(githubIsolatedSources),
+            triggers: githubEventTriggers,
+          },
+        }
+      : {}),
+    corsairReadiness: {
+      database,
+      workspaceId: deploymentId,
+      includeDeploymentLegacy: true,
+      registrations: {
+        ...(githubPilot
+          ? { github: `${githubPilot.appId}/${githubPilot.clientId}` }
+          : {}),
+        ...(slackPilot ? { slack: slackPilot.registration } : {}),
+      },
+      ...(slackPilot
+        ? { slackChannels: [...slackPilot.allowedChannels].sort() }
+        : {}),
+      ...(sharedSlack ? { sharedSlackRegistration: sharedSlack.appId } : {}),
+    },
+    ...(corsairCloud ? { corsairCloud } : {}),
+    ...(githubPilot
+      ? {
+          githubPilot: {
+            workspaceId: deploymentId,
+            registration: `${githubPilot.appId}/${githubPilot.clientId}`,
+            provider: createGithubPilotProvider(githubPilot),
+            enforceCutover: true,
+            legacyPolicy: () => policyStore.get(),
+            legacyDefaults: readVerifiedLegacyGithubDefaults(
+              process.env.CORSAIR_GITHUB_VERIFIED_LEGACY_DEFAULTS,
+            ),
+            database,
+            approvals: storedApprovals,
+            audit: bootAuditStore,
+            encryptionKey: config.keyEncryptionKey,
+          },
+        }
+      : {}),
+    ...(slackPilotOptions ? { slackPilot: slackPilotOptions } : {}),
+    ...(slackEvents
+      ? {
+          slackEventRoutes: slackEvents.routes,
+          readSlackEventEvidence: slackEvents.readEvidence,
+        }
+      : {}),
+    ...(sharedSlackProvider
+      ? {
+          sharedSlackPilot: {
+            workspaceId: deploymentId,
+            provider: sharedSlackProvider,
+            githubEventAccess: githubEventTriggers,
+            enforceCutover: true,
+            legacyPolicy: () => policyStore.get(),
+            database,
+            approvals: storedApprovals,
+            audit: bootAuditStore,
+            sharedUse: sharedUseStore,
+          },
+        }
+      : {}),
     shared: { modes: accountModes, use: sharedUseStore },
     ...(signInService ? { passwords: signInService } : {}),
     recorder: recorderExtension,
@@ -3655,6 +3942,9 @@ if (config.singleUser) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     responsibilitySweep.stop();
+    githubEventSweep?.stop();
+    slackEventSweep?.stop();
+    corsairEventOperationsSweep.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
     memorySweep.stop();

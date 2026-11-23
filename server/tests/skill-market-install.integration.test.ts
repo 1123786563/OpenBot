@@ -1573,7 +1573,7 @@ for (const phase of [
           approvalService: guardedApprovals,
           executeApprovedAction: never,
           database,
-          responsibilityStore: { resumeWaiting: never },
+          responsibilityStore: { resumeWaiting: never } as never,
           groupConversations: {
             continueWaiting: async (_id, run, reason) =>
               reason ? { replyText: reason } : run(),

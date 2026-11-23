@@ -2,7 +2,7 @@ import type { AppliedMigration, FolderMigration } from "./migration-reach";
 
 // The two histories that diverged immediately after 0089_direct_chat_runs.
 // Pin hash and timestamp so the exception cannot authorize a modified SQL file.
-const parentMigrations = [
+const [intelligenceMigrations, skillMarketMigrations, corsairMigrations] = [
   [
     [
       "0090_direct_chat_replay",
@@ -87,6 +87,28 @@ const parentMigrations = [
       1795189760196,
     ],
   ],
+  [
+    [
+      "0093_corsair_slack_personal",
+      "76ca9115951d9864c7d112887d8f8c328469b5ee963090bdba6e8ee95f101d51",
+      1795189761196,
+    ],
+    [
+      "0094_corsair_slack_shared",
+      "a600a5b4cbcda9db067ba15e1d0bba133949835c47a8235ba87dfb59eaf3a0a6",
+      1795189761197,
+    ],
+    [
+      "0095_corsair_shared_storage",
+      "8e442eca323ba2a8fc393a7cdd4c5b3b87c98fb93731acfedf73d98be6590eb2",
+      1795189761198,
+    ],
+    [
+      "0096_corsair_revocation",
+      "7423096bc674c740ef266699ed726f12677e8797912fc4f17209f47612951091",
+      1795189761199,
+    ],
+  ],
 ] as const;
 
 export function canMergeMigrationHistories(
@@ -99,11 +121,12 @@ export function canMergeMigrationHistories(
   );
   if (baseIndex < 0) return false;
   const base = folder.slice(0, baseIndex + 1);
-  const forks = parentMigrations.map((history) =>
-    history.map(([tag, hash, when]) => ({ tag, hash, when })),
-  );
+  const diverged = [
+    ...intelligenceMigrations,
+    ...skillMarketMigrations,
+    ...corsairMigrations,
+  ].map(([tag, hash, when]) => ({ tag, hash, when }));
   const byTag = new Map(folder.map((entry) => [entry.tag, entry]));
-  const diverged = forks.flat();
   if (
     !diverged.every(({ tag, hash, when }) => {
       const entry = byTag.get(tag);
@@ -117,16 +140,27 @@ export function canMergeMigrationHistories(
     applied.map(({ hash, createdAt }) => `${createdAt}:${hash}`),
   );
   if (recorded.size !== applied.length) return false;
-  const history = forks.find((fork) => {
-    const prefixLength = applied.length - base.length;
-    if (prefixLength <= 0 || prefixLength > fork.length) return false;
-    const expected = [...base, ...fork.slice(0, prefixLength)];
-    return expected.every((entry) => recorded.has(identity(entry)));
+  const histories = [
+    intelligenceMigrations,
+    skillMarketMigrations,
+    [...skillMarketMigrations, ...corsairMigrations],
+    [...intelligenceMigrations, ...skillMarketMigrations],
+  ];
+  const prefixLength = applied.length - base.length;
+  if (prefixLength <= 0) return false;
+  const knownPrefix = histories.some((history) => {
+    if (prefixLength > history.length) return false;
+    const prefix = [...history]
+      .sort((a, b) => a[2] - b[2])
+      .slice(0, prefixLength)
+      .map(([tag, hash, when]) => ({ tag, hash, when }));
+    return [...base, ...prefix].every((entry) => recorded.has(identity(entry)));
   });
-  if (!history) return false;
+  if (!knownPrefix) return false;
 
-  const otherFork = forks.find((fork) => fork !== history);
-  return skipped.every((entry) =>
-    otherFork?.some((other) => identity(entry) === identity(other)),
-  );
+  const allowedGaps = new Set(diverged.map(identity));
+  return skipped.every((entry) => {
+    const id = identity(entry);
+    return allowedGaps.has(id) && !recorded.has(id);
+  });
 }

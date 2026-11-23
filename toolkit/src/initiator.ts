@@ -6,6 +6,6 @@ export type AuditInitiator =
   | { kind: "person" }
   | { kind: "deployment" }
   | { kind: "routine"; id: string }
-  | { kind: "responsibility"; id: string }
+  | { kind: "responsibility"; id: string; goalRunId?: string }
   | { kind: "memory"; id: string }
   | { kind: "handoff"; id: string; origin?: AuditInitiator };

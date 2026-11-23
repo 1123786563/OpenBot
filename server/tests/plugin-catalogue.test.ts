@@ -104,6 +104,11 @@ describe("which servers this deployment will talk to", () => {
         // Anchored at both ends or the pattern is decoration.
         expect(entry.hostPattern?.startsWith("^")).toBe(true);
         expect(entry.hostPattern?.endsWith("$")).toBe(true);
+      } else if (entry.key === "corsair-cloud") {
+        // Also first-party and in-process: its transport reaches Corsair Cloud itself, never a host
+        // named here. Pinned the same positive way, so it is no loophole either.
+        expect(entry.transport).toBe("corsair-cloud");
+        expect(entry.host).toBe("corsair://cloud");
       } else if (entry.auth.kind === "builtin") {
         // First-party and in-process: there is no host outside this process to reach, so the
         // https requirement below does not apply. Asserted positively instead, so this branch

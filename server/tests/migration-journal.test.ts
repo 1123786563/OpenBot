@@ -511,7 +511,11 @@ describe("the migration journal", () => {
       [102, "0091_skill_market_version_disablements"],
       [103, "0101_intelligence_deletion_cleanup"],
       [104, "0092_skill_market_runs"],
-      [105, "0102_background_conversation_runs"],
+      [105, "0093_corsair_slack_personal"],
+      [106, "0094_corsair_slack_shared"],
+      [107, "0095_corsair_shared_storage"],
+      [108, "0096_corsair_revocation"],
+      [109, "0102_background_conversation_runs"],
     ]);
     const mislabelled = entries
       .filter((entry, index) => {
