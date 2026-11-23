@@ -85,7 +85,11 @@ test("a date is written in the interface language and still names the same day",
 
 test("the language changes the words of a date, not the hour on this device's clock", async () => {
   const sent = new Date("2026-03-05T12:00:00.000Z");
-  const wallClock = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+  const wallClock = {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  } as const;
 
   await setLocalePreference("en");
   const english = formatDate(sent, wallClock);
