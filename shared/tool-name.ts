@@ -495,6 +495,11 @@ const OWN_TOOLS: Record<string, OwnTool> = {
   [SUBAGENT_TOOL]: { running: "Working on a subtask", done: "Ran a subtask" },
   // A voice conversation handing what was said to the Bot behind it.
   ask_agent: { running: "Asking the Bot", done: "Asked the Bot" },
+  // A Goal run asking you to approve one Slack post.
+  corsair_slack_post_message: {
+    running: "Asking to post in Slack",
+    done: "Asked to post in Slack",
+  },
 
   // Skills: the ones it learned, and the ones a person writes with it.
   copilotkit_load_skill: { running: "Using a skill", done: "Used a skill" },

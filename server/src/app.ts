@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { users } from "./db/schema";
+import { createCorsairBotWrites } from "./plugins/corsair/bot-write";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import type { WhatIfVocabulary } from "@openbot/shared/what-if";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
@@ -46,7 +49,7 @@ import {
   recordAuditEvent,
 } from "./audit";
 import { type AuditVocabulary, createAuditAskRoutes } from "./audit-ask";
-import { createDevRequireUser } from "./auth/dev-actor";
+import { createDevRequireUser, DEV_ACTOR } from "./auth/dev-actor";
 import {
   type AppVariables,
   type AuthService,
@@ -138,6 +141,19 @@ import { MAX_PAGE, type PeopleStore } from "./people/store";
 import type { BrokerProvider } from "./plugins/access";
 import type { AccountModeSwitch } from "./plugins/account-mode";
 import type { ComposioBroker } from "./plugins/broker";
+import { createGithubEventIngress } from "./plugins/corsair/event-ingress";
+import { createCorsairEventOperationRoutes } from "./plugins/corsair/event-operation-routes";
+import type { CorsairEventOperations } from "./plugins/corsair/event-operations";
+import { createGithubEventTriggerRoutes } from "./plugins/corsair/event-triggers";
+import { createCorsairReadinessRoutes } from "./plugins/corsair/readiness";
+import {
+  createCorsairCloudRoutes,
+  type CorsairCloudClient,
+} from "./plugins/corsair/cloud";
+import { createGithubPilotRoutes } from "./plugins/corsair/routes";
+import { createCorsairIntegrationsRoutes } from "./plugins/corsair/integrations-routes";
+import { createSlackPilotRoutes } from "./plugins/corsair/slack/routes";
+import { createSharedSlackPilot } from "./plugins/corsair/slack/shared-routes";
 import { createAppGrantDraftRoutes } from "./plugins/grant-translate";
 import { createPluginRoutes } from "./plugins/routes";
 import { createSharedUseRoutes } from "./plugins/shared-use-routes";
@@ -176,8 +192,8 @@ import type { ModelCompleter } from "./routing/model";
 import { createRoutingRoutes } from "./routing/routes";
 import { createCoworkerRoutingService } from "./routing/service";
 import type { SelfHostBanner } from "./self-host-banner";
-import { createSetupRoutes, type SetupSources } from "./setup/checklist";
 import { createSkillMarketRoutes } from "./skill-market/routes";
+import { createSetupRoutes, type SetupSources } from "./setup/checklist";
 import { createTaskRoutes } from "./tasks/routes";
 import type { TaskRunner } from "./tasks/runner";
 import type { TaskStore } from "./tasks/store";
@@ -453,6 +469,32 @@ export function createApp(
   coworker?: {
     productTelemetry?: ProductTelemetry;
     approvals?: ApprovalService;
+    corsairEventOperations?: CorsairEventOperations;
+    corsairReadiness?: Omit<
+      Parameters<typeof createCorsairReadinessRoutes>[0],
+      "requireUser"
+    >;
+    corsairCloud?: CorsairCloudClient;
+    githubEvents?: Parameters<typeof createGithubEventIngress>[0] &
+      Pick<Parameters<typeof createGithubEventTriggerRoutes>[0], "triggers">;
+    githubPilot?: Omit<
+      Parameters<typeof createGithubPilotRoutes>[0],
+      "requireUser" | "canUseBot"
+    >;
+    slackPilot?: Omit<
+      Parameters<typeof createSlackPilotRoutes>[0],
+      "requireUser" | "canUseBot"
+    >;
+    slackEventRoutes?: Hono;
+    readSlackEventEvidence?: (
+      receiptId: string,
+      triggerId: string,
+      personId: string,
+    ) => Promise<Uint8Array | null | undefined>;
+    sharedSlackPilot?: Omit<
+      Parameters<typeof createSharedSlackPilot>[0],
+      "requireUser" | "canUseBot"
+    >;
     /** The Recorder extension's routes and guards (recorder/wiring.ts). Absent, nothing about it is mounted. */
     recorder?: RecorderExtensionDeps;
     /** A person's own OpenBot browser, with the Recorder in it already connected (browser/routes.ts). Absent, nothing
@@ -1631,6 +1673,152 @@ export function createApp(
     ? async (actor, botId) =>
         (await agentProfileStore.get(actor, botId)) !== null
     : async () => true;
+
+  if (coworker?.corsairEventOperations) {
+    app.route(
+      "/api/corsair/events",
+      createCorsairEventOperationRoutes(
+        coworker.corsairEventOperations,
+        requireUser,
+      ),
+    );
+  }
+
+  if (coworker?.corsairEventOperations) {
+    const operations = coworker.corsairEventOperations;
+    app.get(
+      "/api/corsair/events/:provider/:receiptId/evidence",
+      requireUser,
+      async (context) => {
+        const { provider, receiptId } = context.req.param();
+        const triggerId = context.req.query("triggerId");
+        if (!triggerId || triggerId.length > 128 || receiptId.length > 128)
+          return context.json({ error: "Invalid evidence request." }, 400);
+        const personId = context.var.actor.id;
+        const github = coworker.githubEvents?.triggers;
+        const raw =
+          provider === "github" && github
+            ? await operations.readEvidence(receiptId, () =>
+                github.canReadEvidence(receiptId, triggerId, personId),
+              )
+            : provider === "slack"
+              ? await coworker.readSlackEventEvidence?.(
+                  receiptId,
+                  triggerId,
+                  personId,
+                )
+              : null;
+        if (!raw) return context.json({ error: "Evidence unavailable." }, 404);
+        return context.body(Uint8Array.from(raw), 200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": "attachment",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+      },
+    );
+  }
+
+  if (coworker?.corsairReadiness) {
+    app.route(
+      "/api/corsair/migration",
+      createCorsairReadinessRoutes({
+        ...coworker.corsairReadiness,
+        requireUser,
+        canUseBot,
+      }),
+    );
+  }
+
+  if (coworker?.corsairCloud)
+    app.route(
+      "/api/corsair/cloud",
+      createCorsairCloudRoutes({
+        client: coworker.corsairCloud,
+        requireUser,
+      }),
+    );
+
+  if (coworker?.githubEvents) {
+    app.route(
+      "/api/corsair/github",
+      createGithubEventIngress(coworker.githubEvents),
+    );
+    app.route(
+      "/api/corsair/github",
+      createGithubEventTriggerRoutes({
+        triggers: coworker.githubEvents.triggers,
+        requireUser,
+      }),
+    );
+  }
+
+  const githubRoutes =
+    coworker?.githubPilot && agentProfileStore
+      ? createGithubPilotRoutes({
+          ...coworker.githubPilot,
+          requireUser,
+          canUseBot,
+        })
+      : undefined;
+  const sharedSlackRoutes =
+    coworker?.sharedSlackPilot && agentProfileStore
+      ? createSharedSlackPilot({
+          ...coworker.sharedSlackPilot,
+          requireUser,
+          canUseBot,
+        })
+      : undefined;
+  const slackRoutes =
+    coworker?.slackPilot && agentProfileStore
+      ? createSlackPilotRoutes({
+          ...coworker.slackPilot,
+          requireUser,
+          canUseBot,
+        })
+      : undefined;
+
+  if (githubRoutes) app.route("/api/corsair/github", githubRoutes);
+  if (coworker?.slackEventRoutes)
+    app.route("/api/corsair/slack", coworker.slackEventRoutes);
+  if (sharedSlackRoutes)
+    app.route("/api/corsair/slack/shared", sharedSlackRoutes);
+  if (slackRoutes) app.route("/api/corsair/slack", slackRoutes);
+  if (coworker?.corsairReadiness)
+    app.route(
+      "/api/corsair/integrations",
+      createCorsairIntegrationsRoutes({
+        requireUser,
+        database: coworker.corsairReadiness.database,
+        workspaceId: coworker.corsairReadiness.workspaceId,
+      }),
+    );
+
+  const readiness = coworker?.corsairReadiness;
+  if (readiness?.includeDeploymentLegacy && pluginStore) {
+    pluginStore.configureCorsairBotWrites(
+      createCorsairBotWrites(
+        readiness,
+        {
+          github: githubRoutes?.prepareBotWrite,
+          slack: slackRoutes?.prepareBotWrite,
+          sharedSlack: sharedSlackRoutes?.prepareBotWrite,
+        },
+        async (id) => {
+          if (config.singleUser && id === DEV_ACTOR.id) return DEV_ACTOR;
+          const [user] = await readiness.database
+            .select({ id: users.id, email: users.email })
+            .from(users)
+            .where(eq(users.id, id));
+          if (!user) return null;
+          const roles = await roleRepository?.rolesForUser(id);
+          if (roles?.includes("admin")) return { ...user, role: "admin" };
+          if (roles?.includes("user")) return { ...user, role: "user" };
+          return null;
+        },
+      ),
+    );
+  }
 
   // The Bot computer. Acting on a page needs the gateway and the policy it enforces, so both arrive
   // together or the routes are not mounted. An ungoverned computer is not a reduced feature. It is

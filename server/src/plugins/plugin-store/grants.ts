@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { recordAuditEvent } from "../../audit";
 import {
+  mcpServers,
   mcpTools,
   pluginGrants,
   SKILL_MARKET_RESERVATION,
@@ -8,8 +9,14 @@ import {
   skillMarketSources,
   skillMarketVersionDisablements,
   skills,
+  vendorNameOf,
 } from "../../db/schema";
 import { catalogueEntry, classifyTool } from "../catalogue";
+import {
+  corsairBrokerInputSchema,
+  supportedBrokerAction,
+} from "../corsair/broker-action";
+import { createCorsairCutover, legacyCorsairScope } from "../corsair/cutover";
 import type { StoreContext } from "./context";
 import {
   type GrantedPlugins,
@@ -263,32 +270,77 @@ export function grantMethods(context: StoreContext) {
         grantedServers.length === 0
           ? []
           : await database
-              .select()
+              .select({
+                tool: mcpTools,
+                vendorName: vendorNameOf(),
+                server: {
+                  url: mcpServers.url,
+                  provenance: mcpServers.provenance,
+                  accountMode: mcpServers.accountMode,
+                },
+              })
               .from(mcpTools)
+              .innerJoin(mcpServers, eq(mcpTools.serverId, mcpServers.id))
               .where(inArray(mcpTools.serverId, grantedServers))
               .orderBy(asc(mcpTools.name));
       // A set, so this is a lookup per row rather than a walk of the grants per row.
       const granted = new Set(toolRefs);
-      const grantedTools = toolRows
-        .filter((row) => granted.has(`${row.serverId}/${row.name}`))
-        .map((row) => {
-          const ref = `${row.serverId}/${row.name}`;
-          return {
-            ref,
-            toolName: toolNameFor(ref),
-            description: row.description,
-            inputSchema: row.inputSchema as Record<string, unknown>,
-            destructive: row.destructive,
-            // The same answer `callTool` gates the call on, so a read here is a read there.
-            read:
-              classifyTool(
-                catalogueEntry(row.serverId),
-                row.name,
-                true,
-                row.effect,
-              ) === "read",
-          };
+      const states = new Map<
+        string,
+        ReturnType<ReturnType<typeof createCorsairCutover>["read"]>
+      >();
+      const grantedTools: GrantedPlugins["tools"] = [];
+      for (const { tool: row, server, vendorName } of toolRows) {
+        const ref = `${row.serverId}/${row.name}`;
+        if (!granted.has(ref)) continue;
+        /*
+         * A SERVER CUT OVER TO CORSAIR offers a Bot only the actions a reviewed mapping names, in the
+         * broker's own arguments; a grant of anything else stays in the table and reaches no model.
+         */
+        const scope = legacyCorsairScope(
+          context.options.deploymentId,
+          server.provenance,
+          server.url,
+        );
+        let inputSchema = row.inputSchema as Record<string, unknown>;
+        if (scope) {
+          let state = states.get(scope.app);
+          if (!state) {
+            state = createCorsairCutover(database, scope).read();
+            states.set(scope.app, state);
+          }
+          const route = await state;
+          if (route.kind !== "legacy") {
+            if (
+              !supportedBrokerAction(scope.app, vendorName ?? row.name) ||
+              !(await context.options.corsairBotWrites?.advertised(
+                scope,
+                ref,
+                agentId,
+                server.accountMode === "shared" ? "shared" : "personal",
+                route.excluded,
+              ))
+            )
+              continue;
+            inputSchema = corsairBrokerInputSchema(scope.app);
+          }
+        }
+        grantedTools.push({
+          ref,
+          toolName: toolNameFor(ref),
+          description: row.description,
+          inputSchema,
+          destructive: row.destructive,
+          // The same answer `callTool` gates the call on, so a read here is a read there.
+          read:
+            classifyTool(
+              catalogueEntry(row.serverId),
+              row.name,
+              true,
+              row.effect,
+            ) === "read",
         });
+      }
 
       const skillRows =
         skillSlugs.length === 0

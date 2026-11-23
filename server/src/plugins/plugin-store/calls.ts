@@ -1,6 +1,6 @@
 import { DECLINED_BY_PERSON } from "@openbot/shared/approval-outcomes";
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { safetyRequirement } from "../../approvals/policy";
 import {
   ApprovalAlreadyAnsweredError,
@@ -34,6 +34,14 @@ import { VERSION_ARG } from "../composio";
 import { inspectToolArguments } from "../content-governance";
 import { shareTargetOf } from "../share-target";
 import { type AccountMode, filedUnderPerson } from "../shared-accounts";
+import {
+  corsairWriteKey,
+  dispatchTrackedLegacyWrite,
+  createCorsairCutover,
+  legacyCorsairScope,
+  cutoverRefusal,
+} from "../corsair/cutover";
+import type { CorsairBotWrites } from "../corsair/bot-write";
 import { withReadRetries } from "../transient";
 import { transportFor } from "../transport";
 import { withVendorDeadline } from "../vendor-deadline";
@@ -65,6 +73,9 @@ export function callMethods(context: StoreContext) {
   } = context;
   const accounts = accountBook(context);
   return {
+    configureCorsairBotWrites(writes: CorsairBotWrites) {
+      options.corsairBotWrites = writes;
+    },
     /**
      * May this Bot use this plugin?
      *
@@ -648,6 +659,168 @@ export function callMethods(context: StoreContext) {
           reason,
         },
       });
+      const transport = access.transport;
+      const corsairScope = legacyCorsairScope(
+        options.deploymentId,
+        transport,
+        row.url,
+      );
+      if (
+        corsairScope &&
+        (await createCorsairCutover(database, corsairScope).read()).kind !==
+          "legacy"
+      ) {
+        const source = input.initiator ?? continuation?.initiator;
+        const goal =
+          source?.kind === "responsibility" &&
+          source.goalRunId &&
+          continuation?.initiator?.kind === "responsibility" &&
+          continuation.initiator.goalRunId === source.goalRunId &&
+          continuation.initiator.id === source.id &&
+          (input.threadId === undefined ||
+            continuation.threadId === input.threadId) &&
+          gatedMode === "shared" &&
+          corsairScope.app === "slack"
+            ? {
+                id: source.id,
+                runId: source.goalRunId,
+                threadId: continuation.threadId,
+              }
+            : undefined;
+        if (
+          !options.corsairBotWrites ||
+          !options.approvalGate ||
+          !gatedMode ||
+          !advertised[0] ||
+          effect !== "write" ||
+          advertised[0].destructive ||
+          advertised[0].unclassified ||
+          opensAs !== input.actorId ||
+          (source && source.kind !== "person" && !goal) ||
+          (transport !== "arcade" && transport !== "composio")
+        ) {
+          throw new PluginRefusedError(
+            "This tool has no current verified Corsair mapping.",
+            null,
+          );
+        }
+        const { vendorUserId } = await connectionTokenFor(
+          row,
+          entry,
+          opensAs,
+          access,
+          gatedMode,
+        );
+        if (
+          !vendorUserId ||
+          (pinned && !filedUnderPerson(pinned.vendorUserId, vendorUserId))
+        )
+          throw new PluginRefusedError(
+            "This tool requires a verified broker account binding.",
+            null,
+          );
+        const mapRefusal = (error: unknown): never => {
+          if (error instanceof cutoverRefusal)
+            throw new PluginRefusedError(error.message, null);
+          throw error;
+        };
+        const write = await options.corsairBotWrites
+          .prepare({
+            scope: corsairScope,
+            ref: input.ref,
+            botId: input.botId,
+            actorId: input.actorId,
+            kind: gatedMode,
+            goal,
+            provider: transport,
+            vendorUserId,
+            pinned: pinned ?? undefined,
+            vendorName: advertised[0].vendorName ?? toolName,
+            args: modelArgs,
+          })
+          .catch(mapRefusal);
+        const approval = await options.approvalGate({
+          actorId: input.actorId,
+          botId: input.botId,
+          toolRef: input.ref,
+          effect,
+          scope: gateApp?.id ?? serverId,
+          args: input.args,
+          target: {
+            legacyRef: input.ref,
+            accountBinding: corsairWriteKey(
+              input.actorId,
+              vendorUserId,
+              input.ref,
+              [
+                transport,
+                gatedMode,
+                pinned?.id,
+                pinned?.vendorUserId,
+                pinned?.accountId,
+              ],
+            ),
+            corsair: write.action.target,
+          },
+          account: write.action.account,
+          requireOneTime: true,
+          ...(goal ? { dispatch: "corsair-shared-goal" } : {}),
+          continuation,
+          declined: write.action.declined,
+        });
+        if (approval && "replay" in approval) {
+          const replay = approval.replay;
+          if (
+            typeof replay === "object" &&
+            replay !== null &&
+            "text" in replay &&
+            typeof replay.text === "string" &&
+            "isError" in replay &&
+            typeof replay.isError === "boolean"
+          )
+            return { text: replay.text, isError: replay.isError };
+          return {
+            text: typeof replay === "string" ? replay : JSON.stringify(replay),
+            isError: false,
+          };
+        }
+        if (!approval?.approvalId)
+          throw new PluginRefusedError(
+            "This Corsair action requires one-time Approval.",
+            null,
+          );
+        const trail = (
+          eventType: "mcp.call_succeeded" | "mcp.call_failed",
+          detail = {},
+        ) =>
+          recordAuditEvent(auditStore, {
+            eventType,
+            targetType: "mcp_tool",
+            targetId: input.ref,
+            ...(input.initiator ? { initiator: input.initiator } : {}),
+            payload: {
+              ...decided,
+              workspaceId: corsairScope.workspaceId,
+              route: "corsair",
+              ...detail,
+            },
+          });
+        const result = await write
+          .send(approval.approvalId, approval.approvalDigest)
+          .catch(async (error: unknown) => {
+            await trail("mcp.call_failed", {
+              failure: (error instanceof Error
+                ? withoutStatement(error)
+                : String(error)
+              ).slice(0, 400),
+            });
+            return mapRefusal(error);
+          });
+        const answer = { text: JSON.stringify(result), isError: false };
+        await trail("mcp.call_succeeded");
+        await approval.complete(answer);
+        return answer;
+      }
       const approval = await options
         .approvalGate?.({
           actorId: input.actorId,
@@ -782,14 +955,92 @@ export function callMethods(context: StoreContext) {
             advertised[0]?.vendorName ?? toolName,
             vendorArgs,
           );
-        const result =
-          effect === "read"
-            ? await withReadRetries(
+        const dispatch = async (
+          tx?: Parameters<Parameters<typeof database.transaction>[0]>[0],
+          invoke = (vendor: typeof callVendor) => vendor(),
+        ) => {
+          const toolkit = access.toolkit;
+          if (
+            tx &&
+            toolkit &&
+            vendorUserId &&
+            (transport === "arcade" || transport === "composio")
+          ) {
+            const credentialActorId = input.credentialActorId ?? input.actorId;
+            const [current] = await tx
+              .select({ connected: brokeredConnections.app })
+              .from(brokeredConnections)
+              .where(
+                and(
+                  eq(brokeredConnections.app, toolkit),
+                  eq(brokeredConnections.provider, transport),
+                  eq(brokeredConnections.vendorUserId, vendorUserId),
+                  gatedMode === "shared"
+                    ? isNull(brokeredConnections.userId)
+                    : eq(brokeredConnections.userId, credentialActorId),
+                ),
+              )
+              .for("share");
+            const [selected] =
+              pinned && current
+                ? await tx
+                    .select({ id: brokeredAccounts.id })
+                    .from(brokeredAccounts)
+                    .where(
+                      and(
+                        eq(brokeredAccounts.app, toolkit),
+                        eq(brokeredAccounts.provider, transport),
+                        eq(brokeredAccounts.userId, credentialActorId),
+                        eq(brokeredAccounts.vendorUserId, pinned.vendorUserId),
+                        eq(brokeredAccounts.accountId, pinned.accountId ?? ""),
+                      ),
+                    )
+                    .for("share")
+                : [];
+            if (!current || (pinned && !selected))
+              throw new PluginRefusedError(
+                "The broker connection changed before dispatch.",
+                null,
+              );
+          }
+          return effect === "read"
+            ? withReadRetries(
                 callVendor,
                 undefined,
                 (error) => error instanceof MarketRunPaused,
               )
-            : await callVendor();
+            : invoke(callVendor);
+        };
+        const result = !corsairScope
+          ? await dispatch()
+          : effect !== "read" &&
+              vendorUserId &&
+              (transport === "arcade" || transport === "composio")
+            ? await dispatchTrackedLegacyWrite(
+                database,
+                corsairScope,
+                {
+                  actorId: input.actorId,
+                  credentialActorId: input.credentialActorId ?? input.actorId,
+                  botId: input.botId,
+                  ref: input.ref,
+                  provider: transport,
+                  vendorUserId: runsAs ?? vendorUserId,
+                  accountId: pinned?.accountId ?? undefined,
+                  vendorAction: advertised[0]?.vendorName ?? toolName,
+                  argumentDigest: corsairWriteKey(
+                    input.actorId,
+                    runsAs ?? vendorUserId,
+                    input.ref,
+                    vendorArgs,
+                  ),
+                },
+                dispatch,
+              )
+            : await createCorsairCutover(database, corsairScope).dispatch(
+                "legacy",
+                (tx) => dispatch(tx),
+              );
         await recordAuditEvent(auditStore, {
           eventType: result.isError ? "mcp.call_failed" : "mcp.call_succeeded",
           targetType: "mcp_tool",

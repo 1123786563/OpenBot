@@ -9,7 +9,7 @@ import {
   IconPlug,
   IconSearch,
 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
 import {
@@ -46,6 +46,13 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConnectApp } from "@/lib/connections/connect-app";
 import {
+  type CorsairIntegration,
+  connectCorsairIntegrationMutationOptions,
+  corsairAccountsQueryOptions,
+  corsairIntegrationIconUrl,
+  corsairIntegrationsQueryOptions,
+} from "@/lib/connections/corsair";
+import {
   type ConnectionRow,
   connectionRows,
   personalAppsNeedingSetup,
@@ -71,6 +78,7 @@ import {
   pluginsProvider,
 } from "@/lib/plugins/queries";
 import { searchTextEntry } from "@/lib/search-text";
+import { queryClient } from "@/query-client";
 
 /**
  * The services a Bot reads as you.
@@ -300,6 +308,12 @@ function RouteComponent() {
   const [search, setSearch] = React.useState("");
   const plugins = useQuery(pluginsPageQueryOptions());
   const connections = useQuery(connectionsQueryOptions());
+  const github = useQuery(corsairAccountsQueryOptions("github"));
+  const slack = useQuery(corsairAccountsQueryOptions("slack"));
+  const corsair = {
+    github: github.data?.accounts,
+    slack: slack.data?.accounts,
+  };
 
   /*
    * ONLY THE PERSON'S OWN. A Shared app's row is the deployment's, not this person's, and the
@@ -387,6 +401,7 @@ function RouteComponent() {
         connected,
         links: links.data ?? [],
         providers: providers.data,
+        corsair,
       })
     : connectionRows({
         catalogue: yours,
@@ -395,6 +410,7 @@ function RouteComponent() {
         connected,
         links: links.data ?? [],
         providers: providers.data,
+        corsair,
       });
   const matching = rows.filter((row) =>
     `${row.title} ${row.summary}`.toLocaleLowerCase().includes(query),
@@ -611,9 +627,7 @@ function RouteComponent() {
               type="button"
               variant="outline"
             >
-              {links.isFetching || providers.isFetching
-                ? "Retrying…"
-                : "Retry"}
+              {links.isFetching || providers.isFetching ? "Retrying…" : "Retry"}
             </ConnectionAction>
           </div>
         ) : null}
@@ -657,7 +671,164 @@ function RouteComponent() {
           </PageRows>
         </PageSection>
       ) : null}
+      <AppDirectorySection />
     </ConnectionPage>
+  );
+}
+
+/**
+ * The Corsair catalog: every app Bots could use, searched by name.
+ *
+ * Read-only rows. A catalog entry says what an app offers; connecting an account is what the tiles
+ * above are for, once an app's credentials are set up.
+ */
+/** How many catalog apps the directory lists before "Show all". */
+const DIRECTORY_PREVIEW = 24;
+
+/**
+ * The directory's whole behaviour in one function, so it can be asserted without drawing: match by
+ * name or id, and show every match the moment there is a query while an empty one previews.
+ */
+export function directoryApps(
+  apps: CorsairIntegration[],
+  query: string,
+  showAll: boolean,
+) {
+  const matching = apps.filter(
+    (app) =>
+      query === "" ||
+      app.displayName.toLocaleLowerCase().includes(query) ||
+      app.id.includes(query),
+  );
+  return {
+    matching,
+    shown:
+      showAll || query !== "" ? matching : matching.slice(0, DIRECTORY_PREVIEW),
+  };
+}
+
+function AppDirectorySection() {
+  const apps = useQuery(corsairIntegrationsQueryOptions());
+  const connect = useMutation(
+    connectCorsairIntegrationMutationOptions(queryClient),
+  );
+  const [search, setSearch] = React.useState("");
+  const [showAll, setShowAll] = React.useState(false);
+  const query = search.trim().toLocaleLowerCase();
+  // A pending read draws nothing rather than a heading with nothing under it.
+  if (apps.isPending) return null;
+  if (apps.error)
+    return (
+      <PageSection
+        description="Search every app Bots can use through Corsair."
+        title="App directory"
+      >
+        <p className="mt-4 text-destructive text-sm" role="alert">
+          Couldn't load the app directory. Reload the page.
+        </p>
+      </PageSection>
+    );
+  // A 404 is a server from before the catalog existed; the directory is not a part of it.
+  if (!apps.data) return null;
+  const { matching, shown } = directoryApps(apps.data, query, showAll);
+
+  return (
+    <PageSection
+      description="Search every app Bots can use through Corsair."
+      title="App directory"
+    >
+      {shown.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground" role="status">
+          Nothing matches “{search.trim()}”.
+        </p>
+      ) : (
+        <>
+          <div className="mt-4 flex items-center gap-3">
+            <InputGroup className="h-9 flex-1 border-transparent bg-muted/60 shadow-none dark:bg-muted/60">
+              <InputGroupAddon>
+                <IconSearch aria-hidden="true" className="size-4" />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label="Search the app directory"
+                placeholder="Search the app directory"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </InputGroup>
+            <p className="shrink-0 text-xs text-muted-foreground">
+              {query === ""
+                ? `${shown.length} of ${apps.data.length} shown`
+                : `${shown.length} ${shown.length === 1 ? "match" : "matches"}`}
+            </p>
+          </div>
+          <PageRows>
+            {shown.map((app, index) => (
+              <React.Fragment key={app.id}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <PluginLogo
+                      logo={corsairIntegrationIconUrl(app)}
+                      name={app.displayName}
+                    />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>{app.displayName}</ItemTitle>
+                    <ItemDescription>{app.description}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions className="shrink-0">
+                    {app.connected ? (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <IconCheck
+                          aria-hidden="true"
+                          className="size-3.5 text-emerald-600 dark:text-emerald-400"
+                        />
+                        Connected
+                      </span>
+                    ) : (
+                      <Button
+                        disabled={
+                          connect.isPending && connect.variables === app.id
+                        }
+                        onClick={() => connect.mutate(app.id)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {connect.isPending && connect.variables === app.id
+                          ? "Connecting…"
+                          : "Connect"}
+                      </Button>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {app.counts.api === 1
+                        ? "1 tool"
+                        : `${app.counts.api} tools`}
+                    </span>
+                  </ItemActions>
+                </Item>
+              </React.Fragment>
+            ))}
+          </PageRows>
+          {connect.error ? (
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              Couldn't connect that app. Try again.
+            </p>
+          ) : null}
+          {query === "" && matching.length > DIRECTORY_PREVIEW ? (
+            <Button
+              className="mt-3"
+              onClick={() => setShowAll(true)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              Show all {matching.length} apps
+            </Button>
+          ) : null}
+        </>
+      )}
+    </PageSection>
   );
 }
 

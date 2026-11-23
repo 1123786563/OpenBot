@@ -487,6 +487,21 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     docsUrl: "https://developers.notion.com/guides/mcp/build-mcp-client",
   },
   {
+    key: "corsair-cloud",
+    title: "Corsair Cloud",
+    vendor: "Corsair",
+    summary:
+      "All Corsair Cloud integrations, scoped to the person asking and governed by OpenBot grants and approvals.",
+    personalSummary:
+      "All Corsair Cloud integrations, scoped to your connected accounts.",
+    host: "corsair://cloud",
+    path: "/",
+    transport: "corsair-cloud",
+    auth: { kind: "none" },
+    writeTools: [],
+    docsUrl: "https://github.com/corsairdev/corsair",
+  },
+  {
     key: "routines",
     title: "Routines",
     vendor: "OpenBot",

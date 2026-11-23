@@ -1575,8 +1575,9 @@ export function ChannelChat({
     void sayRef.current(text).catch(() => undefined);
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Check Again re-runs the resume by bumping `firstAttempt`.
   useEffect(() => {
+    // This state is intentionally a retry trigger. The effect must restart when the user taps Check again.
+    void firstAttempt;
     const owner = user?.id;
     if (!first || !owner) return;
     if (!channel.active || !isReady) {

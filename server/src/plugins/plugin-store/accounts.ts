@@ -21,6 +21,7 @@ export type BrokeredAccountRecord = {
 
 /** The account a call runs in, read off the row it picked. */
 export type PinnedAccount = {
+  id: string;
   vendorUserId: string;
   /** The vendor's id for the account, or null where the user id alone names it. */
   accountId: string | null;
@@ -214,6 +215,7 @@ export function accountBook(context: StoreContext) {
       filedUnderPerson(row.vendorUserId, account.vendorUserId),
     );
     const pinned = (row: Row, label: string): PinnedAccount => ({
+      id: row.id,
       vendorUserId: row.vendorUserId,
       accountId: row.accountId === "" ? null : row.accountId,
       label,

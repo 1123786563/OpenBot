@@ -52,8 +52,17 @@ const PERSON_UNCONFIGURED =
  */
 function pluginStore(reads: Partial<PluginStore>): PluginStore {
   // Every real store is built with the provider its rows belong to; the routes read it and never
-  // guess one, so a stand-in says which deployment it is standing in for.
-  return { brokerProvider: "composio", ...reads } as PluginStore;
+  // guess one, so a stand-in says which deployment it is standing in for. None of these routes has
+  // been cut over to Corsair, so the cutover guard every one of them passes through lets each run.
+  return {
+    brokerProvider: "composio",
+    withLegacyAuthorization: async <T>(_input: never, run: () => Promise<T>) =>
+      run(),
+    // Nor has a legacy authorization anything here to record: no Corsair pilot is enrolled.
+    recordLegacyAuthorizationStart: async () => {},
+    recordUnmatchedLegacyReturn: async () => {},
+    ...reads,
+  } as PluginStore;
 }
 
 /**

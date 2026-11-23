@@ -2,6 +2,7 @@ import type { MarketDispatch } from "../skill-market/disablements";
 import * as arcade from "./arcade";
 import * as builtinRoutines from "./builtin-routines";
 import * as composio from "./composio";
+import * as corsairCloud from "./corsair/transport";
 import * as driveRest from "./google-drive-rest";
 import type { ListedTool, McpCallResult } from "./mcp";
 import * as mcp from "./mcp";
@@ -146,7 +147,8 @@ export type TransportKind =
   | "google-drive-rest"
   | "builtin-routines"
   | "composio"
-  | "arcade";
+  | "arcade"
+  | "corsair-cloud";
 
 /**
  * The kinds a CATALOGUE ENTRY may name, which is every one except the broker's.
@@ -176,6 +178,7 @@ const TRANSPORTS: Record<TransportKind, VendorTransport> = {
   "builtin-routines": builtinRoutines,
   composio,
   arcade,
+  "corsair-cloud": corsairCloud,
 };
 
 /**

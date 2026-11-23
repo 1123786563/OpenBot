@@ -136,6 +136,7 @@
         "@composio/core": "^0.18.1",
         "@copilotkit/runtime": "1.85.0",
         "@copilotkit/shared": "1.85.0",
+        "@corsair-dev/github": "0.1.20",
         "@mastra/client-js": "^1.43.0",
         "@mastra/core": "^1.64.0",
         "@modelcontextprotocol/sdk": "^1.30.0",
@@ -147,6 +148,7 @@
         "@opentelemetry/sdk-logs": "0.221.0",
         "better-auth": "^1.7.1",
         "cel-js": "^0.8.2",
+        "corsair": "0.2.15",
         "cron-parser": "^5",
         "drizzle-orm": "^0.45.2",
         "eventsource": "3.0.7",
@@ -495,6 +497,20 @@
     "@copilotkit/web-components": ["@copilotkit/web-components@1.85.0", "", { "peerDependencies": { "lit": "^3.3.2" } }, "sha512-nFB6C6ZnwclCTlliUPNKlKvEPeCXkFWPFyEwRj97YkPim7EXJ5rgZlCb4CxnbgwdutQxG0ngw/a1i89Vs+uQ5w=="],
 
     "@copilotkit/web-inspector": ["@copilotkit/web-inspector@1.85.0", "", { "dependencies": { "@ag-ui/client": "1.0.2", "@copilotkit/core": "1.85.0", "@copilotkit/shared": "1.85.0", "lit": "^3.2.0", "lucide": "^0.525.0", "marked": "^12.0.2", "semver": "^7.8.5" } }, "sha512-jOvHwjBOMMFbEt+8lky3MVKQAwUZZD3ReQ4PDaDx75qzWRNhUUL+G2f9PwHGEmArGnQ+nRyP0zSdQ+LPfbrARA=="],
+
+    "@corsair-dev/frpc-darwin-arm64": ["@corsair-dev/frpc-darwin-arm64@0.1.117", "", { "os": "darwin", "cpu": "arm64" }, "sha512-PrxfqHlRKzm5xW5J2wnZ1knVF4xV6svgmeo11YvHMAAUqsNBY6mczMQFlu1HJcMvZ9yysqMiTZBKdjAC+DnhlQ=="],
+
+    "@corsair-dev/frpc-darwin-x64": ["@corsair-dev/frpc-darwin-x64@0.1.117", "", { "os": "darwin", "cpu": "x64" }, "sha512-8GZP5G5kPhu/TPGLnSgecvyyxXB6+ZdwDmXAhz3PvqiE8mmQ2PRa7FaoVYdOa4nY8XWa5YmnXC/DcjsTLIfPmQ=="],
+
+    "@corsair-dev/frpc-linux-arm64": ["@corsair-dev/frpc-linux-arm64@0.1.117", "", { "os": "linux", "cpu": "arm64" }, "sha512-TwVeRBYd17hy6YJByCUouMVBo2itK4fPuvm3TPwdq5ZVxN64PEKE2KHQIo+uW7opxcMXre6DVSzLQyFmrqI/Xg=="],
+
+    "@corsair-dev/frpc-linux-x64": ["@corsair-dev/frpc-linux-x64@0.1.117", "", { "os": "linux", "cpu": "x64" }, "sha512-Ch98qSFQXYSA6sg2ysTKrRCZ08tNWfXjSEHKT3nMM7vYhuDXkQcBmXM4tbPEO8SI6BzLa9/g1lsXT5T0hx48dQ=="],
+
+    "@corsair-dev/frpc-win32-arm64": ["@corsair-dev/frpc-win32-arm64@0.1.117", "", { "os": "win32", "cpu": "arm64" }, "sha512-QyLWoaVNrq1C5V81d7DIOLm63n4+0YSKcKJK1MUTdaQAEroaejybeAuskiYhq11LCJ2wb+WTkv3qaWF0yLgg6g=="],
+
+    "@corsair-dev/frpc-win32-x64": ["@corsair-dev/frpc-win32-x64@0.1.117", "", { "os": "win32", "cpu": "x64" }, "sha512-V4sI1JUwlNBi9nAJHedXPXzmivfi5DHaU2yJMwnf++5PQvVcxRMJQcec1p9+Q8bPyAZ7gtq+4XdRuBJVZXdFkg=="],
+
+    "@corsair-dev/github": ["@corsair-dev/github@0.1.20", "", { "peerDependencies": { "corsair": ">=0.1.0", "zod": "^4.1.13" } }, "sha512-UK143FVEL9obJpSsSfXk9FCnexyE3FWsHOa9b8XBS9ajwQRjpSRqHOE2C+NohTiQWSUY3j72hnVoJr/U4W05gA=="],
 
     "@csstools/css-syntax-patches-for-csstree": ["@csstools/css-syntax-patches-for-csstree@1.1.6", "", { "peerDependencies": { "css-tree": "^3.2.1" }, "optionalPeers": ["css-tree"] }, "sha512-TcJCWFbXLPpJYq6z7bfOyjWYJDiDg2/I4gyUC9pqPNqHFRIey0EB0q0L5cSnQDfWJg8Jd6VadakxdIez/3zkqQ=="],
 
@@ -1364,6 +1380,8 @@
 
     "cors": ["cors@2.8.6", "", { "dependencies": { "object-assign": "^4", "vary": "^1" } }, "sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw=="],
 
+    "corsair": ["corsair@0.2.15", "", { "dependencies": { "kysely": "^0.28.5", "kysely-postgres-js": "^3.0.0", "uuid": "^13.0.0", "zod": "^4.1.13" }, "optionalDependencies": { "@corsair-dev/frpc-darwin-arm64": "0.1.117", "@corsair-dev/frpc-darwin-x64": "0.1.117", "@corsair-dev/frpc-linux-arm64": "0.1.117", "@corsair-dev/frpc-linux-x64": "0.1.117", "@corsair-dev/frpc-win32-arm64": "0.1.117", "@corsair-dev/frpc-win32-x64": "0.1.117" }, "peerDependencies": { "react": ">=18.0.0" }, "optionalPeers": ["react"], "hasInstallScript": true }, "sha512-nhQFnS2nfYccUkRJJ/OvQh7eEUA8bVJX40pFnVoUic7/cLkhRNr9Q5iCFDLrHWIWpB6fjOR09ckhKZLCgNXxhw=="],
+
     "cose-base": ["cose-base@1.0.3", "", { "dependencies": { "layout-base": "^1.0.0" } }, "sha512-s9whTXInMSgAp/NVXVNuVxVKzGH2qck3aQlVHxDCdAEPgtMKwc4Wq6/QKhgdEdgbLSi9rBTAcPoRa6JpiG4ksg=="],
 
     "cosmiconfig": ["cosmiconfig@9.0.2", "", { "dependencies": { "env-paths": "^2.2.1", "import-fresh": "^3.3.0", "js-yaml": "^4.1.0", "parse-json": "^5.2.0" }, "peerDependencies": { "typescript": ">=4.9.5" }, "optionalPeers": ["typescript"] }, "sha512-gtTZxTDau1wL7Y7zifc2dd8jHSK/k6BTx/2Xp/BpdlAdnlYWFVt7qhJqgwi7637yRwRQ3qL4ZidbB4I8tA5VOg=="],
@@ -1909,6 +1927,8 @@
     "kleur": ["kleur@4.1.5", "", {}, "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="],
 
     "kysely": ["kysely@0.29.5", "", {}, "sha512-ooa+eSbBNPTo3MycPEuW5jdrxQdQwdtB3LC3h43FiXQbIry5tR0C5lDG7eealK0E4D7XjrnOP5DIUg/LyjRMYQ=="],
+
+    "kysely-postgres-js": ["kysely-postgres-js@3.0.0", "", { "peerDependencies": { "kysely": ">= 0.24.0 < 1", "postgres": "^3.4.0" }, "optionalPeers": ["postgres"] }, "sha512-o2t/xNSYJQDW6rVGGFPXKmZ0BEz2dGn66c2B+cO/k9ZNcU2qPWPycQPQ+B+P2MBXbKYq0xV9BZmFIvkUrmFWAQ=="],
 
     "langchain": ["langchain@1.5.10", "", { "dependencies": { "@langchain/langgraph": "^1.4.10", "@langchain/langgraph-checkpoint": "^1.1.5", "langsmith": ">=0.5.0 <1.0.0", "zod": "^3.25.76 || ^4" }, "peerDependencies": { "@langchain/core": "^1.2.9" } }, "sha512-JaC12C1qyGn985vvjttr4hr8lfFzWhrXp2M1byZJGmNJ2RiIgqnhiYDuLlG/xHDxhKD3onJ5pCuUif/cbdqPhA=="],
 
@@ -2939,6 +2959,10 @@
     "conf/ajv-formats": ["ajv-formats@2.1.1", "", { "dependencies": { "ajv": "^8.0.0" } }, "sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA=="],
 
     "conf/json-schema-typed": ["json-schema-typed@7.0.3", "", {}, "sha512-7DE8mpG+/fVw+dTpjbxnx47TaMnDfOI1jwft9g1VybltZCduyRQPJPvc+zzKY9WPHxhPWczyFuYa6I8Mw4iU5A=="],
+
+    "corsair/kysely": ["kysely@0.28.20", "", {}, "sha512-D7rXCs0Psxq2hqjg15PGzk/k2bsWY1ohT9o/Xzl8SzgWExT6GiHCz4Z0NP1z5uOE3WBG7gJ46kYdgLYCOlaLoA=="],
+
+    "corsair/uuid": ["uuid@13.0.2", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-vzi9uRZ926x4XV73S/4qQaTwPXM2JBj6/6lI/byHH1jOpCzb0zDbfytgA9LcN/hzb2l7WQSQnxITOVx5un/wGw=="],
 
     "cross-spawn/which": ["which@2.0.2", "", { "dependencies": { "isexe": "^2.0.0" }, "bin": { "node-which": "./bin/node-which" } }, "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA=="],
 

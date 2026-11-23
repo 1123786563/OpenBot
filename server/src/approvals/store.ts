@@ -245,7 +245,8 @@ export function createApprovalStore(database: Database): ApprovalStore {
           .where(owned(owner, id))
           .returning();
         if (!updated) throw new ApprovalNotFoundError();
-        const workItemKey = id;
+        const workItemKey =
+          request.action.dispatch === "explicit" ? undefined : id;
         const continuation = request.action.continuation;
         const approvalRun = {
           runId: request.runId,
@@ -285,21 +286,23 @@ export function createApprovalStore(database: Database): ApprovalStore {
           await recordAuditEvent(trail, request.action.declined, {
             run: approvalRun,
           });
-        await tx
-          .insert(workItems)
-          .values({
-            kind: "approval.resume",
-            key: workItemKey,
-            payload: { ownerUserId: owner, approvalId: id },
-          })
-          .onConflictDoNothing();
-        await tx.execute(
-          sql`select pg_notify('openbot_work_offered', 'approval.resume')`,
-        );
+        if (workItemKey) {
+          await tx
+            .insert(workItems)
+            .values({
+              kind: "approval.resume",
+              key: workItemKey,
+              payload: { ownerUserId: owner, approvalId: id },
+            })
+            .onConflictDoNothing();
+          await tx.execute(
+            sql`select pg_notify('openbot_work_offered', 'approval.resume')`,
+          );
+        }
         return updated;
       });
     },
-    async consume(owner, id, digest) {
+    async consume(owner, id, digest, beforeConsume) {
       return database.transaction(async (tx) => {
         const [request] = await tx
           .select()
@@ -334,6 +337,7 @@ export function createApprovalStore(database: Database): ApprovalStore {
             .limit(1);
           if (!grant) return false;
         }
+        await beforeConsume?.(tx);
         const rows = await tx
           .update(approvalRequests)
           .set({ status: "consumed", consumedAt: sql`now()` })

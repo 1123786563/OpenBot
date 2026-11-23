@@ -125,9 +125,15 @@ export const Route = createFileRoute("/_authed/_app/connections/$key")({
    */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { linked?: string; action?: string; connect?: true } => ({
+  ): {
+    linked?: string;
+    action?: string;
+    connect?: true;
+    corsair?: string;
+  } => ({
     ...searchTextEntry("linked", search.linked),
     ...searchTextEntry("action", search.action),
+    ...searchTextEntry("corsair", search.corsair),
     /*
      * `?connect=true` is Browse apps sending somebody here to finish adding an app that takes a
      * key: the page opens with the key form. Read once and dropped, so a reload does not reopen it.
@@ -144,19 +150,32 @@ export const Route = createFileRoute("/_authed/_app/connections/$key")({
  */
 function RouteComponent() {
   const { key } = Route.useParams();
-  const { linked, action, connect } = Route.useSearch();
+  const { linked, action, connect, corsair } = Route.useSearch();
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   // Held for this visit, keyed on the app, and dropped from the address below.
-  const [arrival] = useState(() => ({ key, connect: connect === true }));
+  const [arrival] = useState(() => ({
+    key,
+    connect: connect === true,
+    corsair,
+  }));
   const startConnect = arrival.key === key && arrival.connect;
   const navigate = Route.useNavigate();
   useEffect(() => {
-    if (connect === undefined) return;
-    navigate({ search: ({ connect: _c, ...rest }) => rest, replace: true });
-  }, [connect, navigate]);
+    if (connect === undefined && corsair === undefined) return;
+    navigate({
+      search: ({ connect: _c, corsair: _outcome, ...rest }) => rest,
+      replace: true,
+    });
+  }, [connect, corsair, navigate]);
   if (key === "github" || key === "slack") {
-    return <IdentityConnectionPage linked={linked} provider={key} />;
+    return (
+      <IdentityConnectionPage
+        linked={linked}
+        outcome={arrival.key === key ? arrival.corsair : undefined}
+        provider={key}
+      />
+    );
   }
   // Routines has nothing to connect or switch: its page says what it is and leads to the routines.
   if (key === ALWAYS_ON_APP) return <RoutinesConnectionPage />;
