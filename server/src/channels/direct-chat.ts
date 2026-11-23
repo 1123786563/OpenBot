@@ -1893,6 +1893,7 @@ export function createDirectChatRoutes(deps: {
         await verifyRunContext();
         return agent.runAgent(input, {
           onEvent: ({ event }) => {
+            if (continuation && event.type === EventType.RUN_STARTED) return;
             if (
               event.type === EventType.CUSTOM &&
               event.name === "openbot.headless.waiting"

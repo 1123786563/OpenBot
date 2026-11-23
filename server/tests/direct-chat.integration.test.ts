@@ -1456,13 +1456,22 @@ function voiceTurn(
           const response = await app.request(
             `/api/copilotkit/threads/${threadId}/messages?agentId=${botId}`,
           );
-          return response.json();
+          if (!response.ok)
+            return { availability: "unavailable", messages: [] };
+          const history = await response.json();
+          return { ...history, availability: "ready" };
         },
       }),
   });
   const result = (async () => {
     await session.start();
     expect(session.getSnapshot().phase).toBe("connected");
+    receive({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "fixture-transcript",
+      transcript: request,
+    });
+    expect(session.getSnapshot().transcript).toBe(request);
     const call = {
       type: "response.function_call_arguments.done",
       name: "ask_agent",
@@ -1479,7 +1488,7 @@ function voiceTurn(
   return { id: dispatched.promise, result, end: session.end };
 }
 
-test("a granted cloud Chat tool waits for approval and resumes the original Run once", async () => {
+test("a voice-triggered tool waits for approval and resumes the original Run once", async () => {
   const actor = await person();
   const bot = await profiles.create(actor, {
     name: "Notes",
@@ -1553,35 +1562,23 @@ test("a granted cloud Chat tool waits for approval and resumes the original Run 
     ).json();
     const thread = `/api/copilotkit/threads/${channel.threadId}`;
     const path = `/api/copilotkit/agent/${bot.id}`;
-    const runId = crypto.randomUUID();
-    const run = await app.request(
-      `${path}/run`,
-      post({
-        threadId: channel.threadId,
-        runId,
-        messages: [{ id: "message", role: "user", content: "Post the note." }],
-      }),
-    );
+    const voice = voiceTurn(app, channel, bot.id, "Post the note.");
+    const runId = await voice.id;
     const history = async () =>
       (await restarted.request(`${thread}/messages?agentId=${bot.id}`)).json();
-    try {
-      let snapshot = await history();
-      const until = Date.now() + 8_000;
-      while (
-        snapshot.runs[0]?.status === "running" &&
-        !snapshot.runs[0].waitingForApproval &&
-        Date.now() < until
-      ) {
-        await Bun.sleep(100);
-        snapshot = await history();
-      }
-      expect(snapshot.runs).toMatchObject([
-        { id: runId, status: "running", waitingForApproval: true },
-      ]);
-      expect(writes).toBe(0);
-    } finally {
-      await run.body?.cancel();
+    let snapshot = await history();
+    const waitingDeadline = Date.now() + 8_000;
+    while (
+      !snapshot.runs[0]?.waitingForApproval &&
+      Date.now() < waitingDeadline
+    ) {
+      await Bun.sleep(100);
+      snapshot = await history();
     }
+    expect(snapshot.runs).toMatchObject([
+      { id: runId, status: "running", waitingForApproval: true },
+    ]);
+    expect(writes).toBe(0);
     const mobileInbox = await restarted.request(
       `/api/approvals?threadId=${encodeURIComponent(channel.threadId)}`,
     );
@@ -1639,14 +1636,21 @@ test("a granted cloud Chat tool waits for approval and resumes the original Run 
       ...post({ threadId: channel.threadId, runId, cursor: 0 }),
       signal: AbortSignal.timeout(15_000),
     });
-    expect(events(await resume.text())).toContainEqual({
+    const replay = events(await resume.text());
+    expect(
+      replay.filter(({ type }) => type === EventType.RUN_STARTED),
+    ).toMatchObject([
+      { type: EventType.RUN_STARTED, threadId: channel.threadId, runId },
+    ]);
+    expect(replay).toContainEqual({
       type: EventType.RUN_FINISHED,
       threadId: channel.threadId,
       runId,
     });
+    expect(await voice.result).toEqual({ answer: "Your note was posted." });
     expect(await history()).toMatchObject({
       messages: [
-        { id: "message" },
+        { id: runId },
         { role: "assistant", content: "Your note was posted." },
       ],
       runs: [{ id: runId, status: "completed" }],
@@ -2963,7 +2967,8 @@ test("Conversation and voice turns share Test Credits, reconcile uncertain dispa
       }),
     );
     expect(await winner.voice("Try it again.").result).toEqual({
-      error: expect.stringContaining("unverified external outcome"),
+      error:
+        "Check the run’s unverified outcome in the conversation before asking again.",
     });
     uncertainState = "released";
     confirmedUnsent = true;
@@ -3346,6 +3351,15 @@ test("a revoked account loses its live Run and a restored account must start a n
       404,
     );
     expect(
+      await voiceTurn(
+        aliceApp,
+        aliceChannel,
+        aliceBot.id,
+        "Continue from the call.",
+      ).result,
+    ).toEqual({ error: expect.stringContaining("HTTP 404") });
+    expect(dispatches).toBe(1);
+    expect(
       await (
         await bobApp.request(
           `/api/copilotkit/agent/${bobBot.id}/run`,
@@ -3361,15 +3375,31 @@ test("a revoked account loses its live Run and a restored account must start a n
     const original = await aliceApp.request(`${path}/run`, post(payload));
     expect(await original.text()).toContain("access_revoked");
     expect(dispatches).toBe(1);
-    const retry = await aliceApp.request(
-      `${path}/run`,
-      post({
-        ...payload,
-        runId: "explicit-retry",
-        messages: [{ ...message, id: "explicit-retry" }],
-      }),
+    expect(
+      await voiceTurn(aliceApp, aliceChannel, bobBot.id, "Ask a different Bot.")
+        .result,
+    ).toEqual({ error: expect.stringContaining("HTTP 404") });
+    expect(dispatches).toBe(1);
+    const retry = voiceTurn(
+      aliceApp,
+      aliceChannel,
+      aliceBot.id,
+      "Try again from the call.",
     );
-    expect(await retry.text()).toContain("Offline answer.");
+    expect(await retry.result).toEqual({
+      answer: "Before revocation.Offline answer.",
+    });
+    expect(
+      (
+        await (
+          await aliceApp.request(
+            `/api/copilotkit/threads/${aliceChannel.threadId}/messages?agentId=${aliceBot.id}`,
+          )
+        ).json()
+      ).runs,
+    ).toContainEqual(
+      expect.objectContaining({ id: await retry.id, status: "completed" }),
+    );
     expect(dispatches).toBe(2);
   } finally {
     release.resolve();

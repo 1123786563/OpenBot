@@ -40,7 +40,7 @@ export async function askChannelAgent(
   channel: {
     busy(): boolean;
     send(request: string, messageId: string): Promise<string>;
-    read(): Promise<Pick<StoredThread, "runs" | "messages">>;
+    read(): Promise<Pick<StoredThread, "runs" | "messages" | "availability">>;
   },
 ): Promise<string> {
   signal.throwIfAborted();
@@ -57,10 +57,21 @@ export async function askChannelAgent(
   const stored = await channel.read();
   signal.throwIfAborted();
 
+  if (stored.availability === "unavailable") {
+    if (streamed.kind === "error") throw streamed.error;
+    throw new Error(
+      "The run’s result could not be confirmed. Check the conversation.",
+    );
+  }
+
   const run = stored.runs?.find(
     (candidate) => candidate.userMessageId === messageId,
   );
-  if (run?.externalOutcome === "unknown") {
+  const previousOutcomeBlocksRequest =
+    !run &&
+    streamed.kind === "error" &&
+    stored.runs?.some((candidate) => candidate.externalOutcome === "unknown");
+  if (run?.externalOutcome === "unknown" || previousOutcomeBlocksRequest) {
     throw new Error(
       "Check the run’s unverified outcome in the conversation before asking again.",
     );
