@@ -39,6 +39,7 @@ import type { CoordinationModelCall } from "./coordination-model-call";
 import {
   allocatePaidSources,
   consumePaidAllocations,
+  hasDisputedPaidHold,
   pilotReservesStoppedAt,
   releasePaidAllocations,
   restoreHolds,
@@ -2050,6 +2051,13 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         ) {
           await releaseReservation(tx, row);
           return denied("not_authorized");
+        }
+        if (
+          row.paidHoldMicrocredits > 0n &&
+          (await hasDisputedPaidHold(tx, row.accountId, row.id))
+        ) {
+          await releaseReservation(tx, row);
+          return denied("insufficient_credits");
         }
         let deadline: Date | undefined;
         if (row.authorizationId) {

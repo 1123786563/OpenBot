@@ -86,3 +86,18 @@ Querying and closing orders on the real channel needs the test merchant. The res
 OpenBot's own model calls make the ledger's reservation. The adapter wired into the server (`server/src/managed-model-trial.ts`), for Web direct chat and the auxiliary calls beside it, reads `GET /v1/quote`, reserves on that Price Version as the app `openbot` with Test Credits, and sends `resumable: false`, since nothing retries a chat turn by its operation ID. `server/tests/managed-model-routes.integration.test.ts` runs it against these routes and the real ledger.
 
 What that leaves to a deployment is the credential. The entry point resolves the person from the credential and never from the body, and the runtime holds one service token for everybody, so a deployment has to give the entry point a way to tell people apart. The Bifrost executor behind `/v1/dispatch` is mounted by the same deployment.
+
+## Payment disputes
+
+Run these commands from the repository root in the billing operator environment with `DATABASE_URL` set. Use channel or finance record IDs as references. Record the operator's identity with `--by`.
+
+```sh
+bun --no-env-file server/scripts/billing-paths.ts dispute open <order-id> --by <operator> --reference <channel-case-id>
+bun --no-env-file server/scripts/billing-paths.ts dispute status <order-id>
+bun --no-env-file server/scripts/billing-paths.ts dispute confirm-reversal <order-id> --by <operator> --reference <channel-reversal-id>
+bun --no-env-file server/scripts/billing-paths.ts dispute reconcile <order-id> --by <operator> --reference <finance-record-id>
+```
+
+Open a case when the channel reports a payment dispute. The disputed order stops funding new reservations and dispatches. Work already sent can settle against its original allocation. Other eligible sources remain available.
+
+Use `confirm-reversal` after verifying the reversal with the original channel. The ledger revokes the order's remaining credits and keeps the original usage. After the affected holds settle or release, run `status` to get the RMB amount to reconcile. Use `reconcile` after recording the reconciliation in the finance system. Repeating a command preserves the existing case and evidence. The customer's orders and usage statement show the same dispute ID and progress.

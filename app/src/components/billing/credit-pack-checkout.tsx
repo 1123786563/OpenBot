@@ -6,6 +6,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useRef, useState } from "react";
 import { z } from "zod";
+import { PaymentDisputeDetails } from "@/components/billing/payment-dispute";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
   Item,
@@ -19,6 +20,7 @@ import {
   billingKeys,
   creditsText,
   paidSourcesQueryOptions,
+  paymentDisputeSchema,
 } from "@/lib/billing/queries";
 import { ClientError, client } from "@/lib/client";
 
@@ -85,6 +87,7 @@ const orderSchema = pack.extend({
   ]),
   entitlementId: z.string().nullable(),
   creditsFrozen: z.boolean().optional(),
+  dispute: paymentDisputeSchema.nullish(),
   refund: z
     .object({
       id: z.uuid(),
@@ -150,6 +153,7 @@ function OrderRow({
         checkoutKeys(path).offer,
         billingKeys.paidBalance,
         billingKeys.paidSources,
+        billingKeys.bill,
       ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
     );
   const verify = useMutation({
@@ -175,7 +179,9 @@ function OrderRow({
           {packText(order)}
         </ItemTitle>
         <ItemDescription>Order {order.id}</ItemDescription>
-        {order.refund ? (
+        {order.dispute ? (
+          <PaymentDisputeDetails dispute={order.dispute} />
+        ) : order.refund ? (
           <>
             <Text>
               Refund amount CN¥{(order.refund.amountCents / 100).toFixed(2)}
@@ -218,6 +224,7 @@ function OrderRow({
             />
           )}
           {order.state === "verified" &&
+            !order.dispute &&
             !order.refund &&
             (!subscription || order.canRefundFuture) && (
               <Button
@@ -228,15 +235,21 @@ function OrderRow({
                 }}
               />
             )}
-          {order.refund &&
+          {order.dispute ? (
+            <Button
+              label="Check dispute status"
+              isLoading={refundAction.isPending}
+              onClick={() => refundAction.mutate("verify")}
+            />
+          ) : order.refund &&
             order.refund.state !== "confirmed" &&
-            order.refund.state !== "failed" && (
-              <Button
-                label="Check refund status"
-                isLoading={refundAction.isPending}
-                onClick={() => refundAction.mutate("verify")}
-              />
-            )}
+            order.refund.state !== "failed" ? (
+            <Button
+              label="Check refund status"
+              isLoading={refundAction.isPending}
+              onClick={() => refundAction.mutate("verify")}
+            />
+          ) : null}
         </HStack>
         {verify.data?.state === "pending" && order.state === "pending" ? (
           <Text role="status">

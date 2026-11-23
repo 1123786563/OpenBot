@@ -831,3 +831,75 @@ test("monthly checkout shows paid Beijing periods and submits the selected plan 
     view.getByRole("button", { name: "Refund future period" }),
   ).toBeTruthy();
 });
+
+test("a reversed order and statement share the dispute reference and retain the original charge", async () => {
+  const path = "/api/billing/paid/credit-pack";
+  const id = "4a06fd08-73e4-472c-824e-4077bed08946";
+  const dispute = {
+    id: "41d62691-95ee-4618-a356-2fd4c03db34d",
+    progress: "manual_reconciliation",
+    usedMicrocredits: "1000000",
+    revokedMicrocredits: "24000000",
+    manualReviewCents: 100,
+  };
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(input) === path)
+        return Response.json({
+          available: false,
+          product: null,
+          pausedApplications: [],
+          blockedReason: "New test orders are unavailable for this account.",
+        });
+      if (String(input) === `${path}/orders`)
+        return Response.json([
+          {
+            id,
+            state: "refunded",
+            priceCents: 2500,
+            creditsMicrocredits: "25000000",
+            entitlementId: "ent-1",
+            dispute,
+          },
+        ]);
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const queryClient = answered();
+  queryClient.setQueryData(billingKeys.bill, [
+    ...lines.map((line) =>
+      line.entitlementId === "ent-1" ? { ...line, orderId: id } : line,
+    ),
+    {
+      source: "dispute",
+      orderId: id,
+      operationId: null,
+      applicationId: null,
+      entitlementId: null,
+      periodStart: null,
+      periodEnd: null,
+      reason: null,
+      arrivedAt: null,
+      at: "2026-02-17T05:00:00.000Z",
+      amountMicrocredits: "0",
+      dispute,
+    },
+  ]);
+  const view = renderCredits(queryClient);
+  expect(
+    await view.findByRole("button", { name: "Check dispute status" }),
+  ).toBeTruthy();
+  expect(
+    view.getAllByText(/Support is reconciling the cost of settled usage/),
+  ).toHaveLength(2);
+  expect(
+    view.getAllByText(`Dispute ${dispute.id} · 1 credits used`),
+  ).toHaveLength(2);
+  expect(
+    view.getAllByText("24 credits revoked · CN¥1.00 for settled usage"),
+  ).toHaveLength(2);
+  expect(view.getByText(/op-2 on/)).toBeTruthy();
+  expect(view.queryByText(/Funds returned/)).toBeNull();
+});

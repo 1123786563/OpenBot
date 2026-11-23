@@ -17,6 +17,7 @@ import {
   CreditPackCheckout,
   SubscriptionCheckout,
 } from "@/components/billing/credit-pack-checkout";
+import { PaymentDisputeDetails } from "@/components/billing/payment-dispute";
 import {
   PageEmpty,
   PageRows,
@@ -105,6 +106,7 @@ const SOURCES: Record<BillLine["source"], string> = {
   subscription: "Monthly plan",
   credit_pack: "Credit pack",
   correction: "Correction",
+  dispute: "Payment dispute",
 };
 
 const APPLICATIONS: Record<string, string> = {
@@ -525,16 +527,26 @@ function UsageSection() {
         <PageRows>
           {shown.map((line, index) => (
             <Fragment
-              key={`${line.operationId}|${line.source}|${line.entitlementId ?? ""}|${line.at ?? ""}|${line.amountMicrocredits}`}
+              key={`${line.orderId ?? ""}|${line.operationId}|${line.source}|${line.entitlementId ?? ""}|${line.at ?? ""}|${line.amountMicrocredits}`}
             >
               {index > 0 ? <Separator /> : null}
               <Item size="sm">
                 <ItemContent>
                   <ItemTitle>{SOURCES[line.source]}</ItemTitle>
-                  <ItemDescription>
-                    {line.reason ??
-                      `${line.applicationId ? `${appLabel(line.applicationId)}, ` : ""}${line.operationId} on ${onDate(line.at)}`}
-                  </ItemDescription>
+                  {line.operationId ? (
+                    <ItemDescription>
+                      {line.reason ??
+                        `${line.applicationId ? `${appLabel(line.applicationId)}, ` : ""}${line.operationId} on ${onDate(line.at)}`}
+                    </ItemDescription>
+                  ) : line.reason ? (
+                    <ItemDescription>{line.reason}</ItemDescription>
+                  ) : null}
+                  {line.orderId && (
+                    <ItemDescription>Order {line.orderId}</ItemDescription>
+                  )}
+                  {line.dispute && (
+                    <PaymentDisputeDetails dispute={line.dispute} />
+                  )}
                   {line.periodStart && line.periodEnd ? (
                     <ItemDescription>
                       Original period {beijingBillingTime(line.periodStart)} to{" "}
@@ -550,13 +562,16 @@ function UsageSection() {
                   ) : null}
                 </ItemContent>
                 <ItemActions>
-                  {creditsText(line.amountMicrocredits)}
-                  {line.source === "test" ? (
+                  {line.source !== "dispute" &&
+                    creditsText(line.amountMicrocredits)}
+                  {line.source === "test" && line.operationId ? (
                     <Button
                       size="sm"
                       type="button"
                       variant="outline"
-                      onClick={() => setOperationId(line.operationId)}
+                      onClick={() =>
+                        setOperationId(line.operationId ?? undefined)
+                      }
                     >
                       View receipt
                     </Button>

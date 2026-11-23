@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { z } from "zod";
 import { client } from "@/lib/client";
 
 /** A person's Test Credit balance, counted in microcredits. */
@@ -30,12 +31,30 @@ export type PaidSource = {
   remainingMicrocredits: string;
 };
 
-/** One charge booked against one source. */
+export const paymentDisputeSchema = z.object({
+  id: z.uuid(),
+  progress: z.enum([
+    "open",
+    "awaiting_settlement",
+    "reversed",
+    "manual_reconciliation",
+    "reconciled",
+  ]),
+  usedMicrocredits: z.string().regex(/^\d+$/),
+  revokedMicrocredits: z.string().regex(/^\d+$/).nullable(),
+  manualReviewCents: z.number().int().nonnegative().nullable(),
+});
+
+export type PaymentDispute = z.infer<typeof paymentDisputeSchema>;
+
+/** A charge booked against a source, or the status of a disputed payment. */
 export type BillLine = {
-  operationId: string;
+  operationId: string | null;
+  orderId?: string | null;
+  dispute?: PaymentDispute | null;
   /** The app the step ran for, where the caller named one. */
   applicationId: string | null;
-  source: "test" | "subscription" | "credit_pack" | "correction";
+  source: "test" | "subscription" | "credit_pack" | "correction" | "dispute";
   entitlementId: string | null;
   periodStart: string | null;
   periodEnd: string | null;

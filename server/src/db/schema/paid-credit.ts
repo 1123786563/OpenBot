@@ -5,6 +5,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -207,6 +208,14 @@ export const paidRefundStates = [
   "failed",
 ] as const;
 
+type DisputeEvidence = { by: string; reference: string; at: string };
+
+type PaymentDispute = {
+  opened: DisputeEvidence;
+  reversal?: DisputeEvidence;
+  reconciliation?: DisputeEvidence;
+};
+
 // One original-route refund per order (#102/#103): the money always goes
 // back through the channel that took it, in the order's own currency
 // amount, whatever the reason. The row is the refund-progress contract
@@ -229,6 +238,7 @@ export const paidRefunds = pgTable(
     // Staff handling the case (#104 disputes); refund requests from the
     // channel side record the notifying operator.
     openedBy: text("opened_by").notNull().default("channel"),
+    dispute: jsonb().$type<PaymentDispute>(),
     state: text({ enum: paidRefundStates }).notNull().default("requested"),
     requestedAt: timestamp("requested_at", { withTimezone: true })
       .notNull()

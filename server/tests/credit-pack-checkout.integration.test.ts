@@ -840,8 +840,257 @@ for (const state of ["disputed", "partial"]) {
       refund: { id: refund.id, amountCents: 3500, state: "manual_review" },
     });
     expect(await pack.balance()).toMatchObject({ availableMicrocredits: "0" });
+    if (state === "disputed") {
+      const ops = (action: string) =>
+        runBillingPaths(
+          [
+            "dispute",
+            action,
+            pack.orderId,
+            "--by",
+            "support-fixture",
+            "--reference",
+            "refund-channel-case",
+          ],
+          { credit: ledger, paid },
+        );
+      expect(await pack.status()).toMatchObject({
+        dispute: { id: refund.id, progress: "open" },
+      });
+      await ops("open");
+      await ops("confirm-reversal");
+      expect(await pack.status()).toMatchObject({
+        dispute: {
+          id: refund.id,
+          progress: "reversed",
+          usedMicrocredits: "0",
+          manualReviewCents: null,
+        },
+      });
+    }
   });
 }
+
+test("support reverses a fixture order and the statement preserves its dispatched usage", async () => {
+  const pack = await verifiedPack();
+  const route = "checkout-payment-dispute";
+  const restoreCatalog = await installFixtureCatalog(route, 500_000);
+  const identity = { issuer, subject: pack.subject };
+  const quote = await ledger.quote();
+  const reserve = async (operationId: string) =>
+    (
+      await call("/v1/reserve", pack.subject, {
+        operationId,
+        route,
+        priceVersion: quote?.priceVersion,
+        creditType: "paid",
+        resumable: false,
+      })
+    ).json();
+  const dispatch = async (operationId: string, permit: string) =>
+    ledger.beginDispatch(identity, { operationId, permit });
+  const bill = async () => (await call("/paid/bill", pack.subject)).json();
+  const ops = async (action: string, reference?: string) => {
+    const command = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        "server/scripts/billing-paths.ts",
+        "dispute",
+        action,
+        pack.orderId,
+        ...(reference
+          ? ["--by", "support-fixture", "--reference", reference]
+          : []),
+      ],
+      {
+        env: { PATH: process.env.PATH, DATABASE_URL: testDatabaseUrl() },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(command.stdout).text(),
+      new Response(command.stderr).text(),
+      command.exited,
+    ]);
+    if (exitCode !== 0) throw new Error(stderr);
+    return JSON.parse(stdout);
+  };
+  try {
+    const first = crypto.randomUUID();
+    expect(await dispatch(first, (await reserve(first)).permit)).toMatchObject({
+      state: "dispatch",
+    });
+    await ledger.settle(pack.accountId, first, {
+      inputTokens: 100_000n,
+      outputTokens: 0n,
+    });
+    const alreadyDispatched = crypto.randomUUID();
+    expect(
+      await dispatch(
+        alreadyDispatched,
+        (await reserve(alreadyDispatched)).permit,
+      ),
+    ).toMatchObject({ state: "dispatch" });
+    const unsent = crypto.randomUUID();
+    const unsentHold = await reserve(unsent);
+    expect(unsentHold).toMatchObject({ state: "reserved" });
+
+    const opened = await ops("open", "channel-case-104");
+    expect(await ops("open", "channel-case-104")).toEqual(opened);
+    expect(await pack.status()).toMatchObject({
+      creditsFrozen: true,
+      dispute: { id: opened.id, progress: "open", usedMicrocredits: "100000" },
+    });
+    expect(await reserve(crypto.randomUUID())).toMatchObject({
+      reason: "insufficient_credits",
+    });
+    expect(await dispatch(unsent, unsentHold.permit)).toMatchObject({
+      reason: "insufficient_credits",
+    });
+
+    const { product } = await (
+      await call("/paid/credit-pack", pack.subject)
+    ).json();
+    const otherOrder = crypto.randomUUID();
+    expect(
+      (
+        await call(orders, pack.subject, {
+          orderId: otherOrder,
+          version: product.version,
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await call(
+          callback,
+          undefined,
+          {
+            orderId: otherOrder,
+            state: "paid",
+            merchantId: "fixture-merchant",
+            currency: "CNY",
+            amountCents: product.priceCents,
+            channelOrderRef: crypto.randomUUID(),
+            paidAt: new Date().toISOString(),
+          },
+          true,
+        )
+      ).status,
+    ).toBe(200);
+    const fromOther = crypto.randomUUID();
+    expect(
+      await dispatch(fromOther, (await reserve(fromOther)).permit),
+    ).toMatchObject({ state: "dispatch" });
+    await ledger.settle(pack.accountId, fromOther, {
+      inputTokens: 50_000n,
+      outputTokens: 0n,
+    });
+
+    const reversed = await ops("confirm-reversal", "channel-reversal-104");
+    expect(reversed.id).toBe(opened.id);
+    const disputedOrder = async () =>
+      (await (await call(orders, pack.subject)).json()).find(
+        ({ id }: { id: string }) => id === pack.orderId,
+      );
+    expect(await disputedOrder()).toMatchObject({
+      creditsFrozen: false,
+      dispute: { progress: "awaiting_settlement" },
+    });
+    await expect(ops("reconcile", "finance-journal-104")).rejects.toThrow(
+      "settle",
+    );
+    await ledger.settle(pack.accountId, alreadyDispatched, {
+      inputTokens: 200_000n,
+      outputTokens: 0n,
+    });
+    expect(await disputedOrder()).toMatchObject({
+      dispute: {
+        id: opened.id,
+        progress: "manual_reconciliation",
+        usedMicrocredits: "300000",
+        revokedMicrocredits: "34700000",
+        manualReviewCents: 30,
+      },
+    });
+    const reconciled = await ops("reconcile", "finance-journal-104");
+    expect(reconciled).toMatchObject({
+      id: opened.id,
+      dispute: {
+        reconciliation: {
+          by: "support-fixture",
+          reference: "finance-journal-104",
+        },
+      },
+    });
+    expect(await ops("reconcile", "finance-journal-104")).toEqual(reconciled);
+    expect(await ops("status")).toMatchObject({
+      payment: {
+        orderId: pack.orderId,
+        channel: "wechat",
+        channelOrderRef: expect.stringMatching(/^fixture:fixture-merchant:/),
+      },
+      progress: {
+        id: opened.id,
+        progress: "reconciled",
+        manualReviewCents: 30,
+      },
+      evidence: {
+        opened: { reference: "channel-case-104" },
+        reversal: { reference: "channel-reversal-104" },
+        reconciliation: { reference: "finance-journal-104" },
+      },
+    });
+    expect((await ops("confirm-reversal", "channel-reversal-104")).id).toBe(
+      opened.id,
+    );
+    expect(refundStarts.has(opened.id)).toBe(false);
+    expect(await pack.balance()).toMatchObject({
+      availableMicrocredits: "34950000",
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "350000",
+    });
+    expect(await bill()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operationId: first,
+          orderId: pack.orderId,
+          amountMicrocredits: "100000",
+        }),
+        expect.objectContaining({
+          operationId: alreadyDispatched,
+          orderId: pack.orderId,
+          amountMicrocredits: "200000",
+        }),
+        expect.objectContaining({
+          operationId: fromOther,
+          orderId: otherOrder,
+          amountMicrocredits: "50000",
+        }),
+        expect.objectContaining({
+          source: "dispute",
+          orderId: pack.orderId,
+          dispute: expect.objectContaining({
+            id: opened.id,
+            progress: "reconciled",
+            usedMicrocredits: "300000",
+            revokedMicrocredits: "34700000",
+            manualReviewCents: 30,
+          }),
+        }),
+      ]),
+    );
+    expect(await (await call("/paid/bill", bob)).json()).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ orderId: pack.orderId }),
+      ]),
+    );
+  } finally {
+    await restoreCatalog();
+  }
+}, 30_000);
 
 test("Alipay checkout reconciles missed callbacks and refunds only through the original channel", async () => {
   await approvePaths();

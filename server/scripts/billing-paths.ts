@@ -11,11 +11,16 @@
  *   … pending [--account <id>]       the orders still awaiting a channel result
  *   … close <order id> --by <who>    the channel says nobody paid
  *   … confirm-test-refund <order id> --returned-cents <amount>
+ *   … dispute status <order id>
+ *   … dispute open <order id> --by <operator> --reference <channel case>
+ *   … dispute confirm-reversal <order id> --by <operator> --reference <verified reversal>
+ *   … dispute reconcile <order id> --by <operator> --reference <finance record>
  *   … restore begin --by <who>       new charges and grants pause, account by account
  *   … restore order <order id> --account <id> --product <code> --cents <amount> --channel alipay|wechat
  *   … restore resume --account <id>  the account's records match the channel
  *   … restore end
  */
+import { z } from "zod";
 import {
   createPaidCreditLedger,
   type PaidCreditLedger,
@@ -27,7 +32,7 @@ import {
 import { createDatabase } from "../src/db/client";
 
 const usage =
-  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | provider-cost [set --microcredits --by] | pending [--account] | close <order id> --by | confirm-test-refund <order id> --returned-cents | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
+  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | provider-cost [set --microcredits --by] | pending [--account] | close <order id> --by | confirm-test-refund <order id> --returned-cents | dispute status <order id> | dispute open|confirm-reversal|reconcile <order id> --by --reference | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
 
 export type BillingPaths = {
   credit: Pick<
@@ -42,6 +47,8 @@ export type BillingPaths = {
   >;
   paid: Pick<
     PaidCreditLedger,
+    | "handleDispute"
+    | "disputeStatus"
     | "pendingOrders"
     | "closeOrder"
     | "confirmTestPackManualRefund"
@@ -143,6 +150,20 @@ export async function run(
       return ledgers.paid.confirmTestPackManualRefund({
         orderId: id("order id"),
         returnedCents,
+      });
+    }
+    case "dispute": {
+      const orderId = z.uuid().parse(named(action, "order id"));
+      if (target === "status") return ledgers.paid.disputeStatus(orderId);
+      const disputeAction = z
+        .enum(["open", "confirm-reversal", "reconcile"])
+        .parse(target);
+      const label = z.string().trim().min(1).max(256);
+      return ledgers.paid.handleDispute({
+        action: disputeAction,
+        orderId,
+        by: label.parse(by()),
+        reference: label.parse(need(flags, "reference")),
       });
     }
     case "restore begin":

@@ -7,6 +7,8 @@ import {
   isNotNull,
   lte,
   ne,
+  or,
+  type SQL,
   sql,
 } from "drizzle-orm";
 import type { Database } from "../db/client";
@@ -38,6 +40,87 @@ import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 const customerRefund = "customer";
 type Refund = typeof paidRefunds.$inferSelect;
+
+const isDispute = or(
+  isNotNull(paidRefunds.dispute),
+  eq(paidRefunds.reason, "channel_dispute"),
+);
+
+const disputeUsageFields = {
+  used: sql<string>`(select coalesce(sum(source.consumed_microcredits), 0)::text
+    from paid_entitlements source where source.order_id = paid_orders.id)`,
+  total: sql<string>`(select coalesce(sum(source.credits_microcredits), 0)::text
+    from paid_entitlements source where source.order_id = paid_orders.id)`,
+  hasHold: sql<boolean>`exists (select 1 from paid_credit_allocations allocation
+    join paid_entitlements source on source.id = allocation.entitlement_id
+    where source.order_id = paid_orders.id and allocation.state = 'held')`,
+};
+
+const disputeFields = {
+  id: paidRefunds.id,
+  reason: paidRefunds.reason,
+  openedAt: paidRefunds.requestedAt,
+  evidence: paidRefunds.dispute,
+  reconciledUsage: paidRefunds.usedMicrocredits,
+  reconciledCents: paidRefunds.manualReviewCents,
+  ...disputeUsageFields,
+};
+
+function usedShareCents(priceCents: number, used: string, total: string) {
+  const credits = BigInt(total);
+  if (credits === 0n) return 0;
+  return Number((BigInt(priceCents) * BigInt(used) + credits / 2n) / credits);
+}
+
+function disputeView(
+  row: {
+    id: string;
+    reason: string;
+    openedAt: Date;
+    evidence: Refund["dispute"];
+    reconciledUsage: bigint | null;
+    reconciledCents: number | null;
+    used: string;
+    total: string;
+    hasHold: boolean;
+  } | null,
+  priceCents: number,
+) {
+  if (!row || (!row.evidence && row.reason !== "channel_dispute")) return null;
+  const { evidence, hasHold, used, total } = row;
+  const reversal = evidence?.reversal;
+  const reconciliation = evidence?.reconciliation;
+  const awaitingSettlement = Boolean(reversal && hasHold);
+  const finalized = Boolean(reversal && !hasHold);
+  const usedCredits = reconciliation
+    ? (row.reconciledUsage ?? BigInt(used))
+    : BigInt(used);
+  return {
+    id: row.id,
+    openedAt: evidence?.opened.at ?? row.openedAt.toISOString(),
+    reversalAt: reversal?.at ?? null,
+    reconciledAt: reconciliation?.at ?? null,
+    progress: !reversal
+      ? ("open" as const)
+      : awaitingSettlement
+        ? ("awaiting_settlement" as const)
+        : reconciliation
+          ? ("reconciled" as const)
+          : usedCredits > 0n
+            ? ("manual_reconciliation" as const)
+            : ("reversed" as const),
+    usedMicrocredits: usedCredits.toString(),
+    revokedMicrocredits: finalized
+      ? (BigInt(total) - usedCredits).toString()
+      : null,
+    manualReviewCents:
+      finalized && usedCredits > 0n
+        ? reconciliation
+          ? row.reconciledCents
+          : usedShareCents(priceCents, used, total)
+        : null,
+  };
+}
 
 const paidPathFilter = and(
   isNotNull(billingApplications.approvedAt),
@@ -436,7 +519,7 @@ export function createPaidCreditLedger(
     id?: string;
     kind?: "subscription";
   }) {
-    return database
+    const rows = await database
       .select({
         id: paidOrders.id,
         productCode: paidOrders.productCode,
@@ -450,6 +533,7 @@ export function createPaidCreditLedger(
         periodStart: paidEntitlements.periodStart,
         canRefundFuture: sql<boolean>`coalesce(${paidEntitlements.state} in ('granted', 'future') and ${paidEntitlements.periodStart} > ${now().toISOString()}::timestamptz, false)`,
         creditsFrozen: sql<boolean>`coalesce(${paidEntitlements.state} = 'frozen', false)`,
+        hasDispute: sql<boolean>`coalesce(${isDispute}, false)`,
         refund: {
           id: paidRefunds.id,
           state: paidRefunds.state,
@@ -470,6 +554,27 @@ export function createPaidCreditLedger(
         ),
       )
       .orderBy(desc(paidOrders.createdAt), paidOrders.id);
+    const disputedIds = rows
+      .filter(({ hasDispute }) => hasDispute)
+      .map(({ id }) => id);
+    const disputes = disputedIds.length
+      ? await readDisputes(
+          and(
+            eq(paidOrders.accountId, input.accountId),
+            inArray(paidOrders.id, disputedIds),
+          ),
+        )
+      : [];
+    const byOrder = new Map(
+      disputes.map(({ orderId, priceCents, disputeRecord }) => [
+        orderId,
+        disputeView(disputeRecord, priceCents),
+      ]),
+    );
+    return rows.map(({ hasDispute: _, ...order }) => ({
+      ...order,
+      dispute: byOrder.get(order.id) ?? null,
+    }));
   }
 
   async function activeSubscription(accountId: string) {
@@ -946,6 +1051,157 @@ export function createPaidCreditLedger(
     return order;
   }
 
+  async function handleDispute(input: {
+    orderId: string;
+    action: "open" | "confirm-reversal" | "reconcile";
+    by: string;
+    reference: string;
+  }) {
+    return database.transaction(async (tx) => {
+      // Match payment verification and dispatch: account before order.
+      await tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .innerJoin(paidOrders, eq(paidOrders.accountId, testCreditAccounts.id))
+        .where(eq(paidOrders.id, input.orderId))
+        .for("no key update", { of: testCreditAccounts });
+      const order = await lockRefundOrder(tx, input.orderId);
+      const existing = await findRefund(tx, order.id);
+      if (await restoreHolds(tx, order.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "Disputes are paused during ledger recovery.",
+        );
+      const evidence = {
+        at: now().toISOString(),
+        by: input.by,
+        reference: input.reference,
+      };
+      const dispute = existing?.dispute;
+      if (input.action === "open") {
+        if (dispute) return existing;
+        if (
+          !order.channelOrderRef ||
+          (existing &&
+            !(
+              existing.state === "manual_review" &&
+              existing.reason === "channel_dispute"
+            )) ||
+          (order.state !== "verified" && order.state !== "refund_pending")
+        )
+          throw new PaidLedgerError(
+            "not_verified",
+            "A verified payment without another refund in progress is required.",
+          );
+        const refund =
+          existing ??
+          (await recordRefundWithin(
+            tx,
+            order,
+            "channel_dispute",
+            now(),
+            input.by,
+            "manual_review",
+          ));
+        await freezeForRefund(tx, order.id);
+        const [row] = await tx
+          .update(paidRefunds)
+          .set({ dispute: { opened: evidence } })
+          .where(eq(paidRefunds.id, refund.id))
+          .returning();
+        return row;
+      }
+      if (!existing || !dispute)
+        throw new PaidLedgerError(
+          "not_verified",
+          "Open the dispute for this payment first.",
+        );
+      if (input.action === "confirm-reversal") {
+        if (dispute.reversal) return existing;
+        const confirmed = await settleRefundWithin(tx, existing, true);
+        const [row] = await tx
+          .update(paidRefunds)
+          .set({ dispute: { ...dispute, reversal: evidence } })
+          .where(eq(paidRefunds.id, confirmed.id))
+          .returning();
+        return row;
+      }
+      if (dispute.reconciliation) return existing;
+      if (!dispute.reversal)
+        throw new PaidLedgerError(
+          "not_verified",
+          "Confirm the payment reversal first.",
+        );
+      const [usage] = await tx
+        .select(disputeUsageFields)
+        .from(paidOrders)
+        .where(eq(paidOrders.id, order.id));
+      if (usage.hasHold)
+        throw new PaidLedgerError(
+          "refund_held",
+          "Wait for original allocations to settle or release.",
+        );
+      if (BigInt(usage.used) === 0n)
+        throw new PaidLedgerError(
+          "not_verified",
+          "There is no settled usage to reconcile.",
+        );
+      const [row] = await tx
+        .update(paidRefunds)
+        .set({
+          dispute: { ...dispute, reconciliation: evidence },
+          usedMicrocredits: BigInt(usage.used),
+          manualReviewCents: usedShareCents(
+            order.priceCents,
+            usage.used,
+            usage.total,
+          ),
+        })
+        .where(eq(paidRefunds.id, existing.id))
+        .returning();
+      return row;
+    });
+  }
+
+  function readDisputes(scope: SQL | undefined) {
+    return database
+      .select({
+        orderId: paidOrders.id,
+        priceCents: paidOrders.priceCents,
+        disputeRecord: disputeFields,
+      })
+      .from(paidOrders)
+      .innerJoin(paidRefunds, eq(paidRefunds.orderId, paidOrders.id))
+      .where(and(scope, isDispute));
+  }
+
+  async function disputeStatus(orderId: string) {
+    const [row] = await database
+      .select({
+        payment: {
+          orderId: paidOrders.id,
+          channel: paidOrders.channel,
+          channelOrderRef: paidOrders.channelOrderRef,
+          priceCents: paidOrders.priceCents,
+          verifiedAt: paidOrders.verifiedAt,
+        },
+        disputeRecord: disputeFields,
+      })
+      .from(paidOrders)
+      .innerJoin(paidRefunds, eq(paidRefunds.orderId, paidOrders.id))
+      .where(and(eq(paidOrders.id, orderId), isDispute));
+    if (!row)
+      throw new PaidLedgerError(
+        "order_unknown",
+        "No dispute found for this order.",
+      );
+    return {
+      payment: row.payment,
+      progress: disputeView(row.disputeRecord, row.payment.priceCents),
+      evidence: row.disputeRecord.evidence,
+    };
+  }
+
   async function findRefund(tx: Transaction, orderId: string) {
     const [refund] = await tx
       .select()
@@ -981,6 +1237,7 @@ export function createPaidCreditLedger(
       const existing = await findRefund(tx, orderId);
       if (
         existing?.state === "confirmed" ||
+        existing?.dispute ||
         existing?.openedBy === customerRefund
       )
         return existing;
@@ -1204,7 +1461,7 @@ export function createPaidCreditLedger(
           "not_verified",
           "No refund has been requested for this order.",
         );
-      if (refund.openedBy === customerRefund) return refund;
+      if (refund.dispute || refund.openedBy === customerRefund) return refund;
       return settleRefundWithin(tx, refund, succeeded);
     });
   }
@@ -1255,16 +1512,17 @@ export function createPaidCreditLedger(
         .update(paidOrders)
         .set({ state: "refunded" })
         .where(eq(paidOrders.id, orderId));
-      // Only the remaining credits return through the channel. What the
-      // order already funded cannot be pulled back from settled usage, so
-      // its RMB share enters manual reconciliation (#104 人工对账).
-      const granted = await tx
-        .select({
-          consumed: paidEntitlements.consumedMicrocredits,
-          credits: paidEntitlements.creditsMicrocredits,
-        })
-        .from(paidEntitlements)
-        .where(eq(paidEntitlements.orderId, orderId));
+      // A dispute can reverse before its original allocations settle.
+      // Its live case shows the final amount after the remaining holds clear.
+      const granted = refund.dispute
+        ? []
+        : await tx
+            .select({
+              consumed: paidEntitlements.consumedMicrocredits,
+              credits: paidEntitlements.creditsMicrocredits,
+            })
+            .from(paidEntitlements)
+            .where(eq(paidEntitlements.orderId, orderId));
       const used = granted.reduce((sum, row) => sum + row.consumed, 0n);
       const credits = granted.reduce((sum, row) => sum + row.credits, 0n);
       const manualReviewCents =
@@ -1834,6 +2092,7 @@ export function createPaidCreditLedger(
         applicationId: testCreditOperations.applicationId,
         source: paidEntitlements.kind,
         entitlementId: paidEntitlements.id,
+        orderId: paidEntitlements.orderId,
         periodStart: paidEntitlements.periodStart,
         periodEnd: paidEntitlements.periodEnd,
         arrivedAt: paidEntitlements.arrivedAt,
@@ -1899,12 +2158,16 @@ export function createPaidCreditLedger(
       )
       .where(eq(paidCorrections.accountId, accountId))
       .orderBy(paidCorrections.createdAt);
+    const disputeLines = await readDisputes(
+      eq(paidOrders.accountId, accountId),
+    );
     return [
       ...testLines.map((line) => ({
         ...line,
         amountMicrocredits: line.amountMicrocredits,
         source: "test" as const,
         entitlementId: null,
+        orderId: null,
         periodStart: null,
         periodEnd: null,
         arrivedAt: null,
@@ -1920,9 +2183,24 @@ export function createPaidCreditLedger(
         amountMicrocredits: line.amountMicrocredits.toString(),
         source: "correction" as const,
         entitlementId: null,
+        orderId: null,
         periodStart: null,
         periodEnd: null,
         arrivedAt: null,
+      })),
+      ...disputeLines.map(({ orderId, priceCents, disputeRecord }) => ({
+        source: "dispute" as const,
+        orderId,
+        operationId: null,
+        applicationId: null,
+        entitlementId: null,
+        periodStart: null,
+        periodEnd: null,
+        arrivedAt: null,
+        reason: null,
+        amountMicrocredits: "0",
+        at: disputeRecord.openedAt,
+        dispute: disputeView(disputeRecord, priceCents),
       })),
     ].sort((a, b) => (a.at?.getTime() ?? 0) - (b.at?.getTime() ?? 0));
   }
@@ -1939,6 +2217,8 @@ export function createPaidCreditLedger(
     freezeEntitlements,
     revokeEntitlements,
     requestRefund,
+    handleDispute,
+    disputeStatus,
     requestTestPackRefund,
     testPackRefundDispatch,
     applyTestPackRefundResult,
@@ -2153,6 +2433,33 @@ export async function consumePaidAllocations(
       );
   }
   return { state: "settled", charge: input.chargeMicrocredits, consumed };
+}
+
+/** A reservation made before a dispute may only settle if it already dispatched. */
+export async function hasDisputedPaidHold(
+  tx: PaidTx,
+  accountId: string,
+  operationId: string,
+) {
+  const [row] = await tx
+    .select({ id: paidCreditAllocations.id })
+    .from(paidCreditAllocations)
+    .innerJoin(
+      paidEntitlements,
+      eq(paidCreditAllocations.entitlementId, paidEntitlements.id),
+    )
+    .innerJoin(paidRefunds, eq(paidEntitlements.orderId, paidRefunds.orderId))
+    .where(
+      and(
+        eq(paidCreditAllocations.accountId, accountId),
+        eq(paidCreditAllocations.operationId, operationId),
+        eq(paidCreditAllocations.state, "held"),
+        inArray(paidEntitlements.state, ["frozen", "revoked"]),
+        isDispute,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Releases every held allocation of one operation without consuming. */
