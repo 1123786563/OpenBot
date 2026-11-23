@@ -542,11 +542,16 @@ test("a concurrent reservation and refund can never both claim the same source",
     .select()
     .from(enterpriseSettings)
     .where(eq(enterpriseSettings.key, pilotCatalogKey));
-  const install = (value: unknown) =>
-    database
+  const install = (value: unknown) => {
+    const json = sql`${JSON.stringify(value)}::text::jsonb`;
+    return database
       .insert(enterpriseSettings)
-      .values({ key: pilotCatalogKey, value })
-      .onConflictDoUpdate({ target: enterpriseSettings.key, set: { value } });
+      .values({ key: pilotCatalogKey, value: json })
+      .onConflictDoUpdate({
+        target: enterpriseSettings.key,
+        set: { value: json },
+      });
+  };
   await install(catalog);
   try {
     const operationId = crypto.randomUUID();
