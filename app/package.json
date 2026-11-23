@@ -11,6 +11,7 @@
     "prebuild": "bun run --cwd .. generate:app-config",
     "predev": "bun run --cwd .. generate:app-config",
     "pretypecheck": "bun run --cwd .. generate:app-config",
+    "i18n:extract": "i18next-cli extract --sync-primary",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -70,6 +71,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "fake-indexeddb": "6.2.5",
     "happy-dom": "^20.11.2",
+    "i18next-cli": "1.94.1",
     "tailwindcss": "^4.3.3",
     "vite": "^7.1.12"
   }

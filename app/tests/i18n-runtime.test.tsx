@@ -39,6 +39,7 @@ beforeAll(() => {
       "test.items": "{count, plural, one {# item} other {# items}} for {name}",
       "test.notice": "Read the <0>release notes</0> for {product}.",
       "test.englishOnly": "Only ever written in English.",
+      "test.untranslated": "Not written in Chinese yet.",
     },
     true,
     true,
@@ -49,6 +50,8 @@ beforeAll(() => {
     {
       "test.items": "{name} 有 {count} 项",
       "test.notice": "阅读 {product} 的<0>发行说明</0>。",
+      // What extraction leaves behind for a key no one has translated yet.
+      "test.untranslated": "",
     },
     true,
     true,
@@ -154,6 +157,20 @@ function EnglishOnly() {
   const { t } = useTranslation();
   return <p>{t("test.englishOnly")}</p>;
 }
+
+function Untranslated() {
+  const { t } = useTranslation();
+  return <p>{t("test.untranslated", "Not written in Chinese yet.")}</p>;
+}
+
+test("a message nobody has translated yet is shown in English, never blank or as its ID", async () => {
+  const view = render(<Untranslated />);
+  await pinLocale("zh-CN");
+
+  expect(view.getByRole("paragraph").textContent).toBe(
+    "Not written in Chinese yet.",
+  );
+});
 
 /** Makes the browser ask for `languages`, most preferred first, until the returned function runs. */
 function browserSpeaks(languages: string[]): () => void {

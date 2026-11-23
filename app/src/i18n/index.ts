@@ -8,6 +8,8 @@ import {
   writeLocalePreference,
   type LocalePreference,
 } from "./locale";
+import enCatalog from "./locales/en.json";
+import zhCatalog from "./locales/zh-CN.json";
 
 /**
  * The one instance every interface string goes through. Importing it is enough to render English,
@@ -15,12 +17,21 @@ import {
  */
 export const i18n = i18next.createInstance();
 
-void i18n.use(ICU).use(initReactI18next).init({
-  lng: "en",
-  fallbackLng: "en",
-  resources: {},
-  initAsync: false,
-});
+void i18n
+  .use(ICU)
+  .use(initReactI18next)
+  .init({
+    lng: "en",
+    fallbackLng: "en",
+    // Catalogs are one flat map per language, keys stored whole, exactly as the extractor writes them.
+    keySeparator: false,
+    nsSeparator: false,
+    resources: {
+      en: { translation: enCatalog },
+      "zh-CN": { translation: zhCatalog },
+    },
+    initAsync: false,
+  });
 
 // The document says what language it is written in, for screen readers, fonts and spell-checking.
 i18n.on("languageChanged", () => {
