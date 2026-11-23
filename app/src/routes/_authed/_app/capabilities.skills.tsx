@@ -29,6 +29,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
@@ -54,6 +55,9 @@ export const Route = createFileRoute("/_authed/_app/capabilities/skills")({
   component: SkillsPage,
 });
 
+/** Placeholder rows while the list loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
+
 function SkillsPage() {
   const queryClient = useQueryClient();
   const { new: isCreating, edit: editingSlug } = Route.useSearch();
@@ -65,6 +69,7 @@ function SkillsPage() {
   const {
     data,
     isPending: skillsPending,
+    isFetching: skillsFetching,
     refetch: refetchSkills,
   } = useQuery(pluginsPageQueryOptions());
   const { data: me, isPending: mePending } = useQuery(
@@ -133,18 +138,44 @@ function SkillsPage() {
           title="Your skills"
         >
           {/*
-           * Nothing while the two queries are still in flight. The alternative is the empty state
-           * standing there saying this person has written no skills, which is a claim the page has
-           * not yet earned.
+           * Placeholder rows while the two queries are still in flight: the alternative is the
+           * empty state standing there saying this person has written no skills, which is a claim
+           * the page has not yet earned.
            *
            * And not after a read that failed, for the same reason: `isPending` goes false on a
            * failed fetch too, and no list is no evidence of no skills. A list already held stays on
            * screen through a failed refetch, because `data` is still there.
            */}
-          {loading ? null : !data ? (
-            <p className="mt-4 text-destructive text-sm" role="alert">
-              Couldn't load your skills. Reload the page.
-            </p>
+          {loading ? (
+            <div aria-busy="true" aria-label="Loading skills" className="mt-4" role="status">
+              <PageRows>
+                {LOADING_ROWS.map((key, index) => (
+                  <StaggerItem index={index} key={key}>
+                    <Item size="sm">
+                      <ItemContent className="gap-1.5">
+                        <Skeleton className="h-3.5 w-40" />
+                        <Skeleton className="h-3 w-64" />
+                      </ItemContent>
+                    </Item>
+                  </StaggerItem>
+                ))}
+              </PageRows>
+            </div>
+          ) : !data ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <p className="text-destructive text-sm" role="alert">
+                Couldn't load your skills.
+              </p>
+              <Button
+                disabled={skillsFetching}
+                onClick={() => void refetchSkills()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {skillsFetching ? "Retrying…" : "Retry"}
+              </Button>
+            </div>
           ) : mine.length === 0 ? (
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>

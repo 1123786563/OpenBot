@@ -25,6 +25,7 @@ import {
   IconChevronDown,
   IconClock,
   IconFile,
+  IconListDetails,
   IconX,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
@@ -399,6 +400,26 @@ function describeParked(
   return named.length > 0 ? named.join(", ") : "attachment";
 }
 
+function queuedGroupPosition(
+  index: number,
+  count: number,
+): MessageGroupPosition {
+  if (count <= 1) return "single";
+  if (index === 0) return "start";
+  if (index === count - 1) return "end";
+  return "middle";
+}
+
+/** The chip above a burst: what kind of burst it is, and how many messages it holds. */
+function BurstCount({ count, title }: { count: number; title: string }) {
+  return (
+    <MessageHeader className="message-group-label self-end px-0 text-right text-[0.6875rem]">
+      <IconListDetails aria-hidden className="size-3" />
+      {title} · {count} messages
+    </MessageHeader>
+  );
+}
+
 /**
  * Something the person said while the Bot was working, waiting its turn.
  *
@@ -416,10 +437,16 @@ function Queued({
   attachments,
   text,
   onRemove,
+  compact = false,
+  groupPosition = "single",
+  groupSize = 1,
 }: {
   attachments: readonly Attachment[];
   text: string;
   onRemove?: (() => void) | undefined;
+  compact?: boolean;
+  groupPosition?: MessageGroupPosition;
+  groupSize?: number;
 }) {
   /*
    * THE FILES COME WITH IT, and until they did they were on NO SURFACE IN THE APP AT ALL. Parking
@@ -431,8 +458,18 @@ function Queued({
   const files = parkedTiles(attachments);
 
   return (
-    <MessageRow align="end">
+    <MessageRow
+      align="end"
+      className={cn("queued-message", compact && "-mt-5")}
+      /* The burst tint only when this really is several messages; see `personBursts`. */
+      {...(groupSize > 1 ? { "data-message-group": "person" } : {})}
+      data-message-group-position={groupPosition}
+      data-queued-state="waiting"
+    >
       <MessageContent>
+        {groupPosition === "start" && groupSize > 1 ? (
+          <BurstCount count={groupSize} title="Next in line" />
+        ) : null}
         {files.length > 0 ? (
           <AttachmentTiles attachments={files} className="opacity-60" />
         ) : null}
@@ -454,7 +491,10 @@ function Queued({
            * `status` rather than `alert`, matching the thinking line: a person who has just chosen
            * to queue something is not being interrupted by the news that it is queued.
            */}
-          <span role="status">Queued</span>
+          <span className="inline-flex items-center gap-1" role="status">
+            <IconClock aria-hidden className="size-3" />
+            Queued
+          </span>
           {onRemove ? (
             <button
               /*
@@ -789,6 +829,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   text,
   threadId,
   messageId,
+  groupSize = 1,
 }: {
   commandLabels?: string;
   role: "user" | "assistant";
@@ -798,6 +839,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   streaming?: boolean;
   settled?: boolean;
   text: string;
+  groupSize?: number;
 }) {
   const isUser = role === "user";
   const live = useArrivedLive();
@@ -853,6 +895,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
       <MessageContent>
         <Arriving>
           {answerer ? <AnswererName botId={answerer} /> : null}
+          {isUser && groupSize > 1 ? (
+            <BurstCount count={groupSize} title="Sent together" />
+          ) : null}
           {/*
             A Bot's message takes the whole column, not the width of its words: block content
             inside it — a fenced code block, a table — should span the transcript rather than
@@ -956,6 +1001,8 @@ const ATTACHMENT_URL_PREFIX = attachmentUrl("");
  */
 type AttachmentRowProps = {
   attachments: readonly SentAttachment[];
+  /** How many messages this row's burst holds, when it is the first row of one. See `personBursts`. */
+  groupSize?: number;
 };
 
 /**
@@ -981,7 +1028,10 @@ export function sameAttachmentRow(
   previous: AttachmentRowProps,
   next: AttachmentRowProps,
 ): boolean {
-  if (previous.attachments.length !== next.attachments.length) {
+  if (
+    previous.attachments.length !== next.attachments.length ||
+    previous.groupSize !== next.groupSize
+  ) {
     return false;
   }
 
@@ -1000,11 +1050,15 @@ export function sameAttachmentRow(
 
 export const TranscriptAttachments = memo(function TranscriptAttachments({
   attachments,
+  groupSize = 1,
 }: AttachmentRowProps) {
   return (
     <MessageRow align="end">
       <MessageContent>
         <Arriving>
+          {groupSize > 1 ? (
+            <BurstCount count={groupSize} title="Sent together" />
+          ) : null}
           <AttachmentTiles attachments={attachments} />
         </Arriving>
       </MessageContent>
@@ -1926,6 +1980,71 @@ function assertNever(_item: never): null {
   return null;
 }
 
+type MessageGroupPosition = "single" | "start" | "middle" | "end";
+
+/** One person-authored row's place in its burst, and how many MESSAGES the burst holds. */
+type PersonBurst = { position: MessageGroupPosition; size: number };
+
+function isPersonRow(item: TranscriptItem): boolean {
+  return (
+    (item.kind === "text" && isPersonSentMessage(item.role, item.text)) ||
+    item.kind === "attachments"
+  );
+}
+
+/**
+ * Which rows belong to a burst of consecutive sends, and how many messages that burst is.
+ *
+ * A ROW is not a MESSAGE: one send with a file and a caption is two rows (the tiles, then the
+ * words) of one message, so the count a reader is shown counts DISTINCT TURNS — `turnOf` strips
+ * the `:attachments` suffix — and a photo with a caption is not "2 messages sent together".
+ *
+ * A routine firing wears `role: "user"` without anybody having typed anything, so `isPersonRow`
+ * asks `isPersonSentMessage` rather than the role alone; a firing between two sends ENDS a burst
+ * rather than joining it, exactly as a Bot's answer does.
+ *
+ * `position` is by row, so the tiles and the caption of one message stack their corners like a
+ * burst does; `size` is by message, so the tint and the label are drawn only when there really
+ * were several sends. Exported for its test.
+ */
+export function personBursts(
+  items: readonly TranscriptItem[],
+): Map<string, PersonBurst> {
+  const bursts = new Map<string, PersonBurst>();
+  let ids: string[] = [];
+  let turns = new Set<string>();
+
+  const flush = () => {
+    const size = turns.size;
+    ids.forEach((id, offset) => {
+      bursts.set(id, {
+        position:
+          ids.length === 1
+            ? "single"
+            : offset === 0
+              ? "start"
+              : offset === ids.length - 1
+                ? "end"
+                : "middle",
+        size,
+      });
+    });
+    ids = [];
+    turns = new Set<string>();
+  };
+
+  for (const item of items) {
+    if (!isPersonRow(item)) {
+      flush();
+      continue;
+    }
+    ids.push(item.id);
+    turns.add(turnOf(item));
+  }
+  flush();
+  return bursts;
+}
+
 const SEND_SCROLL_MS = 700;
 
 /**
@@ -2167,6 +2286,9 @@ export function ChatTranscript({
   /* One rule for both kinds of row — see `anchorRowIds`, which is where it is written down. */
   const anchorRows = anchorRowIds(items);
 
+  /* Which person rows belong to which burst of sends; see `personBursts`. */
+  const bursts = personBursts(items);
+
   /*
    * Decided once, from the rows present when the scroller mounts, and forgotten while restoring so
    * a conversation opened again staggers again. Rows that arrive later are not in it: they have
@@ -2377,9 +2499,12 @@ export function ChatTranscript({
            * composer that cleared with nothing appearing reads as a message that vanished, and the
            * person types it again.
            */}
-          {queued.map((message) => (
+          {queued.map((message, index) => (
             <Queued
               attachments={message.attachments}
+              compact={index > 0}
+              groupPosition={queuedGroupPosition(index, queued.length)}
+              groupSize={queued.length}
               key={message.id}
               onRemove={
                 onRemoveQueued ? () => onRemoveQueued(message.id) : undefined
@@ -2396,12 +2521,41 @@ export function ChatTranscript({
    * One row, wherever it is drawn. `index` is the row's place in `items`, not in the slice being
    * drawn, so "the last row" and "latest" mean the same with or without older pages above.
    */
-  const renderRow = (item: TranscriptItem, index: number) =>
-    item.kind === "tools" || item.kind === "tool" ? (
+  const renderRow = (item: TranscriptItem, index: number) => {
+    const motionProps = openingProps(item.id);
+    const burst = bursts.get(item.id);
+    const groupSize = burst?.position === "start" ? burst.size : 1;
+    const rowClassName = cn(
+      motionProps.className,
+      /*
+       * Rows of one burst sit 4px apart rather than at the column's 24px rhythm: at the rhythm a
+       * burst reads as messages that happen to line up, and the whole point of the grouping is
+       * that they read as one act of sending. Photo-above-caption rows of a single message get it
+       * too, for the same reason — they are one thing that was sent.
+       */
+      burst !== undefined &&
+        (burst.position === "middle" || burst.position === "end") &&
+        "-mt-5",
+    );
+    /*
+     * The tint (`data-message-group`) is drawn only for a burst of SEVERAL messages; the stacked
+     * corners (`data-message-group-position`) whenever person rows touch, so a captioned photo
+     * keeps its plain single-message bubble while still sitting tight under its picture.
+     */
+    const groupProps = burst
+      ? {
+          ...(burst.size > 1 ? { "data-message-group": "person" } : {}),
+          "data-message-group-position": burst.position,
+        }
+      : {};
+
+    return item.kind === "tools" || item.kind === "tool" ? (
       <MessageScrollerItem
         key={item.id}
         messageId={item.id}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
         <ToolRow
           active={busy && index === items.length - 1}
@@ -2416,7 +2570,9 @@ export function ChatTranscript({
       <MessageScrollerItem
         key={item.id}
         messageId={item.id}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
         <TranscriptActivity message={item.message} />
       </MessageScrollerItem>
@@ -2425,7 +2581,9 @@ export function ChatTranscript({
         key={item.id}
         messageId={item.id}
         scrollAnchor={anchorRows.has(item.id)}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
         <TranscriptMessage
           threadId={threadId}
@@ -2433,6 +2591,7 @@ export function ChatTranscript({
           settled={!busy || index < turnStart}
           commandLabels={commandLabels}
           role={item.role}
+          groupSize={groupSize}
           streaming={
             busy && item.role === "assistant" && index === items.length - 1
           }
@@ -2444,9 +2603,14 @@ export function ChatTranscript({
         key={item.id}
         messageId={item.id}
         scrollAnchor={anchorRows.has(item.id)}
-        {...openingProps(item.id)}
+        {...motionProps}
+        {...groupProps}
+        className={rowClassName}
       >
-        <TranscriptAttachments attachments={item.attachments} />
+        <TranscriptAttachments
+          attachments={item.attachments}
+          groupSize={groupSize}
+        />
       </MessageScrollerItem>
     ) : (
       // Every member of the union is handled above. `assertNever` types `item` as
@@ -2454,6 +2618,7 @@ export function ChatTranscript({
       // this call instead of silently falling into this branch and rendering nothing.
       assertNever(item)
     );
+  };
 
   return (
     <ArrivalsLive>
@@ -2568,9 +2733,15 @@ export function ChatTranscript({
                       <Thinking />
                     ) : null}
                     {working}
-                    {queued.map((message) => (
+                    {queued.map((message, index) => (
                       <Queued
                         attachments={message.attachments}
+                        compact={index > 0}
+                        groupPosition={queuedGroupPosition(
+                          index,
+                          queued.length,
+                        )}
+                        groupSize={queued.length}
                         key={message.id}
                         onRemove={
                           onRemoveQueued

@@ -19,6 +19,7 @@ import {
   PageSection,
 } from "@/components/layout/page-shell";
 import { DescribeGrants } from "@/components/manage/describe-grants";
+import { appPageTitle } from "@/components/manage/plugin-page";
 import {
   SharedApprovalFields,
   sharedSectionSentence,
@@ -40,6 +41,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
@@ -95,6 +97,9 @@ import { toolsListError } from "@/lib/plugins/tools-error";
 export function readOnlyRefs(tools: PluginTool[]): string[] {
   return tools.filter((tool) => tool.effect === "read").map((tool) => tool.ref);
 }
+
+/** Placeholder rows while the page loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 
 export function PluginBotPage({
   pluginKey: key,
@@ -162,7 +167,7 @@ export function PluginBotPage({
   const appTitle =
     plugins.data?.catalogue.find((item) => item.key === key)?.title ??
     server?.title ??
-    key;
+    appPageTitle(key);
   const bot =
     agents.data?.find((one) => one.id === agentId) ??
     hiddenAgents.data?.find((one) => one.id === agentId);
@@ -198,9 +203,27 @@ export function PluginBotPage({
     }
   };
 
-  /* Nothing rather than a placeholder, so no sentence asserts anything while a fetch is open. */
+  /* Placeholder rows while the fetches are open, so no sentence asserts anything mid-read. */
   if (plugins.isPending || agents.isPending || hiddenAgents.isPending) {
-    return <ConnectionPage title="Bot">{null}</ConnectionPage>;
+    return (
+      <ConnectionPage title="Bot">
+        <div aria-busy="true" aria-label="Loading" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <div key={key}>
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-64" />
+                  </ItemContent>
+                </Item>
+                {index !== LOADING_ROWS.length - 1 && <Separator />}
+              </div>
+            ))}
+          </PageRows>
+        </div>
+      </ConnectionPage>
+    );
   }
 
   /*
@@ -236,11 +259,29 @@ export function PluginBotPage({
     return (
       <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
-        title="Plugins"
+        title={appTitle}
       >
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          Couldn't load plugins. Reload the page.
-        </p>
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load plugins.
+          </p>
+          <ConnectionAction
+            disabled={
+              plugins.isFetching ||
+              agents.isFetching ||
+              hiddenAgents.isFetching
+            }
+            onClick={() => {
+              void plugins.refetch();
+              void agents.refetch();
+              void hiddenAgents.refetch();
+            }}
+            type="button"
+            variant="outline"
+          >
+            {plugins.isFetching ? "Retrying…" : "Retry"}
+          </ConnectionAction>
+        </div>
       </ConnectionPage>
     );
   }

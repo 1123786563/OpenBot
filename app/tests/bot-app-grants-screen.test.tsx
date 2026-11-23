@@ -263,8 +263,10 @@ test("a failed plugin read reports the failure instead of claiming the app is no
   const view = renderScreen(failingQueryClient());
 
   expect(
-    await view.findByText("Couldn't load plugins. Reload the page."),
+    await view.findByText("Couldn't load plugins."),
   ).toBeTruthy();
+  // And a way to try again without leaving the page.
+  expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
 
   // The whole point: an app that may be enabled, with grants on it right now, must never be
   // reported as absent on the evidence of a request that never came back.
@@ -275,7 +277,7 @@ test("a failed plugin read reports the failure instead of claiming the app is no
 test("a failed plugin read draws no switches, so nothing reads as a Bot holding nothing", async () => {
   const view = renderScreen(failingQueryClient());
 
-  await view.findByText("Couldn't load plugins. Reload the page.");
+  await view.findByText("Couldn't load plugins.");
 
   expect(view.container.querySelectorAll('[role="switch"]').length).toBe(0);
   expect(view.queryByText("Turn on every read-only action")).toBeNull();

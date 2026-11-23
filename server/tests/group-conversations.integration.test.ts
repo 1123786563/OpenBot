@@ -71,12 +71,11 @@ afterAll(async () => {
 
 async function person(
   id = `${prefix}-user-${randomUUID()}`,
-): Promise<AgentActor> {
-  await database
-    .insert(users)
-    .values({ id, email: `${id}@example.test`, name: "Group Test" });
+): Promise<AgentActor & { email: string }> {
+  const email = `${id}@example.test`;
+  await database.insert(users).values({ id, email, name: "Group Test" });
   createdUsers.push(id);
-  return { id, role: "user" };
+  return { id, email, role: "user" };
 }
 async function bot(owner: AgentActor, name: string) {
   const profile = await profileStore.create(owner, {
@@ -504,7 +503,11 @@ describe("group conversations in PostgreSQL", () => {
       },
     });
     const routes = createGroupRoutes(conversations, async (context, next) => {
-      context.set("actor", { id: owner.id, email: owner.email, role: "user" });
+      context.set("actor", {
+        id: owner.id,
+        email: `${owner.id}@example.test`,
+        role: "user",
+      });
       await next();
     });
     const channel = await conversations.create(owner.id, {

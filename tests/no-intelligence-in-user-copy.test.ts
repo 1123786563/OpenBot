@@ -64,6 +64,26 @@ const NOT_SHOWN: { file: string; text: string; why: string }[] = [
     text: "Intelligence did not confirm this deployment's entitlement",
     why: "the boot log's advice",
   },
+  {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Waiting for Intelligence to finish starting.",
+    why: "the boot log’s advice",
+  },
+  {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Could not read Intelligence entitlements.",
+    why: "the boot log’s advice",
+  },
+  {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Intelligence did not confirm entitlement.",
+    why: "the boot log’s advice",
+  },
+  {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Intelligence's licence has expired.",
+    why: "the boot log’s advice",
+  },
 ];
 
 /** Calls whose arguments are written to a log, never shown. */

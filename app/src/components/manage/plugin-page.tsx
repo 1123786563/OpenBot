@@ -11,6 +11,7 @@ import * as React from "react";
 import { useState } from "react";
 import { ASK_FIRST_TITLE } from "@/components/approvals/ask-first-copy";
 import {
+  ConnectionAction,
   ConnectionDialogContent,
   ConnectionPage,
 } from "@/components/connections/connection-surface";
@@ -27,6 +28,7 @@ import {
   useBrokeredAccount,
 } from "@/components/plugins/brokered-account-row";
 import { SkippedToolsNotice } from "@/components/plugins/skipped-tools-notice";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -47,6 +49,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { grantSummary } from "@/lib/agents/grant-summary";
@@ -99,6 +102,9 @@ import { toolsListError } from "@/lib/plugins/tools-error";
 
 /** Which of the four dialogs is open, or none. */
 type OpenDialog = "token" | "client" | "instance" | "grant" | null;
+
+/** Placeholder rows while the page loads: enough to fill the view, not to suggest a count. */
+const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 
 /** The set with one member toggled, as a new set so React sees the change. */
 function toggled(
@@ -203,6 +209,15 @@ function listedTools<T extends { name: string }>(
  * for the person asking, so it is reached as that person and has no token to paste: the shared-token
  * shape would say the opposite of what it does.
  */
+/*
+ * The page's own name for itself while the catalogue has not answered (loading, or the read
+ * failed): the key, spelled like a name, rather than a generic "Plugin" that renames the page the
+ * person navigated to.
+ */
+export function appPageTitle(key: string): string {
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
 export function connectionKindFor(
   server: PluginServer | undefined,
   auth: CatalogueItem["auth"] | undefined,
@@ -308,6 +323,13 @@ export function PluginPage({
   const connectionsUnreadable = connections.error !== null;
 
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Turning an app off deletes it and every Bot's access, so the switch asks before it acts. The
+   * switch itself never moves optimistically: it is checked by the server's data, so a cancelled
+   * confirmation leaves it exactly where it was.
+   */
+  const { requestConfirmation, confirmation: turnOffConfirmation } =
+    useActionConfirmation();
   const [dialog, setDialog] = useState<OpenDialog>(null);
   /** Which way the mode-switch confirmation is asking, or null while it is closed. */
   const [modeTarget, setModeTarget] = useState<"personal" | "shared" | null>(
@@ -595,7 +617,25 @@ export function PluginPage({
    * connected this". The personal screen had the identical gap; see its own note.
    */
   if (plugins.isPending || connections.isPending) {
-    return <ConnectionPage title="Plugin">{null}</ConnectionPage>;
+    return (
+      <ConnectionPage title={appPageTitle(key)}>
+        <div aria-busy="true" aria-label="Loading" role="status">
+          <PageRows>
+            {LOADING_ROWS.map((key, index) => (
+              <div key={key}>
+                <Item size="sm">
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-40" />
+                    <Skeleton className="h-3 w-64" />
+                  </ItemContent>
+                </Item>
+                {index !== LOADING_ROWS.length - 1 && <Separator />}
+              </div>
+            ))}
+          </PageRows>
+        </div>
+      </ConnectionPage>
+    );
   }
   /*
    * Gated on the plugin list having ARRIVED, the guard the per-Bot grant screen already keeps
@@ -609,13 +649,26 @@ export function PluginPage({
     return (
       <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
-        title={paths.pluginsLabel}
+        title={appPageTitle(key)}
       >
-        <p className="mt-12 text-destructive text-sm" role="alert">
-          {personal
-            ? "Couldn't load your apps. Reload the page."
-            : "Couldn't load plugins. Reload the page."}
-        </p>
+        <div className="mt-12 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            {personal ? "Couldn't load your apps." : "Couldn't load plugins."}
+          </p>
+          <ConnectionAction
+            disabled={plugins.isFetching || connections.isFetching}
+            onClick={() => {
+              void plugins.refetch();
+              void connections.refetch();
+            }}
+            type="button"
+            variant="outline"
+          >
+            {plugins.isFetching || connections.isFetching
+              ? "Retrying…"
+              : "Retry"}
+          </ConnectionAction>
+        </div>
       </ConnectionPage>
     );
   }
@@ -733,8 +786,21 @@ export function PluginPage({
                   checked={server !== undefined}
                   onCheckedChange={(next) => {
                     setError(null);
-                    if (next) void add();
-                    else remove.mutate(key);
+                    if (next) {
+                      void add();
+                      return;
+                    }
+                    requestConfirmation({
+                      title: `Turn ${title} off?`,
+                      description: `This removes ${title} and every Bot's access to its tools.`,
+                      confirmLabel: "Turn off",
+                      pendingLabel: "Turning off…",
+                      failureMessage: `Couldn't turn ${title} off. Try again.`,
+                      variant: "destructive",
+                      run: async () => {
+                        await remove.mutateAsync(key);
+                      },
+                    });
                   }}
                 />
               </ItemActions>
@@ -1382,7 +1448,7 @@ export function PluginPage({
                       <span
                         className={
                           tool.effect === "write"
-                            ? "text-amber-600 text-xs dark:text-amber-500"
+                            ? "text-amber-700 text-xs dark:text-amber-400"
                             : "text-muted-foreground text-xs"
                         }
                       >
@@ -1711,7 +1777,7 @@ export function PluginPage({
                   >
                     <div className="mb-1 flex items-center justify-between">
                       <p
-                        className="font-medium text-amber-600 text-sm dark:text-amber-500"
+                        className="font-medium text-amber-700 text-sm dark:text-amber-400"
                         id="grant-writes-heading"
                       >
                         Changes things
@@ -1792,6 +1858,7 @@ export function PluginPage({
           </ConnectionDialogContent>
         </Dialog>
       ) : null}
+      {turnOffConfirmation}
     </ConnectionPage>
   );
 }
