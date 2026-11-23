@@ -14,7 +14,7 @@ A reservation under an authorization carries `authorizationId`, `resourceId` and
 
 A limit only rises and an expiry only extends (`amendAuthorization`). An application reads an account through `authorizationSummary` and `authorizedOperation` alone, and both answer nothing for an authorization granted to another application.
 
-`pauseApplication(id, by)` refuses that application's new reservations. Other applications and first-party steps keep working, and payments, refunds and settlements already in flight finish. New orders are refused with `no_paid_path` while every approved application is paused; `paidPaths()` lists which are open.
+`pauseApplication(id, by)` refuses new reservations and releases undispatched reservations for that application. Other eligible applications can still reserve. Payment verification, refunds, and settlement continue for existing work. `paidPaths()` lists registered paid paths and their pause state. Each new sale also checks the signoffs that cover the buyer.
 
 | Endpoint | Credential | Request |
 | --- | --- | --- |
@@ -78,6 +78,42 @@ The shared ceiling covers all pilot reservations across billing accounts and mod
 The database checks the ceiling in the reservation transaction. Pausing a route blocks new admissions while dispatched operations continue to settle. If trusted evidence exceeds the frozen bound, the ledger records the observed cost and can report negative headroom.
 
 Keep migration `0117` applied during a binary rollback. Its trigger still caps new reservations. An older API image may return a generic error on a capped reservation. In the deployment drill, verify the operator's database role can inspect and edit the ceiling, then test a full cap and an in-flight settlement with the rollback API and Worker images against the migrated database.
+
+## Record paid pilot signoff
+
+Apply migration `0122_billing_pilot_signoffs`. Run the operator CLI from the repository root with `DATABASE_URL` set to the target ledger.
+
+```sh
+bun server/scripts/billing-paths.ts signoff record --file application-signoff.json
+bun server/scripts/billing-paths.ts signoff record --file channel-signoff.json
+bun server/scripts/billing-paths.ts signoff list
+bun server/scripts/billing-paths.ts provider-cost set --route <route-id> --microcredits <amount> --by <operator>
+bun server/scripts/billing-paths.ts provider-cost --route <route-id>
+bun server/scripts/billing-paths.ts pause <application-id> --by <operator>
+bun server/scripts/billing-paths.ts channel pause alipay --evidence deployment --by <operator>
+bun server/scripts/billing-paths.ts resume <application-id>
+bun server/scripts/billing-paths.ts channel resume alipay --evidence deployment
+```
+
+Each JSON file contains `kind`, `id`, `evidence`, `deploymentId`, `buildVersion`, `imageDigest`, `deploymentRef`, `approvedBy`, `pauseOwner`, and `accountIds`. Use Billing Account UUIDs for `accountIds`. Use an immutable `sha256:<digest>` from the running API image. Keep the referenced evidence in the pilot's records.
+
+| Record | Additional fields |
+| --- | --- |
+| `kind: "application"` | The registered application ID in `id`. Set `pathRef` and `rampRef`. Each item in `routes` has the released route `id`, `revision`, and `provider`, plus `resourceType: "chat"`, `reconciliationRef`, `supplierCapMicrocredits`, and `maxOperationMicrocredits`. Provide microcredits as decimal strings. |
+| `kind: "channel"` | Set `id` to `alipay` or `wechat`. Set `merchant`, `maxOrderCents` as an integer, and `paymentRef`, `refundRef`, `reconciliationRef`, and `rulesRef`. |
+
+The running API requires `deployment` evidence matching `DEPLOYMENT_ID`, `OPENBOT_BUILD_VERSION`, and `OPENBOT_BILLING_IMAGE_DIGEST`. The operator verifies the image digest against the running container before configuring it. Fixture signoffs qualify only a ledger running with an explicit fixture scope. The existing loopback checkout adapter also requires fixture scope for new sales.
+
+Approve each registered paid application with the existing `approve` command. The first-party application ID is `openbot`. A paid reservation needs a matching application signoff for the account and released route. The provider-cost ceiling for that route must be within the signed cap. Dispatch rechecks the signoff and releases a reservation that no longer qualifies. A sale needs at least one eligible application path and a matching channel signoff for the buyer, merchant, and amount. Recording new evidence for a paused channel preserves its pause.
+
+### Verify on the target deployment before opening sales
+
+1. Read back the running API and Worker images. Link their digests to the build and source commit. Verify the controlled entry, credential isolation, account allowlist, maximum order size, and provider-cost caps on that build. Record the readback in `deploymentRef`.
+2. For each supplier and resource type, confirm the cost boundary and reconciliation window. Attach that evidence to the corresponding route revision. Capture path-specific evidence for the application. Use the separate WeKnora evidence from [#110](https://github.com/1123786563/OpenBot/issues/110) for chat, reranking, and maintenance. Verify each independent application under the contract in [#111](https://github.com/1123786563/OpenBot/issues/111). Paid routing here covers the existing chat paths.
+3. For each proposed channel, verify its merchant, applicable refund rules, financial reconciliation procedure, and channel limits. Complete a small real payment and a refund through the original channel. Reconcile the order, the channel's funds, and the resulting Credits and entitlement. Store the four references in that channel's record. Real merchant checkout requires the target payment integration.
+4. Rerun the concurrency, failure, and account isolation cases on the deployed entry. Pause one application and check that new reservations and undispatched work stop. Verify another signed path still runs, and that in-flight payments, original-channel refunds, and dispatched usage still complete. Pause each proposed channel and verify new checkout stops while earlier payments and refunds reconcile. Link the results in `rampRef` before the pilot lead signs off.
+
+The local PostgreSQL tests in `server/tests/billing-paths.integration.test.ts` use fixture signoffs and payment results. Target deployment acceptance remains open for all four steps.
 
 ## Still gated on a deployment
 

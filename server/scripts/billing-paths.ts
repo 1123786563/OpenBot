@@ -7,7 +7,9 @@
  *   … approve <id> --by <who>        an application takes reservations once approved
  *   … pause <id> --by <who>          its path takes no new reservation; the rest settles
  *   … resume <id>
- *   … provider-cost [set --microcredits <amount> --by <who>]
+ *   … signoff list | record --file <json>
+ *   … channel pause|resume <alipay|wechat> --evidence fixture|deployment [--by <who>]
+ *   … provider-cost [set --microcredits <amount> --by <who>] [--route <id>]
  *   … closure stop --account <id>   permanently stop an account with no remaining paid path
  *   … closure reconcile --account <id>  repeat channel queries and recheck held orders
  *   … pending [--account <id>]       the orders still awaiting a channel result
@@ -22,6 +24,7 @@
  *   … restore resume --account <id>  the account's records match the channel
  *   … restore end
  */
+
 import { z } from "zod";
 import {
   type CreditPackTestChannel,
@@ -35,6 +38,7 @@ import {
   type PilotClosureLedgers,
   reconcilePilotClosure,
 } from "../src/billing/pilot-closure";
+import { createPilotSignoffs } from "../src/billing/pilot-signoffs";
 import {
   createTestCreditLedger,
   type TestCreditLedger,
@@ -42,9 +46,10 @@ import {
 import { createDatabase } from "../src/db/client";
 
 const usage =
-  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | provider-cost [set --microcredits --by] | closure stop|reconcile --account <id> | pending [--account] | close <order id> --by | confirm-test-refund <order id> --returned-cents | dispute status <order id> | dispute open|confirm-reversal|reconcile <order id> --by --reference | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
+  "bun scripts/billing-paths.ts apps | register <id> --name --operator --prefix | approve <id> --by | pause <id> --by | resume <id> | signoff list|record --file | channel pause|resume <channel> --evidence [--by] | provider-cost [set --microcredits --by] [--route <id>] | closure stop|reconcile --account <id> | pending [--account] | close <order id> --by | confirm-test-refund <order id> --returned-cents | dispute status <order id> | dispute open|confirm-reversal|reconcile <order id> --by --reference | restore begin --by | restore order <order id> --account --product --cents --channel | restore resume --account | restore end";
 
 export type BillingPaths = PilotClosureLedgers & {
+  signoffs: ReturnType<typeof createPilotSignoffs>;
   credit: Pick<
     TestCreditLedger,
     | "applications"
@@ -53,6 +58,8 @@ export type BillingPaths = PilotClosureLedgers & {
     | "pauseApplication"
     | "resumeApplication"
     | "pilotProviderCost"
+    | "providerCost"
+    | "setProviderCostLimit"
     | "setPilotProviderCostLimit"
   >;
   paid: Pick<
@@ -135,16 +142,37 @@ export async function run(
       return ledgers.credit.pauseApplication(id("application id"), by());
     case "resume":
       return ledgers.credit.resumeApplication(id("application id"));
+    case "signoff": {
+      if (action) throw new TypeError(usage);
+      if (target === "list") return ledgers.signoffs.list();
+      if (target === "record")
+        return ledgers.signoffs.record(
+          await Bun.file(need(flags, "file")).json(),
+        );
+      throw new TypeError(usage);
+    }
+    case "channel": {
+      if (target !== "pause" && target !== "resume") throw new TypeError(usage);
+      return ledgers.signoffs.setChannelPause(
+        named(action, "payment channel"),
+        need(flags, "evidence"),
+        target === "pause" ? by() : null,
+      );
+    }
     case "provider-cost": {
-      if (!target) return ledgers.credit.pilotProviderCost();
+      const path = flags.route === undefined ? undefined : need(flags, "route");
+      if (!target)
+        return path
+          ? ledgers.credit.providerCost(path)
+          : ledgers.credit.pilotProviderCost();
       if (target !== "set" || action) throw new TypeError(usage);
       const amount = need(flags, "microcredits");
       if (!/^\d+$/.test(amount))
         throw new TypeError("--microcredits must be a nonnegative integer.");
-      return ledgers.credit.setPilotProviderCostLimit({
-        limitMicrocredits: BigInt(amount),
-        by: by(),
-      });
+      const limit = { limitMicrocredits: BigInt(amount), by: by() };
+      return path
+        ? ledgers.credit.setProviderCostLimit({ path, ...limit })
+        : ledgers.credit.setPilotProviderCostLimit(limit);
     }
     case "closure": {
       if ((target !== "stop" && target !== "reconcile") || action)
@@ -230,6 +258,7 @@ if (import.meta.main) {
         await run(
           args,
           {
+            signoffs: createPilotSignoffs(database),
             credit: createTestCreditLedger(database),
             paid: createPaidCreditLedger(database),
           },

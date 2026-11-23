@@ -922,7 +922,17 @@ const resolveDeploymentModelKey = () =>
     environment: process.env,
   });
 
-const testCreditLedger = createTestCreditLedger(database);
+const pilotDeployment = {
+  evidence: "deployment",
+  deploymentId: process.env.DEPLOYMENT_ID?.trim(),
+  buildVersion: process.env.OPENBOT_BUILD_VERSION?.trim(),
+  imageDigest: process.env.OPENBOT_BILLING_IMAGE_DIGEST?.trim(),
+} satisfies import("./billing/pilot-signoffs").PilotDeployment;
+const testCreditLedger = createTestCreditLedger(
+  database,
+  undefined,
+  pilotDeployment,
+);
 const platformAuditBudgetId =
   process.env.TEST_CREDIT_AUDIT_BUDGET_ID?.trim() || undefined;
 const pilotAuxiliaryModel =
@@ -1896,7 +1906,12 @@ const backgroundModel =
         execute: directChatTestCredit.execute,
       })
     : undefined;
-const paidCreditLedger = createPaidCreditLedger(database);
+const paidCreditLedger = createPaidCreditLedger(
+  database,
+  undefined,
+  undefined,
+  pilotDeployment,
+);
 const creditPackTestChannel = loadCreditPackTestChannel(process.env);
 const alipayCreditPackTestChannel = loadCreditPackTestChannel(
   process.env,

@@ -529,6 +529,15 @@ test("an application reserves and reads only through a person's authorization", 
     authorizationId: "routes-online",
     resourceId: "kb-doc-1",
   };
+  expect(
+    (
+      await api.request("/v1/reserve", {
+        ...signedIn,
+        method: "POST",
+        body: JSON.stringify(step),
+      })
+    ).status,
+  ).toBe(401);
   // Without an authorization there is nobody to act for.
   expect(
     (await call("/v1/reserve", app, { ...step, authorizationId: undefined }))

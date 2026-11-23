@@ -341,3 +341,33 @@ export const paidPilotClosure = pgTable("paid_pilot_closure", {
     .notNull()
     .defaultNow(),
 });
+
+export const billingPilotSignoffs = pgTable(
+  "billing_pilot_signoffs",
+  {
+    kind: text({ enum: ["application", "channel"] }).notNull(),
+    id: text().notNull(),
+    evidence: text({ enum: ["fixture", "deployment"] }).notNull(),
+    record: jsonb().notNull(),
+    signedAt: timestamp("signed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pausedBy: text("paused_by"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.kind, table.id, table.evidence] }),
+    check(
+      "billing_pilot_signoff_kind",
+      sql`${table.kind} in ('application', 'channel')`,
+    ),
+    check(
+      "billing_pilot_signoff_evidence",
+      sql`${table.evidence} in ('fixture', 'deployment')`,
+    ),
+    check(
+      "billing_pilot_signoff_pause",
+      sql`(${table.pausedAt} is null) = (${table.pausedBy} is null)`,
+    ),
+  ],
+);

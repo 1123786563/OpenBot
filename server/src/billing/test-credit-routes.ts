@@ -560,6 +560,13 @@ export function createTestCreditRoutes({
     );
     if (!input.success)
       return context.json({ error: "Invalid reservation." }, 400);
+    if (
+      context.var.application === undefined &&
+      (input.data.authorizationId !== undefined ||
+        (input.data.applicationId !== undefined &&
+          input.data.applicationId !== "openbot"))
+    )
+      return context.json({ error: "Verified application required." }, 401);
     const acting = await actingAs(context, input.data.authorizationId);
     if (acting.state === "refused") return refused(context, acting.status);
     return context.json(

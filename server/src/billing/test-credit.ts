@@ -12,12 +12,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
-import {
-  catalogSchema,
-  pilotCatalogKey,
-  type ReleasedBifrostRoute,
-  view,
-} from "../admin/bifrost-catalog";
+import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
 import type { Database } from "../db/client";
 import {
   testCreditAccounts as accounts,
@@ -44,6 +39,12 @@ import {
   releasePaidAllocations,
   restoreHolds,
 } from "./paid-ledger";
+import {
+  readPilotRoutes as activeRoutes,
+  currentRouteLimit,
+  type PilotDeployment,
+  signedApplication,
+} from "./pilot-signoffs";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
@@ -165,15 +166,6 @@ const denied = (
     | "pilot_closed"
     | "unavailable",
 ) => ({ state: "denied", reason }) as const;
-
-async function activeRoutes(database: Database | Transaction, lock = false) {
-  const query = database
-    .select({ value: enterpriseSettings.value })
-    .from(enterpriseSettings)
-    .where(eq(enterpriseSettings.key, pilotCatalogKey));
-  const [row] = await (lock ? query.for("share") : query);
-  return row && view(catalogSchema.parse(row.value));
-}
 
 function routeEligible(
   active: Awaited<ReturnType<typeof activeRoutes>>,
@@ -339,7 +331,11 @@ function eligibleCharge(
   return verified.cost > row.reserved ? row.reserved : verified.cost;
 }
 
-export function createTestCreditLedger(database: Database, clock?: () => Date) {
+export function createTestCreditLedger(
+  database: Database,
+  clock?: () => Date,
+  pilot?: PilotDeployment,
+) {
   async function currentTime(tx: Transaction) {
     if (clock) return clock();
     const [row] = await tx.execute<{ time: string }>(
@@ -1387,6 +1383,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             )
           : undefined;
         if (under?.refusal) return denied(under.refusal);
+        const applicationId =
+          under?.held.applicationId ?? input.applicationId ?? "openbot";
+        const pilotPath = pilot
+          ? await application(applicationId, tx, true)
+          : undefined;
+        if (pilotPath?.pausedAt) return denied("route_unavailable");
         if (!embedding && under?.held.applicationId === WEKNORA_APPLICATION_ID)
           return denied("not_authorized");
         // Within the resource scope the person granted, which every step of
@@ -1507,6 +1509,22 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // bound from paid sources only, and the default spans both — the
         // trial balance first and the paid ledger holding any shortfall in
         // this same transaction (#101).
+        if (
+          pilot &&
+          (input.creditType === "paid" ||
+            (input.creditType === undefined && balance.available < reserved)) &&
+          (!pilotPath?.approvedAt ||
+            !(await signedApplication(
+              tx,
+              pilot,
+              applicationId,
+              accountId,
+              route,
+              costLimit?.limitMicrocredits,
+              reserved,
+            )))
+        )
+          return denied("route_unavailable");
         let paidHold = 0n;
         if (input.creditType === "paid") {
           const paid = await allocatePaidSources(
@@ -2182,11 +2200,34 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           }
           deadline = under.held.expiresAt;
         }
+        const applicationId = row.applicationId ?? "openbot";
+        const path = pilot
+          ? await application(applicationId, tx, true)
+          : undefined;
+        const active = await activeRoutes(tx, true);
+        if (pilot) {
+          if (
+            path?.pausedAt ||
+            (row.paidHoldMicrocredits > 0n &&
+              (!path?.approvedAt ||
+                !(await signedApplication(
+                  tx,
+                  pilot,
+                  applicationId,
+                  accountId,
+                  row.route,
+                  await currentRouteLimit(tx, row.route.id),
+                  row.reserved,
+                ))))
+          ) {
+            await releaseReservation(tx, row);
+            return denied("route_unavailable");
+          }
+        }
         if (!(await canDispatchUnderBudget(tx, row))) {
           await releaseReservation(tx, row);
           return denied("execution_limit");
         }
-        const active = await activeRoutes(tx, true);
         const eligible = routeEligible(active, row.route);
         const dispatchedAt = await currentTime(tx);
         if (deadline && dispatchedAt >= deadline) {

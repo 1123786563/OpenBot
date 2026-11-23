@@ -38,6 +38,13 @@ import type {
   CreditPackChannel,
   CreditPackTestRefundResult,
 } from "./credit-pack-test-channel";
+import {
+  currentRouteLimit,
+  eligibleSignoff,
+  type PilotDeployment,
+  readPilotRoutes,
+  signedSupplier,
+} from "./pilot-signoffs";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 const customerRefund = "customer";
@@ -180,6 +187,7 @@ export class PaidLedgerError extends Error {
       | "account_suspended"
       | "pilot_closed"
       | "no_paid_path"
+      | "channel_unavailable"
       | "ledger_restoring"
       | "not_restoring"
       | "correction_conflict",
@@ -190,6 +198,12 @@ export class PaidLedgerError extends Error {
   }
 }
 
+type SaleChannel = {
+  channel: CreditPackChannel;
+  merchant?: string;
+  fixture: boolean;
+};
+
 export function createPaidCreditLedger(
   database: Database,
   clock?: () => Date,
@@ -198,6 +212,7 @@ export function createPaidCreditLedger(
     currency: string;
     merchants?: Partial<Record<"wechat" | "alipay", string>>;
   },
+  pilot?: PilotDeployment,
 ) {
   const now = () => clock?.() ?? new Date();
 
@@ -259,6 +274,8 @@ export function createPaidCreditLedger(
     accountId: string,
     testApplicationIds?: string[],
     paths?: Awaited<ReturnType<typeof readPaidPaths>>,
+    sale?: SaleChannel,
+    priceCents?: number,
   ) {
     const [account] = await tx
       .select({ suspendedAt: testCreditAccounts.suspendedAt })
@@ -285,7 +302,55 @@ export function createPaidCreditLedger(
         "Pilot sales are stopped; no new orders.",
       );
     const availablePaths =
-      paths ?? (await readPaidPaths(tx, testApplicationIds));
+      paths ?? (await readPaidPaths(tx, testApplicationIds).for("share"));
+    if (pilot) {
+      const catalog = await readPilotRoutes(tx, true);
+      let qualified = false;
+      path: for (const { id, pausedAt } of availablePaths) {
+        if (pausedAt) continue;
+        const record = await eligibleSignoff(
+          tx,
+          pilot,
+          "application",
+          id,
+          accountId,
+        );
+        if (record?.kind !== "application") continue;
+        for (const route of catalog?.options ?? []) {
+          if (
+            signedSupplier(
+              record,
+              route,
+              await currentRouteLimit(tx, route.id),
+              BigInt(route.maxChargeMicrocredits),
+            )
+          ) {
+            qualified = true;
+            break path;
+          }
+        }
+      }
+      if (!qualified)
+        throw new PaidLedgerError(
+          "no_paid_path",
+          "No signed paid application path is available.",
+        );
+      const channel =
+        sale &&
+        (await eligibleSignoff(tx, pilot, "channel", sale.channel, accountId));
+      if (
+        channel?.kind !== "channel" ||
+        channel.merchant !== sale?.merchant ||
+        sale.fixture !== (pilot.evidence === "fixture") ||
+        (priceCents !== undefined && priceCents > channel.maxOrderCents)
+      )
+        throw new PaidLedgerError(
+          "channel_unavailable",
+          "The payment channel is unavailable for this order.",
+        );
+      if (testApplicationIds) await spendableSources(tx, accountId, now());
+      return channel.maxOrderCents;
+    }
     if (
       (testApplicationIds || availablePaths.length > 0) &&
       availablePaths.every(({ pausedAt }) => pausedAt !== null)
@@ -309,6 +374,7 @@ export function createPaidCreditLedger(
     accountId: string,
     code: string,
     applicationIds: string[],
+    sale?: SaleChannel,
   ) {
     return database.transaction(async (tx) => {
       const product = await readProduct(tx, code);
@@ -318,7 +384,14 @@ export function createPaidCreditLedger(
           ? null
           : "The test Credit Pack is unavailable.";
       try {
-        await checkSales(tx, accountId, applicationIds, paths);
+        await checkSales(
+          tx,
+          accountId,
+          applicationIds,
+          paths,
+          sale,
+          product?.priceCents,
+        );
       } catch (error) {
         if (!(error instanceof PaidLedgerError)) throw error;
         blockedReason = error.message;
@@ -385,6 +458,7 @@ export function createPaidCreditLedger(
     accountId: string,
     applicationIds: string[],
     eligible: boolean,
+    sale?: SaleChannel,
   ) {
     return database.transaction(async (tx) => {
       const at = now();
@@ -395,7 +469,7 @@ export function createPaidCreditLedger(
       const next =
         periods.find(({ periodStart }) => periodStart && periodStart > at) ??
         null;
-      const products = eligible
+      let products = eligible
         ? await tx
             .select({
               code: paidProducts.code,
@@ -421,7 +495,17 @@ export function createPaidCreditLedger(
         blockedReason = "New test orders are unavailable for this account.";
       } else {
         try {
-          await checkSales(tx, accountId, applicationIds, paths);
+          const maxOrderCents = await checkSales(
+            tx,
+            accountId,
+            applicationIds,
+            paths,
+            sale,
+          );
+          if (maxOrderCents !== undefined)
+            products = products.filter(
+              ({ priceCents }) => priceCents <= maxOrderCents,
+            );
         } catch (error) {
           if (!(error instanceof PaidLedgerError)) throw error;
           blockedReason = error.message;
@@ -514,7 +598,18 @@ export function createPaidCreditLedger(
         // Keep late payments attached to the renewal the buyer originally ordered.
         renewsOrderId = period?.id;
       }
-      await checkSales(tx, input.accountId, testPack?.applicationIds);
+      await checkSales(
+        tx,
+        input.accountId,
+        testPack?.applicationIds,
+        undefined,
+        {
+          channel: input.channel,
+          merchant: testPack?.merchant ?? channels?.merchants?.[input.channel],
+          fixture: testPack !== undefined,
+        },
+        product.priceCents,
+      );
       const [order] = await tx
         .insert(paidOrders)
         .values({
@@ -544,9 +639,11 @@ export function createPaidCreditLedger(
   async function checkTestCheckout(
     accountId: string,
     applicationIds: string[],
+    sale?: SaleChannel,
+    priceCents?: number,
   ) {
     await database.transaction((tx) =>
-      checkSales(tx, accountId, applicationIds),
+      checkSales(tx, accountId, applicationIds, undefined, sale, priceCents),
     );
   }
 
@@ -605,7 +702,17 @@ export function createPaidCreditLedger(
           "order_conflict",
           "The original order already received a payment.",
         );
-      await checkSales(tx, accountId, target.applicationIds);
+      await checkSales(
+        tx,
+        accountId,
+        target.applicationIds,
+        undefined,
+        {
+          ...target,
+          fixture: true,
+        },
+        order.priceCents,
+      );
       return { ...order, replayed: false };
     });
     if (original.replayed) return original;
@@ -623,7 +730,17 @@ export function createPaidCreditLedger(
           "order_conflict",
           "The original order already received a payment.",
         );
-      await checkSales(tx, accountId, target.applicationIds);
+      await checkSales(
+        tx,
+        accountId,
+        target.applicationIds,
+        undefined,
+        {
+          ...target,
+          fixture: true,
+        },
+        order.priceCents,
+      );
       const [replacement] = await tx
         .insert(paidOrders)
         .values({

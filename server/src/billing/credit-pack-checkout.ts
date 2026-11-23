@@ -144,6 +144,7 @@ export function createCreditPackCheckout({
   const { verify, verifyRefund, refreshRefund, reconcileOrder } =
     createCreditPackReconciliation(paid, channel);
   const channelScope = { merchant, channel: kind };
+  const sale = { ...channelScope, fixture: true };
   const suffix = kind === "alipay" ? "/alipay" : "";
   const callbackPath = `/credit-pack-test${suffix}`;
   const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
@@ -209,6 +210,7 @@ export function createCreditPackCheckout({
         accountId,
         channel.productCode,
         channel.applicationIds,
+        sale,
       )),
       canSwitchChannel: Boolean(otherChannel?.allows(accountId)),
     });
@@ -235,6 +237,7 @@ export function createCreditPackCheckout({
         accountId,
         channel.applicationIds,
         eligible,
+        sale,
       )),
       canSwitchChannel: Boolean(otherChannel?.allows(accountId)),
     });
@@ -326,7 +329,13 @@ export function createCreditPackCheckout({
       if (!order) return notFound(context);
       if (order.state !== "pending" || order.switchOrderId)
         return context.json({ error: "This order is no longer pending." }, 409);
-      await paid.checkTestCheckout(accountId, channel.applicationIds);
+      if (!channel.allows(accountId)) return notFound(context);
+      await paid.checkTestCheckout(
+        accountId,
+        channel.applicationIds,
+        sale,
+        order.priceCents,
+      );
       return context.json({ checkoutUrl: await channel.checkout(order) });
     });
 

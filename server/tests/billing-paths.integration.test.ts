@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import {
   configure,
   emptyCatalog,
@@ -11,6 +11,7 @@ import {
   createPaidCreditLedger,
   type PaidCreditLedger,
 } from "../src/billing/paid-ledger";
+import { createPilotSignoffs } from "../src/billing/pilot-signoffs";
 import {
   createTestCreditLedger,
   type TestCreditLedger,
@@ -19,6 +20,7 @@ import {
 import { createDatabase } from "../src/db/client";
 import {
   billingApplications,
+  billingPilotSignoffs,
   billingRestore,
   billingSpendingAuthorizations,
   enterpriseSettings,
@@ -254,6 +256,14 @@ async function cleanUp() {
       await tx
         .delete(testCreditBatches)
         .where(eq(testCreditBatches.id, batchId));
+    await tx
+      .delete(billingPilotSignoffs)
+      .where(
+        and(
+          eq(billingPilotSignoffs.evidence, "fixture"),
+          sql`${billingPilotSignoffs.record}->>'buildVersion' = 'issue-112'`,
+        ),
+      );
     await tx
       .delete(billingApplications)
       .where(like(billingApplications.id, "paths-%"));
@@ -1153,4 +1163,268 @@ test("a restore from an old backup pauses the ledger, replays each record once a
   // Nothing is resumed once the restore has ended.
   await paid.endRestore();
   expect(await paid.resumeAccount(b.accountId)).toBeUndefined();
+});
+
+test("paid pilot requires matching path and channel signoffs and drains in-flight work after pause", async () => {
+  const { accountId, identity } = await enrolled("signoff", 20n);
+  const scope = {
+    evidence: "fixture" as const,
+    deploymentId: "local",
+    buildVersion: "issue-112",
+    imageDigest: `sha256:${"a".repeat(64)}`,
+  };
+  const paid = createPaidCreditLedger(database, undefined, undefined, scope);
+  const credit = createTestCreditLedger(database, undefined, scope);
+  const order = (channel: "alipay" | "wechat" = "alipay") =>
+    paid.createOrder({ accountId, productCode: "pack-paths", channel });
+  const firstParty = `paths-first-party-${run}`;
+  const alternative = `paths-signoff-alternative-${run}`;
+  await credit.registerApplication({
+    id: firstParty,
+    name: "Fixture platform path",
+    operator: "platform",
+    resourcePrefix: "fixture-platform:",
+  });
+  await credit.approveApplication(firstParty, "fixture-lead");
+  await credit.registerApplication({
+    id: alternative,
+    name: "Fixture alternative path",
+    operator: "platform",
+    resourcePrefix: "fixture-alternative:",
+  });
+  await credit.approveApplication(alternative, "fixture-lead");
+  await expect(order()).rejects.toMatchObject({ code: "no_paid_path" });
+  const signoffs = createPilotSignoffs(database);
+  const revision = catalog.routes[routeId]?.revision;
+  if (!revision) throw new Error("Missing fixture route revision.");
+  const record = {
+    ...scope,
+    approvedBy: "fixture-lead",
+    pauseOwner: "fixture-ops",
+    accountIds: [accountId],
+    deploymentRef: "fixture:build",
+  };
+  const channelRecord = {
+    ...record,
+    kind: "channel",
+    id: "alipay",
+    merchant: "fixture-alipay",
+    maxOrderCents: 9900,
+    paymentRef: "fixture:payment",
+    refundRef: "fixture:refund",
+    reconciliationRef: "fixture:reconciliation",
+    rulesRef: "fixture:rules",
+  };
+  await signoffs.record(channelRecord);
+  await expect(order()).rejects.toMatchObject({ code: "no_paid_path" });
+  await credit.setProviderCostLimit({
+    path: routeId,
+    limitMicrocredits: 1000n,
+    by: "fixture-ops",
+  });
+  for (const id of [firstParty, alternative]) {
+    await signoffs.record({
+      ...record,
+      kind: "application",
+      id,
+      pathRef: `fixture:${id}`,
+      rampRef: "fixture:ramp",
+      routes: [
+        {
+          id: routeId,
+          provider: "fixture-paths",
+          revision,
+          resourceType: "chat",
+          reconciliationRef: "fixture:supplier-window",
+          supplierCapMicrocredits: "1000",
+          maxOperationMicrocredits: "20",
+        },
+      ],
+    });
+  }
+  await expect(order("wechat")).rejects.toMatchObject({
+    code: "channel_unavailable",
+  });
+  const otherDeployment = createPaidCreditLedger(
+    database,
+    undefined,
+    undefined,
+    {
+      ...scope,
+      evidence: "deployment",
+    },
+  );
+  await expect(
+    otherDeployment.createOrder({
+      accountId,
+      productCode: "pack-paths",
+      channel: "alipay",
+    }),
+  ).rejects.toMatchObject({ code: "no_paid_path" });
+  const testMerchant = {
+    merchant: "fixture-alipay",
+    version: 1,
+    applicationIds: [firstParty, alternative],
+  };
+  const fixtureOrder = (
+    ledger = paid,
+    channel: "alipay" | "wechat" = "alipay",
+    buyer = accountId,
+  ) =>
+    ledger.createOrder({
+      accountId: buyer,
+      productCode: "pack-paths",
+      channel,
+      testPack: {
+        ...testMerchant,
+        merchant: `fixture-${channel}`,
+        id: crypto.randomUUID(),
+      },
+    });
+  const excluded = await enrolled("signoff-excluded", 20n);
+  await expect(
+    fixtureOrder(paid, "alipay", excluded.accountId),
+  ).rejects.toMatchObject({ code: "no_paid_path" });
+  const staleBuild = createPaidCreditLedger(database, undefined, undefined, {
+    ...scope,
+    buildVersion: "new-build",
+  });
+  await expect(fixtureOrder(staleBuild)).rejects.toMatchObject({
+    code: "no_paid_path",
+  });
+  await signoffs.record({ ...channelRecord, maxOrderCents: 9899 });
+  await expect(fixtureOrder()).rejects.toMatchObject({
+    code: "channel_unavailable",
+  });
+  await signoffs.record(channelRecord);
+  await expect(
+    signoffs.record({ ...channelRecord, evidence: "deployment" }),
+  ).rejects.toThrow("A fixture merchant cannot receive deployment signoff.");
+  await expect(fixtureOrder(paid, "wechat")).rejects.toMatchObject({
+    code: "channel_unavailable",
+  });
+  await signoffs.record({
+    ...channelRecord,
+    id: "wechat",
+    merchant: "fixture-wechat",
+  });
+  const paidAt = new Date();
+  const verified = await fixtureOrder();
+  const pending = await fixtureOrder();
+  async function verify(id: string) {
+    expect(
+      (
+        await paid.verifyOrder({
+          orderId: id,
+          channel: "alipay",
+          channelOrderRef: `fixture:${id}`,
+          amountCents: 9900,
+          paidAt,
+          merchantId: testMerchant.merchant,
+          currency: "CNY",
+          testChannel: true,
+        })
+      ).claimed,
+    ).toBe(true);
+  }
+  await verify(verified.id);
+  const step = (operationId: string, applicationId = firstParty) => ({
+    operationId,
+    applicationId,
+    route: routeId,
+    priceVersion,
+    creditType: "paid" as const,
+  });
+  const productionCredit = createTestCreditLedger(database, undefined, {
+    ...scope,
+    evidence: "deployment",
+  });
+  expect(
+    await productionCredit.reserve(identity, step("fixture-isolation")),
+  ).toEqual({
+    state: "denied",
+    reason: "route_unavailable",
+  });
+  await credit.setProviderCostLimit({
+    path: routeId,
+    limitMicrocredits: 1001n,
+    by: "fixture-ops",
+  });
+  expect(await credit.reserve(identity, step("excess-cap"))).toEqual({
+    state: "denied",
+    reason: "route_unavailable",
+  });
+  await expect(fixtureOrder()).rejects.toMatchObject({ code: "no_paid_path" });
+  await credit.setProviderCostLimit({
+    path: routeId,
+    limitMicrocredits: 1000n,
+    by: "fixture-ops",
+  });
+  const dispatched = await reservedAs(credit, identity, step("signed-sent"));
+  expect(
+    await credit.beginDispatch(identity, {
+      operationId: "signed-sent",
+      permit: dispatched,
+    }),
+  ).toMatchObject({ state: "dispatch" });
+  const held = await reservedAs(credit, identity, step("signed-held"));
+  await credit.pauseApplication(firstParty, "fixture-ops");
+  expect(await credit.reserve(identity, step("signed-after"))).toEqual({
+    state: "denied",
+    reason: "route_unavailable",
+  });
+  expect(
+    await credit.beginDispatch(identity, {
+      operationId: "signed-held",
+      permit: held,
+    }),
+  ).toEqual({ state: "denied", reason: "route_unavailable" });
+  expect(await operationRow(accountId, "signed-held")).toMatchObject({
+    state: "released",
+  });
+  await reservedAs(credit, identity, step("signed-alternative", alternative));
+  expect((await fixtureOrder()).state).toBe("pending");
+  await signoffs.setChannelPause("alipay", "fixture", "fixture-ops");
+  await signoffs.record(channelRecord);
+  expect((await fixtureOrder(paid, "wechat")).state).toBe("pending");
+  await expect(
+    paid.checkTestCheckout(
+      accountId,
+      testMerchant.applicationIds,
+      {
+        channel: "alipay",
+        merchant: testMerchant.merchant,
+        fixture: true,
+      },
+      pending.priceCents,
+    ),
+  ).rejects.toMatchObject({ code: "channel_unavailable" });
+  await expect(fixtureOrder()).rejects.toMatchObject({
+    code: "channel_unavailable",
+  });
+  await verify(pending.id);
+  const refund = await paid.requestTestPackRefund({
+    orderId: pending.id,
+    accountId,
+    channel: "alipay",
+    merchant: testMerchant.merchant,
+  });
+  expect(
+    await paid.applyTestPackRefundResult({
+      orderId: pending.id,
+      refundId: refund.id,
+      merchantId: testMerchant.merchant,
+      channel: "alipay",
+      channelOrderRef: `fixture:${pending.id}`,
+      currency: "CNY",
+      amountCents: 9900,
+      state: "confirmed",
+    }),
+  ).toMatchObject({ state: "confirmed" });
+  expect(
+    await credit.settle(accountId, "signed-sent", {
+      inputTokens: 7n,
+      outputTokens: 0n,
+    }),
+  ).toMatchObject({ state: "settled", chargedMicrocredits: "7" });
 });
