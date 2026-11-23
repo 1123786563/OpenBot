@@ -194,6 +194,35 @@ describe("the General page speaks the interface language", () => {
       within(dialog).getByText("选择 OpenBot 为你显示的名字。"),
     ).toBeTruthy();
   });
+
+  test("in Chinese the instructions row and dialog read in Chinese, with written content unchanged", async () => {
+    instructions = "Write in British English.";
+    queryClient.setQueryData(settingsKeys.instructions(), instructions);
+    await pinLocale("zh-CN");
+    const view = drawPage();
+    const row = view.getByRole("button", { name: /^常设指令/ });
+    expect(row.textContent).toContain("Write in British English.");
+    await userEvent.setup({ document }).click(row);
+    const dialog = await view.findByRole("dialog");
+    expect(within(dialog).getByText("常设指令")).toBeTruthy();
+    expect(
+      within(dialog).getByRole("textbox", { name: "常设指令" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByPlaceholderText(
+        "我们是两个人，不是一个团队。用英式英语书写，不要把我们的产品称为平台。",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("已用 25 / 4000 个字符")).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "保存" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "适用于每个对话中的每个 Bot。Bot 的角色说明它做什么；这里说明你希望它怎么做，比如你的写作风格。",
+      ),
+    ).toBeTruthy();
+  });
 });
 
 /*
