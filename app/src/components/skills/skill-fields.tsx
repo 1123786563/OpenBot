@@ -1,4 +1,5 @@
 import { useForm } from "@tanstack/react-form";
+import { useEffect } from "react";
 import { PageCard, PageSection } from "@/components/layout/page-shell";
 import { SkillTools } from "@/components/skills/skill-tools";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,21 @@ import { cn } from "@/lib/utils";
 const TOOLS_HINT =
   "Using this skill loads these tools for that reply. It doesn't give access. A Bot only uses tools it already has.";
 
+/** Says the form's dirty state once per change, and once false when it goes away. */
+function DirtyProbe({
+  dirty,
+  onChange,
+}: {
+  dirty: boolean;
+  onChange: (dirty: boolean) => void;
+}) {
+  useEffect(() => {
+    onChange(dirty);
+    return () => onChange(false);
+  }, [dirty, onChange]);
+  return null;
+}
+
 /**
  * The things a person decides about a skill: what they type, what it is called, what it is for,
  * what the Bot is told, and which tools it needs.
@@ -31,6 +47,7 @@ export function SkillFields({
   onSubmit,
   error,
   onCancel,
+  onDirtyChange,
   footer,
   sections,
   slugLocked = false,
@@ -40,14 +57,23 @@ export function SkillFields({
   onSubmit: (values: SkillFormValues) => Promise<unknown>;
   error?: Error | null;
   onCancel?: () => void;
+  /**
+   * The form's dirty state, lifted for a page that guards leaving with it. Called on every change
+   * of it, and once with false when the form unmounts.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Anything that belongs with the skill but saves on its own, shown above the submit button. */
   footer?: React.ReactNode;
   /**
    * On a page of its own: one `PageSection` per part, with `cancel` beside the submit button.
+   * `cancel` is drawn from the form's dirty state, so it can ask before throwing a draft away.
    * `flush` drops the first section's top margin when the form is the page's first content, since
    * `PageShell` already spaces the title from it.
    */
-  sections?: { cancel?: React.ReactNode; flush?: boolean };
+  sections?: {
+    cancel?: (state: { dirty: boolean }) => React.ReactNode;
+    flush?: boolean;
+  };
   /**
    * Editing, where the command cannot change.
    *
@@ -214,9 +240,12 @@ export function SkillFields({
   );
 
   const submit = (
-    <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-      {([canSubmit, isSubmitting]) => (
-        <Button disabled={!canSubmit || isSubmitting} type="submit">
+    <form.Subscribe
+      selector={(state) => [state.canSubmit, state.isSubmitting, state.isDirty]}
+    >
+      {([canSubmit, isSubmitting, isDirty]) => (
+        /* Clean and disabled: saving what is already saved is a no-op that reads as done. */
+        <Button disabled={!canSubmit || isSubmitting || !isDirty} type="submit">
           {isSubmitting ? "Saving…" : submitLabel}
         </Button>
       )}
@@ -224,8 +253,10 @@ export function SkillFields({
   );
 
   const failure = error ? (
+    /* The typed edits are all still on screen; say that rather than relaying the server's
+       own words, which never name the skill or the save. */
     <p className="mt-4 text-sm text-destructive" role="alert">
-      {error.message}
+      Couldn't save this skill. Your edits are still on screen.
     </p>
   ) : null;
 
@@ -237,6 +268,12 @@ export function SkillFields({
         form.handleSubmit();
       }}
     >
+      {/* Lifts the form's dirty state for a page guarding the way out; renders nothing. */}
+      {onDirtyChange ? (
+        <form.Subscribe selector={(state) => state.isDirty}>
+          {(dirty) => <DirtyProbe dirty={dirty} onChange={onDirtyChange} />}
+        </form.Subscribe>
+      ) : null}
       {sections ? (
         <>
           <PageSection
@@ -266,10 +303,14 @@ export function SkillFields({
           </PageSection>
 
           {failure}
-          <div className="mt-8 flex justify-end gap-2">
-            {sections.cancel}
-            {submit}
-          </div>
+          <form.Subscribe selector={(state) => state.isDirty}>
+            {(dirty) => (
+              <div className="mt-8 flex justify-end gap-2">
+                {sections.cancel?.({ dirty })}
+                {submit}
+              </div>
+            )}
+          </form.Subscribe>
         </>
       ) : (
         <>

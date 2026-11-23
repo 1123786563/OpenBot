@@ -1,10 +1,12 @@
 import { createRouter } from "@tanstack/react-router";
+import { RouteLoadError } from "./components/layout/route-recovery";
 import { parseSearchText } from "./lib/search-text";
 import type { RouterContext } from "./router-context";
 import { routeTree } from "./routeTree.gen";
 
 export const router = createRouter({
   routeTree,
+  defaultErrorComponent: RouteLoadError,
   context: {} as RouterContext,
   /*
    * The router's own search parsing, minus the numbers it cannot render back: see

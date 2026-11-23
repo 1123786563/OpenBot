@@ -160,7 +160,10 @@ body {
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
+  /* Astryx's own buttons paint with this pair; map it to the app primary so a
+     primary button is the same colour wherever it renders, not the pale accent. */
+  --color-accent: var(--primary);
+  --color-on-accent: var(--primary-foreground);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -225,4 +228,19 @@ body {
  */
 [data-slot="item-description"] {
   text-wrap: pretty;
+}
+
+.bot-task-views .astryx-tab {
+  min-block-size: calc(var(--spacing) * 11);
+  padding-inline: calc(var(--spacing) * 3);
+  border-block-end: calc(var(--spacing) / 2) solid transparent;
+}
+
+.bot-task-views .astryx-tab[aria-selected="true"] {
+  border-block-end-color: var(--foreground);
+  font-weight: 600;
+}
+
+.bot-task-views .astryx-tab-indicator {
+  display: none;
 }

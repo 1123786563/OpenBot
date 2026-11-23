@@ -17,6 +17,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   Dialog,
   DialogBody,
@@ -146,7 +147,6 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
       binding.enabled &&
       (fixedBot === undefined || binding.agentId === fixedBot),
   );
-  const listError = reach.error ?? remove.error;
   /*
    * A transport the deployment cannot reach is a row that says why rather than one that opens a
    * dialog whose every button is disabled. A phone with a code already on its way stays reachable,
@@ -184,12 +184,25 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
         </p>
       ) : null}
       <PageSection title="Connected destinations">
-        {listError ? (
+        {remove.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            {listError.message}
+            {remove.error.message}
           </p>
         ) : null}
-        {reach.isPending || !destinations ? null : destinations.length === 0 ? (
+        {reach.error ? (
+          <ReadError
+            message="Couldn’t load connected destinations"
+            retry={() => reach.refetch()}
+            retryBelow
+            retrying={reach.isFetching}
+          />
+        ) : null}
+        {reach.isPending ? (
+          <ReadStatus
+            kind="loading"
+            message="Loading connected destinations…"
+          />
+        ) : !destinations ? null : destinations.length === 0 && !reach.error ? (
           <PageEmpty icon={IconSend} title="No destinations connected" />
         ) : (
           <PageRows>

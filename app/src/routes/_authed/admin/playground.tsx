@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import "@/components/astryx-pilot/capability-surface.css";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -120,8 +121,13 @@ export function validatePlaygroundDraft(draft: Draft): PlaygroundValidation {
 
 function PlaygroundPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
+  const {
+    confirmation: publishConfirmation,
+    requestConfirmation: confirmPublish,
+  } = useActionConfirmation();
   const queryClient = useQueryClient();
-  const { data: components } = useQuery(sandboxedListQueryOptions());
+  const savedList = useQuery(sandboxedListQueryOptions());
+  const components = savedList.data;
   const [draft, setDraft] = useState<Draft>(STARTER);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -135,8 +141,11 @@ function PlaygroundPage() {
   const validation = validatePlaygroundDraft(draft);
   const sample = validation.ok ? validation.input.sampleArguments : null;
 
-  /* Every write here reports into the same banner, so they share one failure handler. */
-  const report = { onError: (thrown: Error) => setError(thrown.message) };
+  /* Every write here reports into the same banner, so they share one failure handler. The
+     draft on screen is untouched by a failed save, so the banner says that, not the raw string. */
+  const report = {
+    onError: () => setError("Couldn't save. Your edits are still on screen."),
+  };
   const saveDraft = useMutation({
     ...saveSandboxedDraftMutationOptions(queryClient),
     ...report,
@@ -174,12 +183,24 @@ function PlaygroundPage() {
     saveDraft.mutate(payload, { onSuccess: () => setNotice("Draft saved.") });
   };
 
+  /* Publishing reaches every Bot at once, so it asks first, like Delete. */
   const publish = () => {
     setError(null);
     setNotice(null);
     const payload = input();
     if (!payload) return;
-    publishDraft.mutate(payload, { onSuccess: () => setNotice("Published.") });
+    confirmPublish({
+      title: `Publish ${draft.title}?`,
+      description:
+        "Publishing makes it available to every Bot. Turn it off for one Bot on the UI components page.",
+      confirmLabel: "Publish",
+      pendingLabel: "Publishing…",
+      failureMessage: "Couldn't publish it. Try again.",
+      successMessage: "Published.",
+      run: async () => {
+        await publishDraft.mutateAsync(payload);
+      },
+    });
   };
 
   const load = (component: SandboxedRecord) =>
@@ -223,7 +244,14 @@ function PlaygroundPage() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {/* The JSON fields explain their own invalid state inline; these two names are
+              the only inputs whose absence disables the buttons without a visible reason. */}
+          {!canWrite && !busy && (!draft.slug || !draft.title) ? (
+            <p className="text-muted-foreground text-xs">
+              Name and title are needed first.
+            </p>
+          ) : null}
           <Button
             disabled={!canWrite}
             onClick={save}
@@ -244,6 +272,8 @@ function PlaygroundPage() {
           </Button>
         </div>
       </header>
+
+      {publishConfirmation}
 
       {error ? (
         <div
@@ -348,7 +378,24 @@ function PlaygroundPage() {
             <div className="border-border border-b px-4 py-2 font-medium text-sm">
               Saved here
             </div>
-            {(components ?? []).length === 0 ? (
+            {/* A failed read is not "nothing saved": your drafts exist, the list just
+                couldn't be loaded. */}
+            {savedList.error ? (
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <p className="text-destructive text-sm" role="alert">
+                  Couldn't load what's saved here.
+                </p>
+                <Button
+                  disabled={savedList.isFetching}
+                  onClick={() => void savedList.refetch()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {savedList.isFetching ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+            ) : (components ?? []).length === 0 ? (
               <p className="px-4 py-3 text-muted-foreground text-sm">
                 Nothing saved yet. Save a draft to see it here.
               </p>

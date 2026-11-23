@@ -288,9 +288,10 @@ test("when the states cannot be read, the apps are still listed and the failure 
   });
   const view = draw();
   expect((await view.findByRole("alert")).textContent).toContain(
-    "Couldn't check whether each app is ready for you. Reload the page.",
+    "Couldn’t check whether each app is ready for you",
   );
   expect(await view.findByText("Google Drive")).toBeTruthy();
+  expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
 });
 
 test("Routines' tools are listed as commands, like every other app's, not as what was done", async () => {

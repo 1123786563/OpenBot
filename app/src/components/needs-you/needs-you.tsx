@@ -65,6 +65,7 @@ export function useNeedsYouTasks(agentId?: string) {
   return {
     pending: taskList.isPending,
     error: taskList.error,
+    refetch: taskList.refetch,
     tasks: listed.filter(({ status }) => status !== "resolved"),
     done: listed.filter(({ status }) => status === "resolved"),
   };

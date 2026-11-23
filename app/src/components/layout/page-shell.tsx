@@ -1,6 +1,6 @@
 import { IconChevronLeft } from "@tabler/icons-react";
 import { Link, type LinkProps } from "@tanstack/react-router";
-import type * as React from "react";
+import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { PageColumn, PageHeader, type ShellWidth } from "./page-parts";
@@ -63,6 +63,15 @@ export function PageShell({
   const showToggle = useSidebarToggleVisible();
   const bar = showToggle || !!backButton;
 
+  /*
+   * The tab and history name the page the person is on. Every configuration screen reaches here
+   * (or ConnectionPage over it) with its own title, so the document title comes along for the
+   * ride rather than every route setting it by hand.
+   */
+  React.useEffect(() => {
+    document.title = `${title} · OpenBot`;
+  }, [title]);
+
   const header = (
     <PageHeader
       eyebrow={eyebrow}
@@ -78,7 +87,12 @@ export function PageShell({
       {!!backButton && (
         <Button
           variant="ghost"
-          render={(props) => <Link {...backButton.linkProps} {...props} />}
+          render={(props) => (
+            // linkProps last, as the Link renders elsewhere on these screens, so a page can
+            // intercept its own Back trail (an edited form asks before leaving) without the
+            // button's undefined handlers clobbering it.
+            <Link {...props} {...backButton.linkProps} />
+          )}
         >
           <IconChevronLeft />
           {backButton.label}

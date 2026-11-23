@@ -100,6 +100,27 @@ test("a memory a Bot formed names the Bot that formed it", async () => {
   expect(await view.findByText(/Formed by Expenses/)).toBeTruthy();
 });
 
+test("a failed memory read can be retried without leaving the page", async () => {
+  serving();
+  const serve = global.fetch;
+  let unavailable = true;
+  global.fetch = Object.assign(
+    async (...args: Parameters<typeof fetch>) =>
+      String(args[0]) === "/api/memory" && unavailable
+        ? Response.json({ error: "Temporary outage" }, { status: 503 })
+        : serve(...args),
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const view = draw(<MemoryList />);
+  expect(await view.findByText("Couldn't load your memories.")).toBeTruthy();
+  expect(view.queryByText("No memories yet")).toBeNull();
+  unavailable = false;
+  fireEvent.click(view.getByRole("button", { name: "Retry" }));
+  expect(await view.findByText("I prefer mornings.")).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
 test("remembering a fact saves it", async () => {
   serving();
   const view = draw(<RememberFact />);

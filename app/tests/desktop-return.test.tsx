@@ -9,6 +9,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   DESKTOP_LINK,
   DesktopReturn,
@@ -80,17 +81,41 @@ test("in the browser, it confirms the account and then brings OpenBot Desktop fo
   await waitFor(() => expect(opened).toEqual([DESKTOP_LINK]));
   expect(asked).toContain("POST /api/plugins/servers/gmail/connection/confirm");
   expect(
-    view.getByRole("link", { name: "Open OpenBot" }).getAttribute("href"),
+    view
+      .getByRole("link", { name: "Open OpenBot Desktop" })
+      .getAttribute("href"),
   ).toBe("openbot://open");
 });
 
-test("a confirm that fails still hands the person back", async () => {
-  const { asked, opened } = show("gmail", () =>
-    Response.json({ error: "no" }, { status: 503 }),
+test("a failed confirmation keeps the browser open and can be retried", async () => {
+  let attempts = 0;
+  const { asked, opened, view } = show("gmail", () =>
+    ++attempts === 1
+      ? Response.json({ error: "no" }, { status: 503 })
+      : Response.json({ connected: true }),
   );
 
+  const retry = await view.findByRole("button", { name: "Retry" });
+  expect(opened).toEqual([]);
+  expect(
+    view
+      .getByRole("link", { name: "View connection in browser" })
+      .getAttribute("href"),
+  ).toBe("/connections/gmail");
+  await userEvent.setup({ document }).click(retry);
+  expect(await view.findByText(/Account connected/)).toBeTruthy();
   await waitFor(() => expect(opened).toEqual([DESKTOP_LINK]));
-  expect(asked).toContain("POST /api/plugins/servers/gmail/connection/confirm");
+  expect(asked).toEqual(
+    Array(2).fill("POST /api/plugins/servers/gmail/connection/confirm"),
+  );
+});
+
+test("an unconfirmed account does not trigger Desktop", async () => {
+  const { opened, view } = show("gmail", () =>
+    Response.json({ connected: false }),
+  );
+  expect(await view.findByRole("button", { name: "Retry" })).toBeTruthy();
+  expect(opened).toEqual([]);
 });
 
 test("in the Desktop window itself, it goes to the account's page", async () => {

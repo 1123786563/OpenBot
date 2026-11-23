@@ -1,11 +1,15 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ProviderLogo } from "@/components/auth/provider-logo";
+import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   providerName,
@@ -84,7 +88,9 @@ export const Route = createFileRoute("/sign")({
     }
     // Loaded here so the screen paints with its buttons rather than painting empty and then
     // growing them, which reads as "no providers" for exactly as long as the request takes.
-    await context.queryClient.ensureQueryData(authProvidersQueryOptions());
+    await context.queryClient
+      .ensureQueryData(authProvidersQueryOptions())
+      .catch(() => undefined);
   },
   component: SignScreen,
 });
@@ -99,7 +105,11 @@ function SignScreen() {
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { data: options } = useQuery(authProvidersQueryOptions());
+  const {
+    data: options,
+    isFetching: checkingOptions,
+    refetch: reloadOptions,
+  } = useQuery({ ...authProvidersQueryOptions(), retryOnMount: false });
   const providers = options?.providers ?? [];
   const [email, setEmail] = useState("");
 
@@ -121,16 +131,19 @@ function SignScreen() {
         resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
-      setError(
+      const message =
         caughtError instanceof Error
           ? caughtError.message
-          : "No company sign-in is set up for that address.",
+          : "Couldn't open company sign-in.";
+      setError(
+        `${message} Check your company email and try again. If the problem continues, contact your OpenBot administrator.`,
       );
       setOpening(null);
     }
   }
 
   async function handleSignIn(provider: AuthProviderId) {
+    if (opening !== null) return;
     setError(null);
     setOpening(provider);
 
@@ -162,8 +175,9 @@ function SignScreen() {
          * that configured three has three, and none of them is the recommended one.
          */
         <Button
-          className="h-10 w-full justify-start gap-3 px-3 tracking-tight"
-          disabled={opening !== null}
+          aria-disabled={opening === provider}
+          className="min-h-11 w-full justify-start gap-3 px-3 tracking-tight"
+          disabled={opening !== null && opening !== provider}
           key={provider}
           onClick={() => handleSignIn(provider)}
           size="lg"
@@ -194,7 +208,14 @@ function SignScreen() {
   };
 
   return (
-    <div className="flex flex-col h-dvh w-full items-center justify-center -mt-12">
+    <Stack
+      {...astryxScope}
+      align="center"
+      as="main"
+      className="sign-in-screen"
+      minHeight="100dvh"
+      width="100%"
+    >
       <motion.div
         animate="shown"
         className="flex-1 flex w-full max-w-82 flex-col items-center justify-center p-4"
@@ -223,7 +244,16 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          {options?.ssoRequired ? (
+          {!options && (
+            <ReadError
+              message="Couldn't load sign-in options."
+              description="Check your connection and try again."
+              retry={reloadOptions}
+              retryBelow
+              retrying={checkingOptions}
+            />
+          )}
+          {options?.ssoRequired && options.sso ? (
             <p className="mb-3 text-center text-sm text-muted-foreground">
               Your organization requires you to sign in with your company
               account.
@@ -231,11 +261,13 @@ function SignScreen() {
           ) : null}
           {providers.length > 0 && !options?.ssoRequired ? (
             providerButtons
-          ) : options?.sso || options?.ssoRequired ? null : (
-            <p className="text-center text-sm text-muted-foreground">
-              Sign-in isn't set up yet. An admin has to set it up first.
-            </p>
-          )}
+          ) : options && !options.sso ? (
+            <Text as="p" justify="center" type="supporting">
+              {options.ssoRequired
+                ? "Company sign-in is required but unavailable. Contact your OpenBot administrator for access."
+                : "Sign-in isn’t set up yet. Contact your OpenBot administrator for access."}
+            </Text>
+          ) : null}
           {/*
            * The way in for a company that runs its own identity provider.
            *
@@ -243,24 +275,32 @@ function SignScreen() {
            * buttons: the registered providers are for the companies whose IdP was added by hand.
            */}
           {options?.sso ? (
-            <form className="mt-3" onSubmit={handleDomainSignIn}>
-              {providers.length > 0 ? (
+            <Stack
+              as="form"
+              gap={2}
+              onSubmit={handleDomainSignIn}
+              style={{ marginBlockStart: "var(--spacing-3)" }}
+            >
+              {providers.length > 0 && !options.ssoRequired ? (
                 <div className="mb-3 flex items-center gap-3">
                   <Separator className="flex-1" />
                   <span className="text-muted-foreground text-xs">or</span>
                   <Separator className="flex-1" />
                 </div>
               ) : null}
-              <Input
+              <TextInput
                 autoComplete="email"
-                onChange={(event) => setEmail(event.target.value)}
+                controlClassName="sign-in-email"
+                description="Use the email address issued by your organization."
+                isRequired
+                label="Company email"
+                onChange={setEmail}
                 placeholder="you@company.com"
-                required
                 type="email"
                 value={email}
               />
               <Button
-                className="mt-2 h-10 w-full tracking-tight"
+                className="min-h-11 w-full tracking-tight"
                 disabled={opening !== null || email.trim().length === 0}
                 size="lg"
                 type="submit"
@@ -270,12 +310,12 @@ function SignScreen() {
                   ? "Opening…"
                   : "Continue with your company account"}
               </Button>
-            </form>
+            </Stack>
           ) : null}
           {/* The administrators' audited break-glass while SSO is required; everybody else is refused. */}
           {options?.ssoRequired && providers.length > 0 ? (
             <details className="mt-4 text-sm">
-              <summary className="cursor-pointer text-center text-muted-foreground">
+              <summary className="sign-in-admin-summary cursor-pointer text-center text-muted-foreground">
                 Admin sign-in
               </summary>
               <div className="mt-3">{providerButtons}</div>
@@ -288,6 +328,6 @@ function SignScreen() {
           ) : null}
         </motion.div>
       </motion.div>
-    </div>
+    </Stack>
   );
 }

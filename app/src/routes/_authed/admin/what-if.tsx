@@ -6,13 +6,14 @@ import {
 import { IconSparkles } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
   GovernanceAction,
   GovernancePage,
 } from "@/components/astryx-pilot/governance";
 import { PageCard, PageSection } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   InputGroup,
   InputGroupAddon,
@@ -40,6 +41,11 @@ export const Route = createFileRoute("/_authed/admin/what-if")({
 
 /** The longest question the server takes. */
 const QUESTION_LIMIT = 500;
+
+function revealHeading(heading: HTMLHeadingElement | null) {
+  heading?.focus({ preventScroll: true });
+  heading?.scrollIntoView({ block: "start" });
+}
 
 /** An action handed over in the address, or none. Only the action's own fields are read. */
 function actionFrom(raw: string | undefined): WhatIfAction | null {
@@ -78,29 +84,57 @@ function WhatIfPage() {
   const [checked, setChecked] = useState<WhatIfChecked | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkProblem, setCheckProblem] = useState<string | null>(null);
+  const questionRevision = useRef(0);
+  const actionRevision = useRef(0);
+  const questionInput = useRef<HTMLInputElement>(null);
+  const actionHeading = useRef<HTMLHeadingElement>(null);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  const checkTrigger = useRef<HTMLButtonElement | null>(null);
+  const exampleId = useId();
   const question = text.trim();
 
+  useLayoutEffect(() => {
+    if (checked && document.activeElement === checkTrigger.current) {
+      revealHeading(resultHeading.current);
+    }
+  }, [checked]);
+
   const setAction = (next: WhatIfAction) => {
+    actionRevision.current += 1;
     setActionState(next);
     // The answer below is for the action as it was checked; a change makes it stale.
     setChecked(null);
     setCheckProblem(null);
   };
 
-  const ask = async () => {
-    if (!question || asking) return;
+  const ask = async (form: HTMLFormElement) => {
+    if (!question || asking || checking) return;
+    const questionVersion = questionRevision.current;
+    const actionVersion = actionRevision.current;
+    const isCurrent = () =>
+      questionVersion === questionRevision.current &&
+      actionVersion === actionRevision.current;
     setAskProblem(null);
     setUnclear(null);
     setAsking(true);
     try {
       const reading = await askWhatIf(question);
+      if (!isCurrent()) return;
       if (reading.understood === "no") setUnclear(reading.unclear);
       else {
         setAsked(question);
         setAction(reading.action);
+        if (form.contains(document.activeElement)) {
+          revealHeading(actionHeading.current);
+        }
       }
     } catch (thrown) {
-      setAskProblem((thrown as Error).message);
+      if (isCurrent())
+        setAskProblem(
+          thrown instanceof Error
+            ? thrown.message
+            : "Couldn't read that question. Try again.",
+        );
     } finally {
       setAsking(false);
     }
@@ -110,14 +144,35 @@ function WhatIfPage() {
     ? missingFrom(action, vocabulary.data)
     : "Loading this OpenBot's Bots and apps.";
 
-  const check = async () => {
-    if (missing || checking) return;
+  /* Anything a Start over would throw away: a typed or asked question, chips set by hand or by a
+     deep link, an answer, or a problem with either. */
+  const started =
+    asked !== null ||
+    checked !== null ||
+    text !== "" ||
+    askProblem !== null ||
+    unclear !== null ||
+    JSON.stringify(action) !== JSON.stringify(EMPTY_WHAT_IF_ACTION);
+
+  const check = async (trigger: HTMLButtonElement) => {
+    if (missing || checking || asking || vocabulary.isError) return;
+    const version = actionRevision.current;
+    setChecked(null);
     setCheckProblem(null);
     setChecking(true);
     try {
-      setChecked(await checkWhatIf(action, asked ?? undefined));
+      const result = await checkWhatIf(action, asked ?? undefined);
+      if (version === actionRevision.current) {
+        checkTrigger.current = trigger;
+        setChecked(result);
+      }
     } catch (thrown) {
-      setCheckProblem((thrown as Error).message);
+      if (version === actionRevision.current)
+        setCheckProblem(
+          thrown instanceof Error
+            ? thrown.message
+            : "Couldn't check that action. Try again.",
+        );
     } finally {
       setChecking(false);
     }
@@ -126,14 +181,14 @@ function WhatIfPage() {
   return (
     <GovernancePage
       description="Ask what OpenBot would do if a Bot took an action. Every control answers in the order OpenBot checks them, and you see which one decides."
-      title="What would happen"
+      title="Test a policy"
     >
       <form
         className="flex flex-col gap-2"
         data-asking={asking ? "true" : undefined}
         onSubmit={(event) => {
           event.preventDefault();
-          void ask();
+          void ask(event.currentTarget);
         }}
       >
         <InputGroup>
@@ -141,20 +196,28 @@ function WhatIfPage() {
             <IconSparkles />
           </InputGroupAddon>
           <InputGroupInput
+            aria-describedby={exampleId}
             aria-label="Ask what would happen"
             maxLength={QUESTION_LIMIT}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              questionRevision.current += 1;
+              setText(event.target.value);
+              setAskProblem(null);
+              setUnclear(null);
+            }}
             onKeyDown={(event) => {
               // A composing IME's Enter picks a word. It doesn't ask.
               if (event.key === "Enter" && isComposing(event))
                 event.preventDefault();
             }}
-            placeholder="Could the Sales Bot send email from Gmail when a routine runs it?"
+            placeholder="Ask about one action a Bot could take"
+            ref={questionInput}
             value={text}
           />
           <InputGroupAddon align="inline-end">
             <InputGroupButton
-              disabled={!question || asking}
+              aria-disabled={asking || undefined}
+              disabled={!question || checking}
               size="sm"
               type="submit"
               variant="default"
@@ -163,6 +226,10 @@ function WhatIfPage() {
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
+        <p className="text-muted-foreground text-sm" id={exampleId}>
+          For example, could the Sales Bot send an email from Gmail during a
+          routine?
+        </p>
         {askProblem ? (
           <p
             className="text-destructive text-sm"
@@ -175,6 +242,7 @@ function WhatIfPage() {
           <p
             className="text-amber-700 text-sm dark:text-amber-500"
             data-what-if-unclear
+            role="status"
           >
             {unclear}
           </p>
@@ -184,26 +252,61 @@ function WhatIfPage() {
       <PageSection
         description={
           asked
-            ? "This is how OpenBot read your question. Change anything it got wrong, then check it."
+            ? asked === question
+              ? "Review how OpenBot read your question, then check the action."
+              : `This action is based on “${asked}”. Ask again to use your edited question.`
             : "Ask a question above, or set the action yourself."
         }
+        headingRef={actionHeading}
         title="The action"
       >
         <PageCard
           className="mt-4"
           footer={
-            <GovernanceAction
-              label={checking ? "Checking…" : "Check"}
-              disabled={Boolean(missing) || checking}
-              onClick={() => void check()}
-              type="button"
-            />
+            <>
+              {/* One step back to nothing: without it, starting a new question means
+                  clearing chips one by one. */}
+              {started ? (
+                <GovernanceAction
+                  label="Start over"
+                  variant="outline"
+                  onClick={() => {
+                    questionRevision.current += 1;
+                    actionRevision.current += 1;
+                    setText("");
+                    setAsked(null);
+                    setUnclear(null);
+                    setAskProblem(null);
+                    setActionState(EMPTY_WHAT_IF_ACTION);
+                    setChecked(null);
+                    setCheckProblem(null);
+                    questionInput.current?.focus();
+                  }}
+                  type="button"
+                />
+              ) : null}
+              <GovernanceAction
+                aria-disabled={checking || undefined}
+                label={
+                  checking ? "Checking…" : checkProblem ? "Try again" : "Check"
+                }
+                disabled={Boolean(missing) || asking || vocabulary.isError}
+                onClick={(event) => void check(event.currentTarget)}
+                type="button"
+              />
+            </>
           }
         >
           {vocabulary.isError ? (
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load this OpenBot's Bots and apps. Reload the page.
-            </p>
+            <ReadError
+              message="Couldn't load this OpenBot's Bots and apps."
+              description="Your question and action are still here."
+              retry={vocabulary.refetch}
+              retrying={vocabulary.isFetching}
+              retryBelow
+            />
+          ) : vocabulary.isPending ? (
+            <ReadStatus kind="loading" message="Loading Bots and apps…" />
           ) : (
             <ActionChips
               action={action}
@@ -211,7 +314,7 @@ function WhatIfPage() {
               vocabulary={vocabulary.data}
             />
           )}
-          {missing && vocabulary.data ? (
+          {missing && vocabulary.isSuccess ? (
             <p
               className="mt-3 text-muted-foreground text-sm"
               data-what-if-missing
@@ -230,6 +333,7 @@ function WhatIfPage() {
       {checked ? (
         <PageSection
           description="Each control, in the order OpenBot checks them."
+          headingRef={resultHeading}
           title="What happens"
         >
           <WhatIfResultView result={checked.result} />

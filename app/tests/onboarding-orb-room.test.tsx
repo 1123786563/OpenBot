@@ -177,6 +177,7 @@ const whole = { top: true, right: true, bottom: true, left: true };
 const windows = [
   { name: "the Windows desktop", width: 1000, height: 800, mac: false },
   { name: "the macOS desktop", width: 1000, height: 800, mac: true },
+  { name: "a narrow phone", width: 320, height: 740, mac: false },
   { name: "a phone", width: 360, height: 740, mac: false },
   { name: "two columns", width: 1280, height: 800, mac: false },
 ];

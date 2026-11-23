@@ -1,7 +1,7 @@
 import type { ListedRecorderConnection } from "@openbot/shared/recorder-api";
 import { IconBrowser } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
@@ -9,6 +9,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   Dialog,
   DialogBody,
@@ -47,21 +48,58 @@ export function ConnectedBrowsers({
   const connections = useQuery(
     recorderConnectionsQueryOptions({ listed: true }),
   );
+  const [asking, setAsking] = useState<{
+    connection: ListedRecorderConnection;
+    which: string;
+  } | null>(null);
+  const [notice, setNotice] = useState("");
+  const opener = useRef<HTMLButtonElement>(null);
+  const receipt = useRef<HTMLParagraphElement>(null);
+  const revoke = useMutation(
+    revokeRecorderConnectionMutationOptions(queryClient),
+  );
+  const browsers = connections.data?.connections ?? [];
   return (
     <PageSection title="Connected browsers">
-      {connections.isPending ? null : connections.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't load your connected browsers. Reload the page.
-        </p>
-      ) : connections.data.connections.length === 0 ? (
+      <p
+        aria-live="polite"
+        className="wrap-anywhere text-sm"
+        ref={receipt}
+        tabIndex={-1}
+      >
+        {notice}
+      </p>
+      {connections.isPending ? (
+        <ReadStatus kind="loading" message="Loading connected browsers…" />
+      ) : connections.isError ? (
+        <ReadError
+          description={
+            browsers.length
+              ? "Showing browsers from the last successful check."
+              : undefined
+          }
+          message="Couldn't check your connected browsers."
+          retry={connections.refetch}
+          retryBelow
+          retrying={connections.isFetching}
+        />
+      ) : null}
+      {connections.isSuccess && browsers.length === 0 ? (
         <PageEmpty>No browsers connected yet.</PageEmpty>
-      ) : (
+      ) : browsers.length > 0 ? (
         <PageRows>
-          {connections.data.connections.map((connection, index) => (
+          {browsers.map((connection, index) => (
             <Fragment key={connection.id}>
               {index > 0 ? <Separator /> : null}
               <ConnectedBrowserRow
                 connection={connection}
+                pending={revoke.isPending && revoke.variables === connection.id}
+                onDisconnect={(button, which) => {
+                  revoke.reset();
+                  opener.current = button;
+                  setNotice("");
+                  setAsking({ connection, which });
+                }}
                 here={
                   thisInstallId !== undefined &&
                   connection.installId === thisInstallId
@@ -70,7 +108,66 @@ export function ConnectedBrowsers({
             </Fragment>
           ))}
         </PageRows>
-      )}
+      ) : null}
+      <Dialog
+        open={asking !== null}
+        onOpenChange={(open, event) => {
+          if (!open && revoke.isPending) event.cancel();
+          else if (!open) setAsking(null);
+        }}
+      >
+        <DialogContent
+          {...astryxScope}
+          finalFocus={() =>
+            opener.current?.isConnected ? opener.current : receipt.current
+          }
+        >
+          <DialogHeader>
+            <DialogTitle className="wrap-anywhere">
+              Disconnect {asking?.connection.label}?
+            </DialogTitle>
+          </DialogHeader>
+          <DialogBody className="mt-4 wrap-anywhere text-sm">
+            <p>
+              OpenBot signs the Recorder in {asking?.which} out. It records
+              nothing for you until you connect it again, and a recording
+              running there stops.
+            </p>
+            {revoke.error ? (
+              <p className="mt-2 text-destructive" role="alert">
+                {revoke.error.message}
+              </p>
+            ) : null}
+          </DialogBody>
+          <DialogFooter className="mt-4">
+            <DeviceAction
+              className="min-h-12"
+              variant="ghost"
+              disabled={revoke.isPending}
+              onClick={() => setAsking(null)}
+            >
+              Cancel
+            </DeviceAction>
+            <DeviceAction
+              className="min-h-12"
+              variant="destructive"
+              disabled={revoke.isPending}
+              onClick={() => {
+                if (!asking) return;
+                revoke.mutate(asking.connection.id, {
+                  onSuccess: () => {
+                    setNotice(`Disconnected ${asking.connection.label}.`);
+                    opener.current = null;
+                    setAsking(null);
+                  },
+                });
+              }}
+            >
+              {revoke.isPending ? "Disconnecting…" : "Disconnect"}
+            </DeviceAction>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageSection>
   );
 }
@@ -83,15 +180,15 @@ export function ConnectedBrowsers({
 function ConnectedBrowserRow({
   connection,
   here,
+  pending,
+  onDisconnect,
 }: {
   connection: ListedRecorderConnection;
   /** The copy of the Recorder in the browser this page is open in. */
   here: boolean;
+  pending: boolean;
+  onDisconnect: (button: HTMLButtonElement, which: string) => void;
 }) {
-  const [asking, setAsking] = useState(false);
-  const revoke = useMutation(
-    revokeRecorderConnectionMutationOptions(queryClient),
-  );
   const name = here ? `${connection.label} · This browser` : connection.label;
   // The browser the dialog is about, by the name the row shows: "this browser" only for the copy in the browser this page
   // is open in, which every row's dialog used to say.
@@ -101,87 +198,44 @@ function ConnectedBrowserRow({
       ? "your OpenBot browser"
       : connection.label;
   return (
-    <>
-      <Item size="sm">
-        <ItemMedia variant="icon">
-          <IconBrowser />
-        </ItemMedia>
-        <ItemContent>
-          <ItemTitle>{name}</ItemTitle>
-          <ItemDescription>
-            {connection.via === "openbot-browser"
-              ? "Your OpenBot browser, connected "
-              : "Connected "}
-            {connectedAt.format(new Date(connection.createdAt))}
-            {connection.via === "desktop"
-              ? " from OpenBot Desktop"
-              : connection.via === "web"
-                ? " from OpenBot"
-                : ""}
-            ,{" "}
-            {/* A recording streams to the gateway, not to OpenBot, so its last use lags: it says so instead. */}
-            {connection.recording
-              ? "recording now"
-              : connection.lastUsedAt
-                ? `last used ${relativeTime(connection.lastUsedAt)}`
-                : "never used"}
-          </ItemDescription>
-        </ItemContent>
-        <ItemActions>
-          <DeviceAction
-            aria-label={`Disconnect ${name}`}
-            size="sm"
-            variant="ghost"
-            disabled={revoke.isPending}
-            onClick={() => {
-              revoke.reset();
-              setAsking(true);
-            }}
-          >
-            {revoke.isPending ? "Disconnecting…" : "Disconnect"}
-          </DeviceAction>
-        </ItemActions>
-      </Item>
-      <Dialog onOpenChange={setAsking} open={asking}>
-        <DialogContent {...astryxScope}>
-          <DialogHeader>
-            <DialogTitle>Disconnect {connection.label}?</DialogTitle>
-          </DialogHeader>
-          <DialogBody className="mt-4 text-sm">
-            <p>
-              OpenBot signs the Recorder in {which} out. It records nothing for
-              you until you connect it again, and a recording running there
-              stops.
-            </p>
-            {revoke.error ? (
-              <p className="mt-2 text-destructive" role="alert">
-                {revoke.error.message}
-              </p>
-            ) : null}
-          </DialogBody>
-          <DialogFooter className="mt-4">
-            <DeviceAction
-              size="sm"
-              variant="ghost"
-              onClick={() => setAsking(false)}
-            >
-              Cancel
-            </DeviceAction>
-            <DeviceAction
-              size="sm"
-              variant="destructive"
-              disabled={revoke.isPending}
-              onClick={() =>
-                revoke.mutate(connection.id, {
-                  onSuccess: () => setAsking(false),
-                })
-              }
-            >
-              {revoke.isPending ? "Disconnecting…" : "Disconnect"}
-            </DeviceAction>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <Item size="sm">
+      <ItemMedia variant="icon">
+        <IconBrowser />
+      </ItemMedia>
+      <ItemContent className="min-w-0">
+        <ItemTitle className="line-clamp-none block wrap-anywhere">
+          {name}
+        </ItemTitle>
+        <ItemDescription className="line-clamp-none text-sm leading-relaxed">
+          {connection.via === "openbot-browser"
+            ? "Your OpenBot browser, connected "
+            : "Connected "}
+          {connectedAt.format(new Date(connection.createdAt))}
+          {connection.via === "desktop"
+            ? " from OpenBot Desktop"
+            : connection.via === "web"
+              ? " from OpenBot"
+              : ""}
+          ,{" "}
+          {/* A recording streams to the gateway, not to OpenBot, so its last use lags: it says so instead. */}
+          {connection.recording
+            ? "recording now"
+            : connection.lastUsedAt
+              ? `last used ${relativeTime(connection.lastUsedAt)}`
+              : "never used"}
+        </ItemDescription>
+      </ItemContent>
+      <ItemActions className="basis-full sm:basis-auto">
+        <DeviceAction
+          aria-label={`Disconnect ${name}`}
+          className="min-h-12"
+          variant="ghost"
+          disabled={pending}
+          onClick={(event) => onDisconnect(event.currentTarget, which)}
+        >
+          {pending ? "Disconnecting…" : "Disconnect"}
+        </DeviceAction>
+      </ItemActions>
+    </Item>
   );
 }

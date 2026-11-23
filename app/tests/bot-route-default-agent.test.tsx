@@ -19,6 +19,7 @@ import {
   within,
 } from "@testing-library/react";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { authKeys } from "@/lib/auth/queries";
 import { Route as BotRoute } from "@/routes/_authed/_app/bot";
 
 let originalRect: typeof HTMLElement.prototype.getBoundingClientRect;
@@ -31,6 +32,7 @@ const originalFetch = global.fetch;
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   global.fetch = originalFetch;
   HTMLElement.prototype.getBoundingClientRect = originalRect;
 });
@@ -326,7 +328,7 @@ test("/bot opens a live Computer sidebar with ownership controls and preserves t
   // Taking control is offered inside the Computer, never beside the header's icon.
   expect(view.queryByRole("button", { name: "Take control" })).toBeNull();
   const chat = view.getByTestId("copilot-chat");
-  fireEvent.change(view.getByRole("textbox", { name: "Chat draft" }), {
+  fireEvent.input(view.getByRole("textbox", { name: "Message" }), {
     target: { value: "Keep this conversation" },
   });
   fireEvent.click(toggle);
@@ -349,11 +351,14 @@ test("/bot opens a live Computer sidebar with ownership controls and preserves t
   // Poll a boolean: Bun serializes the entire Happy DOM tree when a pending
   // element is compared with null, starving the navigation this wait observes.
   await waitFor(() => expect(sidebarElement.isConnected).toBe(false));
+  expect(
+    view.container.querySelector("[inert] [data-slot=detail-pane]"),
+  ).toBeTruthy();
   expect(view.getByTestId("copilot-chat")).toBe(chat);
   expect(chat.dataset.agentId).toBe("general-assistant");
   expect(view.getByDisplayValue("Keep this conversation")).toBeTruthy();
   expect(view.getByRole("button", { name: "Open Computer" })).toBeTruthy();
-  fireEvent.click(view.getByRole("button", { name: "New chat" }));
+  fireEvent.click(view.getByRole("button", { name: "Start fresh" }));
   await waitFor(() =>
     expect(view.getByTestId("copilot-chat").dataset.threadId).not.toBe(
       chat.dataset.threadId,
@@ -362,6 +367,30 @@ test("/bot opens a live Computer sidebar with ownership controls and preserves t
   expect(view.getByTestId("copilot-chat").dataset.agentId).toBe(
     "general-assistant",
   );
+});
+
+test("a quick chat draft stays with its Bot after reload and starting fresh", async () => {
+  const client = queryClientWithAgents([GENERAL_ASSISTANT, PICKED_HARNESS]);
+  client.setQueryData(authKeys.currentUser(), { id: "draft-owner" });
+  const route = "/bot?agent=general-assistant";
+  const first = renderBot(client, route);
+  const box = await first.findByRole("textbox", { name: "Message" });
+  fireEvent.input(box, { target: { value: "Keep my draft" } });
+  first.unmount();
+
+  const other = renderBot(client, "/bot?agent=picked-harness");
+  expect(await other.findByRole("textbox", { name: "Message" })).toHaveProperty(
+    "value",
+    "",
+  );
+  other.unmount();
+
+  const reopened = renderBot(client, route);
+  await reopened.findByDisplayValue("Keep my draft");
+  const oldChat = reopened.getByTestId("copilot-chat");
+  fireEvent.click(reopened.getByRole("button", { name: "Start fresh" }));
+  await waitFor(() => expect(oldChat.isConnected).toBe(false));
+  expect(await reopened.findByDisplayValue("Keep my draft")).toBeTruthy();
 });
 
 test("/bot?watch=true restores the live Computer panel on reload", async () => {

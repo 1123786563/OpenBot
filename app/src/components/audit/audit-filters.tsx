@@ -34,7 +34,6 @@ import {
 } from "@/components/ui/popover";
 import type { AuditFilterLabels } from "@/lib/audit/ask";
 import {
-  type AuditOutcome,
   COMPUTER_ACTION_EVENT_TYPES,
   DID_NOT_HAPPEN_EVENT_TYPES,
   REFUSED_EVENT_TYPES,
@@ -56,20 +55,22 @@ const MATCHES_NOTHING = "none";
 
 /**
  * The trail's own filters and the outcome, which the page asks for by event type: Blocked and Did
- * not happen are the lists the saved views are built from, and Allowed is everything else.
+ * not happen are the lists the saved views are built from, and Other events is everything else.
  */
-export type ChipFilters = AuditFilters & { outcome?: AuditOutcome[] };
+type OutcomeFilter = "allowed" | "refused" | "did-not-happen";
+
+export type ChipFilters = AuditFilters & { outcome?: OutcomeFilter[] };
 
 type ChipKey = keyof ChipFilters;
 
-const OUTCOMES: { value: AuditOutcome; label: string }[] = [
-  { value: "allowed", label: "Allowed" },
+const OUTCOMES: { value: OutcomeFilter; label: string }[] = [
+  { value: "allowed", label: "Other events" },
   { value: "refused", label: "Blocked" },
   { value: "did-not-happen", label: "Did not happen" },
 ];
 
 const OUTCOME_TYPES: Record<
-  Exclude<AuditOutcome, "allowed">,
+  Exclude<OutcomeFilter, "allowed">,
   readonly string[]
 > = {
   refused: REFUSED_EVENT_TYPES,
@@ -110,12 +111,12 @@ export function withFilters(search: string, filters: ChipFilters): string {
   }
   if (outcomes.length > 0) {
     if (!outcomes.includes("allowed")) {
-      const types = outcomes.flatMap(
-        (chosen) => OUTCOME_TYPES[chosen as Exclude<AuditOutcome, "allowed">],
+      const types = outcomes.flatMap((chosen) =>
+        chosen === "allowed" ? [] : OUTCOME_TYPES[chosen],
       );
       params.set("eventType", narrowed(params.get("eventType"), types));
     } else {
-      // Allowed is every row that is neither of the others, so it is asked as what to leave out.
+      // Other events is the complement of the two event-type lists.
       const left = (["refused", "did-not-happen"] as const)
         .filter((other) => !outcomes.includes(other))
         .flatMap((other) => OUTCOME_TYPES[other]);
@@ -452,7 +453,7 @@ function Chip({
   const remove = (
     <Button
       aria-label={`Remove ${text}`}
-      className="-ml-1 rounded-l-none text-muted-foreground hover:text-foreground"
+      className="-ml-1 rounded-l-none text-muted-foreground hover:text-foreground max-sm:ml-0 max-sm:min-h-11 max-sm:min-w-11"
       onClick={() => onChange(without(filters, filterKey))}
       size="icon-sm"
       variant="ghost"
@@ -462,7 +463,7 @@ function Chip({
   );
   const trigger = (
     <Button
-      className="rounded-r-none pr-1 font-normal"
+      className="rounded-r-none pr-1 font-normal max-sm:min-h-11"
       onClick={onOpen}
       size="sm"
       variant="ghost"
@@ -610,7 +611,7 @@ export function AuditFilterChips({
         <DropdownMenuTrigger
           render={
             <Button
-              className="border-dashed"
+              className="border-dashed max-sm:min-h-11"
               onClick={onOpen}
               size="sm"
               variant="outline"
@@ -676,7 +677,7 @@ export function AuditFilterChips({
       </DropdownMenu>
       {present.length > 0 ? (
         <Button
-          className="text-muted-foreground"
+          className="text-muted-foreground max-sm:min-h-11"
           onClick={() => onChange({})}
           size="sm"
           variant="ghost"

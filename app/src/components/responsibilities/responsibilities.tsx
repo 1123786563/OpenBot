@@ -8,7 +8,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { ReadStatus } from "@/components/layout/read-status";
 import {
   Item,
   ItemActions,
@@ -71,22 +71,16 @@ export function BotResponsibilities({
       }
       title={sectionTitle}
     >
-      {/* Pending, error, empty, rows — pending first, so no sentence asserts anything mid-fetch. */}
-      {goals.isPending ? null : goals.error ? (
-        <p role="alert" className="mt-4 text-destructive text-sm">
-          {goals.error.message}
-        </p>
+      {goals.isPending ? (
+        <ReadStatus kind="loading" message="Loading Goals…" />
+      ) : goals.error ? (
+        <ReadStatus
+          kind="error"
+          message="Couldn’t load Goals"
+          retry={goals.refetch}
+        />
       ) : shown.length === 0 ? (
-        <PageEmpty
-          action={
-            <Button onClick={start} size="sm" variant="outline">
-              <IconPlus />
-              New goal
-            </Button>
-          }
-          icon={IconChecklist}
-          title="No goals yet"
-        >
+        <PageEmpty icon={IconChecklist} title="No goals yet">
           {agentId
             ? "Work you give this Bot to keep doing shows up here."
             : "Work you give your Bots to keep doing shows up here."}

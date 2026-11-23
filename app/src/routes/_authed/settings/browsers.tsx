@@ -16,7 +16,7 @@ function BrowsersPage() {
   return (
     <DevicePage
       title="Browsers"
-      description="Connect the OpenBot Recorder in this browser to teach your Bots by doing a task yourself. What you record goes into your own Learning space."
+      description="Connect the OpenBot Recorder in this browser to teach your Bots by doing a task yourself."
     >
       <BrowserSections />
     </DevicePage>

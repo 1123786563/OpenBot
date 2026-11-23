@@ -203,12 +203,16 @@ test("opens on New Bot details and creates locally without another screen", asyn
       .hasAttribute("aria-pressed"),
   ).toBe(false);
   expect(
-    view.getByRole("button", { name: "Create Bot" }).hasAttribute("disabled"),
-  ).toBe(true);
+    view
+      .getByRole("button", { name: "Create Bot" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   await user.type(view.getByLabelText("Name"), "Expense Review");
   expect(
-    view.getByRole("button", { name: "Create Bot" }).hasAttribute("disabled"),
-  ).toBe(false);
+    view
+      .getByRole("button", { name: "Create Bot" })
+      .getAttribute("aria-disabled"),
+  ).not.toBe("true");
 });
 
 test("unavailable hosting still permits the custom path", async () => {
@@ -220,12 +224,16 @@ test("unavailable hosting still permits the custom path", async () => {
     view.queryByRole("button", { name: /^Connect a custom agent/ }),
   ).toBeNull();
   expect(
-    view.getByRole("button", { name: "Continue" }).hasAttribute("disabled"),
-  ).toBe(true);
+    view
+      .getByRole("button", { name: "Continue" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   await user.type(view.getByLabelText("Name"), "External");
   expect(
-    view.getByRole("button", { name: "Continue" }).hasAttribute("disabled"),
-  ).toBe(false);
+    view
+      .getByRole("button", { name: "Continue" })
+      .getAttribute("aria-disabled"),
+  ).not.toBe("true");
   await user.click(view.getByRole("button", { name: "Continue" }));
   const framework = view.getByRole("button", { name: /LangChain/ });
   expect(framework.hasAttribute("aria-pressed")).toBe(false);

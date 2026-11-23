@@ -21,6 +21,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { componentListQueryOptions } from "@/lib/components/queries";
 import { galleryComponent } from "@/lib/copilot/gallery-registry";
 
@@ -70,14 +71,38 @@ function RouteComponent() {
   const { name } = Route.useParams();
   const components = useQuery(componentListQueryOptions());
 
-  if (components.isPending) return null;
+  if (components.isPending) {
+    return (
+      <CapabilityPage backButton={BACK} title="Components gallery">
+        <div
+          aria-busy="true"
+          aria-label="Loading this component"
+          role="status"
+          className="mt-8"
+        >
+          <Skeleton className="aspect-video w-full rounded-lg" />
+        </div>
+      </CapabilityPage>
+    );
+  }
 
   if (components.error) {
     return (
       <CapabilityPage backButton={BACK} title="Components gallery">
-        <p className="mt-8 text-destructive text-sm" role="alert">
-          Couldn't load components. Reload the page.
-        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <p className="text-destructive text-sm" role="alert">
+            Couldn't load this component.
+          </p>
+          <Button
+            disabled={components.isFetching}
+            onClick={() => void components.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {components.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       </CapabilityPage>
     );
   }

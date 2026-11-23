@@ -1,17 +1,13 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconCheck,
   IconCode,
   IconShieldX,
   IconSparkles,
 } from "@tabler/icons-react";
-import {
-  keepPreviousData,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { GovernancePage } from "@/components/astryx-pilot/governance";
 import {
   DescribeRule,
@@ -24,6 +20,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -47,6 +44,7 @@ import {
   RULE_TEMPLATES,
   type RuleTemplate,
 } from "@/lib/boundaries/rules";
+import { ClientError } from "@/lib/client";
 import { isComposing } from "@/lib/composing";
 import { saveActionPolicyMutationOptions } from "@/lib/computers/mutations";
 import {
@@ -69,6 +67,27 @@ const PREVIEW_DELAY_MS = 400;
 
 type Start = RuleTemplate | "describe" | "custom";
 
+type Draft = {
+  name: string;
+  description: string;
+  rule: string;
+  prompt: string;
+  written: WrittenRule | null;
+  filled: { name: string; description: string };
+};
+
+function startDraft(start: Start | null): Draft {
+  const template = start && typeof start !== "string" ? start : null;
+  return {
+    name: template?.name ?? "",
+    description: template?.description ?? "",
+    rule: template?.rule ?? "",
+    prompt: "",
+    written: null,
+    filled: { name: "", description: "" },
+  };
+}
+
 /**
  * Adding a rule: describe it, pick a template or write one, see what it would have stopped, then
  * add it.
@@ -86,20 +105,25 @@ function NewRulePage() {
   const stored = useQuery(actionPolicyQueryOptions());
   const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
   const [chosen, setChosen] = useState<Start | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [rule, setRule] = useState("");
-  const [written, setWritten] = useState<WrittenRule | null>(null);
-  /*
-   * What a written rule last put in Name and What it stops. A field still holding it is ours to
-   * replace when the rule is written again; anything else in it is the admin's, and stays.
-   */
-  const [filled, setFilled] = useState({ name: "", description: "" });
-  const [problem, setProblem] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Partial<Record<string, Draft>>>({});
+  const [problem, setProblem] = useState<Error | null>(null);
+  const [writing, setWriting] = useState(false);
+
+  const key = typeof chosen === "string" ? chosen : chosen?.rule;
+  const draft = (key && drafts[key]) || startDraft(chosen);
+  const { name, description, rule, prompt, written } = draft;
+  const updateDraft = (update: (current: Draft) => Partial<Draft>) => {
+    if (!key) return;
+    setDrafts((previous) => {
+      const current = previous[key] ?? startDraft(chosen);
+      return { ...previous, [key]: { ...current, ...update(current) } };
+    });
+  };
 
   const policy = stored.data;
   const trimmed = rule.trim();
   const duplicate = Boolean(policy?.deny.includes(trimmed));
+  const promptChanged = written !== null && prompt.trim() !== written.text;
   /*
    * The model's rule, unedited, that the compiler refused. Its error is already under the rule, from
    * the writing, so it is neither replayed nor offered to Add rule.
@@ -107,10 +131,6 @@ function NewRulePage() {
   const broken = Boolean(
     written && !written.compile.ok && written.rule.trim() === trimmed,
   );
-  const ready = Boolean(
-    policy && name.trim() && trimmed && !duplicate && !broken,
-  );
-
   /*
    * The rule as it stood a moment ago, debounced as People's search is. A template's rule arrives
    * whole, and is replayed as soon as it rests.
@@ -131,8 +151,11 @@ function NewRulePage() {
    * password fields "would have stopped" the Salesforce writes the rule before it now stops. The
    * labels are left out too: nothing evaluates them, and a renamed rule needs no new answer.
    */
+  const canPreview = Boolean(
+    policy && trimmed && !duplicate && !broken && !promptChanged && !writing,
+  );
   const candidate: ActionPolicy | null =
-    policy && settled && !policy.deny.includes(settled) && !broken
+    policy && canPreview && settled === trimmed
       ? { mode: policy.mode, deny: [settled], allow: ["true"] }
       : null;
   const preview = useQuery({
@@ -140,51 +163,73 @@ function NewRulePage() {
       candidate ?? { mode: "enforce", deny: [], allow: [] },
     ),
     enabled: candidate !== null,
-    // The last answer stays up while the next loads, so the list does not blink between keystrokes.
-    placeholderData: keepPreviousData,
   });
+  const previewStatus =
+    preview.error instanceof ClientError ? preview.error.status : null;
+  const needsPolicyRefresh =
+    problem instanceof ClientError && problem.status === 409;
+  const ready = Boolean(
+    candidate &&
+      name.trim() &&
+      stored.isSuccess &&
+      !preview.isPending &&
+      !preview.isFetching &&
+      (preview.isSuccess || previewStatus === 501) &&
+      !needsPolicyRefresh,
+  );
+
+  const reloadPolicy = async () => {
+    const result = await stored.refetch();
+    if (result.isSuccess) setProblem(null);
+  };
 
   const choose = (next: Start) => {
     setChosen(next);
-    setProblem(null);
-    setWritten(null);
-    setFilled({ name: "", description: "" });
-    if (next === "custom" || next === "describe") {
-      setName("");
-      setDescription("");
-      setRule("");
-    } else {
-      setName(next.name);
-      setDescription(next.description);
-      setRule(next.rule);
-    }
+    if (!needsPolicyRefresh) setProblem(null);
+    /*
+     * The form under the sources is the point of the choice, and on a phone it sits a
+     * full source list below the fold, so the choice itself carries the scroll.
+     */
+    requestAnimationFrame(() =>
+      document
+        .getElementById("the-rule-section")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
   };
 
   /* The model's rule goes into the CEL field, where the preview picks it up as it would any rule. */
   const takeWritten = (next: WrittenRule) => {
-    setWritten(next);
-    setRule(next.rule);
-    const ours = (value: string, last: string) =>
-      !value.trim() || value === last;
-    const nextName = next.text.slice(0, 80);
-    const nextDescription = next.summary?.slice(0, 300) ?? "";
-    const takeName = ours(name, filled.name);
-    const takeDescription =
-      Boolean(nextDescription) && ours(description, filled.description);
-    if (takeName) setName(nextName);
-    if (takeDescription) setDescription(nextDescription);
-    setFilled({
-      name: takeName ? nextName : filled.name,
-      description: takeDescription ? nextDescription : filled.description,
+    updateDraft((current) => {
+      const ours = (value: string, last: string) =>
+        !value.trim() || value === last;
+      const nextName = next.text.slice(0, 80);
+      const nextDescription = next.summary?.slice(0, 300) ?? "";
+      const takeName = ours(current.name, current.filled.name);
+      const takeDescription =
+        Boolean(nextDescription) &&
+        ours(current.description, current.filled.description);
+      return {
+        written: next,
+        rule: next.rule,
+        name: takeName ? nextName : current.name,
+        description: takeDescription ? nextDescription : current.description,
+        filled: {
+          name: takeName ? nextName : current.filled.name,
+          description: takeDescription
+            ? nextDescription
+            : current.filled.description,
+        },
+      };
     });
   };
 
   const add = () => {
-    if (!policy || !ready) return;
+    if (!policy || !ready || savePolicy.isPending) return;
     setProblem(null);
     savePolicy.mutate(
       {
         ...policy,
+        expected: policy,
         deny: [...policy.deny, trimmed],
         labels: {
           ...policy.labels,
@@ -195,7 +240,7 @@ function NewRulePage() {
           : {}),
       },
       {
-        onError: (thrown: Error) => setProblem(thrown.message),
+        onError: setProblem,
         onSuccess: () => void navigate({ to: "/admin/boundaries" }),
       },
     );
@@ -216,6 +261,14 @@ function NewRulePage() {
       description="Define an action that no Bot may take. This boundary applies to every Bot’s next action."
       title="Add rule"
     >
+      {stored.isError || needsPolicyRefresh ? (
+        <ReadError
+          description={stored.error?.message ?? problem?.message}
+          message="Reload the current boundaries before adding your rule."
+          retry={reloadPolicy}
+          retrying={stored.isFetching}
+        />
+      ) : null}
       <PageSection title="Start from">
         <PageRows>
           {options.map((option, index) => {
@@ -225,13 +278,18 @@ function NewRulePage() {
               custom || describe ? null : (option.value as RuleTemplate);
             const selected = chosen === option.value;
             const taken = template
-              ? policy?.deny.includes(template.rule)
+              ? policy?.deny.includes(template.rule) && !drafts[option.key]
               : false;
             return (
-              <div key={option.key}>
+              <Fragment key={option.key}>
                 <Item
                   aria-pressed={selected}
-                  render={<button disabled={taken} type="button" />}
+                  render={
+                    <button
+                      disabled={taken || writing || savePolicy.isPending}
+                      type="button"
+                    />
+                  }
                   onClick={() => choose(option.value)}
                   size="sm"
                 >
@@ -269,27 +327,24 @@ function NewRulePage() {
                   ) : null}
                 </Item>
                 {index !== options.length - 1 && <Separator />}
-              </div>
+              </Fragment>
             );
           })}
         </PageRows>
       </PageSection>
 
       {chosen ? (
-        <PageSection title="The rule">
+        <PageSection id="the-rule-section" title="The rule">
           <form
             className="mt-4"
             noValidate
             onKeyDown={(event) => {
-              // Enter in a field submits the form, but not the Enter that confirms a composed
-              // character: that would add a rule whose name is still half typed.
+              // Nothing submits on Enter any more, but the Enter that confirms a composed
+              // character is still stopped: no half-typed name may ever reach a submit path.
               if (event.key === "Enter" && isComposing(event))
                 event.preventDefault();
             }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              add();
-            }}
+            onSubmit={(event) => event.preventDefault()}
           >
             <PageCard
               footer={
@@ -304,7 +359,8 @@ function NewRulePage() {
                   </Button>
                   <Button
                     disabled={!ready || savePolicy.isPending}
-                    type="submit"
+                    onClick={add}
+                    type="button"
                   >
                     {savePolicy.isPending ? "Adding…" : "Add rule"}
                   </Button>
@@ -313,14 +369,29 @@ function NewRulePage() {
             >
               <FieldGroup>
                 {chosen === "describe" ? (
-                  <DescribeRule onWritten={takeWritten} />
+                  <DescribeRule
+                    disabled={savePolicy.isPending}
+                    onTextChange={(prompt) => updateDraft(() => ({ prompt }))}
+                    onWritten={takeWritten}
+                    onWritingChange={setWriting}
+                    text={prompt}
+                  />
+                ) : null}
+                {promptChanged ? (
+                  <Text as="p" color="secondary" role="status" size="sm">
+                    Your description changed. Choose Write rule to update the
+                    draft before adding it.
+                  </Text>
                 ) : null}
                 <Field>
                   <FieldLabel htmlFor="rule-name">Name</FieldLabel>
                   <Input
                     id="rule-name"
                     maxLength={80}
-                    onChange={(event) => setName(event.target.value)}
+                    onChange={(event) => {
+                      const name = event.target.value;
+                      updateDraft(() => ({ name }));
+                    }}
                     placeholder="Never delete files"
                     value={name}
                   />
@@ -335,7 +406,10 @@ function NewRulePage() {
                   <Input
                     id="rule-description"
                     maxLength={300}
-                    onChange={(event) => setDescription(event.target.value)}
+                    onChange={(event) => {
+                      const description = event.target.value;
+                      updateDraft(() => ({ description }));
+                    }}
                     value={description}
                   />
                 </Field>
@@ -346,12 +420,28 @@ function NewRulePage() {
                     so a typo can't stop every action.
                   </FieldDescription>
                   <Textarea
+                    aria-describedby={
+                      candidate && previewStatus === 400
+                        ? "rule-validation-error"
+                        : undefined
+                    }
+                    aria-invalid={
+                      duplicate ||
+                      broken ||
+                      (candidate && previewStatus === 400)
+                        ? true
+                        : undefined
+                    }
                     autoCapitalize="off"
                     autoCorrect="off"
                     className="min-h-20 font-mono text-xs"
                     id="rule-expression"
-                    onChange={(event) => setRule(event.target.value)}
+                    onChange={(event) => {
+                      const rule = event.target.value;
+                      updateDraft(() => ({ rule }));
+                    }}
                     placeholder='tool.name == "computer_click" && contains(element.name, "delete")'
+                    readOnly={writing || savePolicy.isPending}
                     spellCheck={false}
                     value={rule}
                   />
@@ -365,23 +455,51 @@ function NewRulePage() {
                       {chosen.cost}
                     </p>
                   ) : null}
-                  {written ? (
+                  {written && !promptChanged && !writing ? (
                     <RuleReading rule={rule} written={written} />
+                  ) : null}
+                  {candidate && previewStatus === 400 ? (
+                    <Text
+                      as="p"
+                      className="text-destructive"
+                      id="rule-validation-error"
+                      role="alert"
+                      size="sm"
+                    >
+                      {preview.error?.message}
+                    </Text>
                   ) : null}
                   <RuleReference />
                 </Field>
-                {trimmed && candidate && !duplicate ? (
-                  <RulePreview preview={preview} />
+                {canPreview && !stored.isError ? (
+                  !candidate ||
+                  preview.isPending ||
+                  (preview.isFetching && !preview.error) ? (
+                    <Text as="p" color="secondary" role="status" size="sm">
+                      Checking this rule…
+                    </Text>
+                  ) : previewStatus === 501 ? (
+                    <Text as="p" color="secondary" role="status" size="sm">
+                      Rule checked. This deployment has no readable audit
+                      history to preview.
+                    </Text>
+                  ) : preview.isError && previewStatus !== 400 ? (
+                    <ReadError
+                      description={preview.error.message}
+                      message="Couldn’t check this rule."
+                      retry={() => preview.refetch()}
+                      retrying={preview.isFetching}
+                    />
+                  ) : preview.isSuccess ? (
+                    <RulePreview preview={preview} />
+                  ) : null
                 ) : null}
               </FieldGroup>
 
-              {/*
-               * A save refused for the reason the preview already gives under the rule says nothing
-               * twice: the sentence is on screen, beside the rule it is about.
-               */}
-              {problem && problem !== preview.error?.message ? (
+              {problem && !needsPolicyRefresh ? (
                 <p className="mt-5 text-destructive text-sm" role="alert">
-                  {problem}
+                  {problem.message} Your draft is still here. Try adding the
+                  rule again.
                 </p>
               ) : null}
             </PageCard>

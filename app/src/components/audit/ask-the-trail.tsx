@@ -4,7 +4,7 @@ import {
   IconInfoCircle,
   IconSparkles,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -29,6 +29,7 @@ export function AskTheTrail({
 }: {
   onAnswer: (answer: AuditAnswer & { question: string }) => void;
 }) {
+  const exampleId = useId();
   const [text, setText] = useState("");
   const [asking, setAsking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -40,8 +41,12 @@ export function AskTheTrail({
     setAsking(true);
     try {
       onAnswer({ ...(await askAuditTrail(question)), question });
-    } catch (thrown) {
-      setProblem((thrown as Error).message);
+    } catch (error) {
+      setProblem(
+        error instanceof Error
+          ? error.message
+          : "Couldn't search by question. Try again.",
+      );
     } finally {
       setAsking(false);
     }
@@ -61,15 +66,20 @@ export function AskTheTrail({
           <IconSparkles />
         </InputGroupAddon>
         <InputGroupInput
+          aria-describedby={exampleId}
           aria-label="Ask about the audit trail"
           maxLength={QUESTION_LIMIT}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            setProblem(null);
+          }}
           onKeyDown={(event) => {
             // A composing IME's Enter picks a word. It doesn't ask.
             if (event.key === "Enter" && isComposing(event))
               event.preventDefault();
           }}
-          placeholder="Ask what Bots did, like “Gmail changes by a routine last week”"
+          placeholder="Ask what Bots did"
+          readOnly={asking}
           value={text}
         />
         <InputGroupAddon align="inline-end">
@@ -83,6 +93,9 @@ export function AskTheTrail({
           </InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
+      <p className="text-muted-foreground text-sm" id={exampleId}>
+        Try asking about Gmail changes by a routine last week.
+      </p>
       {problem ? (
         <p
           className="text-destructive text-sm"

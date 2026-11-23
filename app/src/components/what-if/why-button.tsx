@@ -1,7 +1,7 @@
 import { whatIfExplainable } from "@openbot/shared/what-if";
 import { IconHelpCircle } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { governanceOverlay } from "@/components/astryx-pilot/governance";
 import type { AuditEvent } from "@/components/audit/audit-cells";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { explainAuditEvent, type WhatIfExplained } from "@/lib/what-if/check";
-import { OUTCOMES, WhatIfResultView } from "./what-if-result";
+import { WhatIfResultView } from "./what-if-result";
 
 /** Whether "Why did this happen?" can answer for a row: one OpenBot's controls decided. */
 export function explainable(event: AuditEvent): boolean {
@@ -25,9 +25,9 @@ export function explainable(event: AuditEvent): boolean {
 
 const RECORDED_WORDS = {
   allowed: "Allowed",
-  refused: "Refused",
-  asks: "Asked first",
-  hands_off: "Handed to the person",
+  refused: "Blocked",
+  asks: "Approval requested",
+  hands_off: "Handed to a person",
   failed: "Allowed, then didn't finish",
 } as const;
 
@@ -36,25 +36,40 @@ const RECORDED_WORDS = {
  * facts, with no model. The dialog says what the row recorded, then what every control says about it
  * today, and where the two differ because a setting has changed since.
  */
+type Explanation =
+  | { kind: "idle" }
+  | { kind: "loading"; retrying: boolean }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; answer: WhatIfExplained };
+
 export function WhyButton({ event }: { event: AuditEvent }) {
   const [open, setOpen] = useState(false);
-  const [answer, setAnswer] = useState<WhatIfExplained | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [explanation, setExplanation] = useState<Explanation>({ kind: "idle" });
+  const retryButton = useRef<HTMLButtonElement>(null);
+  const doneButton = useRef<HTMLButtonElement>(null);
+  const answer = explanation.kind === "ready" ? explanation.answer : null;
+  const canRetry =
+    explanation.kind === "error" ||
+    (explanation.kind === "loading" && explanation.retrying);
 
-  const show = async () => {
-    setOpen(true);
-    if (answer || loading) return;
-    setProblem(null);
-    setLoading(true);
+  async function load() {
+    if (answer || explanation.kind === "loading") return;
+    setExplanation({ kind: "loading", retrying: explanation.kind === "error" });
     try {
-      setAnswer(await explainAuditEvent(event.id));
-    } catch (thrown) {
-      setProblem((thrown as Error).message);
-    } finally {
-      setLoading(false);
+      const result = await explainAuditEvent(event.id);
+      if (retryButton.current === document.activeElement)
+        doneButton.current?.focus();
+      setExplanation({ kind: "ready", answer: result });
+    } catch (error) {
+      setExplanation({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Couldn't explain this event.",
+      });
     }
-  };
+  }
 
   const differs =
     answer &&
@@ -66,9 +81,12 @@ export function WhyButton({ event }: { event: AuditEvent }) {
   return (
     <>
       <Button
-        className="-ms-2 mt-1 text-muted-foreground"
+        className="-ms-2 mt-1 text-muted-foreground @max-3xl/audit:min-h-11"
         data-why={event.id}
-        onClick={() => void show()}
+        onClick={() => {
+          setOpen(true);
+          if (explanation.kind === "idle") void load();
+        }}
         size="xs"
         variant="ghost"
       >
@@ -83,49 +101,58 @@ export function WhyButton({ event }: { event: AuditEvent }) {
           <DialogHeader>
             <DialogTitle>Why did this happen?</DialogTitle>
             <DialogDescription>
-              Each of OpenBot's controls, asked about this event's own facts
-              with today's settings.
+              See what was recorded and how current policy evaluates the same
+              action.
             </DialogDescription>
           </DialogHeader>
-          <DialogBody className="mt-4 overflow-y-auto">
-            {loading ? null : problem ? (
-              <p className="text-destructive text-sm" role="alert">
-                {problem}
+          <DialogBody>
+            {explanation.kind === "loading" ? (
+              <p className="text-muted-foreground" role="status">
+                Loading explanation…
+              </p>
+            ) : explanation.kind === "error" ? (
+              <p
+                className="text-destructive [overflow-wrap:anywhere]"
+                role="alert"
+              >
+                {explanation.message}
               </p>
             ) : answer ? (
-              <div className="flex flex-col gap-4">
-                <div
-                  className="flex items-start gap-2 text-sm"
-                  data-why-recorded={answer.recorded.outcome}
-                >
-                  <span
-                    className={cn(
-                      "mt-px whitespace-nowrap rounded-full px-2 py-0.5 font-medium text-xs",
-                      answer.recorded.outcome === "failed"
-                        ? "bg-muted text-muted-foreground"
-                        : OUTCOMES[answer.recorded.outcome].tone,
-                    )}
-                  >
+              <>
+                <section data-why-recorded={answer.recorded.outcome}>
+                  <h3 className="mb-2 font-semibold">Recorded decision</h3>
+                  <p className="font-medium">
                     {RECORDED_WORDS[answer.recorded.outcome]}
-                  </span>
-                  <span>
-                    <span className="font-medium">Then: </span>
-                    <span className="text-muted-foreground">
-                      {answer.recorded.summary}
-                    </span>
-                  </span>
-                </div>
-                {differs ? (
-                  <p className="text-amber-700 text-sm dark:text-amber-500">
-                    Today's settings decide this differently. Something has
-                    changed since it happened.
                   </p>
-                ) : null}
-                <WhatIfResultView inDialog result={answer.result} />
-              </div>
+                  <p className="mt-1 text-muted-foreground [overflow-wrap:anywhere]">
+                    {answer.recorded.summary}
+                  </p>
+                </section>
+                <section className="border-border border-t pt-4">
+                  <h3 className="mb-2 font-semibold">With current policy</h3>
+                  {differs ? (
+                    <p className="mb-2 text-muted-foreground">
+                      The current evaluation differs from the recorded decision.
+                    </p>
+                  ) : null}
+                  <WhatIfResultView inDialog result={answer.result} />
+                </section>
+              </>
             ) : null}
           </DialogBody>
-          <DialogFooter className="mt-4">
+          <DialogFooter>
+            {canRetry ? (
+              <Button
+                aria-disabled={explanation.kind === "loading"}
+                className="max-sm:min-h-11"
+                onClick={() => void load()}
+                ref={retryButton}
+                size="sm"
+                variant="outline"
+              >
+                {explanation.kind === "loading" ? "Retrying…" : "Try again"}
+              </Button>
+            ) : null}
             {answer ? (
               <Button
                 render={(props) => (
@@ -135,13 +162,19 @@ export function WhyButton({ event }: { event: AuditEvent }) {
                     to="/admin/what-if"
                   />
                 )}
+                className="max-sm:min-h-11"
                 size="sm"
                 variant="outline"
               >
                 Try a change
               </Button>
             ) : null}
-            <Button onClick={() => setOpen(false)} size="sm">
+            <Button
+              className="max-sm:min-h-11"
+              onClick={() => setOpen(false)}
+              ref={doneButton}
+              size="sm"
+            >
               Done
             </Button>
           </DialogFooter>

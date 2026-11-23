@@ -99,6 +99,7 @@ export function DetailPanel({
         <motion.div
           animate={{ width: open ? detailWidth : 0 }}
           className="shrink-0 overflow-hidden"
+          inert={!open}
           // No entry animation on first paint: URL-opened panels should appear as initial state.
           initial={false}
           transition={{

@@ -717,6 +717,12 @@ export function PluginPage({
       ) : null}
 
       {/*
+       * The confirmation's success notice ("Change saved.") renders here, above the fold: at the
+       * page's foot it sat below every section, and a turn-off that replaced the row it came from
+       * read as a control that vanished saying nothing.
+       */}
+      {turnOffConfirmation}
+      {/*
        * No section heading. This is one decision, and a heading over a single row that repeats the
        * row's own title tells a reader nothing they cannot already see.
        */}
@@ -1359,8 +1365,9 @@ export function PluginPage({
                 size="sm"
                 type="button"
                 variant="ghost"
+                disabled={refresh.isPending}
               >
-                Refresh tools
+                {refresh.isPending ? "Refreshing…" : "Refresh tools"}
               </Button>
               {/*
                * Outline where refresh is ghost: granting is the thing an administrator came to
@@ -1452,7 +1459,7 @@ export function PluginPage({
                             : "text-muted-foreground text-xs"
                         }
                       >
-                        {tool.effect === "write" ? "changes things" : "reads"}
+                        {tool.effect === "write" ? "Changes things" : "Reads"}
                       </span>
                       {personal ? null : (
                         <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -1858,7 +1865,6 @@ export function PluginPage({
           </ConnectionDialogContent>
         </Dialog>
       ) : null}
-      {turnOffConfirmation}
     </ConnectionPage>
   );
 }

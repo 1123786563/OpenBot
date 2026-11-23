@@ -1,8 +1,13 @@
-import { IconUser, IconUsers } from "@tabler/icons-react";
+import { Button } from "@astryxdesign/core/Button";
+import { Heading } from "@astryxdesign/core/Heading";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { useRef, useState } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
-import { Button } from "@/components/ui/button";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import {
   Dialog,
   DialogBody,
@@ -11,16 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   addGroupMemberMutationOptions,
@@ -28,11 +23,6 @@ import {
   removeGroupMemberMutationOptions,
 } from "@/lib/groups";
 
-/**
- * Who is in a group, from its top bar: how many people, and a dialog listing them where the creator
- * can take someone out, anyone else can leave, and anyone in it can add a person who has signed in
- * here. Everyone added sees the whole conversation.
- */
 export function GroupPeopleButton({ channelId }: { channelId: string }) {
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
@@ -43,104 +33,179 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
   const remove = useMutation(
     removeGroupMemberMutationOptions(queryClient, channelId),
   );
+  const { requestConfirmation, confirmation } = useActionConfirmation();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
-  const people = group.data?.people ?? [];
+  const [added, setAdded] = useState("");
+  const opener = useRef<HTMLButtonElement>(null);
+  const dialogTitle = useRef<HTMLHeadingElement>(null);
+  const peopleHeading = useRef<HTMLHeadingElement>(null);
   if (!group.data) return null;
-  const iCreated = people.some(
-    (person) => person.creator && person.userId === me?.id,
-  );
-  const count = `${people.length} ${people.length === 1 ? "person" : "people"}`;
+  const { bots, people } = group.data;
+  const membership = people.find((person) => person.userId === me?.id);
+  const botCount = `${bots.length} ${bots.length === 1 ? "Bot" : "Bots"}`;
+  const peopleCount = `${people.length} ${people.length === 1 ? "person" : "people"}`;
 
   return (
     <>
       <Button
-        className="ml-auto"
+        ref={opener}
+        className="group-participants-button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        label={`${botCount} · ${peopleCount}`}
         onClick={() => setOpen(true)}
         size="sm"
         variant="ghost"
-      >
-        <IconUsers />
-        {count}
-      </Button>
+      />
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent {...astryxScope}>
+        <DialogContent
+          {...astryxScope}
+          className="group-participants-dialog"
+          finalFocus={opener}
+          initialFocus={dialogTitle}
+        >
           <DialogHeader>
-            <DialogTitle>People in this group</DialogTitle>
+            <DialogTitle ref={dialogTitle} tabIndex={-1}>
+              Group participants
+            </DialogTitle>
             <DialogDescription>
-              Everyone here sees the whole conversation. Every Bot in it answers
-              them.
+              Everyone listed under People can read the full conversation.
             </DialogDescription>
           </DialogHeader>
-          <DialogBody className="mt-4 grid gap-4 overflow-y-auto">
-            <div className="overflow-hidden rounded-lg">
-              {people.map((person, index) => {
-                const self = person.userId === me?.id;
-                const removable = self ? !person.creator : iCreated;
-                return (
-                  <Fragment key={person.userId}>
-                    {index > 0 ? <Separator /> : null}
-                    <Item size="sm" variant="muted">
-                      <ItemMedia variant="icon">
-                        <IconUser />
-                      </ItemMedia>
-                      <ItemContent>
-                        <ItemTitle>
-                          {self ? "You" : (person.name ?? person.email)}
-                        </ItemTitle>
-                        <ItemDescription>
-                          {person.creator ? "Started this group" : person.email}
-                        </ItemDescription>
-                      </ItemContent>
-                      {removable ? (
-                        <ItemActions>
-                          <Button
-                            aria-label={
-                              self
-                                ? "Leave this group"
-                                : `Remove ${person.email}`
-                            }
-                            disabled={remove.isPending}
-                            onClick={() => remove.mutate(person.userId)}
-                            size="sm"
-                            variant="outline"
+          <DialogBody>
+            <Stack gap={4}>
+              <Stack gap={2}>
+                <Heading level={3}>{botCount}</Heading>
+                {bots.length ? (
+                  <List edge="flush" listStyle="decimal">
+                    {bots.map((bot) => (
+                      <ListItem key={bot.id} label={<Text>{bot.name}</Text>} />
+                    ))}
+                  </List>
+                ) : (
+                  <Text type="supporting">No Bots are available to reply.</Text>
+                )}
+              </Stack>
+              <Stack gap={2}>
+                <Heading level={3} ref={peopleHeading} tabIndex={-1}>
+                  People
+                </Heading>
+                <List edge="flush" hasDividers>
+                  {people.map((person) => {
+                    const self = person.userId === me?.id;
+                    const name = person.name ?? person.email;
+                    const removable =
+                      !person.creator && (self || membership?.creator);
+                    return (
+                      <ListItem
+                        key={person.userId}
+                        label={<Text>{self ? "You" : name}</Text>}
+                        description={
+                          <Text
+                            as="p"
+                            type="supporting"
+                            style={{ overflowWrap: "anywhere" }}
                           >
-                            {self ? "Leave" : "Remove"}
-                          </Button>
-                        </ItemActions>
-                      ) : null}
-                    </Item>
-                  </Fragment>
-                );
-              })}
-            </div>
-            <form
-              className="flex items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                add.mutate(email.trim(), { onSuccess: () => setEmail("") });
-              }}
-            >
-              <Input
-                aria-label="Their email"
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="Add someone by email"
-                type="email"
-                value={email}
-              />
-              <Button
-                disabled={!email.trim() || add.isPending}
-                size="sm"
-                type="submit"
-              >
-                Add
-              </Button>
-            </form>
-            {add.error || remove.error ? (
-              <p className="text-destructive text-sm" role="alert">
-                {(add.error ?? remove.error)?.message}
-              </p>
-            ) : null}
+                            {person.creator
+                              ? "Started this group"
+                              : person.email}
+                          </Text>
+                        }
+                        endContent={
+                          removable && (
+                            <Button
+                              aria-label={
+                                self
+                                  ? "Leave this group"
+                                  : `Remove ${person.email}`
+                              }
+                              isDisabled={remove.isPending}
+                              label={self ? "Leave" : "Remove"}
+                              onClick={(event) =>
+                                requestConfirmation({
+                                  title: self
+                                    ? "Leave this group?"
+                                    : `Remove ${name}?`,
+                                  description: self
+                                    ? "You’ll lose access to this conversation. A member can add you again."
+                                    : `${name} will lose access to this conversation. A member can add them again.`,
+                                  confirmLabel: self
+                                    ? "Leave group"
+                                    : "Remove person",
+                                  pendingLabel: self ? "Leaving…" : "Removing…",
+                                  failureMessage: self
+                                    ? "Couldn’t leave the group. Try again."
+                                    : "Couldn’t remove this person. Try again.",
+                                  fallbackFocus: () => peopleHeading.current,
+                                  successMessage: `${name} was removed from the group.`,
+                                  trigger: event.currentTarget,
+                                  run: async () => {
+                                    await remove.mutateAsync(person.userId);
+                                    if (self) setOpen(false);
+                                  },
+                                })
+                              }
+                              size="sm"
+                              variant="secondary"
+                            />
+                          )
+                        }
+                      />
+                    );
+                  })}
+                </List>
+              </Stack>
+              {membership ? (
+                <Stack
+                  as="form"
+                  align="start"
+                  gap={2}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const address = email.trim();
+                    if (!address || add.isPending) return;
+                    setAdded("");
+                    add.mutate(address, {
+                      onSuccess: () => {
+                        setEmail("");
+                        setAdded(`Added ${address}.`);
+                      },
+                    });
+                  }}
+                >
+                  <TextInput
+                    label="Add someone by email"
+                    description="They need an OpenBot account and will see the conversation history."
+                    type="email"
+                    value={email}
+                    onChange={setEmail}
+                  />
+                  <Button
+                    isDisabled={!email.trim()}
+                    isLoading={add.isPending}
+                    label="Add to group"
+                    type="submit"
+                    variant="primary"
+                  />
+                  {add.error && (
+                    <Text
+                      as="p"
+                      style={{ color: "var(--color-text-error)" }}
+                      role="alert"
+                    >
+                      {add.error.message}
+                    </Text>
+                  )}
+                  {added && (
+                    <Text as="p" role="status">
+                      {added}
+                    </Text>
+                  )}
+                </Stack>
+              ) : null}
+              {confirmation}
+            </Stack>
           </DialogBody>
         </DialogContent>
       </Dialog>
