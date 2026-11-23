@@ -108,7 +108,9 @@ export function useChatCreditConfirmation() {
           <DialogBody>
             {quote ? (
               <DialogDescription render={<Stack gap={2} />}>
-                <p>{quote.model} · Test Credits</p>
+                <p>
+                  {quote.provider}/{quote.model} · Bifrost route {quote.route}
+                </p>
                 <p>
                   Input {quote.price.inputPerMillion} and output{" "}
                   {quote.price.outputPerMillion} microcredits per million

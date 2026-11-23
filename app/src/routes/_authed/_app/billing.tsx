@@ -559,7 +559,23 @@ function UsageSection() {
             ) : receipt.error ? (
               <p role="alert">{receipt.error.message}</p>
             ) : receipt.data ? (
-              <DialogDescription>{`Charged ${creditsText(receipt.data.chargedMicrocredits ?? "0")} credits. Released ${creditsText(receipt.data.releasedMicrocredits ?? "0")} credits.`}</DialogDescription>
+              <>
+                <DialogDescription>{`Charged ${creditsText(receipt.data.chargedMicrocredits ?? "0")} credits. Released ${creditsText(receipt.data.releasedMicrocredits ?? "0")} credits.`}</DialogDescription>
+                <p>
+                  {receipt.data.provider}/{receipt.data.model} · Bifrost route{" "}
+                  {receipt.data.route}
+                </p>
+                <p>Price Version {receipt.data.priceVersion}</p>
+                <p>
+                  Input {receipt.data.price.inputPerMillion} and output{" "}
+                  {receipt.data.price.outputPerMillion} microcredits per million
+                  tokens.
+                </p>
+                <p>
+                  Original reservation{" "}
+                  {creditsText(receipt.data.reservedMicrocredits)} credits.
+                </p>
+              </>
             ) : null}
           </DialogBody>
         </DialogContent>

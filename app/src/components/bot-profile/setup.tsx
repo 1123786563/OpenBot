@@ -14,6 +14,7 @@ import { Fragment, useState } from "react";
 import type { ZodType } from "zod";
 import { CallbackTokenPanel } from "@/components/agents/callback-token-panel";
 import { astryxScope } from "@/components/astryx-pilot/theme";
+import { TestCreditModelPicker } from "@/components/channels/test-credit-model-picker";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
@@ -107,8 +108,8 @@ const TEXT_SCHEMAS: Record<TextField, ZodType<string>> = {
 /** Who a Bot is and where it runs. Editable by whoever may manage it; read-only for everyone else. */
 export function SetupSections({ agent }: { agent: AgentProfile }) {
   // One person and one shared computer: nobody to see a Bot, and no computer of its own to give it.
-  const personal =
-    useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const { data: deployment } = useQuery(deploymentCapabilitiesQueryOptions());
+  const personal = deployment?.edition === "personal";
   const update = useMutation(updateAgentMutationOptions(queryClient));
   const [editing, setEditing] = useState<TextField | null>(null);
   const save = (patch: Partial<AgentFormValues>) =>
@@ -207,6 +208,11 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
           ) : null}
         </PageRows>
       </PageSection>
+      {deployment?.testCreditConversations ? (
+        <PageSection title="Model">
+          <TestCreditModelPicker botId={agent.id} readOnly={!agent.canManage} />
+        </PageSection>
+      ) : null}
       <ConnectionSection agent={agent} />
       {open ? (
         <EditTextDialog

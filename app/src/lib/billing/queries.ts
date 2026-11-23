@@ -137,10 +137,16 @@ export function billingQuoteQueryOptions() {
 export function billingOperationQueryOptions(operationId: string) {
   return queryOptions({
     queryKey: [...billingKeys.all, "operations", operationId],
-    queryFn: (): Promise<{
-      chargedMicrocredits: string | null;
-      releasedMicrocredits: string | null;
-    }> => read(`/api/billing/operations/${encodeURIComponent(operationId)}`),
+    queryFn: (): Promise<
+      Pick<
+        BillingQuote,
+        "route" | "provider" | "model" | "priceVersion" | "price"
+      > & {
+        reservedMicrocredits: string;
+        chargedMicrocredits: string | null;
+        releasedMicrocredits: string | null;
+      }
+    > => read(`/api/billing/operations/${encodeURIComponent(operationId)}`),
     retry: false,
   });
 }

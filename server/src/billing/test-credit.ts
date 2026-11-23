@@ -822,12 +822,17 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           ? id === saved.id && revision === saved.revision
           : id === active.defaultRoute,
       );
+      const options = active?.options.map(modelOption) ?? [];
       if (route && active?.priceVersion)
-        return { source, quote: quoteFor(route, active.priceVersion) } as const;
+        return {
+          source,
+          options,
+          quote: quoteFor(route, active.priceVersion),
+        } as const;
       const reason = saved
         ? `Saved ${source === "bot" ? "Bot default" : "Conversation override"} is no longer verified for this Harness. Choose another verified model or clear the saved selection.`
         : "No verified administrator default is available for this Harness. Ask an administrator to publish a default.";
-      return { source, reason } as const;
+      return { source, options, reason } as const;
     },
 
     async quote() {

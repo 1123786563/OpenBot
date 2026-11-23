@@ -32,6 +32,7 @@ import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { ProgressRow } from "@/components/channels/progress-row";
+import { TestCreditModelPicker } from "@/components/channels/test-credit-model-picker";
 import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
@@ -92,6 +93,7 @@ import {
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
 import { useConversationModel } from "@/lib/models/run-model";
+import { testCreditModelQuery } from "@/lib/models/test-credit-model";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import { publishedSandboxedQueryOptions } from "@/lib/sandboxed/queries";
 import {
@@ -1399,12 +1401,19 @@ export function ChannelChat({
           credit = {};
         } else {
           const rerun = creditAction?.kind === "rerun";
-          const quote = await queries.fetchQuery(
-            conversationCreditQuoteQueryOptions(
-              channel.threadId,
-              runtimeAgentId,
-            ),
-          );
+          const quote = await queries
+            .fetchQuery(
+              conversationCreditQuoteQueryOptions(
+                channel.threadId,
+                runtimeAgentId,
+              ),
+            )
+            .catch((error: unknown) => {
+              void queries.invalidateQueries(
+                testCreditModelQuery(runtimeAgentId, channel.threadId),
+              );
+              throw error;
+            });
           if (!(await confirmCredit(quote, rerun)))
             throw new Error("Send cancelled.");
           credit = {
@@ -1505,6 +1514,10 @@ export function ChannelChat({
           !["reconciling", "settled", "released"].includes(event.code)
         )
           managedDraft.current = undefined;
+        if (event?.code === "route_unavailable")
+          void queryClient.invalidateQueries(
+            testCreditModelQuery(runtimeAgentId, channel.threadId),
+          );
         fail(stoppedReason(event?.message), true);
       },
       onCustomEvent: ({ event }) => {
@@ -1563,7 +1576,7 @@ export function ChannelChat({
       },
     });
     return () => subscription?.unsubscribe();
-  }, [agent, runtimeAgentId]);
+  }, [agent, channel.threadId, runtimeAgentId]);
 
   /** Stable reference for effects and component callbacks. */
   /*
@@ -1903,18 +1916,23 @@ export function ChannelChat({
             // The `/` menu exposes only skills granted to this Bot.
             commands={skillCommands}
             modelPicker={
-              <ModelPicker
-                catalogue={
-                  botProfile?.runsOnOpenBotModel &&
-                  !deployment?.testCreditConversations
-                    ? models.data
-                    : undefined
-                }
-                disabled={!channel.active}
-                onChange={runModel.choose}
-                saving={runModel.saving}
-                value={runModel.value}
-              />
+              deployment?.testCreditConversations ? (
+                <TestCreditModelPicker
+                  botId={runtimeAgentId}
+                  threadId={channel.threadId}
+                  disabled={!channel.active || turnsInFlight > 0}
+                />
+              ) : (
+                <ModelPicker
+                  catalogue={
+                    botProfile?.runsOnOpenBotModel ? models.data : undefined
+                  }
+                  disabled={!channel.active}
+                  onChange={runModel.choose}
+                  saving={runModel.saving}
+                  value={runModel.value}
+                />
+              )
             }
             disabled={!channel.active || Boolean(first)}
             messages={withVoiceChats(

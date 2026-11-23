@@ -8,6 +8,7 @@ import { EventType } from "@ag-ui/client";
 import { and, asc, eq, isNull, ne, notExists, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+import { canManageAgent } from "../agents/profile-policy";
 import type {
   AgentProfileStore,
   ProfileReadExecutor,
@@ -20,6 +21,7 @@ import {
 import type { IdentifyActor } from "../copilot";
 import type { Database } from "../db/client";
 import {
+  agents,
   channelAgents,
   channelMemberships,
   channels,
@@ -29,6 +31,13 @@ import {
 } from "../db/schema";
 import { operationId } from "../managed-model";
 import type { ManagedModel, ManagedModelResult } from "../managed-model-trial";
+
+import {
+  botTestCreditModel,
+  conversationTestCreditModels,
+  testCreditModelSelection,
+  writeTestCreditModel,
+} from "./test-credit-model-choice";
 
 const id = z.string().min(1).max(256);
 const runBody = z.object({
@@ -290,6 +299,118 @@ export function createDirectChatRoutes(deps: {
     });
   });
 
+  routes.on(
+    ["GET", "PUT"],
+    "/agent/:agentId/test-credit-model",
+    async (context) => {
+      context.header("Cache-Control", "no-store");
+      const actor = await actorFor(context.req.raw);
+      if (!testCredit || !actor?.id) return context.json(absent, 404);
+      const agentId = context.req.param("agentId");
+      const threadId = context.req.query("threadId");
+      if (threadId === "") return context.json(absent, 404);
+      const saving = context.req.method === "PUT";
+      // Only our JSON client can write. An HTML form cannot submit this content type.
+      if (
+        saving &&
+        !/^application\/json(?:;|$)/i.test(
+          context.req.header("Content-Type") ?? "",
+        )
+      )
+        return context.json({ error: "Send a JSON model selection." }, 415);
+      const input = saving
+        ? testCreditModelSelection.safeParse(
+            await context.req.json().catch(() => undefined),
+          )
+        : undefined;
+      if (input && !input.success)
+        return context.json(
+          { error: "Choose a verified model or clear the selection." },
+          400,
+        );
+
+      return database.transaction(async (tx) => {
+        if (
+          threadId &&
+          !(await threadFor(tx, actor, threadId, agentId, saving))
+        )
+          return context.json(absent, 404);
+        if (!threadId) {
+          // Take locks in the same order as Bot profile mutations.
+          if (saving)
+            await tx
+              .select({ id: agents.id })
+              .from(agents)
+              .where(eq(agents.id, agentId))
+              .for("update");
+          const profile = await profiles.getWithin(tx, actor, agentId);
+          if (!profile || profile.deletedAt) return context.json(absent, 404);
+          if (saving && !canManageAgent(actor, profile))
+            return context.json(
+              { error: "You cannot change this Bot's default model." },
+              403,
+            );
+        }
+
+        if (input?.success) {
+          const { selection } = input.data;
+          if (selection) {
+            const candidate = await testCredit.modelChoices(
+              { conversation: selection },
+              tx,
+            );
+            if ("reason" in candidate)
+              return context.json(
+                {
+                  error:
+                    "That model is no longer verified for this Harness. Choose another model.",
+                },
+                409,
+              );
+          }
+          if (threadId) {
+            const mapping = intelligenceChannelMappings;
+            await tx
+              .update(mapping)
+              .set({
+                modelSelection: writeTestCreditModel(
+                  mapping.modelSelection,
+                  selection,
+                ),
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(mapping.threadId, threadId),
+                  eq(mapping.userId, actor.id),
+                ),
+              );
+          } else {
+            await tx
+              .update(agents)
+              .set({
+                configuration: writeTestCreditModel(
+                  agents.configuration,
+                  selection,
+                ),
+                updatedAt: new Date(),
+              })
+              .where(eq(agents.id, agentId));
+          }
+        }
+
+        const preferences = threadId
+          ? await conversationTestCreditModels(tx, actor.id, agentId, threadId)
+          : { conversation: null, bot: await botTestCreditModel(tx, agentId) };
+        const choices = await testCredit.modelChoices(preferences, tx);
+        return context.json({
+          saved: threadId ? preferences.conversation : preferences.bot,
+          ...choices,
+        });
+      });
+    },
+  );
+
   routes.get("/agent/:agentId/test-credit-quote", async (context) => {
     context.header("Cache-Control", "no-store");
     if (!testCredit)
@@ -307,10 +428,20 @@ export function createDirectChatRoutes(deps: {
       ))
     )
       return context.json(absent, 404);
-    const quote = await testCredit.quote(actor.id).catch(() => undefined);
-    return quote
-      ? context.json(quote)
-      : context.json({ error: "Test Credit quote unavailable." }, 503);
+    const preferences = await conversationTestCreditModels(
+      database,
+      actor.id,
+      context.req.param("agentId"),
+      threadId,
+    );
+    const resolved = await testCredit
+      .quote(actor.id, preferences)
+      .catch(() => undefined);
+    if (!resolved)
+      return context.json({ error: "Test Credit quote unavailable." }, 503);
+    if ("reason" in resolved)
+      return context.json({ error: resolved.reason }, 409);
+    return context.json(resolved.quote);
   });
 
   routes.post("/agent/:agentId/run", async (context) => {
@@ -558,7 +689,7 @@ export function createDirectChatRoutes(deps: {
               ? [{ role, content }]
               : [],
           );
-          let result: ManagedModelResult;
+          let result: ManagedModelResult & { reason?: string };
           if (testCredit) {
             if (!confirmation.success || !run.testCreditOperationId)
               throw new Error("Test Credit confirmation unavailable.");
@@ -568,6 +699,12 @@ export function createDirectChatRoutes(deps: {
                 personId: actor.id,
                 confirmation: confirmation.data,
                 rerunOfOperationId: claim.rerunOfOperationId,
+                preferences: await conversationTestCreditModels(
+                  database,
+                  actor.id,
+                  agentId,
+                  threadId,
+                ),
                 messages,
               })
               .catch(() => ({ state: "unavailable" as const }));
@@ -607,7 +744,7 @@ export function createDirectChatRoutes(deps: {
             emit({
               type: EventType.RUN_ERROR,
               code: result.state,
-              message: managedRunError[result.state],
+              message: result.reason ?? managedRunError[result.state],
             });
           }
           return;

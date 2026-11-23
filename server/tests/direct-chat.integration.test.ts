@@ -620,29 +620,51 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
   const aliceIdentity = { issuer, subject: crypto.randomUUID() };
   const bobIdentity = { issuer, subject: crypto.randomUUID() };
   const harness = `agent-langgraph-agui@sha256:${"a".repeat(64)}`;
+  const alternate = "conversation-alternate";
+  const primaryConfig = {
+    provider: "fixture",
+    model: "text",
+    gatewayRevision: "fixture-gateway",
+    meteringRevision: "fixture-meter",
+    maxInputTokens: 3,
+    maxOutputTokens: 3,
+    price: { inputPerMillion: 250_000, outputPerMillion: 250_000 },
+    tools: false,
+  };
+  const alternateConfig = {
+    ...primaryConfig,
+    provider: "fixture-b",
+    model: "alternate",
+  };
   const draft = configure(emptyCatalog, {
     harnessImage: harness,
-    routes: {
-      [route]: {
-        provider: "fixture",
-        model: "text",
-        gatewayRevision: "fixture-gateway",
-        meteringRevision: "fixture-meter",
-        maxInputTokens: 3,
-        maxOutputTokens: 3,
-        price: { inputPerMillion: 250_000, outputPerMillion: 250_000 },
-        tools: false,
-      },
-    },
+    routes: { [route]: primaryConfig, [alternate]: alternateConfig },
   });
   const proposed = draft.routes[route];
-  if (!proposed) throw new Error("Fixture route missing.");
-  const { catalog } = publish(
+  const proposedAlternate = draft.routes[alternate];
+  if (!proposed || !proposedAlternate)
+    throw new Error("Fixture route missing.");
+  const verified = verify(
     verify(draft, route, fixtureTraceReport(harness, proposed), "fixture"),
-    [route],
-    route,
+    alternate,
+    fixtureTraceReport(harness, proposedAlternate),
     "fixture",
   );
+  const { catalog } = publish(verified, [route, alternate], route, "fixture");
+  const selectedPrimary = { id: route, revision: proposed.revision };
+  const selectedAlternate = {
+    id: alternate,
+    revision: proposedAlternate.revision,
+  };
+  let onMeter: (() => Promise<void>) | undefined;
+  let onDispatch: (() => Promise<void>) | undefined;
+  const sentModels: string[] = [];
+  const saveCatalog = async (value: typeof catalog) => {
+    await database
+      .update(enterpriseSettings)
+      .set({ value })
+      .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  };
   const operationIds: string[] = [];
   const meteredRequests = new Map<
     string,
@@ -668,6 +690,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
         body,
         operationId: request.headers.get("x-openbot-operation-id"),
       });
+      await onMeter?.();
       return Response.json({
         gatewayRevision: "fixture-gateway",
         meteringRevision: "fixture-meter",
@@ -697,13 +720,15 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       expect(request.headers.get("x-bf-lh-openbot-request-sha256")).toBe(
         Bun.CryptoHasher.hash("sha256", body, "hex"),
       );
-      expect(JSON.parse(body)).toMatchObject({
-        model: "fixture/text",
+      const payload = JSON.parse(body);
+      sentModels.push(payload.model);
+      expect(payload).toMatchObject({
         max_completion_tokens: 3,
         stream: false,
       });
       expect(JSON.parse(body)).not.toHaveProperty("max_tokens");
       operationIds.push(operationId);
+      await onDispatch?.();
       if (gatewayOutcome === "unknown")
         return new Response(null, { status: 502 });
       if (gatewayOutcome === "partial")
@@ -769,7 +794,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
           name: "Billing fixture",
           title: "Bot",
           roleDescription: "Answers questions.",
-          visibility: "private",
+          visibility: actor.id === bob.id ? "public" : "private",
         });
         bots.push(bot.id);
         const app = web(
@@ -799,6 +824,26 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
         return {
           app,
           headers,
+          models: (session = headers) =>
+            app.request(
+              `${path}/test-credit-model?threadId=${channel.threadId}`,
+              { headers: session },
+            ),
+          saveModel: (
+            scope: "bot" | "conversation",
+            selection: object | null,
+            session = headers,
+          ) =>
+            app.request(
+              `${path}/test-credit-model${scope === "conversation" ? `?threadId=${channel.threadId}` : ""}`,
+              {
+                ...authenticatedPost({ selection }),
+                method: "PUT",
+                headers: { ...post({}).headers, ...session },
+              },
+            ),
+          receipt: (id: string) =>
+            app.request(`/api/billing/operations/${id}`, { headers }),
           quote: (session = headers) =>
             app.request(
               `${path}/test-credit-quote?threadId=${channel.threadId}`,
@@ -885,6 +930,17 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       ).status,
     ).toBe(403);
     expect((await first.quote(other.headers)).status).toBe(404);
+    const models = await first.models();
+    expect(models.status).toBe(200);
+    expect(await models.json()).toMatchObject({
+      saved: null,
+      source: "harness",
+      quote: { route, model: "text" },
+      options: expect.arrayContaining([
+        { ...selectedPrimary, provider: "fixture", model: "text" },
+        { ...selectedAlternate, provider: "fixture-b", model: "alternate" },
+      ]),
+    });
     const quoteResponse = await first.quote();
     expect(quoteResponse.status).toBe(200);
     const quote = await quoteResponse.json();
@@ -1027,7 +1083,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     await ledger.enroll({
       identity: bobIdentity,
       batchId: freshBatch,
-      amount: 8n,
+      amount: 20n,
     });
     await ledger.claim(bobIdentity, freshBatch);
     gatewayOutcome = "answer";
@@ -1037,7 +1093,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     );
     expect(operationIds).toHaveLength(2);
     expect(await ledger.balance(bobIdentity)).toMatchObject({
-      availableMicrocredits: "8",
+      availableMicrocredits: "20",
       reservedMicrocredits: "0",
     });
     await database.execute(
@@ -1200,6 +1256,169 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       expect(await ledger.balance(bobIdentity)).toEqual(before);
     }
     expect(operationIds).toHaveLength(7);
+    expect(sentModels).toEqual(Array.from({ length: 7 }, () => "fixture/text"));
+    const beforeModelSelection = sentModels.length;
+    gatewayOutcome = "answer";
+    expect((await first.models(other.headers)).status).toBe(404);
+    expect(
+      (await other.saveModel("conversation", selectedAlternate, first.headers))
+        .status,
+    ).toBe(404);
+    expect(
+      (await other.saveModel("bot", selectedAlternate, first.headers)).status,
+    ).toBe(403);
+    expect(
+      (
+        await other.saveModel("bot", {
+          ...selectedAlternate,
+          revision: crypto.randomUUID(),
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      await (await other.saveModel("bot", selectedAlternate)).json(),
+    ).toMatchObject({
+      saved: selectedAlternate,
+      source: "bot",
+      quote: { route: alternate },
+    });
+    expect(await (await other.models()).json()).toMatchObject({
+      saved: null,
+      source: "bot",
+      quote: { route: alternate },
+    });
+    const botQuote = await (await other.quote()).json();
+    expect(botQuote).toMatchObject({ route: alternate });
+    const send = async (
+      id: string,
+      quote: { route: string; priceVersion: string },
+    ) =>
+      (
+        await other.run(id, {
+          route: quote.route,
+          priceVersion: quote.priceVersion,
+        })
+      ).text();
+    expect(await send("bot-default", botQuote)).toContain("Fixture answer.");
+    expect(sentModels.at(-1)).toBe("fixture-b/alternate");
+
+    expect(
+      await (await other.saveModel("conversation", selectedPrimary)).json(),
+    ).toMatchObject({
+      saved: selectedPrimary,
+      source: "conversation",
+      quote: { route },
+    });
+    expect(await send("old-bot-quote", botQuote)).toContain("price changed");
+    expect(sentModels).toHaveLength(beforeModelSelection + 1);
+    const overrideQuote = await (await other.quote()).json();
+    expect(overrideQuote).toMatchObject({ route });
+    const nextPrice = {
+      inputPerMillion: 1_000_000,
+      outputPerMillion: 1_000_000,
+    };
+    const repriced = publish(
+      configure(verified, {
+        harnessImage: harness,
+        routes: {
+          [route]: { ...primaryConfig, price: nextPrice },
+          [alternate]: alternateConfig,
+        },
+      }),
+      [route, alternate],
+      route,
+      "fixture",
+    );
+    onDispatch = () => saveCatalog(repriced.catalog);
+    expect(await send("conversation-override", overrideQuote)).toContain(
+      "Fixture answer.",
+    );
+    onDispatch = undefined;
+    expect(sentModels.at(-1)).toBe("fixture/text");
+    const original = operationIds.at(-1);
+    if (!original) throw new Error("Missing original operation.");
+    const newQuote = await (await other.quote()).json();
+    expect(newQuote).toMatchObject({
+      route,
+      priceVersion: repriced.release.id,
+      price: nextPrice,
+      maxChargeMicrocredits: "6",
+    });
+    const countBeforeReplay = sentModels.length;
+    expect(
+      await (
+        await other.run("conversation-override", undefined, "after-reprice")
+      ).text(),
+    ).toContain("Fixture answer.");
+    expect(sentModels).toHaveLength(countBeforeReplay);
+    expect(await send("new-price", newQuote)).toContain("Fixture answer.");
+    const newOperation = operationIds.at(-1);
+    if (!newOperation) throw new Error("Missing repriced operation.");
+    expect(await (await other.receipt(newOperation)).json()).toMatchObject({
+      priceVersion: repriced.release.id,
+      price: nextPrice,
+      reservedMicrocredits: "6",
+      chargedMicrocredits: "2",
+    });
+    expect(await (await other.receipt(original)).json()).toMatchObject({
+      priceVersion: overrideQuote.priceVersion,
+      price: primaryConfig.price,
+      reservedMicrocredits: "2",
+      chargedMicrocredits: "1",
+    });
+
+    const revoked = configure(repriced.catalog, {
+      harnessImage: harness,
+      routes: { [alternate]: alternateConfig },
+    });
+    const beforeRevocation = await ledger.balance(bobIdentity);
+    expect(beforeRevocation).toBeDefined();
+    let unsent: string | undefined;
+    onMeter = async () => {
+      unsent = [...meteredRequests.values()].at(-1)?.operationId ?? undefined;
+      await saveCatalog(revoked);
+    };
+    expect(await send("revoked-before-send", newQuote)).toContain(
+      "route_unavailable",
+    );
+    onMeter = undefined;
+    if (!unsent) throw new Error("Missing unsent operation.");
+    expect(await (await other.receipt(unsent)).json()).toMatchObject({
+      state: "released",
+      dispatchedAt: null,
+      heldMicrocredits: "0",
+      releasedMicrocredits: "6",
+    });
+    expect(await ledger.balance(bobIdentity)).toEqual(beforeRevocation);
+    expect(await (await other.models()).json()).toMatchObject({
+      saved: selectedPrimary,
+      source: "conversation",
+      reason: expect.stringContaining("Saved Conversation override"),
+    });
+    expect(await (await other.quote()).json()).toMatchObject({
+      error: expect.stringContaining("Choose another verified model"),
+    });
+    expect(await send("stale-override", newQuote)).toContain(
+      "Saved Conversation override",
+    );
+    expect(sentModels).toHaveLength(beforeModelSelection + 3);
+    expect(
+      await (await other.saveModel("conversation", null)).json(),
+    ).toMatchObject({
+      saved: null,
+      source: "bot",
+      quote: { route: alternate },
+    });
+    const reselected = await (await other.quote()).json();
+    expect(await send("after-reselection", reselected)).toContain(
+      "Fixture answer.",
+    );
+    expect(sentModels.slice(beforeModelSelection)).toEqual([
+      "fixture-b/alternate",
+      "fixture/text",
+      "fixture/text",
+      "fixture-b/alternate",
+    ]);
 
     await database
       .delete(testCreditEnrollments)

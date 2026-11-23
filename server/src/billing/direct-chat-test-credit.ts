@@ -42,7 +42,10 @@ export function createCasdoorBillingIdentity(
 }
 
 type Receipt = Awaited<ReturnType<TestCreditLedger["receipt"]>>;
-type ChatCreditResult = ManagedModelResult & { operation?: Receipt };
+type ChatCreditResult = ManagedModelResult & {
+  operation?: Receipt;
+  reason?: string;
+};
 
 function recovered(receipt: Receipt): ChatCreditResult {
   if (receipt?.state === "settled" && receipt.resultText)
@@ -66,9 +69,14 @@ export function createDirectChatTestCredit(
 ) {
   const identityOf = createCasdoorBillingIdentity(database, casdoor);
   return {
-    async quote(personId: string) {
+    modelChoices: ledger.resolveQuote,
+    async quote(
+      personId: string,
+      preferences: Parameters<TestCreditLedger["resolveQuote"]>[0],
+    ) {
       const identity = await identityOf(personId);
-      if (identity && (await ledger.accountOf(identity))) return ledger.quote();
+      if (identity && (await ledger.accountOf(identity)))
+        return ledger.resolveQuote(preferences);
     },
     async receipt(id: string, personId: string) {
       const identity = await identityOf(personId);
@@ -84,17 +92,24 @@ export function createDirectChatTestCredit(
       id: string;
       personId: string;
       confirmation: z.infer<typeof testCreditConfirmation>;
+      preferences: Parameters<TestCreditLedger["resolveQuote"]>[0];
       messages: Parameters<TestCreditExecutor>[0]["messages"];
       rerunOfOperationId?: string;
     }): Promise<ChatCreditResult> {
       const identity = await identityOf(input.personId);
       if (!identity) return { state: "not_authorized" };
-      const quote = await ledger.quote();
+      const resolved = await ledger.resolveQuote(input.preferences);
+      if ("reason" in resolved)
+        return { state: "route_unavailable", reason: resolved.reason };
       if (
-        quote?.route !== input.confirmation.route ||
-        quote.priceVersion !== input.confirmation.priceVersion
+        resolved.quote.route !== input.confirmation.route ||
+        resolved.quote.priceVersion !== input.confirmation.priceVersion
       )
-        return { state: "route_unavailable" };
+        return {
+          state: "route_unavailable",
+          reason:
+            "The model route or price changed. Review the current quote and confirm again.",
+        };
 
       const held = await ledger.reserve(identity, {
         operationId: input.id,

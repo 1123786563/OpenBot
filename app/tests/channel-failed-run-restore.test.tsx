@@ -6,6 +6,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { type InfiniteData, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { SetupSections } from "@/components/bot-profile/setup";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import {
   type AgentChannel,
@@ -62,10 +63,54 @@ const creditQuote = {
   priceVersion: "fixture-price-version",
   creditType: "test",
   model: "fixture-model",
+  provider: "fixture-a",
   price: { inputPerMillion: 250_000, outputPerMillion: 250_000 },
   maxChargeMicrocredits: "2",
   usageDisclosure: "Interrupted or failed requests can still use Test Credits.",
 };
+const primary = {
+  id: creditQuote.route,
+  revision: "rev-a",
+  model: creditQuote.model,
+  provider: creditQuote.provider,
+};
+const alternate = {
+  id: "alternate",
+  revision: "rev-b",
+  model: "other-model",
+  provider: "fixture-b",
+};
+type Selection = { id: string; revision: string } | null;
+let botModel: Selection = null;
+let conversationModel: Selection = null;
+let revoked = false;
+const staleReason =
+  "Saved Conversation override is no longer verified for this Harness. Choose another verified model or clear the saved selection.";
+function modelState(conversation: boolean) {
+  const saved = conversation ? conversationModel : botModel;
+  const effective = saved ?? botModel;
+  const source =
+    conversation && saved ? "conversation" : botModel ? "bot" : "harness";
+  const options = revoked ? [alternate] : [primary, alternate];
+  const route = effective
+    ? options.find(({ id }) => id === effective.id)
+    : primary;
+  return {
+    saved,
+    options,
+    source,
+    ...(route
+      ? {
+          quote: {
+            ...creditQuote,
+            route: route.id,
+            model: route.model,
+            provider: route.provider,
+          },
+        }
+      : { reason: staleReason }),
+  };
+}
 let managedChat = false;
 let requestedRuns: RunAgentInput[] = [];
 
@@ -244,8 +289,23 @@ beforeAll(() => {
         input instanceof Request ? input : new Request(url, init);
       if (url.pathname === "/api/capabilities")
         return NativeResponse.json({ testCreditConversations: managedChat });
-      if (url.pathname.endsWith("/test-credit-quote"))
-        return NativeResponse.json(creditQuote);
+      if (url.pathname.endsWith("/test-credit-model")) {
+        const conversation = url.searchParams.has("threadId");
+        if (request().method === "PUT") {
+          const { selection } = (await request().json()) as {
+            selection: Selection;
+          };
+          if (conversation) conversationModel = selection;
+          else botModel = selection;
+        }
+        return NativeResponse.json(modelState(conversation));
+      }
+      if (url.pathname.endsWith("/test-credit-quote")) {
+        const state = modelState(true);
+        return "quote" in state
+          ? NativeResponse.json(state.quote)
+          : NativeResponse.json({ error: state.reason }, { status: 409 });
+      }
       if (url.pathname === "/api/agents")
         return NativeResponse.json({ agents: [] });
       if (url.pathname === "/api/plugins/for/failed-run-bot")
@@ -335,6 +395,9 @@ afterEach(() => {
   queryClient.clear();
   plans = [];
   managedChat = false;
+  botModel = null;
+  conversationModel = null;
+  revoked = false;
   requestedRuns = [];
   recorded = new Map();
   stored = new Map();
@@ -401,9 +464,9 @@ function open(selected = channel) {
 async function send(view: ReturnType<typeof open>, text: string) {
   const user = userEvent.setup({ document: view.container.ownerDocument });
   const box = await view.findByRole("textbox", { name: "Message" });
-  await user.clear(box);
+  if (box.textContent) await user.clear(box);
   await user.type(box, text);
-  await user.click(view.getByRole("button", { name: "Send message" }));
+  await user.click(await view.findByRole("button", { name: "Send message" }));
   return user;
 }
 /** Settled: the history is in and the composer is open again. */
@@ -514,8 +577,15 @@ test("a managed turn confirms its quote before sending and retries an uncertain 
     { kind: "answers", text: "Recovered answer" },
   ];
   const view = open();
+  expect(
+    (await view.findByRole("combobox", { name: "Conversation model" }))
+      .textContent,
+  ).toContain("Administrator default · fixture-a/fixture-model");
   const user = await send(view, "Bill this turn");
   const confirm = await view.findByRole("button", { name: "Confirm and send" });
+  expect(
+    view.getByText("fixture-a/fixture-model · Bifrost route fixture"),
+  ).toBeTruthy();
   expect(view.getByText("Maximum reservation 2 microcredits.")).toBeTruthy();
   expect(
     view.getByText(
@@ -587,4 +657,102 @@ test("an explicit managed rerun confirms a fresh reservation linked to the origi
       priceVersion: creditQuote.priceVersion,
     },
   });
+});
+
+test("Bot Setup and the Conversation picker show the effective route and let a person replace a stale override", async () => {
+  managedChat = true;
+  const setup = render(
+    <QueryClientProvider client={queryClient}>
+      <SetupSections
+        agent={{
+          id: "failed-run-bot",
+          name: "Fixture",
+          title: "Bot",
+          roleDescription: "Answers questions.",
+          avatarSeed: "fixture",
+          visibility: "private",
+          endpoint: null,
+          builtIn: true,
+          hasAuth: false,
+          hasCallbackToken: false,
+          hidden: false,
+          pinned: false,
+          systemOwned: false,
+          canManage: true,
+          mine: true,
+          isolated: false,
+          isolationActive: false,
+          isolationOffReason: null,
+        }}
+      />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup({ document: setup.container.ownerDocument });
+  await user.click(
+    await setup.findByRole("combobox", { name: "Bot default model" }),
+  );
+  await setup.findByRole("option", { name: "fixture-b/other-model" });
+  await user.keyboard("{End}{Enter}");
+  await waitFor(() =>
+    expect(botModel).toEqual({
+      id: alternate.id,
+      revision: alternate.revision,
+    }),
+  );
+  setup.unmount();
+
+  plans = [
+    { kind: "answers", text: "Bot default answer" },
+    { kind: "answers", text: "Conversation override answer" },
+  ];
+  const view = open();
+  expect(
+    (await view.findByRole("combobox", { name: "Conversation model" }))
+      .textContent,
+  ).toContain("Bot default · fixture-b/other-model");
+  await send(view, "Use the Bot default");
+  expect(
+    await view.findByText("fixture-b/other-model · Bifrost route alternate"),
+  ).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Confirm and send" }));
+  await settled(view, "Bot default answer");
+
+  await user.click(view.getByRole("combobox", { name: "Conversation model" }));
+  await view.findByRole("option", { name: "fixture-a/fixture-model" });
+  await user.keyboard("{Home}{ArrowDown}{Enter}");
+  await waitFor(() =>
+    expect(conversationModel).toEqual({
+      id: primary.id,
+      revision: primary.revision,
+    }),
+  );
+  await view.findByRole("button", { name: "Send message" });
+  await send(view, "Use the Conversation override");
+  expect(
+    await view.findByText("fixture-a/fixture-model · Bifrost route fixture"),
+  ).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Confirm and send" }));
+  await settled(view, "Conversation override answer");
+
+  revoked = true;
+  await view.findByRole("button", { name: "Send message" });
+  await send(view, "Keep this draft");
+  expect(await view.findByText(staleReason)).toBeTruthy();
+  expect(requestedRuns).toHaveLength(2);
+  expect(view.queryByRole("button", { name: "Confirm and send" })).toBeNull();
+  await user.click(view.getByRole("combobox", { name: "Conversation model" }));
+  await view.findByRole("option", { name: "Use Bot or administrator default" });
+  await user.keyboard("{Home}{Enter}");
+  await waitFor(() =>
+    expect(
+      view.getByRole("combobox", { name: "Conversation model" }).textContent,
+    ).toContain("Bot default · fixture-b/other-model"),
+  );
+  expect(conversationModel).toBeNull();
+  expect(
+    requestedRuns.map((run) => run.forwardedProps?.testCreditQuote),
+  ).toEqual([
+    { route: alternate.id, priceVersion: creditQuote.priceVersion },
+    { route: primary.id, priceVersion: creditQuote.priceVersion },
+  ]);
 });

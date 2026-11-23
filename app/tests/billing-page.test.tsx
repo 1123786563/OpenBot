@@ -237,6 +237,12 @@ test("a charge opens the retained receipt with its released amount", async () =>
         return Response.json({
           chargedMicrocredits: "6000000",
           releasedMicrocredits: "2000000",
+          reservedMicrocredits: "8000000",
+          provider: "fixture",
+          model: "model-a",
+          route: "route-a",
+          priceVersion: "original-publication",
+          price: { inputPerMillion: 100, outputPerMillion: 200 },
         });
       return Response.json([]);
     },
@@ -250,6 +256,11 @@ test("a charge opens the retained receipt with its released amount", async () =>
   expect(
     await view.findByText("Charged 6 credits. Released 2 credits."),
   ).toBeTruthy();
+  expect(view.getByText("Price Version original-publication")).toBeTruthy();
+  expect(
+    view.getByText("Input 100 and output 200 microcredits per million tokens."),
+  ).toBeTruthy();
+  expect(view.getByText("Original reservation 8 credits.")).toBeTruthy();
   expect(requests).toContain("/api/billing/operations/op-1");
 });
 
