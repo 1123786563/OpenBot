@@ -31,7 +31,10 @@ import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
-import { useActionConfirmation } from "@/components/ui/action-confirmation";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
@@ -543,11 +546,17 @@ export function ChannelChat({
   }, [agent, runtimeAgentId, queries]);
 
   const { data: user } = useQuery(currentUserQueryOptions());
-  const [first, setFirst] = useState(() =>
-    user ? findFirstMessage(user.id, channel.id) : null,
-  );
-  const firstOwner = useRef(user?.id);
-  firstOwner.current = user?.id;
+  const ownerId = user?.id;
+  const firstOwner = useRef(ownerId);
+  firstOwner.current = ownerId;
+  const [firstState, setFirstState] = useState(() => ({
+    ownerId,
+    channelId: channel.id,
+    draft: ownerId ? findFirstMessage(ownerId, channel.id) : null,
+  }));
+  const firstScopeMatches =
+    firstState.ownerId === ownerId && firstState.channelId === channel.id;
+  const first = firstScopeMatches ? firstState.draft : null;
   const [firstAttempt, setFirstAttempt] = useState(0);
   const [checkingFirstMessage, setCheckingFirstMessage] = useState(false);
   const resendFirstMessage = useRef(false);
@@ -571,9 +580,17 @@ export function ChannelChat({
     : null;
 
   useEffect(() => {
-    if (user)
-      setFirst((known) => known ?? findFirstMessage(user.id, channel.id));
-  }, [user, channel.id]);
+    if (firstScopeMatches) return;
+    resendFirstMessage.current = false;
+    setCheckingFirstMessage(false);
+    setFirstError(null);
+    setCopyStatus("");
+    setFirstState({
+      ownerId,
+      channelId: channel.id,
+      draft: ownerId ? findFirstMessage(ownerId, channel.id) : null,
+    });
+  }, [firstScopeMatches, ownerId, channel.id]);
 
   /** Promise gate for ordering the first message after the thread join when possible. */
   const openJoinGate = useRef<() => void>(() => {});
@@ -1763,7 +1780,8 @@ export function ChannelChat({
         },
       });
       if (!isCurrent()) return;
-      if (result === "finished") setFirst(null);
+      if (result === "finished")
+        setFirstState({ ownerId: owner, channelId: channel.id, draft: null });
       else if (result !== "inactive") setFirstError(result);
     };
 
@@ -1971,12 +1989,20 @@ export function ChannelChat({
                             successMessage: "Browser copy discarded.",
                             trigger: event.currentTarget,
                             run: async () => {
+                              if (firstOwner.current !== owner)
+                                throw new ActionUnavailable(
+                                  "The signed-in account changed.",
+                                );
                               discardDirectFirstMessage(
                                 owner,
                                 first.id,
                                 channel.id,
                               );
-                              setFirst(null);
+                              setFirstState({
+                                ownerId: owner,
+                                channelId: channel.id,
+                                draft: null,
+                              });
                             },
                           });
                         }}
