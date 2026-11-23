@@ -4,6 +4,7 @@ import { Link, type LinkOptions, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useRef, useState } from "react";
+import { useTranslation } from "@/i18n";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { BrandName } from "@/components/edition/brand-name";
 import {
@@ -216,6 +217,7 @@ export function AppSidebar({
   navId?: string;
   returnFocus?: React.RefObject<HTMLButtonElement | null>;
 }) {
+  const { t } = useTranslation();
   const emphasis = useMessageListEmphasis();
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const signOut = useSignOut();
@@ -247,7 +249,7 @@ export function AppSidebar({
             className: "astryx-web-nav",
             id: isMobile ? undefined : navId,
             mobileNavigation: {
-              title: "Navigation",
+              title: t("nav.navigation", "Navigation"),
               popup: {
                 ...astryxScope,
                 className: "astryx-web-nav",
@@ -276,7 +278,7 @@ export function AppSidebar({
             {/* Square, as tall as the name beside it, with the sidebar's hover rather than `muted`, which
                 is nearly the sidebar's own colour. */}
             <Button
-              aria-label="New conversation"
+              aria-label={t("nav.newConversation", "New conversation")}
               className="aspect-square h-full w-auto hover:bg-foreground/5 dark:hover:bg-foreground/5"
               size="icon"
               variant="ghost"
@@ -296,9 +298,11 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent ref={scrollRoot} className="scroll-fade-b">
-        <nav aria-label="Workspace">
+        <nav aria-label={t("nav.workspace", "Workspace")}>
           <SidebarGroup>
-            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupLabel>
+              {t("nav.workspace", "Workspace")}
+            </SidebarGroupLabel>
             <SidebarMenu>
               {navigation
                 .filter(isNavigationLink)
@@ -317,7 +321,9 @@ export function AppSidebar({
                       )}
                     >
                       <item.icon aria-hidden="true" />
-                      <span className="text-sm">{item.label}</span>
+                      <span className="text-sm">
+                        {t(item.messageId, item.label)}
+                      </span>
                       {/* What waits on you across every Bot; Bots lists them first. */}
                       {item.id === "bots" ? <BotsNavBadge /> : null}
                     </SidebarMenuButton>
@@ -329,14 +335,19 @@ export function AppSidebar({
           </SidebarGroup>
         </nav>
         <SidebarGroup className="gap-px">
-          <SidebarGroupLabel>Conversations</SidebarGroupLabel>
+          <SidebarGroupLabel>
+            {t("nav.conversations", "Conversations")}
+          </SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
               <InputGroup className="bg-background text-sm rounded-lg h-9">
                 <InputGroupInput
-                  aria-label="Search conversations"
+                  aria-label={t(
+                    "nav.searchConversations",
+                    "Search conversations",
+                  )}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search…"
+                  placeholder={t("nav.search", "Search…")}
                   value={search}
                 />
                 <InputGroupAddon>
@@ -356,13 +367,26 @@ export function AppSidebar({
                   <EmptyHeader>
                     <EmptyTitle>
                       {channels.hasNextPage
-                        ? "No loaded conversations match your search"
-                        : "No conversations match your search"}
+                        ? t(
+                            "nav.empty.loadedSearch",
+                            "No loaded conversations match your search",
+                          )
+                        : t(
+                            "nav.empty.search",
+                            "No conversations match your search",
+                          )}
                     </EmptyTitle>
                     <EmptyDescription className="text-pretty">
                       {channels.hasNextPage
-                        ? "Load older conversations to search more of your history."
-                        : `No conversation has “${search.trim()}” in its name or latest message.`}
+                        ? t(
+                            "nav.empty.loadOlder",
+                            "Load older conversations to search more of your history.",
+                          )
+                        : t(
+                            "nav.empty.noMatch",
+                            "No conversation has “{search}” in its name or latest message.",
+                            { search: search.trim() },
+                          )}
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
@@ -372,9 +396,14 @@ export function AppSidebar({
               <SidebarMenuItem className="py-4">
                 <Empty className="border border-dashed min-h-[40dvh]">
                   <EmptyHeader>
-                    <EmptyTitle>No conversations yet</EmptyTitle>
+                    <EmptyTitle>
+                      {t("nav.empty.title", "No conversations yet")}
+                    </EmptyTitle>
                     <EmptyDescription className="text-pretty">
-                      Start a conversation with a Bot and it shows up here.
+                      {t(
+                        "nav.empty.description",
+                        "Start a conversation with a Bot and it shows up here.",
+                      )}
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
@@ -439,7 +468,7 @@ export function AppSidebar({
                       )}
                     >
                       <item.icon />
-                      <BrandName>{item.label}</BrandName>
+                      <BrandName>{t(item.messageId, item.label)}</BrandName>
                     </DropdownMenuItem>
                   ))}
                 {signOutOffered ? (
@@ -450,7 +479,7 @@ export function AppSidebar({
                     variant="destructive"
                   >
                     <IconLogout />
-                    Sign out
+                    {t("nav.signOut", "Sign out")}
                   </DropdownMenuItem>
                 ) : null}
               </DropdownMenuContent>

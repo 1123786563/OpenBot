@@ -1,3 +1,4 @@
+import { useTranslation } from "@/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import {
@@ -239,6 +240,7 @@ export function AttentionNotifier() {
 
 /** Shows how many things are waiting, or a dot for unread messages and check-ins. */
 export function BotsNavBadge() {
+  const { t } = useTranslation();
   const { data: bots = [] } = useQuery({
     ...botAttentionQueryOptions(),
     refetchInterval: false,
@@ -247,7 +249,11 @@ export function BotsNavBadge() {
   if (waiting > 0) {
     return (
       <span
-        aria-label={`${waiting} ${waiting === 1 ? "thing needs" : "things need"} you`}
+        aria-label={t(
+          "nav.attention.waiting",
+          "{count, plural, one {# thing needs you} other {# things need you}}",
+          { count: waiting },
+        )}
         className="ml-auto rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums"
         role="img"
       >
@@ -260,8 +266,8 @@ export function BotsNavBadge() {
       <span
         aria-label={
           bots.some((bot) => bot.unread > 0)
-            ? "Unread messages"
-            : "Your check-ins found something"
+            ? t("nav.attention.unread", "Unread messages")
+            : t("nav.attention.checkIns", "Your check-ins found something")
         }
         className="ml-auto size-2 rounded-full bg-primary"
         role="img"

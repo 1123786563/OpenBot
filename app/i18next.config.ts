@@ -9,6 +9,7 @@ export default defineConfig({
   extract: {
     input: ["src/**/*.{js,jsx,mjs,ts,tsx}"],
     output: "src/i18n/locales/{{language}}.json",
+    functions: ["t", "*.t", "navigationMessage"],
     defaultNS: false,
     keySeparator: false,
     messageFormat: "icu",

@@ -14,7 +14,8 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, within } from "@testing-library/react";
+import { act, cleanup, render, within } from "@testing-library/react";
+import { i18n, setLocalePreference } from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
@@ -57,7 +58,8 @@ beforeAll(() => {
   GlobalRegistrator.register({ url: "http://localhost/" });
   globalThis.WebSocket = OfflineWebSocket as unknown as typeof WebSocket;
 });
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   globalThis.fetch = Object.assign(
     async () => Response.json({ error: "not served" }, { status: 404 }),
     { preconnect: originalFetch.preconnect },
@@ -313,4 +315,39 @@ test("a single-person install has no Sign out, because nobody signed in", async 
   const menu = await view.findByRole("menu");
   expect(within(menu).queryByRole("menuitem", { name: "Sign out" })).toBeNull();
   expect(within(menu).getAllByRole("menuitem").length).toBeGreaterThan(0);
+});
+
+test("sidebar and the open account menu switch language without remounting", async () => {
+  const { view, user } = renderSidebar("admin");
+  const workspace = await view.findByRole("navigation", { name: "Workspace" });
+  await user.click(view.getByRole("button", { name: /Maya Chen/ }));
+  const menu = await view.findByRole("menu");
+  await act(() => setLocalePreference("zh-CN"));
+  expect(view.getByRole("navigation", { name: "工作区" })).toBe(workspace);
+  expect(
+    links(workspace).map(({ label, to }) => ({
+      label: label.replace(/\d+$/, ""),
+      to,
+    })),
+  ).toEqual([
+    { label: "Bot", to: "/bots" },
+    { label: "例行任务", to: "/routines" },
+    { label: "目标", to: "/responsibilities?view=goals" },
+    { label: "能力", to: "/capabilities" },
+    { label: "连接", to: "/connections" },
+  ]);
+  expect(
+    within(workspace).getByRole("img", { name: "1 件事需要你处理" }),
+  ).toBeTruthy();
+  expect(view.getByRole("menu")).toBe(menu);
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent?.trim()),
+  ).toEqual(["管理", "设置", "退出登录"]);
+  expect(view.getByRole("button", { name: /Maya Chen/ })).toBeTruthy();
+  expect(view.getByText("还没有对话")).toBeTruthy();
+  await act(() => setLocalePreference("en"));
+  expect(view.getByRole("navigation", { name: "Workspace" })).toBe(workspace);
+  expect(within(menu).getByRole("menuitem", { name: "Sign out" })).toBeTruthy();
 });
