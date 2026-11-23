@@ -18,27 +18,7 @@ Hangzhou returned approximately 60 seconds of provider TTL for a 10-second creat
    docker push "$flash_image"
    ```
 
-2. In Hangzhou use the Flash custom-image template workflow with that image. Use the MicroVM runtime. For a private GHCR image, supply registry credentials through the SDK headers from the approved secret store. In an isolated Python environment with `e2b==2.31.0`, run the following with `FLASH_IMAGE`, `FLASH_TEMPLATE_NAME`, `FLASH_REGISTRY_USER`, `FLASH_REGISTRY_TOKEN`, and `E2B_API_KEY` set in the environment. Save the returned immutable template ID and the image digest. [Flash custom image workflow](https://www.alibabacloud.com/help/en/agent-sandbox/build-sandbox-templates-with-ghcr-custom-images)
-
-   ```python
-   import os
-   from e2b import Template
-
-   result = Template.build(
-       Template().from_image(os.environ["FLASH_IMAGE"]),
-       name=os.environ["FLASH_TEMPLATE_NAME"],
-       cpu_count=2,
-       memory_mb=2048,
-       api_key=os.environ["E2B_API_KEY"],
-       api_url="https://api.cn-hangzhou.sandbox.aliyuncs.com",
-       domain="cn-hangzhou.sandbox.aliyuncs.com",
-       headers={
-           "X-E2B-Template-Source-Username": os.environ["FLASH_REGISTRY_USER"],
-           "X-E2B-Template-Source-Password": os.environ["FLASH_REGISTRY_TOKEN"],
-       },
-   )
-   print(result.template_id)
-   ```
+2. In the Hangzhou console, select **Flash Edition**, the pilot Team, then **Sandbox Templates** and **Create Template**. Select the **MicroVM** runtime and use the Flash image from step 1. For automation, use Alibaba Cloud's native `CreateTemplate` operation with runtime generation `2` and a scoped Alibaba Cloud identity. The Team E2B key is for creating instances from the resulting template. Save the Ready template ID and the image digest. To check runtime availability before publishing the OpenBot image, use the same console flow with the official Hangzhou MicroVM base image. [Console template setup](https://help.aliyun.com/zh/agent-sandbox/console-management-custom-templates) · [Native OpenAPI configuration](https://www.alibabacloud.com/help/en/agent-sandbox/build-and-manage-custom-templates-with-code/)
 
 3. Create a disposable instance from the Ready template with E2B JS `2.31.0`. Set `secure: true`, `network: { allowPublicTraffic: false }`, and `allowInternetAccess: false`. Keep auto-pause and auto-resume disabled. Require a root envd command to succeed with the envd token and require port 4100 to reject traffic with the traffic token omitted. Before sending a work grant, verify port 4100 has no listener. From a root envd command, preflight the cgroup within the instance.
 
@@ -51,6 +31,8 @@ Hangzhou returned approximately 60 seconds of provider TTL for a 10-second creat
    ```
 
    Require the worker UID to lack write access to the cgroup, runtime files and watchdog state. Require a writable, instance-local cgroup v2 hierarchy with working `cgroup.kill`. If the Flash runtime denies these operations, keep work admission disabled. Destroy the disposable instance and verify provider detail and inventory. [Flash private port access](https://www.alibabacloud.com/help/en/agent-sandbox/network-access-control)
+
+The Hangzhou trial Team exposed `code-interpreter-v1` and `browser-bkbn`. Both provided cgroup v2 and root command execution. Both denied writes to `cgroup.kill`. Alibaba lookups confirmed deletion of both disposable instances. A Ready MicroVM template still needs this preflight before work admission or lease acceptance.
 
 ## Configure the private trial
 
