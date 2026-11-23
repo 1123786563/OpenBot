@@ -62,13 +62,36 @@ type WatchdogRequest = WatchdogAction & {
 };
 type Row = typeof sandboxes.$inferSelect;
 
+type FlashWorkerArtifact = { archive: Blob; sha256: string };
+
+async function installWorker(sandbox: Sandbox, artifact: FlashWorkerArtifact) {
+  const path = "/root/.openbot-runtime.tar.gz";
+  const directory = "/opt/openbot";
+  const digest = z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .parse(artifact.sha256);
+  await sandbox.files.write(path, artifact.archive, {
+    user: "root",
+    requestTimeoutMs: 20_000,
+  });
+  await sandbox.commands.run(
+    `umask 022 && printf '%s  %s\n' '${digest}' '${path}' | sha256sum -c - && ` +
+      `install -d -o 0 -g 0 -m 0755 ${directory} && ` +
+      `tar --no-same-owner -xzf ${path} -C ${directory} && ` +
+      `chmod 0755 ${directory}/openbot-lease ${directory}/worker && ` +
+      `install -d -o 10001 -g 10001 -m 0700 ${directory}/workspace && rm -- ${path}`,
+    { user: "root", requestTimeoutMs: 4_000, timeoutMs: 4_000 },
+  );
+}
+
 async function invokeWatchdog(
   sandbox: Sandbox,
   request: WatchdogRequest,
 ): Promise<unknown> {
   const encoded = Buffer.from(JSON.stringify(request)).toString("base64url");
   const result = await sandbox.commands.run(
-    `/usr/local/bin/openbot-lease control ${encoded}`,
+    `/opt/openbot/openbot-lease control ${encoded}`,
     {
       user: "root",
       requestTimeoutMs: 3_000,
@@ -81,6 +104,8 @@ async function invokeWatchdog(
 export function createAgentSandboxProvider(
   config: Parameters<typeof createFlashSandboxApi>[0] & {
     encryptionKey: string;
+    artifact: FlashWorkerArtifact;
+    provision?: typeof installWorker;
     invoke?: typeof invokeWatchdog;
     fetchWorker?: (url: string, init: RequestInit) => Promise<Response>;
   },
@@ -202,7 +227,7 @@ export function createAgentSandboxProvider(
 
   return {
     allocationScope,
-    async start(binding, lease) {
+    async prepare(binding) {
       const [intent] = await database
         .update(sandboxes)
         .set({ flashCreateRequested: true })
@@ -218,29 +243,52 @@ export function createAgentSandboxProvider(
       if (!intent) throw new Error("Flash allocation no longer authorized");
 
       const allocation = await api.create(binding);
-      const computerToken = crypto.randomUUID() + crypto.randomUUID();
-      const encrypted =
-        allocation.connection &&
-        (await seal(
-          JSON.stringify({ ...allocation.connection, computerToken }),
-          config.encryptionKey,
-          credentialLabel({ ...intent, flashSandboxId: allocation.id }),
-        ));
       await database
         .update(sandboxes)
         .set({ flashSandboxId: allocation.id })
         .where(and(generation(binding), isNull(sandboxes.flashSandboxId)));
 
-      if (!encrypted)
+      if (!allocation.connection)
         throw new Error("Flash returned incomplete runtime credentials");
-      const [armed] = await database
+      const runtime = api.runtime(allocation.id, allocation.connection);
+      await (config.provision ?? installWorker)(runtime, config.artifact);
+
+      const encrypted = await seal(
+        JSON.stringify({
+          ...allocation.connection,
+          computerToken: crypto.randomUUID() + crypto.randomUUID(),
+        }),
+        config.encryptionKey,
+        credentialLabel({ ...intent, flashSandboxId: allocation.id }),
+      );
+      const [prepared] = await database
         .update(sandboxes)
-        .set({ flashConnection: encrypted, flashWorkRequested: true })
+        .set({ flashConnection: encrypted })
         .where(
           and(
             generation(binding),
             eq(sandboxes.phase, "starting"),
             eq(sandboxes.flashSandboxId, allocation.id),
+            gt(sandboxes.expiresAt, now()),
+          ),
+        )
+        .returning({ id: sandboxes.flashSandboxId });
+      if (!prepared) throw new Error("Flash setup no longer authorized");
+    },
+    async start(binding, lease) {
+      const row = await state(binding);
+      if (!row.flashConnection)
+        throw new Error("Flash runtime setup unconfirmed");
+      const { computerToken } = await credentials(row);
+      const [armed] = await database
+        .update(sandboxes)
+        .set({ flashWorkRequested: true })
+        .where(
+          and(
+            generation(binding),
+            eq(sandboxes.phase, "starting"),
+            eq(sandboxes.issuedAt, lease.issuedAt),
+            eq(sandboxes.expiresAt, lease.expiresAt),
             eq(sandboxes.flashWorkRequested, false),
             gt(sandboxes.expiresAt, now()),
           ),

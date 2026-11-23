@@ -5055,6 +5055,7 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
   let loseCreateResponse = false;
   const templateID = "flash-template-fixture";
   let creates = 0;
+  let provisions = 0;
   let deletes = 0;
   let listed = true;
   let missing = false;
@@ -5108,6 +5109,18 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
     domain,
     template: templateID,
     encryptionKey: Buffer.alloc(32, 24).toString("base64"),
+    artifact: {
+      archive: new Blob(["fixture artifact"]),
+      sha256: "a".repeat(64),
+    },
+    async provision(runtime, artifact) {
+      expect(runtime.sandboxId).toBe(sandboxId);
+      expect(await artifact.archive.text()).toBe("fixture artifact");
+      provisions++;
+      expect(workerCalls).toBe(0);
+      // Simulate a transfer that outlasts the original 15-second grant.
+      clockTime = now() + 16_000;
+    },
     async invoke(runtime, request) {
       expect(runtime.sandboxId).toBe(sandboxId);
       expect(request.binding.workspaceId).toBe(owner.workspaceId);
@@ -5179,6 +5192,9 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
     }
     expect((await start).status).toBe(202);
     expect(creates).toBe(1);
+    expect(provisions).toBe(1);
+    expect(lease?.issuedAt).toBe(clockTime);
+    expect(lease?.expiresAt).toBe(now() + 15_000);
     expect(await (await request(second)).json()).toEqual({ status: "running" });
     clockTime += 1_000;
     await second.renewWorkspaceComputers?.();

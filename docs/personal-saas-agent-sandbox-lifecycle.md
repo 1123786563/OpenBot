@@ -2,65 +2,95 @@
 
 [Issue #143](https://github.com/1123786563/OpenBot/issues/143) covers the private-trial lifecycle for [Agent Sandbox](adr/0013-use-agent-sandbox-and-agenticfs-for-the-personal-saas-computer-pilot.md). Use an isolated Alibaba Cloud Team, an empty database for the trial, and two test workspace owners. Use synthetic files and a template without mounts. AgenticFS and its quota belong to #144.
 
-Hangzhou returned approximately 60 seconds of provider TTL for a 10-second create request and a 5-second timeout update. Fresh commands succeeded past 15 seconds in both trials. OpenBot therefore gives Alibaba a five-minute resource TTL and sends absolute leases to the watchdog inside the instance. The watchdog starts the actual `agent-computer` process in a root-owned cgroup under a separate unprivileged UID. It reserves one second for kill and exit confirmation before the authorized deadline. It checks the absolute wall clock and a monotonic boot clock. It rejects later starts and renewals once sealed. [Hangzhou probe evidence](https://github.com/1123786563/OpenBot/pull/148) · [Flash lifecycle](https://www.alibabacloud.com/help/en/agent-sandbox/lifecycle)
+Hangzhou returned approximately 60 seconds of provider TTL for a 10-second create request and a 5-second timeout update. Fresh commands succeeded past 15 seconds in both trials. OpenBot gives Alibaba a five-minute resource TTL and issues absolute work leases of at most 15 seconds. A root-owned watchdog runs the file worker as UID and GID 10001. It applies Linux seccomp before exec, allowing threads in the same process and denying new processes. It checks wall time and monotonic boot time, reserves two seconds for termination, sends SIGKILL through a Linux pidfd and waits for that pidfd to report process exit. It seals the generation so delayed starts and renewals cannot restart it. [Hangzhou probe evidence](https://github.com/1123786563/OpenBot/pull/148) · [Flash lifecycle](https://www.alibabacloud.com/help/en/agent-sandbox/lifecycle)
 
-## Build and preflight the template
+## Build and configure the private trial
 
-1. Build the standard agent-computer image and the Flash image from the same commit. Use a private registry reachable by the Flash template builder. The names below assume GHCR and a registry namespace you control.
+1. Use the Hangzhou Team's existing `code-interpreter-v1` template. On a disposable instance verify `uname -m`, root envd commands and file upload, and that TCP 4100 is initially unused. The runtime needs Python 3 with `os.pidfd_open` and `signal.pidfd_send_signal`, `libseccomp.so.2`, a glibc-compatible Bun binary, `tar`, `sha256sum` and `install`. Confirm UID and GID 10001 are free for OpenBot's worker. Require port 4100 to reject traffic when the Flash traffic token is omitted. Destroy the disposable instance and verify detail and inventory. [Flash private port access](https://www.alibabacloud.com/help/en/agent-sandbox/network-access-control)
 
-   ```sh
-   openbot_revision=$(git rev-parse --short=12 HEAD)
-   computer_image="openbot-computer-flash-base:$openbot_revision"
-   flash_image="ghcr.io/$FLASH_REGISTRY_NAMESPACE/openbot-computer-flash:$openbot_revision"
-   docker buildx build --platform linux/amd64 --load --tag "$computer_image" --file agent-computer/Dockerfile .
-   docker buildx build --platform linux/amd64 --load --tag "$flash_image" \
-       --build-arg "COMPUTER_IMAGE=$computer_image" --file deploy/agent-sandbox/Dockerfile deploy/agent-sandbox
-   docker push "$flash_image"
-   ```
-
-2. In the Hangzhou console, select **Flash Edition**, the pilot Team, then **Sandbox Templates** and **Create Template**. Select the **MicroVM** runtime and use the Flash image from step 1. For automation, use Alibaba Cloud's native `CreateTemplate` operation with runtime generation `2` and a scoped Alibaba Cloud identity. The Team E2B key is for creating instances from the resulting template. Save the Ready template ID and the image digest. To check runtime availability before publishing the OpenBot image, use the same console flow with the official Hangzhou MicroVM base image. [Console template setup](https://help.aliyun.com/zh/agent-sandbox/console-management-custom-templates) · [Native OpenAPI configuration](https://www.alibabacloud.com/help/en/agent-sandbox/build-and-manage-custom-templates-with-code/)
-
-3. Create a disposable instance from the Ready template with E2B JS `2.31.0`. Set `secure: true`, `network: { allowPublicTraffic: false }`, and `allowInternetAccess: false`. Keep auto-pause and auto-resume disabled. Require a root envd command to succeed with the envd token and require port 4100 to reject traffic with the traffic token omitted. Before sending a work grant, verify port 4100 has no listener. From a root envd command, preflight the cgroup within the instance.
+2. From the repository root, use the Bun version in `package.json` and build the worker at the same revision as the server. The example assumes `uname -m` returned `x86_64`. Pass `aarch64` for an ARM instance.
 
    ```sh
-   mkdir /sys/fs/cgroup/openbot-preflight
-   test -w /sys/fs/cgroup/openbot-preflight/cgroup.procs
-   printf 1 > /sys/fs/cgroup/openbot-preflight/cgroup.kill
-   grep -qx 'populated 0' /sys/fs/cgroup/openbot-preflight/cgroup.events
-   rmdir /sys/fs/cgroup/openbot-preflight
+   bun install --frozen-lockfile
+   deploy/agent-sandbox/build-artifact.sh /tmp/openbot-flash-runtime.tar.gz x86_64
+   shasum -a 256 /tmp/openbot-flash-runtime.tar.gz
    ```
 
-   Require the worker UID to lack write access to the cgroup, runtime files and watchdog state. Require a writable, instance-local cgroup v2 hierarchy with working `cgroup.kill`. If the Flash runtime denies these operations, keep work admission disabled. Destroy the disposable instance and verify provider detail and inventory. [Flash private port access](https://www.alibabacloud.com/help/en/agent-sandbox/network-access-control)
+3. On each Personal SaaS server replica make the artifact readable at the configured absolute path. Apply the normal server migrations, including `0118_agent_sandbox_flash` if not already applied. Use the same database, encryption key, Team key, template and artifact on each replica. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES`. Leave the Docker supervisor and former authority settings unset. Drain existing Flash generations before deploying this worker protocol or changing region, template, Team key or provider.
 
-The Hangzhou trial Team exposed `code-interpreter-v1` and `browser-bkbn`. Both provided cgroup v2 and root command execution. Both denied writes to `cgroup.kill`. Alibaba lookups confirmed deletion of both disposable instances. A Ready MicroVM template still needs this preflight before work admission or lease acceptance.
+   ```sh
+   export OPENBOT_PERSONAL_SAAS_MODE=private-trial
+   export OPENBOT_AGENT_SANDBOX_FLASH_REGION=cn-hangzhou
+   export OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE=code-interpreter-v1
+   export OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT=/tmp/openbot-flash-runtime.tar.gz
+   # Supply E2B_API_KEY through the deployment's secret mechanism.
+   (cd server && bun --no-env-file scripts/migrate.ts)
+   (cd server && bun --no-env-file src/personal-saas/index.ts)
+   ```
 
-## Configure the private trial
-
-Apply migrations through `0118_agent_sandbox_flash` with the normal migration entrypoint. Set `OPENBOT_PERSONAL_SAAS_MODE=private-trial`, `OPENBOT_AGENT_SANDBOX_FLASH_REGION=cn-hangzhou`, `OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE=<immutable-template-id>` and `E2B_API_KEY` in the Personal SaaS deployment. Use the same region, template, Team API key, PostgreSQL database, and encryption key across replicas. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES` to enable start admission. Leave the Docker supervisor and former authority settings unset on the Flash deployment. Drain outstanding generations before changing the template, key, or provider.
-
-The Personal SaaS server calls Flash create, detail, list, and delete on the regional endpoint. EnvD commands carry only watchdog requests. They never execute Bot file actions. The existing computer gateway sends file actions to port 4100 using separate Flash traffic and OpenBot worker tokens. The worker serves only while its cgroup is live. Flash does not extend the five-minute resource TTL in this pilot. Run each scenario with a fresh instance.
+On each start request, OpenBot reserves one slot, creates a fresh private instance with public traffic and internet access disabled, uploads the archive through root envd, checks its SHA-256 and installs it in `/opt/openbot`. The instance needs no registry or package download. The setup reservation has a 30-second deadline. OpenBot rechecks account authorization after setup before issuing the initial work lease. Downloads, list, read and write use the same workspace implementation as the Docker computer. Flash exposes these file routes and health. OpenBot's gateway sends both the Flash traffic token and the worker token. Each issued lease applies to one generation and Flash keeps the original five-minute provider TTL. Run each scenario with a fresh instance.
 
 A request whose create result is unknown keeps its slot occupied until reconciliation finds its exact metadata. An empty list by itself cannot close that intent. A delete response also leaves the slot occupied. The server saves worker exit evidence and then requests deletion. It requires an instance-specific Flash 404 and a complete generation-filtered inventory with no matches before releasing the slot. An instance that vanishes before OpenBot collects worker evidence remains pending. Preserve the database record and use the independent operator to investigate that generation.
 
 ## Run the cloud trials
 
 1. Have owner A call `POST /api/workspace/computer/start` twice concurrently. Check `GET /api/workspace/computer` advances from `starting` to `running` and only one allocation appears in Flash inventory. Check owner B sees only B's state. Have a newly authorized Bot run write and read a synthetic file. Use `POST /api/workspace/computer/stop` and hold back delete confirmation in the test network path. Even with worker exit and an accepted delete, verify A sees `stopping` and cannot start another instance. Release confirmation and verify the slot opens.
-2. For the account trial, take a fresh running generation and record its last accepted lease. Have the independent operator start an observer before disabling A in Casdoor. From inside the instance, use the root-only watchdog `inspect` command to record the instance binding, PID, boot ID, and deadline. Its argument is unpadded Base64URL of JSON with `action: "inspect"` and `binding: {workspaceId, generation, epoch, sandboxId}`. As a separate observation, poll a Linux PID file descriptor for that PID with `os.pidfd_open` and `select.poll`. When the PID exits, record current Unix time and verify `/sys/fs/cgroup/openbot-work/cgroup.events` reports `populated 0`. Collect the watchdog's `/var/lib/openbot-lease/exit.json` while available and compare its PID and boot ID. Keep the observer independent of the OpenBot connection. Reject new starts and task dispatch after disablement. Re-enable A, check the old generation stays stopped, manually start, and prove the old task is refused while a newly submitted task can use the file tools.
+2. For the account trial, take a fresh running generation and record its last accepted lease. Have the independent operator start an observer before disabling A in Casdoor. From inside the instance, use `/opt/openbot/openbot-lease control <encoded-request>` with the root-only `inspect` action to record the instance binding, PID, boot ID, and deadline. Its argument is unpadded Base64URL of JSON with `action: "inspect"` and `binding: {workspaceId, generation, epoch, sandboxId}`. As a separate observation, poll a Linux PID file descriptor for that PID with `os.pidfd_open` and `select.poll`. When the PID exits, record current Unix time and verify that the pidfd was opened for the OpenBot worker at `/opt/openbot/worker` and that `/proc/<pid>/status` showed UID/GID 10001, `NoNewPrivs: 1` and `Seccomp: 2` before exit. Collect the watchdog's `/var/lib/openbot-lease/exit.json` while available and compare its PID and boot ID. Keep the observer independent of the OpenBot connection. Reject new starts and task dispatch after disablement. Re-enable A, check the old generation stays stopped, manually start, and prove the old task is refused while a newly submitted task can use the file tools.
 3. For the partition trial, hold both OpenBot's Flash control and envd paths for 20 seconds immediately after an acknowledged renewal. Keep the instance and independent observer running. Observe the process exit while the paths are blocked. Use the independent observer's connection to deliver a newer-but-delayed renewal after exit and confirm the watchdog rejects it. Also verify an out-of-order renewal and delayed start cannot re-arm the generation. Restore OpenBot's connectivity and verify it captures exit evidence, requests deletion, and releases the slot only after separate Flash confirmation.
-4. Use a 30-second setup and a 30-second post-fault observation limit for each trial. Record region, template ID, image digest, SDK version, binding, last accepted `issuedAt` and `leaseExpiresAt`, observed worker exit time, clock uncertainty, Flash request IDs, deletion confirmation time, and the first status that released the slot. Require `leaseExpiresAt - issuedAt <= 15000` and `observedExit + uncertainty <= leaseExpiresAt`. Verify the clock uncertainty between OpenBot and the MicroVM is at most 500 ms, including during the partition. Check Alibaba inventory separately for running and paused instances and confirm the Console reports the instance gone. Finish cleanup before starting the next trial. Attach sanitized evidence to [target-cloud acceptance #74](https://github.com/1123786563/OpenBot/issues/74).
+4. Use a 30-second setup and a 30-second post-fault observation limit for each trial. Record region, template ID, artifact SHA-256, SDK version, binding, last accepted `issuedAt` and `leaseExpiresAt`, observed worker exit time, clock uncertainty, Flash request IDs, deletion confirmation time, and the first status that released the slot. Require `leaseExpiresAt - issuedAt <= 15000` and `observedExit + uncertainty <= leaseExpiresAt`. Verify the clock uncertainty between OpenBot and the instance is at most 500 ms, including during the partition. Check Alibaba inventory separately for running and paused instances and confirm the Console reports the instance gone. Finish cleanup before starting the next trial. Attach sanitized evidence to [target-cloud acceptance #74](https://github.com/1123786563/OpenBot/issues/74).
+
+### Observe worker exit independently
+
+Run this as a separate root envd command with the PID from the watchdog's `inspect` response. Keep its connection independent of the OpenBot fault injection. Wait for `ready` before triggering the fault.
+
+```sh
+python3 - "$worker_pid" <<'PYTHON'
+import json
+import os
+from pathlib import Path
+import select
+import sys
+import time
+
+pid = int(sys.argv[1])
+fd = os.pidfd_open(pid)
+status = dict(line.split(":", 1) for line in Path(f"/proc/{pid}/status").read_text().splitlines())
+assert status["Uid"].split() == ["10001"] * 4
+assert status["Gid"].split() == ["10001"] * 4
+assert status["NoNewPrivs"].strip() == "1"
+assert status["Seccomp"].strip() == "2"
+assert Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")[0] == b"/opt/openbot/worker"
+boot_id = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+poll = select.poll()
+poll.register(fd, select.POLLIN)
+print(json.dumps({"kind": "ready", "pid": pid, "bootId": boot_id}), flush=True)
+if not poll.poll(30_000):
+    raise SystemExit("Worker exit unconfirmed")
+exited = time.time_ns() // 1_000_000
+print(json.dumps({"kind": "exit", "pid": pid, "bootId": boot_id, "observedExit": exited}))
+PYTHON
+```
+
+For the partition trial, use the last acknowledged deadline before blocking connectivity. If another renewal was acknowledged before account disablement, compare the independent observation with the latest accepted lease recorded by the watchdog.
 
 ## Repeat the local checks
 
-Run the process tests on the Flash image with a private Linux cgroup namespace. Substitute the locally built image tag for `$flash_image`. The tests drive the watchdog, a session-detached child, and the real agent-computer file routes. No cloud credential is required.
+Run the process tests as root in an isolated Linux container with its normal read-only cgroup mount. The Python image must have `libseccomp.so.2`. Use `x86_64` on an x64 Linux host and `aarch64` on an ARM64 Linux host. The tests cover denied fork and detached subprocess creation, permitted threads, watchdog death, stale grants, and the shipped file worker.
 
 ```sh
-docker run --rm --privileged --cgroupns private --network none \
-    -v "$PWD/deploy/agent-sandbox:/tests:ro" "$flash_image" \
-    python3 /tests/lease_watchdog_test.py
+deploy/agent-sandbox/build-artifact.sh /tmp/openbot-flash-test.tar.gz "$(docker info --format '{{.Architecture}}')"
+docker run --rm --network none \
+    -v /tmp/openbot-flash-test.tar.gz:/runtime.tar.gz:ro \
+    -v "$PWD/deploy/agent-sandbox:/tests:ro" python:3.12-slim sh -ec '
+      install -d -m 0755 /opt/openbot
+      tar --no-same-owner -xzf /runtime.tar.gz -C /opt/openbot
+      install -d -o 10001 -g 10001 -m 0700 /opt/openbot/workspace
+      python3 -B /tests/lease_watchdog_test.py
+    '
 bun test --no-env-file --env-file=.env.test \
     server/tests/agent-sandbox-provider.test.ts
 bun test --no-env-file --env-file=.env.test --timeout 30000 \
     server/tests/personal-saas-entry.integration.test.ts --test-name-pattern 'Flash|Agent Sandbox'
 ```
 
-The server contract tests use a local Flash HTTP fixture and dedicated PostgreSQL database. Hangzhou template support, clock uncertainty, and final cleanup semantics still require the target-cloud trials.
+The server contract tests use a local Flash HTTP fixture and dedicated PostgreSQL database. Run the target-cloud trials to verify Hangzhou envd upload, the template's seccomp behavior, clock uncertainty and provider cleanup.

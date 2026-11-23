@@ -71,6 +71,7 @@ const trial = z.object({
     .regex(/^cn-[a-z0-9-]+$/)
     .optional(),
   OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE: z.string().trim().min(1).optional(),
+  OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_CLEANUP_URL: httpsUrl.optional(),
   OPENBOT_CLOSURE_CLEANUP_TOKEN: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_RESTORE_JOURNAL: z.string().trim().min(1).optional(),
@@ -174,13 +175,14 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
 
 const flashRegion = env.OPENBOT_AGENT_SANDBOX_FLASH_REGION;
 const flashTemplate = env.OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE;
+const flashArtifactPath = env.OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT;
 const flashKey = process.env.E2B_API_KEY?.trim();
 if (
-  (flashRegion || flashTemplate) &&
-  !(flashRegion && flashTemplate && flashKey)
+  (flashRegion || flashTemplate || flashArtifactPath) &&
+  !(flashRegion && flashTemplate && flashArtifactPath && flashKey)
 )
   throw new Error(
-    "Configure the Flash region, template and E2B API key together",
+    "Configure the Flash region, template, worker artifact and E2B API key together",
   );
 if (flashRegion && supervisorUrl)
   throw new Error("Configure one workspace Computer provider per deployment");
@@ -197,9 +199,17 @@ const cleanupToken = env.OPENBOT_CLOSURE_CLEANUP_TOKEN;
 if (Boolean(cleanupUrl) !== Boolean(cleanupToken))
   throw new Error("Configure the closure cleanup URL and token together");
 
+async function loadFlashWorkerArtifact(path: string) {
+  const bytes = await Bun.file(path).arrayBuffer();
+  return {
+    archive: new Blob([bytes]),
+    sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+  };
+}
+
 const database = createDatabase(env.DATABASE_URL);
 const sandbox =
-  flashRegion && flashTemplate && flashKey
+  flashRegion && flashTemplate && flashKey && flashArtifactPath
     ? createAgentSandboxProvider(
         {
           apiUrl: `https://api.${flashRegion}.sandbox.aliyuncs.com`,
@@ -207,6 +217,7 @@ const sandbox =
           template: flashTemplate,
           apiKey: flashKey,
           encryptionKey: env.KEY_ENCRYPTION_KEY,
+          artifact: await loadFlashWorkerArtifact(flashArtifactPath),
         },
         database,
       )
@@ -322,8 +333,8 @@ const server = Bun.serve({
       request.method === "POST" &&
       pathname === "/api/workspace/computer/start"
     ) {
-      // Storage admission and the supervisor request can outlast the default timeout.
-      server.timeout(request, 30);
+      // Flash stages the artifact before issuing the work lease.
+      server.timeout(request, sandbox ? 40 : 30);
     }
     return app.fetch(request);
   },

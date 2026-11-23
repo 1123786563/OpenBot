@@ -203,6 +203,12 @@ export function workspaceComputer(
           workspaceId,
           leaseFor(grant, issuedAt),
           storageBytes,
+          async () => {
+            const issuedAt = now();
+            const refreshed = await accounts.verify(session);
+            if (refreshed.kind === "active")
+              return leaseFor(refreshed, issuedAt);
+          },
         ))
       )
         return false;

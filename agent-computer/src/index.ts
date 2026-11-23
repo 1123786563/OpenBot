@@ -3,7 +3,6 @@ import { setDefaultAutoSelectFamily } from "node:net";
 import { join } from "node:path";
 import { type ServerWebSocket, serve } from "bun";
 import type { ConsoleMessage, Page } from "playwright";
-import { downloadHeaders } from "../../shared/file-download";
 import {
   isPersonBrowserId,
   RECORDER_DIR_ENV,
@@ -36,6 +35,7 @@ import {
 import { keyForOpenList } from "./dropdown-list";
 import { handleEgressPolicyRequest, startEgressFilter } from "./egress";
 import { enterText, FieldValueError } from "./enter-text";
+import { handleFileRequest } from "./file-routes";
 import { identity } from "./identity";
 import { createInputQueue, type InputQueue } from "./input-queue";
 import {
@@ -86,19 +86,13 @@ import {
   parseSignInCode,
   parseSignInFill,
 } from "./sign-in";
-import { startVirtualDisplay } from "./virtual-display";
-import { applyWebBotAuthPush } from "./web-bot-auth";
-import {
-  WorkspaceFileError,
-  WorkspaceFileNotFoundError,
-  WorkspaceFileTooLargeError,
-  WorkspacePathError,
-} from "./workspace";
 import {
   createTerminalSockets,
   TERMINAL_UNAVAILABLE,
   type TerminalSocketData,
 } from "./terminal-socket";
+import { startVirtualDisplay } from "./virtual-display";
+import { applyWebBotAuthPush } from "./web-bot-auth";
 import { createWorkspaces } from "./workspaces";
 
 /**
@@ -1754,55 +1748,13 @@ serve<StreamData & TerminalSocketData>({
         }
       }
 
-      // The Bot's files. Confined to the workspace by workspace.ts. Nothing here decides whether a Bot
-      // MAY touch a path: the gateway in front of this process does that.
-      if (url.pathname === "/files/download" && request.method === "GET") {
-        try {
-          const { files } = await workspaces.for(botId);
-          const file = await files.download(url.searchParams.get("path") ?? "");
-          return new Response(file.body, {
-            headers: downloadHeaders(file.name, file.bytes),
-          });
-        } catch (error) {
-          return json(
-            { error: describe(error, "The file could not be downloaded.") },
-            fileStatus(error),
-          );
-        }
-      }
-
-      if (url.pathname === "/files/read" && request.method === "POST") {
-        const body = (await request.json().catch(() => null)) as {
-          path?: unknown;
-        } | null;
-        try {
-          const { files } = await workspaces.for(botId);
-          return json(await files.read(String(body?.path ?? "")));
-        } catch (error) {
-          return json(
-            { error: describe(error, "The file could not be read.") },
-            fileStatus(error),
-          );
-        }
-      }
-
-      if (url.pathname === "/files/list" && request.method === "POST") {
-        const body = (await request.json().catch(() => null)) as {
-          path?: unknown;
-        } | null;
-        try {
-          const { files } = await workspaces.for(botId);
-          return json(
-            await files.list(
-              typeof body?.path === "string" ? body.path : undefined,
-            ),
-          );
-        } catch (error) {
-          return json(
-            { error: describe(error, "The folder could not be listed.") },
-            fileStatus(error),
-          );
-        }
+      if (url.pathname.startsWith("/files/")) {
+        const fileResponse = await handleFileRequest(
+          request,
+          url,
+          async () => (await workspaces.for(botId)).files,
+        );
+        if (fileResponse) return fileResponse;
       }
 
       /*
@@ -1849,30 +1801,6 @@ serve<StreamData & TerminalSocketData>({
           return json(
             { error: describe(error, "The command could not be run.") },
             500,
-          );
-        }
-      }
-
-      if (url.pathname === "/files/write" && request.method === "POST") {
-        const body = (await request.json().catch(() => null)) as {
-          path?: unknown;
-          contents?: unknown;
-          append?: unknown;
-        } | null;
-        if (typeof body?.contents !== "string") {
-          return json({ error: "The contents to write are required." }, 400);
-        }
-        try {
-          const { files } = await workspaces.for(botId);
-          return json(
-            await files.write(String(body?.path ?? ""), body.contents, {
-              append: body.append === true,
-            }),
-          );
-        } catch (error) {
-          return json(
-            { error: describe(error, "The file could not be written.") },
-            fileStatus(error),
           );
         }
       }
@@ -2237,23 +2165,6 @@ async function performAction(
 
 function describe(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-/**
- * Which status a file failure deserves.
- *
- * A path outside the workspace is the caller asking for something it may never have, so 403: retrying
- * it unchanged will never work, and it is not a fault. A missing download is 404, an oversized
- * download is 413, and an ordinary bad file request is 400, because a different request could
- * succeed. Collapsing these into 500 would tell the caller the computer is broken and invite a retry
- * of the same request.
- */
-function fileStatus(error: unknown): 400 | 403 | 404 | 413 | 500 {
-  if (error instanceof WorkspacePathError) return 403;
-  if (error instanceof WorkspaceFileTooLargeError) return 413;
-  if (error instanceof WorkspaceFileNotFoundError) return 404;
-  if (error instanceof WorkspaceFileError) return 400;
-  return 500;
 }
 
 console.info(`agent-computer listening on http://127.0.0.1:${PORT}`);

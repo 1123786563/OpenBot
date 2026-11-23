@@ -50,6 +50,7 @@ export type AgentSandboxBinding = {
  */
 export type AgentSandboxProvider = {
   allocationScope?: string;
+  prepare?(binding: AgentSandboxBinding): Promise<void>;
   start(binding: AgentSandboxBinding, lease: ComputerLease): Promise<void>;
   renew(binding: AgentSandboxBinding, lease: ComputerLease): Promise<void>;
   destroy(binding: AgentSandboxBinding): Promise<void>;
@@ -202,12 +203,21 @@ export function agentSandboxComputer(
       if (result.status !== "not_started" && !result.stopped)
         throw new Error("Workspace Computer cleanup unconfirmed");
     },
-    async start(workspaceId: string, lease: ComputerLease) {
-      if (now() >= lease.expiresAt) return false;
+    async start(
+      workspaceId: string,
+      lease: ComputerLease,
+      _storageBytes: number,
+      refresh?: () => Promise<ComputerLease | undefined>,
+    ) {
+      if (now() >= lease.expiresAt || (provider.prepare && !refresh))
+        return false;
       const reservation = {
         workspaceId,
         ...lease,
         startedAt: lease.issuedAt,
+        // While preparing, this closes a stalled slot reservation. No work
+        // grant can be sent until the account has authorized a fresh lease.
+        expiresAt: provider.prepare ? now() + 30_000 : lease.expiresAt,
         generation: crypto.randomUUID(),
         phase: "starting" as const,
         cutoff: null,
@@ -236,12 +246,44 @@ export function agentSandboxComputer(
       try {
         // An error leaves an ambiguous allocation. Reconcile by generation;
         // issuing another create could allocate a second Computer.
-        if (now() >= lease.expiresAt) {
+        if (now() >= row.expiresAt) {
           await destroy(row);
           return false;
         }
-        await provider.start(binding(row), lease);
-        if (now() >= lease.expiresAt) {
+        let workLease = lease;
+        if (provider.prepare && refresh) {
+          await provider.prepare(binding(row));
+          const authorized = await refresh();
+          if (
+            !authorized ||
+            authorized.epoch !== row.epoch ||
+            now() >= authorized.expiresAt
+          ) {
+            await destroy(row);
+            return false;
+          }
+          const [granted] = await database
+            .update(sandboxes)
+            .set({
+              issuedAt: authorized.issuedAt,
+              expiresAt: authorized.expiresAt,
+            })
+            .where(
+              and(
+                sameGeneration(row),
+                eq(sandboxes.phase, "starting"),
+                gt(sandboxes.expiresAt, now()),
+              ),
+            )
+            .returning({ generation: sandboxes.generation });
+          if (!granted) {
+            await destroy(row);
+            return false;
+          }
+          workLease = authorized;
+        }
+        await provider.start(binding(row), workLease);
+        if (now() >= workLease.expiresAt) {
           await destroy(row);
           return false;
         }
