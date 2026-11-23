@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { useTranslation } from "@/i18n";
-import { formatHotkey, type Hotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
+import { formatHotkey, type HotkeyId, HOTKEYS } from "@/lib/hotkeys/hotkeys";
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
@@ -50,7 +50,7 @@ const SHORTCUT_MESSAGES = {
     ),
   },
 } as const satisfies Record<
-  Hotkey["id"],
+  HotkeyId,
   Record<"label" | "description", ReturnType<typeof navigationMessage>>
 >;
 
