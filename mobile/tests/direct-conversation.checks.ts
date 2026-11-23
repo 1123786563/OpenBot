@@ -126,6 +126,52 @@ test("an aborted Run cannot change the next Run's replay cursor", async () => {
   ]);
 });
 
+test("an older pending approval is visible even when the global inbox is full", async () => {
+  const conversationId = "thread/with spaces";
+  const approval = {
+    id: "waiting",
+    status: "pending",
+    action: {
+      threadId: conversationId,
+      toolRef: "tool",
+      scope: "scope",
+      args: {},
+    },
+  };
+  const otherRequests = Array.from({ length: 100 }, (_, index) => ({
+    ...approval,
+    id: `other-${index}`,
+    action: { ...approval.action, threadId: "other-thread" },
+  }));
+  const client = directConversation(
+    async (path) => {
+      if (path.startsWith("/api/approvals")) {
+        const url = new URL(path, "https://openbot.example");
+        return Response.json({
+          requests:
+            url.searchParams.get("threadId") === conversationId
+              ? [approval]
+              : otherRequests,
+        });
+      }
+      return Response.json({
+        messages: [],
+        runs: [
+          {
+            id: turn.runId,
+            userMessageId: turn.messageId,
+            status: "running",
+            pendingApprovals: [{ id: approval.id }],
+          },
+        ],
+      });
+    },
+    { threadId: conversationId, agentId },
+  );
+
+  assert.deepEqual((await client.history()).approvals, [approval]);
+});
+
 test("only the current Run's approvals appear and access loss rejects Run control", async () => {
   let authorized = true;
   const approval = {
@@ -154,7 +200,7 @@ test("only the current Run's approvals appear and access loss rejects Run contro
           ],
         });
       }
-      if (path === "/api/approvals") {
+      if (path === "/api/approvals?threadId=thread") {
         return Response.json({
           requests: [approval, { ...approval, id: "another-approval" }],
         });
