@@ -27,6 +27,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { revokeRecorderConnectionMutationOptions } from "@/lib/recorder/mutations";
 import { recorderConnectionsQueryOptions } from "@/lib/recorder/queries";
 import { relativeTime } from "@/lib/relative-time";
@@ -189,6 +190,8 @@ function ConnectedBrowserRow({
   pending: boolean;
   onDisconnect: (button: HTMLButtonElement, which: string) => void;
 }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const name = here ? `${connection.label} · This browser` : connection.label;
   // The browser the dialog is about, by the name the row shows: "this browser" only for the copy in the browser this page
   // is open in, which every row's dialog used to say.

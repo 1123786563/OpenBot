@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useTranslation } from "@/i18n";
 import {
   changeProactiveSettingMutationOptions,
   type ProactiveSetting,
@@ -48,6 +49,8 @@ export function SuggestionRow({
   setting?: ProactiveSetting;
   inGroup?: boolean;
 }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const act = useMutation(resolveSuggestionMutationOptions(queryClient));
   const stop = useMutation(changeProactiveSettingMutationOptions(queryClient));
   const pressed = act.isPending ? act.variables.action : null;
