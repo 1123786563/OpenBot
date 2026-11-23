@@ -534,3 +534,64 @@ test("returns to a Web deep link without the newer URL.parse API", () => {
     else Reflect.deleteProperty(URL, "parse");
   }
 });
+
+test("a refused provider press passes the server's words through, and says its own in the interface language", async () => {
+  const { view, user } = renderSignScreen({
+    providers: ["google"],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  // The server's own sentence is a value: shown as it arrived, in either language.
+  signInSpy = async () => {
+    throw new Error("Sign-in provider unavailable");
+  };
+  await user.click(view.getByRole("button", { name: "使用 Google 继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Sign-in provider unavailable",
+  );
+
+  // Without a reason from the server, the screen says its own sentence.
+  signInSpy = async () => {
+    throw "no reason given";
+  };
+  await user.click(view.getByRole("button", { name: "使用 Google 继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "无法打开 Google 登录。请重试。",
+  );
+
+  await pinLocale("en");
+  await user.click(view.getByRole("button", { name: "Continue with Google" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Couldn't open Google sign-in. Try again.",
+  );
+});
+
+test("a refused company sign-in keeps the server's words and guides in the interface language", async () => {
+  const { view, user } = renderSignScreen({
+    providers: [],
+    sso: true,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  await user.type(view.getByPlaceholderText("you@company.com"), "ada@corp.cn");
+  domainSignInSpy = async () => {
+    throw new Error("Domain not registered");
+  };
+  await user.click(view.getByRole("button", { name: "使用公司账号继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Domain not registered 请检查你的公司邮箱后重试。如果问题仍然存在，请联系你的 OpenBot 管理员。",
+  );
+
+  domainSignInSpy = async () => {
+    throw "no reason given";
+  };
+  await user.click(view.getByRole("button", { name: "使用公司账号继续" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "无法打开公司登录。 请检查你的公司邮箱后重试。如果问题仍然存在，请联系你的 OpenBot 管理员。",
+  );
+});

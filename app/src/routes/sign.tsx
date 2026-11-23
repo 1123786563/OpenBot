@@ -140,12 +140,21 @@ function SignScreen() {
         resumeUrlFor(window.location.origin, flowId, resumeRequest),
       );
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Couldn't open company sign-in.";
+      /*
+       * Whatever the server said is a value, not copy: it passes through verbatim and only the
+       * sentence built around it is translated.
+       */
       setError(
-        `${message} Check your company email and try again. If the problem continues, contact your OpenBot administrator.`,
+        t(
+          "sign.sso.guidance",
+          "{message} Check your company email and try again. If the problem continues, contact your OpenBot administrator.",
+          {
+            message:
+              caughtError instanceof Error
+                ? caughtError.message
+                : t("sign.sso.failed", "Couldn't open company sign-in."),
+          },
+        ),
       );
       setOpening(null);
     }
@@ -166,7 +175,11 @@ function SignScreen() {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : `Couldn't open ${providerName(provider)} sign-in. Try again.`,
+          : t(
+              "sign.provider.failed",
+              "Couldn't open {provider} sign-in. Try again.",
+              { provider: providerName(provider) },
+            ),
       );
       setOpening(null);
     }
