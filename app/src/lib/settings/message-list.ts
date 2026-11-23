@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { client } from "@/lib/client";
+import { t } from "@/i18n";
 import { settingsKeys } from "./queries";
 
 export type { MessageListEmphasis } from "@openbot/shared/user-preferences";
@@ -18,7 +19,10 @@ export function userPreferencesQueryOptions(userId: string | undefined) {
     queryFn: ({ signal }): Promise<UserPreferences> =>
       client("/api/settings/preferences", "preferences", {
         signal,
-        fallback: "Could not load your preferences",
+        fallback: t(
+          "settings.messageList.loadFailed",
+          "Could not load your preferences",
+        ),
       }),
   });
 }
@@ -49,11 +53,17 @@ export function dismissSelfHostBannerMutationOptions(
   const queryKey = userPreferencesQueryOptions(userId).queryKey;
   return mutationOptions({
     mutationFn: (): Promise<UserPreferences> => {
-      if (!userId) throw new Error("Sign in to save your preferences.");
+      if (!userId)
+        throw new Error(
+          t("settings.messageList.signInToSave", "Sign in to save your preferences."),
+        );
       return client("/api/settings/preferences", "preferences", {
         method: "PATCH",
         body: { selfHostBannerDismissed: true },
-        fallback: "Could not save your preferences",
+        fallback: t(
+          "settings.messageList.saveFailed",
+          "Could not save your preferences",
+        ),
       });
     },
     onMutate: () => {
@@ -82,11 +92,17 @@ export function saveUserPreferencesMutationOptions(
     mutationFn: (
       preferences: Partial<UserPreferences>,
     ): Promise<UserPreferences> => {
-      if (!userId) throw new Error("Sign in to save your preferences.");
+      if (!userId)
+        throw new Error(
+          t("settings.messageList.signInToSave", "Sign in to save your preferences."),
+        );
       return client("/api/settings/preferences", "preferences", {
         method: "PATCH",
         body: preferences,
-        fallback: "Could not save your preferences",
+        fallback: t(
+          "settings.messageList.saveFailed",
+          "Could not save your preferences",
+        ),
       });
     },
     onSuccess: (preferences) =>
