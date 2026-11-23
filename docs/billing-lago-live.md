@@ -20,7 +20,7 @@ notes for whoever repeats this:
 The organization also needed the `postgres_enriched_events` feature flag for the
 api-worker to enrich ingested events (default off for a fresh org).
 
-## Wiring
+## Original fixture wiring
 
 - `server/src/billing/lago-client.ts` implements the outbox's `LagoUsageClient`
   against `POST /api/v1/events`: the outbox `eventId` becomes Lago's
@@ -50,7 +50,7 @@ Evidence files live in [`evidence/billing-lago-live/`](./evidence/billing-lago-l
 the running deployment's artifacts are kept outside the checkout at
 `/Users/wuyj/.local/share/openbot/billing-97`.
 
-## Remaining Lago-side gap
+## Original fixture aggregation result
 
 Enrichment runs (one enriched row per event once the org flag is on), but
 `quantified_events` — the table behind `current_usage` units — stays empty in
@@ -59,3 +59,25 @@ the default compose and upstream documents it as requiring ClickHouse and
 Redpanda. Raw-event ingestion, idempotency, outage retention and replay are all
 verified above; showing aggregated units in Lago's own `current_usage` response
 needs that service deployed alongside.
+
+## Production worker replay verified in isolation
+
+The follow-up used fresh OpenBot PostgreSQL, a pinned Bifrost gateway with a
+synthetic provider, and a separate Lago CE v1.57.0 deployment with PostgreSQL,
+Redis, the API and the API worker. The [worker configuration and reconciliation
+procedure](billing-lago-usage-export.md) supersede the original fixture script.
+
+| Check | Result |
+| --- | --- |
+| Operation | `3e711348-1dfb-4447-8a80-eaf1d07b4ddd` |
+| Bifrost request ID, OpenBot outbox ID and Lago transaction ID | `aab856b5-429d-45a5-9ec6-b7fc5136574e` |
+| Settlement while Lago API was stopped | 1 input token, 4 output tokens, 1 charged microcredit, outbox pending |
+| Recovery through the real worker | Original event accepted after API restart, one Lago row and one OpenBot debit |
+| Lago current usage | 2 units across two fixture settlements, period ending `2026-11-30T23:59:59Z`, amount and total both 0 cents |
+| Discrepancy and repair | Altered fixture's output tokens from 4 to 5 in Lago, reconciled to paused, removed the discrepant fixture row, then replayed the original ID with 4 output tokens |
+| After repair | One matching Lago row at zero cents, one OpenBot charge of 1 microcredit, original mismatch reason retained |
+| Repeat flush | Zero pending events sent |
+
+This deployment reported `current_usage` through the PostgreSQL path without
+the separate events processor. The synthetic provider incurred no external
+model cost. Real Zhipu and the shared deployment were outside this run.

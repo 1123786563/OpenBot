@@ -486,21 +486,6 @@ Bun.serve({
   },
 });
 
-async function lago(path: string, init?: RequestInit) {
-  const response = await fetch(`${lagoUrl}/api/v1${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${lagoKey}`,
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-  return {
-    status: response.status,
-    body: await response.json().catch(() => null),
-  };
-}
-
 // ── Matrix ──────────────────────────────────────────────────────────────────
 
 let revisions: Record<string, string> = {};
@@ -994,37 +979,23 @@ await scenario("lago-reconciliation", async () => {
     ["A", identityA],
     ["B", identityB],
   ] as const;
-  for (const [, identity] of accounts) {
-    const accountId = await accountIdOf(identity);
-    assert(accountId, "account missing");
-    await lago("/customers", {
-      method: "POST",
-      body: JSON.stringify({
-        customer: {
-          external_id: accountId,
-          name: `Matrix ${accountId.slice(0, 8)}`,
-        },
-      }),
-    });
-    await lago("/subscriptions", {
-      method: "POST",
-      body: JSON.stringify({
-        subscription: {
-          external_customer_id: accountId,
-          external_id: `openbot-sub-${accountId}`,
-          plan_code: process.env.LAGO_PLAN_CODE ?? "openbot-usage-v2",
-        },
-      }),
-    });
-  }
+  const subscriptionId = process.env.LAGO_USAGE_SUBSCRIPTION_ID;
+  assert(
+    subscriptionId,
+    "Set LAGO_USAGE_SUBSCRIPTION_ID before running the matrix",
+  );
   const client = createLagoHttpUsageClient({
     baseUrl: lagoUrl,
     apiKey: lagoKey,
     metricCode: "model-usage",
-    externalSubscriptionId: (accountId) => `openbot-sub-${accountId}`,
+    externalSubscriptionId: subscriptionId,
   });
   const exporter = createLagoUsageExporter(database, client);
   const flushed = await exporter.flush();
+  assert(
+    !flushed.unavailable && flushed.paused === 0,
+    "Lago usage did not reconcile",
+  );
   const balances: Record<string, unknown> = {};
   for (const [name, identity] of accounts) {
     balances[name] = await ledger.balance(identity);

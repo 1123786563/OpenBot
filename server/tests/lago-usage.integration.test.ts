@@ -32,7 +32,11 @@ test("Lago exporter replays a pending raw event idempotently and pauses on misma
         throw new Error("Lago unavailable");
       },
     });
-    expect(await outage.flush()).toEqual({ sent: 0, paused: 0 });
+    expect(await outage.flush()).toEqual({
+      sent: 0,
+      paused: 0,
+      unavailable: true,
+    });
     expect(
       (
         await database
@@ -44,20 +48,22 @@ test("Lago exporter replays a pending raw event idempotently and pauses on misma
     const exporter = createLagoUsageExporter(database, {
       send: async (event) => {
         sent.push(event);
-        return {
-          eventId,
-          inputTokens: 3n,
-          outputTokens: 5n,
-          amountMicrocredits: 17n,
-        };
+        return "matched";
       },
     });
-    expect(await exporter.flush()).toEqual({ sent: 1, paused: 0 });
-    expect(await exporter.flush()).toEqual({ sent: 0, paused: 0 });
+    expect(await exporter.flush()).toEqual({
+      sent: 1,
+      paused: 0,
+      unavailable: false,
+    });
+    expect(await exporter.flush()).toEqual({
+      sent: 0,
+      paused: 0,
+      unavailable: false,
+    });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toEqual({
       eventId,
-      accountId,
       operationId: "op-97",
       resource: "glm-4.6",
       inputTokens: 3n,
@@ -71,14 +77,13 @@ test("Lago exporter replays a pending raw event idempotently and pauses on misma
       .set({ state: "pending" })
       .where(eq(lagoUsageEvents.eventId, eventId));
     const mismatch = createLagoUsageExporter(database, {
-      send: async () => ({
-        eventId,
-        inputTokens: 4n,
-        outputTokens: 5n,
-        amountMicrocredits: 17n,
-      }),
+      send: async () => "mismatch",
     });
-    expect(await mismatch.flush()).toEqual({ sent: 0, paused: 1 });
+    expect(await mismatch.flush()).toEqual({
+      sent: 0,
+      paused: 1,
+      unavailable: false,
+    });
     expect(
       (
         await database
@@ -87,10 +92,46 @@ test("Lago exporter replays a pending raw event idempotently and pauses on misma
           .where(eq(lagoUsageEvents.eventId, eventId))
       )[0]?.state,
     ).toBe("paused");
+    expect(await mismatch.flush()).toEqual({
+      sent: 0,
+      paused: 0,
+      unavailable: false,
+    });
+    expect(await exporter.reconcileEvent(eventId)).toMatchObject({
+      result: "matched",
+      previousState: "paused",
+      previousFailure: "Lago stored usage mismatch",
+    });
+    expect(
+      (
+        await database
+          .select()
+          .from(lagoUsageEvents)
+          .where(eq(lagoUsageEvents.eventId, eventId))
+      )[0],
+    ).toMatchObject({
+      state: "accepted",
+      failure: "Lago stored usage mismatch",
+    });
+    const notVisible = createLagoUsageExporter(database, {
+      send: async () => "missing",
+    });
+    expect(await notVisible.reconcileEvent(eventId)).toMatchObject({
+      previousState: "accepted",
+      result: "missing",
+    });
+    expect(await exporter.flush()).toEqual({
+      sent: 1,
+      paused: 0,
+      unavailable: false,
+    });
   } finally {
     await database
       .delete(lagoUsageEvents)
       .where(eq(lagoUsageEvents.eventId, eventId));
+    await database
+      .delete(testCreditAccounts)
+      .where(eq(testCreditAccounts.id, accountId));
     await database.$client.close();
   }
 });

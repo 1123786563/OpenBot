@@ -286,6 +286,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   let token = firstToken;
   const secondToken = crypto.randomUUID();
   let sends = 0;
+  let gatewayRequestId: string | null = null;
   const sent: { model: string; max_tokens: number }[] = [];
   const externalGateway = process.env.OPENBOT_TEST_BIFROST_FIXTURE_URL;
   let lastOperationId: string | null = null;
@@ -299,6 +300,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       const input = await request.json();
       sent.push(input);
       sends++;
+      gatewayRequestId = request.headers.get("x-request-id");
       if (!externalGateway)
         expect(request.headers.get("x-openbot-operation-id")).toBe(
           lastOperationId,
@@ -576,6 +578,24 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       reservedMicrocredits: "2",
       chargedMicrocredits: "1",
       releasedMicrocredits: "1",
+    });
+    const [exported] = await database
+      .select()
+      .from(lagoUsageEvents)
+      .where(eq(lagoUsageEvents.operationId, operationId));
+    const [binding] = await database
+      .select({ requestId: testCreditOperations.gatewayRequestId })
+      .from(testCreditOperations)
+      .where(eq(testCreditOperations.id, operationId));
+    expect(binding?.requestId).toBeTruthy();
+    if (!externalGateway) expect(binding?.requestId).toBe(gatewayRequestId);
+    expect(exported).toMatchObject({
+      eventId: binding?.requestId,
+      operationId,
+      inputTokens: 1n,
+      outputTokens: 4n,
+      amountMicrocredits: 1n,
+      state: "pending",
     });
     expect(
       (await request(`/operations/${operationId}`, undefined, secondToken))

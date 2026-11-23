@@ -267,6 +267,9 @@ services:
       TEST_CREDIT_GATEWAY_REVISION:
       TEST_CREDIT_GATEWAY_IMAGE_DIGEST:
       TEST_CREDIT_METERING_REVISION:
+      LAGO_URL:
+      LAGO_API_KEY:
+      LAGO_USAGE_SUBSCRIPTION_ID:
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:-openbot-dev-worker-secret}
     depends_on:
       migrate:

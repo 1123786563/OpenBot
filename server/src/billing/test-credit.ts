@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   and,
   eq,
@@ -2520,21 +2521,22 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       state: "verified",
       costMicrocredits: settled?.state === "settled" ? charged : 0n,
     });
-    if (settled && verified && settled.state === "settled") {
-      await tx
-        .insert(lagoUsageEvents)
-        .values({
-          eventId: `lago:${accountId}:${id}`,
-          accountId,
-          operationId: id,
-          resource: settled.route.model,
-          inputTokens: verified.inputTokens,
-          outputTokens: verified.outputTokens,
-          amountMicrocredits: charged,
-          occurredAt: verified.recordedAt,
-          state: "pending",
-        })
-        .onConflictDoNothing();
+    if (settled?.state === "settled") {
+      await tx.insert(lagoUsageEvents).values({
+        eventId:
+          row.gatewayRequestId ??
+          `openbot-${createHash("sha256")
+            .update(JSON.stringify([accountId, id]))
+            .digest("hex")}`,
+        accountId,
+        operationId: id,
+        resource: settled.route.model,
+        inputTokens: verified.inputTokens,
+        outputTokens: verified.outputTokens,
+        amountMicrocredits: charged,
+        occurredAt: row.dispatchedAt ?? verified.recordedAt,
+        state: "pending",
+      });
     }
     return settled && operationReceipt(settled, verified);
   }
