@@ -23,6 +23,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { i18n, setLocalePreference } from "@/i18n";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { agentKeys } from "@/lib/agents/queries";
@@ -126,7 +127,8 @@ beforeAll(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   requests.length = 0;
   respond = async () => {
     throw new Error("Unexpected request");
@@ -352,4 +354,35 @@ test("search loads older history explicitly and includes new matches", async () 
   await user.keyboard("{Control>}a{/Control}{Backspace}");
   expect(await view.findByText("Recent conversation")).toBeTruthy();
   expect(view.getByText("Archived conversation")).toBeTruthy();
+});
+
+test("pagination speaks the interface language without leaving the page", async () => {
+  const view = renderSidebar();
+  const load = await view.findByRole("button", {
+    name: "Load older conversations",
+  });
+  await act(() => setLocalePreference("zh-CN"));
+  expect(view.getByRole("button", { name: "加载更早的对话" })).toBe(load);
+
+  // A page asks for older conversations and stalls: the waiting button is translated too.
+  const pending = Promise.withResolvers<Response>();
+  respond = () => pending.promise;
+  act(() => activeObserver().intersect());
+  expect(
+    await view.findByRole("button", { name: "正在加载更早的对话…" }),
+  ).toBeTruthy();
+  pending.resolve(Response.json({ error: "Unavailable" }, { status: 503 }));
+  expect(await view.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "无法加载更早的对话。",
+  );
+  expect(view.getByRole("button", { name: "重试" })).toBeTruthy();
+
+  // Back to English on the same mount, the same alert and button speak it.
+  await act(() => setLocalePreference("en"));
+  expect(view.getByRole("alert")).toHaveProperty(
+    "textContent",
+    "Couldn't load older conversations.",
+  );
+  expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
 });
