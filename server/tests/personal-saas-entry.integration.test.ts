@@ -1148,11 +1148,15 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       await stoppingWebRun;
     }
     const recoveryPath = `/api/workspace/recovery/${originalRunId}`;
+    const republished = publish(published, ["pilot"], "pilot", "fixture");
+    await saveCatalog(republished.catalog);
+    const freshPriceVersion = republished.release.id;
     const stoppedMarkup = await (
       await send("/workspace", { headers: browserHeaders })
     ).text();
     expect(stoppedMarkup).toContain("Retry with Test Credits");
     expect(stoppedMarkup).toContain("Maximum reservation for the new run");
+    expect(stoppedMarkup).toContain(freshPriceVersion);
     expect(
       (
         await recoverManaged(originalRunId, native, {
@@ -1166,7 +1170,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     expect(missingQuote.status).toBe(400);
     const outdated = await recoverManaged(originalRunId, browserNative, {
       acknowledged: true,
-      quote: { route, priceVersion: crypto.randomUUID() },
+      quote: { route, priceVersion },
     });
     expect(outdated.status).toBe(409);
     expect(await outdated.json()).toEqual({
@@ -1181,7 +1185,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
           action: "retry",
           acknowledged: "true",
           route,
-          priceVersion,
+          priceVersion: freshPriceVersion,
         }),
       });
     const [retried, replayedRetry] = await Promise.all([retry(), retry()]);
@@ -1212,7 +1216,11 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       ).json(),
     ).toMatchObject({
       state: "completed",
-      testCredit: { state: "settled", rerunOfOperationId: null },
+      testCredit: {
+        state: "settled",
+        priceVersion: freshPriceVersion,
+        rerunOfOperationId: null,
+      },
     });
     const completed = await send(retryPath, { headers: browserHeaders });
     const receiptMarkup = await completed.text();
@@ -1225,6 +1233,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
     expect(browserReplay.headers.get("location")).toBe(runPath);
     const newForm = new URLSearchParams(formData);
     newForm.set("requestId", crypto.randomUUID());
+    newForm.set("priceVersion", freshPriceVersion);
     const browserExhausted = await submitForm(newForm);
     expect(browserExhausted.status).toBe(402);
     expect(await browserExhausted.text()).toContain("Not enough Test Credits");
