@@ -1,7 +1,15 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { i18n, setLocalePreference } from "@/i18n";
 import {
   AttentionNotifier,
   BotsNavBadge,
@@ -20,7 +28,12 @@ beforeAll(() => {
   GlobalRegistrator.register();
   awayFromOpenBot();
 });
-afterEach(cleanup);
+beforeEach(() => i18n.changeLanguage("en"));
+// Tests here may end in Chinese; the next file's tests expect English.
+afterEach(async () => {
+  await i18n.changeLanguage("en");
+  cleanup();
+});
 afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
@@ -372,3 +385,47 @@ test("a ping already sent when the page opened is not announced again", async ()
   await settleReactWork();
   expect(sent).toEqual([]);
 });
+
+/*
+ * The badge's name is what is read out for the Bots item, so it follows the interface language.
+ * English has two plural forms and Chinese one; the count on the badge is the same number either
+ * way, on the same element.
+ */
+test.each([
+  [1, "1 thing needs you", "1 件事需要你处理"],
+  [3, "3 things need you", "3 件事需要你处理"],
+] as const)(
+  "a badge counting %i follows the interface language",
+  async (waiting, english, chinese) => {
+    serving([attention("expenses", { questions: waiting })]);
+    const { view } = draw();
+    const badge = await view.findByRole("img", { name: english });
+    expect(badge.textContent).toBe(String(waiting));
+    await act(() => setLocalePreference("zh-CN"));
+    expect(view.getByRole("img", { name: chinese })).toBe(badge);
+    expect(badge.textContent).toBe(String(waiting));
+    await act(() => setLocalePreference("en"));
+    expect(view.getByRole("img", { name: english })).toBe(badge);
+  },
+);
+
+test.each([
+  ["unread", { unread: 2 }, "Unread messages", "未读消息"],
+  [
+    "check-in",
+    { items: 2 },
+    "Your check-ins found something",
+    "你的定期检查有了发现",
+  ],
+] as const)(
+  "the %s dot follows the interface language",
+  async (_kind, counts, english, chinese) => {
+    serving([attention("expenses", counts)]);
+    const { view } = draw();
+    const dot = await view.findByRole("img", { name: english });
+    await act(() => setLocalePreference("zh-CN"));
+    expect(view.getByRole("img", { name: chinese })).toBe(dot);
+    // A dot says nothing in text; only its name does.
+    expect(dot.textContent).toBe("");
+  },
+);

@@ -17,9 +17,12 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
+import { i18n, setLocalePreference } from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
+import { SidebarToggle } from "@/components/layout/sidebar-toggle";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
 import {
@@ -67,7 +70,8 @@ beforeAll(() => {
   });
   globalThis.WebSocket = OfflineWebSocket as unknown as typeof WebSocket;
 });
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   globalThis.fetch = Object.assign(
     async () => Response.json({ error: "not served" }, { status: 404 }),
     { preconnect: originalFetch.preconnect },
@@ -446,4 +450,77 @@ test("new attention and check-ins notify once while narrow navigation is closed"
     if (original) Object.defineProperty(globalThis, "Notification", original);
     else Reflect.deleteProperty(globalThis, "Notification");
   }
+});
+
+test("changing language keeps the narrow navigation open, its search and people's titles intact", async () => {
+  const app = renderNarrowApp();
+  const sheet = await app.openSheet();
+  const search = within(sheet).getByRole("textbox", {
+    name: "Search conversations",
+  });
+  await app.user.type(search, "Hacker");
+  await act(() => setLocalePreference("zh-CN"));
+  expect(app.view.getByRole("dialog", { name: "导航" })).toBe(sheet);
+  expect(within(sheet).getByRole("textbox", { name: "搜索对话" })).toBe(search);
+  expect(search).toHaveProperty("value", "Hacker");
+  expect(
+    app.view
+      .getByRole("button", { name: "关闭导航", hidden: true })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(
+    within(sheet).getByRole("link", { name: /Hacker News Top Stories/ }),
+  ).toBeTruthy();
+  expect(
+    within(sheet).getByRole("link", {
+      name: /Personal Assistant\b.*AI Model and Agent Framework/,
+    }),
+  ).toBeTruthy();
+  expect(within(sheet).getByRole("link", { name: "教 Bot 做事" })).toBeTruthy();
+  await app.user.click(
+    within(sheet).getByRole("button", { name: /Dana Fresh/ }),
+  );
+  const menu = await app.view.findByRole("menu");
+  expect(within(menu).getByRole("menuitem", { name: "设置" })).toBeTruthy();
+  expect(within(menu).queryByRole("menuitem", { name: "退出登录" })).toBeNull();
+  await app.user.click(
+    within(menu).getByRole("menuitem", { name: "OpenBot for Business" }),
+  );
+  expect(
+    await app.view.findByRole("dialog", { name: "OpenBot for Business" }),
+  ).toBeTruthy();
+  await act(() => setLocalePreference("en"));
+});
+
+test("the navigation toggle keeps its state while it changes language", async () => {
+  const app = renderNarrowApp("/");
+  const toggle = await app.view.findByRole("button", {
+    name: "Open navigation",
+  });
+  await act(() => setLocalePreference("zh-CN"));
+  const zhToggle = app.view.getByRole("button", { name: "打开导航" });
+  expect(zhToggle).toBe(toggle);
+  await app.user.click(zhToggle);
+  const sheet = await app.view.findByRole("dialog", { name: "导航" });
+  expect(app.view.getByRole("button", { name: "关闭导航" })).toBe(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  await act(() => setLocalePreference("en"));
+  expect(app.view.getByRole("button", { name: "Close navigation" })).toBe(
+    toggle,
+  );
+  expect(app.view.getByRole("dialog", { name: "Navigation" })).toBe(sheet);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+});
+
+test("the page's sidebar toggle names its action in both languages", async () => {
+  const view = render(
+    <SidebarProvider>
+      <SidebarToggle />
+    </SidebarProvider>,
+  );
+  const toggle = view.getByRole("button", { name: "Show sidebar" });
+  await act(() => setLocalePreference("zh-CN"));
+  expect(view.getByRole("button", { name: "显示侧栏" })).toBe(toggle);
+  await act(() => setLocalePreference("en"));
+  expect(view.getByRole("button", { name: "Show sidebar" })).toBe(toggle);
 });
