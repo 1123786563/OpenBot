@@ -77,6 +77,7 @@
   "sign.admin.signIn": "Admin sign-in",
   "sign.heading": "Sign in to {product}",
   "sign.provider.continue": "Continue with {provider}",
+  "sign.provider.opening": "Opening {provider}…",
   "sign.required.notice": "Your organization requires you to sign in with your company account.",
   "sign.required.unavailable": "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
   "sign.sso.continue": "Continue with your company account",

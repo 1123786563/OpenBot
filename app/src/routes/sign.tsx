@@ -196,7 +196,9 @@ function SignScreen() {
           {/* Centred against the button, not against the space left of the mark. */}
           <span className="flex-1 text-center">
             {opening === provider
-              ? `Opening ${providerName(provider)}…`
+              ? t("sign.provider.opening", "Opening {provider}…", {
+                  provider: providerName(provider),
+                })
               : t("sign.provider.continue", "Continue with {provider}", {
                   provider: providerName(provider),
                 })}

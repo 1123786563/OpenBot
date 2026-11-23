@@ -277,6 +277,32 @@ test("a deployment that requires the company account says so, in the interface l
   );
 });
 
+test("opening a provider names it, in the interface language", async () => {
+  const { view, user } = renderSignScreen({
+    providers: ["google"],
+    sso: false,
+    ssoRequired: false,
+  });
+  await view.findByRole("heading", { name: "Sign in to OpenBot" });
+
+  await pinLocale("zh-CN");
+  let release: (() => void) | null = null;
+  try {
+    signInSpy = async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    };
+    await user.click(view.getByRole("button", { name: "使用 Google 继续" }));
+    expect(view.getByRole("button", { name: "正在打开 Google…" })).toBeTruthy();
+
+    await pinLocale("en");
+    expect(view.getByRole("button", { name: "Opening Google…" })).toBeTruthy();
+  } finally {
+    release?.();
+  }
+});
+
 test("a deployment with no way in says so, in the interface language", async () => {
   const { view } = renderSignScreen({
     providers: [],

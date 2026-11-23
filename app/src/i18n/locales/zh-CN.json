@@ -77,6 +77,7 @@
   "sign.admin.signIn": "管理员登录",
   "sign.heading": "登录 {product}",
   "sign.provider.continue": "使用 {provider} 继续",
+  "sign.provider.opening": "正在打开 {provider}…",
   "sign.required.notice": "你的组织要求你使用公司账号登录。",
   "sign.required.unavailable": "需要公司登录，但当前不可用。请联系你的 OpenBot 管理员获取访问权限。",
   "sign.sso.continue": "使用公司账号继续",
