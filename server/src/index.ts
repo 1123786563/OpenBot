@@ -442,6 +442,12 @@ const learningSettingsStore = createLearningSettingsStore(
 const learningProbeIntelligence = createIntelligenceClient(
   config.runtime.intelligence,
 );
+// The SDK's experimental methods are bound on a nested object. They bypass the
+// unavailable client's top-level proxy and would still make HTTP requests.
+const legacyLearningManagement =
+  config.runtime.mode === "intelligence"
+    ? learningProbeIntelligence.experimental.learning
+    : undefined;
 /*
  * Who can create a Learning container here. First the runtime key itself, on an Intelligence that
  * lets a project key create one in its own project, at the address the server already uses (a
@@ -481,16 +487,20 @@ const learningCredentials = (): LearningContainerCredentials => ({
       }
     : {}),
 });
-const learningAutoAssign = createLearningAutoAssign({
-  enabled: config.runtime.mode === "intelligence" && config.learningAutoAssign,
-  configured: configuredLearning,
-  store: learningSettingsStore,
-  probe: (containerId) =>
-    probeLearningContainer(learningProbeIntelligence, containerId),
-  instructions: learningSetupInstructions(learningApiOrigin ?? learningApiUrl),
-  create: () => ensureLearningContainer(learningCredentials()),
-  audit: createAuditStore(database),
-});
+const learningAutoAssign = legacyLearningManagement
+  ? createLearningAutoAssign({
+      enabled: config.learningAutoAssign,
+      configured: configuredLearning,
+      store: learningSettingsStore,
+      probe: (containerId) =>
+        probeLearningContainer(learningProbeIntelligence, containerId),
+      instructions: learningSetupInstructions(
+        learningApiOrigin ?? learningApiUrl,
+      ),
+      create: () => ensureLearningContainer(learningCredentials()),
+      audit: createAuditStore(database),
+    })
+  : undefined;
 /*
  * Each person's own Learning space: every recording they make joins it, and every Bot they run uses its Skills. Made
  * with the same credential as the default container, on first need: when their browser connects, and again on a
@@ -517,11 +527,10 @@ const learningSharingStore = createLearningSharingStore(database);
 const openSkillIndex = createOpenSkillIndex({
   read: () => learningSharingStore.openSources(),
 });
-const learningSettings = withLearningAutoAssign(
-  learningSettingsStore,
-  learningAutoAssign,
-);
-learningAutoAssign.start();
+const learningSettings = learningAutoAssign
+  ? withLearningAutoAssign(learningSettingsStore, learningAutoAssign)
+  : learningSettingsStore;
+learningAutoAssign?.start();
 await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -1851,23 +1860,25 @@ const recorderExpirySweep = repeatAfterEach(async () => {
  * DEV_ACTOR), so what its Bots learn is approved for them while automatic approval is on: once shortly after boot, so
  * what waited while the app was closed doesn't wait another 15 minutes, then every 15 minutes.
  */
-const autoApprover = createAutoApprover({
-  manage: learningProbeIntelligence.experimental.learning,
-  enabled: async () =>
-    currentEdition() === "personal" &&
-    ((await learningSettings.read()).autoApprove ?? true),
-  sources: async () =>
-    learningScopes({
-      edition: "personal",
+const autoApprover = legacyLearningManagement
+  ? createAutoApprover({
+      manage: legacyLearningManagement,
+      enabled: async () =>
+        currentEdition() === "personal" &&
+        ((await learningSettings.read()).autoApprove ?? true),
+      sources: async () =>
+        learningScopes({
+          edition: "personal",
+          userId: DEV_ACTOR.id,
+          settings: await learningSettings.read(),
+        }),
+      approvals: skillApprovalStore,
       userId: DEV_ACTOR.id,
-      settings: await learningSettings.read(),
-    }),
-  approvals: skillApprovalStore,
-  userId: DEV_ACTOR.id,
-  audit: bootAuditStore,
-});
+      audit: bootAuditStore,
+    })
+  : undefined;
 const sweepAutoApprovals = () =>
-  void autoApprover.sweep().catch((error) =>
+  void autoApprover?.sweep().catch((error) =>
     console.error(
       JSON.stringify({
         type: "learning-auto-approve-sweep-error",
@@ -1877,12 +1888,12 @@ const sweepAutoApprovals = () =>
     ),
   );
 const firstAutoApproveSweep =
-  currentEdition() === "personal"
+  autoApprover && currentEdition() === "personal"
     ? setTimeout(sweepAutoApprovals, 10_000)
     : undefined;
 firstAutoApproveSweep?.unref();
 const autoApproveTimer =
-  currentEdition() === "personal"
+  autoApprover && currentEdition() === "personal"
     ? setInterval(sweepAutoApprovals, 15 * 60_000)
     : undefined;
 autoApproveTimer?.unref();
@@ -3566,7 +3577,7 @@ const app = createApp(
       copilotRuntime.learning && config.runtime.intelligence
         ? createInspectorLearningReader(config.runtime.intelligence)
         : undefined,
-    manage: learningProbeIntelligence.experimental.learning,
+    manage: legacyLearningManagement,
     modelUnavailable: learningModelUnavailable(process.env),
     skills: copilotRuntime.learning?.containerSkills,
     approvals: skillApprovalStore,
@@ -3751,6 +3762,9 @@ const app = createApp(
         : {}),
       approvals: skillApprovalStore,
       autoApprover,
+      ...(config.runtime.mode === "openbot"
+        ? { openbotDatabase: database }
+        : {}),
       skillsOf: (userId) =>
         copilotRuntime.learning?.personalSkills(userId) ??
         Promise.resolve({ unavailable: "unavailable" as const }),
@@ -3761,7 +3775,7 @@ const app = createApp(
         Promise.resolve({ unavailable: "unavailable" as const }),
       invalidate: () => openSkillIndex.invalidate(),
       sharingAllowed: skillSharingAllowed,
-      manage: learningProbeIntelligence.experimental.learning,
+      manage: legacyLearningManagement,
       modelUnavailable: learningModelUnavailable(process.env),
       recordingTitles: recorderExtension.recordingTitles,
       settings: learningSettings,

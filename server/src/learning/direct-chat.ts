@@ -152,6 +152,42 @@ async function autoApproval(tx: ProfileReadExecutor, personId: string) {
   return row?.enabled ?? false;
 }
 
+async function writePersonalAutoApproval(
+  tx: Transaction,
+  personId: string,
+  enabled: boolean,
+) {
+  const changed = await tx
+    .insert(preferences)
+    .values({ personId, enabled })
+    .onConflictDoUpdate({
+      target: preferences.personId,
+      set: { enabled },
+      setWhere: ne(preferences.enabled, enabled),
+    })
+    .returning();
+  if (changed.length > 0) {
+    await tx.insert(auditEvents).values({
+      actorUserId: personId,
+      eventType: "learning.personal_auto_approval_changed",
+      targetType: "person",
+      targetId: personId,
+      payload: { enabled },
+    });
+  }
+}
+
+/** This preference belongs to the authenticated person across their conversations. */
+export function setPersonalLearningAutoApproval(
+  database: Database,
+  personId: string,
+  enabled: boolean,
+) {
+  return database.transaction((tx) =>
+    writePersonalAutoApproval(tx, personId, enabled),
+  );
+}
+
 async function saveReview(
   tx: Transaction,
   proposalId: string,
@@ -974,24 +1010,7 @@ export function createDirectChatLearning(
   ) {
     return database.transaction(async (tx) => {
       if (!(await authorize(tx))) return false;
-      const changed = await tx
-        .insert(preferences)
-        .values({ personId: scope.personId, enabled })
-        .onConflictDoUpdate({
-          target: preferences.personId,
-          set: { enabled },
-          setWhere: ne(preferences.enabled, enabled),
-        })
-        .returning();
-      if (changed.length > 0) {
-        await tx.insert(auditEvents).values({
-          actorUserId: scope.personId,
-          eventType: "learning.personal_auto_approval_changed",
-          targetType: "person",
-          targetId: scope.personId,
-          payload: { enabled },
-        });
-      }
+      await writePersonalAutoApproval(tx, scope.personId, enabled);
       return true;
     });
   }

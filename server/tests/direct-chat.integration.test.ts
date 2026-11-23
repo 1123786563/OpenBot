@@ -87,8 +87,11 @@ import {
   users,
   workItems,
 } from "../src/db/schema";
+import { currentEdition, setEdition } from "../src/edition";
+import { createSkillApprovalStore } from "../src/learning/approvals";
 import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
+import { createLearningSharingStore } from "../src/learning/sharing";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createMemoryRoutes } from "../src/memory/routes";
 import { createMemoryStore } from "../src/memory/store";
@@ -128,6 +131,89 @@ const post = (body: unknown) => ({
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify(body),
+});
+
+test("the original personal Learning switch updates the preference read in OpenBot chat", async () => {
+  const actor = await person();
+  const bot = await profiles.create(actor, {
+    name: "Learning preference Bot",
+    visibility: "private",
+    title: "Bot",
+    roleDescription: "Answers locally.",
+  });
+  const previousEdition = currentEdition();
+  try {
+    setEdition("personal");
+    const chat = web(database, actor, bot.id, async () => {
+      throw new Error("Reading a preference must not call a model.");
+    });
+    const opened = await chat.request(
+      "/api/channels",
+      post({ agentIds: [bot.id] }),
+    );
+    expect(opened.status).toBe(201);
+    const { channel } = await opened.json();
+    const path = `/api/copilotkit/threads/${channel.threadId}/learn?agentId=${bot.id}`;
+    expect(await (await chat.request(path)).json()).toMatchObject({
+      autoApprove: false,
+    });
+
+    const args = new Array(createApp.length) as unknown as Parameters<
+      typeof createApp
+    >;
+    args[0] = { ...config, singleUser: false };
+    args[1] = {
+      handler: () => new Response(null, { status: 204 }),
+      api: {
+        getSession: async () => ({
+          user: { id: actor.id, email: actor.email, name: actor.id },
+        }),
+      },
+    } as never;
+    args[2] = { rolesForUser: async () => ["user"] };
+    const personalLearning = {
+      store: createLearningSharingStore(database),
+      approvals: createSkillApprovalStore(database),
+      skillsOf: async () => ({ unavailable: "unavailable" as const }),
+      invalidate: () => {},
+      sharingAllowed: async () => false,
+      settings: createLearningSettingsStore(database),
+      scopesFor: async () => [],
+      openbotDatabase: database,
+    };
+    args[34] = { personalLearning };
+    const settings = createApp(...args);
+    const refused = await settings.request(
+      "/api/settings/learning/auto-approve",
+      {
+        ...post({ autoApprove: true }),
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "sec-fetch-site": "cross-site",
+        },
+      },
+    );
+    expect(refused.status).toBe(403);
+    expect(await (await chat.request(path)).json()).toMatchObject({
+      autoApprove: false,
+    });
+    const response = await settings.request(
+      "/api/settings/learning/auto-approve",
+      {
+        ...post({ autoApprove: true }),
+        method: "PUT",
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ autoApprove: true });
+    expect(await (await chat.request(path)).json()).toMatchObject({
+      autoApprove: true,
+    });
+  } finally {
+    setEdition(previousEdition);
+    await database.delete(users).where(eq(users.id, actor.id));
+  }
 });
 
 class AnsweringAgent extends AbstractAgent {
