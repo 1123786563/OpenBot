@@ -62,6 +62,23 @@ DATABASE_URL=… bun scripts/billing-paths.ts apps
 
 Registering and approving applications is an operator action. The Credits page shows a person their authorizations, lets them grant one to an approved application whose path is open, and revoke it.
 
+## Set the shared provider-cost ceiling
+
+Apply migration `0117_shared_pilot_provider_cost` before deploying the updated API and Worker. Run these commands from `server/` with the operator's database credentials.
+
+```sh
+bun scripts/billing-paths.ts provider-cost
+bun scripts/billing-paths.ts provider-cost set --microcredits 1000000 --by pilot-lead
+```
+
+The first command shows the configured ceiling, cumulative exposure, and remaining headroom. The second sets the absolute ceiling and records the previous value, new value, operator, and time. Use the operator's own identifier in `--by`.
+
+The shared ceiling covers all pilot reservations across billing accounts and model routes, including operations created before the migration. Each reservation counts at its frozen upper bound until trusted evidence reports cost. Unknown dispatched operations keep the bound after their user reservation releases, including after evidence polling ends. Confirmed usage replaces the bound. A confirmed unsent operation frees its share. Existing limits for individual routes still apply.
+
+The database checks the ceiling in the reservation transaction. Pausing a route blocks new admissions while dispatched operations continue to settle. If trusted evidence exceeds the frozen bound, the ledger records the observed cost and can report negative headroom.
+
+Keep migration `0117` applied during a binary rollback. Its trigger still caps new reservations. An older API image may return a generic error on a capped reservation. In the deployment drill, verify the operator's database role can inspect and edit the ceiling, then test a full cap and an in-flight settlement with the rollback API and Worker images against the migrated database.
+
 ## Still gated on a deployment
 
 Querying and closing orders on the real channel needs the test merchant. The restore and rollback drills above run against the ledger; the deployment drill that starts an older build is separate. An application's credential, and the controlled executor behind `/v1/dispatch`, are mounted by a deployment. The WeKnora adapter in `server/src/billing/weknora-ingestion.ts` keeps its own in-memory authorization map and has not moved onto this contract.

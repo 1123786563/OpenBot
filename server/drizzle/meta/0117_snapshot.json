@@ -1,5 +1,5 @@
 {
-  "id": "db3c1f6b-10b4-4781-8866-460b45d19afd",
+  "id": "132118ed-e503-4191-83e6-5c0f02015afa",
   "prevId": "d612d69b-dca5-44f3-9b97-c61327b27dcb",
   "version": "7",
   "dialect": "postgresql",
@@ -14282,24 +14282,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
-        },
-        "locked_kind": {
-          "name": "locked_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "locked_microcredits": {
-          "name": "locked_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "test_merchant": {
-          "name": "test_merchant",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "channel": {
           "name": "channel",
