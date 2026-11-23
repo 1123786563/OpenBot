@@ -42,9 +42,12 @@ export function sessionEventRoutes(options: {
       retry.hidden = false;
     }
 
+    function canCheckAccess() {
+      return !document.hidden && document.hasFocus() && navigator.onLine;
+    }
+
     function resume() {
-      if (controller.signal.aborted && !document.hidden && navigator.onLine)
-        location.reload();
+      if (controller.signal.aborted && canCheckAccess()) location.reload();
     }
 
     async function checkAccess() {
@@ -65,7 +68,7 @@ export function sessionEventRoutes(options: {
         const delay = nextRemaining();
         if (
           response.status !== 204 || !Number.isInteger(accessMs) ||
-          accessMs > 60_000 || delay <= 0 || remaining() <= 0 || document.hidden
+          accessMs > 60_000 || delay <= 0 || remaining() <= 0 || !canCheckAccess()
         ) {
           withdraw();
           if ([401, 403, 503].includes(response.status)) location.replace("/workspace");
@@ -92,7 +95,7 @@ export function sessionEventRoutes(options: {
       if (document.hidden) withdraw();
       else resume();
     });
-    if (!document.hidden && navigator.onLine) void checkAccess();
+    if (canCheckAccess()) void checkAccess();
     else withdraw();
   `,
         { headers: { "content-type": "text/javascript; charset=utf-8" } },

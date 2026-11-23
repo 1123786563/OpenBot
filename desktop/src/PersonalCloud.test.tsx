@@ -518,3 +518,81 @@ test("an authorized owner can submit a managed text run and read its settled cha
   );
   await screen.findByText("Fresh managed answer");
 });
+
+test("focus while offline cannot reopen protected content", async () => {
+  const workspace = {
+    kind: "workspace",
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "Private assistant" },
+    conversations: [],
+    accessMs: 60_000,
+  } satisfies CloudView;
+  let checks = 0;
+  const screen = within(
+    render(
+      <PersonalCloud
+        request={async () => {
+          checks++;
+          return workspace;
+        }}
+      />,
+    ).container,
+  );
+  await screen.findByText("Private assistant");
+  await act(async () => {
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(Boolean(screen.queryByText("Private assistant"))).toBe(false);
+  expect(checks).toBe(1);
+
+  await act(async () => window.dispatchEvent(new Event("online")));
+  await screen.findByText("Private assistant");
+  expect(checks).toBe(2);
+});
+
+test("a pending poll cannot undo a newer sign-out response", async () => {
+  const workspace = {
+    kind: "workspace",
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "Private assistant" },
+    conversations: [],
+    computer: { status: "not_started", cutoff: null },
+    accessMs: 4_000,
+  } satisfies CloudView;
+  const pollStarted = Promise.withResolvers<void>();
+  const poll = Promise.withResolvers<CloudView>();
+  const action = Promise.withResolvers<null>();
+  let checks = 0;
+  const screen = within(
+    render(
+      <PersonalCloud
+        request={async () => {
+          switch (++checks) {
+            case 1:
+              return workspace;
+            case 2:
+              pollStarted.resolve();
+              return poll.promise;
+            default:
+              return { kind: "signedOut" };
+          }
+        }}
+        workspaceAction={() => action.promise}
+      />,
+    ).container,
+  );
+  const user = userEvent.setup({ document });
+  await user.click(
+    await screen.findByRole("button", { name: "Start Computer" }),
+  );
+  await pollStarted.promise;
+  await act(async () => action.resolve(null));
+  await screen.findByRole("button", { name: "Sign in with browser" });
+  await act(async () => poll.resolve(workspace));
+  expect(Boolean(screen.queryByText("Private assistant"))).toBe(false);
+  expect(
+    screen.getByRole("button", { name: "Sign in with browser" }),
+  ).toBeTruthy();
+});

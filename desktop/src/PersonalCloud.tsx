@@ -167,11 +167,15 @@ export function PersonalCloud({
     runs: AutomationRun[];
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(() =>
+    navigator.onLine ? null : ACCESS_ERROR,
+  );
 
   const generation = useRef(0);
+  const latestRead = useRef(0);
   const lastRun = useRef<{ workspaceId: string; id: string } | null>(null);
   const foreground = useRef(!document.hidden);
+  const online = useRef(navigator.onLine);
   const access = useRef<(() => number) | null>(null);
   const [checkVersion, recheck] = useState(0);
 
@@ -188,10 +192,18 @@ export function PersonalCloud({
       const started = performance.now();
       const wallStarted = Date.now();
       const current = generation.current;
-      const next = await request(action);
-      if (current !== generation.current) return;
+      const check = ++latestRead.current;
+      const superseded = () =>
+        current !== generation.current || check !== latestRead.current;
+      const next = await request(action).catch((error: unknown) => {
+        if (!superseded()) throw error;
+      });
+      if (!next || superseded()) return;
       if (next.kind === "workspace") {
-        if (!foreground.current) return;
+        if (!foreground.current || !online.current || !navigator.onLine) {
+          withdraw(ACCESS_ERROR);
+          return;
+        }
         const remaining = () =>
           next.accessMs -
           Math.max(performance.now() - started, Date.now() - wallStarted);
@@ -217,32 +229,37 @@ export function PersonalCloud({
   useEffect(() => {
     const background = () => {
       foreground.current = false;
-      flushSync(() => withdraw(null));
+      flushSync(() => withdraw(online.current ? null : ACCESS_ERROR));
     };
     const resume = () => {
       if (document.hidden) return;
       foreground.current = true;
+      if (!online.current) return;
       flushSync(() => {
         withdraw(null);
         recheck((version) => version + 1);
       });
     };
     const visibility = () => (document.hidden ? background() : resume());
-    const offline = () => flushSync(() => withdraw(ACCESS_ERROR));
-    const online = () => {
+    const disconnected = () => {
+      online.current = false;
+      flushSync(() => withdraw(ACCESS_ERROR));
+    };
+    const connected = () => {
+      online.current = true;
       if (foreground.current) resume();
     };
     window.addEventListener("blur", background);
     window.addEventListener("focus", resume);
-    window.addEventListener("offline", offline);
-    window.addEventListener("online", online);
+    window.addEventListener("offline", disconnected);
+    window.addEventListener("online", connected);
     document.addEventListener("visibilitychange", visibility);
     return () => {
       generation.current++;
       window.removeEventListener("blur", background);
       window.removeEventListener("focus", resume);
-      window.removeEventListener("offline", offline);
-      window.removeEventListener("online", online);
+      window.removeEventListener("offline", disconnected);
+      window.removeEventListener("online", connected);
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [withdraw]);
@@ -273,6 +290,7 @@ export function PersonalCloud({
   useEffect(() => {
     if (
       !foreground.current ||
+      !online.current ||
       busy ||
       (view !== null && view.kind !== "waiting") ||
       failure
