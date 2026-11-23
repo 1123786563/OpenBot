@@ -1739,7 +1739,8 @@ fn run(args: &[String], here: &Path) {
     fn callback_on(port: u16, code: &str, state: &str) -> std::io::Result<String> {
         let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
         let mut stream = std::net::TcpStream::connect_timeout(&address, Duration::from_secs(2))?;
-        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+        // Leave time for the relay to wait for its upstream before the fixture replies.
+        stream.set_read_timeout(Some(Duration::from_secs(20)))?;
         write!(
             stream,
             "GET /auth/callback?code={code}&scope=openid&state={state} HTTP/1.1\r\n\
@@ -1925,7 +1926,8 @@ def login_chatgpt(*, store_path=None, host="localhost", port=1455, callback_path
             "{crowded}"
         );
 
-        let first = callback_on(relay, "ac.first", &state).unwrap();
+        let first = callback_on(relay, "ac.first", &state)
+            .expect("the relay forwards the first valid callback and returns the upstream reply");
         assert!(first.contains("You're signed in"), "{first}");
 
         let again = callback_on(relay, "ac.again", &state).unwrap();
