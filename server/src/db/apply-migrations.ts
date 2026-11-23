@@ -9,18 +9,19 @@
  * See `./migration-reach` for the check that refuses unrecognized histories. This runner can
  * reconcile the known pre-merge Personal SaaS trial journal.
  */
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
+
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Sql, TransactionSql } from "postgres";
 import {
   type AppliedMigration,
   type FolderMigration,
   type MigrationsJournal,
-  migratorHighWaterMark,
   migrationsOutOfReach,
+  migratorHighWaterMark,
   outOfReachRefusal,
   readMigrationFolder,
 } from "./migration-reach";
