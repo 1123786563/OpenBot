@@ -996,8 +996,11 @@ test("puts the server beside the database and the Bots, and the worker beside th
   expect(Object.keys(services.worker.environment ?? {}).sort()).toEqual([
     "DATABASE_URL",
     "DEPLOYMENT_ID",
+    "OPENBOT_TEST_CREDIT_CONVERSATIONS",
     "OTEL_SERVICE_NAME",
     "SERVER_INTERNAL_URL",
+    "TEST_CREDIT_CASDOOR_ISSUER",
+    "TEST_CREDIT_CASDOOR_PROVIDER_ID",
     "WORKER_SHARED_SECRET",
   ]);
   expect(services.worker.environment?.SERVER_INTERNAL_URL).toBe(
