@@ -41,6 +41,7 @@ import { wireCoordination } from "./agents/coordination-wiring";
 import { createAgentFetch } from "./agents/endpoint";
 import { createHandoffDesk } from "./agents/handoff";
 import { createHandoffRunner } from "./agents/handoff-runner";
+import { HANDOFF_TOOL } from "./agents/handoff-tool";
 import { startHandoffDelivery } from "./agents/handoff-wiring";
 import { runsIsolated } from "./agents/isolation";
 import {
@@ -2392,6 +2393,16 @@ const routineAgentRunner = new IntelligenceAgentRunner({
   authToken: routineIntelligence.ɵgetRunnerAuthToken(),
 });
 
+const budgetedDelegationTools = async (run: RunAssertion) =>
+  (await coordination.toolsForRun(run)).filter(
+    ({ name }) => name === HANDOFF_TOOL,
+  );
+
+const requireOpenBillingTask = async (ownerUserId: string, taskId: string) => {
+  const task = await taskStore.locate(ownerUserId, taskId);
+  if (!task || task.resolvedAt) throw new Error("This task is no longer open.");
+};
+
 const meteredTurn = (
   kind: "routine" | "task",
   fallback: Parameters<typeof budgetedTurn>[4],
@@ -2424,9 +2435,8 @@ const meteredTurn = (
         throw new Error("This routine is paused.");
       if (kind === "task") {
         const taskId = budget?.stepId?.slice("task-".length);
-        const task = taskId && (await taskStore.locate(ownerUserId, taskId));
-        if (!task || task.resolvedAt)
-          throw new Error("This task is no longer open.");
+        if (!taskId) throw new Error("The billing Task is unavailable.");
+        await requireOpenBillingTask(ownerUserId, taskId);
       }
       const admitted = await serverTurnAdmission({
         ownerUserId,
@@ -2438,6 +2448,25 @@ const meteredTurn = (
         throw new Error("The headless turn was cancelled.");
     },
     fallback,
+    ({ ownerUserId, agentId, initiator, budget }, run) =>
+      restrictCoordinationForRun(initiator, async () => {
+        const parent = {
+          actorId: ownerUserId,
+          botId: agentId,
+          runId: run.runId,
+          threadId: run.threadId,
+          budgetId: run.budgetId,
+          coordinationOperationId: run.operationId,
+          ...(kind === "task" && budget?.stepId
+            ? { billingTaskId: budget.stepId.slice("task-".length) }
+            : {}),
+          initiator: initiator ?? PERSON_INITIATOR,
+        };
+        return [
+          ...(await budgetedDelegationTools(parent)),
+          subagents.toolForRun(parent),
+        ];
+      })(),
   );
 
 const routineRunner = createRoutineRunner({
@@ -2484,6 +2513,24 @@ const routineRunner = createRoutineRunner({
  * without resuming its thread, because the action goes back to the conversation instead.
  */
 const subagents = createSubagents({
+  backgroundModel,
+  authorizeBudgetedTurn: async (
+    { ownerUserId, agentId, threadId, signal },
+    parent,
+  ) => {
+    if (parent.billingTaskId)
+      await requireOpenBillingTask(ownerUserId, parent.billingTaskId);
+    const actor = await actorFor(ownerUserId);
+    if (!(await agentProfileStore.get(actor, agentId)))
+      throw new Error("The Bot is no longer available.");
+    const admitted = await serverTurnAdmission({
+      ownerUserId,
+      agentId,
+      threadId,
+      signal,
+    });
+    if (admitted.aborted) throw new Error("The subagent was cancelled.");
+  },
   turn: {
     prepareRunInput: prepareProductRunInput,
     onKnownStop: productTelemetry.stopKnown,
@@ -3273,6 +3320,26 @@ let workOfferedListener: WorkOfferedListener | undefined;
 
 if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
   workOfferedListener = await startHandoffDelivery({
+    backgroundModel,
+    authorizeBudgetedWork: async (work) => {
+      if (work.billingTaskId)
+        await requireOpenBillingTask(work.actorId, work.billingTaskId);
+    },
+    budgetedCoordination: (work, claim, run) =>
+      restrictCoordinationForRun(work.initiator, async () =>
+        budgetedDelegationTools({
+          botId: work.toBotId,
+          actorId: work.actorId,
+          runId: run.runId,
+          threadId: work.threadId,
+          budgetId: run.budgetId,
+          coordinationOperationId: run.operationId,
+          billingTaskId: work.billingTaskId,
+          depth: work.depth,
+          initiator: work.initiator,
+          handoff: { key: claim.key, owner: claim.owner },
+        }),
+      )(),
     productTelemetry,
     config,
     database,

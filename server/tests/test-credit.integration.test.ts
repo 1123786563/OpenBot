@@ -104,6 +104,176 @@ test("execution budgets authorize each step and preserve completed steps across 
   }
 });
 
+test("parallel child reservations count against every ancestor exactly once", async () => {
+  const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const ledger = createTestCreditLedger(database);
+  const identity = {
+    issuer: "https://issue95.example.test",
+    subject: crypto.randomUUID(),
+  };
+  const batchId = crypto.randomUUID();
+  const root = crypto.randomUUID();
+  const parent = crypto.randomUUID();
+  const children = [
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+  ];
+  const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
+  const catalog = configure(emptyCatalog, {
+    harnessImage,
+    routes: {
+      pilot: {
+        provider: "fixture-a",
+        model: "model-a",
+        gatewayRevision: "a",
+        meteringRevision: "a",
+        maxInputTokens: 3,
+        maxOutputTokens: 16,
+        tools: false,
+        price: { inputPerMillion: 250_000, outputPerMillion: 78_125 },
+      },
+    },
+  });
+  const pilot = catalog.routes.pilot;
+  if (!pilot) throw new Error("Missing fixture route");
+  const { catalog: published } = publish(
+    verify(
+      catalog,
+      "pilot",
+      fixtureTraceReport(harnessImage, pilot),
+      "fixture",
+    ),
+    ["pilot"],
+    "pilot",
+    "fixture",
+  );
+  const [original] = await database
+    .select()
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  try {
+    await database
+      .insert(enterpriseSettings)
+      .values({
+        key: pilotCatalogKey,
+        value: published,
+      })
+      .onConflictDoUpdate({
+        target: enterpriseSettings.key,
+        set: { value: published },
+      });
+    const quote = await ledger.quote();
+    if (!quote) throw new Error("Missing published quote");
+    const bound = BigInt(quote.maxChargeMicrocredits);
+    await ledger.enroll({ identity, batchId, amount: bound * 20n });
+    await ledger.claim(identity, batchId);
+    const create = (
+      budgetId: string,
+      limitMicrocredits: bigint,
+      childOf?: {
+        budgetId: string;
+        kind: "delegation" | "subagent";
+        botId: string;
+      },
+    ) =>
+      ledger.createBudget(identity, {
+        budgetId,
+        creditType: "test",
+        limitMicrocredits,
+        childOf,
+        modelQuote: quote,
+      });
+    await create(root, bound);
+    await create(parent, bound * 2n, {
+      budgetId: root,
+      kind: "delegation",
+      botId: "parent",
+    });
+    await Promise.all(
+      children.map((id, index) =>
+        create(id, index === 2 ? bound - 1n : bound, {
+          budgetId: parent,
+          kind: index === 1 ? "subagent" : "delegation",
+          botId: id,
+        }),
+      ),
+    );
+    await expect(
+      ledger.reserve(identity, {
+        operationId: crypto.randomUUID(),
+        route: quote.route,
+        priceVersion: quote.priceVersion,
+        budgetId: children[2],
+        creditType: "test",
+      }),
+    ).resolves.toMatchObject({ state: "denied", reason: "execution_limit" });
+    const attempts = await Promise.all(
+      children.map((budgetId) =>
+        ledger.reserve(identity, {
+          operationId: crypto.randomUUID(),
+          route: quote.route,
+          priceVersion: quote.priceVersion,
+          budgetId,
+          creditType: "test",
+        }),
+      ),
+    );
+    expect(attempts.map(({ state }) => state).sort()).toEqual([
+      "denied",
+      "denied",
+      "reserved",
+    ]);
+    expect(attempts[2]).toMatchObject({
+      state: "denied",
+      reason: "execution_limit",
+    });
+    const won = attempts.find(
+      (result) => result.state === "reserved" && result.permit,
+    );
+    if (won?.state !== "reserved" || !won.permit)
+      throw new Error("Missing reservation");
+    const used = async (id: string) =>
+      (await ledger.budget(identity, id))?.usedMicrocredits;
+    expect(
+      await Promise.all([used(root), used(parent), used(children[2] ?? "")]),
+    ).toEqual([bound.toString(), bound.toString(), "0"]);
+    expect(await ledger.balance(identity)).toMatchObject({
+      reservedMicrocredits: bound.toString(),
+      availableMicrocredits: (bound * 19n).toString(),
+    });
+    const cancel = {
+      operationId: won.operation.operationId,
+      permit: won.permit,
+    };
+    await Promise.all([
+      ledger.discardReservation(identity, cancel),
+      ledger.discardReservation(identity, cancel),
+    ]);
+    expect(await Promise.all([used(root), used(parent)])).toEqual(["0", "0"]);
+    expect(await ledger.balance(identity)).toMatchObject({
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "0",
+      availableMicrocredits: (bound * 20n).toString(),
+    });
+    expect(await ledger.reconcile(identity, cancel.operationId)).toMatchObject({
+      state: "released",
+      releasedMicrocredits: bound.toString(),
+    });
+  } finally {
+    if (original)
+      await database
+        .update(enterpriseSettings)
+        .set({ value: original.value })
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    else
+      await database
+        .delete(enterpriseSettings)
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    await database.$client.close();
+  }
+});
+
 test("pilot routes isolate accounts and settle one of two concurrent admissions exactly once", async () => {
   const database = createDatabase(testDatabaseUrl(), TEST_POOL);
   let now = Date.UTC(2026, 0, 1);

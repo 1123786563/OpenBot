@@ -2,6 +2,10 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
+import {
+  type CoordinationToolSpec,
+  coordinationCalls,
+} from "./coordination-model-call";
 import type { PaidCreditLedger } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
@@ -48,6 +52,10 @@ const result = z.union([
   z.object({
     outcome: z.literal("completed").optional(),
     text: z.string().trim().min(1),
+    usage,
+  }),
+  z.object({
+    calls: coordinationCalls,
     usage,
   }),
   z.object({
@@ -175,6 +183,13 @@ export function createTestCreditRoutes({
         budgetId: operationId,
         creditType: z.enum(["test", "paid"]),
         limitMicrocredits: z.string().regex(/^[1-9]\d*$/),
+        childOf: z
+          .strictObject({
+            budgetId: operationId,
+            kind: z.enum(["delegation", "subagent"]),
+            botId: z.string().min(1).max(256),
+          })
+          .optional(),
         confirmed: z.boolean().optional(),
         modelQuote: z
           .strictObject({
@@ -592,6 +607,7 @@ export type TestCreditExecutor = (input: {
   accountId: string;
   route: ReleasedBifrostRoute;
   messages: z.infer<typeof messages>;
+  coordinationTools?: readonly CoordinationToolSpec[];
   recheckRoute(): Promise<boolean>;
   bindGatewayRequest(request: {
     requestId: string;
@@ -605,12 +621,14 @@ export async function dispatchTestCredit({
   identity,
   input,
   authorizeDispatch,
+  coordinationTools,
 }: {
   ledger: TestCreditLedger;
   execute?: TestCreditExecutor;
   identity: VerifiedBillingIdentity;
   input: z.infer<typeof dispatch>;
   authorizeDispatch?: () => Promise<boolean>;
+  coordinationTools?: readonly CoordinationToolSpec[];
 }) {
   const admission = await ledger.beginDispatch(identity, input, {
     executorAvailable: execute !== undefined,
@@ -643,6 +661,7 @@ export async function dispatchTestCredit({
           return bound;
         },
         messages: input.messages,
+        coordinationTools,
       }),
     );
     const recorded = await ledger.recordEvidence(
@@ -650,10 +669,17 @@ export async function dispatchTestCredit({
       input.operationId,
       {
         evidenceId: "inline-completion",
-        outcome: completed.outcome ?? "completed",
+        outcome:
+          "outcome" in completed
+            ? (completed.outcome ?? "completed")
+            : "completed",
         inputTokens: BigInt(completed.usage.inputTokens),
         outputTokens: BigInt(completed.usage.outputTokens),
         resultText: "text" in completed ? completed.text : undefined,
+        resultCalls:
+          coordinationTools?.length && "calls" in completed
+            ? completed.calls
+            : undefined,
       },
     );
     const receipt =

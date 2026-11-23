@@ -3,6 +3,7 @@ import { IntelligenceAgentRunner } from "@copilotkit/runtime/v2";
 import { workOwner } from "@openbot/shared/work-owner";
 import { eq, inArray } from "drizzle-orm";
 import { type AuditStore, handoffInitiator } from "../audit";
+import type { BackgroundModel } from "../billing/background-model";
 import type { GroupConversations } from "../channels/group";
 import type { ChannelStore } from "../channels/routes";
 import type { ThreadIdentity } from "../channels/thread-identity";
@@ -101,6 +102,13 @@ export function botNamesFrom(database: Database) {
  * shutdown can give the connection back. Called only where handing work between Bots is on.
  */
 export async function startHandoffDelivery(deps: {
+  backgroundModel?: BackgroundModel;
+  authorizeBudgetedWork?: Parameters<
+    typeof createHandoffDelivery
+  >[0]["authorizeBudgetedWork"];
+  budgetedCoordination?: Parameters<
+    typeof createHandoffDelivery
+  >[0]["coordination"];
   productTelemetry?: ProductTelemetry;
   config: DeploymentConfig;
   database: Database;
@@ -136,6 +144,9 @@ export async function startHandoffDelivery(deps: {
     onSettled: (work) => channelStore.signalWork(work.threadId),
     answerGone: answerGoneFrom(database),
     delivery: createHandoffDelivery({
+      backgroundModel: deps.backgroundModel,
+      authorizeBudgetedWork: deps.authorizeBudgetedWork,
+      coordination: deps.budgetedCoordination,
       ...(productTelemetry
         ? {
             prepareRunInput: (input, work) =>

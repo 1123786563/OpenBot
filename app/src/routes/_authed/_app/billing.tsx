@@ -1,3 +1,4 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconApps,
   IconCoins,
@@ -568,6 +569,11 @@ function UsageSection() {
                   {receipt.data.provider}/{receipt.data.model} · Bifrost route{" "}
                   {receipt.data.route}
                 </p>
+                {receipt.data.parentRunId ? (
+                  <Text as="p" display="block" wordBreak="break-word">
+                    Parent Run {receipt.data.parentRunId}
+                  </Text>
+                ) : null}
                 <p>Price Version {receipt.data.priceVersion}</p>
                 <p>
                   Input {receipt.data.price.inputPerMillion} and output{" "}
@@ -617,20 +623,23 @@ function WaitingSection({
                     : "A task"}
                 </ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  {point.budgetId && point.authorizationId
-                    ? "Limit confirmed. Retry the paused upload in WeKnora."
-                    : point.budgetId
-                      ? `Continues on a ${point.creditType === "paid" ? "Paid" : "Test"} budget.`
-                      : point.reason === "insufficient_credits"
-                        ? point.authorizationId
-                          ? "Add Test credits, then retry the upload."
-                          : "Its Test credits ran out."
-                        : point.authorizationId
-                          ? "It reached the upload spending limit."
-                          : "It reached its budget."}
+                  {point.requiredBudgetId
+                    ? "This step can retry when its original execution budget has room."
+                    : point.budgetId && point.authorizationId
+                      ? "Limit confirmed. Retry the paused upload in WeKnora."
+                      : point.budgetId
+                        ? `Continues on a ${point.creditType === "paid" ? "Paid" : "Test"} budget.`
+                        : point.reason === "insufficient_credits"
+                          ? point.authorizationId
+                            ? "Add Test credits, then retry the upload."
+                            : "Its Test credits ran out."
+                          : point.authorizationId
+                            ? "It reached the upload spending limit."
+                            : "It reached its budget."}
                 </ItemDescription>
               </ItemContent>
-              {point.budgetId ||
+              {point.requiredBudgetId ||
+              point.budgetId ||
               (point.authorizationId &&
                 point.reason === "insufficient_credits") ? null : (
                 <ItemActions>

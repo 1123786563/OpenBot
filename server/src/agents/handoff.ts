@@ -443,7 +443,9 @@ export function createHandoffDesk(options: {
        * keeping it stable for the run, which is all the cap needs.
        */
       const runPrefix = `hop:${createHash("sha256")
-        .update(`${from.actorId}\u0000${from.runId}`)
+        .update(
+          `${from.actorId}\u0000${from.coordinationOperationId ?? from.runId}`,
+        )
         .digest("hex")
         .slice(0, 32)}:`;
       const key = `${runPrefix}${createHash("sha256")
@@ -474,6 +476,7 @@ export function createHandoffDesk(options: {
           threadId: from.threadId,
           runId: from.runId,
           ...(from.budgetId ? { budgetId: from.budgetId } : {}),
+          ...(from.billingTaskId ? { billingTaskId: from.billingTaskId } : {}),
           /*
            * One deeper than the run that asked. The receiving Bot's own assertion is minted from
            * this, so the cap keeps counting across every pod the chain touches.

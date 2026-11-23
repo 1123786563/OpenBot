@@ -15,6 +15,7 @@ import {
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
+import { BackgroundModelWaiting } from "../billing/background-model";
 import { cutAtCodeUnits } from "../channels/text";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { isEndpointRefusal } from "./endpoint";
@@ -31,6 +32,7 @@ export type HandoffWork = {
   runId: string;
   /** Shared parent execution budget, carried across queued retries and redelegation. */
   budgetId?: string;
+  billingTaskId?: string;
   depth: number;
   /** What started the original run, preserved across queued delivery and relay hops. */
   initiator?: AuditInitiator;
@@ -89,6 +91,8 @@ export type HandoffDelivery = {
      * speak is addressed to a model.
      */
     shown?: string;
+    /** The durable queue identity and authority to dispatch under its current lease. */
+    claim?: { key: string; owner: string; isCurrent: () => Promise<boolean> };
     /** The signed statement of the run it is starting, carrying its depth. */
     assertion: string;
   }) => Promise<{ answer: string | null }>;
@@ -301,6 +305,11 @@ export function createHandoffRunner(options: {
         depth: work.depth,
         ...(work.initiator ? { initiator: work.initiator } : {}),
         answerIn: work.threadId,
+        ...(work.budgetId
+          ? {
+              answer: `I asked ${work.toName ?? work.toBotId} to help with “${work.task}”, but it did not come back. Reason: ${forThePerson(reason)}.`,
+            }
+          : {}),
         task: `You asked ${work.toBotId} to help with this and it never answered: ${forThePerson(reason)}. Tell the person plainly that it did not come back, say what you had asked it for, and offer what you can do yourself.`,
       } as unknown as Record<string, unknown>,
     });
@@ -351,7 +360,7 @@ export function createHandoffRunner(options: {
       /*
        * EVERY CLAIMED HOP IS RENEWED, not just the one being delivered.
        *
-       * A claim leases the whole batch from one moment and this loop delivers them one at a time, so
+       * A claim leases the whole batch from one moment. Ordinary hops are still delivered serially, so
        * a heartbeat started per item leaves the rest of the batch on a lease that is quietly running
        * out while the first delivery runs. A delivery is minutes and the lease is one, so the tail of
        * every batch expired, was claimed by another replica, and was delivered twice: two model
@@ -375,7 +384,7 @@ export function createHandoffRunner(options: {
       }, renewEveryMs);
 
       try {
-        for (const item of claimed) {
+        const deliverClaim = async (item: (typeof claimed)[number]) => {
           const work = item.payload as unknown as HandoffWork;
           if (!work?.toBotId || !work.threadId) {
             /*
@@ -384,14 +393,14 @@ export function createHandoffRunner(options: {
              */
             await queue.finish({ kind: HANDOFF_KIND, key: item.key, owner });
             report.skipped.push({ key: item.key, reason: "not a hop" });
-            continue;
+            return;
           }
           // A hop to a Bot its person paused is dropped, not delivered, and recorded as such. See
           // agents/lifecycle.ts.
           if (await isBotPaused(work.actorId, work.toBotId)) {
             ours.delete(item.key);
             await notDelivered(report, work, item, BOT_PAUSED_REASON);
-            continue;
+            return;
           }
 
           /*
@@ -451,13 +460,28 @@ export function createHandoffRunner(options: {
               key: item.key,
               reason: "the lease went elsewhere",
             });
-            continue;
+            return;
           }
 
           try {
             const shown = summarise(work);
             const { answer } = await delivery.deliver({
               work,
+              ...(work.budgetId
+                ? {
+                    claim: {
+                      key: item.key,
+                      owner,
+                      isCurrent: () =>
+                        queue.renew({
+                          kind: HANDOFF_KIND,
+                          key: item.key,
+                          owner,
+                          leaseMs,
+                        }),
+                    },
+                  }
+                : {}),
               message: attribute(work),
               ...(shown ? { shown } : {}),
               assertion: sign(work, { key: item.key, owner }),
@@ -496,7 +520,7 @@ export function createHandoffRunner(options: {
                   note: "This replica delivered a hop whose lease had already gone elsewhere. Another may have delivered it too.",
                 },
               });
-              continue;
+              return;
             }
             report.delivered.push(work.toBotId);
             /*
@@ -550,7 +574,7 @@ export function createHandoffRunner(options: {
               const gone = await answerGone?.(work).catch(() => null);
               if (gone) {
                 await notDelivered(report, work, item, gone, startedAt);
-                continue;
+                return;
               }
               const waited = Number(
                 (item.payload as { busyRetries?: unknown }).busyRetries ?? 0,
@@ -570,7 +594,7 @@ export function createHandoffRunner(options: {
               });
               report.skipped.push({ key: item.key, reason });
               await settled(work);
-              continue;
+              return;
             }
             /*
              * The last try, so the person is told rather than left waiting.
@@ -588,7 +612,14 @@ export function createHandoffRunner(options: {
               (error instanceof Error &&
                 error.name === "CapabilityRefusedError") ||
               isEndpointRefusal(error);
-            if ((refused || item.attempts >= maxAttempts) && !work.answerIn) {
+            const awaitingEvidence =
+              error instanceof BackgroundModelWaiting &&
+              error.awaitingGatewayEvidence;
+            if (
+              (refused ||
+                (!awaitingEvidence && item.attempts >= maxAttempts)) &&
+              !work.answerIn
+            ) {
               await tell(work, item.key, reason).catch((failure) => {
                 // A notice that cannot be queued must not take the release with it: leaving the row
                 // claimed would be worse than a hop nobody was told about.
@@ -611,6 +642,7 @@ export function createHandoffRunner(options: {
                 key: item.key,
                 owner,
                 delayMs: 60_000,
+                ...(awaitingEvidence ? { uncounted: true } : {}),
                 reason,
               });
             ours.delete(item.key);
@@ -636,7 +668,17 @@ export function createHandoffRunner(options: {
               },
             });
           }
-        }
+        };
+        let serial = Promise.resolve();
+        const deliveries = claimed.map((item) => {
+          const payload = item.payload as Partial<HandoffWork>;
+          if (payload?.budgetId) return deliverClaim(item);
+          serial = serial.then(() => deliverClaim(item));
+          return serial;
+        });
+        const results = await Promise.allSettled(deliveries);
+        const failure = results.find((result) => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
       } finally {
         clearInterval(heartbeat);
       }

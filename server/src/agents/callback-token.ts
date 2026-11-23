@@ -81,6 +81,9 @@ export type RunAssertion = {
   runId: string;
   /** The shared Test Credit execution budget for every descendant run. */
   budgetId?: string;
+  /** Host-owned identity of a recorded model decision, stable across Run attempts. */
+  coordinationOperationId?: string;
+  billingTaskId?: string;
   /**
    * The conversation this run belongs to.
    *

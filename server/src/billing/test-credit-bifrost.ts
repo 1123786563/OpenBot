@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
 
+import {
+  type CoordinationToolSpec,
+  readProviderCoordinationCalls,
+} from "./coordination-model-call";
+
 type Route = Pick<
   ReleasedBifrostRoute,
   | "gatewayRevision"
@@ -10,7 +15,8 @@ type Route = Pick<
   | "model"
   | "maxInputTokens"
   | "maxOutputTokens"
->;
+> &
+  Partial<Pick<ReleasedBifrostRoute, "tools">>;
 export function bifrostRouteProof(route: ReleasedBifrostRoute) {
   return createHash("sha256")
     .update(
@@ -39,6 +45,15 @@ const completion = z.object({
 
 const completionText = z.tuple([
   z.object({ message: z.object({ content: z.string().trim().min(1) }) }),
+]);
+
+const toolResponse = z.tuple([
+  z.object({
+    finish_reason: z.literal("tool_calls"),
+    message: z.object({
+      tool_calls: readProviderCoordinationCalls,
+    }),
+  }),
 ]);
 
 export class UnsentBifrostRequest extends Error {
@@ -90,6 +105,7 @@ export function createBifrostCreditExecutor({
   return async ({
     route,
     messages,
+    coordinationTools,
     operationId,
     recheckRoute,
     bindGatewayRequest,
@@ -97,6 +113,7 @@ export function createBifrostCreditExecutor({
   }: {
     route: Route;
     messages: Messages;
+    coordinationTools?: readonly CoordinationToolSpec[];
     operationId?: string;
     recheckRoute?: () => Promise<boolean>;
     bindGatewayRequest?: (request: {
@@ -107,7 +124,8 @@ export function createBifrostCreditExecutor({
   }) => {
     if (
       route.gatewayRevision !== gatewayRevision ||
-      route.meteringRevision !== meteringRevision
+      route.meteringRevision !== meteringRevision ||
+      (coordinationTools?.length && !route.tools)
     ) {
       throw new UnsentBifrostRequest("route_unavailable");
     }
@@ -116,6 +134,14 @@ export function createBifrostCreditExecutor({
       messages,
       [limitField]: route.maxOutputTokens,
       stream: false,
+      ...(coordinationTools?.length
+        ? {
+            tools: coordinationTools.map((spec) => ({
+              type: "function",
+              function: spec,
+            })),
+          }
+        : {}),
     });
     const digest = createHash("sha256").update(body).digest("hex");
     const requestId = crypto.randomUUID();
@@ -169,6 +195,11 @@ export function createBifrostCreditExecutor({
       inputTokens: usage.prompt_tokens,
       outputTokens: usage.completion_tokens,
     };
+    if (coordinationTools?.length) {
+      const response = toolResponse.safeParse(choices);
+      if (response.success)
+        return { calls: response.data[0].message.tool_calls, usage: metered };
+    }
     const text = completionText.safeParse(choices);
     return text.success
       ? { text: text.data[0].message.content, usage: metered }

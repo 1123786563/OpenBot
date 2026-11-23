@@ -28,6 +28,11 @@ import {
 } from "@openbot/toolkit/run-stop";
 import { from, type Observable } from "rxjs";
 import type { AuditInitiator } from "../audit";
+import type { BackgroundModel } from "../billing/background-model";
+import {
+  type BudgetedCoordination,
+  budgetedAgent,
+} from "../billing/background-model-turn";
 import type { HandoffDelivery, HandoffWork } from "./handoff-runner";
 import { textOf } from "./message-text";
 
@@ -60,6 +65,13 @@ export type ThreadRunner = {
 };
 
 export function createHandoffDelivery(options: {
+  coordination?: (
+    work: HandoffWork,
+    claim: { key: string; owner: string },
+    run: Parameters<BudgetedCoordination>[0],
+  ) => ReturnType<BudgetedCoordination>;
+  authorizeBudgetedWork?: (work: HandoffWork) => Promise<void>;
+  backgroundModel?: BackgroundModel;
   prepareRunInput?: (
     input: {
       threadId: string;
@@ -226,7 +238,7 @@ export function createHandoffDelivery(options: {
   } = options;
 
   return {
-    async deliver({ work, message, shown, assertion }) {
+    async deliver({ work, message, shown, assertion, claim }) {
       /*
        * Admitted before anything else, as every headless turn is: refused if the person paused the
        * Bot while this hop waited, or if "Use Bots" or the model allowlist refuse it, before the Bot
@@ -250,18 +262,55 @@ export function createHandoffDelivery(options: {
         work.answerIn && typeof work.answer === "string" && work.answer.trim()
           ? work.answer
           : null;
-      const agent: AbstractAgent | null = spoken
+      const target = {
+        actorId: work.actorId,
+        botId: work.toBotId,
+        fromBotId: work.fromBotId,
+        ...(work.initiator ? { initiator: work.initiator } : {}),
+      };
+      if (!spoken && work.budgetId && !claim)
+        throw new Error("The Delegation lease is unavailable.");
+      const childLifetime = new AbortController();
+      const authorize = async () => {
+        if (!claim || paused.aborted || childLifetime.signal.aborted)
+          throw new Error("The Delegation is no longer authorized.");
+        await options.authorizeBudgetedWork?.(work);
+        if (
+          !(await agentFor(target)) ||
+          !(await claim.isCurrent()) ||
+          paused.aborted ||
+          childLifetime.signal.aborted
+        )
+          throw new Error("The Delegation is no longer authorized.");
+      };
+      const metered =
+        !spoken && work.budgetId && claim
+          ? budgetedAgent(
+              options.backgroundModel,
+              {
+                kind: "delegation",
+                executionId: claim.key,
+                budgetId: work.budgetId,
+                parentRunId: work.runId,
+                personId: work.actorId,
+                botId: work.toBotId,
+              },
+              authorize,
+              options.coordination
+                ? (run) =>
+                    options.coordination?.(work, claim, run) ??
+                    Promise.resolve([])
+                : undefined,
+              AbortSignal.any([paused, childLifetime.signal]),
+            )
+          : undefined;
+      const agent = spoken
         ? new SpokenAnswer({
             botId: work.fromBotId,
             name: work.fromName ?? work.fromBotId,
             text: spoken,
           })
-        : await agentFor({
-            actorId: work.actorId,
-            botId: work.toBotId,
-            fromBotId: work.fromBotId,
-            ...(work.initiator ? { initiator: work.initiator } : {}),
-          });
+        : (metered?.agent ?? (await agentFor(target)));
       if (!agent) {
         /*
          * Thrown rather than swallowed, so the hop is released and tried again. A Bot that cannot be
@@ -490,7 +539,10 @@ export function createHandoffDelivery(options: {
           renew: () => lock.renew({ threadId: where.threadId, runId }),
           everyMs: renewEveryMs,
           lifetimeMs: lockLifetimeMs,
-          onLost: (error) => lockLost.abort(error),
+          onLost: (error) => {
+            childLifetime.abort(error);
+            lockLost.abort(error);
+          },
         });
 
         let stoppingHere = false;
@@ -575,6 +627,7 @@ export function createHandoffDelivery(options: {
             AbortSignal.any([paused, lockLost.signal]),
             () => {
               stoppingHere = true;
+              childLifetime.abort();
               // A pause is a cancel. A lost lock is a failure, and is not reported as a stop.
               if (!lockLost.signal.aborted) knownStop();
               return runner
@@ -593,6 +646,8 @@ export function createHandoffDelivery(options: {
            * the top of somebody's list for a turn that failed, or said nothing, is a conversation
            * they open to find nothing new.
            */
+          const failure = metered?.failure();
+          if (failure) throw failure;
           if (announce && said.length > 0) {
             await announce({
               actorId: work.actorId,
@@ -605,7 +660,10 @@ export function createHandoffDelivery(options: {
               // as failed and run a second time.
             });
           }
+        } catch (error) {
+          throw metered?.failure() ?? error;
         } finally {
+          childLifetime.abort();
           heartbeat.stop();
           /*
            * Given back whatever happened. Left held, the conversation is unusable by anybody until the

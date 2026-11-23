@@ -15,6 +15,8 @@ import {
 } from "drizzle-orm/pg-core";
 import type { ReleasedBifrostRoute } from "../../admin/bifrost-catalog";
 
+import type { CoordinationModelCall } from "../../billing/coordination-model-call";
+
 export const testCreditAccounts = pgTable(
   "test_credit_accounts",
   {
@@ -155,6 +157,9 @@ export const testCreditBudgets = pgTable(
   {
     accountId: uuid("account_id").notNull(),
     id: text().notNull(),
+    parentBudgetId: text("parent_budget_id"),
+    childKind: text("child_kind", { enum: ["delegation", "subagent"] }),
+    childBotId: text("child_bot_id"),
     // A background task fixes its Credit type when it starts (#107):
     // trial (test) or paid — never both.
     creditType: text("credit_type", { enum: ["test", "paid"] }).notNull(),
@@ -181,6 +186,24 @@ export const testCreditBudgets = pgTable(
       columns: [table.accountId],
       foreignColumns: [testCreditAccounts.id],
     }),
+    foreignKey({
+      name: "test_credit_budgets_parent_fk",
+      columns: [table.accountId, table.parentBudgetId],
+      foreignColumns: [table.accountId, table.id],
+    }),
+    unique("test_credit_budgets_child_key").on(
+      table.accountId,
+      table.parentBudgetId,
+      table.childKind,
+      table.childBotId,
+    ),
+    check(
+      "test_credit_budgets_child_binding",
+      sql`(${table.parentBudgetId} IS NULL AND ${table.childKind} IS NULL AND ${table.childBotId} IS NULL)
+        OR (${table.parentBudgetId} IS NOT NULL AND ${table.parentBudgetId} <> ${table.id}
+          AND ${table.childKind} IN ('delegation', 'subagent') AND ${table.childKind} IS NOT NULL
+          AND ${table.childBotId} IS NOT NULL)`,
+    ),
     check(
       "test_credit_budget_credit_type",
       sql`${sql.identifier(table.creditType.name)} IN ('test', 'paid')`,
@@ -230,12 +253,15 @@ export const testCreditOperations = pgTable(
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     budgetId: text("budget_id"),
     stepId: text("step_id"),
+    parentRunId: text("parent_run_id"),
     // The app the step ran for (#107 按应用筛选). Null for a caller that named none.
     applicationId: text("application_id"),
     // The Spending Authorization the reservation was made under and counts
     // against (#111). Null for a first-party step.
     authorizationId: text("authorization_id"),
     resultText: text("result_text"),
+    coordinationToolNames: jsonb("coordination_tool_names").$type<string[]>(),
+    resultCalls: jsonb("result_calls").$type<CoordinationModelCall[]>(),
     gatewayRequestId: uuid("gateway_request_id").unique(),
     gatewayRequestDigest: text("gateway_request_digest"),
     gatewayEvidenceCheckAt: timestamp("gateway_evidence_check_at", {
@@ -321,6 +347,7 @@ export const testCreditResumePoints = pgTable(
       enum: ["insufficient_credits", "execution_limit"],
     }).notNull(),
     // The budget the person confirmed for this step, once they have.
+    requiredBudgetId: text("required_budget_id"),
     budgetId: text("budget_id"),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })

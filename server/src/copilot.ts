@@ -59,6 +59,7 @@ import {
   type PlatformRun,
   stopRecorder,
 } from "@openbot/toolkit/run-stop";
+import { EXECUTION_BUDGET_PROP } from "@openbot/toolkit/run-turn";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
 import { Hono } from "hono";
 import {
@@ -3181,12 +3182,12 @@ export async function markAskedRun(
     return;
   }
   if (!isPlainObject(body)) return;
-  const { [ASKED_RUN]: claimed, ...forwardedProps } = isPlainObject(
-    body.forwardedProps,
-  )
-    ? body.forwardedProps
-    : {};
-  if (!run && claimed === undefined) return;
+  const {
+    [ASKED_RUN]: claimed,
+    [EXECUTION_BUDGET_PROP]: claimedBudget,
+    ...forwardedProps
+  } = isPlainObject(body.forwardedProps) ? body.forwardedProps : {};
+  if (!run && claimed === undefined && claimedBudget === undefined) return;
   return new Request(request, {
     body: JSON.stringify({
       ...body,

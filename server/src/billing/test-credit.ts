@@ -34,6 +34,7 @@ import {
   pilotProviderCostLimits,
   testCreditResumePoints as resumePoints,
 } from "../db/schema";
+import type { CoordinationModelCall } from "./coordination-model-call";
 import {
   allocatePaidSources,
   consumePaidAllocations,
@@ -44,6 +45,12 @@ import {
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
+export type ChildBudgetBinding = {
+  budgetId: string;
+  kind: NonNullable<(typeof budgets.$inferSelect)["childKind"]>;
+  botId: string;
+};
+type Budget = typeof budgets.$inferSelect;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
@@ -192,6 +199,7 @@ function quoteFor(route: ReleasedBifrostRoute, priceVersion: string) {
     provider: route.provider,
     model: route.model,
     price: route.price,
+    tools: route.tools,
     maxChargeMicrocredits: route.maxChargeMicrocredits,
     usageDisclosure:
       "Interrupted, cancelled, or failed requests may still use Test Credits.",
@@ -280,8 +288,11 @@ function operationReceipt(operation: Operation, verified?: Evidence) {
     outputTokens: (outputTokens ?? verified?.outputTokens)?.toString() ?? null,
     budgetId,
     stepId,
+    parentRunId: operation.parentRunId,
     applicationId: operation.applicationId,
     resultText,
+    resultCalls: operation.resultCalls,
+    coordinationToolNames: operation.coordinationToolNames,
   };
 }
 
@@ -469,18 +480,58 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
     return BigInt(row?.used ?? "0");
   }
 
-  async function budgetUsage(
-    accountId: string,
-    budgetId: string,
-    tx: Transaction,
-  ) {
+  function withinBudget(accountId: string, budgetId: string) {
+    return sql`${operations.budgetId} IN (
+      WITH RECURSIVE subtree(id) AS (
+        SELECT ${budgetId}::text
+        UNION
+        SELECT ${budgets.id} FROM ${budgets}
+        JOIN subtree ON ${budgets.parentBudgetId} = subtree.id
+        WHERE ${budgets.accountId} = ${accountId}
+      )
+      SELECT id FROM subtree
+    )`;
+  }
+
+  function budgetUsage(accountId: string, budgetId: string, tx: Transaction) {
     return chargedOrHeld(
       tx,
       and(
         eq(operations.accountId, accountId),
-        eq(operations.budgetId, budgetId),
+        withinBudget(accountId, budgetId),
       ),
     );
+  }
+
+  async function budgetChain(tx: Transaction, leaf: Budget) {
+    const chain = [leaf];
+    let parentId = leaf.parentBudgetId;
+    while (parentId) {
+      const parent = await budget(leaf.accountId, parentId, tx);
+      if (!parent) throw new Error("Execution budget ancestor is missing");
+      chain.push(parent);
+      parentId = parent.parentBudgetId;
+    }
+    return chain;
+  }
+
+  function activeBudget(row: Budget) {
+    return row.state === "active" && row.confirmedAt !== null;
+  }
+
+  async function canDispatchUnderBudget(tx: Transaction, row: Operation) {
+    if (!row.budgetId) return true;
+    const leaf = await budget(row.accountId, row.budgetId, tx);
+    if (!leaf) return false;
+    for (const limit of await budgetChain(tx, leaf)) {
+      if (
+        !activeBudget(limit) ||
+        (await budgetUsage(row.accountId, limit.id, tx)) >
+          limit.limitMicrocredits
+      )
+        return false;
+    }
+    return true;
   }
 
   // What an authorization has used, on the same rule as a budget's usage.
@@ -702,6 +753,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // a paid continuation under paid.
         creditType: "test" | "paid";
         limitMicrocredits: bigint;
+        childOf?: ChildBudgetBinding;
         confirmed?: boolean;
         modelQuote?: { route: string; priceVersion: string };
       },
@@ -713,6 +765,24 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
         if (!accountId) return undefined;
+        const parent = input.childOf
+          ? await budget(accountId, input.childOf.budgetId, tx)
+          : undefined;
+        if (
+          input.childOf &&
+          (!parent || parent.creditType !== input.creditType)
+        )
+          return undefined;
+        const modelRoute =
+          input.modelQuote?.route ?? parent?.modelRoute ?? null;
+        const modelPriceVersion =
+          input.modelQuote?.priceVersion ?? parent?.modelPriceVersion ?? null;
+        if (
+          parent &&
+          (modelRoute !== parent.modelRoute ||
+            modelPriceVersion !== parent.modelPriceVersion)
+        )
+          return undefined;
         if (input.modelQuote) {
           const active = await activeRoutes(tx, true);
           if (
@@ -726,11 +796,16 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           if (existing.creditType !== input.creditType)
             throw new Error("Execution budget Credit type differs");
           if (
-            existing.modelRoute !== (input.modelQuote?.route ?? null) ||
-            existing.modelPriceVersion !==
-              (input.modelQuote?.priceVersion ?? null)
+            existing.modelRoute !== modelRoute ||
+            existing.modelPriceVersion !== modelPriceVersion
           )
             throw new Error("Execution budget quote differs");
+          if (
+            existing.parentBudgetId !== (input.childOf?.budgetId ?? null) ||
+            existing.childKind !== (input.childOf?.kind ?? null) ||
+            existing.childBotId !== (input.childOf?.botId ?? null)
+          )
+            throw new Error("Execution budget ancestry differs");
           if (existing.limitMicrocredits !== input.limitMicrocredits)
             throw new Error("Execution budget limit differs");
           return {
@@ -749,11 +824,15 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             creditType: input.creditType,
             limitMicrocredits: input.limitMicrocredits,
             confirmedAt: input.confirmed === false ? null : new Date(),
-            modelRoute: input.modelQuote?.route,
-            modelPriceVersion: input.modelQuote?.priceVersion,
+            modelRoute,
+            modelPriceVersion,
+            parentBudgetId: input.childOf?.budgetId,
+            childKind: input.childOf?.kind,
+            childBotId: input.childOf?.botId,
           })
+          .onConflictDoNothing()
           .returning();
-        if (!row) throw new Error("Execution budget could not be created");
+        if (!row) return undefined;
         return {
           budgetId: row.id,
           creditType: row.creditType,
@@ -992,6 +1071,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         // Host-owned execution identity. Include earlier charges if the person
         // moved this execution to another budget while it was paused.
         cumulativeExecution?: boolean;
+        child?: Omit<ChildBudgetBinding, "budgetId">;
+        coordinationToolNames?: string[];
+        parentRunId?: string;
       },
       { embedding = false } = {},
     ) {
@@ -1038,16 +1120,39 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             ),
           )
           .for("update");
+        const prior = await operation(accountId, request.operationId, tx);
+        const child = request.child;
+        const [matched] =
+          child && request.budgetId && !prior && !paused?.requiredBudgetId
+            ? await tx
+                .select({ id: budgets.id })
+                .from(budgets)
+                .where(
+                  and(
+                    eq(budgets.accountId, accountId),
+                    eq(budgets.parentBudgetId, request.budgetId),
+                    eq(budgets.childKind, child.kind),
+                    eq(budgets.childBotId, child.botId),
+                  ),
+                )
+            : [];
+        const requiredBudgetId =
+          paused?.requiredBudgetId ??
+          (child
+            ? (prior?.budgetId ?? matched?.id ?? request.budgetId)
+            : undefined);
         const continued = paused?.budgetId
           ? await budget(accountId, paused.budgetId, tx)
           : undefined;
-        const input = continued
-          ? {
-              ...request,
-              creditType: continued.creditType,
-              budgetId: continued.id,
-            }
-          : request;
+        const input = requiredBudgetId
+          ? { ...request, budgetId: requiredBudgetId }
+          : continued
+            ? {
+                ...request,
+                creditType: continued.creditType,
+                budgetId: continued.id,
+              }
+            : request;
         // Nothing is held or dispatched for a step refused for want of
         // credits or budget room, so it waits here until the person sets a
         // budget (#107 安全续做点).
@@ -1061,6 +1166,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             .values({
               accountId,
               operationId: pointId,
+              requiredBudgetId,
               applicationId:
                 input.applicationId ?? under?.held?.applicationId ?? null,
               reason,
@@ -1084,10 +1190,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             });
           return denied(reason);
         };
-        const existing = await operation(accountId, input.operationId, tx);
+        const existing = prior;
         if (existing) {
           if (
             existing.authorizationId !== (input.authorizationId ?? null) ||
+            (!request.child &&
+              existing.parentRunId !== (input.parentRunId ?? null)) ||
             (existing.route.purpose === "embedding") !== embedding ||
             (embedding && existing.stepId !== input.stepId) ||
             (input.applicationId !== undefined &&
@@ -1181,7 +1289,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             .limit(1);
           if (priorPause) return denied("execution_limit");
         }
-        if (!embedding && paused && !continued) return denied(paused.reason);
+        if (!embedding && paused && !continued && !requiredBudgetId)
+          return denied(paused.reason);
         const executionBudget = input.budgetId
           ? await budget(accountId, input.budgetId, tx)
           : undefined;
@@ -1192,11 +1301,10 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           executionBudget?.creditType !== (input.creditType ?? "test")
         )
           return denied("not_authorized");
-        if (
-          executionBudget &&
-          (executionBudget.state !== "active" ||
-            executionBudget.confirmedAt === null)
-        )
+        const limits = executionBudget
+          ? await budgetChain(tx, executionBudget)
+          : [];
+        if (limits.some((limit) => !activeBudget(limit)))
           return pause("execution_limit");
         const active = await activeRoutes(tx, true);
         const route = active?.options.find(({ id }) => id === input.route);
@@ -1207,15 +1315,17 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         )
           return denied("route_unavailable");
         const reserved = BigInt(route.maxChargeMicrocredits);
-        if (executionBudget) {
+        for (const limit of limits) {
           const used =
-            input.cumulativeExecution && input.stepId
+            limit.id === executionBudget?.id &&
+            input.cumulativeExecution &&
+            input.stepId
               ? await chargedOrHeld(
                   tx,
                   and(
                     eq(operations.accountId, accountId),
                     or(
-                      eq(operations.budgetId, executionBudget.id),
+                      withinBudget(accountId, limit.id),
                       and(
                         eq(operations.applicationId, "openbot"),
                         eq(operations.stepId, input.stepId),
@@ -1223,8 +1333,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
                     ),
                   ),
                 )
-              : await budgetUsage(accountId, executionBudget.id, tx);
-          if (used + reserved > executionBudget.limitMicrocredits)
+              : await budgetUsage(accountId, limit.id, tx);
+          if (used + reserved > limit.limitMicrocredits)
             return pause("execution_limit");
         }
         // Ingestion waits at its original operation until the person raises
@@ -1316,6 +1426,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             rerunOfOperationId: input.rerunOfOperationId,
             state: "reserved",
             budgetId: input.budgetId,
+            coordinationToolNames: input.coordinationToolNames,
+            parentRunId: input.parentRunId,
             stepId: input.stepId,
             applicationId:
               input.applicationId ?? under?.held.applicationId ?? null,
@@ -1703,6 +1815,7 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
             applicationId: resumePoints.applicationId,
             reason: resumePoints.reason,
             createdAt: resumePoints.createdAt,
+            requiredBudgetId: resumePoints.requiredBudgetId,
             budgetId: resumePoints.budgetId,
             confirmedAt: resumePoints.confirmedAt,
             creditType: budgets.creditType,
@@ -1784,6 +1897,8 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           return undefined;
         const target = await budget(accountId, budgetId, tx);
         if (
+          (point.requiredBudgetId !== null &&
+            point.requiredBudgetId !== budgetId) ||
           target?.state !== "active" ||
           target.confirmedAt === null ||
           (authorizationId
@@ -1904,25 +2019,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
           }
           deadline = under.held.expiresAt;
         }
-        if (row.budgetId) {
-          // The budget's Credit type was matched to the entry at reservation
-          // (#107), so either type dispatches under the budget it fixed.
-          const executionBudget = await budget(row.accountId, row.budgetId, tx);
-          const invalid =
-            executionBudget?.state !== "active" ||
-            executionBudget.confirmedAt === null;
-          const overLimit = executionBudget
-            ? (await budgetUsage(row.accountId, row.budgetId, tx)) >
-              executionBudget.limitMicrocredits
-            : false;
-          if (invalid || overLimit) {
-            await releaseReservation(tx, row);
-            return denied(
-              invalid && !executionBudget
-                ? "not_authorized"
-                : "execution_limit",
-            );
-          }
+        if (!(await canDispatchUnderBudget(tx, row))) {
+          await releaseReservation(tx, row);
+          return denied("execution_limit");
         }
         const active = await activeRoutes(tx, true);
         const eligible = routeEligible(active, row.route);
@@ -2000,13 +2099,9 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         await applyCutoff(tx, accountId, now);
         if (recheckAdmission) {
           const operationRow = await operation(accountId, id, tx);
-          const executionBudget = operationRow?.budgetId
-            ? await budget(accountId, operationRow.budgetId, tx)
-            : undefined;
           if (
-            !operationRow ||
-            executionBudget?.state !== "active" ||
-            executionBudget.confirmedAt === null ||
+            !operationRow?.budgetId ||
+            !(await canDispatchUnderBudget(tx, operationRow)) ||
             (await suspended(tx, accountId)) ||
             (await restoreHolds(tx, accountId)) ||
             (await pilotReservesStoppedAt(tx)) ||
@@ -2229,7 +2324,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
   async function recordEvidence(
     accountId: string,
     id: string,
-    verified: Evidence & { gatewayRequestId?: string; resultText?: string },
+    verified: Evidence & {
+      gatewayRequestId?: string;
+      resultText?: string;
+      resultCalls?: CoordinationModelCall[];
+    },
   ) {
     return database.transaction(async (tx) => {
       if (!(await lockAccount(tx, accountId))) return undefined;
@@ -2245,6 +2344,11 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         gatewayRequestId,
         resultText,
       } = verified;
+      const resultCalls = verified.resultCalls?.every(({ name }) =>
+        row.coordinationToolNames?.includes(name),
+      )
+        ? verified.resultCalls
+        : undefined;
       if (
         gatewayRequestId &&
         (row.gatewayRequestId !== gatewayRequestId ||
@@ -2258,6 +2362,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
         row.resultText !== resultText
       )
         throw new Error("Test Credit result differs on replay");
+      if (
+        resultCalls !== undefined &&
+        row.resultCalls !== null &&
+        JSON.stringify(row.resultCalls) !== JSON.stringify(resultCalls)
+      )
+        throw new Error("Test Credit tool calls differ on replay");
       const maxBigint = 9_223_372_036_854_775_807n;
       if (
         !evidenceId ||
@@ -2306,10 +2416,12 @@ export function createTestCreditLedger(database: Database, clock?: () => Date) {
               eligibleEvidenceId: evidenceId,
               gatewayEvidenceCheckAt: null,
               ...(resultText === undefined ? {} : { resultText }),
+              ...(resultCalls === undefined ? {} : { resultCalls }),
             })
             .where(operationFilter(accountId, id));
           row.eligibleEvidenceId = evidenceId;
           if (resultText !== undefined) row.resultText = resultText;
+          if (resultCalls !== undefined) row.resultCalls = resultCalls;
         }
       }
       if (row.eligibleEvidenceId === null && gatewayRequestId)

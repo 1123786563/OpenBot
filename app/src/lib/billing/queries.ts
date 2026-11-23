@@ -60,6 +60,7 @@ export type ResumePoint = {
   reason: "insufficient_credits" | "execution_limit";
   createdAt: string;
   /** The budget the person confirmed for this step, once they have. */
+  requiredBudgetId?: string | null;
   budgetId: string | null;
   confirmedAt: string | null;
   creditType: "test" | "paid" | null;
@@ -144,6 +145,7 @@ export function billingOperationQueryOptions(operationId: string) {
         BillingQuote,
         "route" | "provider" | "model" | "priceVersion" | "price"
       > & {
+        parentRunId?: string | null;
         reservedMicrocredits: string;
         chargedMicrocredits: string | null;
         releasedMicrocredits: string | null;

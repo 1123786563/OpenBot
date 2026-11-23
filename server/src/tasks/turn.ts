@@ -102,7 +102,10 @@ export function createTaskTurn(deps: {
         initiator: PERSON_INITIATOR,
         signal: input.signal,
         ...(input.budgetId
-          ? { budget: { id: input.budgetId, stepId: input.askId } }
+          ? {
+              runId: input.runId,
+              budget: { id: input.budgetId, stepId: input.askId },
+            }
           : {}),
       });
       /*

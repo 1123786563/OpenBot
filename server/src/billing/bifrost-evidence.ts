@@ -1,5 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import {
+  providerCoordinationCalls,
+  readProviderCoordinationCalls,
+} from "./coordination-model-call";
 import type { TestCreditLedger } from "./test-credit";
 import { bifrostRouteProof } from "./test-credit-bifrost";
 
@@ -24,11 +28,10 @@ const settings = z.object({
 });
 
 const tokens = z.number().int().nonnegative();
-const log = z.object({
+const logEnvelope = z.object({
   id: z.uuid(),
   object: z.literal("chat_completion"),
   status: z.literal("success"),
-  stop_reason: z.enum(["stop", "length"]),
   stream: z.literal(false),
   provider: z.string(),
   alias: z.undefined().optional(),
@@ -62,11 +65,23 @@ const log = z.object({
     completion_tokens: tokens,
     total_tokens: tokens,
   }),
-  output_message: z.object({
-    role: z.literal("assistant"),
-    content: z.string().trim().min(1),
-  }),
 });
+const log = z.union([
+  logEnvelope.extend({
+    stop_reason: z.enum(["stop", "length"]),
+    output_message: z.object({
+      role: z.literal("assistant"),
+      content: z.string().trim().min(1),
+    }),
+  }),
+  logEnvelope.extend({
+    stop_reason: z.literal("tool_calls"),
+    output_message: z.object({
+      role: z.literal("assistant"),
+      tool_calls: providerCoordinationCalls,
+    }),
+  }),
+]);
 
 const maxLogBytes = 256 * 1024;
 
@@ -212,14 +227,23 @@ export function loadBifrostEvidenceReader(
     )
       return undefined;
 
-    return {
+    const evidence = {
       evidenceId: `bifrost:${requestId}`,
       gatewayRequestId: requestId,
       outcome: "completed" as const,
       inputTokens: BigInt(input),
       outputTokens: BigInt(output),
-      resultText: entry.output_message.content,
     };
+    if (entry.stop_reason === "tool_calls") {
+      if (!route.tools) return undefined;
+      const calls = readProviderCoordinationCalls.safeParse(
+        entry.output_message.tool_calls,
+      );
+      return calls.success
+        ? { ...evidence, resultCalls: calls.data }
+        : undefined;
+    }
+    return { ...evidence, resultText: entry.output_message.content };
   };
 }
 
