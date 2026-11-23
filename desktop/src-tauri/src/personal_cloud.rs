@@ -176,7 +176,7 @@ pub struct WorkspaceView {
     #[serde(rename = "accessMs")]
     access_ms: u64,
     quotas: Option<WorkspaceQuotas>,
-    #[serde(rename = "testCredits")]
+    #[serde(rename = "testCredits", skip_serializing_if = "Option::is_none")]
     test_credits: Option<TestCredits>,
     recovery: Vec<StoppedWork>,
     #[serde(rename = "recoveryCanRetry")]
