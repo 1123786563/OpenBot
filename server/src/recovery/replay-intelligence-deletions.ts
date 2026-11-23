@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, eq, getTableColumns, isNotNull, isNull, or } from "drizzle-orm";
 import { purgeDeletedConversations } from "../channels/deletion-cleanup";
 import type { Database } from "../db/client";
 import {
@@ -70,20 +70,9 @@ export async function replayIntelligenceDeletions({
         .from(projections)
         .leftJoin(memories, eq(projections.memoryId, memories.id))
         .where(or(isNull(memories.id), isNotNull(memories.deletedAt))),
-      grants: await tx
-        .select({
-          id: grants.id,
-          at: grants.revokedAt,
-        })
-        .from(grants)
-        .where(isNotNull(grants.revokedAt)),
+      grants: await tx.select().from(grants).where(isNotNull(grants.revokedAt)),
       traces: await tx
-        .select({
-          id: evaluations.id,
-          target: evaluations.target,
-          workspace: evaluations.workspace,
-          project: evaluations.project,
-        })
+        .select(getTableColumns(evaluations))
         .from(evaluations)
         .innerJoin(grants, eq(evaluations.requestId, grants.id))
         .where(and(eq(evaluations.kind, "real"), isNotNull(grants.revokedAt))),
@@ -170,12 +159,15 @@ export async function replayIntelligenceDeletions({
           ),
         );
     }
-    for (const { id, at } of journal.grants) {
-      if (!at) continue;
+    for (const grant of journal.grants) {
       await tx
-        .update(grants)
-        .set({ revokedAt: at })
-        .where(and(eq(grants.id, id), isNull(grants.revokedAt)));
+        .insert(grants)
+        .values(grant)
+        .onConflictDoUpdate({
+          target: grants.id,
+          set: { revokedAt: grant.revokedAt },
+          setWhere: isNull(grants.revokedAt),
+        });
     }
   });
 
@@ -197,12 +189,17 @@ export async function replayIntelligenceDeletions({
     }
   }
   if (opik) {
-    for (const { id } of journal.traces) {
-      await deleteEvaluationCopy(opik, id);
+    for (const trace of journal.traces) {
+      await deleteEvaluationCopy(opik, trace.id);
+      // Preserve the locator even if the backup predates the trace.
+      const cleanupCompletedAt = new Date();
       await restored
-        .update(evaluations)
-        .set({ cleanupCompletedAt: new Date() })
-        .where(eq(evaluations.id, id));
+        .insert(evaluations)
+        .values({ ...trace, cleanupCompletedAt })
+        .onConflictDoUpdate({
+          target: evaluations.id,
+          set: { cleanupCompletedAt },
+        });
     }
   }
   return {
