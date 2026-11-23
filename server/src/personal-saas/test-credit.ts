@@ -51,7 +51,7 @@ export function personalTestCreditExecution(
     if (rerunOfOperationId) await checkExecution();
     const reservation = await ledger.reserve(identity, {
       operationId,
-      ...(priorOperation ? { rerunOfOperationId } : {}),
+      ...(priorOperation?.dispatchedAt ? { rerunOfOperationId } : {}),
       ...quote,
     });
     if (reservation.state === "denied" || !reservation.permit) return;

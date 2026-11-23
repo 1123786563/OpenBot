@@ -195,8 +195,9 @@ is disabled. Managed Computer runs and unattended model execution require a
 separate billing integration.
 
 In Stopped work, review the current quote before requeuing or retrying a managed
-text run. The new run has its own reservation and receipt. If the old run had
-a ledger operation, the new receipt links to it. Confirm that you checked any
+text run. The new run has its own reservation and receipt. If the old run
+reached provider dispatch, the new receipt links to its ledger operation.
+Confirm that you checked any
 external actions whose outcome is unknown. A stopped run keeps its original
 input, output and receipt.
 

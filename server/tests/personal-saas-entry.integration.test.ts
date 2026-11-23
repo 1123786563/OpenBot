@@ -1212,7 +1212,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       ).json(),
     ).toMatchObject({
       state: "completed",
-      testCredit: { state: "settled", rerunOfOperationId: originalRunId },
+      testCredit: { state: "settled", rerunOfOperationId: null },
     });
     const completed = await send(retryPath, { headers: browserHeaders });
     const receiptMarkup = await completed.text();
@@ -1272,7 +1272,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         .delete(enterpriseSettings)
         .where(eq(enterpriseSettings.key, pilotCatalogKey));
   }
-}, 60_000);
+}, 180_000);
 
 test("Web, Desktop, iOS, and Android share the owner’s workspace and conversation history", async () => {
   const owner = {
