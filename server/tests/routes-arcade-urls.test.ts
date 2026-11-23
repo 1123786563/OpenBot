@@ -68,6 +68,13 @@ function deployment(provider: BrokerProvider) {
 
   const store = {
     brokerProvider: provider,
+    // Every connect route passes through the Corsair cutover guard; none here is cut over.
+    withLegacyAuthorization: async <T>(
+      _input: { serverId: string; actor: string; callback?: string },
+      run: () => Promise<T>,
+    ) => run(),
+    recordLegacyAuthorizationStart: async () => {},
+    recordUnmatchedLegacyReturn: async () => {},
     serverAddress: async (serverId: string) =>
       serverId === SERVER_ID
         ? {

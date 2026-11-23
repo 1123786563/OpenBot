@@ -159,6 +159,35 @@ export const auditEventTypes = [
    */
   "mcp.tools_discovered",
   "mcp.call_succeeded",
+  "corsair.authorization.disconnected",
+  "corsair.authorization.revocation_checked",
+  "corsair.migration_readiness_decided",
+  "corsair.migration_route_changed",
+  "corsair.migration_write_reconciled",
+  "corsair.migration_policy_copied",
+  "corsair.migration_legacy_operation_verified",
+  "corsair.legacy_cleanup",
+  "corsair.legacy_callback_blocked",
+  "corsair.legacy_authorization_started",
+  "corsair.github.event_delivery",
+  "corsair.github.connected",
+  "corsair.slack.connected",
+  "corsair.slack.event_delivery",
+  "corsair.slack.event_run_skipped",
+  "corsair.slack.shared_enrollment_changed",
+  "corsair.slack.shared_access_changed",
+  "corsair.slack.grant_changed",
+  "corsair.slack.write_refused",
+  "corsair.slack.write_started",
+  "corsair.slack.write_succeeded",
+  "corsair.slack.write_unconfirmed",
+  "corsair.github.repository_registered",
+  "corsair.github.repository_removed",
+  "corsair.github.grant_changed",
+  "corsair.github.write_started",
+  "corsair.github.write_refused",
+  "corsair.github.write_succeeded",
+  "corsair.github.write_unconfirmed",
   "mcp.call_rejected",
   /*
    * A call this deployment permitted and the vendor did not complete.
@@ -889,7 +918,8 @@ export type AuditEventInput = {
   targetId?: string;
   actorUserId?: string;
   /** Omitted means a person did it. */
-  initiator?: AuditInitiator;
+  initiator?: AuditInitiator | { kind: "system" };
+  createdAt?: SQL;
   payload: Record<string, unknown>;
 };
 
@@ -1044,10 +1074,14 @@ export function auditSink(store: AuditStore): AuditSink {
   return { record: (event) => recordAuditEvent(store, event) };
 }
 
-function initiatorColumns(initiator: AuditInitiator | undefined) {
+function initiatorColumns(initiator: AuditEventInput["initiator"]) {
   if (!initiator)
     return { initiatorKind: "person" as const, initiatorId: null };
-  if (initiator.kind === "person" || initiator.kind === "deployment") {
+  if (
+    initiator.kind === "person" ||
+    initiator.kind === "deployment" ||
+    initiator.kind === "system"
+  ) {
     return { initiatorKind: initiator.kind, initiatorId: null };
   }
   return { initiatorKind: initiator.kind, initiatorId: initiator.id };
@@ -1101,10 +1135,12 @@ export type TransactionAuditStore = (
 export async function withAuditTransaction<T>(
   database: Database,
   write: (transaction: AuditTransaction, deferTap: DeferAuditTap) => Promise<T>,
+  config?: Parameters<Database["transaction"]>[1],
 ): Promise<T> {
   const pendingTaps: Array<() => void> = [];
-  const result = await database.transaction((transaction) =>
-    write(transaction, (publish) => pendingTaps.push(publish)),
+  const result = await database.transaction(
+    (transaction) => write(transaction, (publish) => pendingTaps.push(publish)),
+    config,
   );
   for (const publish of pendingTaps) publish();
   return result;

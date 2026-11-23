@@ -256,6 +256,12 @@ function readInitiator(value: unknown): AuditInitiator {
     const origin = readOrigin((value as { origin?: unknown }).origin);
     return origin ? { kind, id, origin } : { kind, id };
   }
+  if (
+    kind === "responsibility" &&
+    "goalRunId" in value &&
+    typeof value.goalRunId === "string"
+  )
+    return { kind, id, goalRunId: value.goalRunId };
   return { kind, id };
 }
 

@@ -66,6 +66,11 @@ function app(input: {
     // The brokered read the connect handler makes before anything about the consent flow. This
     // deployment has no brokered rows, so it answers nothing and the flow below is untouched.
     serverAddress: async () => undefined,
+    // The Corsair cutover guard the connect route passes through; nothing here is cut over.
+    withLegacyAuthorization: async <T>(
+      _input: { serverId: string; actor: string; callback?: string },
+      run: () => Promise<T>,
+    ) => run(),
     oauthClientFor:
       input.oauthClientFor ??
       (async () => ({ clientId: "dyn-1", clientSecret: "" })),

@@ -100,6 +100,12 @@ function deployment() {
     }),
     brokeredConnection: async () => null,
     listSkills: async () => [],
+    // The Corsair cutover guard the connect route passes through, and what a legacy authorization
+    // records on its way through it; nothing here is cut over or enrolled.
+    withLegacyAuthorization: async <T>(_input: never, run: () => Promise<T>) =>
+      run(),
+    recordLegacyAuthorizationStart: async () => {},
+    recordUnmatchedLegacyReturn: async () => {},
   } as unknown as PluginStore;
 
   const broker = {

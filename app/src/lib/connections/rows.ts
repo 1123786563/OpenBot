@@ -1,3 +1,7 @@
+import type {
+  CorsairAccount,
+  CorsairProvider,
+} from "@/lib/connections/corsair";
 import type { IdentityProviders, LinkedAccount } from "@/lib/identity/queries";
 import { schemeNeedsKey } from "@/lib/plugins/enablement-notes";
 import { brokeredProvenance } from "@/lib/plugins/provider-vocabulary";
@@ -82,6 +86,10 @@ const IDENTITY_TILE_SUMMARIES = {
 
 const IDENTITY_TITLES = { github: "GitHub", slack: "Slack" } as const;
 
+type CorsairAccountsByProvider = Partial<
+  Record<CorsairProvider, CorsairAccount[]>
+>;
+
 export function connectionRows(input: {
   /** Catalogue apps a person connects for themselves, already narrowed to the enabled ones. */
   catalogue: CatalogueItem[];
@@ -93,10 +101,34 @@ export function connectionRows(input: {
   connected: ReadonlySet<string>;
   links: LinkedAccount[];
   providers: IdentityProviders | undefined;
+  corsair?: CorsairAccountsByProvider;
 }): ConnectionRow[] {
   const identity = (["github", "slack"] as const).flatMap(
     (provider): ConnectionRow[] => {
       const link = input.links.find((entry) => entry.provider === provider);
+      const accounts = input.corsair?.[provider];
+      if (accounts) {
+        const count = accounts.length;
+        const needsAuthorization = accounts.some(
+          (account) => account.needsAuthorization,
+        );
+        return [
+          {
+            key: provider,
+            title: IDENTITY_TITLES[provider],
+            summary:
+              count === 0
+                ? "Authorize a personal tool account"
+                : `${count} personal tool ${count === 1 ? "account" : "accounts"}`,
+            state: needsAuthorization
+              ? "needs_reconnect"
+              : count
+                ? "connected"
+                : "available",
+            mark: { kind: "provider", provider },
+          },
+        ];
+      }
       if (!link && !input.providers?.[provider]) return [];
       return [
         {
@@ -127,7 +159,12 @@ export function connectionRows(input: {
    * the link alone.
    */
   const githubTools = input.brokered.find(isBrokeredGithub);
-  if (githubListed && githubTools && !input.connected.has(githubTools.id)) {
+  if (
+    githubListed &&
+    !input.corsair?.github &&
+    githubTools &&
+    !input.connected.has(githubTools.id)
+  ) {
     const github = identity.find((row) => row.key === "github");
     if (github && github.state !== "needs_reconnect") {
       github.state = "available";
@@ -210,6 +247,7 @@ export function personalConnectionRows(input: {
   connected: ReadonlySet<string>;
   links: LinkedAccount[];
   providers: IdentityProviders | undefined;
+  corsair?: CorsairAccountsByProvider;
 }): ConnectionRow[] {
   const apps = input.catalogue.flatMap((entry): ConnectionRow[] => {
     const row = personalAppRow(entry, input);
@@ -224,7 +262,8 @@ export function personalConnectionRows(input: {
     connected: input.connected,
     links: input.links,
     providers: input.providers,
-  }).filter((row) => row.key !== "slack");
+    corsair: input.corsair,
+  }).filter((row) => row.key !== "slack" || input.corsair?.slack !== undefined);
   const rows = [...apps, ...rest];
   const inUse = (row: ConnectionRow) => row.state !== "available";
   return [...rows.filter(inUse), ...rows.filter((row) => !inUse(row))];
