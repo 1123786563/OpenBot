@@ -137,6 +137,22 @@ function run(input: RunAgentInput): Response {
   if (plan.kind === "fails") {
     const events = [
       started,
+      ...(plan.code === "reconciling"
+        ? [
+            {
+              type: "CUSTOM",
+              name: "openbot-test-credit-receipt",
+              value: {
+                operationId: "fixture-operation",
+                userMessageId: input.messages.at(-1)?.id,
+                state: "pending",
+                heldMicrocredits: "2",
+                chargedMicrocredits: null,
+                releasedMicrocredits: null,
+              },
+            },
+          ]
+        : []),
       {
         type: "RUN_ERROR",
         message: plan.message,
@@ -161,7 +177,13 @@ function run(input: RunAgentInput): Response {
             {
               type: "CUSTOM",
               name: "openbot-test-credit-receipt",
-              value: { chargedMicrocredits: "1", releasedMicrocredits: "1" },
+              value: {
+                operationId: "settled-operation",
+                userMessageId: input.messages.at(-1)?.id,
+                state: "settled",
+                chargedMicrocredits: "1",
+                releasedMicrocredits: "1",
+              },
             },
           ]
         : []),
@@ -251,7 +273,21 @@ beforeAll(() => {
         });
       if (url.pathname.endsWith("/connect")) {
         const body = (await request().json()) as { threadId?: string };
-        return sse(recorded.get(body.threadId ?? "") ?? []);
+        const threadId = body.threadId ?? "";
+        const events = recorded.get(threadId) ?? [];
+        if (!managedChat) return sse(events);
+        const receipt = events.findLast(
+          (event) =>
+            typeof event === "object" &&
+            event !== null &&
+            "name" in event &&
+            event.name === "openbot-test-credit-receipt",
+        );
+        const snapshot = {
+          type: "MESSAGES_SNAPSHOT",
+          messages: stored.get(threadId) ?? [],
+        };
+        return sse(receipt ? [snapshot, receipt] : [snapshot]);
       }
       if (url.pathname.endsWith("/run"))
         return run(RunAgentInputSchema.parse(await request().json()));
@@ -486,24 +522,24 @@ test("a managed turn confirms its quote before sending and retries an uncertain 
       "Input 250000 and output 250000 microcredits per million tokens.",
     ),
   ).toBeTruthy();
+  expect(view.getByText(creditQuote.usageDisclosure)).toBeTruthy();
   expect(requestedRuns).toHaveLength(0);
   await user.click(confirm);
-  await view.findByText("The model outcome is being reconciled.");
-  await waitFor(() =>
-    expect(
-      view
-        .getByRole("button", { name: "Send message" })
-        .hasAttribute("disabled"),
-    ).toBe(false),
+  await view.findByText(
+    "Test Credits · Pending reconciliation · 2 microcredits held",
   );
-  await user.click(view.getByRole("button", { name: "Send message" }));
+  view.unmount();
+  const reopened = open();
   await user.click(
-    await view.findByRole("button", { name: "Confirm and send" }),
+    await reopened.findByRole("button", { name: "Check again" }),
   );
-  await settled(view, "Recovered answer");
   expect(
-    view.getByText(
-      "Test Credits · 1 microcredit charged · 1 microcredit released",
+    reopened.queryByRole("button", { name: "Confirm and send" }),
+  ).toBeNull();
+  await settled(reopened, "Recovered answer");
+  expect(
+    reopened.getByText(
+      "Test Credits · Settled · 1 microcredit charged · 1 microcredit released",
     ),
   ).toBeTruthy();
   expect(requestedRuns).toHaveLength(2);
@@ -516,4 +552,39 @@ test("a managed turn confirms its quote before sending and retries an uncertain 
   expect(requestedRuns[1]?.messages.at(-1)?.id).toBe(
     requestedRuns[0]?.messages.at(-1)?.id,
   );
+});
+
+test("an explicit managed rerun confirms a fresh reservation linked to the original message", async () => {
+  managedChat = true;
+  plans = [
+    {
+      kind: "fails",
+      code: "reconciling",
+      message: "The model outcome is being reconciled.",
+    },
+    { kind: "answers", text: "New answer" },
+  ];
+  const view = open();
+  const user = await send(view, "Run this again");
+  await user.click(
+    await view.findByRole("button", { name: "Confirm and send" }),
+  );
+  await user.click(await view.findByRole("button", { name: "Run again" }));
+  const confirm = await view.findByRole("button", {
+    name: "Confirm and rerun",
+  });
+  expect(view.getByText(creditQuote.usageDisclosure)).toBeTruthy();
+  expect(requestedRuns).toHaveLength(1);
+  await user.click(confirm);
+  await settled(view, "New answer");
+  expect(requestedRuns).toHaveLength(2);
+  const original = requestedRuns[0]?.messages.at(-1)?.id;
+  expect(requestedRuns[1]?.messages.at(-1)?.id).not.toBe(original);
+  expect(requestedRuns[1]?.forwardedProps).toMatchObject({
+    rerunOfMessageId: original,
+    testCreditQuote: {
+      route: creditQuote.route,
+      priceVersion: creditQuote.priceVersion,
+    },
+  });
 });

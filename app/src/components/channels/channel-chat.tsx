@@ -1146,7 +1146,10 @@ export function ChannelChat({
     attachments: Attachment[],
     sent?: Message,
     beforeFirstSend?: () => Promise<void>,
-    creditQuote?: { route: string; priceVersion: string },
+    credit?: {
+      testCreditQuote?: { route: string; priceVersion: string };
+      rerunOfMessageId?: string;
+    },
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -1243,7 +1246,7 @@ export function ChannelChat({
       id: newId(),
       role: "user" as const,
     };
-    if (!creditQuote || !target.messages.some(({ id }) => id === message.id))
+    if (!credit || !target.messages.some(({ id }) => id === message.id))
       target.addMessage(message);
     report(trimmed || describeAttachments(attachments), null);
 
@@ -1284,9 +1287,7 @@ export function ChannelChat({
           whileObserved(target, () =>
             copilotkit.runAgent({
               agent: target,
-              ...(creditQuote
-                ? { forwardedProps: { testCreditQuote: creditQuote } }
-                : {}),
+              ...(credit ? { forwardedProps: credit } : {}),
             }),
           ),
         );
@@ -1367,6 +1368,7 @@ export function ChannelChat({
     /** The message to send for `text`, when it is more than the words: an answer to a question. */
     sent?: Message,
     beforeFirstSend?: () => Promise<void>,
+    creditAction?: { kind: "check" | "rerun"; message: Message },
   ) => {
     const trimmed = text.trim();
     // A pasted screenshot with no caption is still a message to send: `canSendDraft` already
@@ -1387,20 +1389,38 @@ export function ChannelChat({
       void setChannelBusy({ channelId: channel.id, busy: true });
     }
     try {
-      let creditQuote: { route: string; priceVersion: string } | undefined;
+      let credit: Parameters<typeof deliver>[4];
       if (deployment?.testCreditConversations) {
         if (attachments.length > 0)
           throw new Error("Test Credit Conversations accept text messages.");
-        const quote = await queries.fetchQuery(
-          conversationCreditQuoteQueryOptions(channel.threadId, runtimeAgentId),
-        );
-        if (!(await confirmCredit(quote))) throw new Error("Send cancelled.");
-        creditQuote = { route: quote.route, priceVersion: quote.priceVersion };
         const previous = managedDraft.current;
-        sent ??=
-          previous?.threadId === channel.threadId && previous.text === trimmed
-            ? previous.message
-            : { id: newId(), role: "user", content: trimmed };
+        if (creditAction?.kind === "check") {
+          sent = creditAction.message;
+          credit = {};
+        } else {
+          const rerun = creditAction?.kind === "rerun";
+          const quote = await queries.fetchQuery(
+            conversationCreditQuoteQueryOptions(
+              channel.threadId,
+              runtimeAgentId,
+            ),
+          );
+          if (!(await confirmCredit(quote, rerun)))
+            throw new Error("Send cancelled.");
+          credit = {
+            testCreditQuote: {
+              route: quote.route,
+              priceVersion: quote.priceVersion,
+            },
+            rerunOfMessageId: rerun ? creditAction.message.id : undefined,
+          };
+          sent ??=
+            !rerun &&
+            previous?.threadId === channel.threadId &&
+            previous.text === trimmed
+              ? previous.message
+              : { id: newId(), role: "user", content: trimmed };
+        }
         managedDraft.current = {
           threadId: channel.threadId,
           text: trimmed,
@@ -1412,9 +1432,9 @@ export function ChannelChat({
         attachments,
         sent,
         beforeFirstSend,
-        creditQuote,
+        credit,
       );
-      if (creditQuote) managedDraft.current = undefined;
+      if (credit) managedDraft.current = undefined;
       /*
        * The person left while this turn was running (holding control of the Bot's browser, say) and the turn went on
        * without this screen. The run-finished subscription that tells the roster what the Bot said went with it, so the
@@ -1443,6 +1463,23 @@ export function ChannelChat({
     }
   };
 
+  const creditMessage = agent.messages.findLast(
+    (message) => message.role === "user",
+  );
+  const runCreditAction = async (kind: "check" | "rerun") => {
+    if (creditMessage?.id !== creditReceipt?.userMessageId || !creditMessage)
+      return;
+    try {
+      await say(messageText(creditMessage), [], undefined, undefined, {
+        kind,
+        message: creditMessage,
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "Send cancelled.")
+        setRunError(stoppedReason(error));
+    }
+  };
+
   useEffect(() => {
     /*
      * `laterRun` is a RUN_ERROR from a run of a turn still going here after its first run has
@@ -1463,7 +1500,10 @@ export function ChannelChat({
       // Both surfaces fall back to the same sentence, from the same place, so a person who uses
       // both is not told two different things about the same silence.
       onRunErrorEvent: ({ event }) => {
-        if (event?.code && event.code !== "reconciling")
+        if (
+          event?.code &&
+          !["reconciling", "settled", "released"].includes(event.code)
+        )
           managedDraft.current = undefined;
         fail(stoppedReason(event?.message), true);
       },
@@ -1973,8 +2013,32 @@ export function ChannelChat({
                 {/* What the person allowed for this conversation, each with Turn off. */}
                 {draftDiscard}
                 {creditDialog}
-                {creditReceipt && deployment?.testCreditConversations ? (
-                  <p role="status">{creditReceipt.description}</p>
+                {creditReceipt &&
+                creditReceipt.userMessageId === creditMessage?.id &&
+                deployment?.testCreditConversations ? (
+                  <Stack gap={2}>
+                    <p role="status">{creditReceipt.description}</p>
+                    {channel.active && creditReceipt.canRerun ? (
+                      <Stack direction="horizontal" gap={2} wrap="wrap">
+                        {creditReceipt.pending ? (
+                          <Button
+                            label="Check again"
+                            variant="secondary"
+                            size="sm"
+                            isDisabled={turnsInFlight > 0}
+                            onClick={() => void runCreditAction("check")}
+                          />
+                        ) : null}
+                        <Button
+                          label="Run again"
+                          variant="secondary"
+                          size="sm"
+                          isDisabled={turnsInFlight > 0}
+                          onClick={() => void runCreditAction("rerun")}
+                        />
+                      </Stack>
+                    ) : null}
+                  </Stack>
                 ) : null}
                 {channel.active ? (
                   <ConversationAllowances threadId={channel.threadId} />

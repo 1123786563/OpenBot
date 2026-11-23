@@ -615,7 +615,8 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
   const providerId = "trial-casdoor";
   const route = "conversation-fixture";
   const batchId = crypto.randomUUID();
-  const ledger = createTestCreditLedger(database);
+  let now = Date.now();
+  const ledger = createTestCreditLedger(database, () => new Date(now));
   const aliceIdentity = { issuer, subject: crypto.randomUUID() };
   const bobIdentity = { issuer, subject: crypto.randomUUID() };
   const harness = `agent-langgraph-agui@sha256:${"a".repeat(64)}`;
@@ -647,7 +648,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     string,
     { body: string; operationId: string | null }
   >();
-  let uncertain = false;
+  let gatewayOutcome: "answer" | "unknown" | "partial" = "answer";
   let invalidProof = false;
   const meter = Bun.serve({
     hostname: "127.0.0.1",
@@ -703,7 +704,13 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
       });
       expect(JSON.parse(body)).not.toHaveProperty("max_tokens");
       operationIds.push(operationId);
-      if (uncertain) return new Response(null, { status: 502 });
+      if (gatewayOutcome === "unknown")
+        return new Response(null, { status: 502 });
+      if (gatewayOutcome === "partial")
+        return Response.json({
+          choices: [],
+          usage: { prompt_tokens: 3, completion_tokens: 1 },
+        });
       return Response.json({
         choices: [{ message: { content: "Fixture answer." } }],
         usage: { prompt_tokens: 1, completion_tokens: 1 },
@@ -797,7 +804,12 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
               `${path}/test-credit-quote?threadId=${channel.threadId}`,
               { headers: session },
             ),
-          run: (id: string, confirmation?: object, runId = id) =>
+          run: (
+            id: string,
+            confirmation?: object,
+            runId = id,
+            rerunOfMessageId?: string,
+          ) =>
             app.request(
               `${path}/run`,
               authenticatedPost({
@@ -806,10 +818,16 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
                 messages: [{ role: "user", id, content: "Fixture prompt." }],
                 forwardedProps: {
                   testCreditQuote: confirmation,
+                  rerunOfMessageId,
                   personId: bob.id,
                   subject: bobIdentity.subject,
                 },
               }),
+            ),
+          connect: () =>
+            app.request(
+              `${path}/connect`,
+              authenticatedPost({ threadId: channel.threadId }),
             ),
           history: () =>
             app.request(
@@ -954,7 +972,7 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     ).toContain("Fixture answer.");
     expect(await (await winner.history()).text()).toContain("Fixture answer.");
 
-    uncertain = true;
+    gatewayOutcome = "unknown";
     expect(await (await other.run("uncertain", confirmed)).text()).toContain(
       "reconciling",
     );
@@ -1009,17 +1027,17 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
     await ledger.enroll({
       identity: bobIdentity,
       batchId: freshBatch,
-      amount: 2n,
+      amount: 8n,
     });
     await ledger.claim(bobIdentity, freshBatch);
-    uncertain = false;
+    gatewayOutcome = "answer";
     invalidProof = true;
     expect(await (await other.run("bad-meter", confirmed)).text()).toContain(
       "route_unavailable",
     );
     expect(operationIds).toHaveLength(2);
     expect(await ledger.balance(bobIdentity)).toMatchObject({
-      availableMicrocredits: "2",
+      availableMicrocredits: "8",
       reservedMicrocredits: "0",
     });
     await database.execute(
@@ -1038,6 +1056,151 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
         sql`ALTER TABLE test_credit_operations_fixture_outage RENAME TO test_credit_operations`,
       );
     }
+    invalidProof = false;
+    expect(
+      (
+        await other.run(
+          "foreign-rerun",
+          confirmed,
+          "foreign-rerun",
+          "confirmed",
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      await (
+        await other.run(
+          "explicit-rerun",
+          confirmed,
+          "explicit-rerun",
+          "uncertain",
+        )
+      ).text(),
+    ).toContain("Fixture answer.");
+    expect(operationIds).toHaveLength(3);
+    const rerun = operationIds[2];
+    const rerunReceipt = await other.app.request(
+      `/api/billing/operations/${rerun}`,
+      { headers: other.headers },
+    );
+    expect(await rerunReceipt.json()).toMatchObject({
+      state: "settled",
+      operationId: rerun,
+      rerunOfOperationId: unknown,
+      reservedMicrocredits: "2",
+      chargedMicrocredits: "1",
+    });
+    expect(
+      await (
+        await other.run("explicit-rerun", undefined, "retry-rerun")
+      ).text(),
+    ).toContain("Fixture answer.");
+    await recover();
+    expect(operationIds).toHaveLength(3);
+    const receiptOf = async (id: string | undefined) => {
+      if (!id) throw new Error("Expected a gateway dispatch.");
+      const response = await other.app.request(
+        `/api/billing/operations/${id}`,
+        {
+          headers: other.headers,
+        },
+      );
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    gatewayOutcome = "partial";
+    const partialStream = await (await other.run("partial", confirmed)).text();
+    expect(partialStream).toContain('"code":"settled"');
+    expect(await receiptOf(operationIds[3])).toMatchObject({
+      state: "settled",
+      outcome: "partial",
+      chargedMicrocredits: "1",
+      releasedMicrocredits: "1",
+    });
+
+    gatewayOutcome = "unknown";
+    const unknownStream = await (
+      await other.run("cancelled", confirmed)
+    ).text();
+    expect(unknownStream).toContain('"state":"pending"');
+    const cancelled = operationIds[4];
+    if (!cancelled)
+      throw new Error("Expected cancelled operation to dispatch.");
+    const day = 24 * 60 * 60_000;
+    const reconnected = await (await other.connect()).text();
+    expect(reconnected).toContain('"name":"openbot-test-credit-receipt"');
+    expect(reconnected).toContain('"state":"pending"');
+    const dispatched = await receiptOf(cancelled);
+    expect(dispatched).toMatchObject({
+      state: "pending",
+      cutoffAt: new Date(now + day).toISOString(),
+      dispatchedAt: new Date(now).toISOString(),
+      heldMicrocredits: "2",
+    });
+    now += day - 1;
+    const cancellation = {
+      evidenceId: "verified-cancellation",
+      outcome: "cancelled",
+      inputTokens: 4n,
+      outputTokens: 0n,
+    } as const;
+    await ledger.recordEvidence(bobAccount, cancelled, cancellation);
+    now++;
+    expect(await receiptOf(cancelled)).toMatchObject({
+      state: "pending",
+      heldMicrocredits: "1",
+      releasedMicrocredits: "1",
+    });
+    await Promise.all([recover(), recover()]);
+    expect(await receiptOf(cancelled)).toMatchObject({
+      state: "settled",
+      outcome: "cancelled",
+      chargedMicrocredits: "1",
+    });
+    expect(
+      await (await other.run("cancelled", undefined, "after-cancel")).text(),
+    ).toContain('"code":"settled"');
+    const beforeLate = await ledger.balance(bobIdentity);
+    expect(
+      await ledger.recordEvidence(bobAccount, cancelled, {
+        ...cancellation,
+        evidenceId: "late-cumulative-usage",
+        inputTokens: 20n,
+      }),
+    ).toMatchObject({ platformMicrocredits: "4" });
+    expect(await ledger.balance(bobIdentity)).toEqual(beforeLate);
+    expect(operationIds).toHaveLength(5);
+    for (const fixture of [
+      { outcome: "zero_cost", inputTokens: 0n, expectedCost: "0" },
+      { outcome: "platform_failure", inputTokens: 16n, expectedCost: "4" },
+    ] as const) {
+      const before = await ledger.balance(bobIdentity);
+      expect(
+        await (await other.run(fixture.outcome, confirmed)).text(),
+      ).toContain('"state":"pending"');
+      const operation = operationIds.at(-1);
+      if (!operation) throw new Error("Missing gateway operation.");
+      expect(
+        await ledger.recordEvidence(bobAccount, operation, {
+          evidenceId: fixture.outcome,
+          outcome: fixture.outcome,
+          inputTokens: fixture.inputTokens,
+          outputTokens: 0n,
+        }),
+      ).toMatchObject({ platformMicrocredits: fixture.expectedCost });
+      await recover();
+      expect(await receiptOf(operation)).toMatchObject({
+        state: "released",
+        outcome: fixture.outcome,
+        releasedMicrocredits: "2",
+      });
+      expect(await (await other.connect()).text()).toContain(
+        '"state":"released"',
+      );
+      expect(await ledger.balance(bobIdentity)).toEqual(before);
+    }
+    expect(operationIds).toHaveLength(7);
+
     await database
       .delete(testCreditEnrollments)
       .where(eq(testCreditEnrollments.batchId, freshBatch));

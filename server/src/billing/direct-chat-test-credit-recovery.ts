@@ -74,9 +74,11 @@ export function createDirectChatCreditRecovery(
           isNull(channels.deletedAt),
           isNotNull(directChatRuns.testCreditOperationId),
           ne(directChatRuns.status, "completed"),
-          isNotNull(testCreditOperations.resultText),
           or(
-            eq(testCreditOperations.state, "settled"),
+            and(
+              eq(testCreditOperations.state, "settled"),
+              isNotNull(testCreditOperations.resultText),
+            ),
             and(
               eq(testCreditOperations.state, "pending"),
               isNotNull(testCreditOperations.eligibleEvidenceId),

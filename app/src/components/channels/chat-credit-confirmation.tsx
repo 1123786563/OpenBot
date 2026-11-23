@@ -11,7 +11,12 @@ import {
 } from "@/components/ui/dialog";
 import type { BillingQuote } from "@/lib/billing/queries";
 
-export type ChatCreditReceipt = { description: string };
+export type ChatCreditReceipt = {
+  userMessageId: string;
+  description: string;
+  pending: boolean;
+  canRerun: boolean;
+};
 
 function microcredits(amount: string) {
   return `${amount} microcredit${amount === "1" ? "" : "s"}`;
@@ -23,22 +28,54 @@ export function chatCreditReceipt(
   if (
     typeof value !== "object" ||
     value === null ||
-    !("chargedMicrocredits" in value) ||
+    !("userMessageId" in value) ||
+    typeof value.userMessageId !== "string" ||
+    !("state" in value)
+  )
+    return undefined;
+  const { userMessageId, state } = value;
+  if (state === "pending" || state === "reserved") {
+    if (
+      !("heldMicrocredits" in value) ||
+      typeof value.heldMicrocredits !== "string"
+    )
+      return undefined;
+    return {
+      userMessageId,
+      description: `Test Credits · Pending reconciliation · ${microcredits(value.heldMicrocredits)} held`,
+      pending: true,
+      canRerun: true,
+    };
+  }
+  if (
+    (state !== "settled" && state !== "released") ||
     !("releasedMicrocredits" in value) ||
     typeof value.releasedMicrocredits !== "string"
   )
     return undefined;
   const charged =
+    "chargedMicrocredits" in value &&
     typeof value.chargedMicrocredits === "string"
       ? value.chargedMicrocredits
       : "0";
   return {
-    description: `Test Credits · ${microcredits(charged)} charged · ${microcredits(value.releasedMicrocredits)} released`,
+    userMessageId,
+    description:
+      state === "released"
+        ? `Test Credits · Reservation released · ${microcredits(value.releasedMicrocredits)} returned`
+        : `Test Credits · Settled · ${microcredits(charged)} charged · ${microcredits(value.releasedMicrocredits)} released`,
+    pending: false,
+    canRerun: "hasReply" in value && value.hasReply === false,
   };
 }
 
 export function useChatCreditConfirmation() {
-  const [quote, setQuote] = useState<BillingQuote>();
+  const [confirmation, setConfirmation] = useState<{
+    quote: BillingQuote;
+    rerun: boolean;
+  }>();
+  const quote = confirmation?.quote;
+  const rerun = confirmation?.rerun === true;
   const resolve = useRef<((confirmed: boolean) => void) | undefined>(undefined);
   const cancelButton = useRef<HTMLButtonElement>(null);
   useEffect(() => () => resolve.current?.(false), []);
@@ -46,14 +83,14 @@ export function useChatCreditConfirmation() {
   function finish(confirmed: boolean) {
     resolve.current?.(confirmed);
     resolve.current = undefined;
-    setQuote(undefined);
+    setConfirmation(undefined);
   }
 
   return {
-    confirmCredit: (next: BillingQuote) =>
+    confirmCredit: (next: BillingQuote, rerun: boolean) =>
       new Promise<boolean>((confirmed) => {
         resolve.current = confirmed;
-        setQuote(next);
+        setConfirmation({ quote: next, rerun });
       }),
     creditDialog: (
       <Dialog
@@ -63,7 +100,11 @@ export function useChatCreditConfirmation() {
         }}
       >
         <DialogContent initialFocus={cancelButton} showCloseButton={false}>
-          <DialogTitle>Send using Test Credits?</DialogTitle>
+          <DialogTitle>
+            {rerun
+              ? "Run again using Test Credits?"
+              : "Send using Test Credits?"}
+          </DialogTitle>
           <DialogBody>
             {quote ? (
               <DialogDescription render={<Stack gap={2} />}>
@@ -78,6 +119,12 @@ export function useChatCreditConfirmation() {
                   {microcredits(quote.maxChargeMicrocredits)}.
                 </p>
                 <p>{quote.usageDisclosure}</p>
+                {rerun ? (
+                  <p>
+                    Running again makes a new reservation. The original charge
+                    is handled separately.
+                  </p>
+                ) : null}
               </DialogDescription>
             ) : null}
           </DialogBody>
@@ -89,7 +136,7 @@ export function useChatCreditConfirmation() {
               onClick={() => finish(false)}
             />
             <Button
-              label="Confirm and send"
+              label={rerun ? "Confirm and rerun" : "Confirm and send"}
               variant="primary"
               onClick={() => finish(true)}
             />

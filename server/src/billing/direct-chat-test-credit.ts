@@ -70,6 +70,10 @@ export function createDirectChatTestCredit(
       const identity = await identityOf(personId);
       if (identity && (await ledger.accountOf(identity))) return ledger.quote();
     },
+    async receipt(id: string, personId: string) {
+      const identity = await identityOf(personId);
+      if (identity) return ledger.receipt(identity, id);
+    },
     async reconcile(id: string, personId: string) {
       const identity = await identityOf(personId);
       return identity
@@ -81,6 +85,7 @@ export function createDirectChatTestCredit(
       personId: string;
       confirmation: z.infer<typeof testCreditConfirmation>;
       messages: Parameters<TestCreditExecutor>[0]["messages"];
+      rerunOfOperationId?: string;
     }): Promise<ChatCreditResult> {
       const identity = await identityOf(input.personId);
       if (!identity) return { state: "not_authorized" };
@@ -97,6 +102,7 @@ export function createDirectChatTestCredit(
         creditType: "test",
         applicationId: "openbot",
         resumable: false,
+        rerunOfOperationId: input.rerunOfOperationId,
       });
       if (held.state === "denied") return { state: held.reason };
 

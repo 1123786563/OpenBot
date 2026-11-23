@@ -36,9 +36,11 @@ const runBody = z.object({
   runId: id,
   messages: z.array(z.unknown()).min(1),
   forwardedProps: z
-    .object({ testCreditQuote: z.unknown().optional() })
-    .optional()
-    .catch(undefined),
+    .object({
+      testCreditQuote: z.unknown().optional(),
+      rerunOfMessageId: id.optional(),
+    })
+    .nullish(),
 });
 const promptMessage = z.object({
   id,
@@ -78,6 +80,26 @@ function replyFor(run: Run): Message[] {
   return run.assistantMessageId && run.reply !== null
     ? [{ id: run.assistantMessageId, role: "assistant", content: run.reply }]
     : [];
+}
+
+function creditReceiptEvent(
+  run: Run,
+  receipt: NonNullable<Awaited<ReturnType<DirectChatTestCredit["receipt"]>>>,
+  hasReply: boolean,
+): BaseEvent {
+  return {
+    type: EventType.CUSTOM,
+    name: "openbot-test-credit-receipt",
+    value: {
+      operationId: receipt.operationId,
+      userMessageId: run.userMessageId,
+      state: receipt.state,
+      heldMicrocredits: receipt.heldMicrocredits,
+      hasReply,
+      chargedMicrocredits: receipt.chargedMicrocredits,
+      releasedMicrocredits: receipt.releasedMicrocredits,
+    },
+  };
 }
 
 function eventStream(
@@ -253,9 +275,18 @@ export function createDirectChatRoutes(deps: {
       ))
     )
       return context.json(absent, 404);
-    const messages = messagesFor(await history(database, threadId));
+    const runs = await history(database, threadId);
     return eventStream(async (emit) => {
-      emit({ type: EventType.MESSAGES_SNAPSHOT, messages });
+      emit({ type: EventType.MESSAGES_SNAPSHOT, messages: messagesFor(runs) });
+      const latest = runs.at(-1);
+      if (!testCredit || !latest?.testCreditOperationId) return;
+      const receipt = await testCredit
+        .receipt(latest.testCreditOperationId, actor.id)
+        .catch(() => undefined);
+      if (receipt)
+        emit(
+          creditReceiptEvent(latest, receipt, latest.status === "completed"),
+        );
     });
   });
 
@@ -290,6 +321,7 @@ export function createDirectChatRoutes(deps: {
     if (!prompt.success)
       return context.json({ error: "A text message is required." }, 400);
     const { threadId, runId } = body.data;
+    const rerunOfMessageId = body.data.forwardedProps?.rerunOfMessageId;
     const confirmation = testCreditConfirmation.safeParse(
       body.data.forwardedProps?.testCreditQuote,
     );
@@ -335,6 +367,17 @@ export function createDirectChatRoutes(deps: {
         return { kind: "busy" } as const;
       if (testCredit && !confirmation.success)
         return { kind: "confirmation_required" } as const;
+      const original =
+        rerunOfMessageId === undefined
+          ? undefined
+          : previous.find((run) => run.userMessageId === rerunOfMessageId);
+      if (
+        rerunOfMessageId !== undefined &&
+        (!testCredit ||
+          !original?.testCreditOperationId ||
+          original.prompt !== content)
+      )
+        return { kind: "rerun_unavailable" } as const;
       const [run] = await transaction
         .insert(directChatRuns)
         .values({
@@ -353,12 +396,18 @@ export function createDirectChatRoutes(deps: {
         kind: "start",
         run,
         messages: messagesFor([...previous, run]),
+        rerunOfOperationId: original?.testCreditOperationId ?? undefined,
       } as const;
     });
     if (claim.kind === "absent") return context.json(absent, 404);
     if (claim.kind === "confirmation_required")
       return context.json(
         { error: "Confirm the current Test Credit quote before sending." },
+        409,
+      );
+    if (claim.kind === "rerun_unavailable")
+      return context.json(
+        { error: "The original Test Credit run is unavailable." },
         409,
       );
     if (claim.kind === "conflict")
@@ -382,15 +431,7 @@ export function createDirectChatRoutes(deps: {
       ) {
         const receipt = result?.operation;
         if (receipt)
-          emit({
-            type: EventType.CUSTOM,
-            name: "openbot-test-credit-receipt",
-            value: {
-              operationId: receipt.operationId,
-              chargedMicrocredits: receipt.chargedMicrocredits,
-              releasedMicrocredits: receipt.releasedMicrocredits,
-            },
-          });
+          emit(creditReceiptEvent(run, receipt, result?.state === "completed"));
       }
       if (claim.kind === "repeat") {
         let outcome = run;
@@ -526,6 +567,7 @@ export function createDirectChatRoutes(deps: {
                 id: run.testCreditOperationId,
                 personId: actor.id,
                 confirmation: confirmation.data,
+                rerunOfOperationId: claim.rerunOfOperationId,
                 messages,
               })
               .catch(() => ({ state: "unavailable" as const }));
