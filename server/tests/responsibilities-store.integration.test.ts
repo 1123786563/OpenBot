@@ -3,18 +3,18 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { agents, users } from "../src/db/schema/core";
+import { personalSaasAccounts } from "../src/db/schema/personal-saas";
 import {
   responsibilityEvents,
   responsibilityRuns,
 } from "../src/db/schema/responsibilities";
-import { personalSaasAccounts } from "../src/db/schema/personal-saas";
-import { createWorkQueue } from "../src/work/queue";
 import { workItems } from "../src/db/schema/work";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import {
   ResponsibilityNotFoundError,
   ResponsibilityRefusedError,
 } from "../src/responsibilities/types";
+import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);

@@ -18,7 +18,7 @@ import {
   mcpTools,
 } from "../src/db/schema";
 import type { ConnectedAppBroker } from "../src/plugins/broker";
-import { useComposioClient } from "../src/plugins/composio";
+import { useComposioClient as installComposioClient } from "../src/plugins/composio";
 import { createPluginStore } from "../src/plugins/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -79,7 +79,7 @@ const store = createPluginStore({
 
 /** The ids the Composio transport was handed, which is where a call that went out is visible. */
 function recordingTransport(sentAs: string[]) {
-  useComposioClient({
+  installComposioClient({
     listActions: async () => [],
     execute: async ({ userId }) => {
       sentAs.push(userId);
@@ -103,7 +103,7 @@ beforeEach(async () => {
     .values({ id: bot, name: "Helper", type: "built_in", configuration: {} });
 });
 afterEach(async () => {
-  useComposioClient(null);
+  installComposioClient(null);
   await clean();
 });
 

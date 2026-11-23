@@ -26,9 +26,9 @@ import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import { modelUsage } from "../src/db/schema/admin";
 import { agents, channels, users } from "../src/db/schema/core";
-import { personalSaasAccounts } from "../src/db/schema/personal-saas";
 import { deliveryOutbox } from "../src/db/schema/delivery";
 import { botLifecycle } from "../src/db/schema/lifecycle";
+import { personalSaasAccounts } from "../src/db/schema/personal-saas";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
 import {
   proactivePeople,

@@ -388,7 +388,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
       },
       body: "{}",
     });
-  const useDefault = async (
+  const configureDefaultContainer = async (
     store: ReturnType<typeof createLearningSettingsStore>,
   ) =>
     store.write({
@@ -399,7 +399,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("an admin lists the container's analysis runs", async () => {
     const { app, store } = admin();
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const response = await app.request("/runs");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
@@ -418,7 +418,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("published skills say it is automatic learning that is off", async () => {
     const store = createLearningSettingsStore();
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const app = createLearningRoutes(
       { store, skills: async () => ({ unavailable: "off" }) },
       async (context, next) => {
@@ -441,7 +441,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("an admin reads a published skill's files", async () => {
     const store = createLearningSettingsStore();
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const skill: LearnedSkillContent = {
       name: "weekly-report",
       description: "Write the weekly report.",
@@ -498,7 +498,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("an admin reads the SKILL.md and evidence, approves it, and OpenBot's audit names them", async () => {
     const { app, store, events, intelligence } = admin();
-    await useDefault(store);
+    await configureDefaultContainer(store);
     expect(await (await app.request("/proposals")).json()).toMatchObject({
       containerId: "openbot",
       proposals: [
@@ -580,7 +580,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("a cross-site approval is refused before Intelligence is asked", async () => {
     const { app, store, intelligence } = admin();
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const response = await app.request(
       `https://openbot.example.com/proposals/${PROPOSAL}/approve`,
       {
@@ -598,7 +598,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("Learn now starts a run on the container and is audited", async () => {
     const { app, store, events } = admin();
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const response = await post(app, "/runs");
     expect(await response.json()).toEqual({
       run: { id: "0198a012-a20f-77c0-9e33-8992f18e74c1", status: "queued" },
@@ -616,7 +616,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
         OPENBOT_LEARNING_MODEL_UNAVAILABLE: "unsupported",
       }),
     });
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const said =
       "Learning can't run on the model you signed in with. To use it, sign OpenBot in with an OpenAI or Anthropic API key, or a Claude or ChatGPT plan.";
     const response = await post(app, "/runs");
@@ -633,7 +633,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
       noModel: true,
       modelUnavailable: learningModelUnavailable({}),
     });
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const response = await post(app, "/runs");
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
@@ -648,7 +648,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("with no dashboard, the overview has the Inspector panel's counts and links nowhere", async () => {
     const { app, store } = admin("current", "admin", "no-dashboard");
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const response = await app.request("/overview");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -669,7 +669,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
   test("with a dashboard, the overview has the same counts and links into it, on any Intelligence", async () => {
     for (const inspector of ["dashboard", "dashboard-before-opt-in"] as const) {
       const { app, store, intelligence } = admin("current", "admin", inspector);
-      await useDefault(store);
+      await configureDefaultContainer(store);
       const response = await app.request("/overview");
       expect(response.status).toBe(200);
       expect(
@@ -691,7 +691,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("an Intelligence with no Inspector panel gives the overview from the key's own routes", async () => {
     const { app, store } = admin();
-    await useDefault(store);
+    await configureDefaultContainer(store);
     const response = await app.request("/overview");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -711,7 +711,7 @@ describe("reviewing proposed skills in Admin, against Intelligence's project-key
 
   test("Learning switched off in Intelligence is said as that, on the list and the overview", async () => {
     const { app, store } = admin("learning-off");
-    await useDefault(store);
+    await configureDefaultContainer(store);
     for (const path of ["/proposals", "/overview"]) {
       const response = await app.request(path);
       expect(response.status).toBe(409);

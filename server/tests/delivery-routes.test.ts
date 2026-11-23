@@ -3,8 +3,8 @@ import { createHmac } from "node:crypto";
 import { createOpenTagTransport } from "../src/delivery/opentag";
 import type { ConverseResult } from "../src/delivery/router";
 import { createDeliveryWebhookRoutes } from "../src/delivery/routes";
-import { createTwilioTransport } from "../src/delivery/twilio";
 import type { DeliveryStore } from "../src/delivery/store";
+import { createTwilioTransport } from "../src/delivery/twilio";
 
 const SECRET = "x".repeat(48);
 const APPROVAL = "0f8fad5b-d9cb-469f-a165-70867728950e";

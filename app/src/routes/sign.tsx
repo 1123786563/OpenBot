@@ -90,8 +90,11 @@ export const Route = createFileRoute("/sign")({
 });
 
 function SignScreen() {
-  const { flow_id: flowId, openfuse_request: openFuseRequest, returnTo } =
-    Route.useSearch();
+  const {
+    flow_id: flowId,
+    openfuse_request: openFuseRequest,
+    returnTo,
+  } = Route.useSearch();
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
@@ -115,12 +118,7 @@ function SignScreen() {
       await signInWithEmailDomain(
         email,
         undefined,
-        resumeUrlFor(
-          window.location.origin,
-          flowId,
-          openFuseRequest,
-          returnTo,
-        ),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       setError(
@@ -140,12 +138,7 @@ function SignScreen() {
       await signInWith(
         provider,
         undefined,
-        resumeUrlFor(
-          window.location.origin,
-          flowId,
-          openFuseRequest,
-          returnTo,
-        ),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       setError(

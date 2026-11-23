@@ -19,8 +19,11 @@ import {
   routines,
   users,
 } from "../src/db/schema";
-import { callTool, useRoutineTools } from "../src/plugins/builtin-routines";
-import { useGoalTools } from "../src/responsibilities/chat-tools";
+import {
+  callTool,
+  useRoutineTools as installRoutineTools,
+} from "../src/plugins/builtin-routines";
+import { useGoalTools as installGoalTools } from "../src/responsibilities/chat-tools";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createRoutineRoutes } from "../src/routines/routes";
 import { createRoutineStore } from "../src/routines/store";
@@ -78,8 +81,8 @@ const createdAgentIds: string[] = [];
 const createdChannelIds: string[] = [];
 
 afterEach(async () => {
-  useRoutineTools(null);
-  useGoalTools(null);
+  installRoutineTools(null);
+  installGoalTools(null);
   for (const userId of createdUserIds) {
     await database.delete(routines).where(eq(routines.ownerUserId, userId));
     await database
@@ -126,8 +129,8 @@ async function setUp() {
   createdAgentIds.push(profile.id);
   const channel = await channelStore.create(owner, [profile.id]);
   createdChannelIds.push(channel.id);
-  useRoutineTools(store);
-  useGoalTools({
+  installRoutineTools(store);
+  installGoalTools({
     store: goalStore,
     engine: { ingest: async () => ({ duplicate: false }) as never },
     conversationFor: store.conversationFor,
