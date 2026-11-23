@@ -8,11 +8,7 @@ const RELATIVE_UNITS = [
   { limit: Number.POSITIVE_INFINITY, divisor: 604_800_000, unit: "week" },
 ] as const;
 
-const relativeFormat = new Intl.RelativeTimeFormat(undefined, {
-  numeric: "auto",
-});
-
-/** Locale-aware relative timestamp, e.g. "2 minutes ago". */
+/** Locale-aware relative timestamp, e.g. "2 minutes ago", spelled out in the interface language. */
 export function relativeTime(iso: string): string {
   const time = new Date(iso).getTime();
   // An invalid date used to flow into `Math.abs(NaN)` comparisons and `format(-NaN)`, which
@@ -22,10 +18,17 @@ export function relativeTime(iso: string): string {
   const scale =
     RELATIVE_UNITS.find(({ limit }) => Math.abs(elapsed) < limit) ??
     RELATIVE_UNITS[RELATIVE_UNITS.length - 1];
-  return relativeFormat.format(
-    -Math.round(elapsed / scale.divisor),
-    scale.unit,
-  );
+  // A formatter speaks the language it was made in, so it is made for this call and not kept.
+  // With no interface language yet, Intl speaks the browser's, as it always did.
+  const words = new Intl.RelativeTimeFormat(i18n.language || undefined, {
+    numeric: "auto",
+  }).format(-Math.round(elapsed / scale.divisor), scale.unit);
+  return i18n.language === "zh-CN" ? spacedNumeral(words) : words;
+}
+
+/** CLDR writes "3分钟前"; Chinese copy sets the numeral apart with a space ("3 分钟前"). */
+function spacedNumeral(words: string): string {
+  return words.replace(/^\d+/, (digits) => `${digits} `);
 }
 
 const SHORT_UNITS = [
@@ -73,9 +76,5 @@ export function relativeTimeShort(iso: string, now: Date = new Date()): string {
   const count = Math.floor(elapsed / scale.divisor);
   // Only English has these compact suffixes; other languages spell the unit out, which Intl knows.
   if (i18n.language === "en") return `${count}${scale.suffix}`;
-  // CLDR writes "3分钟前"; Chinese copy sets the numeral apart with a space ("3 分钟前").
-  return formatRelativeTime(-count, scale.unit).replace(
-    /^\d+/,
-    (digits) => `${digits} `,
-  );
+  return spacedNumeral(formatRelativeTime(-count, scale.unit));
 }
