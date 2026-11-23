@@ -109,7 +109,12 @@ export function directConversation(
       const ids = new Set(waiting.pendingApprovals.map(({ id }) => id));
       const inbox = inboxSchema.parse(
         await (
-          await checked(await request("/api/approvals", { signal }))
+          await checked(
+            await request(
+              `/api/approvals?threadId=${encodeURIComponent(threadId)}`,
+              { signal },
+            ),
+          )
         ).json(),
       );
       return {
