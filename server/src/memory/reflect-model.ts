@@ -143,6 +143,12 @@ export function createReflectModelGateway({
         session.failed = true;
         return failure(503);
       }
+      // A completion can finish or be retried after its evidence is withdrawn.
+      const authorized = await session.canDispatch().catch(() => false);
+      if (!authorized || !sessions.has(key) || session.failed) {
+        session.failed = true;
+        return failure(403);
+      }
       return Response.json({
         id: `chatcmpl-${digest}`,
         object: "chat.completion",
