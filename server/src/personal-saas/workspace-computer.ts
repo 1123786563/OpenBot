@@ -50,7 +50,9 @@ export type ComputerLease = {
   expiresAt: number;
 };
 export type ComputerTask = { epoch: number; authorizedAt: number };
-export type ComputerStatus = z.infer<typeof status>;
+export type ComputerStatus = z.infer<typeof status> & {
+  trafficAccessToken?: string;
+};
 export type ComputerGeneration = {
   id: string;
   epoch: number;
@@ -81,7 +83,10 @@ function supervisorComputer(config: SupervisorConfig) {
     });
   }
 
-  async function read(id: string, task?: ComputerTask) {
+  async function read(
+    id: string,
+    task?: ComputerTask,
+  ): Promise<ComputerStatus> {
     const response = await call(
       `/${id}${task ? `?${new URLSearchParams({ epoch: String(task.epoch), authorizedAt: String(task.authorizedAt) })}` : ""}`,
     );
@@ -240,6 +245,9 @@ export function workspaceComputer(
         kind: "running",
         address: computer.address,
         token: computer.token,
+        ...(computer.trafficAccessToken && {
+          trafficAccessToken: computer.trafficAccessToken,
+        }),
       } as const;
     },
     async renew() {

@@ -1,41 +1,84 @@
-# Personal SaaS Agent Sandbox lifecycle pilot
+# Validate the Personal SaaS Agent Sandbox in Hangzhou
 
-[Issue #143](https://github.com/1123786563/OpenBot/issues/143) implements the OpenBot side of the lifecycle in [ADR 0013](adr/0013-use-agent-sandbox-and-agenticfs-for-the-personal-saas-computer-pilot.md). The workspace API keeps explicit owner start and stop. PostgreSQL reserves one slot per workspace and assigns each start a new generation. An ambiguous create or destroy keeps the slot occupied. A sealed generation with exit evidence releases it. A task needs the current account epoch and authorization after the generation's start. The lifecycle pilot uses empty ephemeral sandboxes. AgenticFS mounts and quota are covered by subsequent issues.
+[Issue #143](https://github.com/1123786563/OpenBot/issues/143) covers the private-trial lifecycle for [Agent Sandbox](adr/0013-use-agent-sandbox-and-agenticfs-for-the-personal-saas-computer-pilot.md). Use an isolated Alibaba Cloud Team, an empty database for the trial, and two test workspace owners. Use synthetic files and a template without mounts. AgenticFS and its quota belong to #144.
 
-## Alibaba Cloud API findings
+Hangzhou returned approximately 60 seconds of provider TTL for a 10-second create request and a 5-second timeout update. Fresh commands succeeded past 15 seconds in both trials. OpenBot therefore gives Alibaba a five-minute resource TTL and sends absolute leases to the watchdog inside the instance. The watchdog starts the actual `agent-computer` process in a root-owned cgroup under a separate unprivileged UID. It reserves one second for kill and exit confirmation before the authorized deadline. It checks the absolute wall clock and a monotonic boot clock. It rejects later starts and renewals once sealed. [Hangzhou probe evidence](https://github.com/1123786563/OpenBot/pull/148) · [Flash lifecycle](https://www.alibabacloud.com/help/en/agent-sandbox/lifecycle)
 
-Flash Edition documents E2B-compatible creation, inspection, timeout renewal and termination. Timeouts are durations. Alibaba documents TypeScript milliseconds and Python seconds. Upstream E2B TypeScript source rounds fractional seconds up for the wire timeout. Even flooring a duration at send time leaves request transit and provider scheduling unbounded. The public Flash Edition documentation does not specify rounding and minimums on the service side, a process-exit bound for an absolute deadline during control-plane loss, or a process exit timestamp from a kill response. A relative timeout can serve as a resource cleanup backstop. [Alibaba Cloud timeouts](https://www.alibabacloud.com/help/en/agent-sandbox/timeout) · [Alibaba Cloud lifecycle](https://www.alibabacloud.com/help/en/agent-sandbox/lifecycle) · [Alibaba Cloud termination](https://www.alibabacloud.com/help/en/agent-sandbox/terminate-sandbox) · [Upstream E2B conversion](https://github.com/e2b-dev/E2B/blob/main/packages/js-sdk/src/utils.ts) · [Upstream renewal request](https://github.com/e2b-dev/E2B/blob/main/packages/js-sdk/src/sandbox/sandboxApi.ts)
+## Build and preflight the template
 
-## Authority contract
+1. Build the standard agent-computer image and the Flash image from the same commit. Use a private registry reachable by the Flash template builder. The names below assume GHCR and a registry namespace you control.
 
-The OpenBot adapter requires a trusted HTTPS service that runs Flash Edition lifecycle operations and can enforce and report the absolute lease. The service and its runtime cutoff mechanism are a live prerequisite. The OpenBot adapter and a deterministic fake are implemented in this slice.
+   ```sh
+   openbot_revision=$(git rev-parse --short=12 HEAD)
+   computer_image="openbot-computer-flash-base:$openbot_revision"
+   flash_image="ghcr.io/$FLASH_REGISTRY_NAMESPACE/openbot-computer-flash:$openbot_revision"
+   docker buildx build --platform linux/amd64 --load --tag "$computer_image" --file agent-computer/Dockerfile .
+   docker buildx build --platform linux/amd64 --load --tag "$flash_image" \
+       --build-arg "COMPUTER_IMAGE=$computer_image" --file deploy/agent-sandbox/Dockerfile deploy/agent-sandbox
+   docker push "$flash_image"
+   ```
 
-The authority owns the mapping from workspace, account epoch, and generation to a sandbox ID. It installs the lease before admitting the process and checks the deadline independently of OpenBot, its network path, and its ability to send destroy. It rejects expired, out-of-order, wrong-epoch, and previously sealed grants. It never resumes an expired or sealed process. The authorization deadline is an absolute Unix time in milliseconds, capped at 15 seconds from issuance. The installed deadline may be earlier. An accepted renewal extends only an alive, unexpired generation. A terminal observation seals it against in-flight creates and renewals, including a create whose response was lost.
+2. In Hangzhou use the Flash custom-image template workflow with that image. Use the MicroVM runtime. For a private GHCR image, supply registry credentials through the SDK headers from the approved secret store. In an isolated Python environment with `e2b==2.31.0`, run the following with `FLASH_IMAGE`, `FLASH_TEMPLATE_NAME`, `FLASH_REGISTRY_USER`, `FLASH_REGISTRY_TOKEN`, and `E2B_API_KEY` set in the environment. Save the returned immutable template ID and the image digest. [Flash custom image workflow](https://www.alibabacloud.com/help/en/agent-sandbox/build-sandbox-templates-with-ghcr-custom-images)
 
-The base path is `/v1/workspaces/{workspaceId}/agent-sandboxes/{generation}?epoch={epoch}` with a server-only bearer token.
+   ```python
+   import os
+   from e2b import Template
 
-| Request | Success | Meaning |
-| --- | --- | --- |
-| `POST` on the base path with `{epoch, issuedAt, expiresAt}` | `202` | Accept the generation for allocation. Its process can start only under its initial enforced lease. |
-| `PUT` on `.../{generation}/lease?epoch={epoch}` with the same lease fields | `204` | Commit the renewed lease at the execution boundary. |
-| `DELETE` on the base path | `202` | Accept idempotent sealing and destruction. OpenBot continues to check exit. |
-| `GET` on the base path | `200` | Return `{binding: {workspaceId, generation, epoch}, observation}`. |
+   result = Template.build(
+       Template().from_image(os.environ["FLASH_IMAGE"]),
+       name=os.environ["FLASH_TEMPLATE_NAME"],
+       cpu_count=2,
+       memory_mb=2048,
+       api_key=os.environ["E2B_API_KEY"],
+       api_url="https://api.cn-hangzhou.sandbox.aliyuncs.com",
+       domain="cn-hangzhou.sandbox.aliyuncs.com",
+       headers={
+           "X-E2B-Template-Source-Username": os.environ["FLASH_REGISTRY_USER"],
+           "X-E2B-Template-Source-Password": os.environ["FLASH_REGISTRY_TOKEN"],
+       },
+   )
+   print(result.template_id)
+   ```
 
-An observation has a `kind`. Use `starting` during allocation, `running` with `leaseExpiresAt` once a lease is installed and the process is ready, and `unconfirmed` for ambiguous or missing evidence. A running observation can include a private generation-bound `endpoint: {address, token}` when task dispatch is supported. An `exited` observation includes the actual `exitedAt` and last installed `leaseExpiresAt`. Use `never_started` only after establishing that the process never ran and all delayed creates have been fenced. A 404, a scheduled expiry, a missed heartbeat, and a destroy receipt alone leave the slot reserved. Exit evidence must be retained across restarts and cloud resource deletion.
+3. Create a disposable instance from the Ready template with E2B JS `2.31.0`. Set `secure: true`, `network: { allowPublicTraffic: false }`, and `allowInternetAccess: false`. Keep auto-pause and auto-resume disabled. Require a root envd command to succeed with the envd token and require port 4100 to reject traffic with the traffic token omitted. Before sending a work grant, verify port 4100 has no listener. From a root envd command, preflight the cgroup within the instance.
 
-## Target-cloud prerequisites
+   ```sh
+   mkdir /sys/fs/cgroup/openbot-preflight
+   test -w /sys/fs/cgroup/openbot-preflight/cgroup.procs
+   printf 1 > /sys/fs/cgroup/openbot-preflight/cgroup.kill
+   grep -qx 'populated 0' /sys/fs/cgroup/openbot-preflight/cgroup.events
+   rmdir /sys/fs/cgroup/openbot-preflight
+   ```
 
-- Pick one supported Flash Edition region, an activated pilot Alibaba account and Team, a Ready disposable template, and two newly created private-trial workspace owners. Use a no-data probe with no mounts and no user traffic.
-- Supply an approved Team-scoped `E2B_API_KEY` with create, get/list, timeout update, and delete access to the template. Use `E2B_API_URL=https://api.<region>.sandbox.aliyuncs.com` and `E2B_DOMAIN=<region>.sandbox.aliyuncs.com`. Pin an SDK version that the region supports and record it with the template ID and runtime generation. [Endpoint and credential setup](https://www.alibabacloud.com/help/en/agent-sandbox/e2b-sdk-integration-parameter-description) · [API key management](https://www.alibabacloud.com/help/en/agent-sandbox/api-key-management) · [RAM permissions](https://www.alibabacloud.com/help/en/agent-sandbox/authorize-ram-users-to-access-the-console)
-- Supply the authority above and an independent observer that can report actual process exit, such as a runtime or host exit event tied to the sandbox ID, boot identity and PID. Prove the observer survives the test fault and establish a clock uncertainty bound. If the account and runtime expose no such evidence, keep cloud acceptance blocked.
-- Apply migration 0117 in the isolated private-trial deployment. Set `OPENBOT_AGENT_SANDBOX_AUTHORITY_URL` and `OPENBOT_AGENT_SANDBOX_AUTHORITY_TOKEN`. Leave the Docker supervisor settings unset in that deployment. Configure a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES` so existing start admission is enabled. Keep the ordinary service and its Docker-backed workspaces on their existing deployment. Have an independent operator with delete and list access for cleanup.
+   Require the worker UID to lack write access to the cgroup, runtime files and watchdog state. Require a writable, instance-local cgroup v2 hierarchy with working `cgroup.kill`. If the Flash runtime denies these operations, keep work admission disabled. Destroy the disposable instance and verify provider detail and inventory. [Flash private port access](https://www.alibabacloud.com/help/en/agent-sandbox/network-access-control)
 
-## Bounded cloud procedure
+## Configure the private trial
 
-1. In a disposable run, validate the selected SDK's create, inspect, timeout update and kill under the target Team. Probe fractional-second boundaries and delays on create and renewal. Record the wire duration, server-reported expiration if available, and actual exit. Establish enforcement independently of any relative Flash timeout. Keep auto-pause and auto-resume disabled.
-2. Through the OpenBot workspace API, have owner A start and observe the sandbox, then issue two concurrent starts and an explicit stop. Check owner B's view stays scoped to B. Hold back exit evidence while returning destroy acceptance and verify A reports `stopping` and cannot start a replacement. Restore evidence and verify the slot releases. Check the cloud inventory independently for resource cleanup.
-3. Start a fresh generation with a long-lived harmless probe. After recording an acknowledged renewal, disable A's account in Casdoor, wait for OpenBot to observe it, and check start and task admission are denied. Capture the authority's last installed lease and the independent exit event. Restore the account, check that the old generation stays stopped, and manually start a replacement. Check that previously authorized work stays rejected and an explicit new submission can dispatch.
-4. Use a fresh generation for the partition trial. Immediately after a recorded renew acknowledgement, stop OpenBot renewal and block its control path to the authority. Keep destroy requests from reaching the sandbox through the same path. Separately hold in-flight renewal delivery past expiry and verify that it cannot re-arm the process. Keep the independent exit observer active. Restore connectivity and record when OpenBot first confirms the exit.
-5. Allow 30 seconds for setup per attempt, hold the injected partition for 20 seconds, and allow 30 seconds after fault removal for evidence and cleanup. For each generation record the last installed lease issue time and deadline, actual exit time, clock uncertainty, OpenBot confirmation time, sandbox ID, and sanitized provider request or event IDs. Pass the 15-second condition only when `deadline - issuedAt <= 15,000 ms` and the exit timestamp plus its uncertainty is at or before the deadline. Where evidence is incomplete or late, keep the acceptance result open and reconcile with the independent cleanup operator. Run one fault scenario at a time and confirm all disposable allocations are deleted before starting another. Attach the sanitized results to [target-cloud acceptance #74](https://github.com/1123786563/OpenBot/issues/74).
+Apply migrations through `0118_agent_sandbox_flash` with the normal migration entrypoint. Set `OPENBOT_PERSONAL_SAAS_MODE=private-trial`, `OPENBOT_AGENT_SANDBOX_FLASH_REGION=cn-hangzhou`, `OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE=<immutable-template-id>` and `E2B_API_KEY` in the Personal SaaS deployment. Use the same region, template, Team API key, PostgreSQL database, and encryption key across replicas. Set a positive `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES` within `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES` to enable start admission. Leave the Docker supervisor and former authority settings unset on the Flash deployment. Drain outstanding generations before changing the template, key, or provider.
 
-Local tests use deterministic provider responses. No Alibaba account, lease authority, or cloud process was exercised for this slice.
+The Personal SaaS server calls Flash create, detail, list, and delete on the regional endpoint. EnvD commands carry only watchdog requests. They never execute Bot file actions. The existing computer gateway sends file actions to port 4100 using separate Flash traffic and OpenBot worker tokens. The worker serves only while its cgroup is live. Flash does not extend the five-minute resource TTL in this pilot. Run each scenario with a fresh instance.
+
+A request whose create result is unknown keeps its slot occupied until reconciliation finds its exact metadata. An empty list by itself cannot close that intent. A delete response also leaves the slot occupied. The server saves worker exit evidence and then requests deletion. It requires an instance-specific Flash 404 and a complete generation-filtered inventory with no matches before releasing the slot. An instance that vanishes before OpenBot collects worker evidence remains pending. Preserve the database record and use the independent operator to investigate that generation.
+
+## Run the cloud trials
+
+1. Have owner A call `POST /api/workspace/computer/start` twice concurrently. Check `GET /api/workspace/computer` advances from `starting` to `running` and only one allocation appears in Flash inventory. Check owner B sees only B's state. Have a newly authorized Bot run write and read a synthetic file. Use `POST /api/workspace/computer/stop` and hold back delete confirmation in the test network path. Even with worker exit and an accepted delete, verify A sees `stopping` and cannot start another instance. Release confirmation and verify the slot opens.
+2. For the account trial, take a fresh running generation and record its last accepted lease. Have the independent operator start an observer before disabling A in Casdoor. From inside the instance, use the root-only watchdog `inspect` command to record the instance binding, PID, boot ID, and deadline. Its argument is unpadded Base64URL of JSON with `action: "inspect"` and `binding: {workspaceId, generation, epoch, sandboxId}`. As a separate observation, poll a Linux PID file descriptor for that PID with `os.pidfd_open` and `select.poll`. When the PID exits, record current Unix time and verify `/sys/fs/cgroup/openbot-work/cgroup.events` reports `populated 0`. Collect the watchdog's `/var/lib/openbot-lease/exit.json` while available and compare its PID and boot ID. Keep the observer independent of the OpenBot connection. Reject new starts and task dispatch after disablement. Re-enable A, check the old generation stays stopped, manually start, and prove the old task is refused while a newly submitted task can use the file tools.
+3. For the partition trial, hold both OpenBot's Flash control and envd paths for 20 seconds immediately after an acknowledged renewal. Keep the instance and independent observer running. Observe the process exit while the paths are blocked. Use the independent observer's connection to deliver a newer-but-delayed renewal after exit and confirm the watchdog rejects it. Also verify an out-of-order renewal and delayed start cannot re-arm the generation. Restore OpenBot's connectivity and verify it captures exit evidence, requests deletion, and releases the slot only after separate Flash confirmation.
+4. Use a 30-second setup and a 30-second post-fault observation limit for each trial. Record region, template ID, image digest, SDK version, binding, last accepted `issuedAt` and `leaseExpiresAt`, observed worker exit time, clock uncertainty, Flash request IDs, deletion confirmation time, and the first status that released the slot. Require `leaseExpiresAt - issuedAt <= 15000` and `observedExit + uncertainty <= leaseExpiresAt`. Verify the clock uncertainty between OpenBot and the MicroVM is at most 500 ms, including during the partition. Check Alibaba inventory separately for running and paused instances and confirm the Console reports the instance gone. Finish cleanup before starting the next trial. Attach sanitized evidence to [target-cloud acceptance #74](https://github.com/1123786563/OpenBot/issues/74).
+
+## Repeat the local checks
+
+Run the process tests on the Flash image with a private Linux cgroup namespace. Substitute the locally built image tag for `$flash_image`. The tests drive the watchdog, a session-detached child, and the real agent-computer file routes. No cloud credential is required.
+
+```sh
+docker run --rm --privileged --cgroupns private --network none \
+    -v "$PWD/deploy/agent-sandbox:/tests:ro" "$flash_image" \
+    python3 /tests/lease_watchdog_test.py
+bun test --no-env-file --env-file=.env.test \
+    server/tests/agent-sandbox-provider.test.ts
+bun test --no-env-file --env-file=.env.test --timeout 30000 \
+    server/tests/personal-saas-entry.integration.test.ts --test-name-pattern 'Flash|Agent Sandbox'
+```
+
+The server contract tests use a local Flash HTTP fixture and dedicated PostgreSQL database. Hangzhou template support, clock uncertainty, and final cleanup semantics still require the target-cloud trials.

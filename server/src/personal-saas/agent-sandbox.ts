@@ -21,6 +21,7 @@ export const agentSandboxObservation = z.discriminatedUnion("kind", [
       .object({
         address: z.url({ protocol: /^https?$/ }),
         token: z.string().min(1),
+        trafficAccessToken: z.string().min(1).optional(),
       })
       .optional(),
   }),
@@ -28,6 +29,7 @@ export const agentSandboxObservation = z.discriminatedUnion("kind", [
     kind: z.literal("exited"),
     exitedAt: timestamp,
     leaseExpiresAt: timestamp,
+    clockUncertaintyMs: timestamp.optional(),
   }),
 ]);
 
@@ -43,9 +45,11 @@ export type AgentSandboxBinding = {
  * managed process, rejects late or reordered leases, and enforces the deadline
  * during control-plane loss. Destroy seals this generation against delayed
  * starts and renewals. Terminal observations require evidence of that seal
- * and an actual exit (or proof that no process was ever admitted).
+ * and an actual exit (or proof that no process was ever admitted). For
+ * Flash, terminal also requires independent instance deletion evidence.
  */
 export type AgentSandboxProvider = {
+  allocationScope?: string;
   start(binding: AgentSandboxBinding, lease: ComputerLease): Promise<void>;
   renew(binding: AgentSandboxBinding, lease: ComputerLease): Promise<void>;
   destroy(binding: AgentSandboxBinding): Promise<void>;
@@ -131,14 +135,16 @@ export function agentSandboxComputer(
     if (
       observation.kind === "never_started" ||
       (observation.kind === "exited" &&
-        observation.exitedAt >= current.startedAt &&
+        observation.exitedAt + (observation.clockUncertaintyMs ?? 0) >=
+          current.startedAt &&
         observation.exitedAt <= observedAt &&
         observation.leaseExpiresAt > current.startedAt &&
         observation.leaseExpiresAt <= current.expiresAt)
     ) {
       const cutoff =
         observation.kind === "never_started" ||
-        observation.exitedAt <= observation.leaseExpiresAt
+        observation.exitedAt + (observation.clockUncertaintyMs ?? 0) <=
+          observation.leaseExpiresAt
           ? "confirmed"
           : "failed";
       const [confirmed] = await database
@@ -153,6 +159,7 @@ export function agentSandboxComputer(
             ...binding(current),
             leaseExpiresAt: observation.leaseExpiresAt,
             exitedAt: observation.exitedAt,
+            clockUncertaintyMs: observation.clockUncertaintyMs,
             confirmedAt: observedAt,
             cutoff,
           }),
@@ -204,6 +211,13 @@ export function agentSandboxComputer(
         generation: crypto.randomUUID(),
         phase: "starting" as const,
         cutoff: null,
+        flashScope: provider.allocationScope ?? null,
+        flashCreateRequested: false,
+        flashSandboxId: null,
+        flashConnection: null,
+        flashWorkRequested: false,
+        flashWorkerExit: null,
+        flashDestroyedAt: null,
       };
       const [row] = await database
         .insert(sandboxes)

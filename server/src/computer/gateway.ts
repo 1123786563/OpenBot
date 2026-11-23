@@ -43,6 +43,7 @@ import {
 } from "../audit";
 import { withUntrustedNotice } from "../untrusted-content";
 import {
+  type ComputerConnection,
   ComputerStillStartingError,
   ComputerStoppedError,
   ComputerUnavailableError,
@@ -150,7 +151,9 @@ export type ComputerGatewayOptions = {
   approvalGate?: ApprovalGate;
   provider: ComputerProvider;
   /** Revalidate a caller-scoped connection immediately before a Computer request. */
-  connect?: (seat: ComputerSeat) => Promise<{ url: string; token: string }>;
+  connect?: (
+    seat: ComputerSeat,
+  ) => Promise<ComputerConnection & { token: string }>;
   signal?: AbortSignal;
   auditStore: AuditStore;
   /** Absent denies everything. See evaluateActionPolicy. */
@@ -430,13 +433,13 @@ export function createComputerGateway(
   async function at(
     seat: ComputerSeat,
     locatedUrl?: string,
-  ): Promise<{ url: string; token?: string }> {
+  ): Promise<ComputerConnection> {
     if (options.connect) {
       const connection = await options.connect(seat);
       const url = checkedAddress(connection.url);
       if (locatedUrl !== undefined && locatedUrl !== url)
         throw new ComputerUnavailableError("The computer connection changed.");
-      return { url, token: connection.token };
+      return { ...connection, url };
     }
     const url = locatedUrl ?? (await locate(seat));
     const token = tokenFor(seat);

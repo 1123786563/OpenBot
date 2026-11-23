@@ -66,8 +66,11 @@ const trial = z.object({
     .trim()
     .min(1)
     .optional(),
-  OPENBOT_AGENT_SANDBOX_AUTHORITY_URL: httpsUrl.optional(),
-  OPENBOT_AGENT_SANDBOX_AUTHORITY_TOKEN: z.string().trim().min(1).optional(),
+  OPENBOT_AGENT_SANDBOX_FLASH_REGION: z
+    .string()
+    .regex(/^cn-[a-z0-9-]+$/)
+    .optional(),
+  OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_CLEANUP_URL: httpsUrl.optional(),
   OPENBOT_CLOSURE_CLEANUP_TOKEN: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_RESTORE_JOURNAL: z.string().trim().min(1).optional(),
@@ -169,19 +172,25 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
     "Configure the workspace Computer supervisor URL and token together",
   );
 
-const sandboxUrl = env.OPENBOT_AGENT_SANDBOX_AUTHORITY_URL;
-const sandboxToken = env.OPENBOT_AGENT_SANDBOX_AUTHORITY_TOKEN;
-if (Boolean(sandboxUrl) !== Boolean(sandboxToken))
+const flashRegion = env.OPENBOT_AGENT_SANDBOX_FLASH_REGION;
+const flashTemplate = env.OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE;
+const flashKey = process.env.E2B_API_KEY?.trim();
+if (
+  (flashRegion || flashTemplate) &&
+  !(flashRegion && flashTemplate && flashKey)
+)
   throw new Error(
-    "Configure the Agent Sandbox authority URL and token together",
+    "Configure the Flash region, template and E2B API key together",
   );
-if (sandboxUrl && supervisorUrl)
+if (flashRegion && supervisorUrl)
   throw new Error("Configure one workspace Computer provider per deployment");
-
-const sandbox =
-  sandboxUrl && sandboxToken
-    ? createAgentSandboxProvider({ url: sandboxUrl, token: sandboxToken })
-    : undefined;
+if (
+  process.env.OPENBOT_AGENT_SANDBOX_AUTHORITY_URL ||
+  process.env.OPENBOT_AGENT_SANDBOX_AUTHORITY_TOKEN
+)
+  throw new Error(
+    "Replace the Agent Sandbox authority settings with the direct Flash settings",
+  );
 
 const cleanupUrl = env.OPENBOT_CLOSURE_CLEANUP_URL;
 const cleanupToken = env.OPENBOT_CLOSURE_CLEANUP_TOKEN;
@@ -189,6 +198,19 @@ if (Boolean(cleanupUrl) !== Boolean(cleanupToken))
   throw new Error("Configure the closure cleanup URL and token together");
 
 const database = createDatabase(env.DATABASE_URL);
+const sandbox =
+  flashRegion && flashTemplate && flashKey
+    ? createAgentSandboxProvider(
+        {
+          apiUrl: `https://api.${flashRegion}.sandbox.aliyuncs.com`,
+          domain: `${flashRegion}.sandbox.aliyuncs.com`,
+          template: flashTemplate,
+          apiKey: flashKey,
+          encryptionKey: env.KEY_ENCRYPTION_KEY,
+        },
+        database,
+      )
+    : undefined;
 const testCreditLedger = createTestCreditLedger(database);
 const restoreJournal = env.OPENBOT_CLOSURE_RESTORE_JOURNAL;
 const restoredClosures = restoreJournal
