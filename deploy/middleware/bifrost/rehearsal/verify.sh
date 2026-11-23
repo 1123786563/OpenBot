@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mode=${1:-}
 directory=$(cd "$(dirname "$0")/.." && pwd)
 image=maximhq/bifrost:v2.6.0@sha256:5968d007ba4f74ee01bc4ceb071decb9927a0b7bb43dbb9072208f75e2d522e3
 previous=maximhq/bifrost:v2.4.0@sha256:a1c90607dcfd13c1fb2f9476ceb3bb24407a50ade7fdf3e61a59fb42b09e5c57
 database=postgres:17-alpine@sha256:526f86d93c6ea08fd3f1fe5605650cacc781b2c6013169a0ad8f42c7d3d84f32
+proxy=nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+openbot_database=pgvector/pgvector:pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd
 python=python:3-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
 
 actual=$(env -u BIFROST_IMAGE BIFROST_SETUP_TOKEN=fixture BIFROST_DB_HOST=fixture-db \
   BIFROST_DB_PASSWORD=fixture docker compose --env-file /dev/null \
-  -f "$directory/docker-compose.yml" config --images)
+  -f "$directory/docker-compose.yml" config --images bifrost)
 if [[ "$actual" != "$image" ]]; then
   echo "Expected Compose to resolve $image, got $actual" >&2
   exit 1
@@ -26,9 +29,12 @@ cleanup() {
     docker logs --tail 15 "$project-fixture" >&2 || true
     if [[ -n "${market_rehearsal:-}" ]]; then
       docker logs --tail 15 "$project-edge" >&2 || true
+      if [[ "$mode" == "--skill-cutover" ]]; then
+        docker logs --tail 15 "$project-registry" >&2 || true
+      fi
     fi
   fi
-  docker rm -fv "$project-edge" "$project-gateway" "$project-fixture" "$project-db" >/dev/null 2>&1 || true
+  docker rm -fv "$project-registry" "$project-openbot-db" "$project-edge" "$project-gateway" "$project-fixture" "$project-db" >/dev/null 2>&1 || true
   docker network rm "$project" >/dev/null 2>&1 || true
   rm -rf "$temp"
 }
@@ -59,7 +65,7 @@ printf '%s\n' '{"gpt-4o-mini":{"provider":"openai","mode":"chat","input_cost_per
 
 start_gateway() {
   echo "Starting $1 against $2"
-  docker run -d --name "$project-gateway" --network "$project" --network-alias gateway \
+  docker run -d --name "$project-gateway" --network "$project" --network-alias gateway --network-alias bifrost \
     -e BIFROST_SETUP_TOKEN=fixture-setup-token \
     -e BIFROST_DB_HOST=db -e BIFROST_DB_PORT=5432 -e BIFROST_DB_NAME="$2" \
     -e BIFROST_DB_USER=bifrost -e BIFROST_DB_PASSWORD=fixture -e BIFROST_DB_SSL_MODE=disable \
@@ -81,7 +87,7 @@ start_gateway "$image" restored_upgrade "$temp/restore.json"
 docker exec "$project-fixture" python /fixture.py models
 docker exec "$project-fixture" python /fixture.py skills
 
-if [[ "${1:-}" == "--skill-market" || "${1:-}" == "--skill-migration" ]]; then
+if [[ "$mode" == "--skill-market" || "$mode" == "--skill-migration" || "$mode" == "--skill-cutover" ]]; then
   market_rehearsal=1
   repository=$(cd "$directory/../../.." && pwd)
   docker exec "$project-fixture" python /fixture.py seed-market
@@ -105,7 +111,7 @@ SQL
   docker run --rm --network "$project" -v "$repository:/work:ro" -w /work \
     -e BIFROST_SKILL_MARKET_DATABASE_URL=postgres://openbot_skill_reader:fixture-market-reader@db/restored_upgrade \
     oven/bun:1.4.3-alpine bun --no-env-file server/tests/support/bifrost-market-rehearsal.ts
-  if [[ "${1:-}" == "--skill-migration" ]]; then
+  if [[ "$mode" == "--skill-migration" || "$mode" == "--skill-cutover" ]]; then
     docker exec "$project-db" createdb -U bifrost skillhub_fixture
     docker run --rm --network "$project" -v "$repository:/work:ro" -w /work \
       oven/bun:1.4.3-alpine bun --no-env-file server/tests/support/bifrost-migration-rehearsal.ts
@@ -125,4 +131,55 @@ SQL
   docker run --rm --network "container:$project-edge" \
     -v "$directory/rehearsal/fixture.py:/fixture.py:ro" "$python" \
     python /fixture.py market-edge http://127.0.0.1 local
+
+  if [[ "$mode" == "--skill-cutover" ]]; then
+    mkdir -p "$temp/publication-freeze.d" "$temp/edge/private/publication-freeze.d"
+    {
+      printf '%s\n' 'server { listen 80; server_name skillhub.fixture.test;'
+      sed 's#127\.0\.0\.1:18090#upstream:8080#' "$directory/../skillhub/openresty-location.conf"
+      printf '%s\n' '}'
+    } > "$temp/edge/skillhub.conf"
+    docker cp "$temp/edge/skillhub.conf" "$project-edge:/etc/nginx/conf.d/skillhub.conf"
+    docker exec "$project-edge" nginx -s reload
+    docker run -d --name "$project-registry" --network "$project" --network-alias registry \
+      -v "$directory/registry-proxy.conf:/etc/nginx/conf.d/default.conf:ro" \
+      -v "$temp/publication-freeze.d:/etc/nginx/publication-freeze.d:ro" "$proxy" >/dev/null
+
+    docker exec "$project-fixture" python /fixture.py publication open
+    cp "$directory/../openresty/skill-market-write-freeze.conf" "$temp/publication-freeze.d/freeze.conf"
+    cp "$temp/publication-freeze.d/freeze.conf" "$temp/edge/private/publication-freeze.d/"
+    docker exec "$project-registry" nginx -s reload
+    docker exec "$project-edge" nginx -s reload
+    docker exec "$project-fixture" python /fixture.py publication frozen
+
+    docker run -d --name "$project-openbot-db" --network "$project" --network-alias openbot-db \
+      -e POSTGRES_USER=openbot -e POSTGRES_PASSWORD=fixture -e POSTGRES_DB=openbot_test \
+      --tmpfs /var/lib/postgresql/data:rw,size=512m "$openbot_database" -c fsync=off >/dev/null
+    for attempt in {1..60}; do
+      if docker exec "$project-openbot-db" pg_isready -h 127.0.0.1 -U openbot -d openbot_test >/dev/null; then
+        break
+      fi
+      if (( attempt == 60 )); then
+        docker logs --tail 30 "$project-openbot-db" >&2
+        exit 1
+      fi
+      sleep 1
+    done
+
+    cat > "$temp/rehearsal.env" <<'ENV'
+DATABASE_URL=postgres://openbot:fixture@openbot-db/openbot_test
+TEST_DATABASE_URL=postgres://openbot:fixture@openbot-db/openbot_test
+OPENBOT_LIVE_SKILL_CUTOVER=1
+OPENBOT_REHEARSAL_BIFROST_READER=postgres://openbot_skill_reader:fixture-market-reader@db/restored_upgrade
+ENV
+    docker run --rm --network "$project" -v "$repository:/work:ro" -w /work \
+      -v "$temp/rehearsal.env:/fixture.env:ro" oven/bun:1.4.3-alpine sh -ec '
+        bun --no-env-file --env-file=/fixture.env server/scripts/migrate.ts
+        bun test --no-env-file --env-file=/fixture.env --test-name-pattern "cutover preserves" \
+          server/tests/skill-market-install.integration.test.ts
+      '
+    rm "$temp/publication-freeze.d/freeze.conf"
+    docker exec "$project-registry" nginx -s reload
+    docker exec "$project-fixture" python /fixture.py publication reopened
+  fi
 fi

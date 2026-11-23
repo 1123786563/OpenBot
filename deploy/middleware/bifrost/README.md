@@ -17,14 +17,14 @@ contents are suitable for that audience.
    environment. Use the reader login and the Bifrost database name. For
    the middleware Compose deployment, set it in `.env.server`.
 5. Apply the [OpenResty configuration](../openresty/openbot-middleware.conf)
-   and restart OpenBot. Use the loopback Bifrost port for authorized
-   administration. The middleware host rejects Bifrost's native skills
+   and restart OpenBot. Use the Bifrost registry proxy on the loopback port for
+   authorized administration. The middleware host rejects Bifrost's native skills
    routes and keeps its existing inference access rules.
 
 Bifrost becomes the market search source when the reader URL is set. Keep
 the SkillHub settings to retain reads and installation eligibility for
 legacy SkillHub coordinates. Bifrost versions support preview and download.
-Installation approval for Bifrost is a separate rollout step.
+Administrators approve exact Bifrost versions in OpenBot before installation.
 
 ## Package files
 
@@ -52,5 +52,4 @@ The rehearsal exercises exact-version downloads, the database reader grants,
 native route privacy, and direct and routed inference. All services use a
 private Docker network and synthetic data.
 
-For a SkillHub cutover, follow the [catalog migration and verification
-runbook](skill-market-migration.md).
+For a SkillHub cutover, follow the [cutover runbook](skill-market-cutover.md).

@@ -19,6 +19,7 @@ export const skillHubConfirmation = z.object({
 });
 
 export type SkillMarketConfig = {
+  writesFrozen?: boolean;
   baseUrl: string;
   namespace: string;
   token: string;
@@ -49,6 +50,7 @@ export const bifrostSlug = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
 export type BifrostMarketConfig = {
+  writesFrozen?: boolean;
   kind: "bifrost";
   namespace: typeof bifrostNamespace;
   databaseUrl: string;
@@ -58,9 +60,14 @@ export type BifrostMarketConfig = {
 export function loadSkillMarketConfig(
   env: Record<string, string | undefined>,
 ): SkillMarketConfig | BifrostMarketConfig | undefined {
+  const freeze = env.SKILL_MARKET_WRITES_FROZEN?.trim() || "false";
+  if (freeze !== "true" && freeze !== "false") {
+    throw new Error("SKILL_MARKET_WRITES_FROZEN must be true or false.");
+  }
+  const writesFrozen = freeze === "true";
   const legacy = loadSkillHubConfig(env);
   const databaseUrl = env.BIFROST_SKILL_MARKET_DATABASE_URL?.trim();
-  if (!databaseUrl) return legacy;
+  if (!databaseUrl) return legacy && { ...legacy, writesFrozen };
 
   const url = URL.parse(databaseUrl);
   if (
@@ -75,7 +82,13 @@ export function loadSkillMarketConfig(
       "BIFROST_SKILL_MARKET_DATABASE_URL requires a PostgreSQL catalog reader URL and reserves the bifrost namespace.",
     );
   }
-  return { kind: "bifrost", namespace: bifrostNamespace, databaseUrl, legacy };
+  return {
+    kind: "bifrost",
+    namespace: bifrostNamespace,
+    databaseUrl,
+    legacy,
+    writesFrozen,
+  };
 }
 
 function loadSkillHubConfig(

@@ -1,6 +1,8 @@
 # Migrate the SkillHub catalog
 
-Run the migration against a rehearsal destination first. For cutover, pause
+Run the migration against a rehearsal destination first. Follow the
+[cutover runbook](skill-market-cutover.md) for the release gates. Before
+taking the final inventory, pause
 publishing and new installations and take a matched SkillHub PostgreSQL
 backup and local object-storage snapshot. Restore the database separately
 with a read-only login and mount the object root read-only. Keep this pair

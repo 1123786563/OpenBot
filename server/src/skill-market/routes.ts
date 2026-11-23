@@ -29,6 +29,9 @@ const forbidden = "You cannot manage skills on this Bot.";
 const stale =
   "The installed version has changed. Review the current installation and try again.";
 const unavailable = "Skill installation is unavailable.";
+const writesPaused = {
+  error: "Skill market writes are paused for maintenance.",
+};
 const commandBody = z.strictObject({
   command: z.string().trim().min(1).max(40).regex(slashCommand),
 });
@@ -213,6 +216,7 @@ export function createSkillMarketRoutes(
     async (context) => {
       const refused = requireAdmin(context);
       if (refused) return refused;
+      if (config.writesFrozen) return context.json(writesPaused, 503);
       if (!installations) return context.json({ error: unavailable }, 503);
       const { namespace, slug, version } = context.req.param();
       if (namespace !== bifrost?.namespace) throw new CatalogEntryUnavailable();
@@ -272,6 +276,7 @@ export function createSkillMarketRoutes(
   routes.post(
     "/:namespace/:slug/versions/:version/:operation{install|switch}",
     async (context) => {
+      if (config.writesFrozen) return context.json(writesPaused, 503);
       if (!installations) return context.json({ error: unavailable }, 503);
       const { namespace, slug, version, operation } = context.req.param();
       const input = await context.req.json().catch(() => null);
@@ -377,6 +382,7 @@ export function createSkillMarketRoutes(
   routes.post("/:namespace/:slug/command", async (context) => {
     const denied = requireAdmin(context);
     if (denied) return denied;
+    if (config.writesFrozen) return context.json(writesPaused, 503);
     if (!installations)
       return context.json(
         { error: "Skill command assignment is unavailable." },
@@ -458,6 +464,12 @@ export function createSkillMarketRoutes(
         disableReason: reason,
       });
     if (!preview.installable) return context.json(preview);
+    if (config.writesFrozen)
+      return context.json({
+        ...preview,
+        installable: false,
+        reasons: [writesPaused.error],
+      });
     const command = await installations.marketCommand(preview);
     return context.json(
       command

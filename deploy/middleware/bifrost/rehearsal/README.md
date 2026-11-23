@@ -43,3 +43,11 @@ requires an approved copy of the existing deployment's pre-upgrade PostgreSQL
 configuration and authorized test credentials for its configured provider
 routes. This rehearsal uses synthetic data and a local upstream. It exercises
 the database upgrade and gateway requests without production access.
+
+## Skill market cutover
+
+Run `bash deploy/middleware/bifrost/rehearsal/verify.sh --skill-cutover` after
+installing the locked workspace dependencies. The cutover mode extends the
+migration and reader rehearsals with publication freezes, approval continuity,
+fallback, recovery and the simulated SkillHub stop. See the
+[cutover runbook](../skill-market-cutover.md) for actual deployment acceptance.

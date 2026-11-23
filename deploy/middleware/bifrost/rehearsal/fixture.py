@@ -86,12 +86,18 @@ class Upstream(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
     def do_GET(self):
+        if self.path == "/api/web/skills":
+            self.send_json(200, {"code": 0, "data": {"items": []}})
+            return
         if self.path.split("?")[0] != "/v1/models":
             self.send_error(404)
             return
         self.send_json(200, {"object": "list", "data": [{"id": MODEL, "object": "model"}]})
 
     def do_POST(self):
+        if self.path in ("/api/v1/skills/catalog/publish", "/api/v1/publish"):
+            self.send_json(201, {"published": True})
+            return
         if self.path != "/v1/chat/completions":
             self.send_error(404)
             return
@@ -284,6 +290,50 @@ def check_market_edge(host, local):
         print("External clients cannot reach the native skill routes through middleware")
 
 
+def publication(phase):
+    global GATEWAY
+    GATEWAY = "http://registry:8080"
+    models()
+    client = admin()
+    skills = request("/api/skills", client=client)["skills"]
+    body = {
+        "name": f"publication-{phase}",
+        "description": "Cutover publication fixture",
+        "version": "1.0.0",
+        "skill_md_body": "Fixture instructions.",
+    }
+    try:
+        skill = request("/api/skills", client=client, body=body)["skill"]
+        assert phase != "frozen", skill
+    except AssertionError as failure:
+        assert phase == "frozen" and "returned 503" in str(failure), failure
+
+    if phase == "frozen":
+        created = next(skill for skill in skills if skill["name"] == "publication-open")
+        skill_path = f"/api/skills/{created['id']}"
+        for path, method, data in [
+            (skill_path, "PUT", {"version": "1.1.0", "skill_md_body": "Frozen update."}),
+            (skill_path + "/shift-version", "POST", {"version": "1.0.0"}),
+        ]:
+            try:
+                request(path, client=client, method=method, body=data)
+            except AssertionError as failure:
+                assert "returned 503" in str(failure), failure
+            else:
+                raise AssertionError(f"Registry accepted {method} {path} during the freeze")
+
+    GATEWAY = "http://edge"
+    headers = {"Host": "skillhub.fixture.test"}
+    assert request("/api/web/skills", headers=headers)["code"] == 0
+    for path in ("/api/v1/skills/catalog/publish", "/api/v1/publish"):
+        try:
+            result = request(path, headers=headers, body={})
+            assert phase == "open" and result["published"], result
+        except AssertionError as failure:
+            assert phase != "open" and "returned 503" in str(failure), failure
+    print(f"Publication checks passed ({phase}): Bifrost management, inference and SkillHub ingress")
+
+
 if __name__ == "__main__":
     command = sys.argv[1]
     if command == "upstream":
@@ -300,3 +350,5 @@ if __name__ == "__main__":
         check_market_pointer()
     elif command == "market-edge":
         check_market_edge(sys.argv[2], sys.argv[3] == "local")
+    elif command == "publication":
+        publication(sys.argv[2])

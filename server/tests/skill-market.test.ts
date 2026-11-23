@@ -223,3 +223,40 @@ test("Bifrost mode protects the catalog and exact downloads with the market sess
     expect((await routes.request(path)).status).toBe(401);
   }
 });
+
+test("a frozen market rejects release writes through both catalog namespaces", async () => {
+  const config = loadSkillMarketConfig({
+    SKILL_MARKET_WRITES_FROZEN: "true",
+    SKILLHUB_URL: "http://skillhub.test",
+    SKILLHUB_CATALOG_NAMESPACE: "catalog",
+    SKILLHUB_READ_TOKEN: "fixture",
+    BIFROST_SKILL_MARKET_DATABASE_URL:
+      "postgres://reader:fixture@localhost:1/bifrost",
+  });
+  if (!config) throw new Error("Market unavailable");
+  const routes = createSkillMarketRoutes(async (context, next) => {
+    context.set("actor", {
+      id: "admin",
+      email: "admin@example.test",
+      role: "admin",
+    });
+    await next();
+  }, config);
+  for (const [method, path] of [
+    ["POST", "/catalog/summarize/versions/1.0.0/install"],
+    ["POST", "/bifrost/summarize/versions/1.0.0/install"],
+    ["POST", "/bifrost/summarize/versions/1.0.0/switch"],
+    ["PUT", "/bifrost/summarize/versions/1.0.0/review"],
+    ["DELETE", "/bifrost/summarize/versions/1.0.0/review"],
+    ["POST", "/bifrost/summarize/command"],
+  ]) {
+    const response = await routes.request(path, { method });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Skill market writes are paused for maintenance.",
+    });
+  }
+  expect(() =>
+    loadSkillMarketConfig({ SKILL_MARKET_WRITES_FROZEN: "treu" }),
+  ).toThrow("SKILL_MARKET_WRITES_FROZEN");
+});

@@ -11,7 +11,7 @@ import { MCPMock } from "@copilotkit/aimock/mcp";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { and, eq, inArray } from "drizzle-orm";
-import { unzipSync } from "fflate";
+import { unzipSync, zipSync } from "fflate";
 import type { MiddlewareHandler } from "hono";
 import postgres from "postgres";
 import { Observable, of } from "rxjs";
@@ -22,6 +22,7 @@ import {
 } from "../../app/src/lib/copilot/approval-context";
 import { applySkillMarketReceipt } from "../scripts/skill-migration/receipt";
 import { packageManifest } from "../scripts/skill-migration/source";
+import { migrationTarget } from "../scripts/skill-migration/target";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { mintRunAssertion } from "../src/agents/callback-token";
 import { createAgentProfileStore } from "../src/agents/profile-store";
@@ -74,6 +75,7 @@ import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createRoutineRoutes } from "../src/routines/routes";
 import { createRoutineStore } from "../src/routines/store";
 import { createBifrostMarket } from "../src/skill-market/bifrost";
+import { loadSkillMarketConfig } from "../src/skill-market/config";
 import { encodeImportedSkillDocument } from "../src/skill-market/imported-document";
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
 import { createWorkQueue } from "../src/work/queue";
@@ -242,100 +244,123 @@ const plugins = createPluginRoutes(
   async (actor, id) => (await profiles.get(actor, id)) !== null,
 );
 
-const routes = createSkillMarketRoutes(
-  requireUser,
-  {
-    baseUrl: "http://skillhub:8080",
-    namespace: "catalog",
-    token: "read",
-    confirmations: {
-      "3": {
-        slug,
-        version: "1.0.0",
-        versionId: 3,
-        fingerprint,
-        reviewTaskId: 1,
-        reviewerId: "reviewer",
-      },
-      "4": {
-        slug,
-        version: "2.0.0",
-        versionId: 4,
-        fingerprint: secondManifest.fingerprint,
-        reviewTaskId: 3,
-        reviewerId: "reviewer",
-      },
-      "6": {
-        slug: collision,
-        version: "1.0.0",
-        versionId: 6,
-        fingerprint,
-        reviewTaskId: 2,
-        reviewerId: "reviewer",
-      },
+const legacyConfig = {
+  baseUrl: "http://skillhub:8080",
+  namespace: "catalog",
+  token: "read",
+  confirmations: {
+    "3": {
+      slug,
+      version: "1.0.0",
+      versionId: 3,
+      fingerprint,
+      reviewTaskId: 1,
+      reviewerId: "reviewer",
+    },
+    "4": {
+      slug,
+      version: "2.0.0",
+      versionId: 4,
+      fingerprint: secondManifest.fingerprint,
+      reviewTaskId: 3,
+      reviewerId: "reviewer",
+    },
+    "6": {
+      slug: collision,
+      version: "1.0.0",
+      versionId: 6,
+      fingerprint,
+      reviewTaskId: 2,
+      reviewerId: "reviewer",
     },
   },
-  async (url: URL) => {
-    if (state === "offline") return new Response(null, { status: 503 });
-    const { pathname } = url;
-    const entry = pathname.split("/")[5];
-    const skillId = entry === collision ? 5 : 2;
-    const v1 = {
-      id: entry === collision ? 6 : 3,
-      version: "1.0.0",
-      status: "PUBLISHED",
+};
+const fetchLegacy = async (url: URL) => {
+  if (state === "offline") return new Response(null, { status: 503 });
+  const { pathname } = url;
+  const entry = pathname.split("/")[5];
+  const skillId = entry === collision ? 5 : 2;
+  const v1 = {
+    id: entry === collision ? 6 : 3,
+    version: "1.0.0",
+    status: "PUBLISHED",
+  };
+  const v2 = { id: 4, version: "2.0.0", status: "PUBLISHED" };
+  const version = pathname.endsWith("3.0.0")
+    ? { id: 7, version: "3.0.0", status: "PENDING_REVIEW" }
+    : pathname.endsWith("2.0.0") || url.searchParams.get("version") === "2.0.0"
+      ? v2
+      : v1;
+  let data: unknown = {
+    id: skillId,
+    namespace: "catalog",
+    slug: entry,
+    displayName: "Notes",
+    status: "ACTIVE",
+    visibility: "NAMESPACE_ONLY",
+    publishedVersion: state === "published" ? v1 : v2,
+  };
+  if (pathname === "/api/web/skills") {
+    data = {
+      items: [
+        {
+          id: 2,
+          namespace: "catalog",
+          slug,
+          displayName: "Notes",
+          status: "ACTIVE",
+          visibility: "NAMESPACE_ONLY",
+          publishedVersion: v1,
+        },
+      ],
+      total: 1,
+      page: 0,
+      size: 20,
     };
-    const v2 = { id: 4, version: "2.0.0", status: "PUBLISHED" };
-    const version = pathname.endsWith("3.0.0")
-      ? { id: 7, version: "3.0.0", status: "PENDING_REVIEW" }
-      : pathname.endsWith("2.0.0") ||
-          url.searchParams.get("version") === "2.0.0"
-        ? v2
-        : v1;
-    let data: unknown = {
-      id: skillId,
+  } else if (pathname.endsWith("/resolve")) {
+    data = {
+      skillId,
       namespace: "catalog",
       slug: entry,
-      displayName: "Notes",
-      status: "ACTIVE",
-      visibility: "NAMESPACE_ONLY",
-      publishedVersion: state === "published" ? v1 : v2,
+      version: version.version,
+      versionId: version.id,
+      fingerprint: version === v2 ? secondManifest.fingerprint : fingerprint,
     };
-    if (pathname.endsWith("/resolve")) {
-      data = {
-        skillId,
-        namespace: "catalog",
-        slug: entry,
-        version: version.version,
-        versionId: version.id,
-        fingerprint: version === v2 ? secondManifest.fingerprint : fingerprint,
-      };
-    } else if (pathname.endsWith("/files")) {
-      data = [{ filePath: "SKILL.md" }];
-    } else if (pathname.includes("/versions/")) {
-      data = {
-        ...version,
-        status:
-          version === v1 && state === "withdrawn" ? "ARCHIVED" : version.status,
-        parsedMetadataJson: JSON.stringify({
-          body:
-            version === v1
-              ? "Summarize in three bullets."
-              : "Produce an outline.",
-          frontmatter: {
-            metadata: {
-              "openbot-compatibility": {
-                scripts: version === v2 && !secondVersionCompatible,
-                supportingFiles: false,
-                dedicatedRuntime: false,
-              },
+  } else if (pathname.endsWith("/download")) {
+    const bytes = version === v2 ? legacySecondBytes : legacyFirstBytes;
+    return new Response(Buffer.from(zipSync({ "SKILL.md": bytes })), {
+      headers: { "content-type": "application/zip" },
+    });
+  } else if (pathname.endsWith("/files")) {
+    data = [{ filePath: "SKILL.md" }];
+  } else if (pathname.includes("/versions/")) {
+    data = {
+      ...version,
+      status:
+        version === v1 && state === "withdrawn" ? "ARCHIVED" : version.status,
+      parsedMetadataJson: JSON.stringify({
+        body:
+          version === v1
+            ? "Summarize in three bullets."
+            : "Produce an outline.",
+        frontmatter: {
+          metadata: {
+            "openbot-compatibility": {
+              scripts: version === v2 && !secondVersionCompatible,
+              supportingFiles: false,
+              dedicatedRuntime: false,
             },
           },
-        }),
-      };
-    }
-    return Response.json({ code: 0, data });
-  },
+        },
+      }),
+    };
+  }
+  return Response.json({ code: 0, data });
+};
+const routes = createSkillMarketRoutes(
+  requireUser,
+  legacyConfig,
+  fetchLegacy,
   store,
 );
 
@@ -566,36 +591,106 @@ async function cutoverApprovalFixture() {
   };
 }
 
-test("a verified Bifrost successor upgrades a SkillHub installation under its original command", async () => {
-  const reader = postgres(testDatabaseUrl(), { max: 1 });
-  const market = createSkillMarketRoutes(
-    requireUser,
-    { kind: "bifrost", namespace: "bifrost", databaseUrl: testDatabaseUrl() },
-    undefined,
-    store,
-  );
+test("cutover preserves legacy commands and approvals, and recovers post-reopen writes", async () => {
+  const realReader = process.env.OPENBOT_REHEARSAL_BIFROST_READER;
+  const readerUrl = realReader ?? testDatabaseUrl();
+  const reader = postgres(readerUrl, { max: 1 });
+  const exactReader = createBifrostMarket({
+    kind: "bifrost",
+    namespace: "bifrost",
+    databaseUrl: readerUrl,
+  });
+  const marketConfig = (
+    databaseUrl: string | undefined,
+    frozen: boolean,
+    legacy = true,
+  ) => {
+    const config = loadSkillMarketConfig({
+      SKILL_MARKET_WRITES_FROZEN: String(frozen),
+      BIFROST_SKILL_MARKET_DATABASE_URL: databaseUrl,
+      ...(legacy
+        ? {
+            SKILLHUB_URL: legacyConfig.baseUrl,
+            SKILLHUB_CATALOG_NAMESPACE: legacyConfig.namespace,
+            SKILLHUB_READ_TOKEN: legacyConfig.token,
+            SKILLHUB_COMPATIBILITY_CONFIRMATIONS: JSON.stringify(
+              Object.values(legacyConfig.confirmations),
+            ),
+          }
+        : {}),
+    });
+    if (!config) throw new Error("Expected a configured market");
+    return createSkillMarketRoutes(requireUser, config, fetchLegacy, store);
+  };
+  let market = marketConfig(readerUrl, true);
   const request = (path: string, method: string, body?: unknown) =>
     market.request(path, {
       method,
       headers: { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  const skillId = randomUUID();
-  const firstId = randomUUID();
-  const secondId = randomUUID();
   const target = `/bifrost/${slug}/versions`;
-  const first = encodeImportedSkillDocument(legacyFirstBytes, slug);
-  const second = encodeImportedSkillDocument(legacySecondBytes, slug);
-  const exactReader = createBifrostMarket({
-    kind: "bifrost",
-    namespace: "bifrost",
-    databaseUrl: testDatabaseUrl(),
-  });
+  const search = `/?q=${slug}`;
   const scope = {
     snapshotId: suite,
-    source: { source: "http://skillhub:8080", namespace: "catalog" },
+    source: { source: legacyConfig.baseUrl, namespace: legacyConfig.namespace },
     target: { registryId: suite, namespace: "bifrost" as const },
   };
+  const packages = await (async () => {
+    if (!realReader)
+      return {
+        skillId: randomUUID(),
+        firstId: randomUUID(),
+        secondId: randomUUID(),
+      };
+    const origin = "http://gateway:8080";
+    const login = await fetch(`${origin}/api/session/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "fixture-admin",
+        password: "fixture-admin-password",
+      }),
+    });
+    expect(login.status).toBe(200);
+    const cookie = login.headers
+      .getSetCookie()
+      .map((item) => item.split(";")[0])
+      .join("; ");
+    await login.body?.cancel();
+    expect(cookie).not.toBe("");
+    const importer = migrationTarget({
+      sql: reader,
+      market: exactReader,
+      origin,
+      cookie,
+      registryId: suite,
+    });
+    const first = await importer.ensurePackage(
+      { slug, version: "1.0.0" },
+      new Map([["SKILL.md", legacyFirstBytes]]),
+    );
+    const second = await importer.ensurePackage(
+      { slug, version: "2.0.0" },
+      new Map([["SKILL.md", legacySecondBytes]]),
+    );
+    const promote = await fetch(
+      `${origin}/api/skills/${first.skillId}/shift-version`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie, origin },
+        body: JSON.stringify({ version: "2.0.0" }),
+      },
+    );
+    expect(promote.ok).toBe(true);
+    await promote.body?.cancel();
+    return {
+      skillId: first.skillId,
+      firstId: first.versionId,
+      secondId: second.versionId,
+    };
+  })();
+  const { skillId, firstId, secondId } = packages;
   const original = {
     ...scope.source,
     slug,
@@ -682,24 +777,28 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
     ],
   };
   const approvalsAtCutover = await cutoverApprovalFixture();
-  await reader`create schema openbot_skill_market`;
   try {
-    await reader`create table openbot_skill_market.catalog (
+    if (!realReader) {
+      const first = encodeImportedSkillDocument(legacyFirstBytes, slug);
+      const second = encodeImportedSkillDocument(legacySecondBytes, slug);
+      await reader`create schema openbot_skill_market`;
+      await reader`create table openbot_skill_market.catalog (
       name text, description text, latest_version text, skill_id uuid
     )`;
-    await reader`create table openbot_skill_market.versions (
+      await reader`create table openbot_skill_market.versions (
       id uuid primary key, skill_id uuid, name text, version text,
       skill_md_body text, frontmatter_snapshot jsonb, created_at timestamptz default now()
     )`;
-    await reader`create table openbot_skill_market.files (
+      await reader`create table openbot_skill_market.files (
       skill_version_id uuid, path text, source_type text, file_size_bytes integer, data bytea
     )`;
-    await reader`insert into openbot_skill_market.catalog values
+      await reader`insert into openbot_skill_market.catalog values
       (${slug}, 'Notes', '2.0.0', ${skillId})`;
-    await reader`insert into openbot_skill_market.versions
+      await reader`insert into openbot_skill_market.versions
       (id, skill_id, name, version, skill_md_body, frontmatter_snapshot)
       values (${firstId}, ${skillId}, ${slug}, '1.0.0', ${first.body}, ${reader.json(first.snapshot)}),
              (${secondId}, ${skillId}, ${slug}, '2.0.0',  ${second.body}, ${reader.json(second.snapshot)})`;
+    }
 
     expect((await install(spareBot)).status).toBe(201);
     expect(await slash(spareBot)).toContain("Summarize in three bullets.");
@@ -713,17 +812,63 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
     await store.grant("mcp", protectedTool, emptyBot, "admin@example.test");
     const enabledApproval = await approvalsAtCutover.open(bot, "1.0.0");
     const blockedApproval = await approvalsAtCutover.open(emptyBot, "2.0.0");
+    // Inject a reader outage while the primary is frozen, then restart using only SkillHub.
+    market = marketConfig(
+      "postgres://reader:fixture@127.0.0.1:1/unavailable",
+      true,
+    );
+    expect((await request(search, "GET")).status).toBe(502);
+    market = marketConfig(undefined, true);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "catalog", slug }],
+    });
     expect(
       (
-        await changeDisablement(
-          "PUT",
-          "admin",
-          "Legacy emergency stop",
-          originalSecond,
-        )
+        await request(`/catalog/${slug}/versions/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(503);
+    const fallbackDownload = await request(
+      `/catalog/${slug}/versions/1.0.0/download`,
+      "GET",
+    );
+    expect(fallbackDownload.status).toBe(200);
+    expect(
+      Buffer.from(
+        unzipSync(new Uint8Array(await fallbackDownload.arrayBuffer()))[
+          "SKILL.md"
+        ],
+      ),
+    ).toEqual(legacyFirstBytes);
+    market = marketConfig(readerUrl, true);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "bifrost", slug }],
+    });
+    const download = await request(`${target}/1.0.0/download`, "GET");
+    expect(download.status).toBe(200);
+    expect(
+      Buffer.from(
+        unzipSync(new Uint8Array(await download.arrayBuffer()))["SKILL.md"],
+      ),
+    ).toEqual(legacyFirstBytes);
+    expect(
+      (
+        await request(`${target}/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(503);
+    state = "offline";
+    expect(
+      (
+        await request("/version-disablements", "PUT", {
+          ...originalSecond,
+          reason: "Legacy emergency stop",
+        })
       ).status,
     ).toBe(204);
-    state = "offline";
+
     const entry = receipt.entries[0];
     await expect(
       applySkillMarketReceipt(database, exactReader, scope, {
@@ -800,6 +945,30 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
       expect.objectContaining({ result: { content: "done" } }),
     ]);
     expect(approvalsAtCutover.dispatched()).toBe(1);
+    // The pre-existing emergency stop still governs the awaiting approval while frozen.
+    expect(await slash(emptyBot)).toBeUndefined();
+    await approvalsAtCutover.approve(blockedApproval.id);
+    expect(
+      await approvalsAtCutover.resume(blockedApproval.id, emptyBot),
+    ).toEqual([
+      expect.objectContaining({
+        pauseReason: expect.stringContaining("Legacy emergency stop"),
+      }),
+    ]);
+    expect(approvalsAtCutover.dispatched()).toBe(1);
+    const frozenPreview = await (
+      await request(`${target}/1.0.0`, "GET")
+    ).json();
+    expect(
+      (
+        await request(
+          `${target}/1.0.0/review`,
+          "PUT",
+          frozenPreview.packageIdentity,
+        )
+      ).status,
+    ).toBe(503);
+    market = marketConfig(readerUrl, false);
 
     expect(
       (
@@ -808,13 +977,14 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
         })
       ).status,
     ).toBe(409);
-    await reader`update openbot_skill_market.versions set id = ${randomUUID()} where id = ${firstId}`;
-    const changed = await (await request(`${target}/1.0.0`, "GET")).json();
     expect(
-      (await request(`${target}/1.0.0/review`, "PUT", changed.packageIdentity))
-        .status,
+      (
+        await request(`${target}/1.0.0/review`, "PUT", {
+          ...frozenPreview.packageIdentity,
+          versionId: randomUUID(),
+        })
+      ).status,
     ).toBe(409);
-    await reader`update openbot_skill_market.versions set id = ${firstId} where version = '1.0.0'`;
 
     const firstPreview = await (await request(`${target}/1.0.0`, "GET")).json();
     expect(firstPreview.installable).toBe(false);
@@ -872,20 +1042,11 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
       versionId: successor.versionId,
     };
     expect(await slash(emptyBot)).toBeUndefined();
-    await approvalsAtCutover.approve(blockedApproval.id);
     expect(
       (await request("/version-disablements", "DELETE", equivalentSecond))
         .status,
     ).toBe(204);
     expect(await slash(emptyBot)).toContain("Produce an outline.");
-    expect(
-      await approvalsAtCutover.resume(blockedApproval.id, emptyBot),
-    ).toEqual([
-      expect.objectContaining({
-        pauseReason: expect.stringContaining("Legacy emergency stop"),
-      }),
-    ]);
-    expect(approvalsAtCutover.dispatched()).toBe(1);
     expect(
       (
         await request(`${target}/2.0.0/switch`, "POST", {
@@ -920,6 +1081,79 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
     ).toBe(204);
     expect(await slash(spareBot)).toBeUndefined();
     expect(
+      (
+        await request(`${target}/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(201);
+    const freshPath = `/bots/${anotherBot}/installations`;
+    const fresh = await (await request(freshPath, "GET")).json();
+    expect(fresh.installations).toMatchObject([
+      { registry: "bifrost", command: slug, versionId: equivalent.versionId },
+    ]);
+    const installationPath = `/bots/${spareBot}/installations`;
+    const installed = await (await request(installationPath, "GET")).json();
+    const installSnapshot = { ...installed.installations[0] };
+    delete installSnapshot.catalogSlug;
+    const reviewedAfterReopen = await (
+      await request(`${target}/2.0.0`, "GET")
+    ).json();
+    expect(reviewedAfterReopen.reviewStatus).toBe("approved");
+
+    // Recover the catalog without rewinding OpenBot's database or registry contents.
+    state = "published";
+    market = marketConfig(undefined, true);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "catalog", slug }],
+    });
+    expect(await slash(anotherBot)).toContain("Summarize in three bullets.");
+    expect(await (await request(installationPath, "GET")).json()).toEqual({
+      installations: [installSnapshot],
+    });
+    expect(await slash(spareBot)).toBeUndefined();
+    market = marketConfig(readerUrl, true);
+    expect(await (await request(installationPath, "GET")).json()).toEqual(
+      installed,
+    );
+    expect(
+      await (await request(`${target}/2.0.0`, "GET")).json(),
+    ).toMatchObject({
+      packageIdentity: reviewedAfterReopen.packageIdentity,
+      reviewedFingerprint: reviewedAfterReopen.reviewedFingerprint,
+      reviewStatus: "approved",
+      disableReason: "Second emergency stop",
+    });
+
+    expect(await (await request(freshPath, "GET")).json()).toEqual(fresh);
+    expect(
+      (
+        await request(`${freshPath}/${slug}`, "DELETE", {
+          expectedVersionId: equivalent.versionId,
+          expectedRegistry: "bifrost",
+        })
+      ).status,
+    ).toBe(204);
+
+    // Simulate stopping SkillHub, remove its configuration, and use only Bifrost.
+    state = "offline";
+    expect((await routes.request(search)).status).toBe(502);
+    market = marketConfig(readerUrl, false, false);
+    expect((await request(`/catalog/${slug}`, "GET")).status).toBe(404);
+    expect(await (await request(search, "GET")).json()).toMatchObject({
+      items: [{ namespace: "bifrost", slug }],
+    });
+    expect(
+      (
+        await request(`${target}/1.0.0/install`, "POST", {
+          agentId: anotherBot,
+        })
+      ).status,
+    ).toBe(201);
+    expect(await slash(anotherBot)).toContain("Summarize in three bullets.");
+    expect(await slash(bot)).toContain("Summarize in three bullets.");
+
+    expect(
       (await request("/version-disablements", "DELETE", equivalentSecond))
         .status,
     ).toBe(204);
@@ -934,14 +1168,15 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
     );
     await store.revoke("mcp", protectedTool, emptyBot, "admin@example.test");
     await request("/version-disablements", "DELETE", originalSecond);
-    const items = await store.listMarketInstallations(spareBot);
-    for (const item of items) {
-      await store.uninstallMarketSkill(
-        { id: "admin", role: "admin", email: "admin@example.test" },
-        spareBot,
-        item.command,
-        item.versionId,
-      );
+    for (const id of [spareBot, anotherBot]) {
+      for (const item of await store.listMarketInstallations(id)) {
+        await store.uninstallMarketSkill(
+          { id: "admin", role: "admin", email: "admin@example.test" },
+          id,
+          item.command,
+          item.versionId,
+        );
+      }
     }
     await request("/version-disablements", "DELETE", original);
     await database
@@ -957,7 +1192,8 @@ test("a verified Bifrost successor upgrades a SkillHub installation under its or
       .delete(bifrostMarketSkills)
       .where(eq(bifrostMarketSkills.skillUuid, skillId));
     await exactReader.close();
-    await reader`drop schema openbot_skill_market cascade`;
+    if (!realReader)
+      await reader`drop schema if exists openbot_skill_market cascade`;
     await reader.end();
   }
 });
