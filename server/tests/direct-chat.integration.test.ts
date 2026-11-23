@@ -83,6 +83,7 @@ import {
   directChatRunEvents,
   directChatRuns,
   directChatSkillShares,
+  enterpriseSettings,
   learningSettings,
   opikRuns,
   recorderConnections,
@@ -3709,6 +3710,7 @@ test.each([
   "native-write-lock",
   "managed-write-lock",
   "managed-evidence-write-lock",
+  "managed-sharing-setting-write-lock",
   "late-user",
   "late-background",
   "late-authorized",
@@ -3906,6 +3908,7 @@ async function exercisePublishedSkill(mode: string) {
     const native = mode.startsWith("native");
     const writeLock = mode.endsWith("-write-lock");
     const evidenceWriteLock = mode === "managed-evidence-write-lock";
+    const settingsWriteLock = mode === "managed-sharing-setting-write-lock";
     const late = mode.startsWith("late");
     const background = mode.startsWith("late-background");
     const selectionChanged = mode === "native-selection";
@@ -4039,7 +4042,9 @@ async function exercisePublishedSkill(mode: string) {
               ).status,
             ).toBe(200);
           }
-        : revokeShare;
+        : settingsWriteLock
+          ? () => enterprise.setSetting("skillSharing", false, reviewer.id)
+          : revokeShare;
       let authorizationLocked = false;
       const newerIds = Array.from({ length: 20 }, () => crypto.randomUUID());
       if (selectionChanged) {
@@ -4106,6 +4111,12 @@ async function exercisePublishedSkill(mode: string) {
                   .select({ id: channels.id })
                   .from(channels)
                   .where(eq(channels.id, source.id))
+                  .for("update", { noWait: true });
+              } else if (settingsWriteLock) {
+                await probe
+                  .select({ key: enterpriseSettings.key })
+                  .from(enterpriseSettings)
+                  .where(eq(enterpriseSettings.key, "skill_sharing"))
                   .for("update", { noWait: true });
               } else {
                 await probe

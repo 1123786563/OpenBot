@@ -209,7 +209,8 @@ export async function readSkillSharingAllowed(
   const [row] = await executor
     .select({ value: enterpriseSettings.value })
     .from(enterpriseSettings)
-    .where(eq(enterpriseSettings.key, SETTING_KEYS.skillSharing));
+    .where(eq(enterpriseSettings.key, SETTING_KEYS.skillSharing))
+    .for("share");
   return unwrap("skillSharing", row?.value);
 }
 
