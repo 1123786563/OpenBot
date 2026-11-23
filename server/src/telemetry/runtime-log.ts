@@ -211,6 +211,14 @@ const events = {
     diagnostic:
       "The worker could not recover billed Conversation replies. It will retry on the next tick.",
   },
+  bifrost_evidence_recovery_failed: {
+    severity: "warn",
+    component: "worker",
+    operation: "sweep",
+    outcome: "failed",
+    error_category: "bifrost_evidence_recovery_error",
+    diagnostic: "The worker could not recover Bifrost billing evidence.",
+  },
   routine_sweep_failed: {
     severity: "warn",
     component: "routines",
