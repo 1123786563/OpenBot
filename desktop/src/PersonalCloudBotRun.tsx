@@ -76,12 +76,15 @@ export function PersonalCloudBotRun({
       : null;
   const terminal = status?.state === "completed" || status?.state === "stopped";
 
+  const previousInitialRunId = useRef(initialRunId);
   useEffect(() => {
-    if (!initialRunId) return;
+    if (previousInitialRunId.current === initialRunId) return;
+    previousInitialRunId.current = initialRunId;
+    if (!initialRunId || initialRunId === runId) return;
     setRunId(initialRunId);
     setStatus(null);
     setStatusError(false);
-  }, [initialRunId]);
+  }, [initialRunId, runId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: A manual refresh or stop restarts the poll immediately.
   useEffect(() => {
