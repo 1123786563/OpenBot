@@ -1548,3 +1548,10 @@ Omit the file entirely for a package with no skills.
    bun run typecheck
    bun run test
    ```
+
+
+## Shared Credits
+
+The signed-in **Credits** page at `/billing` shows Test Credits, Paid Credits, usage and app Spending Authorizations. Set `OPENBOT_TEST_CREDIT_CONVERSATIONS=enabled` to require a published quote before sending a metered Conversation. `TEST_CREDIT_AUXILIARY_ROUTING=enabled` enables quote-confirmed automatic Bot routing.
+
+Set `OPENBOT_TEST_CREDIT_WEKNORA=enabled` for the WeKnora billing entry. Configure the shared Casdoor issuer and provider ID, WeKnora service credential, and the verified route IDs for the paths you enable. See the [Test Credit pilot setup](billing-test-credit-pilot.md), [WeKnora worker setup](billing-weknora-live.md), and [paid signoff runbook](billing-paths.md#record-paid-pilot-signoff) for settings and verification.

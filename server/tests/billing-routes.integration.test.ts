@@ -1062,6 +1062,7 @@ test("an independent HTTP app uses a bound credential and the metered dispatcher
         );
         await duringMeter?.();
         return Response.json({
+          requestId: request.headers.get("x-request-id"),
           requestSha256: hash(body),
           inputTokenUpperBound: 4,
           gatewayRevision: "routes-r1",

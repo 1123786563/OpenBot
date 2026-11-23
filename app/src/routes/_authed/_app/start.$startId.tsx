@@ -1,4 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
 import { Stack } from "@astryxdesign/core/Stack";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
@@ -17,7 +18,9 @@ import { seedMessage } from "@/components/channels/transcript-messages";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import type { BillingQuote } from "@/lib/billing/queries";
 import { readPendingStart } from "@/lib/channels/pending-start";
+import { CoworkerRoutingQuoteRequired } from "@/lib/channels/route";
 import { resumeConversationStart } from "@/lib/channels/start";
 
 export const Route = createFileRoute("/_authed/_app/start/$startId")({
@@ -42,21 +45,35 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  const [quote, setQuote] = useState<BillingQuote>();
+  const [confirmation, setConfirmation] =
+    useState<Pick<BillingQuote, "route" | "priceVersion">>();
+
   const hasStart = start?.state === "pending";
   useEffect(() => {
     // This state is intentionally a retry trigger. The effect must restart when the user taps Retry.
     void attempt;
     if (!hasStart) return;
     let current = true;
-    void resumeConversationStart(queryClient, owner, startId, (next) => {
-      if (current) setStart(next);
-    }).then(
+    void resumeConversationStart(
+      queryClient,
+      owner,
+      startId,
+      (next) => {
+        if (current) setStart(next);
+      },
+      confirmation,
+    ).then(
       (next) => {
         if (current) setStart(next);
       },
       (cause: unknown) => {
         if (!current) return;
         setStart(readPendingStart(owner, startId));
+        if (cause instanceof CoworkerRoutingQuoteRequired) {
+          setQuote(cause.quote);
+          return;
+        }
         setError(
           cause instanceof Error
             ? cause.message
@@ -67,7 +84,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
     return () => {
       current = false;
     };
-  }, [attempt, hasStart, owner, queryClient, startId]);
+  }, [attempt, confirmation, hasStart, owner, queryClient, startId]);
 
   const draft = hasStart ? start.draft : undefined;
   const agentId =
@@ -148,7 +165,26 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
           }
           messages={[seedMessage(draft.text, startId)]}
           notice={
-            error ? (
+            quote ? (
+              <Banner
+                status="info"
+                title="Use Test Credits to pick a Bot?"
+                description={`${quote.provider}/${quote.model} charges ${quote.price.inputPerMillion} input and ${quote.price.outputPerMillion} output microcredits per million tokens. Maximum ${quote.maxChargeMicrocredits} microcredits for routing. ${quote.usageDisclosure} Your conversation has a separate quote.`}
+                endContent={
+                  <Button
+                    label="Confirm routing"
+                    onClick={() => {
+                      setConfirmation({
+                        route: quote.route,
+                        priceVersion: quote.priceVersion,
+                      });
+                      setQuote(undefined);
+                      setAttempt((value) => value + 1);
+                    }}
+                  />
+                }
+              />
+            ) : error ? (
               <ConversationReadError
                 title="Couldn't continue the conversation."
                 description={error}

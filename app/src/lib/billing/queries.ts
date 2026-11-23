@@ -2,37 +2,65 @@ import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import { client } from "@/lib/client";
 
-/** A person's Test Credit balance, counted in microcredits. */
-export type BillingBalance = {
-  creditType: "test";
-  trialEnded?: boolean;
-  grantedMicrocredits: string;
-  reservedMicrocredits: string;
-  chargedMicrocredits: string;
-  availableMicrocredits: string;
-};
+const microcredits = z.string().regex(/^-?\d+$/);
+const creditType = z.enum(["test", "paid"]);
+const rate = z.object({
+  inputPerMillion: z.number().int().nonnegative(),
+  outputPerMillion: z.number().int().nonnegative(),
+});
+const paidBalanceSchema = z.object({
+  availableMicrocredits: microcredits,
+  reservedMicrocredits: microcredits,
+  chargedMicrocredits: microcredits,
+});
+const billingBalanceSchema = paidBalanceSchema.extend({
+  creditType: z.literal("test"),
+  trialEnded: z.boolean().optional(),
+  grantedMicrocredits: microcredits,
+});
+export type BillingBalance = z.infer<typeof billingBalanceSchema>;
 
-/** The model route a task runs on, what it costs, and the most one request can charge. */
-export type BillingQuote = {
-  creditType: "test";
-  paidAvailable?: boolean;
-  priceVersion: string;
-  route: string;
-  tools?: boolean;
-  provider: string;
-  model: string;
-  price: { inputPerMillion: number; outputPerMillion: number };
-  maxChargeMicrocredits: string;
-  usageDisclosure: string;
-};
+export const billingQuoteSchema = z.object({
+  creditType: z.literal("test"),
+  paidAvailable: z.boolean().optional(),
+  priceVersion: z.string().min(1),
+  route: z.string().min(1),
+  tools: z.boolean().optional(),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  price: rate,
+  maxChargeMicrocredits: microcredits,
+  usageDisclosure: z.string(),
+});
+export type BillingQuote = z.infer<typeof billingQuoteSchema>;
+const ingestionPreviewSchema = billingQuoteSchema.pick({
+  creditType: true,
+  price: true,
+  maxChargeMicrocredits: true,
+});
+const billingOperationSchema = billingQuoteSchema
+  .pick({
+    route: true,
+    provider: true,
+    model: true,
+    priceVersion: true,
+    price: true,
+  })
+  .extend({
+    parentRunId: z.string().nullish(),
+    reservedMicrocredits: microcredits,
+    chargedMicrocredits: microcredits.nullable(),
+    releasedMicrocredits: microcredits.nullable(),
+  });
 
-/** One paid source of credits, in the order a task spends them. */
-export type PaidSource = {
-  entitlementId: string;
-  kind: "subscription" | "credit_pack" | "correction_credit";
-  arrivedAt: string;
-  remainingMicrocredits: string;
-};
+const paidSourceSchema = z.object({
+  entitlementId: z.string(),
+  kind: z.enum(["subscription", "credit_pack", "correction_credit"]),
+  arrivedAt: z.string(),
+  remainingMicrocredits: microcredits,
+});
+export type PaidSource = z.infer<typeof paidSourceSchema>;
+export type PaidBalance = z.infer<typeof paidBalanceSchema>;
 
 export const paymentDisputeSchema = z.object({
   id: z.uuid(),
@@ -43,103 +71,93 @@ export const paymentDisputeSchema = z.object({
     "manual_reconciliation",
     "reconciled",
   ]),
-  usedMicrocredits: z.string().regex(/^\d+$/),
-  revokedMicrocredits: z.string().regex(/^\d+$/).nullable(),
+  usedMicrocredits: microcredits,
+  revokedMicrocredits: microcredits.nullable(),
   manualReviewCents: z.number().int().nonnegative().nullable(),
 });
-
 export type PaymentDispute = z.infer<typeof paymentDisputeSchema>;
+const billLineSchema = z.object({
+  operationId: z.string().nullable(),
+  orderId: z.string().nullish(),
+  dispute: paymentDisputeSchema.nullish(),
+  applicationId: z.string().nullable(),
+  source: z.enum([
+    "test",
+    "subscription",
+    "credit_pack",
+    "correction_credit",
+    "correction",
+    "dispute",
+  ]),
+  entitlementId: z.string().nullable(),
+  periodStart: z.string().nullable(),
+  periodEnd: z.string().nullable(),
+  arrivedAt: z.string().nullable(),
+  amountMicrocredits: microcredits,
+  at: z.string().nullable(),
+  reason: z.string().nullable(),
+  correction: z
+    .object({
+      id: z.string(),
+      kind: z.enum(["overcharge_refund", "fault_compensation"]),
+      evidence: z.string(),
+      operator: z.string(),
+      availableBeforeMicrocredits: microcredits.nullable(),
+      availableAfterMicrocredits: microcredits.nullable(),
+      correctionCreditsMicrocredits: microcredits.nullable(),
+    })
+    .optional(),
+});
+export type BillLine = z.infer<typeof billLineSchema>;
 
-/** A charge booked against a source, or the status of a disputed payment. */
-export type BillLine = {
-  operationId: string | null;
-  orderId?: string | null;
-  dispute?: PaymentDispute | null;
-  /** The app the step ran for, where the caller named one. */
-  applicationId: string | null;
-  source:
-    | "test"
-    | "subscription"
-    | "credit_pack"
-    | "correction_credit"
-    | "correction"
-    | "dispute";
-  entitlementId: string | null;
-  periodStart: string | null;
-  periodEnd: string | null;
-  arrivedAt: string | null;
-  amountMicrocredits: string;
-  at: string | null;
-  reason: string | null;
-  correction?: {
-    id: string;
-    kind: "overcharge_refund" | "fault_compensation";
-    evidence: string;
-    operator: string;
-    availableBeforeMicrocredits: string | null;
-    availableAfterMicrocredits: string | null;
-    correctionCreditsMicrocredits: string | null;
-  };
-};
+const resumePointSchema = z.object({
+  operationId: z.string(),
+  authorizationId: z.string().optional(),
+  applicationId: z.string().nullable(),
+  reason: z.enum(["insufficient_credits", "execution_limit", "trial_ended"]),
+  createdAt: z.string(),
+  requiredBudgetId: z.string().nullish(),
+  budgetId: z.string().nullable(),
+  confirmedAt: z.string().nullable(),
+  creditType: creditType.nullable(),
+});
+export type ResumePoint = z.infer<typeof resumePointSchema>;
 
-/** The paid side of a person's balance: what can be spent, what running steps hold, and what finished steps charged. */
-export type PaidBalance = {
-  availableMicrocredits: string;
-  reservedMicrocredits: string;
-  chargedMicrocredits: string;
-};
+const budgetSchema = z.object({
+  budgetId: z.string(),
+  creditType,
+  limitMicrocredits: microcredits,
+  usedMicrocredits: microcredits,
+  state: z.enum(["active", "paused", "completed"]),
+  confirmed: z.boolean(),
+});
+export type BudgetRecord = z.infer<typeof budgetSchema>;
 
-/** A step that stopped for want of credits or budget room, waiting on the person. */
-export type ResumePoint = {
-  operationId: string;
-  authorizationId?: string;
-  applicationId: string | null;
-  reason: "insufficient_credits" | "execution_limit" | "trial_ended";
-  createdAt: string;
-  /** The budget the person confirmed for this step, once they have. */
-  requiredBudgetId?: string | null;
-  budgetId: string | null;
-  confirmedAt: string | null;
-  creditType: "test" | "paid" | null;
-};
+const billingApplicationSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  operator: z.enum(["platform", "independent"]),
+  resourcePrefix: z.string(),
+  approvedAt: z.string().nullable(),
+  pausedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type BillingApplication = z.infer<typeof billingApplicationSchema>;
 
-/** An execution budget: the Credit type a task runs on and the most it may spend. */
-export type BudgetRecord = {
-  budgetId: string;
-  creditType: "test" | "paid";
-  limitMicrocredits: string;
-  usedMicrocredits: string;
-  state: "active" | "paused" | "completed";
-  confirmed: boolean;
-};
-
-/** An app whose steps can spend from a person's account, once it is approved. */
-export type BillingApplication = {
-  id: string;
-  name: string;
-  operator: "platform" | "independent";
-  /** The resources it may be authorized for, as a prefix of their names. */
-  resourcePrefix: string;
-  approvedAt: string | null;
-  pausedAt: string | null;
-  createdAt: string;
-};
-
-/** A person's explicit grant to an app (#111): what it may spend, on which resources, and until when. */
-export type SpendingAuthorization = {
-  creditType?: "test" | "paid";
-  authorizationId: string;
-  applicationId: string;
-  /** A background grant is for one task. */
-  kind: "online" | "background";
-  taskId: string | null;
-  resourcePrefix: string;
-  expiresAt: string;
-  limitMicrocredits: string;
-  spentMicrocredits: string;
-  revokedAt: string | null;
-  state: "active" | "expired" | "revoked";
-};
+const spendingAuthorizationSchema = z.object({
+  creditType: creditType.optional(),
+  authorizationId: z.string(),
+  applicationId: z.string(),
+  kind: z.enum(["online", "background"]),
+  taskId: z.string().nullable(),
+  resourcePrefix: z.string(),
+  expiresAt: z.string(),
+  limitMicrocredits: microcredits,
+  spentMicrocredits: microcredits,
+  revokedAt: z.string().nullable(),
+  state: z.enum(["active", "expired", "revoked"]),
+});
+export type SpendingAuthorization = z.infer<typeof spendingAuthorizationSchema>;
 
 export const billingKeys = {
   all: ["billing"] as const,
@@ -157,38 +175,40 @@ export const billingKeys = {
 
 const FALLBACK = "Could not load your credits";
 
-async function read<T>(path: string): Promise<T> {
-  return (await client(path, { fallback: FALLBACK })).json();
+async function read<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  options?: { signal?: AbortSignal; fallback?: string },
+): Promise<T> {
+  const fallback = options?.fallback ?? FALLBACK;
+  const response = await client(path, { fallback, signal: options?.signal });
+  const parsed = schema.safeParse(await response.json().catch(() => undefined));
+  if (!parsed.success) throw new Error(fallback);
+  return parsed.data;
 }
 
 export function billingBalanceQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.balance,
-    queryFn: (): Promise<BillingBalance> => read("/api/billing/balance"),
+    queryFn: () => read("/api/billing/balance", billingBalanceSchema),
   });
 }
 
 export function billingQuoteQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.quote,
-    queryFn: (): Promise<BillingQuote> => read("/api/billing/quote"),
+    queryFn: () => read("/api/billing/quote", billingQuoteSchema),
   });
 }
 
 export function billingOperationQueryOptions(operationId: string) {
   return queryOptions({
     queryKey: [...billingKeys.all, "operations", operationId],
-    queryFn: (): Promise<
-      Pick<
-        BillingQuote,
-        "route" | "provider" | "model" | "priceVersion" | "price"
-      > & {
-        parentRunId?: string | null;
-        reservedMicrocredits: string;
-        chargedMicrocredits: string | null;
-        releasedMicrocredits: string | null;
-      }
-    > => read(`/api/billing/operations/${encodeURIComponent(operationId)}`),
+    queryFn: () =>
+      read(
+        `/api/billing/operations/${encodeURIComponent(operationId)}`,
+        billingOperationSchema,
+      ),
     retry: false,
   });
 }
@@ -199,11 +219,12 @@ export function conversationCreditQuoteQueryOptions(
 ) {
   return queryOptions({
     queryKey: [...billingKeys.quote, threadId, agentId],
-    queryFn: ({ signal }): Promise<BillingQuote> =>
-      client(
+    queryFn: ({ signal }) =>
+      read(
         `/api/copilotkit/agent/${encodeURIComponent(agentId)}/test-credit-quote?${new URLSearchParams({ threadId })}`,
+        billingQuoteSchema,
         { fallback: "Could not get a Test Credit quote", signal },
-      ).then((response) => response.json()),
+      ),
     retry: false,
   });
 }
@@ -211,7 +232,7 @@ export function conversationCreditQuoteQueryOptions(
 export function weknoraPreviewQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.weknoraPreview,
-    queryFn: (): Promise<BillingQuote> => read("/api/billing/weknora/preview"),
+    queryFn: () => read("/api/billing/weknora/preview", ingestionPreviewSchema),
     retry: false,
   });
 }
@@ -219,51 +240,52 @@ export function weknoraPreviewQueryOptions() {
 export function paidSourcesQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.paidSources,
-    queryFn: (): Promise<PaidSource[]> => read("/api/billing/paid/sources"),
+    queryFn: () => read("/api/billing/paid/sources", z.array(paidSourceSchema)),
   });
 }
 
 export function paidBalanceQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.paidBalance,
-    queryFn: (): Promise<PaidBalance> => read("/api/billing/paid/balance"),
+    queryFn: () => read("/api/billing/paid/balance", paidBalanceSchema),
   });
 }
 
 export function resumePointsQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.resumePoints,
-    queryFn: (): Promise<ResumePoint[]> => read("/api/billing/resume-points"),
+    queryFn: () =>
+      read("/api/billing/resume-points", z.array(resumePointSchema)),
   });
 }
 
 export function applicationsQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.applications,
-    queryFn: (): Promise<BillingApplication[]> =>
-      read("/api/billing/applications"),
+    queryFn: () =>
+      read("/api/billing/applications", z.array(billingApplicationSchema)),
   });
 }
 
 export function authorizationsQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.authorizations,
-    queryFn: (): Promise<SpendingAuthorization[]> =>
-      read("/api/billing/authorizations"),
+    queryFn: () =>
+      read("/api/billing/authorizations", z.array(spendingAuthorizationSchema)),
   });
 }
 
 export function billLinesQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.bill,
-    queryFn: (): Promise<BillLine[]> => read("/api/billing/paid/bill"),
+    queryFn: () => read("/api/billing/paid/bill", z.array(billLineSchema)),
   });
 }
 
 export function budgetsQueryOptions() {
   return queryOptions({
     queryKey: billingKeys.budgets,
-    queryFn: (): Promise<BudgetRecord[]> => read("/api/billing/budgets"),
+    queryFn: () => read("/api/billing/budgets", z.array(budgetSchema)),
   });
 }
 

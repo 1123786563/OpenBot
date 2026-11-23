@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CasdoorBillingProvider } from "./direct-chat-test-credit";
+import { measureInput } from "./input-meter";
 import {
   bifrostRouteProof,
   createBifrostCreditExecutor,
@@ -36,13 +37,6 @@ const settings = z.object({
   TEST_CREDIT_INPUT_METER_TOKEN: required,
   TEST_CREDIT_METERING_REVISION: required,
 });
-const proof = z.object({
-  gatewayRevision: required,
-  meteringRevision: required,
-  inputTokenUpperBound: z.number().int().nonnegative(),
-  requestSha256: z.string().regex(/^[a-f0-9]{64}$/),
-});
-
 export function directChatCasdoorProvider(
   environment: Record<string, string | undefined>,
 ): CasdoorBillingProvider | undefined {
@@ -91,33 +85,13 @@ export function loadMeteredChatExecutor(
     meteringRevision: config.TEST_CREDIT_METERING_REVISION,
     limitField: "max_completion_tokens",
     async countInputTokens(route, _messages, request) {
-      const headers = new Headers({
-        authorization: `Bearer ${config.TEST_CREDIT_INPUT_METER_TOKEN}`,
-        "content-type": "application/json",
-        "x-request-id": request.requestId,
-        "x-openbot-bifrost-gateway-revision": route.gatewayRevision,
-        "x-openbot-bifrost-metering-revision": route.meteringRevision,
-      });
-      if (request.operationId)
-        headers.set("x-openbot-operation-id", request.operationId);
-      const response = await fetch(config.TEST_CREDIT_INPUT_METER_URL, {
-        method: "POST",
-        redirect: "error",
+      return measureInput({
+        endpoint: config.TEST_CREDIT_INPUT_METER_URL,
+        token: config.TEST_CREDIT_INPUT_METER_TOKEN,
+        request,
+        revision: route,
         signal: AbortSignal.timeout(25_000),
-        headers,
-        body: request.body,
       });
-      if (!response.ok) throw new Error("Test Credit input meter unavailable.");
-      const measured = proof.parse(await response.json());
-      if (
-        measured.gatewayRevision !== route.gatewayRevision ||
-        measured.meteringRevision !== route.meteringRevision ||
-        measured.requestSha256 !== request.digest
-      )
-        throw new Error(
-          "Test Credit input meter returned an invalid request proof.",
-        );
-      return measured.inputTokenUpperBound;
     },
   });
   return async (input) => {

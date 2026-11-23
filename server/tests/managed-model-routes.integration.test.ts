@@ -346,6 +346,7 @@ test("routing and Audit Ask settle against their own accounts and refuse unbilla
           gatewayRevision: routeSpec.gatewayRevision,
           meteringRevision: routeSpec.meteringRevision,
           inputTokenUpperBound: 7,
+          requestId: request.headers.get("x-request-id"),
           requestSha256: Bun.CryptoHasher.hash(
             "sha256",
             await request.text(),
@@ -452,19 +453,55 @@ test("routing and Audit Ask settle against their own accounts and refuse unbilla
       body: JSON.stringify(body),
     });
   const routingRequestId = crypto.randomUUID();
-  const route = (requestId = crypto.randomUUID()) =>
-    post("/api/route", { text: "Review this policy.", requestId });
+  const publishedQuote = await ledger.quote();
+  if (!publishedQuote) throw new Error("Routing quote missing");
+  const confirmation = {
+    route: publishedQuote.route,
+    priceVersion: publishedQuote.priceVersion,
+  };
+  const route = (
+    requestId = crypto.randomUUID(),
+    confirmed?: typeof confirmation,
+  ) =>
+    post("/api/route", {
+      text: "Review this policy.",
+      requestId,
+      confirmation: confirmed,
+    });
   const ask = () =>
     post("/api/admin/audit-events/ask", {
       question: recording.text,
       timeZone: auditDeployment.asked.timeZone,
     });
   try {
-    expect(await (await route(routingRequestId)).json()).toMatchObject({
+    const preview = await route(routingRequestId);
+    expect(preview.status).toBe(409);
+    expect(await preview.json()).toMatchObject({
+      quote: { ...confirmation, creditType: "test" },
+    });
+    expect(
+      (
+        await route(routingRequestId, {
+          ...confirmation,
+          priceVersion: crypto.randomUUID(),
+        })
+      ).status,
+    ).toBe(409);
+    expect(meterIds).toHaveLength(0);
+    expect(gatewayIds).toHaveLength(0);
+    expect(await ledger.balance(person.identity)).toMatchObject({
+      chargedMicrocredits: "0",
+      reservedMicrocredits: "0",
+    });
+    expect(
+      await (await route(routingRequestId, confirmation)).json(),
+    ).toMatchObject({
       agentId: "specialist",
       fallback: false,
     });
-    expect(await (await route(routingRequestId)).json()).toMatchObject({
+    expect(
+      await (await route(routingRequestId, confirmation)).json(),
+    ).toMatchObject({
       agentId: "specialist",
       fallback: false,
     });
@@ -506,13 +543,17 @@ test("routing and Audit Ask settle against their own accounts and refuse unbilla
     expect((await ask()).status).toBe(502); // platform budget exhausted
     expect(meterIds).toHaveLength(3);
     ledgerAvailable = false;
-    expect(await (await route()).json()).toMatchObject({
+    expect(
+      await (await route(crypto.randomUUID(), confirmation)).json(),
+    ).toMatchObject({
       undecided: "unreachable",
     });
     expect(meterIds).toHaveLength(3);
     ledgerAvailable = true;
     meterAvailable = false;
-    expect(await (await route()).json()).toMatchObject({
+    expect(
+      await (await route(crypto.randomUUID(), confirmation)).json(),
+    ).toMatchObject({
       undecided: "unreachable",
     });
     expect(meterIds).toHaveLength(4);

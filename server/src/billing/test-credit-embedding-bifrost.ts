@@ -1,18 +1,12 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
+import { measureInput } from "./input-meter";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
 
 const tokens = z.number().int().positive();
 const identity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$/);
 const batch = z.array(z.string().min(1)).min(1);
-const meterProof = z.object({
-  requestId: z.uuid(),
-  requestSha256: z.string().regex(/^[a-f0-9]{64}$/),
-  gatewayRevision: identity,
-  meteringRevision: identity,
-  inputTokenUpperBound: tokens,
-});
 const terminal = z.object({
   object: z.literal("list"),
   model: identity,
@@ -71,10 +65,11 @@ function requestUuid(
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-${variant}${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
-export type BifrostEmbeddingDispatchProof = Pick<
-  z.infer<typeof meterProof>,
-  "requestId" | "requestSha256" | "inputTokenUpperBound"
->;
+export type BifrostEmbeddingDispatchProof = {
+  requestId: string;
+  requestSha256: string;
+  inputTokenUpperBound: number;
+};
 
 export function createBifrostEmbeddingExecutor({
   endpoint,
@@ -164,32 +159,15 @@ export function createBifrostEmbeddingExecutor({
     };
 
     const meterTimeout = AbortSignal.timeout(5_000);
-    const measurement = await fetch(meter, {
-      method: "POST",
-      redirect: "error",
+    const inputTokenUpperBound = await measureInput({
+      endpoint: meter,
+      token: meterToken,
+      request: { body, operationId, requestId, digest: requestSha256 },
+      revision: { gatewayRevision, meteringRevision },
       signal: signal ? AbortSignal.any([signal, meterTimeout]) : meterTimeout,
-      headers: {
-        ...requestHeaders,
-        authorization: `Bearer ${meterToken}`,
-        "x-openbot-bifrost-gateway-revision": gatewayRevision,
-        "x-openbot-bifrost-metering-revision": meteringRevision,
-      },
-      body,
-    })
-      .then((response) => (response.ok ? response.json() : undefined))
-      .catch(() => undefined);
-    const proof = meterProof.safeParse(measurement);
-    if (
-      !proof.success ||
-      proof.data.requestId !== requestId ||
-      proof.data.requestSha256 !== requestSha256 ||
-      proof.data.gatewayRevision !== gatewayRevision ||
-      proof.data.meteringRevision !== meteringRevision ||
-      signal?.aborted
-    ) {
+    });
+    if (inputTokenUpperBound === 0)
       throw new UnsentBifrostRequest("route_unavailable");
-    }
-    const { inputTokenUpperBound } = proof.data;
     if (inputTokenUpperBound > maxInputTokens) {
       throw new UnsentBifrostRequest("execution_limit");
     }

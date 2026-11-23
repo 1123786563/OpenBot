@@ -3,6 +3,10 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { AppVariables } from "../auth/guards";
 import {
+  RoutingCreditQuoteRequired,
+  routingCreditConfirmation,
+} from "./credit-quote";
+import {
   type HttpCoworkerRoutingService,
   MAX_ROUTING_TEXT_LENGTH,
 } from "./service";
@@ -28,6 +32,7 @@ export function createRoutingRoutes(
       agentId?: unknown;
       skillSlugs?: unknown;
       requestId?: unknown;
+      confirmation?: unknown;
     } | null;
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text) return context.json({ error: "A message is required." }, 400);
@@ -62,13 +67,34 @@ export function createRoutingRoutes(
     if (!requestId.success)
       return context.json({ error: "Invalid routing request ID." }, 400);
 
-    const detail = await routing.routeDetailed({
-      actor: context.var.actor,
-      text,
-      agentId,
-      skillSlugs,
-      ...(requestId.data ? { requestId: requestId.data } : {}),
-    });
+    const confirmation = routingCreditConfirmation
+      .optional()
+      .safeParse(body?.confirmation);
+    if (!confirmation.success || (confirmation.data && !requestId.data))
+      return context.json({ error: "Invalid routing confirmation." }, 400);
+
+    const detail = await routing
+      .routeDetailed({
+        actor: context.var.actor,
+        text,
+        agentId,
+        skillSlugs,
+        confirmation: confirmation.data,
+        ...(requestId.data ? { requestId: requestId.data } : {}),
+      })
+      .catch((error: unknown) => {
+        if (error instanceof RoutingCreditQuoteRequired) return error;
+        throw error;
+      });
+    if (detail instanceof RoutingCreditQuoteRequired)
+      return context.json(
+        {
+          code: "routing_quote_required",
+          error: detail.message,
+          quote: detail.quote,
+        },
+        409,
+      );
     const { result } = detail;
     if (result.kind === "none") {
       return context.json(

@@ -1,6 +1,7 @@
 import { PlanModel, type PlanModelConfig } from "../agents/plan-model";
 import type { RuntimeModel } from "../copilot";
 import { startMarketRequest } from "../skill-market/disablements";
+import type { RoutingCreditConfirmation } from "./credit-quote";
 
 /**
  * One model call on the deployment's own model, for the router, the approval reviewer and the tool
@@ -44,6 +45,7 @@ export type ModelBillingContext = {
   botId: string;
   runId: string;
   step: string;
+  routingConfirmation?: RoutingCreditConfirmation;
   funding:
     | { kind: "user"; budget?: { id: string; stepId?: string } }
     | { kind: "platform"; budget: { id: string; stepId?: string } };

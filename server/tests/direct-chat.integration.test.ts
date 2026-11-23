@@ -717,9 +717,8 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
         gatewayRevision: "fixture-gateway",
         meteringRevision: "fixture-meter",
         inputTokenUpperBound: 1,
-        requestSha256: invalidProof
-          ? "9".repeat(64)
-          : Bun.CryptoHasher.hash("sha256", body, "hex"),
+        requestId: invalidProof ? crypto.randomUUID() : requestId,
+        requestSha256: Bun.CryptoHasher.hash("sha256", body, "hex"),
       });
     },
   });

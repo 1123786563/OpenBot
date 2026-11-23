@@ -543,12 +543,48 @@ test("an app spends only under the grant the person makes, and the grant can be 
 });
 
 test("a person without a Billing Account is told so, not shown a failure", async () => {
-  const queryClient = client();
-  const view = renderCredits(queryClient);
-  // No seeded answers: every read fails, as a server without the person's account answers.
+  const fetch = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof global.fetch>[0], init?: RequestInit) =>
+      String(input) === "/api/billing/balance"
+        ? new Response(null, { status: 404 })
+        : fetch(input, init),
+    { preconnect: fetch.preconnect },
+  );
+  const view = renderCredits(client());
   expect(await view.findByText("No credits yet")).toBeTruthy();
   // The other sections say what they could not load, each in its own place.
   expect(view.getAllByText("Could not load your credits").length).toBe(4);
+});
+
+test("a malformed balance offers a retry without claiming the account is missing", async () => {
+  const fetch = global.fetch;
+  let attempts = 0;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof global.fetch>[0], init?: RequestInit) => {
+      if (String(input) !== "/api/billing/balance") return fetch(input, init);
+      return Response.json(
+        ++attempts === 1
+          ? { availableMicrocredits: {} }
+          : {
+              creditType: "test",
+              grantedMicrocredits: "4000000",
+              availableMicrocredits: "4000000",
+              chargedMicrocredits: "0",
+              reservedMicrocredits: "0",
+            },
+      );
+    },
+    { preconnect: fetch.preconnect },
+  );
+  const view = renderCredits(client());
+  expect(await view.findByText("Couldn’t load Test Credits")).toBeTruthy();
+  expect(view.queryByText("No credits yet")).toBeNull();
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: "Retry" }));
+  expect(await view.findByText("Available")).toBeTruthy();
+  expect(attempts).toBe(2);
 });
 
 test("credits read as people write them, and typed limits become microcredits", () => {
@@ -879,7 +915,7 @@ test("monthly checkout shows paid Beijing periods and submits the selected plan 
   const view = renderCredits(answered());
   expect(await view.findByText("Current period")).toBeTruthy();
   expect(
-    view.getByText(/Jan 31, 2027 at 4:00 AM to Feb 28, 2027 at 12:00 AM/),
+    view.getByText(/Jan 31, 2027.+4:00\s*AM to Feb 28, 2027.+12:00\s*AM/),
   ).toBeTruthy();
   expect(view.getByText("No paid period")).toBeTruthy();
   await user.click(
@@ -888,7 +924,7 @@ test("monthly checkout shows paid Beijing periods and submits the selected plan 
   await user.click(await view.findByRole("button", { name: "Check payment" }));
   expect(
     await view.findByText(
-      /Feb 28, 2027 at 12:00 AM to Mar 31, 2027 at 12:00 AM/,
+      /Feb 28, 2027.+12:00\s*AM to Mar 31, 2027.+12:00\s*AM/,
     ),
   ).toBeTruthy();
   expect(

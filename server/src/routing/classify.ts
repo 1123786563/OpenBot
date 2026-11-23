@@ -1,3 +1,4 @@
+import { RoutingCreditQuoteRequired } from "./credit-quote";
 /**
  * Choosing which coworker an untagged message is for.
  *
@@ -256,7 +257,8 @@ export function createIntentRouter(deps: {
       let raw: string;
       try {
         raw = await this._complete(text, candidates, options);
-      } catch {
+      } catch (error) {
+        if (error instanceof RoutingCreditQuoteRequired) throw error;
         return fallback(
           "sent to your default while the router was unreachable",
           "unreachable",

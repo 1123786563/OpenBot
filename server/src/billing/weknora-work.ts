@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
+import { measureInput } from "./input-meter";
 import { bifrostRouteProof, UnsentBifrostRequest } from "./test-credit-bifrost";
 
 const tokens = z.number().int().nonnegative();
@@ -112,31 +113,14 @@ export function createWeKnoraWorkExecutor(config: {
       "x-request-id": requestId,
       "x-openbot-operation-id": operationId,
     };
-    const reply = await fetch(meter, {
-      method: "POST",
-      body,
-      redirect: "error",
+    const inputTokenUpperBound = await measureInput({
+      endpoint: meter,
+      token: config.meterToken,
+      request: { body, requestId, digest, operationId },
+      revision: route,
       signal: AbortSignal.timeout(5000),
-      headers: {
-        ...headers,
-        authorization: `Bearer ${config.meterToken}`,
-        "x-openbot-bifrost-gateway-revision": route.gatewayRevision,
-        "x-openbot-bifrost-metering-revision": route.meteringRevision,
-      },
-    })
-      .then((response) => (response.ok ? response.json() : undefined))
-      .catch(() => undefined);
-    const proof = z
-      .object({
-        requestId: z.literal(requestId),
-        requestSha256: z.literal(digest),
-        gatewayRevision: z.literal(route.gatewayRevision),
-        meteringRevision: z.literal(route.meteringRevision),
-        inputTokenUpperBound: tokens,
-      })
-      .safeParse(reply);
-    if (!proof.success) throw new UnsentBifrostRequest("route_unavailable");
-    if (proof.data.inputTokenUpperBound > route.maxInputTokens)
+    });
+    if (inputTokenUpperBound > route.maxInputTokens)
       throw new UnsentBifrostRequest("execution_limit");
     if (!(await bind({ requestId, digest })))
       throw new UnsentBifrostRequest("route_unavailable");
@@ -177,7 +161,7 @@ export function createWeKnoraWorkExecutor(config: {
       terminal.usage.completion_tokens ?? (input.kind === "rerank" ? 0 : -1);
     if (
       inputTokens <= 0 ||
-      inputTokens > proof.data.inputTokenUpperBound ||
+      inputTokens > inputTokenUpperBound ||
       outputTokens < 0 ||
       outputTokens > route.maxOutputTokens
     )

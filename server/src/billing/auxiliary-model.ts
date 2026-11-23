@@ -4,6 +4,7 @@ import {
   type ModelOperation,
   managedModelOperationId,
 } from "../managed-model-trial";
+import { RoutingCreditQuoteRequired } from "../routing/credit-quote";
 import type {
   ModelBillingContext,
   ModelCallOptions,
@@ -125,6 +126,13 @@ export function createPilotAuxiliaryModel({
 
     const resolved = await ledger.resolveQuote({});
     if ("reason" in resolved) return { state: "route_unavailable" };
+    if (
+      billing.source === "routing" &&
+      (billing.routingConfirmation?.priceVersion !==
+        resolved.quote.priceVersion ||
+        billing.routingConfirmation.route !== resolved.quote.route)
+    )
+      throw new RoutingCreditQuoteRequired(resolved.quote);
     signal?.throwIfAborted();
     const operationId = managedModelOperationId(input);
     const held = await ledger.reserve(identity, {

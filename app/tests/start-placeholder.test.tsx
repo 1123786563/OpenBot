@@ -84,6 +84,59 @@ test("a Bot chosen with @ and the message appear in the Conversation handoff", a
   ).toBeTruthy();
 });
 
+test("automatic routing keeps the start ID and waits for a confirmed quote", async () => {
+  const quote = {
+    creditType: "test",
+    route: "routing-fixture",
+    priceVersion: crypto.randomUUID(),
+    provider: "fixture",
+    model: "routing",
+    price: { inputPerMillion: 10, outputPerMillion: 20 },
+    maxChargeMicrocredits: "30",
+    usageDisclosure: "Interrupted routing may still use Test Credits.",
+  };
+  const requests: unknown[] = [];
+  let created = 0;
+  answerRequests(async (url, init) => {
+    if (url === "/api/route") {
+      requests.push(JSON.parse(String(init?.body)));
+      return requests.length === 1
+        ? Response.json(
+            { code: "routing_quote_required", quote },
+            { status: 409 },
+          )
+        : Response.json({ agentId: knowledge.id });
+    }
+    if (url === "/api/channels" && init?.method === "POST") {
+      created++;
+      return createdChannel(
+        "channel-quoted",
+        readChannelRequest(init).agentIds,
+      );
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  const view = renderAt("/");
+  await submitHomeMessage(view, "Review the quarterly numbers");
+  expect(await view.findByText("Use Test Credits to pick a Bot?")).toBeTruthy();
+  expect(view.getByText(/Maximum 30 microcredits for routing/)).toBeTruthy();
+  const requestId = view.router.state.location.pathname.slice("/start/".length);
+  expect(requests).toEqual([
+    { text: "Review the quarterly numbers", requestId },
+  ]);
+  expect(created).toBe(0);
+
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(view.getByRole("button", { name: "Confirm routing" }));
+  await view.findByText("The conversation");
+  expect(requests[1]).toMatchObject({
+    requestId,
+    confirmation: { route: quote.route, priceVersion: quote.priceVersion },
+  });
+  expect(created).toBe(1);
+});
+
 test("reloading an interrupted creation keeps the first message and reuses its request ID", async () => {
   const requests: string[] = [];
   answerRequests(async (url, init) => {

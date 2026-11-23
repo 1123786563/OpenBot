@@ -88,6 +88,10 @@ Local PostgreSQL and HTTP fixtures cover the application credential,
 scoped authorization, metered dispatch, and paid receipt.
 
 
+## Migration history
+
+Migration `0102_test_credit_execution_budgets` was originally authored before its Drizzle snapshot. Existing pilot ledgers identify it by its SQL hash. During integration, its original SQL was retained byte for byte and its snapshot was moved into the merged chain. The Drizzle snapshot check and fresh and upgrade database comparisons cover the combined schema. Generate future schema changes using Drizzle as described in the [migration workflow](development.md#migrations).
+
 ## Set the shared provider-cost ceiling
 
 Apply migration `0119_shared_pilot_provider_cost` before deploying the updated API and Worker. Run these commands from `server/` with the operator's database credentials.

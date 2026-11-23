@@ -88,6 +88,7 @@ import {
   type SpendingAuthorization,
   weknoraPreviewQueryOptions,
 } from "@/lib/billing/queries";
+import { ClientError } from "@/lib/client";
 import { queryClient } from "@/query-client";
 
 /**
@@ -182,9 +183,20 @@ function TestCreditsSection() {
   return (
     <PageSection title="Test credits">
       {balance.isPending ? null : balance.error ? (
-        <PageEmpty icon={IconWallet} title="No credits yet">
-          An admin adds Test Credits to your account.
-        </PageEmpty>
+        balance.error instanceof ClientError && balance.error.status === 404 ? (
+          <PageEmpty icon={IconWallet} title="No credits yet">
+            An admin adds Test Credits to your account.
+          </PageEmpty>
+        ) : (
+          <PageEmpty icon={IconWallet} title="Couldn’t load Test Credits">
+            <Button
+              onClick={() => void balance.refetch()}
+              disabled={balance.isFetching}
+            >
+              Retry
+            </Button>
+          </PageEmpty>
+        )
       ) : (
         <PageRows>
           <ValueRow

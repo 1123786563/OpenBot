@@ -21,6 +21,8 @@ test("the background budget shows credit type, rate, and cap before creating a b
   });
   const quote = {
     creditType: "test",
+    provider: "fixture",
+    usageDisclosure: "Interrupted requests may use Test Credits.",
     model: "Fixture model",
     route: "fixture-route",
     priceVersion,
@@ -54,8 +56,10 @@ test("the background budget shows credit type, rate, and cap before creating a b
     );
     expect(view.getByText(/Fixture model costs 10/)).toBeDefined();
     expect(
-      view.getByRole("combobox", { name: "Credit type" }).textContent,
-    ).toBe("Test Credits");
+      view
+        .getByRole("radio", { name: "Test Credits" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
     const user = userEvent.setup({ document: view.container.ownerDocument });
     await user.type(view.getByLabelText("Cumulative cap in Credits"), "2.5");
     expect(requests).toEqual([]);

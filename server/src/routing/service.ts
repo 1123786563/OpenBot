@@ -9,6 +9,7 @@ import type {
   RoutingCandidate,
   RoutingUndecided,
 } from "./classify";
+import type { RoutingCreditConfirmation } from "./credit-quote";
 
 const PICKED_HARNESS_AGENT_ID = "picked-harness";
 
@@ -59,6 +60,7 @@ export type CoworkerRoutingInput = {
   /** Every selected skill must be offered by the recipient. */
   skillSlugs?: readonly string[];
   requestId?: string;
+  confirmation?: RoutingCreditConfirmation;
 };
 
 export type CoworkerRouteDetail = {
@@ -488,6 +490,7 @@ export function createCoworkerRoutingService(
                 .digest("hex")
             : crypto.randomUUID(),
           step: "route-intent",
+          routingConfirmation: input.confirmation,
           funding: { kind: "user" },
         },
       },
