@@ -739,6 +739,14 @@ const noIntelligence = {
 test("a connected Recorder submits an OpenBot recording once without Intelligence", async () => {
   const h = build(noIntelligence);
   const { token } = await connect(h);
+  expect(h.kicked).toEqual([]);
+  const learning = await call(h, "/api/recorder/learning", {
+    headers: bearer(token),
+  });
+  expect(learning.status).toBe(200);
+  expect(await learning.json()).toEqual({
+    learning: { state: "openbot", containerId: null },
+  });
   const recordingId = randomUUID();
   const trajectoryId = randomUUID();
   const path = `/api/recorder/capture/${trajectoryId}`;

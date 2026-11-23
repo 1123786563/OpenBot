@@ -116,8 +116,10 @@ export type RecorderMe = { user: RecorderUser; connectionId: string };
 /** Decision 10, for the person's own Learning space: assigned (it exists), unassigned (Automatic Learning is off, so
  * there is no space), missing (it does not exist and could not be made), learning-off (Intelligence's Learning delivery
  * is off, unlicensed or unavailable, so existence was not checked), unverified (Intelligence could not be asked, or the
- * space was still being made), unjoined (the runtime's 5 s deadline passed and it joined no space). */
+ * space was still being made), unjoined (the runtime's 5 s deadline passed and it joined no space),
+ * openbot (the recording is stored in OpenBot and available for native Learning). */
 export const LEARNING_SPACE_STATES = [
+  "openbot",
   "assigned",
   "unassigned",
   "missing",
