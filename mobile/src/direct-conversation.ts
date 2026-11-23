@@ -167,9 +167,10 @@ export function directConversation(
       signal: AbortSignal,
     ) {
       if (position?.runId !== runId) position = { runId, cursor: 0 };
+      const replay = position;
       const response = await post(
         `${agent}/resume`,
-        { threadId, ...position },
+        { threadId, ...replay },
         signal,
       );
       const reader = response.body?.getReader();
@@ -185,7 +186,7 @@ export function directConversation(
           const chunk = await reader.read();
           if (chunk.done || signal.aborted) return;
           buffer += decoder.decode(chunk.value, { stream: true });
-          let cursor = position.cursor;
+          let cursor = replay.cursor;
           let changed = false;
           let terminal = false;
           for (
@@ -211,7 +212,8 @@ export function directConversation(
           }
           if (changed) {
             await refresh();
-            position.cursor = cursor;
+            if (signal.aborted) return;
+            replay.cursor = Math.max(replay.cursor, cursor);
           }
           if (terminal) return;
         }
