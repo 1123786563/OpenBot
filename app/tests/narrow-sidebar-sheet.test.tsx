@@ -17,7 +17,8 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
+import { i18n, setLocalePreference } from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
 import { agentKeys } from "@/lib/agents/queries";
@@ -67,7 +68,8 @@ beforeAll(() => {
   });
   globalThis.WebSocket = OfflineWebSocket as unknown as typeof WebSocket;
 });
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   globalThis.fetch = Object.assign(
     async () => Response.json({ error: "not served" }, { status: 404 }),
     { preconnect: originalFetch.preconnect },
@@ -446,4 +448,39 @@ test("new attention and check-ins notify once while narrow navigation is closed"
     if (original) Object.defineProperty(globalThis, "Notification", original);
     else Reflect.deleteProperty(globalThis, "Notification");
   }
+});
+
+test("changing language keeps the narrow navigation open, its search and people's titles intact", async () => {
+  const app = renderNarrowApp();
+  const sheet = await app.openSheet();
+  const search = within(sheet).getByRole("textbox", {
+    name: "Search conversations",
+  });
+  await app.user.type(search, "Hacker");
+  await act(() => setLocalePreference("zh-CN"));
+  expect(app.view.getByRole("dialog", { name: "导航" })).toBe(sheet);
+  expect(within(sheet).getByRole("textbox", { name: "搜索对话" })).toBe(search);
+  expect(search).toHaveProperty("value", "Hacker");
+  expect(
+    within(sheet).getByRole("link", { name: /Hacker News Top Stories/ }),
+  ).toBeTruthy();
+  expect(
+    within(sheet).getByRole("link", {
+      name: /Personal Assistant\b.*AI Model and Agent Framework/,
+    }),
+  ).toBeTruthy();
+  expect(within(sheet).getByRole("link", { name: "教 Bot 做事" })).toBeTruthy();
+  await app.user.click(
+    within(sheet).getByRole("button", { name: /Dana Fresh/ }),
+  );
+  const menu = await app.view.findByRole("menu");
+  expect(within(menu).getByRole("menuitem", { name: "设置" })).toBeTruthy();
+  expect(within(menu).queryByRole("menuitem", { name: "退出登录" })).toBeNull();
+  await app.user.click(
+    within(menu).getByRole("menuitem", { name: "OpenBot for Business" }),
+  );
+  expect(
+    await app.view.findByRole("dialog", { name: "OpenBot for Business" }),
+  ).toBeTruthy();
+  await act(() => setLocalePreference("en"));
 });
