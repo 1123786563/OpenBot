@@ -216,17 +216,30 @@ test("what it says after a switch is in the new language: how ready, then how th
   await waitFor(() =>
     expect(view.getByRole("status").textContent).toBe("正在重启…"),
   );
+
+  // A status already on screen is said again in the new language.
+  const status = view.getByRole("status");
+  await pinLocale("en");
+  expect(status.textContent).toBe("Restarting…");
 });
 
 test("a failed install is said in the interface language, with the app's own reason as it wrote it", async () => {
   inDesktop();
-  await pinLocale("zh-CN");
   installFailure = "signature verification failed";
   const view = show();
-  fireEvent.click(await view.findByRole("button", { name: "更新并重启" }));
-  expect((await view.findByRole("alert")).textContent).toBe(
-    "无法安装更新：signature verification failed",
+  fireEvent.click(
+    await view.findByRole("button", { name: "Update and restart" }),
   );
+  const said = await view.findByRole("alert");
+  expect(said.textContent).toBe(
+    "Couldn't install the update: signature verification failed",
+  );
+
+  await pinLocale("zh-CN");
+
+  // Said again while on screen; the app's reason stays as the app wrote it.
+  expect(view.getByRole("alert")).toBe(said);
+  expect(said.textContent).toBe("无法安装更新：signature verification failed");
   expect(view.getByRole("button", { name: "更新并重启" })).toBeTruthy();
 });
 

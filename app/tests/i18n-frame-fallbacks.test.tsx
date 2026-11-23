@@ -13,9 +13,11 @@ import {
   MissingPage,
   RouteLoadError,
 } from "@/components/layout/route-recovery";
+import { PageShell } from "@/components/layout/page-shell";
 import { ReadError } from "@/components/layout/read-status";
 import { Toaster, toast } from "@/components/ui/toast";
 import { client } from "@/lib/client";
+import { useTranslation } from "@/i18n";
 import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
@@ -222,4 +224,32 @@ test("a toast's close button speaks the interface language", async () => {
   await waitFor(() =>
     expect(document.querySelector("[data-slot=toast-close]")).toBeNull(),
   );
+});
+
+/** A page that has moved to the catalog names itself through `t`, so the tab follows the language. */
+function NamedPage() {
+  const { t } = useTranslation();
+  return (
+    <PageShell title={t("frame.pageNotFound", "Page not found")}>
+      Body
+    </PageShell>
+  );
+}
+
+test("the tab title follows a translated page, and a page still in English stays so", async () => {
+  const unmigrated = render(<PageShell title="Connections">Body</PageShell>);
+  expect(document.title).toBe("Connections · OpenBot");
+
+  await pinLocale("zh-CN");
+
+  // Its title never changes, so nothing asks the tab to be said again.
+  expect(document.title).toBe("Connections · OpenBot");
+  unmigrated.unmount();
+
+  render(<NamedPage />);
+  expect(document.title).toBe("页面不存在 · OpenBot");
+
+  await pinLocale("en");
+
+  expect(document.title).toBe("Page not found · OpenBot");
 });
