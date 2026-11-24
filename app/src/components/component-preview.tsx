@@ -1,6 +1,10 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { Stack } from "@astryxdesign/core/Stack";
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { SandboxHost } from "@/components/gallery/sandbox-host";
 import { galleryComponent } from "@/lib/copilot/gallery-registry";
 import {
   type SandboxedRecord,
@@ -19,9 +23,28 @@ export function AdminComponentPreview({
     ...sandboxedListQueryOptions(),
     enabled: kind === "sandboxed",
   });
-  if (kind === "sandboxed" && sandboxed.isPending) return null;
+  if (kind === "sandboxed" && sandboxed.isPending) {
+    return <SandboxHost status={LOADING} {...TILE} />;
+  }
   if (kind === "sandboxed" && sandboxed.error) {
-    return <PreviewNotice>Preview could not be loaded.</PreviewNotice>;
+    return (
+      <SandboxHost
+        status={{
+          kind: "error",
+          message: "Couldn't load the preview.",
+          action: (
+            <Button
+              clickAction={async () => {
+                await sandboxed.refetch();
+              }}
+              label="Retry"
+              size="sm"
+            />
+          ),
+        }}
+        {...TILE}
+      />
+    );
   }
   return (
     <ComponentPreview
@@ -32,14 +55,10 @@ export function AdminComponentPreview({
   );
 }
 
-function PreviewNotice({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full w-full items-center justify-center p-4">
-      {/* The artwork stays pale in both themes, so this text must stay dark. */}
-      <p className="text-center text-slate-700 text-xs">{children}</p>
-    </div>
-  );
-}
+const LOADING = { kind: "loading", message: "Loading the preview…" } as const;
+
+/** A tile has its own border and artwork, so the host draws no frame there. */
+const TILE = { variant: "transparent" } as const;
 
 export function ComponentPreview({
   name,
@@ -73,9 +92,13 @@ export function ComponentPreview({
   if (sandboxed?.name === name) {
     if (!sandboxed.published || sandboxed.publishedHtml === null) {
       return (
-        <PreviewNotice>
-          Publish in the playground to see a preview.
-        </PreviewNotice>
+        <SandboxHost
+          status={{
+            kind: "notice",
+            message: "Publish in the playground to see a preview.",
+          }}
+          {...TILE}
+        />
       );
     }
     const content = {
@@ -89,10 +112,7 @@ export function ComponentPreview({
     };
     return (
       <FittedPreview fill={fill}>
-        <div
-          className="w-full"
-          title="Published component with saved sample arguments"
-        >
+        <SandboxHost {...TILE}>
           <OpenGenerativeUIActivityRenderer
             activityType="open-generative-ui"
             agent={null}
@@ -100,19 +120,23 @@ export function ComponentPreview({
             key={JSON.stringify(content)}
             message={null}
           />
-        </div>
+        </SandboxHost>
       </FittedPreview>
     );
   }
 
   return (
-    <PreviewNotice>
-      {entry
-        ? "This one is only drawn in a conversation."
-        : kind === "sandboxed"
-          ? "Published in the playground."
-          : "This build cannot draw this."}
-    </PreviewNotice>
+    <SandboxHost
+      status={{
+        kind: "notice",
+        message: entry
+          ? "This one is only drawn in a conversation."
+          : kind === "sandboxed"
+            ? "Published in the playground."
+            : "This build cannot draw this.",
+      }}
+      {...TILE}
+    />
   );
 }
 
@@ -121,11 +145,11 @@ export function ComponentPreview({
  * column: previewing at the tile's own width would be a different component.
  *
  * Only an upper bound, and deliberately not read as the component's width. `GalleryFrame` caps
- * itself at `max-w-2xl`, which is 42rem, or 672px against the app's 16px root. The drawn width is
+ * itself at `max-w-2xl`, which is 42rem. The drawn width is
  * still measured rather than assumed: a root that once differed left every preview sitting half the
  * difference off centre.
  */
-const PREVIEW_LAYOUT_WIDTH = 672;
+const PREVIEW_LAYOUT_WIDTH = "42rem";
 
 /**
  * How much of the space it could fill a preview actually takes, leaving the rest as margin.
@@ -203,11 +227,15 @@ function FittedPreview({
   }, [fill]);
 
   return (
-    <div
+    <Stack
       aria-hidden="true"
-      className="flex h-full w-full items-center justify-center overflow-hidden"
+      className="relative overflow-hidden"
+      hAlign="center"
+      height="100%"
       inert
       ref={box}
+      vAlign="center"
+      width="100%"
     >
       {/*
        * Centred by the flex parent and scaled about its own middle. The layout box stays full size
@@ -217,8 +245,9 @@ function FittedPreview({
        * A flex row itself, so a component narrower than the column it was given is centred in it
        * rather than left against one edge. Whatever `max-w-2xl` resolves to, the slack is split.
        */}
-      <div
-        className="flex shrink-0 justify-center transition-opacity"
+      <Stack
+        className="shrink-0 transition-opacity"
+        hAlign="center"
         ref={content}
         style={{
           // Until the tile has been measured there is no honest scale, so draw nothing.
@@ -228,7 +257,18 @@ function FittedPreview({
         }}
       >
         {children}
-      </div>
-    </div>
+      </Stack>
+      {scale > 0 ? null : (
+        // Mounted but invisible until measured, so the wait is said out loud.
+        <Stack
+          className="absolute inset-0"
+          hAlign="center"
+          role="status"
+          vAlign="center"
+        >
+          <Spinner label={LOADING.message} />
+        </Stack>
+      )}
+    </Stack>
   );
 }

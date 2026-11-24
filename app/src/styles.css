@@ -120,16 +120,16 @@
  * came back correct and larger is left alone. The reader gets an interface that is present and may
  * be cut off, instead of a turn that looks like the Bot said nothing at all.
  *
- * Selected through the frame rather than through a class of ours because both chat surfaces render
- * this container and only one of them is ours: the packaged chat builds it too, and a rule that
- * needed our wrapper would fix the transcript and leave the other surface broken. `websandbox__frame`
- * is the class the sandbox library puts on the frame it creates.
+ * Selected through the frame: `websandbox__frame` is the class the sandbox library puts on the
+ * frame it creates. Scoped to the host that OpenBot draws around every sandboxed component
+ * (`components/gallery/sandbox-host.tsx`), which the conversation, previews and the Playground all
+ * draw through, so a sandbox mounted anywhere else is not made taller unasked.
  *
  * DELETE THIS WHEN THE SDK IS FIXED. It compensates for someone else's arithmetic, so it should not
  * outlive the bug: once the measurement re-runs on sandbox-ready and after the queue drains, this
  * rule can only make small interfaces taller than they asked to be.
  */
-:where(div:has(> iframe.websandbox__frame)) {
+[data-sandbox-host] :where(div:has(> iframe.websandbox__frame)) {
   min-height: 200px;
 }
 

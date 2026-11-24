@@ -10,7 +10,7 @@ import {
 import * as ReactCoreV2 from "@copilotkit/react-core/v2";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import {
   AdminComponentPreview,
   ComponentPreview,
@@ -155,6 +155,57 @@ test("compiled previews retain their real component and do not fetch sandboxed s
     ).toBeTruthy();
     expect(fetcher).not.toHaveBeenCalled();
     expect(renderer).not.toHaveBeenCalled();
+  } finally {
+    queryClient.clear();
+  }
+});
+
+test("the preview shows a loading state while its source and size are still unknown", async () => {
+  let answer: (value: Response) => void = () => {};
+  fetcher.mockReturnValue(
+    new Promise<Response>((resolve) => (answer = resolve)),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  try {
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <AdminComponentPreview kind="sandboxed" name={PUBLISHED.name} />
+      </QueryClientProvider>,
+    );
+    // Not blank: the tile says what it is waiting for.
+    expect(view.getByRole("status").textContent).toContain(
+      "Loading the preview…",
+    );
+
+    answer(Response.json({ components: [PUBLISHED] }));
+    const sandbox = await view.findByTestId("sandbox-renderer");
+    // happy-dom lays nothing out, so the preview is never measured here: it stays in loading.
+    // The preview is hidden from assistive technology, so the role is not queryable.
+    expect(view.getByText("Loading the preview…")).toBeTruthy();
+    expect(sandbox.closest("[data-sandbox-host]")).toBeTruthy();
+  } finally {
+    queryClient.clear();
+  }
+});
+
+test("a preview whose source can't be read shows an Astryx error and a retry", async () => {
+  fetcher.mockResolvedValue(Response.json({}, { status: 500 }));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  try {
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <AdminComponentPreview kind="sandboxed" name={PUBLISHED.name} />
+      </QueryClientProvider>,
+    );
+    const failed = await view.findByText("Couldn't load the preview.");
+    expect(failed.closest(".astryx-banner")).toBeTruthy();
+    fetcher.mockResolvedValue(Response.json({ components: [PUBLISHED] }));
+    fireEvent.click(view.getByRole("button", { name: "Retry" }));
+    expect(await view.findByTestId("sandbox-renderer")).toBeTruthy();
   } finally {
     queryClient.clear();
   }
