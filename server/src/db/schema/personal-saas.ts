@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
+  boolean,
   check,
   index,
   integer,
@@ -72,6 +74,54 @@ export const personalWorkspaces = pgTable("personal_workspaces", {
     .unique()
     .references(() => personalSaasAccounts.id),
 });
+
+export const personalWorkspaceAgenticSpaces = pgTable(
+  "personal_workspace_agentic_spaces",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
+    agenticSpaceId: text("agentic_space_id").notNull().unique(),
+    fileSystemId: text("file_system_id").notNull(),
+    accessPointId: text("access_point_id").notNull().unique(),
+    accessPointDomain: text("access_point_domain").notNull(),
+    roleArn: text("role_arn").notNull().unique(),
+    storageEgressIps: text("storage_egress_ips").array().notNull(),
+    vpcId: text("vpc_id").notNull(),
+    vSwitchId: text("vswitch_id").notNull(),
+    securityGroupId: text("security_group_id").notNull(),
+  },
+);
+
+export const personalWorkspaceAgentSandboxes = pgTable(
+  "personal_workspace_agent_sandboxes",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => personalWorkspaces.id, { onDelete: "cascade" }),
+    generation: uuid().notNull(),
+    epoch: integer().notNull(),
+    startedAt: bigint("started_at", { mode: "number" }).notNull(),
+    issuedAt: bigint("issued_at", { mode: "number" }).notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+    phase: text({
+      enum: ["starting", "active", "stopping", "stopped"],
+    }).notNull(),
+    cutoff: text({ enum: ["confirmed", "failed"] }),
+    flashScope: text("flash_scope"),
+    flashCreateRequested: boolean("flash_create_requested")
+      .notNull()
+      .default(false),
+    flashSandboxId: text("flash_sandbox_id"),
+    flashAgenticSpaceId: text("flash_agentic_space_id"),
+    flashConnection: text("flash_connection"),
+    flashWorkRequested: boolean("flash_work_requested")
+      .notNull()
+      .default(false),
+    flashWorkerExit: jsonb("flash_worker_exit"),
+    flashDestroyedAt: bigint("flash_destroyed_at", { mode: "number" }),
+  },
+);
 
 export const personalWorkspaceDefaultBots = pgTable(
   "personal_workspace_default_bots",

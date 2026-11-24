@@ -134,8 +134,14 @@ test.each([
     const bifrost = migrations.filter(({ tag }) =>
       /_(bifrost_market_reviews|skill_market_equivalences)$/.test(tag),
     );
+    // Pin the historical parent before Bifrost and the sandbox migrations joined it.
     const saas = migrations
-      .slice(93)
+      .slice(
+        93,
+        migrations.findIndex(
+          ({ tag }) => tag === "0117_bifrost_market_reviews",
+        ),
+      )
       .filter((entry) => !corsair.includes(entry) && !bifrost.includes(entry));
     const historical = [
       ...migrations.slice(0, mainThrough),
@@ -204,6 +210,12 @@ test.each([
       expect(await exists(client, "skill_market_runs")).toBe(true);
       expect(await exists(client, "bifrost_market_reviews")).toBe(true);
       expect(await exists(client, "skill_market_equivalences")).toBe(true);
+      expect(await exists(client, "personal_workspace_agent_sandboxes")).toBe(
+        true,
+      );
+      expect(await exists(client, "personal_workspace_agentic_spaces")).toBe(
+        true,
+      );
       expect([
         ...(await client`select hash, created_at::text
         from drizzle.__drizzle_migrations order by created_at::bigint`),

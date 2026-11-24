@@ -237,7 +237,11 @@ export function personalBotWork(
           controller.signal.throwIfAborted();
           if (computer?.kind !== "running")
             throw new ComputerUnavailableError(workspaceComputerRestartMessage);
-          return { url: computer.address, token: computer.token };
+          return {
+            url: computer.address,
+            token: computer.token,
+            trafficAccessToken: computer.trafficAccessToken,
+          };
         }
 
         const initiator = { kind: "routine", id: item.key } as const;

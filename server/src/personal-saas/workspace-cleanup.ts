@@ -23,6 +23,7 @@ import {
   personalSaasAccounts,
   personalSaasSessions,
   personalSupportRequests,
+  personalWorkspaceAgenticSpaces,
   personalWorkspaceClosures,
   personalWorkspaceDefaultBots,
   personalWorkspaceIntegrationGrants,
@@ -141,6 +142,7 @@ export function workspaceCleanup({
   now,
   stopped,
   eraseComputer,
+  agenticStorage = false,
   eraseThread,
 }: {
   database: Database;
@@ -151,6 +153,7 @@ export function workspaceCleanup({
     target: { threadId: string; agentId: string },
   ) => Promise<void>;
   eraseComputer?: (workspaceId: string) => Promise<void>;
+  agenticStorage?: boolean;
   stopped?: (workspaceId: string) => Promise<boolean>;
 }) {
   const ready = (closure: Closure) =>
@@ -190,7 +193,19 @@ export function workspaceCleanup({
           await purgePostgres(savepoint, target);
           return "confirmed";
         }
-        if (key === "computerVolume") await eraseComputer?.(workspaceId);
+        if (key === "computerVolume") {
+          if (!agenticStorage) {
+            const [binding] = await savepoint
+              .select({ id: personalWorkspaceAgenticSpaces.workspaceId })
+              .from(personalWorkspaceAgenticSpaces)
+              .where(
+                eq(personalWorkspaceAgenticSpaces.workspaceId, workspaceId),
+              );
+            if (binding) return "unconfirmed";
+          }
+          if (stopped && !(await stopped(workspaceId))) return "unconfirmed";
+          await eraseComputer?.(workspaceId);
+        }
         if (key === "internalServices") {
           const inventory = await readIntelligenceInventory(savepoint, [
             accountId,
@@ -279,11 +294,6 @@ export function workspaceCleanup({
           if (
             !record.computerCutoff ||
             record.cleanup.computerVolume?.status === "confirmed"
-          )
-            continue;
-          if (
-            stopped &&
-            !(await stopped(record.workspaceId).catch(() => false))
           )
             continue;
         }

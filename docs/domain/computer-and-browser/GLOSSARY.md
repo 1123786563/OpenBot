@@ -4,6 +4,10 @@
 
 The Bot's execution environment for browser, terminal, file, and other computer actions. Each Bot has a computer context with its own access boundaries.
 
+## Managed Computer
+
+A Computer assigned to a Personal SaaS workspace. The workspace owner can start and stop it, and its files belong to the workspace across starts and stops.
+
 ## Browser session
 
 The live browser state a Bot or person can inspect and control, including its open pages and current navigation.

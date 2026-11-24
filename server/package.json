@@ -44,6 +44,7 @@
     "corsair": "0.2.15",
     "cron-parser": "^5",
     "drizzle-orm": "^0.45.2",
+    "e2b": "2.31.0",
     "eventsource": "3.0.7",
     "fflate": "0.8.3",
     "hono": "^4.10.0",
