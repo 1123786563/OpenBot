@@ -3,7 +3,7 @@ import {
   type QueryClient,
   queryOptions,
 } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 export type MemoryRecord = {
   id: string;
   content: string;
@@ -43,16 +43,44 @@ export const memoryKeys = {
 export const memoriesQueryOptions = () =>
   queryOptions({
     queryKey: memoryKeys.all,
-    queryFn: (): Promise<MemoryRecord[]> =>
-      client("/api/memory", "memories", { fallback: "Could not load memory" }),
+    queryFn: ({ client: cache, queryKey }): Promise<MemoryRecord[]> =>
+      client<MemoryRecord[]>("/api/memory", "memories", {
+        fallback: "Could not load memory",
+      }).catch((error: unknown) => {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData<MemoryRecord[]>(queryKey, (current) =>
+            current?.length ? [] : current,
+          );
+        }
+        throw error;
+      }),
   });
 export const memorySourcesQueryOptions = () =>
   queryOptions({
     queryKey: memoryKeys.sources,
-    queryFn: (): Promise<MemorySource[]> =>
-      client("/api/memory/sources", "sources", {
-        fallback: "Could not load memory sources",
-      }),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<MemorySource[]> => {
+      try {
+        return await client("/api/memory/sources", "sources", {
+          fallback: "Could not load memory sources",
+          signal,
+        });
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData<MemorySource[]>(queryKey, []);
+        }
+        throw error;
+      }
+    },
     refetchInterval: 15_000,
   });
 export const availableMemorySourcesQueryOptions = (id: string) =>
@@ -76,7 +104,7 @@ export const updateMemory = (
   id: string,
   input: { content?: string; enabled?: boolean; reviewState?: "confirmed" },
 ) =>
-  client(`/api/memory/${encodeURIComponent(id)}`, {
+  client<MemoryRecord>(`/api/memory/${encodeURIComponent(id)}`, "memory", {
     method: "PATCH",
     body: input,
     fallback: "Could not update memory",
@@ -130,11 +158,30 @@ export const updateMemoryMutationOptions = (queryClient: QueryClient) =>
       id: string;
       input: { content?: string; enabled?: boolean; reviewState?: "confirmed" };
     }) => updateMemory(id, input),
+    onSuccess: async (memory, { id }) => {
+      if (!memory) return;
+      await queryClient.cancelQueries({
+        queryKey: memoryKeys.all,
+        exact: true,
+      });
+      queryClient.setQueryData<MemoryRecord[]>(memoryKeys.all, (current) =>
+        current?.map((record) => (record.id === id ? memory : record)),
+      );
+    },
     onSettled: settleMemory(queryClient),
   });
 export const deleteMemoryMutationOptions = (queryClient: QueryClient) =>
   mutationOptions({
     mutationFn: deleteMemory,
+    onSuccess: async (_, id) => {
+      await queryClient.cancelQueries({
+        queryKey: memoryKeys.all,
+        exact: true,
+      });
+      queryClient.setQueryData<MemoryRecord[]>(memoryKeys.all, (current) =>
+        current?.filter((record) => record.id !== id),
+      );
+    },
     onSettled: settleMemory(queryClient),
   });
 
@@ -155,5 +202,17 @@ export const memorySourceActionMutationOptions = (queryClient: QueryClient) =>
       sourceId: string;
       name: "sync" | "remove" | "enable" | "disable";
     }) => memorySourceAction(sourceId, name),
-    onSuccess: settleMemory(queryClient),
+    onSuccess: async (_, { sourceId, name }) => {
+      if (name === "remove") {
+        await queryClient.cancelQueries({
+          queryKey: memoryKeys.sources,
+          exact: true,
+        });
+        queryClient.setQueryData<MemorySource[]>(
+          memoryKeys.sources,
+          (current) => current?.filter((source) => source.id !== sourceId),
+        );
+      }
+      await settleMemory(queryClient)();
+    },
   });

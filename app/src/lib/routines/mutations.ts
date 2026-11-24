@@ -2,7 +2,7 @@ import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { channelKeys } from "@/lib/channels/queries";
 import { client } from "@/lib/client";
 import { NEW_CONVERSATION } from "./form";
-import { routineKeys } from "./queries";
+import { type RoutinesPage, routineKeys } from "./queries";
 
 /**
  * Writes against a person's own standing instructions.
@@ -102,7 +102,19 @@ export function deleteRoutineMutationOptions(queryClient: QueryClient) {
         method: "DELETE",
         fallback: FALLBACK,
       }),
-    onSuccess: () => invalidateRoutines(queryClient),
+    onSuccess: async (_, id) => {
+      await queryClient.cancelQueries({ queryKey: routineKeys.list() });
+      queryClient.setQueryData<RoutinesPage>(routineKeys.list(), (current) =>
+        current
+          ? {
+              ...current,
+              routines: current.routines.filter((routine) => routine.id !== id),
+            }
+          : undefined,
+      );
+      queryClient.removeQueries({ queryKey: routineKeys.runs(id) });
+      return invalidateRoutines(queryClient);
+    },
   });
 }
 

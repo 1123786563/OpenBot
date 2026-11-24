@@ -1,5 +1,21 @@
 import { Fragment } from "react";
+import { FieldDescription } from "@/components/ui/field";
 import { RULE_ATTRIBUTES } from "@/lib/boundaries/rules";
+
+export const RULE_EXPRESSION_HELP_ID = "rule-expression-help";
+
+export function RuleExpressionHelp() {
+  return (
+    <FieldDescription id={RULE_EXPRESSION_HELP_ID}>
+      <span className="block">
+        Write a CEL condition. An action matches when the condition is true.
+      </span>
+      <code className="block whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs">
+        tool.name == "computer_key" &amp;&amp; key == "Enter"
+      </code>
+    </FieldDescription>
+  );
+}
 
 /**
  * What a rule can check, folded away until it is wanted. It used to be the page's description, a
@@ -24,11 +40,8 @@ export function RuleReference() {
       <p className="mt-3 text-muted-foreground">
         A rule that names something an action doesn't have, such as{" "}
         <code className="font-mono text-xs">key</code> on a click, counts as a
-        match. Name the tool first so the rest is only checked where it applies:{" "}
-        <code className="font-mono text-xs">
-          tool.name == "computer_key" && key == "Enter"
-        </code>
-        .
+        match. Name the tool first, as in the example above, to check attributes
+        only on actions that have them.
       </p>
     </details>
   );

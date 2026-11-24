@@ -131,17 +131,17 @@ export function YourRecordings({
                     <ItemMedia variant="icon">
                       <IconVideo />
                     </ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>{row.title ?? "Untitled recording"}</ItemTitle>
-                      <ItemDescription>
+                    <ItemContent className="min-w-0">
+                      <ItemTitle className="block w-auto wrap-anywhere">
+                        {row.title ?? "Untitled recording"}
+                      </ItemTitle>
+                      <ItemDescription className="line-clamp-none">
                         {new Date(row.recordedAt).toLocaleString()}
                       </ItemDescription>
                     </ItemContent>
                     {ended ? (
-                      <ItemActions>
-                        <span className="text-muted-foreground text-sm">
-                          {ended}
-                        </span>
+                      <ItemActions className="max-sm:basis-full">
+                        <p className="text-muted-foreground text-sm">{ended}</p>
                       </ItemActions>
                     ) : null}
                   </Item>

@@ -1,4 +1,5 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import { client, tryClient } from "@/lib/client";
 import { identityKeys } from "./queries";
 
@@ -41,20 +42,31 @@ export function unlinkMutationOptions(queryClient: QueryClient) {
 }
 
 /** A one-time code the person sends to the bot in Slack to link their account. */
-export type SlackLinkCode = {
-  code: string;
-  expiresAt: string;
-  instruction: string;
-};
+const slackLinkCode = z.object({
+  code: z.string().trim().min(1),
+  expiresAt: z.iso.datetime(),
+  instruction: z.string(),
+});
+
+export type SlackLinkCode = z.infer<typeof slackLinkCode>;
 
 export function issueSlackCodeMutationOptions() {
   return mutationOptions({
-    mutationFn: (): Promise<SlackLinkCode> =>
-      client<SlackLinkCode>("/api/identity/challenges", "challenge", {
-        method: "POST",
-        body: { provider: "slack" },
-        fallback: "Could not create a Slack link code",
-      }),
+    mutationFn: async (): Promise<SlackLinkCode> => {
+      const fallback = "Could not create a Slack link code";
+      const challenge = await client<unknown>(
+        "/api/identity/challenges",
+        "challenge",
+        {
+          method: "POST",
+          body: { provider: "slack" },
+          fallback,
+        },
+      );
+      const parsed = slackLinkCode.safeParse(challenge);
+      if (!parsed.success) throw new Error(fallback);
+      return parsed.data;
+    },
   });
 }
 

@@ -3,6 +3,7 @@ import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   CopilotChat,
   CopilotChatInput,
@@ -10,10 +11,17 @@ import {
 } from "@copilotkit/react-core/v2";
 import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { createContext, useContext, useLayoutEffect, useRef } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { z } from "zod";
 import { ConversationApprovals } from "@/components/approvals/inline-approval";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   ConversationLoading,
   ConversationReadError,
@@ -23,12 +31,19 @@ import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
-import { defaultAgentId } from "@/lib/agents/default-agent";
+import { buttonVariants } from "@/components/ui/button";
 import {
-  type AgentProfile,
-  agentKeys,
-  agentListQueryOptions,
-} from "@/lib/agents/queries";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  defaultAgentId,
+  defaultAgentProfile,
+} from "@/lib/agents/default-agent";
+import { agentKeys, agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   composeDraftKey,
@@ -115,35 +130,79 @@ export const Route = createFileRoute("/_authed/_app/bot")({
  * A named Bot that this deployment does not have is answered in a sentence rather than thrown,
  * for the same reason: a mistyped link is not a crash.
  */
+const quickBotEnvelope = z.object({
+  agent: z.object({
+    id: z.string(),
+    name: z.string(),
+    roleDescription: z.string().nullish(),
+  }),
+});
 type BotDetailLookup =
-  | { bot: AgentProfile; status: "found" }
-  | { status: "missing" };
+  | { bot: z.infer<typeof quickBotEnvelope>["agent"]; status: "found" }
+  | { status: "missing" }
+  | { status: "denied" };
+const quickBotRecoveryTarget = () =>
+  document.getElementById("quick-chat-title") ??
+  document.getElementById("quick-chat-browse-bots");
 
-function isAgentEnvelope(body: unknown): body is { agent: AgentProfile } {
-  if (body === null || typeof body !== "object") return false;
-  const agent = (body as { agent?: unknown }).agent;
-  return (
-    agent !== null &&
-    typeof agent === "object" &&
-    typeof (agent as { id?: unknown }).id === "string" &&
-    typeof (agent as { name?: unknown }).name === "string"
-  );
-}
-
-async function loadExplicitBot(agentId: string): Promise<BotDetailLookup> {
+async function loadExplicitBot(
+  agentId: string,
+  signal: AbortSignal,
+): Promise<BotDetailLookup> {
   const response = await tryClient(
     `/api/agents/${encodeURIComponent(agentId)}`,
+    { signal },
   );
   if (response.status === 404) return { status: "missing" };
+  if (response.status === 401 || response.status === 403)
+    return { status: "denied" };
   if (!response.ok) throw new Error("Couldn't load this Bot.");
 
-  const body: unknown = await response.json().catch(() => null);
-  if (!isAgentEnvelope(body)) throw new Error("Couldn't load this Bot.");
-  return { bot: body.agent, status: "found" };
+  const result = quickBotEnvelope.safeParse(
+    await response.json().catch(() => null),
+  );
+  if (!result.success || result.data.agent.id !== agentId)
+    throw new Error("Couldn't load this Bot.");
+  return { bot: result.data.agent, status: "found" };
+}
+
+function QuickChatRecoveryLinks({
+  alternative,
+}: {
+  alternative?: { id: string; name: string };
+}) {
+  const className = buttonVariants({
+    className: "conversation-recovery-action",
+    variant: "outline",
+  });
+  return (
+    <Stack direction="horizontal" gap={2} wrap="wrap">
+      {alternative ? (
+        <Link
+          className={className}
+          search={{ agent: alternative.id }}
+          style={{
+            blockSize: "auto",
+            maxInlineSize: "100%",
+            overflowWrap: "anywhere",
+            textAlign: "start",
+            whiteSpace: "normal",
+          }}
+          to="/bot"
+        >
+          Open {alternative.name}
+        </Link>
+      ) : null}
+      <Link className={className} id="quick-chat-browse-bots" to="/bots">
+        Browse Bots
+      </Link>
+    </Stack>
+  );
 }
 
 function RouteComponent() {
   const search = Route.useSearch();
+  const { data: user } = useQuery(currentUserQueryOptions());
   const agent = search.agent === "" ? undefined : search.agent;
   const {
     data: agents,
@@ -153,10 +212,24 @@ function RouteComponent() {
     refetch,
   } = useQuery(agentListQueryOptions());
   const agentId = agent ?? defaultAgentId(agents);
-  const listedBot = agents?.find((candidate) => candidate.id === agentId);
+  const draftKey = agentId
+    ? composeDraftKey(
+        user?.id,
+        `quick:${encodeURIComponent(agentId)}`,
+        "message",
+      )
+    : undefined;
+  const alternative =
+    agent && !isError
+      ? defaultAgentProfile(
+          agents?.filter((candidate) => candidate.id !== agent),
+        )
+      : undefined;
+  const listedBot = isError
+    ? undefined
+    : agents?.find((candidate) => candidate.id === agentId);
   const detailAgentId = agent ?? "";
-  const shouldLoadExplicitBot =
-    Boolean(agent) && agents !== undefined && listedBot === undefined;
+  const shouldLoadExplicitBot = Boolean(agent) && listedBot === undefined;
   const {
     data: detail,
     isError: isDetailError,
@@ -166,54 +239,66 @@ function RouteComponent() {
   } = useQuery({
     enabled: shouldLoadExplicitBot,
     queryKey: agentKeys.botRouteDetail(detailAgentId),
-    queryFn: () => loadExplicitBot(detailAgentId),
+    queryFn: ({ signal }) => loadExplicitBot(detailAgentId, signal),
     retry: false,
   });
   const bot =
     listedBot ?? (detail?.status === "found" ? detail.bot : undefined);
-  const known = bot !== undefined;
 
-  if (isPending || (shouldLoadExplicitBot && isDetailPending)) {
+  if ((!agent && isPending) || (shouldLoadExplicitBot && isDetailPending)) {
     return <ConversationLoading label="Finding your Bot…" />;
   }
-  if (isError && agents === undefined) {
+  if (!agent && isError) {
     return (
-      <Stack padding={5}>
+      <Stack gap={3} style={{ padding: "var(--spacing-4, 1rem)" }}>
         <ConversationReadError
           title="Couldn't load your Bots."
-          description="Try loading the Bot list again."
+          focusAfterRetry={quickBotRecoveryTarget}
+          retryBelow
+          retryLabel="Retry Bot list"
           retry={() => void refetch()}
           retrying={isFetching}
         />
+        <QuickChatRecoveryLinks />
       </Stack>
     );
   }
   if (shouldLoadExplicitBot && isDetailError) {
     return (
-      <Stack padding={5}>
+      <Stack gap={3} style={{ padding: "var(--spacing-4, 1rem)" }}>
         <ConversationReadError
+          description={
+            readComposeDraft(draftKey, quickDraftText)?.trim()
+              ? "Your unsent message stays with this Bot in this tab."
+              : undefined
+          }
           title="Couldn't load this Bot."
-          description="Try opening the Bot again."
+          focusAfterRetry={quickBotRecoveryTarget}
+          retryBelow
+          retryLabel="Retry this Bot"
           retry={() => void refetchDetail()}
           retrying={isDetailFetching}
         />
+        <QuickChatRecoveryLinks alternative={alternative} />
       </Stack>
     );
   }
-  if (!agentId || !known) {
+  if (!agentId || !bot) {
     return (
-      <Stack padding={5}>
+      <Stack style={{ padding: "var(--spacing-4, 1rem)" }}>
         <Banner
+          collapsible={false}
           status="info"
           title={
-            agent
-              ? `There's no Bot called "${agent}".`
-              : "There are no Bots yet."
+            detail?.status === "denied"
+              ? "This Bot is unavailable to you."
+              : agent
+                ? "We couldn't find this Bot."
+                : "There are no Bots yet."
           }
-          endContent={
-            <AstryxButton label="Browse Bots" href="/bots" size="sm" />
-          }
-        />
+        >
+          <QuickChatRecoveryLinks alternative={alternative} />
+        </Banner>
       </Stack>
     );
   }
@@ -222,16 +307,28 @@ function RouteComponent() {
    * Keyed on the Bot, so the hooks below never see it change under them. They cannot be called
    * conditionally, and the guards above return before any of them run.
    */
-  return <BotChat agentId={agentId} key={agentId} name={bot.name} />;
+  return (
+    <BotChat
+      agentId={agentId}
+      draftKey={draftKey}
+      key={agentId}
+      name={bot.name}
+      purpose={bot.roleDescription?.trim()}
+    />
+  );
 }
 
-function BotChat({ agentId, name }: { agentId: string; name: string }) {
-  const { data: user } = useQuery(currentUserQueryOptions());
-  const draftKey = composeDraftKey(
-    user?.id,
-    `quick:${encodeURIComponent(agentId)}`,
-    "message",
-  );
+function BotChat({
+  agentId,
+  draftKey,
+  name,
+  purpose,
+}: {
+  agentId: string;
+  draftKey?: string;
+  name: string;
+  purpose?: string;
+}) {
   // Tool calls here act on this Bot's own computer.
   useActiveBot(agentId);
   /*
@@ -250,6 +347,9 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
     starting,
     startFailed,
   } = useBotThread(agentId);
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const newConversationButton = useRef<HTMLButtonElement>(null);
+  const cancelNewConversation = useRef<HTMLButtonElement>(null);
   /*
    * A turn that ends without an answer has to be said out loud here, because the packaged chat says
    * nothing. It reports a failed run to an `onError` prop and otherwise carries on as though the
@@ -291,9 +391,33 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
           }}
           wrap="wrap"
         >
-          <Heading level={1} wordBreak="break-word">
-            {name}
-          </Heading>
+          <Stack gap={1} style={{ minWidth: 0 }}>
+            <Heading
+              id="quick-chat-title"
+              level={1}
+              tabIndex={-1}
+              wordBreak="break-word"
+            >
+              {name}
+            </Heading>
+            {purpose && purpose.toLowerCase() !== name.trim().toLowerCase() ? (
+              <details className="min-w-0 max-w-prose">
+                <summary className="min-h-11 content-center cursor-pointer text-sm underline underline-offset-4">
+                  About this Bot
+                </summary>
+                <Text
+                  as="p"
+                  className="max-h-24 overflow-y-auto wrap-anywhere"
+                  color="secondary"
+                  display="block"
+                  tabIndex={0}
+                  type="supporting"
+                >
+                  {purpose}
+                </Text>
+              </details>
+            ) : null}
+          </Stack>
           <Stack
             align="center"
             className="quick-chat-actions"
@@ -310,14 +434,51 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
               icon={<IconPlus />}
               isLoading={starting}
               isDisabled={!threadId}
-              label="Start fresh"
-              onClick={startNew}
+              label="New chat with this Bot"
+              onClick={() => setShowNewConversation(true)}
+              ref={newConversationButton}
               size="md"
               variant="secondary"
             />
           </Stack>
         </Stack>
         <Divider />
+        <Dialog
+          open={showNewConversation}
+          onOpenChange={setShowNewConversation}
+        >
+          <DialogContent
+            {...astryxScope}
+            finalFocus={newConversationButton}
+            initialFocus={cancelNewConversation}
+            role="alertdialog"
+            showCloseButton={false}
+          >
+            <DialogTitle>Start a new conversation?</DialogTitle>
+            <DialogDescription>
+              The new conversation starts with an empty history.
+              {draftKey ? " Your saved draft stays with this Bot." : null}
+            </DialogDescription>
+            <DialogFooter className="flex-wrap">
+              <AstryxButton
+                className="confirmation-action"
+                label="Cancel"
+                onClick={() => setShowNewConversation(false)}
+                ref={cancelNewConversation}
+                variant="secondary"
+              />
+              <AstryxButton
+                className="confirmation-action"
+                label="Start new conversation"
+                onClick={() => {
+                  setShowNewConversation(false);
+                  startNew();
+                }}
+                variant="primary"
+              />
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {history === "unavailable" ? (
           <ConversationReadError
             title="Couldn't check your earlier messages."

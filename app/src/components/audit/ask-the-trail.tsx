@@ -4,7 +4,7 @@ import {
   IconInfoCircle,
   IconSparkles,
 } from "@tabler/icons-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -33,22 +33,31 @@ export function AskTheTrail({
   const [text, setText] = useState("");
   const [asking, setAsking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => request.current?.abort(), []);
   const question = text.trim();
 
   const ask = async () => {
     if (!question || asking) return;
+    const controller = new AbortController();
+    request.current = controller;
     setProblem(null);
     setAsking(true);
     try {
-      onAnswer({ ...(await askAuditTrail(question)), question });
+      const answer = await askAuditTrail(question, controller.signal);
+      if (!controller.signal.aborted) onAnswer({ ...answer, question });
     } catch (error) {
+      if (controller.signal.aborted) return;
       setProblem(
         error instanceof Error
           ? error.message
           : "Couldn't search by question. Try again.",
       );
     } finally {
-      setAsking(false);
+      if (!controller.signal.aborted) {
+        request.current = null;
+        setAsking(false);
+      }
     }
   };
 

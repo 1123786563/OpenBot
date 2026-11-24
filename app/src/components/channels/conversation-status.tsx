@@ -21,16 +21,19 @@ export function ConversationReadError({
   retrying,
   retryLabel = "Try again",
   retryBelow,
+  focusAfterRetry,
 }: {
   title: string;
   description?: string;
-  retry: () => void;
+  retry?: (() => void) | undefined;
   retrying: boolean;
   retryLabel?: string;
   retryBelow?: boolean;
+  focusAfterRetry?: () => HTMLElement | null;
 }) {
   return (
     <ReadError
+      focusAfterRetry={focusAfterRetry}
       message={title}
       description={description}
       retry={retry}

@@ -32,15 +32,17 @@
 |---|---|
 | 登录、首次使用、桌面交还、为 Bot 登录 | 用持久字段标签和状态解释替代占位提示。完善登录受阻、供应商取消和桌面协议未完成时的下一步。首次使用已接入进度重试和完成重试。已修复姓名保存失败焦点并保留键盘提交，补充能力加载状态和移动进度。主要按钮和重试高 44 像素，审批开关为 44 × 44 像素。默认和低动态模式均验证 320 像素步骤切换。Bot 网站登录已接入验证码和接管焦点、后台读取恢复及原会话回退。已改善长账户布局并显示跨标签处理状态。已显示获授权可见的 Bot 名称，让完整站点地址在窄屏换行，并提供首次读取失败的工作区入口。实测真实请求投递、验证与回跳。 |
 | 首页、新建会话、单 Bot、多 Bot 与快速会话 | 聚焦发送与继续。有明确的收件人和当前执行者。高级模型、命令及附属设置渐进披露。验证历史打开、长消息、长附件名、模型不可用及权限变化。 |
-| Bots 清单、创建、档案及全部子页 | 档案首屏交付该 Bot 的身份、待处理工作和主要操作。将运行、授权、记忆、例行任务、分享和设置归入对应区块。用来源与有效范围解释权限。已修复清单与创建的主操作对比度和触屏区域，档案区分暂时故障与访问失效。下一步恢复从档案返回时的搜索与焦点，简化移动创建页和框架选择，放大删除确认及状态控件。九个子页已复评共享读取，Access、审批规则、Memory、联系方式和 Sharing 已复验区块级重试。Access 已合并共享读取告警，下一轮复验满数据下的授权范围、写入反馈和键盘效率。Setup 已区分能力加载、临时故障、不支持和权限拒绝，需放大辅助文字并验证已有隔离可在真实权限下关闭。实测空名单、多人共享、挂起、只读角色及深链接。 |
+| Bots 清单、创建、档案及全部子页 | 档案首屏交付该 Bot 的身份、待处理工作和主要操作。将运行、授权、记忆、例行任务、分享和设置归入对应区块。用来源与有效范围解释权限。已修复清单与创建的主操作对比度和触屏区域，档案区分暂时故障与访问失效。创建 Bot 已支持按框架名称和描述筛选，键盘返回时保留筛选词。下一步恢复从档案返回时的搜索与焦点，简化窄屏创建流程的次操作并验证创建后的焦点交接，放大删除确认及状态控件。九个子页已复评共享读取，Access、审批规则、Memory、联系方式和 Sharing 已复验区块级重试。Access 已合并共享读取告警，下一轮复验满数据下的授权范围、写入反馈和键盘效率。Setup 已区分能力加载、临时故障、不支持和权限拒绝，需放大辅助文字并验证已有隔离可在真实权限下关闭。实测空名单、多人共享、挂起、只读角色及深链接。 |
 | Browser、Computer、Credentials、Passwords、Recorder、This computer | 先复评设备与凭据相关入口，记录每页当前构建的十项分。Browser 验证断线后能识别原会话并重连。Computer、Recorder 和 This computer 验证设备归属、不可用原因、正在录制状态和桌面接续。Credentials 和 Passwords 在确认前交代目标及已知影响，验证取消、失败重试和成功后的状态。窄屏与键盘分别走完这些任务。 |
-| Capabilities、Skills、Memory、组件库 | 列表提供筛找，编辑有明确提交和离开行为。范围变化、忘记记忆、注册组件和发布分别给后果预览。长内容仍能找回主要操作；组件预览失败保留列表上下文。 |
-| Routines、Responsibilities、Tasks、Ideas、Bot Activity | 用读屏复核已接入的首读、原位重试和焦点恢复。压缩嵌入的 Goals、Routines 与 Activity 空态，补满数据和并发故障场景。Goals、Ideas 与 Activity 已在桌面和窄屏验证页内 Bot 切换、刷新与失效书签恢复。Goals 需对齐术语并拉开选择器与导航的间距，Ideas 需减少失效链接恢复步骤。验证新建例行任务和开启 check-ins 的触屏命中区与保存结果。排程预览时区和夏令时，待办与历史均能回到源 Conversation 或 Bot。 |
+| Capabilities、Skills、Memory、组件库 | 列表提供筛找，编辑有明确提交和离开行为。Memory 已验证组合筛选、保存与删除回执、读取故障和权限拒绝恢复。范围变化、忘记记忆、注册组件和发布分别给后果预览。长内容仍能找回主要操作；组件预览失败保留列表上下文。 |
+| Routines、Responsibilities、Tasks、Ideas、Bot Activity | 用读屏复核已接入的首读、原位重试和焦点恢复。压缩嵌入的 Goals、Routines 与 Activity 空态，补满数据和并发故障场景。Goals、Ideas 与 Activity 已在桌面和窄屏验证页内 Bot 切换、刷新与失效书签恢复。Goals 需对齐术语并拉开选择器与导航的间距。Ideas 已验证失效书签可在原页恢复、建议读取故障可键盘重试，以及开启 check-ins 的 44 CSS 像素触区。验证真实保存结果、读屏和新建例行任务的触区。排程预览时区和夏令时，待办与历史均能回到源 Conversation 或 Bot。 |
 | Connections、个人应用、团队应用、外部身份、broker 目录、插件 Bot/Tool 子页 | 把发现应用、登录账号、授权和验证连通性排成可回溯的步骤。明确授权主体、作用域及 Bot 继承关系。验证 OAuth 同意、退出、回调失败、重复绑定和断开。保留搜索、选择态及返回位置。 |
 | 审批、Permissions、Boundaries、What if、People | 以有效策略查看、修改预览、生效和审计串起治理任务。保留自然语言回测，并把受影响对象带入 What if。边界规则的旧索引深链接需避免落到另一条规则，先验证当前目标，再决定是否迁移为稳定标识。 |
-| Admin 概览、Audit、Providers、Learning、Proactive、Playground 与 Settings 其余页面 | 概览把常用任务和待处理事项置顶。Audit 支持恢复过滤及失败导出。Providers 是部署能力与模型选择入口。Learning、Proactive 的运行状态和配置分层。Playground 保留草稿、局部报错和预览。Settings 的通知、学习、环境与常规设置统一页内可恢复反馈。 |
+| Admin 概览、Audit、Providers、Learning、Proactive、Playground 与 Settings 其余页面 | 概览把常用任务和待处理事项置顶。Audit 已验证权限被拒后清除各视图缓存，提供原页刷新和搜索范围提示。继续验证完整历史搜索与真实权限变更。Providers 是部署能力与模型选择入口。Learning、Proactive 的运行状态和配置分层。Playground 保留草稿、局部报错和预览。Settings 的通知、学习、环境与常规设置统一页内可恢复反馈。 |
 
 ### 设备与凭据整改顺序
+
+Team 和 Personal 的设备页在结果未确认时显示最新设备状态，并提供 Audit 或 Activity 入口。两页暂定 38/40，实体设备、真实日志和读屏仍待复验。 [设备未确认结果复评](web-impeccable-scorecard.md#设备未确认结果复评)
 
 十个入口在同一构建上复评为 **26–34/40**。 [逐页分项与证据](web-impeccable-scorecard.md#设备与凭据复评)
 
@@ -69,7 +71,7 @@
 
 | 顺序 | 待复评 | 首要验证 |
 |---|---|---|
-| 1 | 治理七页已交付提交防错与失败恢复。已修复 Audit 窄屏 Decision 可见性和审批设置说明截断。Audit 已核对审批判定并扩大主要手机触区，两页均暂定 29/40。追加（2026-11-23）：Audit 行剩余三项经代码与走查双确认为已修（Why? 双节词汇+重试、搜索范围披露、44px 触区），待复评；what-if 示例句移出 placeholder 并加一步 Start over（待 fixture 重启活体验证），结果药丸对比度升 AA；评审 fixture 已补 audit-events/vocabulary/ask 与 what-if vocabulary/ask/check/explain 端点。 第五批（同日）：组件库两页补骨架占位与原位 Retry（活体验证）；permissions/describe 与 approvals/describe 移除单项均提供 Undo（前者活体验证，fixture 补 translate/preview 端点）；boundary 新建页选好起点自动滚到规则表单；六个旧地址行（五个已删旧外观与 /settings/activity）按"不再对外提供"关闭。 | 区分 Why? 的历史判定和当前策略并提供原位重试，说明或对齐文字搜索与 CSV 导出的范围，补齐 Ask 触区并压缩手机首屏工具区。两页描述编辑缩减旧候选占位，补取消或撤销。将 Boundary 的编辑表单带到起点选择附近，梳理 Guidance、What if 与审批设置的窄屏层级。补测真实角色、批量审批幂等、持久化、模型和读屏。 [治理七页整改后复评](web-impeccable-scorecard.md#治理七页整改后复评) · [窄屏复评](web-impeccable-scorecard.md#audit-与审批设置窄屏复评) · [Audit 判定与触区复评](web-impeccable-scorecard.md#audit-判定与窄屏触区复评) |
+| 1 | 治理七页已交付提交防错与失败恢复。已修复 Audit 窄屏 Decision 可见性和审批设置说明截断。Audit 已核对审批判定并扩大主要手机触区，两页均暂定 29/40。追加（2026-11-23）：Audit 行剩余三项经代码与走查双确认为已修（Why? 双节词汇+重试、搜索范围披露、44px 触区），待复评；what-if 示例句移出 placeholder 并加一步 Start over（待 fixture 重启活体验证），结果药丸对比度升 AA；评审 fixture 已补 audit-events/vocabulary/ask 与 what-if vocabulary/ask/check/explain 端点。 第五批（同日）：组件库两页补骨架占位与原位 Retry（活体验证）；permissions/describe 与 approvals/describe 移除单项均提供 Undo（前者活体验证，fixture 补 translate/preview 端点）；boundary 新建页选好起点自动滚到规则表单；五个已删旧外观的历史行已关闭。Personal 的 `/settings/activity` 仍在验收范围。 | 区分 Why? 的历史判定和当前策略并提供原位重试，说明或对齐文字搜索与 CSV 导出的范围，补齐 Ask 触区并压缩手机首屏工具区。两页描述编辑缩减旧候选占位，补取消或撤销。将 Boundary 的编辑表单带到起点选择附近，梳理 Guidance、What if 与审批设置的窄屏层级。补测真实角色、批量审批幂等、持久化、模型和读屏。 [治理七页整改后复评](web-impeccable-scorecard.md#治理七页整改后复评) · [窄屏复评](web-impeccable-scorecard.md#audit-与审批设置窄屏复评) · [Audit 判定与触区复评](web-impeccable-scorecard.md#audit-判定与窄屏触区复评) |
 | 2 | 15 项已完成三批整改与两轮盲评（2026-11-22）。首批：Connections 清单只由两个应用读取决定空白、身份行渐进出现且读取失败可原位重试；GitHub tools 行未决时显示 Checking…；目录读取失败原位 Retry；Admin Plugins 首读骨架、失败重试；Providers 三区块骨架加重试。第二批：应用详情与授权子页骨架+重试、Tool 页 Bot 搜索、允许模型对话框运行数标注。第三批与终评修复：Astryx 主按钮层叠根修（对比度 0 low-contrast）、破坏性操作五处确认（应用开关、GitHub 绑定与账户、破坏性工具授权、两个允许清单守卫、未审目录应用）、目录失败保留页面框架、失败态标题不降级、routines 告警+重试、Providers 单条读取失败与对话框保存失败提示、身份读取失败不误报、Reconnect 全流程、目录加后行状态、清单骨架与状态对齐。终评：连接清单 40/40，其余 30-39/40（[顺序2终评](web-impeccable-scorecard.md)）；9 项在盲评后另有已验证修复待复评。 | 从发现应用走到绑定账号、授予 Bot 权限和撤销，覆盖 Team、Personal 与当前供应商。全站已知项另行立项：base-ui 对话框 Tab 焦点泄漏、document.title 每页命名。 |Connections 清单只由两个应用读取决定空白、身份行渐进出现且读取失败可原位重试；GitHub tools 行查询未决时显示 Checking… 不再误读；Arcade/Composio 目录读取失败原位 Retry；Admin Plugins 首读骨架占位、失败重试、连接状态未决时不误称 Not connected；Providers 三区块骨架占位加失败重试。第二批已落地：应用详情（Team 与 Personal 同源组件）、Bot 与 Tool 授权子页首读骨架占位加读取失败原位 Retry，Tool 页 Bot 清单超 8 个提供按名搜索；允许模型对话框为未勾选且近 30 天有运行的模型标注运行数，选择前同屏可见影响。7 个测试文件 45 项通过，Bot-应用授权页与 Tool 页已在开发构建浏览器复验。 | 从发现应用走到绑定账号、授予 Bot 权限和撤销。分别覆盖 Team、Personal 和当前启用的供应商，保留搜索与回调上下文。应用详情长页层级、授权子页密度与原始异常、Providers 按 Bot 的影响提示（当前数据只有按模型运行数）仍待整改与复评。 |
 | 3 | 15 条评分行（12 个独立视图）已于 2026-11-23 完成盲评与整改（[顺序3盲评](web-impeccable-scorecard.md#顺序3盲评与整改)）。盲评 C/D 分数 31–40/40（admin/skills 满分）。盲评后修复并全部活体验证：Playground 发布确认与禁用原因提示；Proactive 全境 ping→check-ins 词汇（含平均值句式）；Learning 六处 SectionReadError 与提议弹窗 Retry（admin 与 settings 两页）；技能保存成功 toast（fixture 补 POST）；新建技能脏表单 Cancel 确认与工具读取原位 Retry；设备/投递失败不再伪装空态；Setup 重查文案标明旧列表；组件磁贴状态文字化、详情失败标题与不可渲染开关；fixture 补 channels/setup/proposals/skills 端点后 Routine 创建端到端走通。余下待下轮：真实服务/读屏/角色权限验收（顺序3 记录的其余余项——九节纵排、措辞变体、脏离开、SMS 提示、全绿清单、药丸对比度——已于同日第四批全部清完并活体验证）。E 轮复评（盲评 E，12 视图 31–40 分，三个满分）后其发现已甄别落地：技能编辑器脏/存态三连修、playground 假空态与写失败文案、notifications 假空态与开关静默失败、routines/learning 的 Bot 列表读失败重试、组件详情标题拆词与单数文案；染料文案与零延迟假象已甄别记录。audit/what-if 七组评审端点启用。待下轮复评确认。 | 真实服务与读屏复验、真实角色权限、Playground/Routine 跨时区与未保存离开、`/settings/activity` 正式复评分。 |
 
@@ -85,23 +87,39 @@
 
 权限和审批描述页已防止上一份草稿的撤销记录进入新草稿，并在离开未保存草稿时确认。Audit 已支持录制记录原位重试，并修正提问示例和状态对比度。桌面和窄屏流程通过。四页仍待完整复评，真实模型、角色与读屏继续纳入正式验收。 [整改及证据](web-impeccable-scorecard.md#治理草稿与-audit-整改验证)
 
-What-if 已统一页面、导航与拦截判定用词，并在桌面和两种窄屏复验焦点交接、未执行规则的显示与展开。暂定分为 33/40。跨页场景保留、触屏和读屏待验。 [逐项评分](web-impeccable-scorecard.md#what-if-判定语义整改)
+What if 暂定 36/40。403 清除旧场景和判定，重新开始后刷新会保留空场景。六层判定、焦点交接和原位重试通过回归。真实模型、权限传播与读屏待验。 [逐项评分](web-impeccable-scorecard.md#what-if-权限与场景重置复评)
 
-Routines 清单和历史在 503 后保留已读记录并提供原位重试。工作区暂定分为 33/40。生产版已验证并发写入的行级反馈和启动历史的稳定性。继续验证真实调度、长清单定位、实体触屏和读屏。 [复验证据](web-impeccable-scorecard.md#routines-写入反馈复评)
+Routines 工作区暂定分为 37/40，已验证长清单定位、读取失败后的只读状态、权限拒绝及删除前复查。生产版已回归并发写入的行级反馈和历史切换。继续验证真实调度、跨时区、实体触屏和读屏。 [复验证据](web-impeccable-scorecard.md#routines-查找与删除复评)
 
 People 与 Identity providers 的清单恢复已在三种视口复验，两页最新暂定分均为 32/40。Require SSO 增加影响确认，服务端部分保存后显示已生效的策略，并提供原位重试完成清理。独立 PostgreSQL 集成测试已核对服务端会话清理与例外账户。真实角色变更、外部 SAML/OIDC 回跳、浏览器到真实服务的完整任务和读屏仍待验。 [两页清单复评](web-impeccable-scorecard.md#管理清单读取与恢复复评) · [登录策略复评](web-impeccable-scorecard.md#identity-providers-登录策略复评)
 
-Capabilities 的技能与记忆补齐读取恢复，暂定分分别为 31/40 与 30/40。继续验证真实权限和 Bot 实际使用范围，复查长清单定位与读屏。 [技能与记忆复评](web-impeccable-scorecard.md#技能与记忆读取恢复复评)
+个人技能页暂定 38/40。关闭和浏览器后退会保护新建与编辑的草稿，保存失败后可继续。临时读取故障仍可搜索旧记录，权限拒绝会清除旧技能。真实权限、Bot 使用范围和读屏仍待验。 [个人技能草稿退出复评](web-impeccable-scorecard.md#个人技能草稿退出复评)
+
+会话交接页暂定 31/36。界面保留首条消息和附件名，重试复用同一创建请求标识，可从首页恢复。真实服务的断线、审批和读屏验收仍待补齐。 [会话交接复评](web-impeccable-scorecard.md#会话交接状态与重试复评)
+
+Team 与 Personal 的技能详情各暂定 38/40。Bot 清单读取与技能刷新各自可重试，暂时故障保留草稿，写入等状态恢复后再开放。 [技能详情复评](web-impeccable-scorecard.md#技能详情与-bot-授权复评)
+
+Playground 暂定 37/40。打开旧组件时先确认替换未保存草稿，取消会恢复原行焦点。真实发布与离开页面时的草稿保护仍待验。 [Playground 复评](web-impeccable-scorecard.md#playground-草稿保护复评)
+
+快速会话暂定 38/40。具名书签不等待慢清单，详情失败时可另选可用 Bot，原草稿仍可恢复。真实发送和读屏待验。 [快速会话与慢清单复评](web-impeccable-scorecard.md#快速会话与慢清单复评)
+
+个人审批设置暂定 38/40。关闭新规则对话框会保护草稿，临时故障可原位刷新或重试。403 后再遇到 503 时，旧数据仍保持隐藏。 [个人审批规则草稿复评](web-impeccable-scorecard.md#个人审批规则草稿复评)
+
+审批指导暂定 36/40。保存和删除会校验已保存指导，冲突时可查看最新内容并保留草稿。PostgreSQL 已验证两次并发保存只接受一次。 [审批指导复评](web-impeccable-scorecard.md#审批指导并发编辑复评)
+
+Learning 的管理端和个人设置入口各暂定 37/40。管理端读取故障保留草稿，状态恢复前暂停保存。个人页的技能审阅和技能列表可分别重试，恢复后焦点回到对应区块。 [Learning 复评](web-impeccable-scorecard.md#learning-读取与保存复评)
 
 团队审批暂定 36/40。共享账户请求可原位重试，确认时展示访问范围并复查当前权限。团队规则可筛选后直接操作。三种宽度生产回归与 PostgreSQL 持久化验证通过，真实共享连接器端到端任务及读屏仍待验。 [团队审批复评](web-impeccable-scorecard.md#团队审批决策与搜索复评)
+
+全局 Goals、按 Bot 查看、Tasks 和记忆清单暂定分别为 34、33、31、32 分。目标归属、三种宽度下的切换和记忆筛选已通过模拟生产回归。继续补实际任务数据与读屏，复核 Tasks 长列表和记忆页面的信息密度。 [目标归属与记忆筛选复评](web-impeccable-scorecard.md#目标归属与记忆筛选复评)
 
 边界详情规则与回放各有读取恢复入口，回放文案已与服务端的历史判定对比语义对齐，暂定分为 31/40。旧书签、真实审计记录和读屏仍待复验。 [边界详情复评](web-impeccable-scorecard.md#边界详情历史回放复评)
 
 边界列表补齐策略读取和试运行切换的失败恢复，暂定分为 32/40。继续验证真实执行与审计、长清单定位和读屏。 [边界列表复评](web-impeccable-scorecard.md#边界列表与试运行复评)
 
-Team 与 Personal 设备页的重置和更新均在提交前复查设备状态，并针对确认前失败与写入结果不明提供不同提示。暂定分分别为 31/40、33/40。真实设备与读屏仍待复验。 [设备操作复评](web-impeccable-scorecard.md#设备操作确认与恢复复评)
+Team 与 Personal 设备页的重置和更新均在提交前复查设备状态。Team 管理页增加设备筛选，暂定 33/40，Personal 上轮暂定 33/40。Activity 暂定 34/40，临时故障保留记录与审计入口，权限拒绝后隐藏旧内容。真实设备、真实历史数据与读屏仍待复验。 [设备与活动复评](web-impeccable-scorecard.md#设备筛选与-activity-恢复复评)
 
-Teach a Bot 补齐浏览器重开和录像列表的独立恢复，暂定分为 33/40。仍需复验真实串流、录制回传、实体触屏和读屏。 [连接与录像恢复复评](web-impeccable-scorecard.md#teach-a-bot-连接与录像恢复复评)
+Teach a Bot 暂定 38/40。浏览器状态、打开请求和录制清单可分别重试。录制链接遇到无响应仍能主动打开，失败期间保留录制清单。真实串流、录制回传、实体触屏和读屏待验。 [录制链接恢复复评](web-impeccable-scorecard.md#teach-a-bot-录制链接恢复复评)
 
 审批指导补齐未保存草稿保护、恢复到已保存版本和可展开的安全规则，暂定分为 33/40。真实模型回测、多人同时编辑、实体触屏和读屏仍待验。 [审批指导复评](web-impeccable-scorecard.md#审批指导草稿复评)
 
@@ -132,6 +150,58 @@ Permissions 可按成员查当前有效权限及来源，单项编辑可预览�
 新建边界页将编辑器移到起点列表上方，保护各起点的草稿，策略冲突刷新后恢复焦点。三种宽度生产复验通过，暂定 38/40。补齐模板选择前的代价比较和常驻 CEL 示例。 [新建边界复评](web-impeccable-scorecard.md#新建边界起点与草稿复评)
 
 边界清单新增搜索，筛选后保持规则位置和返回查询，暂定 35/40。保留旧书签处理和部署验收任务。 [边界清单搜索复评](web-impeccable-scorecard.md#边界清单搜索复评)
+
+通知设置按已确认的渠道显示开关，可在失败行重试并保留其他渠道的新设置。暂定 38/40。真实投递、读屏和同一渠道的跨设备写入仍需复验。 [通知渠道与保存恢复复评](web-impeccable-scorecard.md#通知渠道与保存恢复复评)
+
+Recorder 设置新增断开前的目标检查。暂时故障原位恢复，权限拒绝清除旧连接。暂定 37/40。真实扩展连接和读屏仍需复验。 [Recorder 断开与读取恢复复评](web-impeccable-scorecard.md#recorder-断开与读取恢复复评)
+
+个人 Activity 在窄屏用单一菜单切换视图。键盘翻页后聚焦首条新增匹配记录，失败可原位重试，暂定 38/40。全历史文字搜索和实际读屏仍待验。 [Activity 翻页接续复评](web-impeccable-scorecard.md#activity-翻页接续复评)
+
+GitHub 连接页可分别恢复账户可用性、工具目录和连接状态，暂定 37/40。真实 GitHub 授权和读屏仍待验。 [GitHub 账户与工具连接复评](web-impeccable-scorecard.md#github-账户与工具连接复评)
+
+统一 Activity、单 Bot Activity 和 Bot 档案的任务操作新增具名确认、提交前复查及原位重试。Bot 档案删除确认的按钮已达到 44 CSS 像素。三页暂定分别为 37/40、38/40、36/40，真实写入与读屏仍待验。 [Activity 与 Bot 档案操作复评](web-impeccable-scorecard.md#activity-停止取消与-bot-档案复评)
+
+创建 Bot 的提交保护持续到应用授权结束，成功后聚焦新档案标题，暂定 38/40。真实自定义连接、授权与读屏待验。 [创建 Bot 提交与焦点复评](web-impeccable-scorecard.md#创建-bot-提交与焦点复评)
+
+人员清单显示已加载人数，键盘翻页可从首条新增记录继续。权限拒绝会清除旧记录，临时故障时进入只读状态，暂定 38/40。窄屏操作密度、真实角色变更和读屏待验。 [人员翻页定位复评](web-impeccable-scorecard.md#人员翻页定位复评)
+
+管理首页支持任务词搜索，名称匹配优先。空结果提供任务示例，Escape 清空查询，暂定 38/40。实际管理员任务和读屏仍待验。 [管理首页任务词复评](web-impeccable-scorecard.md#管理首页任务词复评)
+
+组件图库清单支持搜索，详情返回保留查询。窄屏可完整阅读长标题和标识符，两个入口各为 37/40。真实组件发布、对话显示和读屏仍待验。 [组件图库搜索与恢复复评](web-impeccable-scorecard.md#组件图库搜索与恢复复评)
+
+新建例行任务和新建技能共用离开确认。例行任务提交期间防重复创建，成功聚焦列表标题。例行任务暂定 39/40，两个技能入口均暂定 38/40。真实排程、实际授权和读屏待验。 [例行任务与技能草稿复评](web-impeccable-scorecard.md#例行任务与技能草稿复评)
+
+组件详情的描述保存失败保留草稿，发布和数据函数读取分别支持原位恢复，暂定 38/40。已发布组件直接应用描述草稿的入口、真实发布与读屏待验。 [组件描述草稿与发布复评](web-impeccable-scorecard.md#组件描述草稿与发布复评)
+
+未知地址和路由加载失败均暂定 31/36。补齐键盘焦点、连续失败指引和窄屏动作尺寸。实际读屏及更多类型的路由故障仍待验。 [共享路由异常复评](web-impeccable-scorecard.md#共享路由异常复评)
+
+会话交接区分临时故障与收件人问题，支持复制原消息和重新选择 Bot，暂定 34/36。更换收件人后的附件交接、真实服务和读屏待验。 [会话收件人与失败恢复复评](web-impeccable-scorecard.md#会话收件人与失败恢复复评)
+
+Bot 任务增加状态筛选、空结果恢复及已解决任务保留期限说明。权限拒绝后清除旧任务缓存，暂定 38/40。真实审批、角色变化和读屏待验。 [Bot 任务状态筛选复评](web-impeccable-scorecard.md#bot-任务状态筛选复评)
+
+Ideas 支持在当前 Bot 范围内搜索建议，明确执行与忽略的后果，暂定 38/40。实际 Check-ins 保存、忽略后的恢复能力和读屏待验。 [Ideas 建议搜索复评](web-impeccable-scorecard.md#ideas-建议搜索复评)
+
+Bot 列表保留搜索与浏览器后退焦点，处理临时故障和权限拒绝，暂定 38/40。真实权限变化和读屏待验。 [Bot 列表搜索与返回复评](web-impeccable-scorecard.md#bot-列表搜索与返回复评)
+
+Bot 记忆来源使用具名确认及提交前复查，显示同步状态与移除回执，暂定 39/40。真实同步、权限撤销和读屏待验。 [Bot 记忆来源操作复评](web-impeccable-scorecard.md#bot-记忆来源操作复评)
+
+个人记忆的新建与编辑对话框保护草稿，并支持读取失败后的原位刷新，暂定 38/40。真实 Bot 读取、跨设备同步和读屏待验。 [记忆草稿与原位刷新复评](web-impeccable-scorecard.md#记忆草稿与原位刷新复评)
+
+边界清单返回时恢复规则焦点，临时故障暂停写入，访问拒绝清除缓存，暂定 39/40。实际策略生效及读屏待验。 [边界清单定位与恢复复评](web-impeccable-scorecard.md#边界清单定位与恢复复评)
+
+审计筛选选项读取失败可在菜单内重试，文字搜索跨字段匹配已加载记录，暂定 38/40。全历史文字搜索、窄屏菜单体验和读屏待验。 [审计筛选菜单恢复复评](web-impeccable-scorecard.md#审计筛选菜单恢复复评)
+
+插件清单支持按插件与工具搜索、浏览器后退焦点恢复以及独立的账户状态重试，暂定 39/40。具体命中工具提示、真实供应商授权和读屏待验。 [插件清单查找与账户状态复评](web-impeccable-scorecard.md#插件清单查找与账户状态复评)
+
+This computer 提供浏览器到桌面设置的接续、状态失败的写入保护及诊断手动复制，暂定 39/40。安装版系统拉起及读屏待验。 [桌面接续与设备状态复评](web-impeccable-scorecard.md#桌面接续与设备状态复评)
+
+未知地址与路由加载失败都提供站内返回与工作区后备入口，均暂定 35/36。路由加载失败增加离线保护和连续失败反馈，Chromium 与 WebKit 的站内历史恢复通过模拟验收。Firefox、桌面端和读屏待验。 [错误地址返回与视觉层级复评](web-impeccable-scorecard.md#错误地址返回与视觉层级复评) · [路由加载失败返回复评](web-impeccable-scorecard.md#路由加载失败返回复评)
+
+按 Bot 查看 Goals 支持页内跳到 Routines，保留当前 Bot 并将键盘焦点移到区块标题，暂定 37/40。嵌入列表密度和实际读屏待验。 [Goals 页内导航复评](web-impeccable-scorecard.md#goals-页内导航复评)
+
+Bot Setup 放大辅助说明，完整显示公开范围与共享登录的后果。公开前需确认和复查，取消后焦点回到 Visibility，暂定 38/40。真实角色写入及读屏待验。 [可见范围复评](web-impeccable-scorecard.md#bot-setup-可见范围复评)
+
+通用设置的姓名和常驻指示编辑器保护浏览器后退时的草稿，刷新失败时标明上次读取内容，暂定 38/40。桌面端专属设置和读屏待验。 [通用设置离开与刷新复评](web-impeccable-scorecard.md#通用设置离开与刷新复评)
 
 ## 产品术语
 

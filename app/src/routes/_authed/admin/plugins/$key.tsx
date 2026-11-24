@@ -7,5 +7,5 @@ export const Route = createFileRoute("/_authed/admin/plugins/$key")({
 
 function RouteComponent() {
   const { key } = Route.useParams();
-  return <PluginPage pluginKey={key} />;
+  return <PluginPage key={key} pluginKey={key} />;
 }

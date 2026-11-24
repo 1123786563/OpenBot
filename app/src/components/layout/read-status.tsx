@@ -30,7 +30,7 @@ export function ReadError({
 }: {
   message: string;
   description?: string;
-  retry: () => unknown;
+  retry?: (() => unknown) | undefined;
   retrying?: boolean;
   retryLabel?: string;
   retryBelow?: boolean;
@@ -46,7 +46,7 @@ export function ReadError({
     [],
   );
 
-  const action = (
+  const action = retry ? (
     <Button
       clickAction={async (event) => {
         const button = event.currentTarget;
@@ -121,7 +121,7 @@ export function ReadError({
       size={retryBelow ? "lg" : "sm"}
       variant="secondary"
     />
-  );
+  ) : undefined;
   return (
     <Banner
       description={description}

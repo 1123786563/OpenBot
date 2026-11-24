@@ -2,7 +2,7 @@ import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { IconBook, IconChevronRight, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useRef } from "react";
 import { z } from "zod";
 import { NewBotSheet } from "@/components/agents/new-bot-sheet";
 import { BotRoster } from "@/components/bots/bot-roster";
@@ -21,12 +21,18 @@ import {
 } from "@/components/ui/item";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 
-/** Just longer than the sheet's 200ms exit, so it has finished sliding away before the page changes. */
-const SHEET_CLOSE_MS = 240;
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    createdBotId?: string;
+  }
+}
 
 /** Creating a Bot is a search-parameter state, so the roster stays mounted and Back closes it. */
 export const Route = createFileRoute("/_authed/_app/bots/")({
-  validateSearch: z.object({ new: z.boolean().optional() }),
+  validateSearch: z.object({
+    new: z.boolean().optional(),
+    q: z.string().optional().catch(undefined),
+  }),
   component: BotsPage,
 });
 
@@ -34,12 +40,21 @@ function CreateBotLink({
   href: _href,
   ...props
 }: ComponentProps<"a"> & { to?: string }) {
-  return <Link {...props} id="bots-new" to="/bots" search={{ new: true }} />;
+  return (
+    <Link
+      {...props}
+      id="bots-new"
+      to="/bots"
+      search={(previous) => ({ ...previous, new: true })}
+    />
+  );
 }
 
 function BotsPage() {
-  const { new: creating } = Route.useSearch();
+  const { new: creating, q = "" } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const createdBot = useRef<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   return (
@@ -60,12 +75,25 @@ function BotsPage() {
           ? "Your Bots for everyday work."
           : "Manage your Bots and access those shared with you."
       }
+      headingRef={heading}
       title="Bots"
     >
-      <BotRoster />
+      <BotRoster
+        focusAfterRetry={() => heading.current}
+        search={q}
+        onSearchChange={(value) =>
+          void navigate({
+            replace: true,
+            resetScroll: false,
+            search: (previous) => ({ ...previous, q: value || undefined }),
+          })
+        }
+      />
       {personal ? <WhatYourBotsKnow /> : null}
       <NewBotSheet
-        finalFocus={() => document.getElementById("bots-new")}
+        finalFocus={() =>
+          createdBot.current ? false : document.getElementById("bots-new")
+        }
         onClose={() =>
           void navigate({
             replace: true,
@@ -73,21 +101,22 @@ function BotsPage() {
           })
         }
         onCreated={(agentId) => {
-          /*
-           * Close first, then go. Navigating straight to the Bot unmounted this page with the sheet
-           * still on it, so it vanished instead of sliding away. Replacing the `?new` entry means Back
-           * from the new Bot lands on the roster, not on an empty sheet.
-           */
-          void navigate({ replace: true, search: {} });
-          window.setTimeout(
-            () =>
-              void navigate({
-                params: { agentId },
-                search: {},
-                to: "/bots/$agentId",
-              }),
-            SHEET_CLOSE_MS,
-          );
+          createdBot.current = agentId;
+          void navigate({
+            replace: true,
+            search: (previous) => ({ ...previous, new: undefined }),
+          });
+        }}
+        onOpenChangeComplete={(open) => {
+          const agentId = createdBot.current;
+          if (open || !agentId) return;
+          createdBot.current = null;
+          void navigate({
+            params: { agentId },
+            search: {},
+            state: { createdBotId: agentId },
+            to: "/bots/$agentId",
+          });
         }}
         open={creating === true}
       />

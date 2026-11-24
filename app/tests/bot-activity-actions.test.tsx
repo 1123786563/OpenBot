@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { BotActivitySections } from "@/components/bot-profile/activity";
 import {
@@ -17,7 +17,10 @@ import {
 } from "@/components/manage/audit-page";
 import { agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
-import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
+import {
+  type BotActivity,
+  botLifecycleKeys,
+} from "@/lib/bot-lifecycle/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { seedAuditPage } from "./seed-audit-page";
 import { settleReactWork } from "./settle-react-work";
@@ -42,6 +45,7 @@ async function renderWith(
     edition: "personal" | "team";
     role: "admin" | "user";
     audit?: Record<string, unknown[]>;
+    activity?: BotActivity;
     ready?: string;
   },
 ) {
@@ -50,11 +54,14 @@ async function renderWith(
       queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
     },
   });
-  queryClient.setQueryData(botLifecycleKeys.activity(BOT), {
-    inProgress: [],
-    scheduled: [],
-    completed: [],
-  });
+  queryClient.setQueryData(
+    botLifecycleKeys.activity(BOT),
+    options.activity ?? {
+      inProgress: [],
+      scheduled: [],
+      completed: [],
+    },
+  );
   queryClient.setQueryData(deploymentKeys.capabilities(), {
     edition: options.edition,
   });
@@ -90,6 +97,63 @@ test("says what it lists, and does not claim the Bot has done nothing", async ()
   expect(
     view.getByText("No tasks, routines or goals have finished yet."),
   ).toBeTruthy();
+});
+
+test("a failed cancellation can recheck the target without sending another request for an expired follow-up", async () => {
+  const task = {
+    kind: "follow_up",
+    id: "follow-up-1",
+    title: "Review tomorrow's expenses",
+    detail: null,
+    status: "Scheduled",
+    at: "2026-11-25T04:00:00Z",
+    channelId: null,
+    needsYou: false,
+    stoppable: false,
+    cancellable: true,
+  } satisfies BotActivity["scheduled"][number];
+  const activity: BotActivity = {
+    inProgress: [],
+    scheduled: [task],
+    completed: [],
+  };
+  const originalFetch = global.fetch;
+  const writes: string[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        writes.push(String(input));
+        return Response.json({ error: "Unavailable" }, { status: 503 });
+      }
+      return Response.json({ activity });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  try {
+    const view = await renderWith(<BotActivitySections agentId={BOT} />, {
+      activity,
+      edition: "team",
+      role: "admin",
+    });
+    fireEvent.click(view.getByRole("button", { name: `Cancel ${task.title}` }));
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Cancel this follow-up?",
+    });
+    expect(writes).toHaveLength(0);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel follow-up" }),
+    );
+    const retry = await within(dialog).findByRole("button", {
+      name: "Try again",
+    });
+    expect(writes).toEqual([`/api/bots/${BOT}/follow-ups/cancel`]);
+    activity.scheduled = [];
+    fireEvent.click(retry);
+    await within(dialog).findByText("This follow-up is no longer scheduled.");
+    expect(writes).toHaveLength(1);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test("in the personal edition, links to Settings › Activity narrowed to this Bot", async () => {

@@ -1,14 +1,17 @@
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
-import { IconBolt, IconDeviceDesktop } from "@tabler/icons-react";
+import {
+  IconBolt,
+  IconDeviceDesktop,
+  IconDots,
+  IconListSearch,
+} from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
-import {
-  ClearBrowserDialog,
-  useClearBrowserData,
-} from "@/components/browser/browser-bar";
 import {
   PageEmpty,
   PageRows,
@@ -20,6 +23,14 @@ import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -40,10 +51,15 @@ import {
   revokeHostFolderGrantMutationOptions,
   stopHostAccessMutationOptions,
 } from "@/lib/computers/host-access";
-import { setComputerStateMutationOptions } from "@/lib/computers/mutations";
 import {
+  type ComputerAction,
+  setComputerStateMutationOptions,
+} from "@/lib/computers/mutations";
+import {
+  type ComputerIsolation,
   type ComputerProfile,
   computerFleetQueryOptions,
+  fleetAccessDenied,
 } from "@/lib/computers/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
@@ -61,6 +77,111 @@ function isOwnBrowser(computer: ComputerProfile): boolean {
   return computer.botId !== undefined && isPersonBrowserId(computer.botId);
 }
 
+type DeviceOperation = ComputerAction | "clear";
+
+function resetLabel(
+  computer: ComputerProfile,
+  isolation: ComputerIsolation | null,
+) {
+  if (isolation !== "shared") return "Reset computer";
+  return computer.kind === "person" && !computer.botId
+    ? "Reset browser profiles"
+    : "Reset browser profile";
+}
+
+function DeviceActions({
+  computer,
+  isolation,
+  title,
+  personal,
+  pending,
+  clearing,
+  onAction,
+}: {
+  computer: ComputerProfile;
+  isolation: ComputerIsolation | null;
+  title: string;
+  personal: boolean;
+  pending: boolean;
+  clearing: boolean;
+  onAction: (action: DeviceOperation, trigger: HTMLElement) => void;
+}) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const canClear = personal && isOwnBrowser(computer);
+  const actions = [
+    ...(computer.updateAvailable
+      ? [
+          {
+            action: "update",
+            label: "Update computer",
+            disabled: pending,
+          } as const,
+        ]
+      : []),
+    {
+      action: "stop",
+      label: "Stop browser",
+      disabled: pending || !computer.running,
+    },
+    {
+      action: canClear ? "clear" : "reset",
+      label: canClear ? "Clear browser data" : resetLabel(computer, isolation),
+      disabled: pending || (canClear && clearing),
+    },
+  ] as const;
+
+  return (
+    <>
+      <ItemActions className="sm:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                aria-label={`Device actions for ${title}`}
+                className="min-h-11 min-w-11"
+                ref={trigger}
+                size="icon"
+                variant="outline"
+              />
+            }
+          >
+            <IconDots aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {actions.map(({ action, label, disabled }) => (
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={disabled}
+                key={action}
+                onClick={() => {
+                  if (trigger.current) onAction(action, trigger.current);
+                }}
+              >
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </ItemActions>
+      <ItemActions className="hidden max-w-full flex-wrap sm:flex">
+        {actions.map(({ action, label, disabled }) => (
+          <DeviceAction
+            aria-label={`${label}: ${title}`}
+            className="confirmation-action"
+            disabled={disabled}
+            key={action}
+            onClick={(event) => onAction(action, event.currentTarget)}
+            size="sm"
+            variant="outline"
+          >
+            {label}
+          </DeviceAction>
+        ))}
+      </ItemActions>
+    </>
+  );
+}
+
 /**
  * `children` are sections only the team edition's Admin adds below the page's own (the admin's
  * controls for these). The personal edition's Settings renders this page with none.
@@ -76,6 +197,9 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const fleetHeading = useRef<HTMLHeadingElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const queryClient = useQueryClient();
   const nameFor = useBotNames();
   /*
@@ -83,7 +207,6 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
    * Recorder connection ends with the profile. A Bot's Reset does neither.
    */
   const clearOwnBrowser = useMutation(clearBrowserMutationOptions(queryClient));
-  const clearing = useClearBrowserData(clearOwnBrowser);
 
   const fleet = useQuery(computerFleetQueryOptions());
   const hostAccess = useQuery(hostAccessQueryOptions());
@@ -99,9 +222,8 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
     stopHostAccessMutationOptions(queryClient),
   );
 
-  const denied =
-    fleet.error instanceof ClientError &&
-    (fleet.error.status === 401 || fleet.error.status === 403);
+  const denied = fleetAccessDenied(fleet.error);
+  const canManageFleet = fleet.isSuccess;
   const computers = denied ? null : (fleet.data?.computers ?? null);
   const isolation = denied ? null : (fleet.data?.isolation ?? null);
   const hostWriteError =
@@ -137,32 +259,60 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
 
   function confirmChange(
     computer: ComputerProfile,
-    action: "reset" | "update",
+    action: DeviceOperation,
     trigger: HTMLElement,
   ) {
     const name = titleOf(computer);
-    const reset = action === "reset";
     const resetImpact =
-      computer.kind === "person" && !computer.botId
-        ? "Every Bot’s browser profile on this computer is deleted. Each Bot is signed out and starts clean."
-        : isOwnBrowser(computer)
-          ? "The browser profile is deleted. The person is signed out of every site in it."
-          : "The Bot’s browser profile is deleted. The Bot is signed out and starts clean.";
+      isolation === "per-person"
+        ? "Files and browser profiles stored on this computer are deleted. Everyone using it will be signed out."
+        : isolation !== "shared"
+          ? "Browser data is deleted and sign-ins are cleared. The computer’s stored files may also be deleted, depending on the deployment."
+          : computer.kind === "person" && !computer.botId
+            ? "Every Bot’s browser profile on this computer is deleted. Each Bot is signed out and starts clean."
+            : isOwnBrowser(computer)
+              ? "The browser profile is deleted. The person is signed out of every site in it."
+              : "The Bot’s browser profile is deleted. The Bot is signed out and starts clean.";
+    const details = {
+      reset: {
+        title: `${resetLabel(computer, isolation)} for ${name}?`,
+        description: `${resetImpact} You can’t undo this.`,
+        confirmLabel: resetLabel(computer, isolation),
+        pendingLabel: "Resetting…",
+        successMessage: `Reset complete for ${name}.`,
+      },
+      update: {
+        title: `Update ${name}?`,
+        description: `Installs the current ${paths.deploymentName} computer version. Files and sign-ins are kept. A running computer restarts and stops what it is doing.`,
+        confirmLabel: "Update computer",
+        pendingLabel: "Updating…",
+        successMessage: `Update complete for ${name}.`,
+      },
+      stop: {
+        title: `Stop browser for ${name}?`,
+        description:
+          "Work in the browser stops. Sign-ins are kept, and the browser starts again the next time it’s needed.",
+        confirmLabel: "Stop browser",
+        pendingLabel: "Stopping…",
+        successMessage: `Browser stopped for ${name}.`,
+      },
+      clear: {
+        title: "Clear this browser?",
+        description:
+          "Cookies, saved passwords and history are wiped. You'll have to sign in everywhere again.",
+        confirmLabel: "Clear browser data",
+        pendingLabel: "Clearing…",
+        successMessage: "Browser cleared.",
+      },
+    }[action];
     requestConfirmation({
-      title: reset ? `Reset ${name}?` : `Update ${name}?`,
-      description: reset
-        ? `${resetImpact} You can’t undo this.`
-        : `It moves to the computer image ${paths.deploymentName} now runs. Files and sign-ins are kept. A running computer restarts and stops what it is doing.`,
-      confirmLabel: reset ? "Reset computer" : "Update computer",
-      pendingLabel: reset ? "Resetting…" : "Updating…",
+      ...details,
       failureMessage: `Couldn't complete the change for ${name}. Try again.`,
-      successMessage: reset
-        ? `Reset complete for ${name}.`
-        : `Update complete for ${name}.`,
-      variant: reset ? "destructive" : "default",
+      variant:
+        action === "reset" || action === "clear" ? "destructive" : "default",
       trigger,
-      fallbackFocus: () => fleetHeading.current,
-      refresh: () => fleet.refetch(),
+      fallbackFocus: () =>
+        (words.length > 0 ? searchInput.current : null) ?? fleetHeading.current,
       run: async () => {
         const { data } = await fleet.refetch({ throwOnError: true });
         const latest = data?.computers.find(
@@ -172,25 +322,52 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
           !latest ||
           latest.running !== computer.running ||
           latest.startedAt !== computer.startedAt ||
-          (!reset && !latest.updateAvailable)
+          (action === "reset" && (data?.isolation ?? null) !== isolation) ||
+          (action === "update" && !latest.updateAvailable)
         ) {
           throw new ActionUnavailable(
             "This device changed while you were reviewing it. Close this dialog and check its current status.",
           );
         }
         try {
-          await setState.mutateAsync({
-            action,
-            computer: latest.computer,
-            botId: latest.botId,
-          });
-        } catch (error) {
-          if (!(error instanceof ClientError) || error.status >= 500) {
-            throw new ActionUnavailable(
-              `The service couldn't confirm the change. Check the device status and ${paths.auditLabel} before trying again.`,
-            );
+          if (action === "clear") {
+            await clearOwnBrowser.mutateAsync();
+          } else {
+            await setState.mutateAsync({
+              action,
+              computer: latest.computer,
+              botId: latest.botId,
+            });
           }
-          throw error;
+        } catch (error) {
+          const refreshed = await fleet.refetch();
+          if (error instanceof ClientError && error.status < 500) throw error;
+          const current = refreshed.isSuccess
+            ? refreshed.data.computers.find(
+                (item) => rowId(item) === rowId(computer),
+              )
+            : undefined;
+          throw new ActionUnavailable(
+            `The service couldn't confirm the change for ${name}.`,
+            <VStack align="start" gap={2}>
+              <Text as="p" color="secondary" display="block" size="base">
+                {current
+                  ? `Latest device status: ${stateOf(current)}`
+                  : "Couldn’t check the latest device status."}
+              </Text>
+              <Link
+                {...paths.audit()}
+                style={{
+                  alignItems: "center",
+                  display: "inline-flex",
+                  minHeight: "var(--spacing-11)",
+                  textDecoration: "underline",
+                }}
+              >
+                Open {paths.auditLabel}
+              </Link>
+            </VStack>,
+          );
         }
       },
     });
@@ -211,9 +388,11 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
 
   /** Whether its browser runs, and when it starts again. */
   const stateOf = (computer: ComputerProfile): string => {
-    const since = computer.running
-      ? `Browser running since ${new Date(computer.startedAt ?? "").toLocaleTimeString()}`
-      : "No browser running";
+    const startedAt = Date.parse(computer.startedAt ?? "");
+    let since = computer.running ? "Browser running" : "No browser running";
+    if (computer.running && Number.isFinite(startedAt)) {
+      since += ` since ${new Date(startedAt).toLocaleTimeString()}`;
+    }
     if (!isOwnBrowser(computer))
       return computer.running
         ? since
@@ -225,12 +404,27 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
       : `${since}. It opens when you record with Teach a Bot.`;
   };
 
+  const matches = (computers ?? []).filter((computer) => {
+    if (words.length === 0) return true;
+    const text = [
+      titleOf(computer),
+      computer.person?.name,
+      computer.person?.email,
+      computer.computer,
+      computer.running ? "running" : "stopped",
+      computer.updateAvailable ? "update available" : null,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+
   return (
     <DevicePage
       description={
         personal
           ? "Your Bots share one computer. Each Bot keeps its own browser profile there, which keeps it signed in. A command one Bot runs can still read another Bot's files."
-          : "Each person's computer, and each isolated Bot's. Every Bot keeps its own browser profile on it, which keeps that Bot signed in. Resetting a computer signs every Bot on it out of everything."
+          : "Each person's computer, and each isolated Bot's. Every Bot keeps its own browser profile, which keeps that Bot signed in. Resetting a browser profile signs out every site in that profile."
       }
       title={personal ? "Computer" : "Computers"}
     >
@@ -241,32 +435,94 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
         }
       >
         {confirmation}
-        {setState.variables?.action === "stop" && setState.error ? (
-          <p
-            className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
-            role="alert"
-          >
-            {setState.error.message}
-          </p>
-        ) : null}
         {fleet.isError ? (
           <ReadError
             description={
               computers?.length
-                ? "Showing device information from the last successful check."
+                ? "Showing device information from the last successful check. Refresh to make changes."
                 : undefined
             }
             message={
-              computers?.length
-                ? "Couldn't refresh device status."
-                : "Couldn't load the device list."
+              denied
+                ? "You don’t have access to these devices."
+                : computers?.length
+                  ? "Couldn't refresh device status."
+                  : "Couldn't load the device list."
             }
             retry={fleet.refetch}
+            focusAfterRetry={() => fleetHeading.current}
+            retryLabel="Retry loading devices"
             retryBelow
             retrying={fleet.isFetching}
           />
         ) : fleet.isPending ? (
           <ReadStatus kind="loading" message="Loading devices…" />
+        ) : null}
+        {computers?.length ? (
+          <Input
+            aria-label="Search devices"
+            className="mt-4 min-h-12"
+            maxLength={200}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && search) {
+                event.preventDefault();
+                setSearch("");
+              }
+            }}
+            placeholder={
+              personal
+                ? "Search by Bot or status"
+                : "Search by person, Bot, or status"
+            }
+            ref={searchInput}
+            type="search"
+            value={search}
+          />
+        ) : null}
+        {computers?.length && words.length > 0 ? (
+          <p className="mt-2 text-muted-foreground text-sm" role="status">
+            {matches.length} of {computers.length} devices match
+          </p>
+        ) : null}
+        {computers?.length ? (
+          <details className="mt-3 text-sm">
+            <summary className="min-h-11 cursor-pointer py-3 font-medium">
+              What these actions do
+            </summary>
+            {personal ? (
+              <p className="pb-3 text-muted-foreground">
+                <strong>Stop browser</strong> closes a browser and keeps its
+                sign-ins. It starts again the next time it's needed.{" "}
+                <strong>Reset</strong> clears sign-ins. The confirmation
+                explains whether it also deletes computer files.{" "}
+                {computers?.some(isOwnBrowser) ? (
+                  <>
+                    <strong>Clear browser data</strong> does the same for your
+                    OpenBot browser.{" "}
+                  </>
+                ) : null}
+                Each shows in{" "}
+                <Link className="underline" {...paths.audit()}>
+                  {paths.auditLabel}
+                </Link>
+                .
+              </p>
+            ) : (
+              <p className="pb-3 text-muted-foreground">
+                <strong>Stop browser</strong> closes the computer's browsers and
+                keeps their logins. It starts again the next time a Bot needs
+                it. <strong>Reset</strong> clears sign-ins. The confirmation
+                explains what happens to profiles and files.{" "}
+                <strong>Update computer</strong> installs the current version
+                and keeps files and sign-ins. All three show in{" "}
+                <Link className="underline" {...paths.audit()}>
+                  {paths.auditLabel}
+                </Link>
+                .
+              </p>
+            )}
+          </details>
         ) : null}
         {computers === null ||
         (fleet.isError && computers.length === 0) ? null : computers.length ===
@@ -279,12 +535,30 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
               ? "One starts the first time a Bot opens a page."
               : "One shows up the first time a Bot opens a page."}
           </PageEmpty>
+        ) : matches.length === 0 ? (
+          <PageEmpty
+            action={
+              <Button
+                className="min-h-11"
+                onClick={() => {
+                  setSearch("");
+                  searchInput.current?.focus();
+                }}
+                type="button"
+                variant="outline"
+              >
+                Clear search
+              </Button>
+            }
+            icon={IconListSearch}
+            title="No matching devices"
+          />
         ) : (
           <PageRows>
-            {computers.map((computer, index) => (
+            {matches.map((computer, index) => (
               <StaggerItem index={index} key={rowId(computer)}>
                 <Item size="sm">
-                  <ItemContent className="min-w-0 basis-full sm:basis-auto">
+                  <ItemContent className="min-w-0">
                     <ItemTitle
                       className="line-clamp-none block wrap-anywhere"
                       title={computer.computer}
@@ -314,72 +588,21 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
                       </ItemDescription>
                     ) : null}
                   </ItemContent>
-                  <ItemActions className="max-w-full flex-wrap">
-                    {computer.updateAvailable ? (
-                      <DeviceAction
-                        aria-label={`Update computer: ${titleOf(computer)}`}
-                        className="confirmation-action"
-                        disabled={setState.isPending}
-                        onClick={(event) =>
-                          confirmChange(computer, "update", event.currentTarget)
-                        }
-                        size="sm"
-                        variant="outline"
-                      >
-                        Update computer
-                      </DeviceAction>
-                    ) : null}
-                    <DeviceAction
-                      aria-label={`Stop browser: ${titleOf(computer)}`}
-                      className="confirmation-action"
-                      disabled={setState.isPending || !computer.running}
-                      onClick={() =>
-                        setState.mutate({
-                          action: "stop",
-                          computer: computer.computer,
-                          botId: computer.botId,
-                        })
+                  {canManageFleet ? (
+                    <DeviceActions
+                      clearing={clearOwnBrowser.isPending}
+                      computer={computer}
+                      isolation={isolation}
+                      onAction={(action, trigger) =>
+                        confirmChange(computer, action, trigger)
                       }
-                      size="sm"
-                      variant="outline"
-                    >
-                      {setState.isPending &&
-                      setState.variables.action === "stop" &&
-                      setState.variables.computer === computer.computer &&
-                      setState.variables.botId === computer.botId
-                        ? "Stopping…"
-                        : "Stop browser"}
-                    </DeviceAction>
-                    {personal && isOwnBrowser(computer) ? (
-                      <DeviceAction
-                        aria-label={`Clear browser data: ${titleOf(computer)}`}
-                        className="confirmation-action"
-                        disabled={
-                          setState.isPending || clearOwnBrowser.isPending
-                        }
-                        onClick={clearing.ask}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Clear browser data
-                      </DeviceAction>
-                    ) : (
-                      <DeviceAction
-                        aria-label={`Reset: ${titleOf(computer)}`}
-                        className="confirmation-action"
-                        disabled={setState.isPending}
-                        onClick={(event) =>
-                          confirmChange(computer, "reset", event.currentTarget)
-                        }
-                        size="sm"
-                        variant="outline"
-                      >
-                        Reset
-                      </DeviceAction>
-                    )}
-                  </ItemActions>
+                      pending={setState.isPending}
+                      personal={personal}
+                      title={titleOf(computer)}
+                    />
+                  ) : null}
                 </Item>
-                {index !== computers.length - 1 && <Separator />}
+                {index !== matches.length - 1 && <Separator />}
               </StaggerItem>
             ))}
           </PageRows>
@@ -432,6 +655,7 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
                 Promise.all([hostAccess.refetch(), agents.refetch()])
               }
               retryBelow
+              retryLabel="Retry checking folder access"
               retrying={hostAccess.isFetching || agents.isFetching}
             />
           ) : hostLoading ? (
@@ -452,43 +676,6 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
         stopping={stopHostAccess.isPending}
       />
 
-      <ClearBrowserDialog
-        clear={clearOwnBrowser}
-        onOpenChange={clearing.setAsking}
-        open={clearing.asking}
-      />
-
-      {personal ? (
-        <p className="mt-4 text-muted-foreground text-sm">
-          <strong>Stop browser</strong> closes a browser and keeps its sign-ins.
-          It starts again the next time it's needed. <strong>Reset</strong>{" "}
-          deletes a Bot's browser profile and signs it out of everything.{" "}
-          {computers?.some(isOwnBrowser) ? (
-            <>
-              <strong>Clear browser data</strong> does the same for your OpenBot
-              browser.{" "}
-            </>
-          ) : null}
-          Each shows in{" "}
-          <Link className="underline" {...paths.audit()}>
-            {paths.auditLabel}
-          </Link>
-          .
-        </p>
-      ) : (
-        <p className="mt-4 text-muted-foreground text-sm">
-          <strong>Stop</strong> closes the computer's browsers and keeps their
-          logins. It starts again the next time a Bot needs it.{" "}
-          <strong>Reset</strong> deletes the profiles and signs every Bot on it
-          out of everything. <strong>Update computer</strong> shows when a
-          computer runs an older image. It moves the computer to the new one and
-          keeps its files and sign-ins. All three show in{" "}
-          <Link className="underline" {...paths.audit()}>
-            {paths.auditLabel}
-          </Link>
-          .
-        </p>
-      )}
       {children}
     </DevicePage>
   );

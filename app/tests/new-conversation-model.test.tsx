@@ -350,7 +350,7 @@ test("two open conversations sharing a saved first message dispatch it once", as
     // The first run is still open when the other view checks for delivery.
     await other.findByRole(
       "button",
-      { name: "Check again" },
+      { name: "Check for message" },
       { timeout: 8000 },
     );
     expect(sentMessages).toEqual([message]);
@@ -391,7 +391,7 @@ for (const scenario of [
     });
     const view = renderAt(`/channel/${channel.id}`);
     const button = await view.findByRole("button", {
-      name: scenario === "check only" ? "Check again" : "Resend message",
+      name: scenario === "check only" ? "Check for message" : "Resend message",
     });
     expect(sentMessages).toEqual([]);
     if (scenario === "already delivered") storedMessages = [message];
@@ -400,7 +400,7 @@ for (const scenario of [
 
     if (scenario === "check only" || scenario === "history offline") {
       const checkAgain = await view.findByRole("button", {
-        name: "Check again",
+        name: "Check for message",
       });
       expect(checkAgain).toBe(button);
       expect(document.activeElement).toBe(checkAgain);

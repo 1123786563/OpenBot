@@ -1,16 +1,19 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { LinkProvider } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import { IconChevronRight, IconShare } from "@tabler/icons-react";
+import {
+  IconChevronRight,
+  IconListSearch,
+  IconShare,
+} from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Link, useLocation } from "@tanstack/react-router";
+import { type MouseEvent, useLayoutEffect, useRef, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
   attentionSummary,
@@ -20,7 +23,7 @@ import { PageEmpty, PageSection } from "@/components/layout/page-shell";
 import { ReadError } from "@/components/layout/read-status";
 import { NeedsYouBoard } from "@/components/needs-you/board";
 import { DoneTasks, useNeedsYou } from "@/components/needs-you/needs-you";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { groupRoster } from "@/lib/agents/roster";
 import { shownSubtitle } from "@/lib/agents/subtitle";
@@ -28,9 +31,13 @@ import {
   type BotAttention,
   botAttentionQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
-import { ClientError } from "@/lib/client";
+import { ClientError, canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { appConfig } from "@/lib/generated/application-config";
+
+let lastOpenedBot:
+  | { historyEntry: string; href: string; hidden: boolean }
+  | undefined;
 
 /**
  * Every Bot the person can reach, in the one place they are listed: what needs the person first,
@@ -43,15 +50,84 @@ import { appConfig } from "@/lib/generated/application-config";
  *
  * This replaces three screens (Bots, Agents and Team Bots) that listed the same Bots three ways.
  */
-export function BotRoster() {
+export function BotRoster({
+  search: query,
+  onSearchChange,
+  focusAfterRetry,
+}: {
+  search?: string;
+  onSearchChange?: (query: string) => void;
+  focusAfterRetry?: () => HTMLElement | null;
+} = {}) {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
-  const [search, setSearch] = useState("");
+  const [localSearch, setLocalSearch] = useState("");
+  const search = query ?? localSearch;
+  const setSearch = onSearchChange ?? setLocalSearch;
+  const searchBox = useRef<HTMLInputElement>(null);
+  const directory = useRef<HTMLElement>(null);
+  const historyEntry = useLocation({
+    select: (location) => location.state.__TSR_key,
+  });
   const agents = useQuery(agentListQueryOptions());
   const hidden = useQuery(agentListQueryOptions(true));
   const attention = useQuery(botAttentionQueryOptions());
   const list = useNeedsYou();
   const byId = new Map((attention.data ?? []).map((bot) => [bot.agentId, bot]));
+  const denied =
+    agents.error instanceof ClientError &&
+    (agents.error.status === 401 || agents.error.status === 403);
+  const loaded =
+    canKeepCachedRead(agents.error) &&
+    agents.data !== undefined &&
+    (!agents.error || agents.data.length > 0);
+  const restoreHidden = Boolean(
+    lastOpenedBot?.hidden && lastOpenedBot.historyEntry === historyEntry,
+  );
+
+  useLayoutEffect(() => {
+    if (
+      !loaded ||
+      !lastOpenedBot ||
+      lastOpenedBot.historyEntry !== historyEntry ||
+      (restoreHidden && hidden.isPending)
+    )
+      return;
+    const target = Array.from(
+      directory.current?.querySelectorAll("a[href]") ?? [],
+    ).find((link) => link.getAttribute("href") === lastOpenedBot?.href);
+    lastOpenedBot = undefined;
+    if (document.activeElement === document.body) {
+      if (target instanceof HTMLElement) target.focus();
+      else searchBox.current?.focus();
+    }
+  }, [hidden.isPending, historyEntry, loaded, restoreHidden]);
+
+  function rememberBot(event: MouseEvent<HTMLElement>) {
+    if (
+      !historyEntry ||
+      event.button !== 0 ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    )
+      return;
+    const href =
+      event.target instanceof Element
+        ? event.target.closest("a[href]")?.getAttribute("href")
+        : undefined;
+    if (href?.startsWith("/bots/")) {
+      lastOpenedBot = {
+        historyEntry,
+        href,
+        hidden:
+          hidden.data?.some(
+            ({ id }) => href === `/bots/${encodeURIComponent(id)}`,
+          ) ?? false,
+      };
+    }
+  }
 
   if (agents.isPending) {
     return (
@@ -64,9 +140,7 @@ export function BotRoster() {
       </section>
     );
   }
-  if (agents.data === undefined) {
-    const denied =
-      agents.error instanceof ClientError && agents.error.status === 403;
+  if (!loaded || agents.data === undefined) {
     return denied ? (
       <Banner
         status="error"
@@ -74,11 +148,20 @@ export function BotRoster() {
         title="You can’t view Bots in this workspace"
         description="Ask a workspace administrator for access."
         endContent={
-          <AstryxButton as={Link} href="/" label="Back to workspace" />
+          <Link
+            className={buttonVariants({
+              className: "min-h-11",
+              variant: "outline",
+            })}
+            to="/"
+          >
+            Back to workspace
+          </Link>
         }
       />
     ) : (
       <ReadError
+        focusAfterRetry={focusAfterRetry}
         message="Couldn’t load Bots"
         description="Try loading the list again."
         retry={() => agents.refetch()}
@@ -89,11 +172,14 @@ export function BotRoster() {
     );
   }
   const term = search.trim().toLocaleLowerCase();
-  const visible = agents.data.filter((bot) =>
-    [bot.name, bot.title].some((text) =>
-      text.toLocaleLowerCase().includes(term),
-    ),
-  );
+  const matches = ({ name, title }: AgentProfile) =>
+    [name, title].some((text) => text.toLocaleLowerCase().includes(term));
+  const visible = agents.data.filter(matches);
+  const hiddenBots = agents.error || hidden.error ? [] : (hidden.data ?? []);
+  const hiddenMatches = hiddenBots.filter(matches);
+  const matchCount = visible.length + hiddenMatches.length;
+  const hiddenPending = !agents.error && hidden.isPending;
+  const noMatches = Boolean(term) && matchCount === 0 && !hiddenPending;
   const { pinned, yours, shared } = groupRoster(visible);
 
   return (
@@ -102,54 +188,127 @@ export function BotRoster() {
        * What waits on the person, each thing under the Bot it came from and decided where it is.
        * A Bot waiting on them stays in its own section below too, with its badge.
        */}
-      <NeedsYouBoard />
-      {agents.data.length > 1 ? (
-        <section>
-          <TextInput
-            label="Find a visible Bot"
-            onChange={setSearch}
-            size="lg"
-            controlStyle={{ minBlockSize: "var(--spacing-11, 2.75rem)" }}
-            value={search}
+      {agents.error ? (
+        <ReadError
+          description="Showing the last loaded Bots. Refresh to update the list."
+          focusAfterRetry={focusAfterRetry}
+          message="Couldn’t refresh Bots"
+          retry={agents.refetch}
+          retryBelow
+          retrying={agents.isFetching}
+        />
+      ) : (
+        <NeedsYouBoard />
+      )}
+      <section
+        aria-label="Bot directory"
+        ref={directory}
+        onClickCapture={rememberBot}
+      >
+        {agents.data.length > 1 || hiddenBots.length || search ? (
+          <VStack gap={2}>
+            <TextInput
+              hasClear
+              label="Search Bots"
+              onChange={setSearch}
+              onEnter={() =>
+                directory.current
+                  ?.querySelector<HTMLAnchorElement>('a[href^="/bots/"]')
+                  ?.focus()
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && search) {
+                  event.preventDefault();
+                  setSearch("");
+                }
+              }}
+              ref={searchBox}
+              placeholder="Name or role"
+              size="lg"
+              type="search"
+              controlClassName="[&_input]:min-h-11 [&_button]:min-h-11 [&_button]:min-w-11"
+              controlStyle={{
+                minBlockSize: "var(--spacing-11)",
+                paddingInlineStart: "var(--spacing-3)",
+              }}
+              value={search}
+            />
+            <p
+              className={
+                noMatches ? "sr-only" : "text-muted-foreground text-sm"
+              }
+              role="status"
+            >
+              {term && hiddenPending
+                ? "Searching hidden Bots…"
+                : term
+                  ? `${matchCount} matching ${matchCount === 1 ? "Bot" : "Bots"}.`
+                  : null}
+            </p>
+          </VStack>
+        ) : null}
+        {pinned.length ? (
+          <PageSection title="Pinned">
+            <RosterRows agents={pinned} byId={byId} />
+          </PageSection>
+        ) : null}
+        {yours.length > 0 ? (
+          <PageSection title="Yours">
+            <RosterRows agents={yours} byId={byId} />
+          </PageSection>
+        ) : null}
+        {!term && yours.length === 0 && pinned.some((bot) => bot.mine) ? (
+          <p>Your Bots are all pinned above.</p>
+        ) : null}
+        {shared.length > 0 ? (
+          <PageSection
+            title={
+              personal
+                ? `Included with ${appConfig.brand.productName}`
+                : "Shared with you"
+            }
+          >
+            <RosterRows agents={shared} byId={byId} />
+          </PageSection>
+        ) : null}
+        {noMatches ? (
+          <PageEmpty
+            icon={IconListSearch}
+            title={`No ${agents.error || hidden.error ? "visible " : ""}Bots match “${search.trim()}”.`}
+          >
+            Try a shorter name or a word from the Bot’s role.
+          </PageEmpty>
+        ) : !term &&
+          agents.data.length === 0 &&
+          !hiddenBots.length &&
+          !hiddenPending ? (
+          <PageEmpty icon={IconShare} title="No Bots available yet">
+            Create a Bot to start working with it.
+          </PageEmpty>
+        ) : null}
+        {!term && !agents.error ? <DoneTasks done={list.done} /> : null}
+        {!agents.error && hidden.error ? (
+          <ReadError
+            message="Couldn’t load hidden Bots"
+            retry={hidden.refetch}
+            retryBelow
+            retryLabel="Retry hidden Bots"
+            retrying={hidden.isFetching}
+            focusAfterRetry={() =>
+              searchBox.current ?? focusAfterRetry?.() ?? null
+            }
           />
-        </section>
-      ) : null}
-      {term && visible.length === 0 ? (
-        <p role="status">No Bots match “{search.trim()}”.</p>
-      ) : null}
-      {pinned.length ? (
-        <PageSection title="Pinned">
-          <RosterRows agents={pinned} byId={byId} />
-        </PageSection>
-      ) : null}
-      {yours.length > 0 ? (
-        <PageSection title="Yours">
-          <RosterRows agents={yours} byId={byId} />
-        </PageSection>
-      ) : null}
-      {!term && yours.length === 0 && pinned.some((bot) => bot.mine) ? (
-        <p>Your Bots are all pinned above.</p>
-      ) : null}
-      {shared.length > 0 ? (
-        <PageSection
-          title={
-            personal
-              ? `Included with ${appConfig.brand.productName}`
-              : "Shared with you"
-          }
-        >
-          <RosterRows agents={shared} byId={byId} />
-        </PageSection>
-      ) : null}
-      {agents.data.length === 0 ? (
-        <PageEmpty icon={IconShare} title="No Bots available yet">
-          Create a Bot to start working with it.
-        </PageEmpty>
-      ) : null}
-      <DoneTasks done={list.done} />
-      {hidden.data?.length ? (
-        <HiddenSection agents={hidden.data} byId={byId} personal={personal} />
-      ) : null}
+        ) : null}
+        {hiddenMatches.length ? (
+          <HiddenSection
+            agents={hiddenMatches}
+            byId={byId}
+            filtering={Boolean(term)}
+            initiallyOpen={restoreHidden && !term}
+            personal={personal}
+          />
+        ) : null}
+      </section>
     </>
   );
 }
@@ -162,24 +321,40 @@ export function BotRoster() {
 function HiddenSection({
   agents,
   byId,
+  filtering,
+  initiallyOpen,
   personal,
 }: {
   agents: AgentProfile[];
   byId: Map<string, BotAttention>;
+  filtering: boolean;
+  initiallyOpen: boolean;
   personal: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   return (
     <PageSection
       action={
-        <Button onClick={() => setOpen(!open)} size="sm" variant="ghost">
-          {open ? "Hide" : "Show"}
-        </Button>
+        filtering ? undefined : (
+          <Button
+            aria-expanded={open}
+            className="min-h-11"
+            onClick={() => setOpen(!open)}
+            size="sm"
+            variant="ghost"
+          >
+            {open ? "Hide hidden Bots" : "Show hidden Bots"}
+          </Button>
+        )
       }
-      description={`${agents.length} ${agents.length === 1 ? "Bot" : "Bots"} you hid.${personal ? "" : " Only your list changes."}`}
+      description={
+        filtering
+          ? "Hidden Bots matching your search."
+          : `${agents.length} ${agents.length === 1 ? "Bot" : "Bots"} you hid.${personal ? "" : " Only your list changes."}`
+      }
       title="Hidden"
     >
-      {open ? <RosterRows agents={agents} byId={byId} /> : null}
+      {open || filtering ? <RosterRows agents={agents} byId={byId} /> : null}
     </PageSection>
   );
 }

@@ -1,5 +1,5 @@
-import { infiniteQueryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { type InfiniteData, infiniteQueryOptions } from "@tanstack/react-query";
+import { ClientError, client } from "@/lib/client";
 
 /**
  * Somebody who has signed in to this deployment.
@@ -38,6 +38,13 @@ export type PeoplePage = {
   nextCursor: string | null;
 };
 
+export function peopleAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 /**
  * The people in this deployment, a page at a time.
  *
@@ -51,15 +58,33 @@ export function peopleListQueryOptions(search = "") {
   return infiniteQueryOptions({
     queryKey: peopleKeys.list(search),
     initialPageParam: "",
-    queryFn: ({ pageParam }): Promise<PeoplePage> => {
+    retry: (failures, error) => failures < 1 && !peopleAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      pageParam,
+      signal,
+    }): Promise<PeoplePage> => {
       const query = new URLSearchParams();
       if (search) query.set("search", search);
-      if (pageParam) query.set("cursor", pageParam as string);
+      if (pageParam) query.set("cursor", pageParam);
       const suffix = query.size > 0 ? `?${query}` : "";
 
-      return client(`/api/admin/people${suffix}`, {
-        fallback: "Could not load people",
-      }).then((response) => response.json() as Promise<PeoplePage>);
+      try {
+        const response = await client(`/api/admin/people${suffix}`, {
+          fallback: "Could not load people",
+          signal,
+        });
+        return response.json();
+      } catch (error) {
+        if (peopleAccessDenied(error)) {
+          cache.setQueriesData<InfiniteData<PeoplePage, string>>(
+            { queryKey: peopleKeys.all },
+            (current) =>
+              current?.pages.length ? { pages: [], pageParams: [] } : current,
+          );
+        }
+        throw error;
+      }
     },
     getNextPageParam: (page: PeoplePage) => page.nextCursor ?? undefined,
   });

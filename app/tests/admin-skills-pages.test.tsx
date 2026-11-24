@@ -49,6 +49,7 @@ afterAll(async () => {
 const originalFetch = global.fetch;
 let writes: { method: string; path: string; body: unknown }[];
 let skills: PluginSkill[];
+let hiddenRosterStatus: number;
 
 function skill(overrides: Partial<PluginSkill> = {}): PluginSkill {
   return {
@@ -69,6 +70,7 @@ function skill(overrides: Partial<PluginSkill> = {}): PluginSkill {
 beforeEach(() => {
   writes = [];
   skills = [skill()];
+  hiddenRosterStatus = 200;
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
@@ -86,7 +88,10 @@ beforeEach(() => {
         });
         return json({ ok: true });
       }
-      if (path === "/api/agents")
+      if (path === "/api/agents") {
+        if (url.includes("hidden=true") && hiddenRosterStatus !== 200) {
+          return new Response(null, { status: hiddenRosterStatus });
+        }
         return json({
           agents: url.includes("hidden=true")
             ? []
@@ -95,6 +100,7 @@ beforeEach(() => {
                 { id: "bot-grace", name: "Grace" },
               ],
         });
+      }
       if (path === "/api/plugins")
         return json({
           catalogue: [],
@@ -197,6 +203,24 @@ describe("the Skills list", () => {
       "/admin/skills/new",
     );
   });
+});
+
+test("a partial Bot roster is read-only until the failed roster read recovers", async () => {
+  hiddenRosterStatus = 503;
+  const { view } = renderAt("/admin/skills/triage");
+  const retry = await view.findByRole("button", { name: "Retry Bots" });
+  const grant = view.getByRole("switch", {
+    name: "Ada offers Triage the inbox",
+  });
+
+  expect(grant.getAttribute("aria-disabled")).toBe("true");
+  expect(view.queryByText("No Bots yet")).toBeNull();
+  hiddenRosterStatus = 200;
+  fireEvent.click(retry);
+  await waitFor(() =>
+    expect(grant.getAttribute("aria-disabled")).not.toBe("true"),
+  );
+  expect(writes).toEqual([]);
 });
 
 describe("writing a skill", () => {

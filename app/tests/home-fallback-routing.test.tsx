@@ -289,7 +289,10 @@ test("a failed start is reachable from Home without replacing a new draft", asyn
   expect(starts).toEqual([]);
 });
 
-for (const status of [409, 500]) {
+for (const { status, notice } of [
+  { status: 409, notice: "Cannot route these skills" },
+  { status: 500, notice: "Try again to continue with your saved message." },
+]) {
   test(`skill routing failure ${status} preserves the message without starting an incompatible fallback`, async () => {
     const starts: string[][] = [];
     const requests: unknown[] = [];
@@ -324,7 +327,13 @@ for (const status of [409, 500]) {
     await user.keyboard("/first");
     await user.click(await view.findByRole("option", { name: /First skill/ }));
     await user.click(await view.findByRole("button", { name: "Send message" }));
-    await view.findByText("Cannot route these skills");
+    await view.findByText(notice);
+    if (status === 500) {
+      expect(view.queryByText("Cannot route these skills")).toBeNull();
+      expect(
+        view.getByRole("button", { name: "Retry saved message" }),
+      ).toBeTruthy();
+    }
     expect(requests).toEqual([{ text: "/first", skillSlugs: ["first"] }]);
     expect(starts).toEqual([]);
     expect(view.getByText("/first")).toBeTruthy();

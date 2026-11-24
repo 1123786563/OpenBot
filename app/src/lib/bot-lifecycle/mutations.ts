@@ -90,18 +90,19 @@ export function cancelFollowUpMutationOptions(queryClient: QueryClient) {
   });
 }
 
-export function setUpdateRoutingMutationOptions(queryClient: QueryClient) {
-  return mutationOptions({
-    mutationFn: async (variables: {
-      kind: UpdateKind;
-      transports: UpdateTransport[] | "all";
-    }) => {
-      await client(`/api/bots/routing/${variables.kind}`, {
-        method: "PUT",
-        body: { transports: variables.transports },
-        fallback: "Could not save where updates go",
-      });
-    },
-    onSuccess: () => invalidateLifecycle(queryClient),
+export async function setUpdateRouting({
+  queryClient,
+  kind,
+  transports,
+}: {
+  queryClient: QueryClient;
+  kind: UpdateKind;
+  transports: UpdateTransport[] | "all";
+}) {
+  await client(`/api/bots/routing/${kind}`, {
+    method: "PUT",
+    body: { transports },
+    fallback: "Could not save where updates go",
   });
+  await invalidateLifecycle(queryClient);
 }

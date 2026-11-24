@@ -147,6 +147,22 @@ test("only this Bot's background research is listed, with no Bot to pick", async
   expect(view.queryByRole("combobox", { name: /^Bot/ })).toBeNull();
 });
 
+test("cancelling source removal leaves the source and sends no delete", async () => {
+  serving();
+  const view = draw(<MemorySources agentId="expenses" />);
+  const user = userEvent.setup({ document });
+  const remove = await view.findByRole("button", {
+    name: "Remove Receipts folder",
+  });
+  await user.click(remove);
+  await view.findByRole("alertdialog", { name: "Remove Receipts folder?" });
+  expect(requested).not.toContain("/api/memory/sources/s1");
+  await user.click(view.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(view.getByText("Receipts folder")).toBeTruthy();
+  expect(requested).not.toContain("/api/memory/sources/s1");
+});
+
 /** Opens Add source for the Expenses Bot and chooses its one read action. */
 async function openAddSource(view: ReturnType<typeof draw>) {
   const user = userEvent.setup({ document });

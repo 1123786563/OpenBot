@@ -137,7 +137,7 @@ export function SignInSection() {
                   <ItemDescription className="line-clamp-none text-sm">
                     {data.settings.ssoRequired
                       ? "People can only sign in through a registered SAML or OpenID Connect provider."
-                      : "People can also sign in with Google, Microsoft or Okta."}
+                      : "People can also sign in with Google, Microsoft or Okta. Before requiring SSO, test a sign-in using an email address from a registered provider's domain."}
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>

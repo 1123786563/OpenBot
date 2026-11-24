@@ -501,15 +501,18 @@ button.quick-chat-touch-target {
   color: var(--color-text-primary);
 }
 
-.routine-enable input[role="switch"] {
-  opacity: 0;
+/* Keep Astryx's native input as the hit target without painting it over the track. */
+@media (forced-colors: none) {
+  .astryx-switch-field input[role="switch"] {
+    opacity: 0;
+  }
+
+  .astryx-switch:not([data-checked], [data-disabled]) {
+    background-color: var(--muted-foreground);
+  }
 }
 
-.routine-enable .astryx-switch:not([data-checked]) {
-  background-color: var(--muted-foreground);
-}
-
-.routine-enable:has(input[role="switch"]:focus-visible) .astryx-switch {
+.astryx-switch-field input[role="switch"]:focus-visible + .astryx-switch {
   outline: calc(var(--spacing) / 2) solid var(--ring);
   outline-offset: calc(var(--spacing) / 2);
 }
@@ -532,6 +535,10 @@ button.quick-chat-touch-target {
 
 .astryx-banner-content:has(> .conversation-recovery-action) {
   padding: var(--spacing-2) var(--spacing-4);
+}
+
+.desktop-return .astryx-banner {
+  padding: var(--spacing-3) var(--spacing-4);
 }
 
 .group-participants-button.group-participants-button {

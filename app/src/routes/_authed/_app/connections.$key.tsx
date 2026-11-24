@@ -181,7 +181,7 @@ function RouteComponent() {
    * authorization (`?action=`) keeps its own page, which is what that flow comes back to.
    */
   if (personal && action === undefined)
-    return <PluginPage pluginKey={key} startConnect={startConnect} />;
+    return <PluginPage key={key} pluginKey={key} startConnect={startConnect} />;
   return <AppConnectionPage startConnect={startConnect} />;
 }
 

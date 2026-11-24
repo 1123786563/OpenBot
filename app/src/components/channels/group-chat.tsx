@@ -34,6 +34,7 @@ import {
   readComposeDraft,
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   awaitingFirstReply,
   type GroupMessage,
@@ -157,6 +158,12 @@ export function GroupChat({
    * down each time a Bot spoke; `atBottom` is where the reader was at their last scroll.
    */
   const viewportRef = useRef<HTMLElement | null>(null);
+  const replyRefresh = useRef<{
+    button: HTMLElement;
+    promptId: string;
+    before: GroupMessage[];
+    checkedAt: number;
+  } | null>(null);
   const restoredActivityFocus = useRef<HTMLElement | null>(null);
   const atBottom = useRef(true);
   // Once per mount, which is once per channel: the route keys `GroupChat` on its channel id.
@@ -169,6 +176,18 @@ export function GroupChat({
     awaitingReply && group.dataUpdatedAt > 0 && awaitingFirstReply(newest);
   const newestIsMine = newest !== undefined && newest.ownerUserId === me?.id;
   const lastKey = `${messages.length}:${newest?.status ?? ""}`;
+  async function refreshReplies(button: HTMLElement) {
+    replyRefresh.current =
+      newest && document.activeElement === button
+        ? {
+            button,
+            promptId: newest.id,
+            before: messages,
+            checkedAt: group.dataUpdatedAt,
+          }
+        : null;
+    await group.refetch();
+  }
   useLayoutEffect(() => {
     const element = viewportRef.current;
     if (element === null || lastKey === "0:") return;
@@ -184,6 +203,39 @@ export function GroupChat({
       atBottom.current = true;
     }
   }, [lastKey, newestIsMine]);
+
+  useLayoutEffect(() => {
+    const intent = replyRefresh.current;
+    if (
+      !intent ||
+      (messages === intent.before && group.dataUpdatedAt === intent.checkedAt)
+    )
+      return;
+    replyRefresh.current = null;
+    const viewport = viewportRef.current;
+    if (
+      !viewport ||
+      intent.button.isConnected ||
+      document.activeElement !== document.body
+    )
+      return;
+    const promptIndex = messages.findIndex(
+      (message) => message.id === intent.promptId,
+    );
+    const nextReply =
+      promptIndex < 0
+        ? undefined
+        : messages
+            .slice(promptIndex + 1)
+            .find((message) => message.agentId !== null);
+    const target =
+      nextReply &&
+      viewport.querySelector<HTMLElement>(
+        `[data-group-message="${CSS.escape(nextReply.id)}"]`,
+      );
+    if (target) target.focus();
+    else viewport.focus({ preventScroll: true });
+  }, [group.dataUpdatedAt, messages]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
@@ -203,13 +255,17 @@ export function GroupChat({
     atBottom.current = isNearBottom(viewport);
   }, [group.data, returningFromActivity]);
 
-  if (group.isPending)
+  if (group.isPending && group.errorUpdateCount === 0)
     return <ConversationLoading label="Opening group conversation…" />;
   if (!group.data) {
     return (
       <Stack padding={5}>
         <ConversationReadError
-          title="Couldn't open this group conversation."
+          title={
+            canKeepCachedRead(group.error)
+              ? "Couldn't open this group conversation."
+              : "You can't access this group conversation."
+          }
           description="The messages and participant list are unavailable."
           retry={() => void group.refetch()}
           retryBelow
@@ -221,7 +277,7 @@ export function GroupChat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {group.isError && (
+      {group.isError && !awaitingReply && (
         <ConversationReadError
           title="Couldn't update group messages."
           description="You can still read the messages already loaded."
@@ -281,31 +337,25 @@ export function GroupChat({
           ))}
           {awaitingReply && (
             <Stack align="start" gap={1}>
-              <Text as="p" type="supporting" role="status">
-                {checkingForReply
-                  ? "Message sent. No Bot reply yet."
-                  : "No Bot reply received. Automatic refresh has stopped."}
+              <Text
+                as="p"
+                type="supporting"
+                role={group.isError ? "alert" : "status"}
+              >
+                {group.isError
+                  ? "Couldn't check for replies. Try again when you're ready."
+                  : checkingForReply
+                    ? "Message sent. No Bot reply yet."
+                    : "No Bot reply received. Automatic refresh has stopped."}
               </Text>
-              {!checkingForReply && !group.isError && (
+              {(!checkingForReply || group.isError) && (
                 <Button
                   className="conversation-recovery-action"
                   label="Refresh messages"
                   variant="ghost"
                   size="lg"
                   isLoading={group.isFetching}
-                  clickAction={async (event) => {
-                    const button = event.currentTarget;
-                    const restoreFocus = document.activeElement === button;
-                    await group.refetch();
-                    if (!restoreFocus) return;
-                    requestAnimationFrame(() => {
-                      if (
-                        !button.isConnected &&
-                        document.activeElement === document.body
-                      )
-                        viewportRef.current?.focus({ preventScroll: true });
-                    });
-                  }}
+                  clickAction={(event) => refreshReplies(event.currentTarget)}
                 />
               )}
             </Stack>
@@ -414,7 +464,7 @@ export function GroupChat({
  * thread of its own, so it is found by the conversation, not by a thread.
  */
 export function groupQuestion(
-  inbox: ApprovalInboxData | undefined,
+  inbox: ApprovalInboxData | null | undefined,
   channelId: string,
 ): WaitingQuestion | undefined {
   return inbox?.questions.find((question) => question.channelId === channelId);
@@ -454,7 +504,12 @@ function GroupLine({
       </MessageRow>
     );
   return (
-    <MessageRow align="start" data-speaker={message.agentId}>
+    <MessageRow
+      align="start"
+      data-group-message={message.id}
+      data-speaker={message.agentId}
+      tabIndex={-1}
+    >
       <div className="shrink-0 pt-0.5">
         <ChannelAvatar participantIds={[message.agentId]} size={24} />
       </div>

@@ -11,7 +11,7 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, useId, useRef } from "react";
 import { HandoffPanel } from "@/components/agents/handoff-panel";
 import {
   PageEmpty,
@@ -24,6 +24,7 @@ import {
   appAccessSentence,
 } from "@/components/plugins/app-access-action";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -47,6 +48,7 @@ import {
   giveableAppsQueryOptions,
 } from "@/lib/app-access/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
 import { setPluginGrantMutationOptions } from "@/lib/plugins/mutations";
@@ -119,8 +121,11 @@ export function AccessSections({ agent }: { agent: AgentProfile }) {
           retrying={apps.isFetching}
         />
       ) : null}
-      {agent.mine && !personal && !apps.error ? (
-        <YourApps agent={agent} held={apps} />
+      {agent.mine &&
+      !personal &&
+      (!apps.error ||
+        (canKeepCachedRead(apps.error) && Boolean(apps.data?.length))) ? (
+        <YourApps agent={agent} held={apps} key={agent.id} />
       ) : null}
       {agent.mine ? <YourSkills agentId={agent.id} /> : null}
       <Granted agentId={agent.id} apps={apps} mine={agent.mine} />
@@ -135,10 +140,6 @@ export function AccessSections({ agent }: { agent: AgentProfile }) {
  * already gave this Bot. Only on your own Bot, for the reason the server gives — see
  * `server/src/plugins/owner-grants.ts`.
  *
- * WHAT A SWITCH GIVES is what an admin's one press gives: the app's read-only actions. Every call
- * runs on the asking person's own account, even after the Bot is published to the team, so the
- * description says "your" only about the person reading it.
- *
  * AN APP AN ADMIN GAVE THIS BOT is drawn switched on and locked. Taking it away is the admin's, and
  * the server would refuse it.
  */
@@ -152,8 +153,10 @@ function YourApps({
   const giveable = useQuery(giveableAppsQueryOptions());
   const give = useMutation(giveBotAppMutationOptions(queryClient));
   const takeBack = useMutation(takeBackBotAppMutationOptions(queryClient));
-  const error = give.error ?? takeBack.error;
-  const busy = give.isPending || takeBack.isPending;
+  const { confirmation, requestConfirmation } = useActionConfirmation();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const scopeId = useId();
+  const busy = give.isPending || takeBack.isPending || held.isError;
   const states = new Map((held.data ?? []).map((app) => [app.key, app]));
   /*
    * What you could give, and then anything you already gave that no longer is — an account you
@@ -174,14 +177,11 @@ function YourApps({
   ];
   return (
     <PageSection
-      description={`Turn on an app to let ${agent.name} use it. It always uses the account of whoever is asking.`}
+      description="Turning on an external app gives this Bot its read-only actions. Each app shows which account it uses."
+      headingRef={heading}
       title="Your apps"
     >
-      {error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {error.message}
-        </p>
-      ) : null}
+      {confirmation}
       {giveable.isPending || held.isPending ? (
         <ReadStatus kind="loading" message="Loading your apps…" />
       ) : giveable.error ? (
@@ -213,10 +213,10 @@ function YourApps({
           {rows.map((app, index) => {
             const granted = app.access?.granted ?? false;
             const locked = granted && !app.access?.givenByOwner;
-            const yours =
-              app.account === "personal"
-                ? `your ${app.displayName}`
-                : app.displayName;
+            const request = give.variables?.app === app.key ? give : undefined;
+            const account = appAccountScope[app.account];
+            const descriptionId = `${scopeId}-${app.key}`;
+            const toggleId = `${descriptionId}-toggle`;
             return (
               <Fragment key={app.key}>
                 {index > 0 ? <Separator /> : null}
@@ -225,26 +225,71 @@ function YourApps({
                     <PluginLogo logo={app.logo} />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{app.displayName}</ItemTitle>
-                    <ItemDescription>
-                      {locked
-                        ? "An admin gave it to this Bot."
-                        : granted
-                          ? `${agent.name} can use ${yours}.`
-                          : `${agent.name} can't use ${yours}.`}
+                    <ItemTitle className="line-clamp-none break-words">
+                      {app.displayName}
+                    </ItemTitle>
+                    <ItemDescription
+                      className="line-clamp-none"
+                      id={descriptionId}
+                    >
+                      {locked ? "An admin gave it to this Bot." : account}
                     </ItemDescription>
+                    {request?.error ? (
+                      <ItemDescription
+                        className="line-clamp-none text-destructive"
+                        role="alert"
+                      >
+                        Couldn’t update access to {app.displayName}.{" "}
+                        {request.error.message}
+                      </ItemDescription>
+                    ) : null}
+                    {request?.isPending || request?.isSuccess ? (
+                      <ItemDescription
+                        className="line-clamp-none"
+                        role="status"
+                      >
+                        {request.isPending
+                          ? `Updating access to ${app.displayName}…`
+                          : `${app.displayName} access is ${granted ? "on" : "still off"}.`}
+                      </ItemDescription>
+                    ) : null}
                   </ItemContent>
                   <ItemActions>
                     <Switch
+                      aria-describedby={descriptionId}
+                      aria-disabled={busy || locked}
                       aria-label={`Let ${agent.name} use ${app.displayName}`}
                       checked={granted}
-                      disabled={busy || locked}
+                      className="after:-inset-y-3.5"
+                      disabled={locked}
+                      id={toggleId}
+                      readOnly={busy}
                       onCheckedChange={(next) => {
+                        if (busy) return;
                         give.reset();
                         takeBack.reset();
                         const variables = { agentId: agent.id, app: app.key };
-                        if (next) give.mutate(variables);
-                        else takeBack.mutate(variables);
+                        if (next) {
+                          give.mutate(variables);
+                          return;
+                        }
+                        const canGrantAgain = giveable.data?.some(
+                          (candidate) => candidate.key === app.key,
+                        );
+                        requestConfirmation({
+                          title: `Remove ${app.displayName} access?`,
+                          description: `This removes access you gave ${agent.name}. Access granted by an admin stays in effect.${canGrantAgain ? "" : ` ${app.displayName} is no longer available for you to grant. Ask an administrator if the Bot needs access again.`}`,
+                          confirmLabel: "Remove access",
+                          pendingLabel: "Removing…",
+                          failureMessage: `Couldn't remove ${app.displayName} access. Try again.`,
+                          successMessage: `Your ${app.displayName} access grant was removed.`,
+                          trigger:
+                            document.getElementById(toggleId) ?? undefined,
+                          fallbackFocus: () => heading.current,
+                          run: async () => {
+                            await takeBack.mutateAsync(variables);
+                          },
+                        });
                       }}
                     />
                   </ItemActions>
@@ -258,6 +303,12 @@ function YourApps({
   );
 }
 
+const appAccountScope: Record<GiveableApp["account"], string> = {
+  personal: "Uses the asking person’s connected account.",
+  shared: "Uses the team account.",
+  deployment: "Uses the workspace connection.",
+};
+
 /**
  * Your own skills, one switch each. Only on your own Bot: the server lets a person put their own
  * skill on a Bot they own, and neither half alone is enough.
@@ -269,12 +320,12 @@ function YourApps({
  * the Bot had none, and every switch was drawn off until the page was opened again.
  */
 function YourSkills({ agentId }: { agentId: string }) {
-  const me = useQuery(currentUserQueryOptions()).data;
+  const user = useQuery(currentUserQueryOptions());
   const page = useQuery(pluginsPageQueryOptions());
   const held = useQuery(agentPluginsQueryOptions(agentId));
   const grant = useMutation(setPluginGrantMutationOptions(queryClient));
   const skills = (page.data?.skills ?? []).filter(
-    (skill) => me && skill.ownerUserId === me.id,
+    (skill) => user.data && skill.ownerUserId === user.data.id,
   );
   const carried = new Set((held.data?.skills ?? []).map((skill) => skill.slug));
   return (
@@ -282,19 +333,16 @@ function YourSkills({ agentId }: { agentId: string }) {
       description="Turn on a skill to use it with this Bot. Type / in a conversation to run it."
       title="Your skills"
     >
-      {grant.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {grant.error.message}
-        </p>
-      ) : null}
-      {page.isPending || held.isPending ? (
+      {user.isPending || page.isPending || held.isPending ? (
         <ReadStatus kind="loading" message="Loading your skills…" />
-      ) : page.error || held.error ? (
+      ) : user.error || page.error || held.error ? (
         <ReadError
           message="Couldn’t load your skills"
-          retry={() => Promise.all([page.refetch(), held.refetch()])}
+          retry={() =>
+            Promise.all([user.refetch(), page.refetch(), held.refetch()])
+          }
           retryBelow
-          retrying={page.isFetching || held.isFetching}
+          retrying={user.isFetching || page.isFetching || held.isFetching}
         />
       ) : skills.length === 0 ? (
         <PageEmpty
@@ -315,36 +363,65 @@ function YourSkills({ agentId }: { agentId: string }) {
         </PageEmpty>
       ) : (
         <PageRows>
-          {skills.map((skill, index) => (
-            <Fragment key={skill.slug}>
-              {index > 0 ? <Separator /> : null}
-              <Item size="sm">
-                <ItemMedia variant="icon">
-                  <IconBox />
-                </ItemMedia>
-                {/* By its title, as What it can use names it below; the section says how to run it. */}
-                <ItemContent>
-                  <ItemTitle>{skill.title}</ItemTitle>
-                  <ItemDescription>{skill.summary}</ItemDescription>
-                </ItemContent>
-                <ItemActions>
-                  <Switch
-                    aria-label={skill.title}
-                    checked={carried.has(skill.slug)}
-                    disabled={grant.isPending}
-                    onCheckedChange={(granted) =>
-                      grant.mutate({
-                        agentId,
-                        granted,
-                        kind: "skill",
-                        ref: skill.slug,
-                      })
-                    }
-                  />
-                </ItemActions>
-              </Item>
-            </Fragment>
-          ))}
+          {skills.map((skill, index) => {
+            const enabled = carried.has(skill.slug);
+            const request =
+              grant.variables?.ref === skill.slug ? grant : undefined;
+            return (
+              <Fragment key={skill.slug}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <IconBox />
+                  </ItemMedia>
+                  {/* By its title, as What it can use names it below; the section says how to run it. */}
+                  <ItemContent>
+                    <ItemTitle className="line-clamp-none break-words">
+                      {skill.title}
+                    </ItemTitle>
+                    <ItemDescription className="line-clamp-none">
+                      {skill.summary}
+                    </ItemDescription>
+                    {request?.error ? (
+                      <ItemDescription
+                        className="line-clamp-none text-destructive"
+                        role="alert"
+                      >
+                        Couldn’t update {skill.title}. {request.error.message}
+                      </ItemDescription>
+                    ) : null}
+                    {request?.isPending || request?.isSuccess ? (
+                      <ItemDescription
+                        className="line-clamp-none"
+                        role="status"
+                      >
+                        {request.isPending
+                          ? `Updating ${skill.title}…`
+                          : `${skill.title} is ${enabled ? "on" : "off"}.`}
+                      </ItemDescription>
+                    ) : null}
+                  </ItemContent>
+                  <ItemActions>
+                    <Switch
+                      aria-disabled={grant.isPending}
+                      aria-label={skill.title}
+                      checked={enabled}
+                      className="after:-inset-y-3.5"
+                      readOnly={grant.isPending}
+                      onCheckedChange={(granted) =>
+                        grant.mutate({
+                          agentId,
+                          granted,
+                          kind: "skill",
+                          ref: skill.slug,
+                        })
+                      }
+                    />
+                  </ItemActions>
+                </Item>
+              </Fragment>
+            );
+          })}
         </PageRows>
       )}
     </PageSection>

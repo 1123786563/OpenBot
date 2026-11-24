@@ -1,16 +1,19 @@
 import { IconBolt, IconPlugOff, IconTool } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, type Ref, useRef, useState } from "react";
 import { ConnectionPage } from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { ReadError } from "@/components/layout/read-status";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { appPageTitle } from "@/components/manage/plugin-page";
+import {
+  SettingsListSearch,
+  settingsSearchTerms,
+} from "@/components/settings/settings-list-search";
 import { useActionConfirmation } from "@/components/ui/action-confirmation";
-import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -22,12 +25,14 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
-import { agentListQueryOptions } from "@/lib/agents/queries";
-import { canKeepCachedRead } from "@/lib/client";
+import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { useManagePaths } from "@/lib/manage-paths";
 import { setPluginGrantMutationOptions } from "@/lib/plugins/mutations";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import {
+  type PluginTool,
+  pluginsPageQueryOptions,
+} from "@/lib/plugins/queries";
 
 /**
  * One tool, and which Bots hold it.
@@ -54,11 +59,14 @@ export function PluginToolPage({
   // Routines is every Bot's, in every edition: there is no switch to take it from one.
   const alwaysOn = key === ALWAYS_ON_APP;
   const paths = useManagePaths();
-  const queryClient = useQueryClient();
   const plugins = useQuery(pluginsPageQueryOptions());
-  const { data: agents } = useQuery(agentListQueryOptions());
+  const visibleRoster = useQuery(agentListQueryOptions());
   /* The ones this person has hidden, so a grant one of them holds still has its switch here. */
-  const { data: hiddenAgents } = useQuery(agentListQueryOptions(true));
+  const hiddenRoster = useQuery(agentListQueryOptions(true));
+  const agents = visibleRoster.data;
+  const hiddenAgents = hiddenRoster.data;
+  const rosterHeading = useRef<HTMLHeadingElement>(null);
+  const firstMatch = useRef<HTMLDivElement>(null);
   /*
    * Whether a call from this Bot could be authenticated at all.
    *
@@ -73,7 +81,6 @@ export function PluginToolPage({
     [...(agents ?? []), ...(hiddenAgents ?? [])].find(
       (one) => one.id === bot.id,
     )?.hasCallbackToken === true;
-  const [error, setError] = useState<string | null>(null);
   /*
    * Granting an action the vendor marks destructive lets a Bot do things that do not come back,
    * so that one direction of the switch asks first. Everything else stays immediate.
@@ -86,12 +93,9 @@ export function PluginToolPage({
    */
   const [botSearch, setBotSearch] = useState("");
 
-  const setGrant = useMutation({
-    ...setPluginGrantMutationOptions(queryClient),
-    onError: (thrown: Error) => setError(thrown.message),
-  });
-
-  const server = plugins.data?.servers.find((row) => row.id === key);
+  const server = plugins.isSuccess
+    ? plugins.data.servers.find((row) => row.id === key)
+    : undefined;
   const tool = server?.tools.find((row) => row.name === toolName);
 
   const back = {
@@ -129,7 +133,7 @@ export function PluginToolPage({
    * deployment that a request that never came back is no evidence for. The per-Bot grant screen
    * keeps the same guard.
    */
-  if (!plugins.data || !canKeepCachedRead(plugins.error)) {
+  if (plugins.isError) {
     return (
       <ConnectionPage backButton={back} title={toolName}>
         <ReadError
@@ -179,10 +183,11 @@ export function PluginToolPage({
     name: agent.name,
     hidden: agent.hidden,
   }));
-  const botNeedle = botSearch.trim().toLowerCase();
-  const shownBots = botNeedle
-    ? bots.filter((bot) => bot.name.toLowerCase().includes(botNeedle))
-    : bots;
+  const terms = settingsSearchTerms(botSearch);
+  const shownBots = bots.filter((bot) => {
+    const name = bot.name.toLowerCase();
+    return terms.every((term) => name.includes(term));
+  });
 
   return (
     <ConnectionPage
@@ -190,12 +195,6 @@ export function PluginToolPage({
       description={tool.description || "This tool has no description."}
       title={toolName}
     >
-      {error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {error}
-        </p>
-      ) : null}
-
       <PageSection
         description={
           tool.effect === "write"
@@ -213,9 +212,9 @@ export function PluginToolPage({
           <Item size="sm">
             <ItemContent>
               <ItemTitle>Effect</ItemTitle>
-              <ItemDescription>
-                Set by the connector, not the tool's name. Anything unknown
-                counts as a write.
+              <ItemDescription className="line-clamp-none">
+                The connector classifies this action. Unknown effects count as
+                writes.
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -235,104 +234,162 @@ export function PluginToolPage({
 
       <PageSection
         description="A Bot can call this tool only while its switch is on. Turning it off applies from the next call."
+        headingRef={rosterHeading}
         title="Bots"
       >
-        {bots.length === 0 ? (
+        {visibleRoster.isError || hiddenRoster.isError ? (
+          <ReadError
+            focusAfterRetry={() => rosterHeading.current}
+            message="Couldn’t load the Bot list"
+            retry={() =>
+              Promise.all([visibleRoster.refetch(), hiddenRoster.refetch()])
+            }
+            retryBelow
+            retryLabel="Retry Bot list"
+            retrying={visibleRoster.isFetching || hiddenRoster.isFetching}
+          />
+        ) : visibleRoster.isPending || hiddenRoster.isPending ? (
+          <ReadStatus kind="loading" message="Loading Bots…" />
+        ) : bots.length === 0 ? (
           <PageEmpty icon={IconBolt} title="No Bots yet">
             Create one to give it this tool.
           </PageEmpty>
-        ) : shownBots.length === 0 ? (
-          <p className="mt-4 text-sm text-muted-foreground" role="status">
-            Nothing matches “{botSearch.trim()}”.
-          </p>
         ) : (
           <>
-            {bots.length > 8 ? (
-              <Input
-                aria-label="Search Bots"
-                className="mb-4"
-                onChange={(event) => setBotSearch(event.target.value)}
-                placeholder="Search by Bot name"
+            {bots.length > 8 || botSearch.trim() ? (
+              <SettingsListSearch
+                noun="Bots"
+                placeholder="Bot name"
                 value={botSearch}
+                onChange={setBotSearch}
+                onEnter={() => firstMatch.current?.focus()}
+                matches={shownBots.length}
+                total={bots.length}
               />
             ) : null}
-            <PageRows>
-              {shownBots.map((bot, index) => {
-                const held = tool.grantedTo.includes(bot.id);
-                return (
-                  <div key={bot.id}>
-                    <Item size="sm">
-                      <ItemContent>
-                        <ItemTitle>{bot.name}</ItemTitle>
-                        <ItemDescription>
-                          {bot.hidden ? "Hidden from your roster. " : ""}
-                          {held
-                            ? canCallBack(bot)
-                              ? `Can call this tool. Every call is still checked against boundaries and logged in ${paths.auditLabel}.`
-                              : "Allowed, but this Bot has no callback token. Every call is refused. Issue one on its page, or set AGENT_TOOL_TOKEN."
-                            : "Can't call this tool. The Bot never sees it."}
-                        </ItemDescription>
-                      </ItemContent>
-                      <ItemActions>
-                        {/*
-                         * Binary and immediate, which is what a Switch is for: it takes effect when
-                         * switched and there is no save. Disabled only while its own write is in
-                         * flight, so switching one Bot does not freeze the rest of the list.
-                         */}
-                        {alwaysOn ? (
-                          // Refused one Bot at a time by the server: Routines is every Bot's.
-                          <span className="text-muted-foreground text-xs">
-                            Always on
-                          </span>
-                        ) : (
-                          <Switch
-                            aria-label={`Let ${bot.name} call ${toolName}`}
-                            checked={held}
-                            disabled={
-                              setGrant.isPending &&
-                              setGrant.variables?.agentId === bot.id
-                            }
-                            onCheckedChange={(next) => {
-                              setError(null);
-                              if (next && tool.destructive) {
-                                requestConfirmation({
-                                  title: `Let ${bot.name} call ${toolName}?`,
-                                  description: `The vendor warns this action destroys things: what it changes does not come back. ${bot.name} could call it without asking each time.`,
-                                  confirmLabel: "Allow",
-                                  pendingLabel: "Allowing…",
-                                  failureMessage: `Couldn't let ${bot.name} call ${toolName}. Try again.`,
-                                  variant: "destructive",
-                                  run: async () => {
-                                    await setGrant.mutateAsync({
-                                      agentId: bot.id,
-                                      granted: true,
-                                      kind: "mcp",
-                                      ref: tool.ref,
-                                    });
-                                  },
-                                });
-                                return;
-                              }
-                              setGrant.mutate({
-                                agentId: bot.id,
-                                granted: next,
-                                kind: "mcp",
-                                ref: tool.ref,
-                              });
-                            }}
-                          />
-                        )}
-                      </ItemActions>
-                    </Item>
-                    {index !== shownBots.length - 1 && <Separator />}
-                  </div>
-                );
-              })}
-            </PageRows>
+            {shownBots.length ? (
+              <PageRows>
+                {shownBots.map((bot, index) => (
+                  <Fragment key={bot.id}>
+                    {index > 0 ? <Separator /> : null}
+                    <ToolGrantRow
+                      alwaysOn={alwaysOn}
+                      auditLabel={paths.auditLabel}
+                      bot={bot}
+                      canCallBack={canCallBack(bot)}
+                      titleRef={index === 0 ? firstMatch : undefined}
+                      requestConfirmation={requestConfirmation}
+                      tool={tool}
+                    />
+                  </Fragment>
+                ))}
+              </PageRows>
+            ) : null}
           </>
         )}
       </PageSection>
       {grantConfirmation}
     </ConnectionPage>
+  );
+}
+
+function ToolGrantRow({
+  alwaysOn,
+  auditLabel,
+  bot,
+  canCallBack,
+  titleRef,
+  requestConfirmation,
+  tool,
+}: {
+  alwaysOn: boolean;
+  auditLabel: string;
+  bot: Pick<AgentProfile, "id" | "name" | "hidden">;
+  canCallBack: boolean;
+  titleRef?: Ref<HTMLDivElement>;
+  requestConfirmation: ReturnType<
+    typeof useActionConfirmation
+  >["requestConfirmation"];
+  tool: PluginTool;
+}) {
+  const queryClient = useQueryClient();
+  const setGrant = useMutation(setPluginGrantMutationOptions(queryClient));
+  const toggle = useRef<HTMLSpanElement>(null);
+  const held = tool.grantedTo.includes(bot.id);
+  return (
+    <Item size="sm">
+      <ItemContent style={{ minInlineSize: 0 }}>
+        <ItemTitle
+          className="line-clamp-none wrap-anywhere"
+          ref={titleRef}
+          tabIndex={-1}
+        >
+          {bot.name}
+        </ItemTitle>
+        <ItemDescription className="line-clamp-none">
+          {bot.hidden ? "Hidden from your roster. " : ""}
+          {held
+            ? canCallBack
+              ? `Can call this tool. Every call is still checked against boundaries and logged in ${auditLabel}.`
+              : "Allowed, but this Bot has no callback token. Every call is refused. Issue one on its page, or set AGENT_TOOL_TOKEN."
+            : "Can't call this tool. The Bot never sees it."}
+        </ItemDescription>
+        {setGrant.error ? (
+          <ItemDescription
+            className="line-clamp-none text-destructive"
+            role="alert"
+          >
+            {setGrant.error.message}
+          </ItemDescription>
+        ) : setGrant.isPending || setGrant.isSuccess ? (
+          <ItemDescription className="line-clamp-none" role="status">
+            {setGrant.isPending
+              ? "Saving access…"
+              : held
+                ? "Access is on."
+                : "Access is off."}
+          </ItemDescription>
+        ) : null}
+      </ItemContent>
+      <ItemActions>
+        {alwaysOn ? (
+          <ItemDescription>Always on</ItemDescription>
+        ) : (
+          <Switch
+            aria-label={`Let ${bot.name} call ${tool.name}`}
+            checked={held}
+            aria-disabled={setGrant.isPending}
+            className="after:-inset-y-3.5"
+            readOnly={setGrant.isPending}
+            ref={toggle}
+            onCheckedChange={(next) => {
+              if (setGrant.isPending) return;
+              const change = {
+                agentId: bot.id,
+                granted: next,
+                kind: "mcp" as const,
+                ref: tool.ref,
+              };
+              if (next && tool.destructive) {
+                requestConfirmation({
+                  title: `Let ${bot.name} call ${tool.name}?`,
+                  description: `The vendor warns this action destroys things: what it changes does not come back. ${bot.name} could call it without asking each time.`,
+                  confirmLabel: "Allow",
+                  pendingLabel: "Allowing…",
+                  failureMessage: `Couldn't let ${bot.name} call ${tool.name}. Try again.`,
+                  variant: "destructive",
+                  trigger: toggle.current ?? undefined,
+                  run: async () => {
+                    await setGrant.mutateAsync(change);
+                  },
+                });
+              } else {
+                setGrant.mutate(change);
+              }
+            }}
+          />
+        )}
+      </ItemActions>
+    </Item>
   );
 }

@@ -17,6 +17,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import type { ComponentType } from "react";
+import { actionPolicyQueryOptions } from "@/lib/computers/queries";
 import { Route as BoundariesRoute } from "@/routes/_authed/admin/boundaries";
 
 /**
@@ -101,4 +102,30 @@ test("a refused read shows the server's own reason", async () => {
     within(alert).getByText("Only an administrator may read the boundary."),
   ).toBeTruthy();
   expect(view.queryByRole("switch", { name: "Trial mode" })).toBeNull();
+});
+
+test("a refused boundary read clears cached rules before a later outage", async () => {
+  const cache = new QueryClient();
+  const options = { ...actionPolicyQueryOptions(), retry: false };
+  policyResponse = () =>
+    Response.json({
+      policy: {
+        mode: "enforce",
+        deny: ['page.host == "example.test"'],
+        allow: ["true"],
+      },
+    });
+  await expect(cache.fetchQuery(options)).resolves.toMatchObject({
+    mode: "enforce",
+  });
+
+  policyResponse = () => new Response(null, { status: 403 });
+  await expect(cache.fetchQuery(options)).rejects.toMatchObject({
+    status: 403,
+  });
+  policyResponse = () => new Response(null, { status: 503 });
+  await expect(cache.fetchQuery(options)).rejects.toMatchObject({
+    status: 503,
+  });
+  expect(cache.getQueryData(options.queryKey)).toBeNull();
 });

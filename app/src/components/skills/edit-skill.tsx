@@ -1,12 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { type ComponentProps, useRef } from "react";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SkillAgents } from "@/components/skills/skill-agents";
 import { SkillFields } from "@/components/skills/skill-fields";
-import { ClientError } from "@/lib/client";
-import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
+import {
+  pluginsPageQueryOptions,
+  skillsAccessDenied,
+} from "@/lib/plugins/queries";
 
 /**
  * Editing a skill, in the same panel that writes one.
@@ -16,9 +17,15 @@ import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
  * re-save changes the words and never quietly changes whose skill it is. The route has already
  * refused anyone editing a skill that is not theirs before it gets that far.
  */
-export function EditSkill({ slug }: { slug: string }) {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
+export function EditSkill({
+  slug,
+  ...form
+}: {
+  slug: string;
+} & Pick<
+  ComponentProps<typeof SkillFields>,
+  "error" | "onDirtyChange" | "onSubmit" | "saving"
+>) {
   const { data, error, isFetching, isPending, refetch } = useQuery(
     pluginsPageQueryOptions(),
   );
@@ -28,32 +35,17 @@ export function EditSkill({ slug }: { slug: string }) {
    * behind this panel just made, so react-query serves it from cache and the form is filled on the
    * first frame instead of flashing empty fields at somebody who came here to change one word.
    */
-  const skill = data?.skills.find((candidate) => candidate.slug === slug);
+  const profile = useQuery(currentUserQueryOptions());
+  const needsProfile = !profile.data;
+  const skill = data?.skills.find(
+    (candidate) =>
+      candidate.slug === slug && candidate.ownerUserId === profile.data?.id,
+  );
 
-  const saveSkill = useMutation(saveSkillMutationOptions(queryClient));
-
-  const denied =
-    error instanceof ClientError &&
-    (error.status === 401 || error.status === 403);
+  const denied = skillsAccessDenied(error);
   const heading = useRef<HTMLHeadingElement>(null);
-  const unavailable = !data || denied;
-
-  async function retrySkill() {
-    const opener = document.activeElement;
-    const result = await refetch();
-    if (!result.isSuccess) return;
-    requestAnimationFrame(() => {
-      const title = heading.current;
-      const active = document.activeElement;
-      if (
-        active === opener ||
-        active === document.body ||
-        active === title?.closest('[role="dialog"]')
-      ) {
-        title?.focus();
-      }
-    });
-  }
+  const unavailable = !data || denied || needsProfile;
+  const stale = error !== null;
 
   return (
     <section className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
@@ -68,44 +60,65 @@ export function EditSkill({ slug }: { slug: string }) {
           </p>
         ) : null}
       </header>
-      {isPending ? (
+      {isPending || profile.isPending ? (
         <ReadStatus kind="loading" message="Loading skill…" />
-      ) : unavailable ? (
+      ) : unavailable || (stale && !skill) ? (
         <ReadError
-          message="Couldn't load this skill."
-          retry={retrySkill}
+          focusAfterRetry={() => heading.current}
+          message={
+            denied
+              ? "Skills access is unavailable."
+              : "Couldn't load this skill."
+          }
+          retry={() => (needsProfile ? profile.refetch() : refetch())}
           retryBelow
-          retrying={isFetching}
+          retryLabel="Retry loading this skill"
+          retrying={needsProfile ? profile.isFetching : isFetching}
         />
       ) : !skill ? (
         <p className="text-muted-foreground text-sm">
           This skill was deleted, or it isn't yours to edit.
         </p>
       ) : (
-        <SkillFields
-          defaultValues={{
-            slug: skill.slug,
-            title: skill.title,
-            summary: skill.summary ?? "",
-            instructions: skill.instructions,
-            // Defaulted, so a skill written before this field existed opens with nothing ticked rather
-            // than with an undefined the form would refuse to submit.
-            tools: skill.tools ?? [],
-          }}
-          error={saveSkill.error}
-          /*
-           * Passed down rather than rendered after the form, so it lands above Save changes. Granting
-           * still saves on its own the instant a button is pressed — `SkillFields` keeps it out of the
-           * form's state and only decides where it sits.
-           */
-          footer={<SkillAgents grantedTo={skill.grantedTo} slug={skill.slug} />}
-          onSubmit={async (values) => {
-            await saveSkill.mutateAsync(values);
-            await navigate({ search: {}, to: "/capabilities/skills" });
-          }}
-          slugLocked
-          submitLabel="Save changes"
-        />
+        <>
+          {stale ? (
+            <ReadError
+              description="Your draft is still here. Refresh to resume saving and changing which Bots use this skill."
+              focusAfterRetry={() => heading.current}
+              message="Couldn't refresh this skill."
+              retry={() => refetch()}
+              retryBelow
+              retryLabel="Retry loading this skill"
+              retrying={isFetching}
+            />
+          ) : null}
+          <SkillFields
+            {...form}
+            defaultValues={{
+              slug: skill.slug,
+              title: skill.title,
+              summary: skill.summary ?? "",
+              instructions: skill.instructions,
+              // Defaulted, so a skill written before this field existed opens with nothing ticked rather
+              // than with an undefined the form would refuse to submit.
+              tools: skill.tools ?? [],
+            }}
+            /*
+             * Passed down rather than rendered after the form, so it lands above Save changes. Granting
+             * still saves on its own the instant a button is pressed — `SkillFields` keeps it out of the
+             * form's state and only decides where it sits.
+             */
+            footer={
+              stale ? undefined : (
+                <SkillAgents grantedTo={skill.grantedTo} slug={skill.slug} />
+              )
+            }
+            key={skill.id}
+            saveDisabled={stale}
+            slugLocked
+            submitLabel="Save changes"
+          />
+        </>
       )}
     </section>
   );

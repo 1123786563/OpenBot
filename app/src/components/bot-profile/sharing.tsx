@@ -7,7 +7,7 @@ import {
   IconUsersGroup,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
@@ -16,6 +16,12 @@ import {
 } from "@/components/layout/page-shell";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
+import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
+import {
+  ActionIncomplete,
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +31,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -46,8 +57,10 @@ import { Separator } from "@/components/ui/separator";
 import { countLabel } from "@/lib/agents/bot-summaries";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { ClientError } from "@/lib/client";
 import {
   assignTeamBotMutationOptions,
+  loadTeamBots,
   publishTeamBotMutationOptions,
   type TeamBot,
   teamBotLink,
@@ -72,19 +85,27 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
   const data = useQuery(teamBotsQueryOptions());
   const me = useQuery(currentUserQueryOptions()).data;
   const unpublish = useMutation(unpublishTeamBotMutationOptions(queryClient));
-  const [copied, setCopied] = useState(false);
+  const { confirmation, requestConfirmation } = useActionConfirmation();
   const [publishing, setPublishing] = useState(false);
   if (data.isPending) {
-    return <ReadStatus kind="loading" message="Loading Bot sharing…" />;
+    return (
+      <>
+        {confirmation}
+        <ReadStatus kind="loading" message="Loading Bot sharing…" />
+      </>
+    );
   }
   if (data.error) {
     return (
-      <ReadError
-        message="Couldn’t load Bot sharing"
-        retry={() => data.refetch()}
-        retryBelow
-        retrying={data.isFetching}
-      />
+      <>
+        {confirmation}
+        <ReadError
+          message="Couldn’t load Bot sharing"
+          retry={() => data.refetch()}
+          retryBelow
+          retrying={data.isFetching}
+        />
+      </>
     );
   }
   const published = data.data.teamBots.find((bot) => bot.id === agent.id);
@@ -92,12 +113,8 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
 
   return (
     <>
+      {confirmation}
       <PageSection title="Published">
-        {unpublish.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            {unpublish.error.message}
-          </p>
-        ) : null}
         {published ? (
           <PageRows>
             <Item size="sm">
@@ -105,12 +122,12 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
                 <IconUsersGroup />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>
+                <ItemTitle className="line-clamp-none">
                   {published.audience === "team"
                     ? "To the whole team"
                     : `To ${[...(published.people ?? []), ...(published.groups ?? []).map((group) => `group ${group}`)].join(", ")}`}
                 </ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none">
                   {published.visibleToTeam
                     ? "Each person's conversations with it are private."
                     : "Teammates can't see it until it has a real name and a description."}
@@ -119,8 +136,29 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
               {agent.mine ? (
                 <ItemActions>
                   <Button
-                    disabled={unpublish.isPending}
-                    onClick={() => unpublish.mutate(agent.id)}
+                    className="confirmation-action"
+                    onClick={(event) =>
+                      requestConfirmation({
+                        title: `Unpublish ${agent.name}?`,
+                        description: `This removes team publishing for ${audienceSummary(published).toLowerCase()}. The Bot’s visibility setting stays the same.`,
+                        confirmLabel: "Unpublish Bot",
+                        pendingLabel: "Unpublishing…",
+                        failureMessage:
+                          "Couldn’t unpublish the Bot. Try again.",
+                        successMessage: `${agent.name} was unpublished.`,
+                        refresh: () => data.refetch(),
+                        trigger: event.currentTarget,
+                        run: async () => {
+                          const latest = await readPublication(agent.id);
+                          if (!latest || !sameAudience(published, latest)) {
+                            throw new ActionUnavailable(
+                              "Publishing has changed. Close this dialog and review the current audience.",
+                            );
+                          }
+                          await unpublish.mutateAsync(agent.id);
+                        },
+                      })
+                    }
                     size="sm"
                     variant="outline"
                   >
@@ -130,30 +168,7 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
               ) : null}
             </Item>
             <Separator />
-            <Item size="sm">
-              <ItemMedia variant="icon">
-                <IconLink />
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>Link</ItemTitle>
-                <ItemDescription>
-                  Opens a private conversation with it.
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <Button
-                  onClick={() =>
-                    void navigator.clipboard
-                      .writeText(teamBotLink(agent.id))
-                      .then(() => setCopied(true))
-                  }
-                  size="sm"
-                  variant="outline"
-                >
-                  {copied ? "Copied" : "Copy link"}
-                </Button>
-              </ItemActions>
-            </Item>
+            <SharingLink botId={agent.id} />
           </PageRows>
         ) : (
           <PageEmpty
@@ -209,11 +224,101 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
       ) : null}
       {me?.role === "admin" && published ? (
         <PageSection
-          description="Pins this Bot at the top of every group member's Bots list. Use * for the whole team."
-          title="Assign to groups"
+          description="Pin this Bot in the Bots list for a group or the whole team."
+          title="Assignments"
         >
           <Assignments bot={published} />
         </PageSection>
+      ) : null}
+    </>
+  );
+}
+
+async function readPublication(botId: string) {
+  try {
+    const { teamBots } = await loadTeamBots();
+    return teamBots.find((bot) => bot.id === botId);
+  } catch (error) {
+    if (error instanceof ClientError && error.status < 500) throw error;
+    throw new ActionIncomplete(
+      "Couldn’t check the current audience. Try again before unpublishing.",
+    );
+  }
+}
+
+function samePeopleOrGroups(previous: string[] = [], current: string[] = []) {
+  return (
+    previous.length === current.length &&
+    previous.every((value) => current.includes(value))
+  );
+}
+
+function sameAudience(previous: TeamBot, current: TeamBot) {
+  return (
+    current.mine &&
+    previous.publishedAt === current.publishedAt &&
+    previous.audience === current.audience &&
+    samePeopleOrGroups(previous.people, current.people) &&
+    samePeopleOrGroups(previous.groups, current.groups)
+  );
+}
+
+function SharingLink({ botId }: { botId: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "manual">(
+    "idle",
+  );
+  const link = teamBotLink(botId);
+  const linkId = useId();
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopyState("copied");
+    } catch {
+      setCopyState("manual");
+    }
+  }
+
+  return (
+    <>
+      <Item size="sm">
+        <ItemMedia variant="icon">
+          <IconLink />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle>Link</ItemTitle>
+          <ItemDescription className="line-clamp-none" role="status">
+            {copyState === "copied"
+              ? "Link copied."
+              : copyState === "manual"
+                ? "Couldn’t copy automatically. Copy the link below."
+                : "Opens a private conversation with it."}
+          </ItemDescription>
+        </ItemContent>
+        <ItemActions>
+          <Button
+            className="confirmation-action"
+            onClick={() => void copyLink()}
+            size="sm"
+            variant="outline"
+          >
+            Copy link
+          </Button>
+        </ItemActions>
+      </Item>
+      {copyState === "manual" ? (
+        <Item size="sm">
+          <ItemContent>
+            <Field>
+              <FieldLabel htmlFor={linkId}>Conversation link</FieldLabel>
+              <Input
+                id={linkId}
+                onFocus={(event) => event.target.select()}
+                readOnly
+                value={link}
+              />
+            </Field>
+          </ItemContent>
+        </Item>
       ) : null}
     </>
   );
@@ -374,6 +479,7 @@ function PublishDialog({
 function Assignments({ bot }: { bot: TeamBot }) {
   const remove = useMutation(assignTeamBotMutationOptions(queryClient));
   const [assigning, setAssigning] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
   const assigned = bot.assignments ?? [];
   return (
     <>
@@ -397,7 +503,12 @@ function Assignments({ bot }: { bot: TeamBot }) {
               </ItemContent>
               <ItemActions>
                 <Button
-                  aria-label={`Remove ${name}`}
+                  aria-label={
+                    name === "*"
+                      ? "Remove whole-team assignment"
+                      : `Remove ${name}`
+                  }
+                  className="min-h-11"
                   disabled={remove.isPending}
                   onClick={() =>
                     remove.mutate({ botId: bot.id, group: name, remove: true })
@@ -413,14 +524,20 @@ function Assignments({ bot }: { bot: TeamBot }) {
           </Fragment>
         ))}
         <Item
-          render={<button onClick={() => setAssigning(true)} type="button" />}
+          render={
+            <button
+              ref={opener}
+              onClick={() => setAssigning(true)}
+              type="button"
+            />
+          }
           size="sm"
         >
           <ItemMedia variant="icon">
             <IconPlus />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle>Assign to a group</ItemTitle>
+            <ItemTitle>Add assignment</ItemTitle>
           </ItemContent>
           <ItemActions>
             <IconChevronRight className="size-4 text-muted-foreground" />
@@ -428,67 +545,136 @@ function Assignments({ bot }: { bot: TeamBot }) {
         </Item>
       </PageRows>
       {assigning ? (
-        <AssignDialog bot={bot} onClose={() => setAssigning(false)} />
+        <AssignDialog
+          bot={bot}
+          onClose={() => setAssigning(false)}
+          opener={opener}
+        />
       ) : null}
     </>
   );
 }
 
-/** One group to pin this Bot for, or * for the whole team. */
-function AssignDialog({ bot, onClose }: { bot: TeamBot; onClose: () => void }) {
+const ASSIGNMENT_SCOPES = { group: "A group", team: "Whole team" } as const;
+
+function AssignDialog({
+  bot,
+  onClose,
+  opener,
+}: {
+  bot: TeamBot;
+  onClose: () => void;
+  opener: React.RefObject<HTMLButtonElement | null>;
+}) {
   const formId = useId();
   const assign = useMutation(assignTeamBotMutationOptions(queryClient));
+  const submitting = useRef(false);
+  const [scope, setScope] = useState<keyof typeof ASSIGNMENT_SCOPES>("group");
   const [group, setGroup] = useState("");
+  const wholeTeam = scope === "team";
+  const typedWildcard = !wholeTeam && group.trim() === "*";
+  const target = wholeTeam ? "*" : group.trim();
+  const taken = bot.assignments?.includes(target) ?? false;
+  const canAssign =
+    Boolean(target) && !typedWildcard && !taken && !assign.isPending;
   return (
-    <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <BotDetailDialog>
-        <DialogHeader>
-          <DialogTitle>Assign {bot.name} to a group</DialogTitle>
-          <DialogDescription>
-            It's pinned at the top of every member's Bots list.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody className="mt-4">
-          <form
-            id={formId}
-            onSubmit={(event) => {
-              event.preventDefault();
-              assign.mutate({ botId: bot.id, group }, { onSuccess: onClose });
-            }}
-          >
+    <SettingsDraftDialog
+      action={
+        <Button
+          className="min-h-11"
+          disabled={!canAssign}
+          form={formId}
+          type="submit"
+        >
+          {assign.isPending
+            ? "Assigning…"
+            : wholeTeam
+              ? "Assign to whole team"
+              : "Assign to group"}
+        </Button>
+      }
+      description="This pins the Bot at the top of the selected members’ Bots lists."
+      dirty={wholeTeam || group.trim() !== ""}
+      guardNavigation={submitting}
+      onClose={onClose}
+      open
+      opener={opener}
+      overlay={astryxScope}
+      saving={assign.isPending}
+      title={`Assign ${bot.name}`}
+    >
+      <form
+        id={formId}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canAssign || submitting.current) return;
+          submitting.current = true;
+          assign.mutate(
+            { botId: bot.id, group: target },
+            {
+              onSuccess: onClose,
+              onSettled: () => {
+                submitting.current = false;
+              },
+            },
+          );
+        }}
+      >
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={`${formId}-scope`}>Assign to</FieldLabel>
+            <Select
+              disabled={assign.isPending}
+              items={ASSIGNMENT_SCOPES}
+              onValueChange={(value) => {
+                if (value === "group" || value === "team") setScope(value);
+              }}
+              value={scope}
+            >
+              <SelectTrigger className="min-h-11" id={`${formId}-scope`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent {...astryxScope}>
+                <SelectItem value="group">A group</SelectItem>
+                <SelectItem
+                  disabled={bot.assignments?.includes("*")}
+                  value="team"
+                >
+                  Whole team
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          {wholeTeam ? null : (
             <Field>
-              <FieldLabel htmlFor={`${formId}-group`}>Group, or *</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-group`}>Group name</FieldLabel>
               <Input
+                aria-describedby={
+                  typedWildcard || taken ? `${formId}-group-help` : undefined
+                }
+                aria-invalid={typedWildcard || taken}
+                className="min-h-11"
                 id={`${formId}-group`}
                 onChange={(event) => setGroup(event.target.value)}
-                placeholder="* for the whole team"
+                readOnly={assign.isPending}
                 value={group}
               />
+              {typedWildcard || taken ? (
+                <FieldDescription id={`${formId}-group-help`}>
+                  {typedWildcard
+                    ? "Choose Whole team from Assign to."
+                    : "This Bot is already assigned to this group."}
+                </FieldDescription>
+              ) : null}
             </Field>
-          </form>
-          {assign.error ? (
-            <p className="mt-4 text-destructive text-sm" role="alert">
-              {assign.error.message}
-            </p>
-          ) : null}
-        </DialogBody>
-        <DialogFooter className="mt-4">
-          <BotDetailFormAction
-            onClick={onClose}
-            type="button"
-            variant="outline"
-          >
-            Cancel
-          </BotDetailFormAction>
-          <BotDetailFormAction
-            disabled={!group.trim() || assign.isPending}
-            form={formId}
-            type="submit"
-          >
-            Assign
-          </BotDetailFormAction>
-        </DialogFooter>
-      </BotDetailDialog>
-    </Dialog>
+          )}
+        </FieldGroup>
+      </form>
+      {assign.error ? (
+        <p className="mt-4 text-destructive text-sm" role="alert">
+          {assign.error.message}
+        </p>
+      ) : null}
+    </SettingsDraftDialog>
   );
 }

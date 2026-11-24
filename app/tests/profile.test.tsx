@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ProfileNameForm } from "@/components/settings/profile";
-import { authKeys } from "@/lib/auth/queries";
+import { NameRow } from "@/components/settings/profile";
+import { type AuthenticatedUser, authKeys } from "@/lib/auth/queries";
 import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
 
@@ -36,32 +36,44 @@ function client(needsName = true) {
   return query;
 }
 
-test("settings saves only the display name and refreshes the current user", async () => {
-  const query = client(false);
-  let sent: unknown;
-  globalThis.fetch = Object.assign(
-    async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      sent = JSON.parse(String(init?.body));
-      return Response.json({ profile: { name: "Samuel", needsName: false } });
-    },
-    { preconnect: originalFetch.preconnect },
-  );
+async function draw(query: typeof queryClient) {
   const view = render(
     <QueryClientProvider client={query}>
-      <ProfileNameForm initialName="Sam" />
+      <NameRow />
     </QueryClientProvider>,
   );
   const user = userEvent.setup({ document });
-  await user.clear(view.getByLabelText("Name"));
-  await user.type(view.getByLabelText("Name"), " Samuel ");
-  fireEvent.click(view.getByRole("button", { name: "Save name" }));
-  await waitFor(() =>
-    expect(view.getByRole("status").textContent).toBe(
-      "Your name has been saved.",
-    ),
+  await user.click(view.getByRole("button", { name: /^Name/ }));
+  const input = await view.findByLabelText("Name");
+  return { view, user, input };
+}
+
+test("settings saves only the display name and keeps the receipt if refreshing the current user fails", async () => {
+  const query = client(false);
+  let sent: unknown;
+  let refreshed = false;
+  globalThis.fetch = Object.assign(
+    async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(url) === "/api/me/profile") {
+        sent = JSON.parse(String(init?.body));
+        return Response.json({ profile: { name: "Samuel", needsName: false } });
+      }
+      refreshed = true;
+      return Response.json({}, { status: 503 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { view, user, input } = await draw(query);
+  await user.clear(input);
+  await user.type(input, " Samuel ");
+  await user.click(view.getByRole("button", { name: "Save name" }));
+  expect(await view.findByRole("status")).toHaveProperty(
+    "textContent",
+    "Your name has been saved.",
   );
   expect(sent).toEqual({ name: "Samuel" });
-  expect(query.getQueryState(authKeys.currentUser())?.isInvalidated).toBe(true);
+  expect(refreshed).toBe(true);
+  expect(view.getByRole("button", { name: /Name Samuel/ })).toBeTruthy();
 });
 
 test("failed saves show an error and preserve the draft for retry", async () => {
@@ -70,50 +82,35 @@ test("failed saves show an error and preserve the draft for retry", async () => 
       Response.json({ error: "Could not save your profile." }, { status: 500 }),
     { preconnect: originalFetch.preconnect },
   );
-  const view = render(
-    <QueryClientProvider client={client(false)}>
-      <ProfileNameForm initialName="Sam" />
-    </QueryClientProvider>,
-  );
-  fireEvent.click(view.getByRole("button", { name: "Save name" }));
+  const { view, user, input } = await draw(client(false));
+  await user.type(input, " Julien");
+  await user.click(view.getByRole("button", { name: "Save name" }));
   await waitFor(() =>
     expect(view.getByRole("alert").textContent).toContain(
       "Could not save your profile.",
     ),
   );
-  expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe("Sam");
+  expect(input instanceof HTMLInputElement && input.value).toBe("Sam Julien");
 });
 
-test("an untouched settings form reflects a name saved by the welcome dialog", () => {
-  const query = client();
-  const view = render(
-    <QueryClientProvider client={query}>
-      <ProfileNameForm initialName="" />
-    </QueryClientProvider>,
+function replaceName(name: string) {
+  queryClient.setQueryData<AuthenticatedUser>(
+    authKeys.currentUser(),
+    (current) => (current ? { ...current, name, needsName: false } : undefined),
   );
-  view.rerender(
-    <QueryClientProvider client={query}>
-      <ProfileNameForm initialName="Sam" />
-    </QueryClientProvider>,
+}
+
+test("an untouched settings form reflects a name saved by the welcome dialog", async () => {
+  const { input } = await draw(client());
+  await act(async () => replaceName("Sam"));
+  await waitFor(() =>
+    expect(input instanceof HTMLInputElement && input.value).toBe("Sam"),
   );
-  expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe("Sam");
 });
 
 test("a profile refetch does not overwrite an unsaved draft", async () => {
-  const query = client(false);
-  const view = render(
-    <QueryClientProvider client={query}>
-      <ProfileNameForm initialName="Sam" />
-    </QueryClientProvider>,
-  );
-  const user = userEvent.setup({ document });
-  await user.type(view.getByLabelText("Name"), " Julien");
-  view.rerender(
-    <QueryClientProvider client={query}>
-      <ProfileNameForm initialName="Samuel" />
-    </QueryClientProvider>,
-  );
-  expect((view.getByLabelText("Name") as HTMLInputElement).value).toBe(
-    "Sam Julien",
-  );
+  const { user, input } = await draw(client(false));
+  await user.type(input, " Julien");
+  await act(async () => replaceName("Samuel"));
+  expect(input instanceof HTMLInputElement && input.value).toBe("Sam Julien");
 });

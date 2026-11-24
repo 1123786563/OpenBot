@@ -71,6 +71,10 @@ type NameFor = (botId: string) => string;
 /** Only the hidden `search` column takes part in search; it holds every visible word of the row. */
 const SEARCHABLE = new Set(["search"]);
 
+function searchableAuditText(text: string) {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 /**
  * Columns that exist to be searched or filtered by and are not drawn as columns of their own. Who
  * started a row is drawn under its Bot (`WhoCell`), and still has a column for the Started by filter.
@@ -143,6 +147,7 @@ export function AuditTable({
   toolbar: (parts: {
     count: string;
     filters: React.ReactNode;
+    hasColumnFilters: boolean;
   }) => React.ReactNode;
 }) {
   const [sorting, setSorting] = useState<SortingState>(INITIAL_SORT);
@@ -151,6 +156,10 @@ export function AuditTable({
     () => auditColumns(nameFor, storedNames, deploymentName, rowAction),
     [nameFor, storedNames, deploymentName, rowAction],
   );
+  const searchWords = searchableAuditText(query)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
   const table = useTable({
     features,
     columns,
@@ -160,10 +169,10 @@ export function AuditTable({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     enableSortingRemoval: false,
-    globalFilterFn: (row, _columnId, value: string) =>
-      row
-        .getValue<string>("search")
-        .includes(String(value).trim().toLowerCase()),
+    globalFilterFn: (row) => {
+      const content = row.getValue<string>("search");
+      return searchWords.every((word) => content.includes(word));
+    },
     getColumnCanGlobalFilter: (column) => SEARCHABLE.has(column.id),
   });
   const rows = table.getRowModel().rows;
@@ -172,6 +181,7 @@ export function AuditTable({
     <>
       {toolbar({
         count: countLabel(rows.length, events.length, moreToLoad),
+        hasColumnFilters: columnFilters.length > 0,
         filters: FACETS.map((facet) => {
           const column = table.getColumn(facet.id);
           const selected = (column?.getFilterValue() as string[]) ?? [];
@@ -241,9 +251,11 @@ export function AuditTable({
                     OUTCOME_ROW[outcome],
                     "@max-3xl/audit:grid @max-3xl/audit:grid-cols-[auto_minmax(0,1fr)] @max-3xl/audit:items-start @max-3xl/audit:gap-x-2 @max-3xl/audit:gap-y-1.5 @max-3xl/audit:px-4 @max-3xl/audit:py-3",
                   )}
+                  data-audit-event-id={row.id}
                   data-outcome={outcome}
                   key={row.id}
                   role="row"
+                  tabIndex={-1}
                 >
                   {row
                     .getAllCells()
@@ -513,7 +525,8 @@ function auditColumns(
     },
     {
       id: "search",
-      accessorFn: (event) => searchTextOf(event, nameFor, deployment),
+      accessorFn: (event) =>
+        searchableAuditText(searchTextOf(event, nameFor, deployment)),
       header: () => null,
       cell: () => null,
       enableSorting: false,

@@ -11,6 +11,11 @@ import {
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryList, RememberFact } from "@/components/memory/memories";
+import {
+  type MemoryRecord,
+  memoriesQueryOptions,
+  updateMemoryMutationOptions,
+} from "@/lib/memory";
 import { settleReactWork } from "./settle-react-work";
 
 /** Settings → Memory: what the person's Bots know about them, and which Bot learned it. */
@@ -27,7 +32,7 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-const memory = (overrides: Record<string, unknown>) => ({
+const memory = (overrides: Partial<MemoryRecord>): MemoryRecord => ({
   id: "m1",
   content: "I prefer mornings.",
   provenance: "You told a Bot",
@@ -97,7 +102,7 @@ function draw(node: ReactNode) {
 test("a memory a Bot formed names the Bot that formed it", async () => {
   serving();
   const view = draw(<MemoryList />);
-  expect(await view.findByText(/Formed by Expenses/)).toBeTruthy();
+  expect(await view.findByText(/Learned by Expenses/)).toBeTruthy();
 });
 
 test("a failed memory read can be retried without leaving the page", async () => {
@@ -119,6 +124,49 @@ test("a failed memory read can be retried without leaving the page", async () =>
   fireEvent.click(view.getByRole("button", { name: "Retry" }));
   expect(await view.findByText("I prefer mornings.")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+test("a saved memory survives a failed refresh until access is denied", async () => {
+  const original = memory({});
+  const edited: MemoryRecord = {
+    ...original,
+    content: "I prefer afternoons.",
+    reviewState: "edited",
+  };
+  let status = 200;
+  global.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PATCH") return Response.json({ memory: edited });
+      return status === 200
+        ? Response.json({ memories: [original] })
+        : Response.json({ error: "Read refused" }, { status });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const query = memoriesQueryOptions();
+  await client.fetchQuery(query);
+
+  status = 503;
+  const update = client
+    .getMutationCache()
+    .build(client, updateMemoryMutationOptions(client));
+  await update.execute({
+    id: "m1",
+    input: { content: "I prefer afternoons." },
+  });
+  await expect(client.fetchQuery(query)).rejects.toThrow("Read refused");
+  expect(client.getQueryData<MemoryRecord[]>(query.queryKey) ?? []).toEqual([
+    edited,
+  ]);
+
+  status = 403;
+  await expect(client.fetchQuery(query)).rejects.toThrow("Read refused");
+  status = 503;
+  await expect(client.fetchQuery(query)).rejects.toThrow("Read refused");
+  expect(client.getQueryData<MemoryRecord[]>(query.queryKey)?.length).toBe(0);
 });
 
 test("remembering a fact saves it", async () => {
@@ -192,7 +240,7 @@ test("forgetting a memory requires confirmation and can retry a failed deletion"
   ]);
 });
 
-test("reopening Remember a fact after a failure starts clean", async () => {
+test("a failed fact stays in the editor until explicitly discarded", async () => {
   serving();
   refuseWrite = "Memory is full.";
   const view = draw(<RememberFact />);
@@ -207,6 +255,20 @@ test("reopening Remember a fact after a failure starts clean", async () => {
   await user.click(view.getByRole("button", { name: "Remember" }));
   expect((await view.findByRole("alert")).textContent).toBe("Memory is full.");
   await user.keyboard("{Escape}");
+  let discard = await view.findByRole("alertdialog", {
+    name: "Discard unsaved changes?",
+  });
+  await user.click(
+    within(discard).getByRole("button", { name: "Keep editing" }),
+  );
+  expect(await view.findByDisplayValue("I work from Lisbon.")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Cancel" }));
+  discard = await view.findByRole("alertdialog", {
+    name: "Discard unsaved changes?",
+  });
+  await user.click(
+    within(discard).getByRole("button", { name: "Discard changes" }),
+  );
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
   await user.click(view.getByRole("button", { name: "Remember a fact" }));
   const field = (await view.findByRole("textbox", {

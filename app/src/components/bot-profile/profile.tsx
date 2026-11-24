@@ -9,6 +9,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type * as React from "react";
+import { useEffect, useId } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -44,9 +45,11 @@ import {
   type BotNotify,
   botLifecycleQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
+import { desktopShell } from "@/lib/desktop/shell";
 import { computerToolsOffered } from "@/lib/copilot/computer-available";
 import { myCapabilitiesQueryOptions } from "@/lib/enterprise/queries";
 import {
+  refreshNotificationPermission,
   requestNotificationPermission,
   useNotificationPermission,
 } from "@/lib/notifications/permission";
@@ -55,9 +58,9 @@ import { BotActivityGlance, BotActivityRow } from "./activity";
 import { BotPausedBanner } from "./pause-banner";
 
 const NOTIFY_LABEL: Record<BotNotify, string> = {
-  all: "Everything",
-  needs_input: "Only when it needs me",
-  none: "Nothing (badges only)",
+  all: "All updates",
+  needs_input: "Decisions, questions, and alerts",
+  none: "Sidebar badges only",
 };
 
 /**
@@ -86,6 +89,24 @@ export function BotProfile({
   const notify = useMutation(setBotNotifyMutationOptions(queryClient));
   // The browser's answer, shared with the prompt a conversation offers, so a yes there shows here.
   const permission = useNotificationPermission();
+  const notificationHelpId = useId();
+  const desktop = desktopShell() !== null;
+  useEffect(() => {
+    if (desktop) return;
+    window.addEventListener("focus", refreshNotificationPermission);
+    return () =>
+      window.removeEventListener("focus", refreshNotificationPermission);
+  }, [desktop]);
+  const permissionCopy = {
+    denied: desktop
+      ? "Blocked. Check notification permissions for OpenBot in your system settings."
+      : "Blocked. Allow notifications in your browser’s site settings to receive them here.",
+    granted: desktop
+      ? "Allowed in the desktop app."
+      : "Allowed while OpenBot is open in this browser.",
+    default: "Permission is off. Turn it on to receive notifications here.",
+    unsupported: "Notifications are unavailable on this device.",
+  };
 
   return (
     <>
@@ -163,11 +184,11 @@ export function BotProfile({
                 <ItemMedia variant="icon">
                   <IconPlayerPause />
                 </ItemMedia>
-                <ItemContent>
+                <ItemContent className="min-w-0">
                   {/* On means working, the way a responsibility's Active switch reads: titled "Paused",
                     the row showed the word "Paused" beside a switch that was off for a running Bot. */}
                   <ItemTitle>Active</ItemTitle>
-                  <ItemDescription>
+                  <ItemDescription className="line-clamp-none">
                     {lifecycle.data.paused
                       ? "Paused. Nothing runs for you until you turn it back on."
                       : "Works on its goals, routines, hand-offs and follow-ups for you."}
@@ -189,28 +210,35 @@ export function BotProfile({
                 <ItemMedia variant="icon">
                   <IconBell />
                 </ItemMedia>
-                <ItemContent>
+                <ItemContent className="min-w-0">
                   <ItemTitle>Notifications</ItemTitle>
-                  <ItemDescription>
-                    {NOTIFY_LABEL[lifecycle.data.notify]}. Sidebar badges always
-                    show.
+                  <ItemDescription
+                    className="line-clamp-none"
+                    id={notificationHelpId}
+                  >
+                    Choose which updates from this Bot can send notifications.
+                    Sidebar badges stay on.
                   </ItemDescription>
                 </ItemContent>
-                <ItemActions>
-                  <Select
+                <ItemActions className="max-sm:basis-full">
+                  <Select<BotNotify>
                     disabled={notify.isPending}
-                    // The label map, so the closed trigger says "Everything" rather than the raw value.
                     items={NOTIFY_LABEL}
                     onValueChange={(next) => {
-                      if (next === lifecycle.data.notify) return;
+                      if (next === null || next === lifecycle.data.notify)
+                        return;
                       notify.mutate({
                         agentId: agent.id,
-                        notify: next as BotNotify,
+                        notify: next,
                       });
                     }}
                     value={lifecycle.data.notify}
                   >
-                    <SelectTrigger aria-label="Notifications">
+                    <SelectTrigger
+                      aria-describedby={notificationHelpId}
+                      aria-label="Notifications"
+                      className="min-h-11 max-w-full max-sm:w-full"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent {...astryxScope}>
@@ -225,29 +253,35 @@ export function BotProfile({
                   </Select>
                 </ItemActions>
               </Item>
-              {permission === "default" ? (
+              {permission !== "checking" ? (
                 <>
                   <Separator />
                   <Item size="sm">
                     <ItemMedia variant="icon">
                       <IconBell />
                     </ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>Browser notifications</ItemTitle>
-                      <ItemDescription>
-                        Off in this browser. Turn them on to hear when a Bot
-                        needs you.
+                    <ItemContent className="min-w-0">
+                      <ItemTitle>
+                        {desktop
+                          ? "Desktop notifications"
+                          : "Browser notifications"}
+                      </ItemTitle>
+                      <ItemDescription className="line-clamp-none">
+                        {permissionCopy[permission]}
                       </ItemDescription>
                     </ItemContent>
-                    <ItemActions>
-                      <Button
-                        onClick={() => void requestNotificationPermission()}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Turn on
-                      </Button>
-                    </ItemActions>
+                    {permission === "default" ? (
+                      <ItemActions>
+                        <Button
+                          className="min-h-11"
+                          onClick={() => void requestNotificationPermission()}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Allow notifications
+                        </Button>
+                      </ItemActions>
+                    ) : null}
                   </Item>
                 </>
               ) : null}

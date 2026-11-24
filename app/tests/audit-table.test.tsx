@@ -17,6 +17,11 @@ import {
 } from "@/components/audit/audit-cells";
 import { AuditPage } from "@/components/manage/audit-page";
 import { agentKeys } from "@/lib/agents/queries";
+import {
+  type AuditVocabulary,
+  auditEventsQueryOptions,
+  auditVocabularyQueryOptions,
+} from "@/lib/audit/queries";
 import { seedAuditPage } from "./seed-audit-page";
 
 /**
@@ -30,6 +35,54 @@ afterEach(() => cleanup());
 afterAll(async () => {
   await new Promise((resolve) => setTimeout(resolve, 50));
   await GlobalRegistrator.unregister();
+});
+
+test("audit access denial clears old pages and cursors across views", async () => {
+  const originalFetch = globalThis.fetch;
+  let status = 503;
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ error: "Read failed" }, { status }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const cache = new QueryClient();
+  const all = auditEventsQueryOptions();
+  const blocked = auditEventsQueryOptions("?eventType=computer.action_denied");
+  const vocabulary = auditVocabularyQueryOptions();
+  const previousVocabulary: AuditVocabulary = {
+    bots: [{ id: "bot-a", name: "Previously visible Bot" }],
+    apps: [],
+    people: [],
+    tools: [],
+    rules: [],
+  };
+  cache.setQueryData<AuditVocabulary | null>(
+    vocabulary.queryKey,
+    () => previousVocabulary,
+  );
+  const seed = { events: [], nextCursor: "older" };
+  seedAuditPage(cache, "", seed);
+  seedAuditPage(cache, "?eventType=computer.action_denied", seed);
+  try {
+    await expect(
+      cache.fetchInfiniteQuery({ ...all, retry: false }),
+    ).rejects.toThrow("Read failed");
+    expect(cache.getQueryData(all.queryKey)?.pages).toEqual([seed]);
+
+    status = 403;
+    await expect(cache.fetchInfiniteQuery(all)).rejects.toThrow("Read failed");
+    expect(cache.getQueryData(all.queryKey)?.pages).toEqual([]);
+    expect(cache.getQueryData(blocked.queryKey)?.pageParams).toEqual([]);
+    expect(cache.getQueryData(vocabulary.queryKey)).toBeNull();
+
+    status = 503;
+    await expect(
+      cache.fetchInfiniteQuery({ ...blocked, retry: false }),
+    ).rejects.toThrow("Read failed");
+    expect(cache.getQueryData(blocked.queryKey)?.pages).toEqual([]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    cache.clear();
+  }
 });
 
 function event(
@@ -150,13 +203,18 @@ test("newest first, and a press on When turns it oldest first", async () => {
 
 test("search narrows the rows already loaded, and says how many match", async () => {
   const view = await renderAudit();
-  await userEvent
-    .setup({ document })
-    .type(view.getByRole("searchbox", { name: "Search events" }), "save deal");
+  const user = userEvent.setup({ document });
+  const input = view.getByRole("searchbox", { name: "Search events" });
+  await user.type(input, "save deal");
   await waitFor(() =>
     expect(whats(view.container)).toEqual(["Click on a page"]),
   );
   expect(view.getByText("1 of 3 events")).toBeDefined();
+  await user.clear(input);
+  await user.type(input, "deal click");
+  await waitFor(() =>
+    expect(whats(view.container)).toEqual(["Click on a page"]),
+  );
 });
 
 test("each row carries what happened, for its colour", async () => {

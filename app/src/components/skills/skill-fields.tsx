@@ -1,5 +1,5 @@
 import { useForm } from "@tanstack/react-form";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { PageCard, PageSection } from "@/components/layout/page-shell";
 import { SkillTools } from "@/components/skills/skill-tools";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { type SkillFormValues, skillFormSchema } from "@/lib/skills/form";
 import { cn } from "@/lib/utils";
 
 const TOOLS_HINT =
-  "Using this skill loads these tools for that reply. It doesn't give access. A Bot only uses tools it already has.";
+  "When someone runs this skill, the Bot loads the selected tools it already has access to. Choose which Bots can offer the skill separately.";
 
 /** Says the form's dirty state once per change, and once false when it goes away. */
 function DirtyProbe({
@@ -26,7 +26,7 @@ function DirtyProbe({
   dirty: boolean;
   onChange: (dirty: boolean) => void;
 }) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     onChange(dirty);
     return () => onChange(false);
   }, [dirty, onChange]);
@@ -50,6 +50,8 @@ export function SkillFields({
   onDirtyChange,
   footer,
   sections,
+  saving = false,
+  saveDisabled = false,
   slugLocked = false,
 }: {
   defaultValues: SkillFormValues;
@@ -62,6 +64,8 @@ export function SkillFields({
    * of it, and once with false when the form unmounts.
    */
   onDirtyChange?: (dirty: boolean) => void;
+  saveDisabled?: boolean;
+  saving?: boolean;
   /** Anything that belongs with the skill but saves on its own, shown above the submit button. */
   footer?: React.ReactNode;
   /**
@@ -83,11 +87,17 @@ export function SkillFields({
    */
   slugLocked?: boolean;
 }) {
+  const failureNotice = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error && document.activeElement === document.body)
+      failureNotice.current?.focus();
+  }, [error]);
   const form = useForm({
     defaultValues,
     validators: { onSubmit: skillFormSchema },
-    onSubmit: async ({ value }) => {
+    onSubmit: async ({ value, formApi }) => {
       await onSubmit(value);
+      formApi.reset(value);
     },
   });
 
@@ -206,7 +216,7 @@ export function SkillFields({
             </FieldLabel>
             <Textarea
               aria-invalid={isInvalid}
-              className={sections ? "min-h-56" : "min-h-40"}
+              className={sections ? "min-h-56" : "min-h-28 sm:min-h-40"}
               id={field.name}
               name={field.name}
               onBlur={field.handleBlur}
@@ -239,13 +249,34 @@ export function SkillFields({
     </form.Field>
   );
 
+  const toolsDisclosure = (
+    <details>
+      <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">
+        Tools to load for this skill
+        <form.Subscribe selector={(state) => state.values.tools.length}>
+          {(count) => (
+            <span className="ms-2 font-normal text-muted-foreground">
+              {count} selected
+            </span>
+          )}
+        </form.Subscribe>
+      </summary>
+      <FieldDescription>{TOOLS_HINT}</FieldDescription>
+      {toolsField}
+    </details>
+  );
+
   const submit = (
     <form.Subscribe
       selector={(state) => [state.canSubmit, state.isSubmitting, state.isDirty]}
     >
       {([canSubmit, isSubmitting, isDirty]) => (
         /* Clean and disabled: saving what is already saved is a no-op that reads as done. */
-        <Button disabled={!canSubmit || isSubmitting || !isDirty} type="submit">
+        <Button
+          className="min-h-11"
+          disabled={saveDisabled || !canSubmit || isSubmitting || !isDirty}
+          type="submit"
+        >
           {isSubmitting ? "Saving…" : submitLabel}
         </Button>
       )}
@@ -255,7 +286,12 @@ export function SkillFields({
   const failure = error ? (
     /* The typed edits are all still on screen; say that rather than relaying the server's
        own words, which never name the skill or the save. */
-    <p className="mt-4 text-sm text-destructive" role="alert">
+    <p
+      className="mt-4 text-sm text-destructive"
+      ref={failureNotice}
+      role="alert"
+      tabIndex={-1}
+    >
       Couldn't save this skill. Your edits are still on screen.
     </p>
   ) : null;
@@ -265,21 +301,25 @@ export function SkillFields({
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        form.handleSubmit();
+        if (!saveDisabled) void form.handleSubmit().catch(() => undefined);
       }}
     >
       {/* Lifts the form's dirty state for a page guarding the way out; renders nothing. */}
       {onDirtyChange ? (
-        <form.Subscribe selector={(state) => state.isDirty}>
+        <form.Subscribe selector={(state) => !state.isDefaultValue}>
           {(dirty) => <DirtyProbe dirty={dirty} onChange={onDirtyChange} />}
         </form.Subscribe>
       ) : null}
       {sections ? (
-        <>
+        <fieldset
+          aria-busy={saving}
+          disabled={saving}
+          style={{ minInlineSize: 0 }}
+        >
           <PageSection
             className={cn(sections.flush && "mt-0")}
             description="How the skill shows in the / menu, and what people type to run it."
-            title="Name"
+            title="Name and command"
           >
             <PageCard className="mt-4">
               <FieldGroup>
@@ -298,9 +338,7 @@ export function SkillFields({
             <div className="mt-4">{instructionsField}</div>
           </PageSection>
 
-          <PageSection description={TOOLS_HINT} title="Tools">
-            {toolsField}
-          </PageSection>
+          <PageSection title="Tools">{toolsDisclosure}</PageSection>
 
           {failure}
           <form.Subscribe selector={(state) => state.isDirty}>
@@ -311,19 +349,19 @@ export function SkillFields({
               </div>
             )}
           </form.Subscribe>
-        </>
+        </fieldset>
       ) : (
-        <>
+        <fieldset
+          aria-busy={saving}
+          disabled={saving}
+          style={{ minInlineSize: 0 }}
+        >
           <FieldGroup>
             {slugField}
             {titleField}
             {summaryField}
             {instructionsField}
-            <Field>
-              <FieldLabel>Tools it needs</FieldLabel>
-              {toolsField}
-              <FieldDescription>{TOOLS_HINT}</FieldDescription>
-            </Field>
+            {toolsDisclosure}
           </FieldGroup>
           {/*
            * Rendered by the caller, between the fields and the buttons, so granting sits with the
@@ -340,7 +378,7 @@ export function SkillFields({
             ) : null}
             {submit}
           </div>
-        </>
+        </fieldset>
       )}
     </form>
   );

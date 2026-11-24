@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client, tryClient } from "@/lib/client";
+import { ClientError, client, tryClient } from "@/lib/client";
 
 /** A component as the Admin surface sees it: its state, its versions and who is held back from it. */
 export type ComponentRecord = {
@@ -34,12 +34,25 @@ export const componentKeys = {
 export function componentListQueryOptions() {
   return queryOptions({
     queryKey: componentKeys.list(),
-    queryFn: async (): Promise<ComponentRecord[]> => {
-      return (
-        (await client("/api/components", "components", {
-          fallback: "The components could not be loaded.",
-        })) ?? []
-      );
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<ComponentRecord[]> => {
+      try {
+        return (
+          (await client("/api/components", "components", {
+            fallback: "The components could not be loaded.",
+          })) ?? []
+        );
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData(queryKey, []);
+        }
+        throw error;
+      }
     },
   });
 }

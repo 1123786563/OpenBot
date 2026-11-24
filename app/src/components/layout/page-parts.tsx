@@ -85,11 +85,13 @@ export function PageHeader({
   action,
   description,
   eyebrow,
+  headingRef,
   title,
 }: {
   action?: React.ReactNode;
   description?: React.ReactNode;
   eyebrow?: React.ReactNode;
+  headingRef?: React.Ref<HTMLHeadingElement>;
   title: string;
 }) {
   return (
@@ -106,6 +108,8 @@ export function PageHeader({
       <h1
         className="break-words font-heading font-semibold text-2xl tracking-tight"
         data-slot="page-title"
+        ref={headingRef}
+        tabIndex={headingRef ? -1 : undefined}
       >
         {title}
       </h1>
@@ -131,6 +135,7 @@ export function PageSection({
   children,
   className,
   description,
+  headingId,
   headingRef,
   id,
   title,
@@ -139,6 +144,7 @@ export function PageSection({
   children?: React.ReactNode;
   className?: string;
   description?: React.ReactNode;
+  headingId?: string;
   headingRef?: React.Ref<HTMLHeadingElement>;
   /** Where a screen sends the person to this section by name. */
   id?: string;
@@ -155,11 +161,12 @@ export function PageSection({
           <h2
             className={cn(
               "font-semibold text-base",
-              headingRef && "scroll-mt-4",
+              (headingRef || headingId) && "scroll-mt-4",
             )}
+            id={headingId}
             ref={headingRef}
             style={{ textWrap: "balance" }}
-            tabIndex={headingRef ? -1 : undefined}
+            tabIndex={headingRef || headingId ? -1 : undefined}
           >
             {title}
           </h2>

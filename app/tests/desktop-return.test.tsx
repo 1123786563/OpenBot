@@ -35,10 +35,16 @@ afterAll(() => GlobalRegistrator.unregister());
 function show(
   app: string | undefined,
   answer = () => Response.json({ connected: true }),
+  catalogue: () => Response | Promise<Response> = () =>
+    Response.json({
+      servers: [{ id: "gmail", title: "Gmail" }],
+      catalogue: [],
+    }),
 ) {
   const asked: string[] = [];
   const opened: string[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/plugins") return catalogue();
     asked.push(`${init?.method ?? "GET"} ${String(input)}`);
     return answer();
   }) as unknown as typeof fetch;
@@ -103,7 +109,7 @@ test("a failed confirmation keeps the browser open and can be retried", async ()
       .getAttribute("href"),
   ).toBe("/connections/gmail");
   await userEvent.setup({ document }).click(retry);
-  expect(await view.findByText(/Account connected/)).toBeTruthy();
+  expect(await view.findByText("Gmail is connected.")).toBeTruthy();
   await waitFor(() => expect(opened).toEqual([DESKTOP_LINK]));
   expect(asked).toEqual(
     Array(2).fill("POST /api/plugins/servers/gmail/connection/confirm"),
@@ -114,8 +120,20 @@ test("an unconfirmed account does not trigger Desktop", async () => {
   const { opened, view } = show("gmail", () =>
     Response.json({ connected: false }),
   );
-  expect(await view.findByRole("button", { name: "Retry" })).toBeTruthy();
+  expect(await view.findByText("Gmail isn’t connected yet.")).toBeTruthy();
+  expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
   expect(opened).toEqual([]);
+});
+
+test("app metadata can finish after the confirmed account returns to Desktop", async () => {
+  const metadata = Promise.withResolvers<Response>();
+  const { opened, view } = show("gmail", undefined, () => metadata.promise);
+  try {
+    expect(await view.findByText("Account connected.")).toBeTruthy();
+    await waitFor(() => expect(opened).toEqual([DESKTOP_LINK]));
+  } finally {
+    metadata.resolve(Response.json({ servers: [], catalogue: [] }));
+  }
 });
 
 test("in the Desktop window itself, it goes to the account's page", async () => {

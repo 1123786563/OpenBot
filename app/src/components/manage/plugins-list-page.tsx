@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import {
   IconApps,
   IconBrandGoogleDrive,
@@ -7,7 +8,7 @@ import {
   IconPlug,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import * as React from "react";
 import { ConnectionPage } from "@/components/connections/connection-surface";
 import {
@@ -22,6 +23,9 @@ import {
   usePendingRequestCounts,
 } from "@/components/plugins/access-requests";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
+import { Button } from "@/components/ui/button";
+import { FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -107,10 +111,18 @@ function summaryFor(
    * never reached as a person.
    */
   auth: CatalogueItem["auth"] | undefined,
-  /** Undefined while the connections read is out: "Not connected" is a claim, and none is made. */
-  youConnected: boolean | undefined,
+  youConnected: "checking" | "unavailable" | "connected" | "disconnected",
 ): string {
-  if (auth === "user-oauth" && youConnected === false) return "Not connected";
+  if (auth === "user-oauth") {
+    if (server.accountMode === "shared") {
+      if (!server.sharedVendorConnected) return "Shared account not connected";
+    } else {
+      if (youConnected === "checking") return "Checking account…";
+      if (youConnected === "unavailable") return "Account status unavailable";
+      if (youConnected === "disconnected")
+        return "Personal account not connected";
+    }
+  }
   if (server.tools.length === 0) return "No tools yet";
 
   const bots = new Set(server.tools.flatMap((tool) => tool.grantedTo)).size;
@@ -126,14 +138,29 @@ function summaryFor(
 /** Placeholder rows while the list loads: enough to fill the view, not to suggest a count. */
 const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 
+let lastOpenedPlugin: { entry: string; id: string } | undefined;
+
+function searchText(value: string) {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 export function PluginsListPage({
   children,
+  search = "",
+  onSearchChange,
 }: {
   children?: React.ReactNode;
+  search?: string;
+  onSearchChange?: (query: string) => void;
 } = {}) {
   const paths = useManagePaths();
   const plugins = useQuery(pluginsPageQueryOptions());
   const connections = useQuery(connectionsQueryOptions());
+  const heading = React.useRef<HTMLHeadingElement>(null);
+  const input = React.useRef<HTMLInputElement>(null);
+  const inputId = React.useId();
+  const rows = React.useRef(new Map<string, HTMLAnchorElement>());
+  const entry = useLocation({ select: (location) => location.state.__TSR_key });
   /*
    * Requests waiting per app, so an administrator sees which app somebody is asking about from the
    * list, without opening each one. Every request is also listed in full above the lists.
@@ -164,10 +191,73 @@ export function PluginsListPage({
   const authByKey = new Map(
     (plugins.data?.catalogue ?? []).map((entry) => [entry.key, entry.auth]),
   );
+  const words = searchText(search).trim().split(/\s+/).filter(Boolean);
+  const searching = words.length > 0;
+  const matches = (value: string) => {
+    const text = searchText(value);
+    return words.every((word) => text.includes(word));
+  };
+  const servers = plugins.data?.servers ?? [];
+  const shownServers = searching
+    ? servers.filter((server) =>
+        matches(
+          `${server.title} ${server.id} ${server.summary ?? ""} ${server.tools.map(({ name, description }) => `${name} ${description}`).join(" ")}`,
+        ),
+      )
+    : servers;
+  const shownExplore = searching
+    ? explore.filter((app) =>
+        matches(`${app.title} ${app.vendor} ${app.key} ${app.summary}`),
+      )
+    : explore;
+  const count = shownServers.length + shownExplore.length;
+  const showAccountError =
+    connections.isError &&
+    shownServers.some(
+      (server) =>
+        authByKey.get(server.id) === "user-oauth" &&
+        server.accountMode !== "shared",
+    );
+
+  React.useLayoutEffect(() => {
+    if (
+      !entry ||
+      !plugins.isSuccess ||
+      plugins.isFetching ||
+      lastOpenedPlugin?.entry !== entry
+    )
+      return;
+    const target = rows.current.get(lastOpenedPlugin.id);
+    lastOpenedPlugin = undefined;
+    if (document.activeElement === document.body)
+      (target ?? input.current ?? heading.current)?.focus();
+  }, [entry, plugins.isFetching, plugins.isSuccess]);
+
+  function linkProps(id: string) {
+    return {
+      ...paths.plugin(id),
+      onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
+        if (
+          entry &&
+          event.button === 0 &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey
+        )
+          lastOpenedPlugin = { entry, id };
+      },
+      ref: (node: HTMLAnchorElement | null) => {
+        if (node) rows.current.set(id, node);
+        else rows.current.delete(id);
+      },
+    };
+  }
 
   return (
     <ConnectionPage
       description="Connect services for your company, then choose which Bots can use each service’s tools."
+      headingRef={heading}
       title="Plugins"
     >
       {/* Pending, error, empty, rows — pending draws placeholder rows, so no sentence asserts
@@ -193,6 +283,7 @@ export function PluginsListPage({
         </div>
       ) : plugins.error ? (
         <ReadError
+          focusAfterRetry={() => heading.current}
           message="Couldn't load plugins."
           retry={plugins.refetch}
           retrying={plugins.isFetching}
@@ -204,124 +295,205 @@ export function PluginsListPage({
            * First, because each one is somebody waiting. All of them, not only those about an app
            * that is connected: an app nobody has switched on has no page of its own to list them on.
            */}
-          <AccessRequestsSection />
+          {!searching ? <AccessRequestsSection /> : null}
 
-          <PageSection
-            description="Added for everybody. Open one to set it up and choose which Bots get its tools."
-            title="Connected"
-          >
-            {plugins.data?.servers.length === 0 ? (
-              <PageEmpty icon={IconPlug} title="Nothing connected yet">
-                Pick one from the list below.
-              </PageEmpty>
-            ) : (
-              <PageRows>
-                {plugins.data?.servers.map((server, index) => {
-                  return (
-                    <React.Fragment key={server.id}>
-                      {/*
-                       * A real link with no children. `useRender` merges props, and children passed
-                       * here replace the row's own — the media, content and actions all vanish and
-                       * the row draws empty. Its accessible name comes from the title inside it.
-                       */}
-                      <Item
-                        data-testid={`plugin-${server.id}`}
-                        render={<Link {...paths.plugin(server.id)} />}
-                        size="sm"
-                      >
-                        <RowMark>
-                          <VendorMark
-                            id={server.id}
-                            logo={server.logo}
-                            name={server.title}
-                          />
-                        </RowMark>
-                        <ItemContent>
-                          <ItemTitle>{server.title}</ItemTitle>
-                          {/*
-                           * The vendor's last failure takes the description's place when there is
-                           * one. A server with no tools and no explanation reads as a server that
-                           * offers nothing, which sends somebody looking in the wrong place.
-                           */}
-                          <ItemDescription
-                            className={
-                              server.lastError ? "text-destructive" : undefined
-                            }
-                          >
-                            {toolsListError(server.lastError, {
-                              title: server.title,
-                              personal: false,
-                            }) ?? server.summary}
-                          </ItemDescription>
-                        </ItemContent>
-                        <ItemActions>
-                          <PendingRequests
-                            count={requestCounts?.byApp[server.id] ?? 0}
-                          />
-                          <span className="text-muted-foreground text-xs">
-                            {summaryFor(
-                              server,
-                              authByKey.get(server.id),
-                              connections.isPending
-                                ? undefined
-                                : connected.has(server.id),
-                            )}
-                          </span>
-                          <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                        </ItemActions>
-                      </Item>
-                      {index !== (plugins.data?.servers.length ?? 0) - 1 && (
-                        <Separator />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </PageRows>
-            )}
-          </PageSection>
+          {onSearchChange && (servers.length + explore.length > 0 || search) ? (
+            <section aria-label="Find a plugin">
+              <Stack gap={2}>
+                <FieldLabel htmlFor={inputId}>Search plugins</FieldLabel>
+                <Stack direction="horizontal" gap={2} align="center">
+                  <Input
+                    aria-label="Search plugins"
+                    className="min-h-11"
+                    id={inputId}
+                    maxLength={200}
+                    onChange={(event) => onSearchChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && search) {
+                        event.preventDefault();
+                        onSearchChange("");
+                      }
+                      if (
+                        event.key === "Enter" &&
+                        !event.nativeEvent.isComposing
+                      ) {
+                        const first =
+                          shownServers[0]?.id ?? shownExplore[0]?.key;
+                        if (first) rows.current.get(first)?.focus();
+                      }
+                    }}
+                    placeholder="Search by plugin, vendor or tool"
+                    ref={input}
+                    type="search"
+                    value={search}
+                  />
+                  {search ? (
+                    <Button
+                      className="min-h-11 shrink-0"
+                      variant="outline"
+                      onClick={() => {
+                        onSearchChange("");
+                        input.current?.focus();
+                      }}
+                    >
+                      Clear search
+                    </Button>
+                  ) : null}
+                </Stack>
+                <p className="text-muted-foreground text-sm" role="status">
+                  {searching
+                    ? count
+                      ? `${count} ${count === 1 ? "plugin matches" : "plugins match"}`
+                      : "No matching plugins"
+                    : "Search connected and listed plugins. Use More apps for the full app catalogue."}
+                </p>
+              </Stack>
+            </section>
+          ) : null}
+          {showAccountError ? (
+            <ReadError
+              focusAfterRetry={() => input.current ?? heading.current}
+              message="Couldn’t check personal account status."
+              retry={connections.refetch}
+              retryBelow
+              retrying={connections.isFetching}
+              retryLabel="Retry account status"
+            />
+          ) : null}
 
-          <PageSection
-            description="Reviewed, first-party servers. Open one to add it."
-            title="Explore plugins"
-          >
-            {explore.length === 0 ? (
-              <PageEmpty icon={IconCircleCheck} title="All connected">
-                Every plugin in the catalogue is connected.
-              </PageEmpty>
-            ) : (
-              <PageRows>
-                {explore.map((entry: CatalogueItem, index) => {
-                  return (
-                    <React.Fragment key={entry.key}>
-                      <Item
-                        data-testid={`plugin-${entry.key}`}
-                        render={<Link {...paths.plugin(entry.key)} />}
-                        size="sm"
-                      >
-                        <RowMark>
-                          <VendorMark id={entry.key} name={entry.title} />
-                        </RowMark>
-                        <ItemContent>
-                          <ItemTitle>{entry.title}</ItemTitle>
-                          <ItemDescription>{entry.summary}</ItemDescription>
-                        </ItemContent>
-                        <ItemActions>
-                          <PendingRequests
-                            count={requestCounts?.byApp[entry.key] ?? 0}
-                          />
-                          <span className="text-muted-foreground text-xs">
-                            Not added
-                          </span>
-                          <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                        </ItemActions>
-                      </Item>
-                      {index !== explore.length - 1 && <Separator />}
-                    </React.Fragment>
-                  );
-                })}
-              </PageRows>
-            )}
-          </PageSection>
+          {!searching || shownServers.length > 0 ? (
+            <PageSection
+              description="Open an added plugin to manage its accounts and choose which Bots get its tools."
+              title="Added plugins"
+            >
+              {plugins.data?.servers.length === 0 ? (
+                <PageEmpty icon={IconPlug} title="No plugins added yet">
+                  Pick a plugin from the catalogue below.
+                </PageEmpty>
+              ) : (
+                <PageRows>
+                  {shownServers.map((server, index) => {
+                    return (
+                      <React.Fragment key={server.id}>
+                        {/*
+                         * A real link with no children. `useRender` merges props, and children passed
+                         * here replace the row's own — the media, content and actions all vanish and
+                         * the row draws empty. Its accessible name comes from the title inside it.
+                         */}
+                        <Item
+                          data-testid={`plugin-${server.id}`}
+                          render={<Link {...linkProps(server.id)} />}
+                          size="sm"
+                        >
+                          <RowMark>
+                            <VendorMark
+                              id={server.id}
+                              logo={server.logo}
+                              name={server.title}
+                            />
+                          </RowMark>
+                          <ItemContent>
+                            <ItemTitle>{server.title}</ItemTitle>
+                            {/*
+                             * The vendor's last failure takes the description's place when there is
+                             * one. A server with no tools and no explanation reads as a server that
+                             * offers nothing, which sends somebody looking in the wrong place.
+                             */}
+                            <ItemDescription
+                              className={
+                                server.lastError
+                                  ? "text-destructive"
+                                  : undefined
+                              }
+                            >
+                              {toolsListError(server.lastError, {
+                                title: server.title,
+                                personal: false,
+                              }) ?? server.summary}
+                            </ItemDescription>
+                          </ItemContent>
+                          <ItemActions>
+                            <PendingRequests
+                              count={requestCounts?.byApp[server.id] ?? 0}
+                            />
+                            <span className="text-muted-foreground text-xs">
+                              {summaryFor(
+                                server,
+                                authByKey.get(server.id),
+                                connections.isPending
+                                  ? "checking"
+                                  : connections.isError
+                                    ? "unavailable"
+                                    : connected.has(server.id)
+                                      ? "connected"
+                                      : "disconnected",
+                              )}
+                            </span>
+                            <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                          </ItemActions>
+                        </Item>
+                        {index !== shownServers.length - 1 && <Separator />}
+                      </React.Fragment>
+                    );
+                  })}
+                </PageRows>
+              )}
+            </PageSection>
+          ) : null}
+
+          {!searching || shownExplore.length > 0 ? (
+            <PageSection
+              description="Reviewed, first-party servers. Open one to add it."
+              title="Explore plugins"
+            >
+              {explore.length === 0 ? (
+                <PageEmpty
+                  icon={IconCircleCheck}
+                  title={
+                    authByKey.size
+                      ? "All catalogue plugins added"
+                      : "No plugins in this catalogue"
+                  }
+                >
+                  {authByKey.size
+                    ? "Open an added plugin to check its connection and tools."
+                    : "Open More apps to browse the provider catalogue."}
+                </PageEmpty>
+              ) : (
+                <PageRows>
+                  {shownExplore.map((entry: CatalogueItem, index) => {
+                    return (
+                      <React.Fragment key={entry.key}>
+                        <Item
+                          data-testid={`plugin-${entry.key}`}
+                          render={<Link {...linkProps(entry.key)} />}
+                          size="sm"
+                        >
+                          <RowMark>
+                            <VendorMark id={entry.key} name={entry.title} />
+                          </RowMark>
+                          <ItemContent>
+                            <ItemTitle>{entry.title}</ItemTitle>
+                            <ItemDescription>{entry.summary}</ItemDescription>
+                          </ItemContent>
+                          <ItemActions>
+                            <PendingRequests
+                              count={requestCounts?.byApp[entry.key] ?? 0}
+                            />
+                            <span className="text-muted-foreground text-xs">
+                              Not added
+                            </span>
+                            <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                          </ItemActions>
+                        </Item>
+                        {index !== shownExplore.length - 1 && <Separator />}
+                      </React.Fragment>
+                    );
+                  })}
+                </PageRows>
+              )}
+            </PageSection>
+          ) : null}
 
           <PageSection
             description={moreAppsSectionDescription(provider)}
@@ -374,7 +546,7 @@ export function PluginsListPage({
           </PageSection>
         </>
       )}
-      {children}
+      {!searching ? children : null}
     </ConnectionPage>
   );
 }

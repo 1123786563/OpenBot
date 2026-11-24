@@ -83,6 +83,7 @@ let giveable: {
   account: string;
 }[] = [];
 let given: string[] = [];
+let holdAppGrant: Promise<void> | undefined;
 /** Every app that is turned on, as `GET /api/plugins` lists them, and every path the sheet asked for. */
 let servers: { id: string; title: string; logo: null }[] = [];
 let requested: string[] = [];
@@ -96,6 +97,7 @@ beforeEach(() => {
   dialled = [];
   giveable = [];
   given = [];
+  holdAppGrant = undefined;
   servers = [];
   requested = [];
   global.fetch = Object.assign(
@@ -128,6 +130,7 @@ beforeEach(() => {
         return Response.json({ catalogue: [], servers, skills: [] });
       if (String(path).endsWith("/give") && init?.method === "POST") {
         given.push(String(path));
+        await holdAppGrant;
         return Response.json({ granted: [] });
       }
       return new Response(null, { status: 404 });
@@ -248,6 +251,24 @@ test("unavailable hosting still permits the custom path", async () => {
   await user.click(view.getByRole("button", { name: "Create Bot" }));
   await waitFor(() => expect(creates).toHaveLength(1));
   expect(creates[0]?.roleDescription).toBe("Connected from LangChain.");
+});
+
+test("framework search keeps the chosen filter when returning from the address", async () => {
+  const { view, user } = await customFlow();
+  const field = () => view.getByRole("searchbox", { name: "Find a framework" });
+  await user.type(field(), " langroid {Enter}");
+  expect(view.getByText("1 matching framework")).toBeTruthy();
+  expect(view.queryByRole("button", { name: /LangChain/ })).toBeNull();
+  expect(view.queryByLabelText("Agent address")).toBeNull();
+  await user.click(view.getByRole("button", { name: /Langroid/ }));
+  expect(await view.findByLabelText("Agent address")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Back" }));
+  expect((field() as HTMLInputElement).value).toBe(" langroid ");
+  await user.type(field(), "missing");
+  expect(view.getByText("No frameworks match this search.")).toBeTruthy();
+  await user.click(view.getByRole("button", { name: "Clear" }));
+  expect(document.activeElement).toBe(field());
+  expect(view.getByRole("button", { name: /LangChain/ })).toBeTruthy();
 });
 
 test("Create fills in what was left blank, then hands over", async () => {
@@ -390,6 +411,40 @@ test("the person's own apps arrive ticked, and the ones left ticked are given on
   ]);
 });
 
+test("Enter cannot create a second Bot while its selected apps are being granted", async () => {
+  giveable = [
+    {
+      key: "composio-gmail",
+      displayName: "Gmail",
+      logo: null,
+      account: "personal",
+    },
+  ];
+  let releaseGrant: () => void = () => {};
+  holdAppGrant = new Promise<void>((resolve) => {
+    releaseGrant = resolve;
+  });
+  const { view, user } = await opened();
+  const name = view.getByLabelText("Name");
+  await user.type(name, "Research");
+  await view.findByRole("checkbox", { name: "Gmail" });
+  try {
+    await user.click(view.getByRole("button", { name: "Create Bot" }));
+    await waitFor(() => expect(given).toHaveLength(1));
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(
+      view
+        .getByRole("button", { name: "Setting up apps…" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+  } finally {
+    releaseGrant();
+  }
+  await view.findByText("Research is ready");
+  expect(creates).toHaveLength(1);
+  expect(given).toHaveLength(1);
+});
+
 test("a person with no apps to give is asked nothing about apps", async () => {
   const { view } = await opened();
   await view.findByLabelText("Name");
@@ -405,28 +460,16 @@ async function named(name = "Research") {
   return { view, user };
 }
 
-/** The text of the tooltip beside Isolated, opened the way a pointer opens it. */
-async function isolatedTooltip(
-  view: Awaited<ReturnType<typeof named>>["view"],
-  user: Awaited<ReturnType<typeof named>>["user"],
-) {
-  await user.hover(view.getByRole("button", { name: "What Isolated means" }));
-  return (await view.findByText(new RegExp(ISOLATED_EXPLAINED.slice(0, 30))))
-    .textContent;
-}
-
 test("Isolated is offered with what it means, and a public Bot is told who shares it", async () => {
   const { view, user } = await named();
   const isolated = await view.findByRole("checkbox", { name: "Isolated" });
   expect(isolated.getAttribute("aria-checked")).toBe("false");
   expect(isolated.hasAttribute("data-disabled")).toBe(false);
-  expect(await isolatedTooltip(view, user)).toBe(ISOLATED_EXPLAINED);
-
-  await user.unhover(view.getByRole("button", { name: "What Isolated means" }));
+  expect(await view.findByText(ISOLATED_EXPLAINED)).toBeTruthy();
   await user.click(view.getByRole("button", { name: /Public/ }));
-  expect(await isolatedTooltip(view, user)).toBe(
-    `${ISOLATED_EXPLAINED} ${ISOLATED_PUBLIC}`,
-  );
+  expect(
+    await view.findByText(`${ISOLATED_EXPLAINED} ${ISOLATED_PUBLIC}`),
+  ).toBeTruthy();
 });
 
 test("a ticked Isolated is sent with the Bot, and an unticked one says no", async () => {

@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { and, eq, sql } from "drizzle-orm";
 import {
   type CredentialSecretReader,
   type CredentialStore,
@@ -35,7 +35,7 @@ export function createResponsibilityBindingStore(
         .where(eq(responsibilitySourceBindings.ownerUserId, ownerUserId)),
     async create(
       ownerUserId: string,
-      input: { repository: string; secret: string },
+      input: { repository: string; secret: string; requestId?: string },
     ) {
       const repository = input.repository.trim();
       if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || repository.length > 256)
@@ -46,12 +46,37 @@ export function createResponsibilityBindingStore(
         throw new ResponsibilityRefusedError(
           "Supply a webhook secret of 1–4096 characters.",
         );
-      const id = randomUUID();
-      const encryptedValue = await encryptSecret(
-        vault.encryptionKey,
-        input.secret,
-      );
+      const id = input.requestId
+        ? createHash("sha256")
+            .update(JSON.stringify([ownerUserId, input.requestId]))
+            .digest("hex")
+        : randomUUID();
       return database.transaction(async (transaction) => {
+        if (input.requestId) {
+          await transaction.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${`github-binding:${id}`}, 0))`,
+          );
+          const [existing] = await transaction
+            .select({
+              ...safeColumns,
+              ownerUserId: responsibilitySourceBindings.ownerUserId,
+            })
+            .from(responsibilitySourceBindings)
+            .where(eq(responsibilitySourceBindings.id, id));
+          if (existing) {
+            const { ownerUserId: owner, ...binding } = existing;
+            if (owner !== ownerUserId || binding.repository !== repository) {
+              throw new ResponsibilityRefusedError(
+                "Start a new request to add this repository.",
+              );
+            }
+            return { ...binding, webhookPath: `/api/events/github/${id}` };
+          }
+        }
+        const encryptedValue = await encryptSecret(
+          vault.encryptionKey,
+          input.secret,
+        );
         const credential = await vault.store.create(
           {
             kind: "connector",
