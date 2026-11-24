@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
+  cp,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   rm,
   symlink,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cp } from "node:fs/promises";
 import { archive, restore, verifyServedBuilds } from "./web-build-archive";
 
 const sha256 = (text: string) =>
