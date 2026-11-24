@@ -23,6 +23,7 @@ import { createWakeUpStore } from "../src/agents/wake-up";
 import { createApprovalStore } from "../src/approvals/store";
 import { approvalAction } from "../src/approvals/types";
 import { createAuditReader } from "../src/audit";
+import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { botSeat, seatText } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
@@ -880,6 +881,28 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         quote: { creditType: "test", maxChargeMicrocredits: "3" },
       },
     });
+    const billingAccount = await ledger.accountOf(identity);
+    if (!billingAccount) throw new Error("Missing fixture Billing Account");
+    const paid = createPaidCreditLedger(database);
+    const productCode = `trial-bot-${owner.sub}`;
+    await paid.upsertProduct({
+      code: productCode,
+      kind: "credit_pack",
+      priceCents: 100,
+      creditsMicrocredits: 3n,
+    });
+    const paidOrder = await paid.createOrder({
+      accountId: billingAccount,
+      productCode,
+      channel: "wechat",
+    });
+    await paid.verifyOrder({
+      orderId: paidOrder.id,
+      channel: "wechat",
+      channelOrderRef: `fixture:${paidOrder.id}`,
+      amountCents: 100,
+      paidAt: new Date(),
+    });
     const quotePage = await send("/workspace", {
       headers: { cookie: session },
     });
@@ -1020,6 +1043,11 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
       [true, true],
     );
     expect(await app.sweepBotWork()).toBe(false);
+    expect(await paid.paidBalance(billingAccount)).toEqual({
+      availableMicrocredits: "3",
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "0",
+    });
     expect(requests).toEqual([
       {
         operationId: expect.stringMatching(
