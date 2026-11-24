@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { SandboxStatusView } from "@/components/gallery/sandbox-host";
 import { ArgumentsArrivingContext } from "@/components/gallery/streaming";
 
 /**
@@ -6,7 +7,7 @@ import { ArgumentsArrivingContext } from "@/components/gallery/streaming";
  *
  * Browser-authored components render in the transcript from model-supplied arguments, sometimes
  * while a tool call is still streaming. A render failure is isolated to the component card and shown
- * as a user-readable failure line; stacks stay in the developer console.
+ * as an Astryx error; stacks stay in the developer console.
  */
 export class ToolRenderBoundary extends Component<
   {
@@ -68,10 +69,13 @@ export class ToolRenderBoundary extends Component<
     }
     if (this.state.failed) {
       return (
-        <p className="my-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          Couldn't show <span className="font-medium">{this.props.name}</span>.
-          The rest of the conversation is fine.
-        </p>
+        <SandboxStatusView
+          status={{
+            kind: "error",
+            message: `Couldn't show ${this.props.name}.`,
+            description: "The rest of the conversation is fine.",
+          }}
+        />
       );
     }
     return this.props.children;
