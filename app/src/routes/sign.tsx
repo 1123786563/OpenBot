@@ -4,13 +4,14 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ProviderLogo } from "@/components/auth/provider-logo";
 import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import {
   providerName,
   signInWith,
@@ -96,6 +97,11 @@ export const Route = createFileRoute("/sign")({
 });
 
 function SignScreen() {
+  const { t } = useTranslation();
+  const title = t("sign.title", "Sign in");
+  useEffect(() => {
+    document.title = `${title} · ${appConfig.brand.productName}`;
+  }, [title]);
   const {
     flow_id: flowId,
     openfuse_request: openFuseRequest,
@@ -134,12 +140,21 @@ function SignScreen() {
         resumeUrlFor(window.location.origin, flowId, resumeRequest),
       );
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Couldn't open company sign-in.";
+      /*
+       * Whatever the server said is a value, not copy: it passes through verbatim and only the
+       * sentence built around it is translated.
+       */
       setError(
-        `${message} Check your company email and try again. If the problem continues, contact your OpenBot administrator.`,
+        t(
+          "sign.sso.guidance",
+          "{message} Check your company email and try again. If the problem continues, contact your OpenBot administrator.",
+          {
+            message:
+              caughtError instanceof Error
+                ? caughtError.message
+                : t("sign.sso.failed", "Couldn't open company sign-in."),
+          },
+        ),
       );
       setOpening(null);
     }
@@ -160,7 +175,11 @@ function SignScreen() {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : `Couldn't open ${providerName(provider)} sign-in. Try again.`,
+          : t(
+              "sign.provider.failed",
+              "Couldn't open {provider} sign-in. Try again.",
+              { provider: providerName(provider) },
+            ),
       );
       setOpening(null);
     }
@@ -190,8 +209,12 @@ function SignScreen() {
           {/* Centred against the button, not against the space left of the mark. */}
           <span className="flex-1 text-center">
             {opening === provider
-              ? `Opening ${providerName(provider)}…`
-              : `Continue with ${providerName(provider)}`}
+              ? t("sign.provider.opening", "Opening {provider}…", {
+                  provider: providerName(provider),
+                })
+              : t("sign.provider.continue", "Continue with {provider}", {
+                  provider: providerName(provider),
+                })}
           </span>
           {/* Balances the mark so the label sits in the middle of the button. */}
           <span aria-hidden="true" className="size-[18px]" />
@@ -240,7 +263,9 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          Sign in to {appConfig.brand.productName}
+          {t("sign.heading", "Sign in to {product}", {
+            product: appConfig.brand.productName,
+          })}
         </motion.h1>
         <motion.div
           className="mt-8 w-full"
@@ -249,8 +274,14 @@ function SignScreen() {
         >
           {!options && (
             <ReadError
-              message="Couldn't load sign-in options."
-              description="Check your connection and try again."
+              description={t(
+                "sign.options.loadFailedDescription",
+                "Check your connection and try again.",
+              )}
+              message={t(
+                "sign.options.loadFailed",
+                "Couldn't load sign-in options.",
+              )}
               retry={reloadOptions}
               retryBelow
               retrying={checkingOptions}
@@ -258,8 +289,10 @@ function SignScreen() {
           )}
           {options?.ssoRequired && options.sso ? (
             <p className="mb-3 text-center text-sm text-muted-foreground">
-              Your organization requires you to sign in with your company
-              account.
+              {t(
+                "sign.required.notice",
+                "Your organization requires you to sign in with your company account.",
+              )}
             </p>
           ) : null}
           {providers.length > 0 && !options?.ssoRequired ? (
@@ -267,8 +300,14 @@ function SignScreen() {
           ) : options && !options.sso ? (
             <Text as="p" justify="center" type="supporting">
               {options.ssoRequired
-                ? "Company sign-in is required but unavailable. Contact your OpenBot administrator for access."
-                : "Sign-in isn’t set up yet. Contact your OpenBot administrator for access."}
+                ? t(
+                    "sign.required.unavailable",
+                    "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
+                  )
+                : t(
+                    "sign.unconfigured",
+                    "Sign-in isn’t set up yet. Contact your OpenBot administrator for access.",
+                  )}
             </Text>
           ) : null}
           {/*
@@ -287,16 +326,21 @@ function SignScreen() {
               {providers.length > 0 && !options.ssoRequired ? (
                 <div className="mb-3 flex items-center gap-3">
                   <Separator className="flex-1" />
-                  <span className="text-muted-foreground text-xs">or</span>
+                  <span className="text-muted-foreground text-xs">
+                    {t("sign.sso.or", "or")}
+                  </span>
                   <Separator className="flex-1" />
                 </div>
               ) : null}
               <TextInput
                 autoComplete="email"
                 controlClassName="sign-in-email"
-                description="Use the email address issued by your organization."
+                description={t(
+                  "sign.sso.description",
+                  "Use the email address issued by your organization.",
+                )}
                 isRequired
-                label="Company email"
+                label={t("sign.sso.label", "Company email")}
                 onChange={setEmail}
                 placeholder="you@company.com"
                 type="email"
@@ -310,8 +354,11 @@ function SignScreen() {
                 variant="outline"
               >
                 {opening === "sso"
-                  ? "Opening…"
-                  : "Continue with your company account"}
+                  ? t("sign.sso.opening", "Opening…")
+                  : t(
+                      "sign.sso.continue",
+                      "Continue with your company account",
+                    )}
               </Button>
             </Stack>
           ) : null}
@@ -319,7 +366,7 @@ function SignScreen() {
           {options?.ssoRequired && providers.length > 0 ? (
             <details className="mt-4 text-sm">
               <summary className="sign-in-admin-summary cursor-pointer text-center text-muted-foreground">
-                Admin sign-in
+                {t("sign.admin.signIn", "Admin sign-in")}
               </summary>
               <div className="mt-3">{providerButtons}</div>
             </details>
