@@ -28,6 +28,7 @@ import { newId } from "../../lib/new-id";
 
 export function ConversationView({
   messages,
+  focusMessageId,
   pendingMessageId,
   threadId,
   busy = false,
@@ -54,6 +55,7 @@ export function ConversationView({
   routine,
 }: {
   messages: readonly Message[];
+  focusMessageId?: string;
   pendingMessageId?: string;
   threadId?: string;
   busy?: boolean;
@@ -461,6 +463,7 @@ export function ConversationView({
          * conversation to change nothing.
          */}
         <ChatTranscript
+          focusMessageId={focusMessageId}
           threadId={threadId}
           busy={busy}
           commandLabels={skillLabels(commands ?? [])}

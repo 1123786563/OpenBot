@@ -1,0 +1,1 @@
+ALTER TABLE "direct_chat_runs" ADD COLUMN "test_credit_request" jsonb;

@@ -13,6 +13,7 @@ import {
   WITHDRAWN_RULE_ALLOWS,
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { RunContextRevokedError } from "@openbot/toolkit/run-context";
 import { PERSON_INITIATOR } from "../audit";
 import { decisionInvalidated } from "../personal-saas/decision-access";
 import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
@@ -142,6 +143,8 @@ export type ApprovalResumeDependencies = {
   refusal?(action: ApprovalAction): Promise<string | null>;
   /** Resolve the target again and recheck current policy/grants; never trust approval as authority. */
   validate(action: ApprovalAction): Promise<ApprovalAction>;
+  /** Verify the saved context before consumption records an external dispatch. */
+  beforeConsume?(action: ApprovalAction): Promise<void>;
   execute(action: ApprovalAction): Promise<unknown>;
   /** Persist this deterministic tool result and resume its canonical conversation. */
   continue(input: {
@@ -267,6 +270,7 @@ export function createApprovalService(
         );
       const snapshot = parseApprovalContinuation(input, "frontend");
       snapshot.initiator = PERSON_INITIATOR;
+      delete snapshot.sourceVersions;
       // Frontend snapshots come from the browser, which cannot supply server telemetry.
       snapshot.forwardedProps = productRunForwardedProps(
         snapshot.forwardedProps,
@@ -803,6 +807,7 @@ export function createApprovalService(
               throw new ApprovalRefusedError(
                 "The approved dispatch has changed.",
               );
+            await dependencies.beforeConsume?.(current);
             // Shared Goal dispatch claims the Approval after it checks live source access.
             if (
               current.dispatch !== "corsair-shared-goal" &&
@@ -817,13 +822,19 @@ export function createApprovalService(
               );
             }
           } catch (error) {
-            if (!(error instanceof ApprovalRefusedError) && !isPermanent(error))
+            if (error instanceof RunContextRevokedError)
+              refusal = error.message;
+            else if (
+              !(error instanceof ApprovalRefusedError) &&
+              !isPermanent(error)
+            )
               throw error;
-            refusal = notDoneOnRecheck(
-              error instanceof ApprovalRefusedError
-                ? error.message
-                : permanentReason(error),
-            );
+            else
+              refusal = notDoneOnRecheck(
+                error instanceof ApprovalRefusedError
+                  ? error.message
+                  : permanentReason(error),
+              );
           }
           if (refusal !== undefined || !current) {
             const reason = refusal ?? NOT_DONE;
@@ -842,7 +853,7 @@ export function createApprovalService(
                     await checkAccess();
                     const reason = await options.marketPause?.(request.action);
                     if (reason) throw new MarketRunPaused(reason);
-                    return dependencies.execute(approved);
+                    return dependencies.execute({ ...approved, continuation });
                   },
                 ),
               );

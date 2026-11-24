@@ -99,6 +99,101 @@ test("an administrator excludes a Bot and saves without losing the default or pa
   await view.findByText("Settings saved.");
 });
 
+test("OpenBot Learning policy saves without querying legacy containers", async () => {
+  let settings: LearningSettings = {
+    enabled: true,
+    defaultTarget: { containerId: "support" },
+    agents: { bot: { containerId: "sales" } },
+  };
+  const requested: string[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      requested.push(path);
+      if (path === "/api/capabilities")
+        return Response.json({ mode: "openbot" });
+      if (path === "/api/admin/learning/settings") {
+        if (init?.method === "PUT") settings = JSON.parse(String(init.body));
+        return Response.json({ settings });
+      }
+      if (path.startsWith("/api/agents")) return Response.json({ agents: [] });
+      return new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = page();
+  fireEvent.click(
+    await view.findByRole("switch", { name: "Allow conversation Learning" }),
+  );
+  fireEvent.click(view.getByRole("button", { name: "Save Learning settings" }));
+  await view.findByText("Settings saved.");
+  expect(settings).toEqual({
+    enabled: false,
+    defaultTarget: { containerId: "support" },
+    agents: { bot: { containerId: "sales" } },
+  });
+  expect(
+    requested.filter((path) => path.startsWith("/api/admin/learning/")),
+  ).toEqual(["/api/admin/learning/settings", "/api/admin/learning/settings"]);
+});
+
+test("native admin opens the evidence from a run and reviews its proposal", async () => {
+  const decisions: unknown[] = [];
+  const id = "0198a012-a20f-77c0-9e33-8992f18e74c2";
+  const operations = "/api/copilotkit/admin/learning";
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/capabilities")
+        return Response.json({ mode: "openbot" });
+      if (path.startsWith("/api/agents")) return Response.json({ agents: [] });
+      if (path.endsWith("/settings"))
+        return Response.json({ settings: { enabled: true, agents: {} } });
+      if (path === `${operations}/proposals/${id}`) {
+        decisions.push(JSON.parse(String(init?.body)));
+        return Response.json({ ok: true });
+      }
+      if (path === operations)
+        return Response.json({
+          runs: [
+            {
+              id,
+              state: "proposed",
+              reason: null,
+              startedAt: "2026-11-05T10:00:00.000Z",
+              evidenceCount: 1,
+              proposal: {
+                title: "Packing checklist",
+                instructions: "Check the label.",
+                canApprove: decisions.length === 0,
+                decision: decisions.length > 0 ? "approve" : null,
+                evidence: [
+                  {
+                    source: { kind: "conversation", id: "shared" },
+                    title: "Shipping",
+                    excerpt: "Compare the address to the shipping label.",
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      return new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = page();
+  fireEvent.click(
+    await view.findByRole("button", { name: /Packing checklist/ }),
+  );
+  await view.findByText("Compare the address to the shipping label.");
+  const approve = view.getByRole("button", { name: "Approve and publish" });
+  await waitFor(() => expect(approve).toHaveProperty("disabled", false));
+  fireEvent.click(approve);
+  await view.findByText("Proposal published.");
+  expect(decisions).toEqual([{ decision: "approve" }]);
+});
+
 test("an unavailable settings store shows an error instead of an editable empty configuration", async () => {
   global.fetch = Object.assign(
     async () =>

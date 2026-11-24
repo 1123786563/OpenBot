@@ -108,6 +108,9 @@ export function createRoutineRoutes(
               : null;
           return {
             id: run.id,
+            ...(run.conversationRunId && {
+              conversationRunId: run.conversationRunId,
+            }),
             status:
               run.status === "skipped" && isMarketVersionPause(run.error)
                 ? "paused"

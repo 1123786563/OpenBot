@@ -359,7 +359,10 @@ function NewConversation({
             setPickerOpen(open);
           }}
           inputValue={recipientFilter}
-          onInputValueChange={setRecipientFilter}
+          onInputValueChange={(value, details) => {
+            setRecipientFilter(value);
+            if (details.reason === "input-change") setPickerOpen(true);
+          }}
           autoHighlight
           inline={pickerVisible}
           multiple

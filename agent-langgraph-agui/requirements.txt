@@ -4,6 +4,10 @@ langchain
 langchain-openai
 langchain-anthropic
 langchain-google-genai
+# anthropic 2.0 moved its default anthropic-version header to 2026-10-21 while
+# langchain-anthropic 1.7 still sends 2023-06-01, which the provider-boundary parity
+# test catches. Held on 1.x until langchain-anthropic tracks the SDK default.
+anthropic>=0.120,<2
 # google-genai 3.0.0 (2026-11-06) moved generateContent from /v1beta to /v1, which the Gemini
 # boundary tests catch. Held on 2.x until the move is checked against the models Bots use.
 google-genai>=2.34,<3

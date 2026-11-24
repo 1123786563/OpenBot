@@ -16,7 +16,7 @@ export type GroupMessage = {
   text: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;
-  /** Why the Bot turn is waiting or paused. */
+  /** Why a Bot is waiting or paused. */
   reason?: string;
   /** For an answer relayed from another Bot through `message_bot`: which Bot answered. */
   answeredBy?: string;
@@ -31,10 +31,27 @@ export type GroupPerson = {
   creator: boolean;
 };
 export type GroupBot = { id: string; name: string };
+export type GroupBackgroundRun = {
+  id: string;
+  agentId: string;
+  threadId: string;
+  status: "running" | "completed" | "failed";
+  waitingForApproval: boolean;
+  reason?: string;
+  partialReply: string | null;
+  externalOutcome:
+    | "dispatching"
+    | "unknown"
+    | "executed"
+    | "not_dispatched"
+    | null;
+};
+
 export type GroupConversation = {
   bots: GroupBot[];
   people: GroupPerson[];
   messages: GroupMessage[];
+  backgroundRuns?: GroupBackgroundRun[];
 };
 
 export const groupKeys = {
@@ -72,7 +89,11 @@ export function groupQueryOptions(channelId: string) {
       query.state.data?.messages.some(
         (message) =>
           message.status === "running" || message.status === "queued",
-      ) || awaitingFirstReply(query.state.data?.messages.at(-1))
+      ) ||
+      query.state.data?.backgroundRuns?.some(
+        ({ status }) => status === "running",
+      ) ||
+      awaitingFirstReply(query.state.data?.messages.at(-1))
         ? 1_500
         : false,
   });

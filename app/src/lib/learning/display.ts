@@ -88,3 +88,25 @@ const SELECTOR_NOTE = new RegExp(
 export function readableSkillBody(markdown: string): string {
   return skillBody(markdown).replace(SELECTOR_NOTE, "");
 }
+
+const reasons: Record<string, string> = {
+  insufficient_credits: "There are not enough Test Credits.",
+  execution_limit: "The Test Credit limit was reached.",
+  not_authorized: "Authorization to analyze or spend Test Credits was lost.",
+  route_unavailable: "The model route is unavailable.",
+  unavailable: "Test Credit admission is unavailable.",
+  no_evidence: "There are no completed turns to analyze.",
+  no_procedure: "No reusable procedure was found.",
+  invalid_model_result: "The model returned an invalid proposal.",
+  analysis_interrupted: "The analysis was interrupted.",
+  schedule_disabled: "Scheduled Learning was turned off.",
+  learning_disabled: "Learning was turned off.",
+  evidence_unavailable: "The selected evidence is unavailable.",
+  evidence_withdrawn: "Evidence was withdrawn.",
+};
+
+export function learningAnalysisReason(
+  reason: string | null,
+): string | undefined {
+  return reason && Object.hasOwn(reasons, reason) ? reasons[reason] : undefined;
+}

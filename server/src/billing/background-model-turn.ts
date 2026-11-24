@@ -283,7 +283,10 @@ type CoordinationTurn = {
 export function budgetedTurn(
   model: BackgroundModel | undefined,
   kind: "routine" | "task" | CoordinationTurn,
-  makeRunner: (agent: AbstractAgent) => TurnRunner,
+  makeRunner: (
+    agent: AbstractAgent,
+    failure: () => BackgroundModelWaiting | undefined,
+  ) => TurnRunner,
   authorize: (turn: Parameters<TurnRunner>[0]) => Promise<void>,
   fallback: TurnRunner,
   coordinate?: (
@@ -317,7 +320,7 @@ export function budgetedTurn(
       turn.initiator,
     );
     try {
-      const result = await makeRunner(agent)(turn);
+      const result = await makeRunner(agent, failure)(turn);
       if (failure()) throw failure();
       return result;
     } catch (error) {

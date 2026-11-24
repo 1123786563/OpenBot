@@ -2,10 +2,17 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import { eq, inArray, like } from "drizzle-orm";
+import { eq, inArray, like, sql } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
+import { createApprovalStore } from "../src/approvals/store";
+import { ApprovalNotFoundError, approvalAction } from "../src/approvals/types";
 import type { AuditEventInput } from "../src/audit";
+import {
+  CHANNEL_ACTIVITY_TOPIC,
+  createChannelEventHub,
+  startChannelActivityListener,
+} from "../src/channels/events";
 import {
   createGroupConversations,
   createGroupRoutes,
@@ -15,13 +22,17 @@ import {
   GroupRefusedError,
   groupSourceForRun,
 } from "../src/channels/group";
-import { createChannelStore } from "../src/channels/routes";
+import {
+  createChannelStore,
+  currentChannelEventMembers,
+} from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
   agents,
   channels,
+  groupBotThreads,
   intelligenceChannelMappings,
   personalSaasAccounts,
   personalWorkspaceSuspensions,
@@ -82,12 +93,16 @@ async function person(
   createdUsers.push(id);
   return { id, email, role: "user" } satisfies AgentActor & { email: string };
 }
-async function bot(owner: AgentActor, name: string) {
+async function bot(
+  owner: AgentActor,
+  name: string,
+  visibility: "private" | "public" = "private",
+) {
   const profile = await profileStore.create(owner, {
     name,
     title: "Tester",
     roleDescription: "Answer briefly.",
-    visibility: "private",
+    visibility,
   });
   createdAgents.push(profile.id);
   return profile.id;
@@ -1038,13 +1053,147 @@ describe("group conversations in PostgreSQL", () => {
     expect(people.map((row) => row.userId)).toEqual([teammate.id]);
   });
 
+  test("an open activity connection stops receiving a group's notifications after leave", async () => {
+    const owner = await person();
+    const teammate = await person();
+    const ada = await bot(owner, "Ada");
+    const grace = await bot(owner, "Grace");
+    const { conversations } = service({ replies: {} });
+    const channel = await conversations.create(owner.id, {
+      agentIds: [ada, grace],
+    });
+    await conversations.addMember(owner.id, channel.id, {
+      email: `${teammate.id}@example.test`,
+    });
+    const hub = createChannelEventHub();
+    const departed: string[] = [];
+    const remaining: string[] = [];
+    hub.register(owner.id, (payload) => departed.push(payload));
+    hub.register(teammate.id, (payload) => remaining.push(payload));
+    const listener = await startChannelActivityListener(
+      testDatabaseUrl(),
+      hub,
+      (event) => currentChannelEventMembers(database, event),
+    );
+    const notify = (lastMessage: string) =>
+      database.execute(
+        sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify({
+          channelId: channel.id,
+          memberIds: [owner.id, teammate.id],
+          lastMessage,
+          lastMessageAt: null,
+          lastMessageAgentId: null,
+        })})`,
+      );
+    try {
+      await notify("Before leave");
+      expect(
+        await readUntil(
+          () => Promise.resolve(departed.join("")),
+          (text) => text.includes("Before leave"),
+        ),
+      ).toContain("Before leave");
+      await conversations.removeMember(owner.id, channel.id, owner.id);
+      await notify("Written with a stale recipient list");
+      const seen = await readUntil(
+        () => Promise.resolve(remaining.join("")),
+        (text) => text.includes("stale recipient list"),
+      );
+      expect(seen).toContain("Written with a stale recipient list");
+      expect(departed.join("")).toContain('"deleted":true');
+      expect(departed.join("")).not.toContain("stale recipient list");
+    } finally {
+      await listener.stop();
+    }
+  });
+
+  test("leaving a group blocks pending approval decisions and previously approved actions", async () => {
+    const owner = await person();
+    const teammate = await person();
+    const ada = await bot(owner, "Ada");
+    const grace = await bot(owner, "Grace");
+    const { conversations } = service({ replies: {} });
+    const channel = await conversations.create(owner.id, {
+      agentIds: [ada, grace],
+    });
+    await conversations.addMember(owner.id, channel.id, {
+      email: `${teammate.id}@example.test`,
+    });
+    const [thread] = await database
+      .select()
+      .from(groupBotThreads)
+      .where(eq(groupBotThreads.channelId, channel.id));
+    if (!thread) throw new Error("missing group Bot thread");
+    const approvals = createApprovalStore(database);
+    const action = () =>
+      approvalAction({
+        actorId: owner.id,
+        botId: thread.agentId,
+        toolRef: "computer_write_file",
+        effect: "write",
+        scope: "project",
+        args: { path: "notes.txt" },
+        target: { filePath: "notes.txt" },
+        continuation: {
+          runId: `${prefix}-run`,
+          threadId: thread.threadId,
+          toolCallId: randomUUID(),
+          toolName: "computer_write_file",
+          args: { path: "notes.txt" },
+          messages: [],
+          state: {},
+          context: [],
+          forwardedProps: {},
+        },
+      });
+    const grantedAction = action();
+    const controlAction = action();
+    const pending = await approvals.open(action());
+    const granted = await approvals.open(grantedAction);
+    const control = await approvals.open(controlAction);
+    try {
+      expect(
+        (await approvals.decide(owner.id, granted.id, "allow_once")).status,
+      ).toBe("approved");
+      await approvals.decide(owner.id, control.id, "allow_once");
+      expect(
+        await approvals.consume(
+          owner.id,
+          control.id,
+          controlAction.actionDigest,
+        ),
+      ).toBe(true);
+      await conversations.removeMember(owner.id, channel.id, owner.id);
+      await expect(
+        approvals.decide(owner.id, pending.id, "allow_once"),
+      ).rejects.toBeInstanceOf(ApprovalNotFoundError);
+      expect((await approvals.get(owner.id, pending.id)).status).toBe(
+        "pending",
+      );
+      expect(
+        await approvals.consume(
+          owner.id,
+          granted.id,
+          grantedAction.actionDigest,
+        ),
+      ).toBe(false);
+      expect((await approvals.get(owner.id, granted.id)).status).toBe(
+        "approved",
+      );
+    } finally {
+      await database
+        .delete(workItems)
+        .where(inArray(workItems.key, [pending.id, granted.id, control.id]));
+    }
+  });
+
   test("the person who made a group can take someone out; others can only leave", async () => {
     const owner = await person();
     const second = await person();
     const third = await person();
-    const ada = await bot(owner, "Ada");
+    const ada = await bot(owner, "Ada", "public");
     const grace = await bot(owner, "Grace");
-    const { conversations } = service({
+    const { conversations, calls } = service({
       replies: { [ada]: () => "a", [grace]: () => "g" },
     });
     const channel = await conversations.create(owner.id, {
@@ -1072,12 +1221,56 @@ describe("group conversations in PostgreSQL", () => {
     await expect(
       conversations.removeMember(second.id, channel.id, third.id),
     ).rejects.toThrow(GroupRefusedError);
-    await expect(
-      conversations.removeMember(owner.id, channel.id, owner.id),
-    ).rejects.toThrow(GroupRefusedError);
-    await conversations.removeMember(second.id, channel.id, second.id);
-    await conversations.removeMember(owner.id, channel.id, third.id);
-    for (const gone of [second, third])
+    const routesFor = (actor: AgentActor) =>
+      createGroupRoutes(conversations, async (context, next) => {
+        context.set("actor", { ...actor, email: `${actor.id}@example.test` });
+        await next();
+      });
+    await conversations.send(owner.id, channel.id, {
+      id: `${channel.id}-source`,
+      text: "Shared history survives.",
+    });
+    const ownerRoutes = routesFor(owner);
+    expect(
+      (
+        await ownerRoutes.request(`/${channel.id}/members/${owner.id}`, {
+          method: "DELETE",
+        })
+      ).status,
+    ).toBe(204);
+    await drain(conversations);
+    expect(calls).toHaveLength(0);
+    expect((await ownerRoutes.request(`/${channel.id}`)).status).toBe(404);
+    expect(
+      (
+        await ownerRoutes.request(`/${channel.id}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: "after-leave", text: "Not a member." }),
+        })
+      ).status,
+    ).toBe(404);
+    const surviving = await routesFor(second).request(`/${channel.id}`);
+    expect(surviving.status).toBe(200);
+    expect(await surviving.text()).toContain("Shared history survives.");
+    const send = (agentId: string) =>
+      routesFor(second).request(`/${channel.id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: `${channel.id}-${agentId}`,
+          text: "Still here.",
+          agentId,
+        }),
+      });
+    expect((await send(grace)).status).toBe(400);
+    expect((await send(ada)).status).toBe(202);
+    await drain(conversations);
+    expect(
+      (await conversations.list(second.id, channel.id)).messages.at(-1),
+    ).toMatchObject({ text: "a" });
+    await conversations.removeMember(second.id, channel.id, third.id);
+    for (const gone of [owner, third])
       await expect(conversations.list(gone.id, channel.id)).rejects.toThrow(
         GroupNotFoundError,
       );

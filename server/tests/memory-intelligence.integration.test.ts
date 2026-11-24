@@ -336,16 +336,17 @@ test("recall keeps a Bot-formed memory to the Bot that formed it", async () => {
     agentId: bot,
     content: "Deploy window is Thursday",
     sourceApp: "Calendar",
+    sourceRef: "calendar/read",
   });
   await store.update(ada, formed.id, { reviewState: "confirmed" });
   const forBot = await store.retrieve(ada, [], "deploy", {
     botId: bot,
-    heldServerIds: new Set(),
+    heldSourceRefs: new Set(["calendar/read"]),
   });
   expect(forBot.map((m) => m.id)).toEqual([formed.id]);
   const forOther = await store.retrieve(ada, [], "deploy", {
     botId: otherBot,
-    heldServerIds: new Set(),
+    heldSourceRefs: new Set(["calendar/read"]),
   });
   expect(forOther).toEqual([]);
 });

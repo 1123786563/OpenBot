@@ -303,7 +303,10 @@ test("a browser restart mid-recording: a new document sends what the old one kep
   });
   expect(await (await openOutbox(databaseName)).count(trajectoryId)).toBe(0);
   await until(() => !fake.offscreen.open, "the document closed");
-  expect(recorderRequests).toEqual([]);
+  expect(recorderRequests).toEqual([
+    `POST /api/recorder/capture/${trajectoryId}/grant`,
+    `POST /api/recorder/capture/${trajectoryId}/grant`,
+  ]);
 });
 
 test("a recording kept when its connection was revoked is sent once the person connects again", async () => {

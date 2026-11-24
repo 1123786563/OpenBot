@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  controlThreadRun,
   readableTurns,
   readThreadMessages,
 } from "../src/lib/copilot/thread-messages";
@@ -364,6 +365,64 @@ describe("thread history retrieval outcomes", () => {
             messages: [],
             unreadable: 0,
             availability: "unavailable",
+          });
+        },
+      );
+    },
+  );
+
+  test("direct chat history retains the run controls and outcomes after reopening", async () => {
+    const runs = [
+      {
+        id: "unknown/1",
+        userMessageId: "msg-1",
+        status: "failed",
+        externalOutcome: "unknown",
+      },
+      {
+        id: "waiting/2",
+        userMessageId: "msg-2",
+        status: "running",
+        waitingForApproval: true,
+      },
+      {
+        id: "stopped/3",
+        userMessageId: "msg-3",
+        status: "failed",
+        stopReason: "stopped",
+      },
+    ];
+    await withFetch(
+      async () => Response.json({ messages: [], runs }),
+      async () => {
+        expect(await readThreadMessages("thread-1", "agent-1")).toMatchObject({
+          runs,
+        });
+      },
+    );
+  });
+
+  test.each(["stop", "reconcile"] as const)(
+    "the %s control posts to the selected run in the selected thread",
+    async (action) => {
+      let sent: { url: string; method?: string } | undefined;
+      await withFetch(
+        async (input, init) => {
+          sent = { url: String(input), method: init?.method };
+          return Response.json({});
+        },
+        async () => {
+          await controlThreadRun({
+            threadId: "thread/1",
+            agentId: "bot&2",
+            runId: "run/3",
+            action,
+          });
+          expect(sent).toEqual({
+            url: expect.stringContaining(
+              `/api/copilotkit/threads/thread%2F1/runs/run%2F3/${action}?agentId=bot%262`,
+            ),
+            method: "POST",
           });
         },
       );

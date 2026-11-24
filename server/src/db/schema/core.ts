@@ -393,6 +393,10 @@ export const channelMemberships = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    learningEvidenceAllowed: boolean("learning_evidence_allowed")
+      .notNull()
+      .default(false),
     /**
      * When this member pinned the channel, or null. On the membership, not the channel: a pin is
      * one person's marker, and the membership row is already the per-member half of a channel.
@@ -406,6 +410,15 @@ export const channelMemberships = pgTable(
     createdAt: createdAt(),
   },
   (table) => [primaryKey({ columns: [table.channelId, table.userId] })],
+);
+
+export const conversationEvidenceWithdrawals = pgTable(
+  "conversation_evidence_withdrawals",
+  {
+    channelId: text("channel_id").primaryKey(),
+    withdrawnAt: createdAt(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
 );
 
 export const channelAgents = pgTable(

@@ -10,7 +10,8 @@ import {
   deploymentAddresses,
   isLoopbackHost,
 } from "@openbot/shared/this-machine";
-import { singleUserEnabled } from "./auth/dev-actor";
+import { z } from "zod";
+import { DEV_ACTOR, singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";
 import type { ActionPolicy } from "./computer/policy";
@@ -21,6 +22,9 @@ import {
 } from "./dictation/config";
 import { type Edition, parseEdition } from "./edition";
 import { proxiedClientSocketUrl } from "./intelligence-gateway-proxy";
+import type { HindsightConfig } from "./memory/hindsight";
+import type { OpikConfig } from "./opik/client";
+import type { OpikEvaluationConfig } from "./opik/evaluation";
 import type { BrokerProvider } from "./plugins/access";
 import { loadSkillMarketConfig } from "./skill-market/config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
@@ -369,7 +373,16 @@ export type DeploymentConfig = {
   openObserveUrl?: string;
   tenantPackageDirectory: string;
   runtime: RuntimeCapabilities;
-  managedModelTrial?: { url: URL; token: string; route: string };
+  managedModelTrial?: {
+    url: URL;
+    credentials: ReadonlyMap<string, string>;
+    route: string;
+  };
+  hindsight?: HindsightConfig;
+  hindsightReflectToken?: string;
+  opik?: OpikConfig;
+  opikTraceOperators?: ReadonlySet<string>;
+  opikEvaluation?: OpikEvaluationConfig;
   /**
    * How long a Bot's stream may say nothing before this deployment ends the turn, in milliseconds.
    *
@@ -840,6 +853,78 @@ function optionalHttpUrl(
   }
 
   return parsed;
+}
+
+function opikConfig(
+  environment: Environment,
+  prefix = "OPENBOT_OPIK",
+  defaultProject = "openbot-runs",
+): OpikConfig | undefined {
+  const name = `${prefix}_API_URL`;
+  const apiUrl = optionalHttpUrl(environment, name);
+  if (!apiUrl) return undefined;
+  if (apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash)
+    throw new Error(
+      `${name} must not contain credentials, a query, or a fragment`,
+    );
+  const workspace = optional(environment, `${prefix}_WORKSPACE`);
+  const apiKey = optional(environment, `${prefix}_API_KEY`);
+  return {
+    apiUrl,
+    project: optional(environment, `${prefix}_PROJECT`) ?? defaultProject,
+    ...(workspace ? { workspace } : {}),
+    ...(apiKey ? { apiKey } : {}),
+  };
+}
+
+function opikEvaluationConfig(
+  environment: Environment,
+  tracing?: OpikConfig,
+): OpikEvaluationConfig | undefined {
+  const synthetic = opikConfig(
+    environment,
+    "OPENBOT_OPIK_EVAL",
+    "openbot-synthetic-evaluations",
+  );
+  const real = opikConfig(
+    environment,
+    "OPENBOT_OPIK_REAL_EVAL",
+    "openbot-authorized-evaluations",
+  );
+  if (!synthetic) {
+    if (real)
+      throw new Error(
+        "Real Opik evaluation requires OPENBOT_OPIK_EVAL_API_URL.",
+      );
+    return undefined;
+  }
+  const operators = new Set(
+    (optional(environment, "OPENBOT_OPIK_EVAL_OPERATORS") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+  if (!operators.size)
+    throw new Error(
+      "OPENBOT_OPIK_EVAL_OPERATORS must list at least one operator ID.",
+    );
+  const budget =
+    optional(environment, "OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT") ?? "";
+  const dailyCaseLimit = Number(budget);
+  if (!/^[1-9][0-9]*$/.test(budget) || !Number.isSafeInteger(dailyCaseLimit))
+    throw new Error(
+      "OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT must be a positive integer.",
+    );
+  if (
+    real &&
+    [synthetic, tracing].some(
+      (config) => config?.apiUrl.origin === real.apiUrl.origin,
+    )
+  )
+    throw new Error(
+      "The real evaluation Opik endpoint must have a dedicated origin.",
+    );
+  return { synthetic, operators, dailyCaseLimit, ...(real ? { real } : {}) };
 }
 
 /**
@@ -1613,27 +1698,54 @@ function serverPort(environment: Environment): number {
   return port ?? serverPort ?? DEFAULT_PORT;
 }
 
-function openObserveUrl(environment: Environment): string | undefined {
-  const value = optional(environment, "OPENBOT_OPENOBSERVE_URL");
-  if (!value || /[?#\\\s]/.test(value)) return undefined;
-  const authority = /^https?:\/\/([^/]+)/i.exec(value)?.[1];
-  if (!authority || authority.includes("@")) return undefined;
-  return URL.parse(value)?.href;
-}
-
 function managedModelTrial(
   environment: Environment,
   runtime: RuntimeCapabilities,
+  singleUser: boolean,
 ): DeploymentConfig["managedModelTrial"] {
   const name = "OPENBOT_MANAGED_MODEL_TRIAL_URL";
   const origin = optionalHttpUrl(environment, name);
   const token = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_TOKEN");
+  const credentialsName = "OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS";
+  const encoded = optional(environment, credentialsName);
   const route = optional(environment, "OPENBOT_MANAGED_MODEL_TRIAL_ROUTE");
-  if (!origin && !token && !route) return undefined;
-  if (!origin || !token || !route || runtime.mode !== "openbot") {
+  if (!origin && !token && !encoded && !route) return undefined;
+  if (!origin || !route || runtime.mode !== "openbot") {
     throw new Error(
-      "The managed model trial requires URL, TOKEN, ROUTE, and the OpenBot runtime.",
+      "The managed model trial requires URL, ROUTE, and the OpenBot runtime.",
     );
+  }
+  if (token && (!singleUser || encoded)) {
+    throw new Error(
+      `The managed model trial TOKEN is only supported by itself in single-user mode. Use ${credentialsName} for multiple People.`,
+    );
+  }
+  const credentials = new Map<string, string>();
+  if (token) {
+    credentials.set(DEV_ACTOR.id, token);
+  } else {
+    let value: unknown;
+    try {
+      value = JSON.parse(encoded ?? "null");
+    } catch {
+      throw new Error(`Invalid ${credentialsName}.`);
+    }
+    const parsed = z
+      .record(z.string().min(1), z.string().regex(/^[A-Za-z0-9._~+/-]+=*$/))
+      .safeParse(value);
+    if (!parsed.success) throw new Error(`Invalid ${credentialsName}.`);
+    const entries = Object.entries(parsed.data);
+    if (
+      !entries.length ||
+      new Set(entries.map(([, credential]) => credential)).size !==
+        entries.length
+    ) {
+      throw new Error(
+        `${credentialsName} requires distinct credentials for each Person.`,
+      );
+    }
+    for (const [personId, credential] of entries)
+      credentials.set(personId, credential);
   }
   const loopback = ["127.0.0.1", "[::1]", "localhost"].includes(
     origin.hostname,
@@ -1642,15 +1754,24 @@ function managedModelTrial(
     (origin.protocol !== "https:" && !loopback) ||
     origin.username ||
     origin.password ||
-    origin.pathname !== "/" ||
+    !["/", "/api/billing", "/api/billing/"].includes(origin.pathname) ||
     origin.search ||
     origin.hash
   ) {
     throw new Error(
-      `${name} must be an HTTPS origin (HTTP allowed for loopback tests).`,
+      `${name} must be an HTTPS origin or its /api/billing endpoint (HTTP allowed for loopback tests).`,
     );
   }
-  return { url: origin, token, route };
+  if (origin.pathname === "/api/billing") origin.pathname += "/";
+  return { url: origin, credentials, route };
+}
+
+function openObserveUrl(environment: Environment): string | undefined {
+  const value = optional(environment, "OPENBOT_OPENOBSERVE_URL");
+  if (!value || /[?#\\\s]/.test(value)) return undefined;
+  const authority = /^https?:\/\/([^/]+)/i.exec(value)?.[1];
+  if (!authority || authority.includes("@")) return undefined;
+  return URL.parse(value)?.href;
 }
 
 export function loadConfig(
@@ -1693,6 +1814,57 @@ export function loadConfig(
   const edition = parseEdition(optional(environment, "OPENBOT_EDITION"));
   const runtime = runtimeCapabilities(environment);
 
+  const hindsightUrl = optional(environment, "OPENBOT_HINDSIGHT_API_URL");
+  const hindsightApiKey = optional(environment, "OPENBOT_HINDSIGHT_API_KEY");
+  const hindsightReflect = optional(environment, "OPENBOT_HINDSIGHT_REFLECT");
+  const hindsightReflectToken = optional(
+    environment,
+    "OPENBOT_HINDSIGHT_REFLECT_TOKEN",
+  );
+  // An external authority takes precedence over local single-user auth.
+  const singleUser =
+    !organizationAuthUrl &&
+    singleUserAllowed(environment, configuredAuthProviders(auth).length > 0);
+  const modelTrial = managedModelTrial(environment, runtime, singleUser);
+  if (
+    hindsightReflect &&
+    (!hindsightUrl ||
+      (hindsightReflect !== "local" && hindsightReflect !== "managed") ||
+      (hindsightReflect === "managed" &&
+        (!modelTrial || !hindsightReflectToken)))
+  )
+    throw new Error(
+      "OPENBOT_HINDSIGHT_REFLECT requires a Hindsight API origin and local or managed mode. Managed mode requires Test Credit configuration and OPENBOT_HINDSIGHT_REFLECT_TOKEN.",
+    );
+  let hindsight: HindsightConfig | undefined;
+  if (hindsightUrl) {
+    const url = new URL(hindsightUrl);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== "/"
+    )
+      throw new Error(
+        "OPENBOT_HINDSIGHT_API_URL must be an HTTP(S) service origin.",
+      );
+    hindsight = {
+      url,
+      ...(hindsightApiKey ? { apiKey: hindsightApiKey } : {}),
+      ...(hindsightReflect ? { reflect: true } : {}),
+    };
+  }
+  const opik = opikConfig(environment);
+  const opikTraceOperators = new Set(
+    (optional(environment, "OPENBOT_OPIK_TRACE_OPERATORS") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+  const opikEvaluation = opikEvaluationConfig(environment, opik);
+
   // Built first and checked after, so every refusal the team edition gives keeps its order.
   const loaded = {
     port: serverPort(environment),
@@ -1719,7 +1891,12 @@ export function loadConfig(
     tenantPackageDirectory:
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
     runtime,
-    managedModelTrial: managedModelTrial(environment, runtime),
+    managedModelTrial: modelTrial,
+    ...(hindsightReflect === "managed" ? { hindsightReflectToken } : {}),
+    ...(hindsight ? { hindsight } : {}),
+    ...(opik ? { opik } : {}),
+    ...(opikTraceOperators.size ? { opikTraceOperators } : {}),
+    ...(opikEvaluation ? { opikEvaluation } : {}),
     recorder: { extraExtensionIds: recorderExtraExtensionIds(environment) },
     learning: learningDefault(environment),
     learningAutoAssign: learningAutoAssignEnabled(environment),
@@ -1736,14 +1913,7 @@ export function loadConfig(
     oauth: { google },
     auth,
     ...(organizationAuthUrl ? { organizationAuthUrl } : {}),
-    /*
-     * The authority short-circuits this, and that ordering is load-bearing: a white-label
-     * deployment naming an external authority lets it win, and `singleUserAllowed` is never
-     * reached and so cannot refuse a combination that already resolves.
-     */
-    singleUser:
-      !organizationAuthUrl &&
-      singleUserAllowed(environment, configuredAuthProviders(auth).length > 0),
+    singleUser,
     edition,
     accessibility: accessibilityEnabled(environment),
     generativeUi: generativeUiEnabled(environment),

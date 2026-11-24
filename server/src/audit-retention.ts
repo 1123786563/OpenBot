@@ -137,11 +137,12 @@ export function startRetentionSweeps(
      * ledger rows a day that nothing reads after a month.
      */
     proactive?: Pick<ProactiveStore, "prune">;
+    pruneDirectChatEvents?: () => Promise<unknown>;
   } = {},
 ): RetentionSweeper {
   const sweepsAudit = Boolean(retentionDays && retentionDays >= 1);
-  const { proactive } = options;
-  if (!sweepsAudit && !pageFrames && !proactive)
+  const { proactive, pruneDirectChatEvents } = options;
+  if (!sweepsAudit && !pageFrames && !proactive && !pruneDirectChatEvents)
     return { stop: () => undefined };
 
   const intervalMs = options.intervalMs ?? 60 * 60_000;
@@ -149,6 +150,14 @@ export function startRetentionSweeps(
   const timers: ReturnType<typeof setInterval>[] = [];
 
   const run = () => {
+    void pruneDirectChatEvents?.().catch((error: unknown) => {
+      console.error(
+        JSON.stringify({
+          type: "direct-chat-replay-sweep-failed",
+          error: String(error),
+        }),
+      );
+    });
     if (pageFrames) {
       void pageFrames
         .purge(FRAME_RETENTION_MS)

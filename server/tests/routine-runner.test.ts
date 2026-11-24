@@ -98,6 +98,7 @@ function harness(options: {
     advanceNextRun: () => unreachable("advanceNextRun"),
     insertRun: () => unreachable("insertRun"),
 
+    openRunsForRecovery: async () => [],
     async runContext(runId) {
       expect(runId).toBe(RUN_ID);
       return options.context === undefined ? CONTEXT : options.context;
@@ -122,6 +123,7 @@ function harness(options: {
   };
 
   const channelStore: ChannelStore = {
+    setArchived: async () => {},
     create: () => unreachable("channels.create"),
     list: () => unreachable("channels.list"),
     setPinned: () => unreachable("channels.setPinned"),
@@ -179,6 +181,7 @@ describe("createRoutineRunner", () => {
         ownerUserId: CONTEXT.ownerUserId,
         // Carried so the turn's audit rows say a routine ran this, not that the owner did.
         routineId: CONTEXT.routineId,
+        runId: RUN_ID,
         telemetry: {
           trigger: "routine",
           surface: "unknown",

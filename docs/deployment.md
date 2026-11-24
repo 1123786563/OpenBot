@@ -4,9 +4,13 @@ OpenBot ships as one container. It carries the app, the API that serves it, and 
 drive, and it can carry its own PostgreSQL as well. It does what it does on a laptop.
 
 ```sh
-# Every release publishes this image, so a deployment needs no clone and no build.
-# `latest` is the most recent; a version tag such as `:v1.0.1` pins one.
-image=ghcr.io/copilotkit/openbot:latest
+# Set CLOUD_RELEASE_VERSION to the published cloud release tag, including the v prefix.
+image=$(
+  gh release download "${CLOUD_RELEASE_VERSION:?Set the published cloud release version}" \
+    --repo 1123786563/OpenBot --pattern container-images.json --output - |
+    jq -er --arg version "$CLOUD_RELEASE_VERSION" \
+      'select(.version == $version) | .images.openbot.reference'
+) || exit 1
 
 # A database you already run.
 docker run -p 3001:3001 --env-file .env "$image"
@@ -67,7 +71,7 @@ second container of this image started with `--entrypoint sh` (without it the co
 [Migrations](#migrations)) — with `SERVER_INTERNAL_URL` and
 `WORKER_SHARED_SECRET` set **on top of this server's whole environment**, not instead of it. That
 sweep builds the same configuration the API server does before it looks for a due routine, so it
-refuses to start without the encryption key, the Intelligence values and an identity provider,
+refuses to start without the encryption key and an identity provider,
 exactly as the server does: give it the same env file and add those two. Until something does, a
 routine is stored, its next run time is computed, the Routines page shows it, and it never fires.
 See [routines.md](routines.md).
@@ -124,8 +128,6 @@ and the fix would not be available.
 | an identity provider | `GOOGLE_OAUTH_*`, `MICROSOFT_OAUTH_*` or `OKTA_OAUTH_*`, with `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` and `INITIAL_ADMIN_EMAILS`. See the README |
 | `EMBEDDED_POSTGRES` | `on` to run the database inside the container. Off by default |
 | `KEY_ENCRYPTION_KEY` | base64 32 bytes. `openssl rand -base64 32`. The example key is refused in production |
-| `INTELLIGENCE_API_URL`, `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY` | CopilotKit Intelligence. A free plan is available and it can be self-hosted |
-| `COPILOTKIT_LICENSE_TOKEN` | optional. Managed Intelligence issues none; set it for a self-hosted Intelligence, which needs the same license on its own deployment too |
 | a model key | `OPENAI_API_KEY`, or the provider you configured |
 
 `COMPUTER_TOKEN` is generated at start if you do not set one. Both processes that need it are inside
@@ -154,6 +156,16 @@ put a sign-in provider in front of it.
 secure context, which removes a set of browser APIs that are present on `http://localhost` and so
 never missing on a laptop. The app does not depend on any of them, but sign-in cookies still want
 `Secure`, and every platform below terminates TLS for you.
+
+## Fresh cloud deployment
+
+Use an image built from the Intelligence replacement and an empty OpenBot database. Keep legacy
+installations and their data in place. The image boots in OpenBot mode without Intelligence
+settings. Check `GET /api/capabilities` for `"mode":"openbot"` and `"durableHistory":true`.
+
+Set Hindsight and Opik variables in the API container environment using your platform's secret
+management. Keep service keys out of client bundles. Configure the API container's network access
+to your providers. See [configuration](configuration.md#personal-memory-recall-and-reflect).
 
 ## Migrations
 

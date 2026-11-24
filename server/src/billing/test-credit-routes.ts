@@ -728,6 +728,7 @@ export async function dispatchTestCredit({
   identity,
   input,
   authorizeDispatch,
+  requireBudgetAtDispatch = authorizeDispatch !== undefined,
   coordinationTools,
   maySend,
   signal,
@@ -739,6 +740,7 @@ export async function dispatchTestCredit({
     messages: Parameters<TestCreditExecutor>[0]["messages"];
   };
   authorizeDispatch?: () => Promise<boolean>;
+  requireBudgetAtDispatch?: boolean;
   coordinationTools?: readonly CoordinationToolSpec[];
   maySend?: () => Promise<boolean>;
   signal?: AbortSignal;
@@ -774,7 +776,7 @@ export async function dispatchTestCredit({
             input.operationId,
             request,
             {
-              recheckAdmission: authorizeDispatch !== undefined,
+              recheckAdmission: requireBudgetAtDispatch,
               recheckAuthorization: input.authorizationId !== undefined,
             },
           );

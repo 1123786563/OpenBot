@@ -30,7 +30,8 @@ const payload = z.object({
   recipient,
   model: z
     .object({ model: z.string().nullable(), effort: z.string().nullable() })
-    .nullable(),
+    .nullable()
+    .default(null),
 });
 const record = z.discriminatedUnion("state", [
   z.object({ state: z.literal("pending"), draft: payload, progress }),

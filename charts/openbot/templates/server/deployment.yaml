@@ -114,11 +114,7 @@ spec:
               value: {{ . | quote }}
             {{- end }}
 {{ include "openbot.commonEnv" . | indent 12 }}
-            {{- /* The server's alone, not commonEnv's: only the API creates Learning containers. */}}
-            {{- with (include "openbot.learningServiceTokenEnv" . | trim) }}
-            {{- . | nindent 12 }}
-            {{- end }}
-            {{- /* Also the server's alone: only the API calls Composio, so the CronJobs are not handed the key. */}}
+            {{- /* The server's alone: only the API calls Composio, so the CronJobs are not handed the key. */}}
             {{- $composio := include "openbot.secretKeySource" (dict "root" . "key" "composio-api-key" "literal" .Values.secrets.composioApiKey) }}
             {{- if $composio }}
             - name: COMPOSIO_API_KEY
@@ -129,6 +125,9 @@ spec:
                   {{- if eq $composio "unknown" }}
                   optional: true
                   {{- end }}
+            {{- end }}
+            {{- with .Values.server.extraEnv }}
+{{ toYaml . | indent 12 }}
             {{- end }}
           envFrom:
             - configMapRef:

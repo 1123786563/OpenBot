@@ -186,15 +186,22 @@ export function createPeopleStore(
       );
     }
     if (cursor) {
-      filters.push(
-        sql`(
-          (${users.lastSignedInAt} is null and (${cursor.lastSignedInAt}::timestamptz is not null or ${users.email} > ${cursor.email}))
-          or (${users.lastSignedInAt} is not null and ${cursor.lastSignedInAt}::timestamptz is not null and (
-            ${users.lastSignedInAt} < ${cursor.lastSignedInAt}::timestamptz
+      if (cursor.lastSignedInAt === null) {
+        // Once the cursor reaches the null tail, only later email keys in that same tail remain.
+        filters.push(
+          sql`(${users.lastSignedInAt} is null and ${users.email} > ${cursor.email})`,
+        );
+      } else {
+        // A non-null cursor admits older sign-ins and the complete null tail. Keeping the two
+        // cursor shapes separate avoids asking Postgres to infer whether a bound parameter is null.
+        filters.push(
+          sql`(
+            ${users.lastSignedInAt} is null
+            or ${users.lastSignedInAt} < ${cursor.lastSignedInAt}::timestamptz
             or (${users.lastSignedInAt} = ${cursor.lastSignedInAt}::timestamptz and ${users.email} > ${cursor.email})
-          ))
-        )`,
-      );
+          )`,
+        );
+      }
     }
 
     const rows = await database

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, ne, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   accounts,
@@ -73,7 +73,9 @@ export function createDirectChatCreditRecovery(
         and(
           isNull(channels.deletedAt),
           isNotNull(directChatRuns.testCreditOperationId),
-          ne(directChatRuns.status, "completed"),
+          eq(directChatRuns.status, "failed"),
+          isNull(directChatRuns.stopReason),
+          isNull(directChatRuns.reply),
           or(
             and(
               eq(testCreditOperations.state, "settled"),
@@ -97,7 +99,7 @@ export function createDirectChatCreditRecovery(
       await database
         .update(directChatRuns)
         .set({
-          status: "completed",
+          externalOutcome: "executed",
           assistantMessageId: crypto.randomUUID(),
           reply: receipt.resultText,
         })
@@ -106,7 +108,9 @@ export function createDirectChatCreditRecovery(
             eq(directChatRuns.threadId, run.threadId),
             eq(directChatRuns.id, run.runId),
             eq(directChatRuns.testCreditOperationId, run.operationId),
-            ne(directChatRuns.status, "completed"),
+            eq(directChatRuns.status, "failed"),
+            isNull(directChatRuns.stopReason),
+            isNull(directChatRuns.reply),
           ),
         );
     }

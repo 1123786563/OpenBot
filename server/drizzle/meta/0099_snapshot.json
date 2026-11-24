@@ -1,6 +1,6 @@
 {
-  "id": "4a9b6965-79d2-4335-8512-f905587e7b04",
-  "prevId": "f622c5be-a037-449d-9cdd-54a7aec855dd",
+  "id": "13d9ff6f-2308-45c3-9991-4588613d87f7",
+  "prevId": "e66f534f-5175-4f58-8d40-c41828268f44",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -695,6 +695,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -6359,6 +6365,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "version": {
+          "name": "version",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
         }
       },
       "indexes": {
@@ -8572,6 +8585,154 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.direct_chat_runs": {
+      "name": "direct_chat_runs",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_message_id": {
+          "name": "assistant_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply": {
+          "name": "reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "event_cursor": {
+          "name": "event_cursor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "partial_message_id": {
+          "name": "partial_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "partial_reply": {
+          "name": "partial_reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dispatched_at": {
+          "name": "dispatched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "external_outcome": {
+          "name": "external_outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stop_reason": {
+          "name": "stop_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "direct_chat_runs_request_idx": {
+          "name": "direct_chat_runs_request_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_runs",
+          "tableTo": "intelligence_channel_mappings",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_runs_thread_id_id_pk": {
+          "name": "direct_chat_runs_thread_id_id_pk",
+          "columns": [
+            "thread_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "direct_chat_runs_status_check": {
+          "name": "direct_chat_runs_status_check",
+          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.group_bot_threads": {
       "name": "group_bot_threads",
       "schema": "",
@@ -10629,710 +10790,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.personal_saas_accounts": {
-      "name": "personal_saas_accounts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "issuer": {
-          "name": "issuer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_status": {
-          "name": "account_status",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "personal_saas_accounts_issuer_subject_unique": {
-          "name": "personal_saas_accounts_issuer_subject_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "issuer",
-            "subject"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_saas_native_codes": {
-      "name": "personal_saas_native_codes",
-      "schema": "",
-      "columns": {
-        "code_hash": {
-          "name": "code_hash",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "client": {
-          "name": "client",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "challenge": {
-          "name": "challenge",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "identity": {
-          "name": "identity",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "personal_saas_native_codes_expiry": {
-          "name": "personal_saas_native_codes_expiry",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_saas_sessions": {
-      "name": "personal_saas_sessions",
-      "schema": "",
-      "columns": {
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "casdoor_access_token": {
-          "name": "casdoor_access_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "personal_saas_sessions_account_id_personal_saas_accounts_id_fk": {
-          "name": "personal_saas_sessions_account_id_personal_saas_accounts_id_fk",
-          "tableFrom": "personal_saas_sessions",
-          "tableTo": "personal_saas_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_support_accesses": {
-      "name": "personal_support_accesses",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "request_id": {
-          "name": "request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_subject": {
-          "name": "actor_subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource": {
-          "name": "resource",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "accessed_at": {
-          "name": "accessed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "personal_support_accesses_request_id_accessed_at_index": {
-          "name": "personal_support_accesses_request_id_accessed_at_index",
-          "columns": [
-            {
-              "expression": "request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "accessed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "personal_support_accesses_request_id_personal_support_requests_id_fk": {
-          "name": "personal_support_accesses_request_id_personal_support_requests_id_fk",
-          "tableFrom": "personal_support_accesses",
-          "tableTo": "personal_support_requests",
-          "columnsFrom": [
-            "request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_support_requests": {
-      "name": "personal_support_requests",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ticket_id": {
-          "name": "ticket_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operator_id": {
-          "name": "operator_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_subject": {
-          "name": "actor_subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resources": {
-          "name": "resources",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "duration_seconds": {
-          "name": "duration_seconds",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "personal_support_requests_workspace_id_requested_at_index": {
-          "name": "personal_support_requests_workspace_id_requested_at_index",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "requested_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "personal_support_requests_workspace_id_personal_workspaces_id_fk": {
-          "name": "personal_support_requests_workspace_id_personal_workspaces_id_fk",
-          "tableFrom": "personal_support_requests",
-          "tableTo": "personal_workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "personal_support_duration_check": {
-          "name": "personal_support_duration_check",
-          "value": "\"personal_support_requests\".\"duration_seconds\" BETWEEN 1 AND 86400"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.personal_workspace_default_bots": {
-      "name": "personal_workspace_default_bots",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "personal_workspace_default_bots_workspace_id_personal_workspaces_id_fk": {
-          "name": "personal_workspace_default_bots_workspace_id_personal_workspaces_id_fk",
-          "tableFrom": "personal_workspace_default_bots",
-          "tableTo": "personal_workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "personal_workspace_default_bots_agent_id_agent_profiles_agent_id_fk": {
-          "name": "personal_workspace_default_bots_agent_id_agent_profiles_agent_id_fk",
-          "tableFrom": "personal_workspace_default_bots",
-          "tableTo": "agent_profiles",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "agent_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "personal_workspace_default_bots_agent_id_unique": {
-          "name": "personal_workspace_default_bots_agent_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "agent_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_workspace_integration_grants": {
-      "name": "personal_workspace_integration_grants",
-      "schema": "",
-      "columns": {
-        "credential_hash": {
-          "name": "credential_hash",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "personal_workspace_integration_grants_agent_id_index": {
-          "name": "personal_workspace_integration_grants_agent_id_index",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "personal_workspace_integration_grants_workspace_id_index": {
-          "name": "personal_workspace_integration_grants_workspace_id_index",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "personal_workspace_integration_grants_workspace_id_personal_workspaces_id_fk": {
-          "name": "personal_workspace_integration_grants_workspace_id_personal_workspaces_id_fk",
-          "tableFrom": "personal_workspace_integration_grants",
-          "tableTo": "personal_workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "personal_workspace_integration_grants_agent_id_personal_workspace_default_bots_agent_id_fk": {
-          "name": "personal_workspace_integration_grants_agent_id_personal_workspace_default_bots_agent_id_fk",
-          "tableFrom": "personal_workspace_integration_grants",
-          "tableTo": "personal_workspace_default_bots",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "agent_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "personal_workspace_integration_action_check": {
-          "name": "personal_workspace_integration_action_check",
-          "value": "\"personal_workspace_integration_grants\".\"action\" = 'assistant.read'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.personal_workspace_suspensions": {
-      "name": "personal_workspace_suspensions",
-      "schema": "",
-      "columns": {
-        "sequence": {
-          "name": "sequence",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operator": {
-          "name": "operator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "display_reason": {
-          "name": "display_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "effective_at": {
-          "name": "effective_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "personal_workspace_suspensions_workspace_id_sequence_index": {
-          "name": "personal_workspace_suspensions_workspace_id_sequence_index",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sequence",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "personal_workspace_suspensions_workspace_id_personal_workspaces_id_fk": {
-          "name": "personal_workspace_suspensions_workspace_id_personal_workspaces_id_fk",
-          "tableFrom": "personal_workspace_suspensions",
-          "tableTo": "personal_workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "personal_workspace_suspensions_id_unique": {
-          "name": "personal_workspace_suspensions_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.personal_workspaces": {
-      "name": "personal_workspaces",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "personal_workspaces_owner_id_personal_saas_accounts_id_fk": {
-          "name": "personal_workspaces_owner_id_personal_saas_accounts_id_fk",
-          "tableFrom": "personal_workspaces",
-          "tableTo": "personal_saas_accounts",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "personal_workspaces_owner_id_unique": {
-          "name": "personal_workspaces_owner_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "owner_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.team_bot_assignments": {
       "name": "team_bot_assignments",
       "schema": "",
@@ -12577,8 +12034,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.direct_chat_runs": {
-      "name": "direct_chat_runs",
+    "public.direct_chat_run_events": {
+      "name": "direct_chat_run_events",
       "schema": "",
       "columns": {
         "thread_id": {
@@ -12587,168 +12044,21 @@
           "primaryKey": false,
           "notNull": true
         },
-        "id": {
-          "name": "id",
+        "run_id": {
+          "name": "run_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "user_message_id": {
-          "name": "user_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prompt": {
-          "name": "prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "assistant_message_id": {
-          "name": "assistant_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reply": {
-          "name": "reply",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "direct_chat_runs_request_idx": {
-          "name": "direct_chat_runs_request_idx",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk": {
-          "name": "direct_chat_runs_thread_id_intelligence_channel_mappings_thread_id_fk",
-          "tableFrom": "direct_chat_runs",
-          "tableTo": "intelligence_channel_mappings",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "direct_chat_runs_thread_id_id_pk": {
-          "name": "direct_chat_runs_thread_id_id_pk",
-          "columns": [
-            "thread_id",
-            "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "direct_chat_runs_status_check": {
-          "name": "direct_chat_runs_status_check",
-          "value": "\"direct_chat_runs\".\"status\" in ('running', 'completed', 'failed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.skill_market_installations": {
-      "name": "skill_market_installations",
-      "schema": "",
-      "columns": {
-        "command": {
-          "name": "command",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_id": {
-          "name": "version_id",
+        "cursor": {
+          "name": "cursor",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "registry_skill_id": {
-          "name": "registry_skill_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "instructions": {
-          "name": "instructions",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "installed_by": {
-          "name": "installed_by",
-          "type": "text",
+        "event": {
+          "name": "event",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
@@ -12760,27 +12070,173 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "direct_chat_run_events_created_idx": {
+          "name": "direct_chat_run_events_created_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "skill_market_installations_command_skill_market_sources_command_fk": {
-          "name": "skill_market_installations_command_skill_market_sources_command_fk",
-          "tableFrom": "skill_market_installations",
-          "tableTo": "skill_market_sources",
+        "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk": {
+          "name": "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk",
+          "tableFrom": "direct_chat_run_events",
+          "tableTo": "direct_chat_runs",
           "columnsFrom": [
-            "command"
+            "thread_id",
+            "run_id"
           ],
           "columnsTo": [
-            "command"
+            "thread_id",
+            "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_run_events_thread_id_run_id_cursor_pk": {
+          "name": "direct_chat_run_events_thread_id_run_id_cursor_pk",
+          "columns": [
+            "thread_id",
+            "run_id",
+            "cursor"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.conversation_evidence_withdrawals": {
+      "name": "conversation_evidence_withdrawals",
+      "schema": "",
+      "columns": {
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
         },
-        "skill_market_installations_agent_id_agents_id_fk": {
-          "name": "skill_market_installations_agent_id_agents_id_fk",
-          "tableFrom": "skill_market_installations",
-          "tableTo": "agents",
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.recorder_capture_trajectories": {
+      "name": "recorder_capture_trajectories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "recording_id": {
+          "name": "recording_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "recorder_capture_trajectories_recording_idx": {
+          "name": "recorder_capture_trajectories_recording_idx",
+          "columns": [
+            {
+              "expression": "recording_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "recorder_capture_trajectories_recording_id_recorder_recordings_id_fk": {
+          "name": "recorder_capture_trajectories_recording_id_recorder_recordings_id_fk",
+          "tableFrom": "recorder_capture_trajectories",
+          "tableTo": "recorder_recordings",
           "columnsFrom": [
-            "agent_id"
+            "recording_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.recorder_recording_events": {
+      "name": "recorder_recording_events",
+      "schema": "",
+      "columns": {
+        "recording_id": {
+          "name": "recording_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event": {
+          "name": "event",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "recorder_recording_events_recording_id_recorder_recordings_id_fk": {
+          "name": "recorder_recording_events_recording_id_recorder_recordings_id_fk",
+          "tableFrom": "recorder_recording_events",
+          "tableTo": "recorder_recordings",
+          "columnsFrom": [
+            "recording_id"
           ],
           "columnsTo": [
             "id"
@@ -12790,11 +12246,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "skill_market_installations_agent_id_command_pk": {
-          "name": "skill_market_installations_agent_id_command_pk",
+        "recorder_recording_events_recording_id_seq_pk": {
+          "name": "recorder_recording_events_recording_id_seq_pk",
           "columns": [
-            "agent_id",
-            "command"
+            "recording_id",
+            "seq"
           ]
         }
       },
@@ -12803,21 +12259,126 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.skill_market_runs": {
-      "name": "skill_market_runs",
+    "public.recorder_recordings": {
+      "name": "recorder_recordings",
       "schema": "",
       "columns": {
-        "actor_id": {
-          "name": "actor_id",
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "bot_id": {
-          "name": "bot_id",
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "title": {
+          "name": "title",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome_seq": {
+          "name": "outcome_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cleanup_completed_at": {
+          "name": "cleanup_completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "recorder_recordings_user_idx": {
+          "name": "recorder_recordings_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "recorder_recordings_user_id_users_id_fk": {
+          "name": "recorder_recordings_user_id_users_id_fk",
+          "tableFrom": "recorder_recordings",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.opik_runs": {
+      "name": "opik_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "thread_id": {
           "name": "thread_id",
@@ -12831,62 +12392,315 @@
           "primaryKey": false,
           "notNull": true
         },
-        "registry": {
-          "name": "registry",
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "registry_skill_id": {
-          "name": "registry_skill_id",
-          "type": "integer",
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         },
-        "version_id": {
-          "name": "version_id",
-          "type": "integer",
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         },
-        "pause_reason": {
-          "name": "pause_reason",
+        "trace": {
+          "name": "trace",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "snapshot": {
-          "name": "snapshot",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "computer_tool_calls": {
-          "name": "computer_tool_calls",
-          "type": "text[]",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::text[]"
+          "default": "'pending'"
+        },
+        "due_at": {
+          "name": "due_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feedback_id": {
+          "name": "feedback_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "score": {
+          "name": "score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "comment": {
+          "name": "comment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feedback_delivered_at": {
+          "name": "feedback_delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
-        "skill_market_runs_version_idx": {
-          "name": "skill_market_runs_version_idx",
+        "opik_runs_due_idx": {
+          "name": "opik_runs_due_idx",
           "columns": [
             {
-              "expression": "registry",
+              "expression": "due_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"opik_runs\".\"trace\" = 'pending' or (\"opik_runs\".\"score\" is not null and \"opik_runs\".\"feedback_delivered_at\" is null)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "opik_runs_expiry_idx": {
+          "name": "opik_runs_expiry_idx",
+          "columns": [
+            {
+              "expression": "finished_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"opik_runs\".\"trace\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "opik_runs_thread_id_run_id_direct_chat_runs_thread_id_id_fk": {
+          "name": "opik_runs_thread_id_run_id_direct_chat_runs_thread_id_id_fk",
+          "tableFrom": "opik_runs",
+          "tableTo": "direct_chat_runs",
+          "columnsFrom": [
+            "thread_id",
+            "run_id"
+          ],
+          "columnsTo": [
+            "thread_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "opik_runs_thread_id_run_id_unique": {
+          "name": "opik_runs_thread_id_run_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "thread_id",
+            "run_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "opik_runs_feedback_check": {
+          "name": "opik_runs_feedback_check",
+          "value": "(\"opik_runs\".\"feedback_id\" is null and \"opik_runs\".\"score\" is null) or (\"opik_runs\".\"feedback_id\" is not null and \"opik_runs\".\"score\" is not null and \"opik_runs\".\"score\" in (0, 1))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.opik_evaluation_grants": {
+      "name": "opik_evaluation_grants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_sha256": {
+          "name": "content_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "opik_eval_grants_active_source_idx": {
+          "name": "opik_eval_grants_active_source_idx",
+          "columns": [
+            {
+              "expression": "memory_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"opik_evaluation_grants\".\"revoked_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "opik_eval_grants_revoked_idx": {
+          "name": "opik_eval_grants_revoked_idx",
+          "columns": [
+            {
+              "expression": "revoked_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "registry_skill_id",
+              "expression": "id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
+            }
+          ],
+          "isUnique": false,
+          "where": "\"opik_evaluation_grants\".\"revoked_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.opik_evaluations": {
+      "name": "opik_evaluations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operator_id": {
+          "name": "operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project": {
+          "name": "project",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'synthetic'"
+        },
+        "target": {
+          "name": "target",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workspace": {
+          "name": "workspace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cases": {
+          "name": "cases",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        }
+      },
+      "indexes": {
+        "opik_evaluations_budget_idx": {
+          "name": "opik_evaluations_budget_idx",
+          "columns": [
             {
-              "expression": "version_id",
+              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -12898,120 +12712,249 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "skill_market_runs_actor_id_users_id_fk": {
-          "name": "skill_market_runs_actor_id_users_id_fk",
-          "tableFrom": "skill_market_runs",
-          "tableTo": "users",
-          "columnsFrom": [
-            "actor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "skill_market_runs_bot_id_agents_id_fk": {
-          "name": "skill_market_runs_bot_id_agents_id_fk",
-          "tableFrom": "skill_market_runs",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk": {
-          "name": "skill_market_runs_actor_id_bot_id_thread_id_run_id_pk",
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "opik_evaluations_kind_request_id_unique": {
+          "name": "opik_evaluations_kind_request_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
-            "actor_id",
-            "bot_id",
-            "thread_id",
-            "run_id"
+            "kind",
+            "request_id"
           ]
         }
       },
-      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.skill_market_sources": {
-      "name": "skill_market_sources",
+    "public.direct_chat_analyses": {
+      "name": "direct_chat_analyses",
       "schema": "",
       "columns": {
-        "command": {
-          "name": "command",
-          "type": "text",
+        "id": {
+          "name": "id",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
-        "registry": {
-          "name": "registry",
+        "thread_id": {
+          "name": "thread_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "namespace": {
-          "name": "namespace",
+        "bot_id": {
+          "name": "bot_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "slug": {
-          "name": "slug",
+        "state": {
+          "name": "state",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_run_ids": {
+          "name": "evidence_run_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proposal": {
+          "name": "proposal",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
-        "skill_market_source_key": {
-          "name": "skill_market_source_key",
+        "direct_chat_analyses_history_idx": {
+          "name": "direct_chat_analyses_history_idx",
           "columns": [
             {
-              "expression": "registry",
+              "expression": "thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "namespace",
+              "expression": "started_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "slug",
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "direct_chat_analyses_active_idx": {
+          "name": "direct_chat_analyses_active_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
+          "where": "\"direct_chat_analyses\".\"state\" in ('running', 'reconciling')",
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "skill_market_sources_command_skills_slug_fk": {
-          "name": "skill_market_sources_command_skills_slug_fk",
-          "tableFrom": "skill_market_sources",
-          "tableTo": "skills",
+        "direct_chat_analyses_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_analyses_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_analyses",
+          "tableTo": "intelligence_channel_mappings",
           "columnsFrom": [
-            "command"
+            "thread_id"
           ],
           "columnsTo": [
-            "slug"
+            "thread_id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "direct_chat_analyses_state_check": {
+          "name": "direct_chat_analyses_state_check",
+          "value": "\"direct_chat_analyses\".\"state\" in ('running', 'reconciling', 'proposed', 'skipped', 'failed', 'cancelled')"
+        },
+        "direct_chat_analyses_proposal_check": {
+          "name": "direct_chat_analyses_proposal_check",
+          "value": "(\"direct_chat_analyses\".\"state\" = 'proposed') = (\"direct_chat_analyses\".\"proposal\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.hindsight_memory_projections": {
+      "name": "hindsight_memory_projections",
+      "schema": "",
+      "columns": {
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "projected_version": {
+          "name": "projected_version",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_deleted_at": {
+          "name": "first_deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_check_at": {
+          "name": "next_check_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hindsight_memory_projections_due_idx": {
+          "name": "hindsight_memory_projections_due_idx",
+          "columns": [
+            {
+              "expression": "next_check_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.direct_chat_proposal_reviews": {
+      "name": "direct_chat_proposal_reviews",
+      "schema": "",
+      "columns": {
+        "proposal_id": {
+          "name": "proposal_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "review": {
+          "name": "review",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "direct_chat_proposal_reviews_proposal_id_direct_chat_analyses_id_fk": {
+          "name": "direct_chat_proposal_reviews_proposal_id_direct_chat_analyses_id_fk",
+          "tableFrom": "direct_chat_proposal_reviews",
+          "tableTo": "direct_chat_analyses",
+          "columnsFrom": [
+            "proposal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -13021,68 +12964,161 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.skill_market_version_disablements": {
-      "name": "skill_market_version_disablements",
+    "public.personal_learning_auto_approval": {
+      "name": "personal_learning_auto_approval",
       "schema": "",
       "columns": {
-        "registry": {
-          "name": "registry",
+        "person_id": {
+          "name": "person_id",
           "type": "text",
-          "primaryKey": false,
+          "primaryKey": true,
           "notNull": true
         },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registry_skill_id": {
-          "name": "registry_skill_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version_id": {
-          "name": "version_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
           "primaryKey": false,
           "notNull": true
         }
       },
       "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "skill_market_version_disablements_registry_registry_skill_id_version_id_pk": {
-          "name": "skill_market_version_disablements_registry_registry_skill_id_version_id_pk",
-          "columns": [
-            "registry",
-            "registry_skill_id",
-            "version_id"
-          ]
+      "foreignKeys": {
+        "personal_learning_auto_approval_person_id_users_id_fk": {
+          "name": "personal_learning_auto_approval_person_id_users_id_fk",
+          "tableFrom": "personal_learning_auto_approval",
+          "tableTo": "users",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.direct_chat_learning_schedules": {
+      "name": "direct_chat_learning_schedules",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "interval_hours": {
+          "name": "interval_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "next_at": {
+          "name": "next_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_after": {
+          "name": "evidence_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_analysis_id": {
+          "name": "last_analysis_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "owns_last_analysis": {
+          "name": "owns_last_analysis",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "pending_dispatch": {
+          "name": "pending_dispatch",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "direct_chat_learning_schedules_due_idx": {
+          "name": "direct_chat_learning_schedules_due_idx",
+          "columns": [
+            {
+              "expression": "next_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"direct_chat_learning_schedules\".\"enabled\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_learning_schedules_thread_id_intelligence_channel_mappings_thread_id_fk": {
+          "name": "direct_chat_learning_schedules_thread_id_intelligence_channel_mappings_thread_id_fk",
+          "tableFrom": "direct_chat_learning_schedules",
+          "tableTo": "intelligence_channel_mappings",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "thread_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "direct_chat_learning_schedules_last_analysis_id_direct_chat_analyses_id_fk": {
+          "name": "direct_chat_learning_schedules_last_analysis_id_direct_chat_analyses_id_fk",
+          "tableFrom": "direct_chat_learning_schedules",
+          "tableTo": "direct_chat_analyses",
+          "columnsFrom": [
+            "last_analysis_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "direct_chat_learning_schedules_interval_check": {
+          "name": "direct_chat_learning_schedules_interval_check",
+          "value": "\"direct_chat_learning_schedules\".\"interval_hours\" between 1 and 168"
+        }
+      },
       "isRLSEnabled": false
     }
   },

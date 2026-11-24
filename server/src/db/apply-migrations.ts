@@ -19,6 +19,10 @@ import type { Sql, TransactionSql } from "postgres";
 import { reconcileBillingPilotMigrations } from "./billing-pilot-migrations";
 import { reconcileCorsairPilotMigrations } from "./corsair-pilot-migrations";
 import {
+  canMergeMigrationHistories,
+  isIntelligenceMigration,
+} from "./merge-migration-histories";
+import {
   type AppliedMigration,
   type FolderMigration,
   type MigrationsJournal,
@@ -330,16 +334,20 @@ export async function applyMigrations(
       await appliedMigrations(tx, journal),
       journal,
     );
+    const mainFolder = folder.filter(
+      (entry) => !isIntelligenceMigration(entry),
+    );
     let applied = await reconcileBillingPilotMigrations(
       tx,
       migrationsFolder,
       folder,
+      mainFolder,
       corsair,
       journal,
     );
     let outOfReach = migrationsOutOfReach(folder, applied);
     if (outOfReach.length > 0) {
-      const saasFolder = folder.filter(({ tag }) => !CORSAIR_TAGS.has(tag));
+      const saasFolder = mainFolder.filter(({ tag }) => !CORSAIR_TAGS.has(tag));
       if (
         (await reconcileTrialJournal(
           tx,
@@ -362,18 +370,24 @@ export async function applyMigrations(
         tx,
         journal,
         migrationsFolder,
-        folder,
+        mainFolder,
         saasFolder,
         applied,
       );
       applied = await appliedMigrations(tx, journal);
       outOfReach = migrationsOutOfReach(folder, applied);
     }
-    if (outOfReach.length > 0) {
+    if (
+      outOfReach.length > 0 &&
+      !canMergeMigrationHistories(folder, applied, outOfReach)
+    ) {
       throw new MigrationsOutOfReachError(
         outOfReachRefusal(outOfReach, folder, applied, journal),
       );
     }
+
+    for (const migration of outOfReach)
+      await applyJournalEntry(tx, journal, migrationsFolder, migration);
 
     await migrate(drizzle(withinTransaction(client, tx)), {
       migrationsFolder,

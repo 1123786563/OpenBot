@@ -1,14 +1,22 @@
 import { createHash } from "node:crypto";
 import { readConnectPrompt } from "@openbot/shared/connect-prompt";
+import {
+  type RunContextVersion,
+  trackRunContext,
+  verifyRunContext,
+} from "@openbot/toolkit/run-context";
 import { accessFor } from "../plugins/access";
 import type { Decides } from "../plugins/broker";
 import { catalogueEntry } from "../plugins/catalogue";
 import { asksForArguments } from "../plugins/composio";
 import { type AccountAnswer, accountFor } from "../plugins/shared-accounts";
 import { PluginRefusedError, type PluginStore } from "../plugins/store";
+import type { Hindsight } from "./hindsight";
 import type { MemoryStore } from "./store";
 import {
   type ImportedMemory,
+  MemoryNotFoundError,
+  type MemoryRecord,
   MemoryRefusedError,
   type MemorySource,
   parseMemorySourceInput,
@@ -180,6 +188,11 @@ export function defaultSourceTool<T extends SourceTool>(tools: T[]): T | null {
 export function createMemoryIngestion(options: {
   store: MemoryStore;
   plugins: PluginStore;
+  hindsight?: {
+    client: Hindsight;
+    exposeNativeReflect?: boolean;
+    canUseMemory: (ownerUserId: string) => Promise<boolean>;
+  };
   /**
    * Whether this person may use the Bot: their own, or a shared deployment Bot they can see. A
    * source's facts are always the owner's own, so a shared Bot is fine. Without it, only an owned
@@ -187,71 +200,103 @@ export function createMemoryIngestion(options: {
    */
   canUseBot?: (ownerUserId: string, botId: string) => Promise<boolean>;
 }) {
-  const { store, plugins } = options;
+  const { store, plugins, hindsight } = options;
   const mayUse = async (ownerUserId: string, botId: string) =>
     options.canUseBot
       ? options.canUseBot(ownerUserId, botId)
       : (await plugins.agentOwner(botId)) === ownerUserId;
+  // One snapshot per recall, shared by imported and Bot-formed memories. All of these reads
+  // inspect OpenBot authorization state without calling the connected app.
+  async function sourceAuthorization(ownerUserId: string, botId: string) {
+    const grants = await plugins.listForAgent(botId);
+    let servers: ReturnType<PluginStore["listServers"]> | undefined;
+    let personal: ReturnType<PluginStore["connectionsFor"]> | undefined;
+    let brokered: ReturnType<PluginStore["brokeredConnectionsFor"]> | undefined;
+    const checks = new Map<string, ReturnType<typeof check>>();
+    async function check(toolRef: string) {
+      if (!grants.tools.some((tool) => tool.ref === toolRef))
+        throw new MemoryRefusedError(
+          "This Bot no longer has access to the source. Restore its permission or choose another source.",
+        );
+      servers ??= plugins.listServers();
+      const server = (await servers).find((entry) =>
+        entry.tools.some((tool) => tool.ref === toolRef),
+      );
+      const tool = server?.tools.find((entry) => entry.ref === toolRef);
+      if (!server || !tool || tool.effect !== "read" || tool.destructive)
+        throw new MemoryRefusedError(
+          "Memory sources must use a read-only connected app action.",
+        );
+      const access = accessFor(server, catalogueEntry(server.id));
+      if (access.credential === "person-oauth") {
+        personal ??= plugins.connectionsFor(ownerUserId);
+        if (
+          !(await personal).some(
+            (connection) => connection.serverId === server.id,
+          )
+        ) {
+          throw new MemoryRefusedError(
+            "Reconnect this app to use its memories.",
+          );
+        }
+      }
+      if (access.credential === "brokered") {
+        const account = accountFor(server, ownerUserId);
+        type _MemoryAccountDecides = Decides<
+          AccountAnswer["kind"],
+          {
+            none: "reads with no account at all";
+            person: "needs the owner's own connection";
+            deployment: "needs the deployment's shared connection";
+            ambiguous: "refused with accountFor's sentence";
+          }
+        >;
+        if (account.kind === "ambiguous")
+          throw new MemoryRefusedError(account.message);
+        if (
+          account.kind === "deployment" &&
+          !(await plugins.deploymentConnectionFor(server.id))
+        ) {
+          throw new MemoryRefusedError(
+            `${server.title} uses a shared account, and nobody has connected it yet. Ask an admin to connect it.`,
+          );
+        }
+        if (account.kind === "person") {
+          brokered ??= plugins.brokeredConnectionsFor(ownerUserId);
+          if (
+            !(await brokered).some(
+              (connection) => connection.serverId === server.id,
+            )
+          ) {
+            throw new MemoryRefusedError(
+              "Reconnect this app to use its memories.",
+            );
+          }
+        }
+      }
+      return tool;
+    }
+    return {
+      grants,
+      check(toolRef: string) {
+        const existing = checks.get(toolRef);
+        if (existing) return existing;
+        const authorization = check(toolRef);
+        checks.set(toolRef, authorization);
+        return authorization;
+      },
+    };
+  }
   async function authorize(
     source: Pick<MemorySource, "ownerUserId" | "agentId" | "toolRef">,
   ) {
     if (!(await mayUse(source.ownerUserId, source.agentId)))
       throw new MemoryRefusedError("Choose one of your Bots for this source.");
-    const [grants, servers] = await Promise.all([
-      plugins.listForAgent(source.agentId),
-      plugins.listServers(),
-    ]);
-    if (!grants.tools.some((tool) => tool.ref === source.toolRef))
-      throw new MemoryRefusedError(
-        "This Bot no longer has access to the source. Restore its permission or choose another source.",
-      );
-    const server = servers.find((entry) =>
-      entry.tools.some((tool) => tool.ref === source.toolRef),
+    const authorization = await sourceAuthorization(
+      source.ownerUserId,
+      source.agentId,
     );
-    const tool = server?.tools.find((entry) => entry.ref === source.toolRef);
-    if (!server || !tool || tool.effect !== "read" || tool.destructive)
-      throw new MemoryRefusedError(
-        "Memory sources must use a read-only connected app action.",
-      );
-    const access = accessFor(server, catalogueEntry(server.id));
-    if (
-      access.credential === "person-oauth" &&
-      !(await plugins.connectionsFor(source.ownerUserId)).some(
-        (connection) => connection.serverId === server.id,
-      )
-    )
-      throw new MemoryRefusedError("Reconnect this app to use its memories.");
-    if (access.credential === "brokered") {
-      const account = accountFor(server, source.ownerUserId);
-      type _MemoryAccountDecides = Decides<
-        AccountAnswer["kind"],
-        {
-          none: "reads with no account at all";
-          person: "needs the owner's own connection";
-          deployment: "needs the deployment's shared connection";
-          ambiguous: "refused with accountFor's sentence";
-        }
-      >;
-      if (account.kind === "ambiguous")
-        throw new MemoryRefusedError(account.message);
-      if (
-        account.kind === "deployment" &&
-        !(await plugins.deploymentConnectionFor(server.id))
-      ) {
-        throw new MemoryRefusedError(
-          `${server.title} uses a shared account, and nobody has connected it yet. Ask an admin to connect it.`,
-        );
-      }
-      if (
-        account.kind === "person" &&
-        !(await plugins.brokeredConnectionsFor(source.ownerUserId)).some(
-          (connection) => connection.serverId === server.id,
-        )
-      ) {
-        throw new MemoryRefusedError("Reconnect this app to use its memories.");
-      }
-    }
-    return tool;
+    return authorization.check(source.toolRef);
   }
   async function sync(ownerUserId: string, id: string) {
     await store.getSource(ownerUserId, id);
@@ -312,23 +357,25 @@ export function createMemoryIngestion(options: {
     }
   }
 
-  async function eligibleSources(ownerUserId: string, botId: string) {
+  const sourceReady = (source: MemorySource) =>
+    source.enabled &&
+    // Keep the last successful sync visible while a healthy source re-syncs.
+    (source.syncStatus === "succeeded" ||
+      (source.syncStatus === "running" &&
+        source.lastSyncAt !== null &&
+        !source.syncError));
+
+  async function recallScope(ownerUserId: string, botId: string) {
+    if (hindsight && !(await hindsight.canUseMemory(ownerUserId))) return null;
+    if (!(await mayUse(ownerUserId, botId))) return null;
+    const authorization = await sourceAuthorization(ownerUserId, botId);
     const sources = (await store.sources(ownerUserId)).filter(
-      (source) =>
-        source.enabled &&
-        source.agentId === botId &&
-        // A scheduled resync of a healthy source keeps what its last good sync read: the facts
-        // would otherwise vanish for as long as the vendor takes to answer. A source whose last
-        // sync failed stays hidden while it retries (`syncError` is cleared only by a success).
-        (source.syncStatus === "succeeded" ||
-          (source.syncStatus === "running" &&
-            source.lastSyncAt !== null &&
-            !source.syncError)),
+      (source) => source.agentId === botId && sourceReady(source),
     );
     const eligible: string[] = [];
     for (const source of sources) {
       try {
-        await authorize(source);
+        await authorization.check(source.toolRef);
         eligible.push(source.id);
       } catch (error) {
         if (
@@ -339,18 +386,166 @@ export function createMemoryIngestion(options: {
         await store.failSync(ownerUserId, source.id, error.message);
       }
     }
-    return eligible;
+    const heldSourceRefs = new Set<string>();
+    for (const tool of authorization.grants.tools) {
+      try {
+        await authorization.check(tool.ref);
+        heldSourceRefs.add(tool.ref);
+      } catch (error) {
+        if (
+          !(
+            error instanceof MemoryRefusedError ||
+            error instanceof PluginRefusedError
+          )
+        )
+          throw error;
+      }
+    }
+    return { eligible, formed: { botId, heldSourceRefs } };
   }
-  async function formedFor(botId: string) {
-    const grants = await plugins.listForAgent(botId);
-    return {
-      botId,
-      heldServerIds: new Set(
-        grants.tools.map((tool) => tool.ref.split("/")[0] ?? ""),
-      ),
-    };
+
+  async function recall(ownerUserId: string, botId: string, search = "") {
+    let scope = await recallScope(ownerUserId, botId);
+    if (!scope) return [];
+    const term = search.slice(0, 200).trim();
+    const candidates =
+      hindsight && term
+        ? await store.recallCandidates(
+            ownerUserId,
+            scope.eligible,
+            scope.formed,
+          )
+        : [];
+    const hits =
+      hindsight && candidates.length
+        ? await hindsight.client.recall(ownerUserId, term, candidates)
+        : [];
+    if (candidates.length) scope = await recallScope(ownerUserId, botId);
+    if (!scope) return [];
+
+    const local = await store.retrieve(
+      ownerUserId,
+      scope.eligible,
+      term,
+      scope.formed,
+    );
+    if (!hits.length) return local;
+    const current = await store.recallCandidates(
+      ownerUserId,
+      scope.eligible,
+      scope.formed,
+      hits.map((hit) => hit.id),
+    );
+    const byId = new Map(current.map((row) => [row.id, row]));
+    const ranked = new Map<string, (typeof current)[number]>();
+    for (const hit of hits) {
+      const row = byId.get(hit.id);
+      if (row?.version === hit.version) ranked.set(row.id, row);
+    }
+    return [
+      ...ranked.values(),
+      ...local.filter((row) => !ranked.has(row.id)),
+    ].slice(0, 40);
   }
+
+  async function memoryVersionsCurrent(
+    ownerUserId: string,
+    botId: string,
+    memories: readonly Pick<RunContextVersion, "id" | "version">[],
+  ) {
+    if (!memories.length) return true;
+    const scope = await recallScope(ownerUserId, botId);
+    if (!scope) return false;
+    const current = await store.currentBotMemories(
+      ownerUserId,
+      scope.eligible,
+      scope.formed,
+      [...new Set(memories.map(({ id }) => id))],
+    );
+    const versions = new Map(current.map(({ id, version }) => [id, version]));
+    return memories.every(({ id, version }) => versions.get(id) === version);
+  }
+
+  function rememberVersions(
+    ownerUserId: string,
+    botId: string,
+    memories: readonly Pick<MemoryRecord, "id" | "version">[],
+  ) {
+    const versions = memories.flatMap(({ id, version }): RunContextVersion[] =>
+      version ? [{ kind: "memory", id, version }] : [],
+    );
+    if (versions.length)
+      trackRunContext(
+        () => memoryVersionsCurrent(ownerUserId, botId, versions),
+        versions,
+      );
+  }
+
   return {
+    memoryVersionsCurrent,
+    reflectEnabled:
+      hindsight?.exposeNativeReflect ??
+      hindsight?.client.reflectEnabled ??
+      false,
+    async reflect(
+      ownerUserId: string,
+      botId: string,
+      query: string,
+      run?: (
+        request: (query: string) => ReturnType<Hindsight["reflect"]>,
+        authorized: () => Promise<boolean>,
+      ) => ReturnType<Hindsight["reflect"]>,
+    ) {
+      let scope = await recallScope(ownerUserId, botId);
+      const client = hindsight?.client;
+      if (scope && client?.reflectEnabled) {
+        const candidates = await store.recallCandidates(
+          ownerUserId,
+          scope.eligible,
+          scope.formed,
+        );
+        const authorized = async () => {
+          scope = await recallScope(ownerUserId, botId);
+          if (!scope) return false;
+          // The engine can read evidence while deciding which sources to cite.
+          const current = await store.recallCandidates(
+            ownerUserId,
+            scope.eligible,
+            scope.formed,
+            candidates.map(({ id }) => id),
+          );
+          const versions = new Map(
+            current.map(({ id, version }) => [id, version]),
+          );
+          return candidates.every(
+            ({ id, version }) => versions.get(id) === version,
+          );
+        };
+        const request = async (text: string) => {
+          await verifyRunContext();
+          return (await authorized())
+            ? client.reflect(ownerUserId, text, candidates)
+            : null;
+        };
+        const reflection = run
+          ? await run(request, authorized)
+          : await request(query);
+        if ((await authorized()) && reflection) {
+          rememberVersions(ownerUserId, botId, reflection.sources);
+          return { kind: "reflection" as const, ...reflection };
+        }
+      }
+      const memories = scope
+        ? await store.retrieveLocal(
+            ownerUserId,
+            scope.eligible,
+            query,
+            scope.formed,
+          )
+        : [];
+      rememberVersions(ownerUserId, botId, memories);
+      return { kind: "local" as const, memories };
+    },
     authorize,
     async createSource(ownerUserId: string, input: unknown) {
       const parsed = parseMemorySourceInput(input);
@@ -359,6 +554,37 @@ export function createMemoryIngestion(options: {
       return sync(ownerUserId, source.id);
     },
     sync,
+    async syncHindsight() {
+      await hindsight?.client.sync(async (row) => {
+        if (!(await hindsight.canUseMemory(row.ownerUserId))) return false;
+        try {
+          if (row.formedBy === "person") return true;
+          if (row.formedBy === "import" && row.sourceId) {
+            const source = await store.getSource(row.ownerUserId, row.sourceId);
+            if (!sourceReady(source)) return false;
+            await authorize(source);
+            return true;
+          }
+          if (row.formedBy === "bot" && row.formedByAgentId && row.sourceRef) {
+            await authorize({
+              ownerUserId: row.ownerUserId,
+              agentId: row.formedByAgentId,
+              toolRef: row.sourceRef,
+            });
+            return true;
+          }
+          return false;
+        } catch (error) {
+          if (
+            error instanceof MemoryNotFoundError ||
+            error instanceof MemoryRefusedError ||
+            error instanceof PluginRefusedError
+          )
+            return false;
+          throw error;
+        }
+      });
+    },
     async syncDue() {
       for (const source of await store.dueSources()) {
         try {
@@ -375,23 +601,15 @@ export function createMemoryIngestion(options: {
         }
       }
     },
-    async recall(ownerUserId: string, botId: string, search = "") {
-      return store.retrieve(
-        ownerUserId,
-        await eligibleSources(ownerUserId, botId),
-        search.slice(0, 200),
-        await formedFor(botId),
-      );
+    async recall(ownerUserId: string, botId: string, search?: string) {
+      const memories = await recall(ownerUserId, botId, search);
+      rememberVersions(ownerUserId, botId, memories);
+      return memories;
     },
     async contextFor(ownerUserId: string, botId: string) {
-      return quoteMemoryContext(
-        await store.retrieve(
-          ownerUserId,
-          await eligibleSources(ownerUserId, botId),
-          "",
-          await formedFor(botId),
-        ),
-      );
+      const memories = await recall(ownerUserId, botId);
+      rememberVersions(ownerUserId, botId, memories);
+      return quoteMemoryContext(memories);
     },
     /**
      * The memory source OpenBot would switch on by itself for each app this person connected that the

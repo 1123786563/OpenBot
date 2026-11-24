@@ -27,6 +27,7 @@ import {
   type RecorderRefusalSink,
   type RecorderResolver,
 } from "./guard";
+import { createOpenBotRecordings } from "./openbot-recordings";
 import { createRecordings, fetchTrajectorySummaries } from "./recordings";
 import { createRecorderRefusalAudit } from "./refusal-audit";
 import type { RecorderRouteDeps } from "./routes";
@@ -217,19 +218,26 @@ export function createRecorderExtension(deps: {
           ),
   });
 
+  const local = intelligence
+    ? undefined
+    : createOpenBotRecordings(database, config.keyEncryptionKey);
   return {
     connections,
-    recordings,
-    recordingTitles: (userId, ids) => recordings.recordingTitles(userId, ids),
+    recordings: local ?? recordings,
+    localRecordings: local,
+    recordingTitles: (userId, ids) =>
+      (local ?? recordings).recordingTitles(userId, ids),
     allowedExtensionIds: () => allowedExtensionIds(config),
-    // Bounded like a capture pass, so the popup is not held by a slow Intelligence; a creation it started goes on.
-    learningSpace: (actor) =>
-      personalSpaces.state(
-        actor.id,
-        AbortSignal.timeout(LEARNING_SPACE_WAIT_MS),
-      ),
-    // Made when the browser connects, so a space only a slow credential can make is there before the first recording.
-    onConnected: (userId) => personalSpaces.kick(userId),
+    learningSpace: async (actor) =>
+      intelligence
+        ? personalSpaces.state(
+            actor.id,
+            AbortSignal.timeout(LEARNING_SPACE_WAIT_MS),
+          )
+        : { state: "openbot", containerId: null },
+    ...(intelligence
+      ? { onConnected: (userId: string) => personalSpaces.kick(userId) }
+      : {}),
     user: async (userId) => {
       const row = await userRow(userId);
       return row

@@ -113,7 +113,7 @@ export function createSlackGoalAction(
 
     async resume(
       record: ApprovalRecord,
-      responsibilityStore: ResponsibilityStore,
+      responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">,
       beforeDispatch?: () => Promise<void>,
     ) {
       const { action, ownerUserId: owner, id: approvalId } = record;

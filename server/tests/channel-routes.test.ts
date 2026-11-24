@@ -72,6 +72,7 @@ function fakeStore(
     throw new Error("Unexpected channel store call in this test");
   };
   const base: ChannelStore = {
+    setArchived: async () => {},
     direct: unexpected,
     list: unexpected,
     recordActivity: unexpected,
@@ -1176,6 +1177,7 @@ describe("channel store integration", () => {
     expect(await persistentStore.get(actor, created.id)).toEqual({
       ...created,
       active: false,
+      direct: false,
     });
   });
 

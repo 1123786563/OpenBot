@@ -7,6 +7,7 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import type { OpenBotPersonalReview } from "@openbot/shared/direct-chat-learning";
 import type {
   LearningRunSummary,
   PersonalReview,
@@ -121,6 +122,7 @@ function freshReview(): PersonalReview {
   };
 }
 let review: PersonalReview = freshReview();
+let nativeReview: OpenBotPersonalReview | null = null;
 /** The skills Learning proposed from the recording the page asks about, and what it asked. */
 let recordingSkills: RecordingSkills["skills"] = [];
 const skillsAsked: string[] = [];
@@ -253,7 +255,8 @@ async function server(path: string, init?: RequestInit): Promise<Response> {
       },
     });
   }
-  if (path === "/api/settings/learning/review") return Response.json(review);
+  if (path === "/api/settings/learning/review")
+    return Response.json(nativeReview ?? review);
   if (path.startsWith("/api/settings/learning/recording-skills")) {
     skillsAsked.push(path);
     return Response.json({ skills: recordingSkills });
@@ -458,6 +461,7 @@ beforeEach(() => {
   preferencesHeld = null;
   preferencesFail = false;
   review = freshReview();
+  nativeReview = null;
   recordingSkills = [];
   skillsAsked.length = 0;
   learnRefusal = null;
@@ -1032,6 +1036,34 @@ function linkNamed(view: ReturnType<typeof draw>, name: string) {
 
 // A teammate on OpenBot Desktop 0.3.3, after Stop: "I'm not sure what to do next. It doesn't tell me to go back."
 // The page said only "Saved to your Learning space: 6 actions and 6 narrated phrases."
+test("after Recorder saves without Intelligence, Teach a Bot opens the Conversation picker", async () => {
+  state = savedMeeting();
+  nativeReview = {
+    mode: "openbot",
+    autoApprove: false,
+    conversations: [
+      {
+        channelId: "channel-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        title: "Meeting prep",
+        botName: "Calendar Bot",
+      },
+    ],
+  };
+  const view = draw(<BrowserPage />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", {
+      name: "Learn from recording Find my meeting",
+    }),
+  );
+  expect(
+    await view.findByRole("button", { name: "Calendar Bot · Meeting prep" }),
+  ).toBeTruthy();
+  expect(writes).toEqual([]);
+});
+
 test("on OpenBot Desktop a saved recording says what happens next, Learn now starts Learning on the person's recordings, and See your skills opens Settings, Learning", async () => {
   state = savedMeeting();
   const view = draw(<BrowserPage />);

@@ -133,6 +133,15 @@ test("opens with only the newest page drawn", () => {
   expect(drawn.at(-1)?.dataset.messageId).toBe("m49");
 });
 
+test("opening a Conversation Run draws the transcript page containing its message", () => {
+  const view = render(
+    <ChatTranscript messages={conversation(50)} focusMessageId="m12" />,
+  );
+  const drawn = rows(view.container);
+  expect(drawn.some((row) => row.dataset.messageId === "m12")).toBe(true);
+  expect(drawn.at(-1)?.dataset.messageId).toBe("m49");
+});
+
 test("scrolling near the top draws the previous page above", () => {
   const view = render(
     <ChatTranscript messages={conversation(50)} restoring={false} />,

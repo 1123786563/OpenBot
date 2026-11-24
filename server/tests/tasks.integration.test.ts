@@ -329,7 +329,10 @@ const resumeTick = (
     // Read only for a responsibility's waiting run, which these turns never are.
     responsibilityStore: {} as ResponsibilityStore,
     // Not a group conversation: carried on as one Bot's, as the real one does for these.
-    groupConversations: { continueWaiting: (_approvalId, run) => run() },
+    groupConversations: {
+      continueWaiting: (_approvalId, run) => run(),
+      pauseWaiting: async () => {},
+    },
     approvalContinuationRunner: runTurn,
     channelStore,
     actorFor,

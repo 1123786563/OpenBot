@@ -239,6 +239,14 @@ export const AUDIT_EVENT_WORDS: Readonly<Record<string, string>> = {
   "recorder.sign_out_failed": "Sign the Recorder out",
   "recorder.trajectory_refused": "Save a recording",
   "learning.sharing_changed": "Change what is shared for learning",
+  "learning.proposal_reviewed": "Review a learned proposal",
+  "learning.evidence_withdrawn": "Withdraw learning evidence",
+  "learning.skill_paused": "Pause a learned skill",
+  "learning.proposal_resubmitted": "Resubmit a learned proposal",
+  "learning.shared_evidence_permission_changed":
+    "Change shared learning evidence",
+  "learning.personal_auto_approval_changed":
+    "Change personal learning approval",
   "learning.skill_opened": "Open a skill for review",
   "learning.skill_closed": "Close a skill review",
   "learning.sharing_requested": "Ask to share a learned skill",

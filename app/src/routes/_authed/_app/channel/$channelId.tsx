@@ -9,6 +9,8 @@ import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { ConversationActions } from "@/components/channels/conversation-actions";
+import { ConversationSurface } from "@/components/channels/conversation-surface";
+import { DirectChatLearning } from "@/components/channels/direct-chat-learning";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
 import { useAutoWatchScreen } from "@/components/computer/use-auto-watch-screen";
@@ -21,6 +23,7 @@ import { useOpenComputerOnRequest } from "@/lib/computers/panel-view";
 
 const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
+  runId: z.string().optional(),
   /** Opens the Bot's screen in the shared detail pane. */
   watch: z.boolean().optional(),
 });
@@ -43,7 +46,7 @@ export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
 
 function RouteComponent() {
   const { channelId } = Route.useParams();
-  const { settings, watch } = Route.useSearch();
+  const { settings, watch, runId } = Route.useSearch();
   const channel = useQuery(channelQueryOptions(channelId));
   const navigate = Route.useNavigate();
   const isSettingsOpen = settings === true;
@@ -88,110 +91,123 @@ function RouteComponent() {
   };
 
   return (
-    <DetailPanel
-      onClose={() => show(null)}
-      open={(isSettingsOpen || isWatching) && agentId !== undefined}
-      detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
-      title={isWatching ? "Computer" : undefined}
-      waiting={
-        channel.data ? (
-          <ConversationApprovals threadId={channel.data.threadId} />
-        ) : null
-      }
-      detail={
-        agentId === undefined ? null : isWatching ? (
-          // Manual watch remains active even when there is no current browser action.
-          <ComputerViewPanel agentId={agentId} name={channel?.data?.name} />
-        ) : (
-          <AgentProfile
-            agentId={agentId}
-            footer={
-              channel.data ? (
-                <ConversationActions
-                  channelId={channelId}
-                  leave={() => navigate({ to: "/" })}
-                  name={channel.data.name}
-                />
-              ) : null
-            }
-          />
-        )
-      }
-    >
-      <div className="flex flex-col">
-        <div
-          className="min-h-12 border-b border-border sticky top-0 flex flex-row flex-wrap items-center justify-between px-3 py-2 gap-2"
-          data-slot="conversation-header"
-        >
-          {/* Keyed on the displayed name so cold channel loads animate the resolved name, not the id. */}
-          <div className="flex min-w-0 items-center gap-1.5">
-            <SidebarToggle />
-            <motion.div
-              animate={{ opacity: 1 }}
-              className="shrink-0"
-              initial={{ opacity: 0 }}
-              key={`avatar:${channel.data?.name ?? channelId}`}
-              transition={{
-                duration: HEADING_ENTRANCE_SECONDS,
-                ease: EASE_OUT,
-              }}
-            >
-              <ChannelAvatar
-                participantIds={channel.data?.agentIds ?? []}
-                size={22}
-              />
-            </motion.div>
-            <motion.h1
-              animate={
-                prefersReducedMotion
-                  ? { opacity: 1 }
-                  : { opacity: 1, transform: "translateY(0px)" }
+    <ConversationSurface>
+      <DetailPanel
+        onClose={() => show(null)}
+        open={(isSettingsOpen || isWatching) && agentId !== undefined}
+        detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
+        title={isWatching ? "Computer" : undefined}
+        waiting={
+          channel.data ? (
+            <ConversationApprovals threadId={channel.data.threadId} />
+          ) : null
+        }
+        detail={
+          agentId === undefined ? null : isWatching ? (
+            // Manual watch remains active even when there is no current browser action.
+            <ComputerViewPanel agentId={agentId} name={channel?.data?.name} />
+          ) : (
+            <AgentProfile
+              agentId={agentId}
+              footer={
+                channel.data ? (
+                  <ConversationActions
+                    archived={channel.data.archived === true}
+                    channelId={channelId}
+                    leave={() => navigate({ to: "/" })}
+                    name={channel.data.name}
+                  />
+                ) : null
               }
-              className="min-w-0 text-sm tracking-tight truncate"
-              initial={
-                prefersReducedMotion
-                  ? { opacity: 0 }
-                  : { opacity: 0, transform: HEADING_ENTRANCE_OFFSET }
-              }
-              key={`name:${channel.data?.name ?? channelId}`}
-              transition={{
-                duration: HEADING_ENTRANCE_SECONDS,
-                ease: EASE_OUT,
-              }}
-            >
-              {channel.data?.name ?? "Conversation"}
-            </motion.h1>
-          </div>
-          <div className="flex flex-row gap-1.5">
-            <ComputerChatControls
-              computerId={agentId}
-              open={isWatching}
-              onOpenChange={(open) => show(open ? "watch" : null)}
             />
-            <Button
-              aria-label="This conversation's Bot"
-              aria-pressed={isSettingsOpen}
-              className={isSettingsOpen ? "bg-foreground/5" : undefined}
-              disabled={agentId === undefined}
-              onClick={() => show(isSettingsOpen ? null : "settings")}
-              variant="ghost"
-              size="icon"
-            >
-              <IconSettings className="size-4.5" />
-            </Button>
+          )
+        }
+      >
+        <div className="flex flex-col">
+          <div
+            className="min-h-12 border-b border-border sticky top-0 flex flex-row flex-wrap items-center justify-between px-3 py-2 gap-2"
+            data-slot="conversation-header"
+          >
+            {/* Keyed on the displayed name so cold channel loads animate the resolved name, not the id. */}
+            <div className="flex min-w-0 items-center gap-1.5">
+              <SidebarToggle />
+              <motion.div
+                animate={{ opacity: 1 }}
+                className="shrink-0"
+                initial={{ opacity: 0 }}
+                key={`avatar:${channel.data?.name ?? channelId}`}
+                transition={{
+                  duration: HEADING_ENTRANCE_SECONDS,
+                  ease: EASE_OUT,
+                }}
+              >
+                <ChannelAvatar
+                  participantIds={channel.data?.agentIds ?? []}
+                  size={22}
+                />
+              </motion.div>
+              <motion.h1
+                animate={
+                  prefersReducedMotion
+                    ? { opacity: 1 }
+                    : { opacity: 1, transform: "translateY(0px)" }
+                }
+                className="min-w-0 text-sm tracking-tight truncate"
+                initial={
+                  prefersReducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, transform: HEADING_ENTRANCE_OFFSET }
+                }
+                key={`name:${channel.data?.name ?? channelId}`}
+                transition={{
+                  duration: HEADING_ENTRANCE_SECONDS,
+                  ease: EASE_OUT,
+                }}
+              >
+                {channel.data?.name ?? "Conversation"}
+              </motion.h1>
+            </div>
+            <div className="flex flex-row gap-1.5">
+              {agentId &&
+              channel.data?.active &&
+              channel.data.agentIds.length === 1 ? (
+                <DirectChatLearning
+                  key={channel.data.threadId}
+                  threadId={channel.data.threadId}
+                  agentId={agentId}
+                />
+              ) : null}
+              <ComputerChatControls
+                computerId={agentId}
+                open={isWatching}
+                onOpenChange={(open) => show(open ? "watch" : null)}
+              />
+              <Button
+                aria-label="This conversation's Bot"
+                aria-pressed={isSettingsOpen}
+                className={isSettingsOpen ? "bg-foreground/5" : undefined}
+                disabled={agentId === undefined}
+                onClick={() => show(isSettingsOpen ? null : "settings")}
+                variant="ghost"
+                size="icon"
+              >
+                <IconSettings className="size-4.5" />
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
-      {agentId && channel.data?.agentIds.length === 1 ? (
-        <BotPausedBanner agentId={agentId} />
-      ) : null}
-      <ChannelBody
-        channel={channel.data}
-        isPending={channel.isPending}
-        retry={() => void channel.refetch()}
-        retrying={channel.isFetching}
-      />
-    </DetailPanel>
+        {agentId && channel.data?.agentIds.length === 1 ? (
+          <BotPausedBanner agentId={agentId} />
+        ) : null}
+        <ChannelBody
+          channel={channel.error ? undefined : channel.data}
+          isPending={channel.isPending}
+          runId={runId}
+          retry={() => void channel.refetch()}
+          retrying={channel.isFetching}
+        />
+      </DetailPanel>
+    </ConversationSurface>
   );
 }
 
@@ -204,11 +220,13 @@ function ChannelBody({
   isPending,
   retry,
   retrying,
+  runId,
 }: {
   channel: AgentChannel | undefined;
   isPending: boolean;
   retry: () => void;
   retrying: boolean;
+  runId?: string;
 }) {
   if (isPending) return <ConversationLoading label="Opening conversation…" />;
   if (!channel) {
@@ -216,9 +234,9 @@ function ChannelBody({
       <Stack padding={5}>
         <ConversationReadError
           title="Couldn't open this conversation."
-          description="Try again. If the conversation was removed, you can open another from the sidebar."
           retry={retry}
           retrying={retrying}
+          retryBelow
         />
       </Stack>
     );
@@ -233,6 +251,7 @@ function ChannelBody({
       <Navigate
         params={{ channelId: channel.id }}
         replace
+        search={{ runId }}
         to="/group/$channelId"
       />
     );
@@ -244,6 +263,7 @@ function ChannelBody({
       channel={channel}
       key={channel.id}
       runtimeAgentId={runtimeAgentId}
+      focusRunId={runId}
     />
   );
 }

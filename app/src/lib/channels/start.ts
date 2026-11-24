@@ -13,7 +13,10 @@ import {
 import { saveConversationModel } from "@/lib/models/mutations";
 import type { ConversationModel } from "@/lib/models/queries";
 import { newId } from "@/lib/new-id";
-import { createChannelMutationOptions } from "./mutations";
+import {
+  createChannelMutationOptions,
+  deleteChannelMutationOptions,
+} from "./mutations";
 import {
   claimFirstSend,
   finishPendingStart,
@@ -175,7 +178,17 @@ export function resumeConversationStart(
       });
       const pick = draft.model;
       if (!group && pick && (pick.model !== null || pick.effort !== null)) {
-        await saveConversationModel(channel.id, pick);
+        try {
+          await saveConversationModel(channel.id, pick);
+        } catch (error) {
+          await new MutationObserver(
+            queryClient,
+            deleteChannelMutationOptions(queryClient, true),
+          )
+            .mutate(channel.id)
+            .catch(() => undefined);
+          throw error;
+        }
       }
       const latest = readPendingStart(owner, id);
       if (latest?.state === "finished") return latest;
@@ -364,8 +377,9 @@ export async function resumeDirectFirstMessage({
     return "finished";
   } catch {
     if (!isCurrent()) return "inactive";
-    if (readPendingStart(owner, id)?.state === "finished") return "finished";
-    if (submitted) return verify();
+    const latest = readPendingStart(owner, id);
+    if (latest?.state === "finished") return "finished";
+    if (submitted || latest?.progress.phase === "submitted") return verify();
     return {
       action: "retry",
       message:

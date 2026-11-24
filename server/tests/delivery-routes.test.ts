@@ -113,6 +113,7 @@ function fixture(
         return {
           ...bound,
           ...input,
+          createdAt: new Date("2026-01-01T00:00:00Z"),
           mentionId: input.mentionId ?? null,
           optedOutAt: input.optedOutAt ?? null,
         };

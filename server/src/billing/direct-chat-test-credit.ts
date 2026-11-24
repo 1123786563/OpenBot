@@ -15,6 +15,11 @@ export const testCreditConfirmation = z.strictObject({
   creditType: z.enum(["test", "paid"]).optional(),
 });
 
+export type DirectChatCreditRequest = {
+  confirmation: z.infer<typeof testCreditConfirmation>;
+  rerunOfOperationId?: string;
+};
+
 export type CasdoorBillingProvider = { issuer: string; providerId: string };
 
 /** Resolve a server-authenticated Person through Better Auth's verified OIDC account link. */
@@ -98,14 +103,15 @@ export function createDirectChatTestCredit(
         ? recovered(await ledger.reconcile(identity, id))
         : undefined;
     },
-    async complete(input: {
-      id: string;
-      personId: string;
-      confirmation: z.infer<typeof testCreditConfirmation>;
-      preferences: Parameters<TestCreditLedger["resolveQuote"]>[0];
-      messages: Parameters<TestCreditExecutor>[0]["messages"];
-      rerunOfOperationId?: string;
-    }): Promise<ChatCreditResult> {
+    async complete(
+      input: DirectChatCreditRequest & {
+        id: string;
+        personId: string;
+        preferences: Parameters<TestCreditLedger["resolveQuote"]>[0];
+        messages: Parameters<TestCreditExecutor>[0]["messages"];
+        beforeDispatch?: () => Promise<boolean>;
+      },
+    ): Promise<ChatCreditResult> {
       const identity = await identityOf(input.personId);
       if (!identity) return { state: "not_authorized" };
       const resolved = await ledger.resolveQuote(input.preferences);
@@ -149,6 +155,9 @@ export function createDirectChatTestCredit(
           ledger,
           execute,
           identity,
+          authorizeDispatch: input.beforeDispatch,
+          requireBudgetAtDispatch: false,
+          maySend: input.beforeDispatch,
           input: {
             operationId: input.id,
             permit: held.permit,

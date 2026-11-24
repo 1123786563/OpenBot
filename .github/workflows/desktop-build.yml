@@ -53,7 +53,7 @@ jobs:
   app:
     name: app (${{ matrix.platform }})
     # PR smoke builds without the CLI can use Intel. Keep arm64 for release and CLI bundles.
-    runs-on: ${{ matrix.platform == 'macos' && (github.event_name == 'pull_request' && inputs.channel == 'internal' && !inputs.bundle_cli && inputs.manifest_artifact == '' && 'macos-15-intel' || 'macos-latest') || matrix.platform == 'windows' && (github.event_name == 'pull_request' && 'windows-latest' || 'openbot-windows-16core') || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.platform == 'macos' && (github.event_name == 'pull_request' && inputs.channel == 'internal' && !inputs.bundle_cli && inputs.manifest_artifact == '' && 'macos-15-intel' || 'macos-latest') || matrix.platform == 'windows' && (github.repository == 'CopilotKit/OpenBot' && github.event_name != 'pull_request' && 'openbot-windows-16core' || 'windows-latest') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:

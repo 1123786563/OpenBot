@@ -83,6 +83,7 @@ mock.module("./Mark", () => ({
 }));
 
 const { App } = await import("./App");
+const { DesktopSetup } = await import("./CloudConnection");
 const { ShuttingDownWindow, isShuttingDownPage } = await import(
   "./ShuttingDown"
 );
@@ -595,7 +596,7 @@ async function chooseOpenAi(view: Awaited<ReturnType<typeof renderApp>>) {
   await userEvent.click(view.getByRole("button", { name: "Continue" }));
 }
 
-test("the first screen is Install, with nothing to choose", async () => {
+test("local-only setup starts at Install", async () => {
   setupRootConfiguration("/tmp/local-eval-welcome", async () =>
     emptyConfiguration(),
   );
@@ -608,7 +609,7 @@ test("the first screen is Install, with nothing to choose", async () => {
   expect(
     [...view.container.querySelectorAll(".lede")].map((p) => p.textContent),
   ).toEqual([
-    "This version of OpenBot is fully self-contained and runs entirely on your computer, including the OpenBot backend.",
+    "Install OpenBot to run it entirely on this computer, including the OpenBot backend.",
     "Depending on your internet speed, setup can take between 1 and 10 minutes.",
     "In production, OpenBot for Business runs on your own infrastructure with Kubernetes, or on OpenBot Cloud. Book a demo for early access.",
   ]);
@@ -4376,6 +4377,11 @@ test("setup records telemetry without a consent gate and deduplicates viewed ste
   ]);
   await userEvent.click(view.getByRole("button", { name: "Install" }));
   await view.findByRole("heading", { name: "Connect your AI" });
+  await waitFor(() => {
+    expect(setupEvents().at(-1)).toEqual({
+      event: { kind: "step_viewed", step: "model" },
+    });
+  });
 
   const events = setupEvents().map(
     (event) => (event as { event: { kind: string; step?: string } }).event,
@@ -4385,7 +4391,6 @@ test("setup records telemetry without a consent gate and deduplicates viewed ste
     { kind: "harness_chosen", harness: "langgraph" } as never,
     { kind: "step_viewed", step: "account" },
   ]);
-  expect(events.at(-1)).toEqual({ kind: "step_viewed", step: "model" });
   // Each step once, the development double mount included.
   const viewed = events
     .filter((event) => event.kind === "step_viewed")
@@ -5662,4 +5667,97 @@ test("any other plan sign-in failure still shows inline on the AI step", async (
   );
   await view.findByText("Sign-in was interrupted.");
   expect(stepLabel(view)).toContain("AI");
+});
+
+test("cloud setup opens before downloading local software and recovers a rejected address", async () => {
+  setupRootConfiguration("/tmp/cloud-desktop", async () =>
+    emptyConfiguration(),
+  );
+  const local = invokeHandler;
+  invokeHandler = async (command, args) => {
+    if (command === "saved_cloud_origin") return null;
+    if (command === "open_cloud") {
+      if (
+        args &&
+        typeof args === "object" &&
+        "origin" in args &&
+        args.origin === "https://openbot.example"
+      ) {
+        return args.origin;
+      }
+      throw "Enter an HTTPS address.";
+    }
+    return local(command, args);
+  };
+
+  const view = render(<DesktopSetup />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", { name: "Connect to OpenBot Cloud" }),
+  );
+  const field = await view.findByRole("textbox", {
+    name: "OpenBot Cloud address",
+  });
+  await user.type(field, "http://openbot.example");
+  await user.click(view.getByRole("button", { name: "Connect and sign in" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Enter an HTTPS address.",
+  );
+  await user.clear(field);
+  await user.type(field, "https://openbot.example");
+  await user.click(view.getByRole("button", { name: "Connect and sign in" }));
+  await view.findByRole("button", { name: "Open cloud window" });
+  expect(view.getByText("https://openbot.example")).toBeTruthy();
+  expect(installationCalls()).toEqual([]);
+  expect(
+    invokeCalls.some(({ command }) => command === "start_early_downloads"),
+  ).toBe(false);
+});
+
+test("a saved cloud address can reopen, change and disconnect without launching local setup", async () => {
+  setupRootConfiguration("/tmp/cloud-desktop", async () =>
+    emptyConfiguration(),
+  );
+  const local = invokeHandler;
+  invokeHandler = async (command, args) => {
+    if (command === "saved_cloud_origin") return "https://openbot.example";
+    if (
+      command === "open_cloud" &&
+      args &&
+      typeof args === "object" &&
+      "origin" in args
+    ) {
+      return args.origin;
+    }
+    if (command === "disconnect_cloud") return;
+    return local(command, args);
+  };
+
+  const view = render(<DesktopSetup />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", { name: "Open cloud window" }),
+  );
+  expect(invokeCalls).toContainEqual({
+    command: "open_cloud",
+    args: { origin: "https://openbot.example" },
+  });
+
+  await user.click(view.getByRole("button", { name: "Change address" }));
+  const field = view.getByRole("textbox", { name: "OpenBot Cloud address" });
+  await user.clear(field);
+  await user.type(field, "https://new.example");
+  await user.click(view.getByRole("button", { name: "Connect and sign in" }));
+  await view.findByText("https://new.example");
+  expect(invokeCalls.map(({ command }) => command)).toEqual([
+    "saved_cloud_origin",
+    "open_cloud",
+    "open_cloud",
+  ]);
+
+  await user.click(view.getByRole("button", { name: "Disconnect" }));
+  await view.findByRole("button", { name: "Connect to OpenBot Cloud" });
+  expect(
+    invokeCalls.some(({ command }) => command === "disconnect_cloud"),
+  ).toBe(true);
 });

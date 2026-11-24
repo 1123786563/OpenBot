@@ -15,6 +15,7 @@ export type MemoryRecord = {
   formedBy: "person" | "import" | "bot" | "intelligence";
   formedByAgentId: string | null;
   sourceApp: string | null;
+  sourceRef: string | null;
   sourceLink: string | null;
   observedAt: string | null;
   updatedAt: string;
