@@ -33,14 +33,24 @@ trap cleanup EXIT
 
 "${compose[@]}" up -d --wait --wait-timeout 120 > "$output/deploy.log" 2>&1
 bash "$script_dir/verify.sh" "$build" "$project" > "$output/runtime-before.jsonl"
+smoke_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 "${compose[@]}" exec -T server bun - < "$script_dir/smoke.mjs" | tee "$output/smoke.jsonl"
 bash "$script_dir/verify.sh" "$build" "$project" > "$output/runtime-after.jsonl"
 cmp "$output/runtime-before.jsonl" "$output/runtime-after.jsonl"
 worker=$(jq -er 'select(.service == "worker") | .container' "$output/runtime-after.jsonl")
-routine=$(jq -er 'select(.type == "worker-task") | .routineId' "$output/smoke.jsonl")
-docker logs "$worker" 2>&1 | jq -Rce --arg routine "$routine" '
-  fromjson? | select(.type == "routine-sweep" and (.fired | index($routine) != null))
-' > "$output/worker-dispatch.jsonl"
+jq -se '[.[] | select(.type == "worker-task" and .source == "schedule" and
+  .status == "succeeded" and (.routineId | type == "string" and length > 0))] | length == 1' \
+  "$output/smoke.jsonl" >/dev/null
+# The isolated database contains only the smoke Routine. Its successful run
+# must be accompanied by exactly one firing from the verified Worker.
+if ! docker logs --since "$smoke_started" "$worker" 2>&1 | jq -Rsce '
+  [split("\n")[] | fromjson? | objects | select(.event_category == "routine_sweep_completed"
+    and (.fired | type == "number" and . > 0))]
+  | select(length == 1 and .[0].fired == 1) | .[0]
+' > "$output/worker-dispatch.jsonl"; then
+  echo 'Expected exactly one Worker Routine firing during the smoke test' >&2
+  exit 1
+fi
 
 assert_rejected() {
   local service=$1
