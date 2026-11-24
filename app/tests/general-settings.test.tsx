@@ -182,6 +182,7 @@ describe("the General page speaks the interface language", () => {
     await userEvent.setup({ document }).click(row);
     const dialog = await view.findByRole("dialog");
     expect(within(dialog).getByText("你的名字")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "关闭" })).toBeTruthy();
     expect(
       (within(dialog).getByLabelText("姓名") as HTMLInputElement).value,
     ).toBe("Ada");

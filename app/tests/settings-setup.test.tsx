@@ -330,6 +330,9 @@ test("in Chinese the sidebar speaks the interface language, destinations unchang
   );
   const setup = view.getByRole("link", { name: /^配置/ });
   await waitFor(() => expect(setup.textContent).toBe("配置，1 项需要配置"));
+  // Chromium puts a space between the text and the absolutely positioned suffix when it computes
+  // the name; the label carries both without one, so the fullwidth comma follows 配置 directly.
+  expect(setup.getAttribute("aria-label")).toBe("配置，1 项需要配置");
   expect(setup.getAttribute("href")).toBe("/settings/setup");
   const badge = view.container.querySelector('[data-sidebar="menu-badge"]');
   expect(badge?.textContent).toBe("1");
