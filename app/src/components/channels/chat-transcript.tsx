@@ -1,4 +1,6 @@
 import type { ActivityMessage, Message } from "@ag-ui/core";
+import { Button } from "@astryxdesign/core/Button";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import type { Attachment } from "@copilotkit/react-core/v2";
@@ -35,6 +37,7 @@ import { motion, useReducedMotion } from "motion/react";
 import {
   createContext,
   memo,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
@@ -49,7 +52,6 @@ import {
   ArgumentsArrivingContext,
   TurnInFlightContext,
 } from "@/components/gallery/streaming";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   Dialog,
   DialogClose,
@@ -71,7 +73,6 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import { readResponsibilityTurn } from "@/lib/channels/responsibility-turn";
@@ -249,32 +250,38 @@ function splitSkillChip(
  * than like a loading widget, on the same line pitch so the column does not jump when words land.
  */
 const RESTORING_ANSWER_LINES = [
-  { id: "line-1", width: "w-full" },
-  { id: "line-2", width: "w-11/12" },
-  { id: "line-3", width: "w-full" },
-  { id: "line-4", width: "w-10/12" },
-  { id: "line-5", width: "w-11/12" },
-  { id: "line-6", width: "w-full" },
-  { id: "line-7", width: "w-11/12" },
-  { id: "line-8", width: "w-2/3" },
+  { id: "line-1", width: "100%" },
+  { id: "line-2", width: "91.67%" },
+  { id: "line-3", width: "100%" },
+  { id: "line-4", width: "83.33%" },
+  { id: "line-5", width: "91.67%" },
+  { id: "line-6", width: "100%" },
+  { id: "line-7", width: "91.67%" },
+  { id: "line-8", width: "66.67%" },
 ] as const;
 
 function RestoringTranscript() {
   return (
     // One announcement, with every bar hidden from it: nine empty shapes read aloud is worse.
-    <div aria-label="Loading this conversation" role="status">
-      <div aria-hidden="true" className="flex justify-end pb-7">
-        <Skeleton className="h-10 w-64 rounded-xl bg-muted/40 motion-reduce:animate-none" />
-      </div>
-      <div aria-hidden="true" className="flex flex-col gap-3">
+    <Stack aria-label="Loading this conversation" role="status">
+      <Stack aria-hidden="true" className="pb-7" hAlign="end">
+        <Skeleton
+          className="rounded-xl bg-muted/40 motion-reduce:animate-none"
+          height="2.5rem"
+          width="16rem"
+        />
+      </Stack>
+      <Stack aria-hidden="true" gap={3}>
         {RESTORING_ANSWER_LINES.map((line) => (
           <Skeleton
-            className={`h-4 bg-muted/40 motion-reduce:animate-none ${line.width}`}
+            className="bg-muted/40 motion-reduce:animate-none"
+            height="1rem"
             key={line.id}
+            width={line.width}
           />
         ))}
-      </div>
-    </div>
+      </Stack>
+    </Stack>
   );
 }
 
@@ -291,14 +298,17 @@ function RestoringTranscript() {
  */
 function Thinking() {
   return (
-    <p
+    <Stack
+      as="p"
       className="tool-line-running text-muted-foreground text-sm"
       // `status` rather than `alert`: this is progress, not something that interrupts what somebody
       // is doing. The text says it, so a screen reader is told the same thing the shimmer implies.
       role="status"
     >
-      Thinking
-    </p>
+      <Text as="span" color="inherit" type="inherit">
+        Thinking
+      </Text>
+    </Stack>
   );
 }
 
@@ -317,13 +327,16 @@ function Thinking() {
  */
 function Stopped({ reason }: { reason: string }) {
   return (
-    <p
+    <Stack
+      as="p"
       className="text-destructive text-sm"
       data-testid="transcript-stopped"
       role="alert"
     >
-      {reason}
-    </p>
+      <Text as="span" color="inherit" type="inherit">
+        {reason}
+      </Text>
+    </Stack>
   );
 }
 
@@ -414,10 +427,64 @@ function queuedGroupPosition(
   return "middle";
 }
 
+/**
+ * The transcript's bubble on Astryx layout, keeping the slots the queued/burst styles and tests
+ * name. A person's message stays muted and end-aligned; a Bot's takes the full column without a
+ * painted boundary, the same two shapes this transcript has always drawn.
+ */
+function Bubble({
+  align,
+  variant,
+  className,
+  children,
+}: {
+  align: "start" | "end";
+  variant: "muted" | "ghost";
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Stack
+      className={cn(
+        "group/bubble relative w-fit max-w-[80%] min-w-0 group-data-[align=end]/message:self-end data-[align=end]:self-end data-[variant=ghost]:max-w-full",
+        className,
+      )}
+      data-align={align}
+      gap={1}
+      data-slot="bubble"
+      data-variant={variant}
+    >
+      {children}
+    </Stack>
+  );
+}
+
+function BubbleContent({
+  className,
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Stack
+      className={cn(
+        "w-fit max-w-full min-w-0 overflow-hidden rounded-xl border border-transparent text-sm leading-relaxed wrap-break-word group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors [button,a]:outline-none [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/50",
+        className,
+      )}
+      data-slot="bubble-content"
+      paddingBlock={2}
+      paddingInline={3}
+    >
+      {children}
+    </Stack>
+  );
+}
+
 /** The chip above a burst: what kind of burst it is, and how many messages it holds. */
 function BurstCount({ count, title }: { count: number; title: string }) {
   return (
-    <MessageHeader className="message-group-label self-end px-0 text-right text-[0.6875rem]">
+    <MessageHeader className="message-group-label self-end px-0 text-right text-(--font-size-xs)">
       <IconListDetails aria-hidden className="size-3" />
       {title} · {count} messages
     </MessageHeader>
@@ -486,7 +553,9 @@ function Queued({
           <Bubble align="end" className="opacity-60" variant="muted">
             <BubbleContent>
               {/* Shown exactly as typed, for the same reason a sent message is. */}
-              <span className="whitespace-pre-wrap">{text}</span>
+              <Text as="span" className="whitespace-pre-wrap" type="inherit">
+                {text}
+              </Text>
             </BubbleContent>
           </Bubble>
         ) : null}
@@ -495,12 +564,18 @@ function Queued({
            * `status` rather than `alert`, matching the thinking line: a person who has just chosen
            * to queue something is not being interrupted by the news that it is queued.
            */}
-          <span className="inline-flex items-center gap-1" role="status">
+          <Stack
+            as="span"
+            direction="horizontal"
+            align="center"
+            gap={1}
+            role="status"
+          >
             <IconClock aria-hidden className="size-3" />
             Queued
-          </span>
+          </Stack>
           {onRemove ? (
-            <button
+            <Button
               /*
                * The sentence it deletes, in the name. Three parked corrections put three buttons
                * called "Remove" in a row, and somebody reading by name alone is told what they can
@@ -512,12 +587,12 @@ function Queued({
                * and read as "Remove queued message:", which is the same nothing three times over.
                */
               aria-label={`Remove queued message: ${describeParked(text, files)}`}
-              className="ml-2 underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="ml-2 underline underline-offset-2"
+              label="Remove"
               onClick={onRemove}
-              type="button"
-            >
-              Remove
-            </button>
+              size="sm"
+              variant="ghost"
+            />
           ) : null}
         </MessageFooter>
       </MessageContent>
@@ -755,13 +830,22 @@ function RoutineFiring({ instruction }: { instruction: string }) {
     return <ResponsibilityFiring raw={instruction} turn={responsibility} />;
   }
   return (
-    <div className="flex min-w-0 items-baseline gap-2 text-muted-foreground text-sm">
+    <Stack
+      direction="horizontal"
+      align="start"
+      className="min-w-0 items-baseline text-muted-foreground text-sm"
+      gap={2}
+    >
       <IconClock aria-hidden className="size-4 shrink-0 translate-y-0.5" />
-      <span className="min-w-0">
-        <span className="font-medium">Routine ran.</span>{" "}
-        <span className="whitespace-pre-wrap">{instruction}</span>
-      </span>
-    </div>
+      <Text as="span" className="min-w-0" type="inherit">
+        <Text as="span" type="inherit" weight="medium">
+          Routine ran.
+        </Text>{" "}
+        <Text as="span" className="whitespace-pre-wrap" type="inherit">
+          {instruction}
+        </Text>
+      </Text>
+    </Stack>
   );
 }
 
@@ -789,14 +873,23 @@ function ResponsibilityFiring({
   turn: { instruction: string; trigger: string };
 }) {
   return (
-    <div className="flex min-w-0 items-baseline gap-2 text-muted-foreground text-sm">
+    <Stack
+      direction="horizontal"
+      align="start"
+      className="min-w-0 items-baseline text-muted-foreground text-sm"
+      gap={2}
+    >
       <IconClock aria-hidden className="size-4 shrink-0 translate-y-0.5" />
-      <div className="min-w-0">
-        <p>
-          <span className="font-medium">Worked on a goal.</span> Trigger:{" "}
-          {describeTrigger(turn.trigger)}
-        </p>
-        <p className="whitespace-pre-wrap">{turn.instruction}</p>
+      <Stack className="min-w-0">
+        <Text as="p" type="inherit">
+          <Text as="span" type="inherit" weight="medium">
+            Worked on a goal.
+          </Text>{" "}
+          Trigger: {describeTrigger(turn.trigger)}
+        </Text>
+        <Text as="p" className="whitespace-pre-wrap" type="inherit">
+          {turn.instruction}
+        </Text>
         <details className="group mt-1">
           <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
             Details
@@ -805,10 +898,17 @@ function ResponsibilityFiring({
               className="size-3 transition-transform group-open:rotate-180 motion-reduce:transition-none"
             />
           </summary>
-          <p className="mt-1 whitespace-pre-wrap break-words text-xs">{raw}</p>
+          <Text
+            as="p"
+            className="mt-1 whitespace-pre-wrap break-words"
+            size="sm"
+            type="inherit"
+          >
+            {raw}
+          </Text>
         </details>
-      </div>
-    </div>
+      </Stack>
+    </Stack>
   );
 }
 
@@ -892,9 +992,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
       {...(answerer ? { "data-speaker": answerer } : {})}
     >
       {answerer ? (
-        <div className="shrink-0 pt-0.5">
+        <Stack className="shrink-0 pt-0.5">
           <ChannelAvatar participantIds={[answerer]} size={24} />
-        </div>
+        </Stack>
       ) : null}
       <MessageContent>
         <Arriving>
@@ -919,11 +1019,21 @@ const TranscriptMessage = memo(function TranscriptMessage({
                 // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
                 // the thing that was already a chip in the composer as a chip here too, so the
                 // transcript shows a skill was used rather than a slash that was typed.
-                <span className="whitespace-pre-wrap">
+                <Text
+                  as="span"
+                  className="whitespace-pre-wrap"
+                  color="inherit"
+                  type="inherit"
+                >
                   {origin && (
-                    <span className="mr-1.5 inline-flex items-center rounded bg-foreground/10 px-1.5 py-0.5 align-middle text-foreground/70 text-xs">
+                    <Stack
+                      as="span"
+                      direction="horizontal"
+                      align="center"
+                      className="mr-1.5 rounded bg-foreground/10 px-1.5 py-0.5 align-middle text-foreground/70 text-xs"
+                    >
                       via {origin.via}
-                    </span>
+                    </Stack>
                   )}
                   {invoked ? (
                     <>
@@ -933,16 +1043,22 @@ const TranscriptMessage = memo(function TranscriptMessage({
                        * `align-middle` rather than a block: this sits mid-sentence, and a badge that
                        * breaks the line it is in reads as a separate message.
                        */}
-                      <span className="mr-1 inline-flex items-center gap-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle text-foreground/80 text-xs">
+                      <Stack
+                        as="span"
+                        direction="horizontal"
+                        align="center"
+                        className="mr-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle text-foreground/80 text-xs"
+                        gap={1}
+                      >
                         <IconBox className="size-3 shrink-0" />
                         {invoked.chip}
-                      </span>
+                      </Stack>
                       {invoked.rest}
                     </>
                   ) : (
                     said
                   )}
-                </span>
+                </Text>
               ) : (
                 /*
                  * A Bot's prose is markdown, and it arrives in pieces.
@@ -953,7 +1069,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
                  * closing token arrives, so the answer visibly rewrites itself as it lands. This
                  * closes them for the duration.
                  */
-                <div ref={resultRef}>
+                <Stack ref={resultRef}>
                   <Streamdown
                     components={markdownComponents}
                     mode={mode}
@@ -962,7 +1078,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
                   >
                     {revealed}
                   </Streamdown>
-                </div>
+                </Stack>
               )}
             </BubbleContent>
           </Bubble>
@@ -1297,28 +1413,45 @@ function SentAttachmentTile({ attachment }: { attachment: SentAttachment }) {
        * the tile as a thing to stop on, and the sentence inside it — unchanged, in the file's own
        * name — is what says the file is gone when the reader reaches it.
        */
-      <div
-        className="flex h-32 w-44 flex-col justify-center gap-2 rounded-xl border border-destructive border-dashed p-3 text-destructive"
+      <Stack
+        className="h-32 w-44 rounded-xl border border-destructive border-dashed text-destructive"
+        justify="center"
+        gap={2}
+        padding={3}
         role="note"
       >
         <IconAlertTriangle className="size-6" />
-        <p className="text-sm">{unavailableSentence(filename)}</p>
-      </div>
+        <Text as="p" className="text-sm" type="inherit">
+          {unavailableSentence(filename)}
+        </Text>
+      </Stack>
     );
   }
 
   if (modality === "document") {
     return (
-      <div className="flex h-32 w-44 flex-col justify-between rounded-xl border border-border bg-muted/40 p-3">
+      <Stack
+        className="h-32 w-44 rounded-xl border border-border bg-muted/40"
+        justify="between"
+        padding={3}
+      >
         <IconFile className="size-6 text-muted-foreground" />
-        <div className="min-w-0">
-          {/* `title` because the tile is fixed-width and a long name is cut, not wrapped. */}
-          <p className="truncate font-medium text-sm" title={filename}>
+        <Stack className="min-w-0" gap={0}>
+          {/* The full name is the accessible label: the tile is fixed-width and cuts a long name. */}
+          <Text
+            as="p"
+            aria-label={filename}
+            className="truncate text-sm"
+            type="inherit"
+            weight="medium"
+          >
             {filename ?? "Untitled file"}
-          </p>
-          <p className="text-muted-foreground text-xs">Attachment</p>
-        </div>
-      </div>
+          </Text>
+          <Text as="p" size="sm" type="inherit" color="secondary">
+            Attachment
+          </Text>
+        </Stack>
+      </Stack>
     );
   }
 
@@ -1395,13 +1528,17 @@ export function LightboxPicture({
        * to something the reader just did rather than an emergency. Light-on-dark because it is
        * drawn against the lightbox's own backdrop, where `text-destructive` is unreadable.
        */
-      <div
-        className="flex flex-col items-center gap-3 p-8 text-center text-white"
+      <Stack
+        align="center"
+        className="p-8 text-center text-(--color-on-dark)"
+        gap={3}
         role="note"
       >
         <IconAlertTriangle className="size-8" />
-        <p className="text-sm">{unavailableSentence(filename)}</p>
-      </div>
+        <Text as="p" className="text-sm" color="inherit" type="inherit">
+          {unavailableSentence(filename)}
+        </Text>
+      </Stack>
     );
   }
 
@@ -1477,7 +1614,7 @@ function AttachmentLightbox({
         onClick={(event) => {
           if (event.target === event.currentTarget) setOpen(false);
         }}
-        overlayClassName="bg-black/80 supports-backdrop-filter:backdrop-blur-sm"
+        overlayClassName="bg-(--color-overlay) supports-backdrop-filter:backdrop-blur-sm"
         showCloseButton={false}
       >
         {/* Named for a screen reader; the picture carries the same name in its alt text. */}
@@ -1487,7 +1624,7 @@ function AttachmentLightbox({
           render={
             <button
               aria-label="Close"
-              className="absolute top-4 right-4 grid size-9 place-items-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+              className="absolute top-4 right-4 grid size-9 place-items-center rounded-full bg-(--color-overlay) text-(--color-on-dark) transition-colors hover:bg-(--color-overlay-pressed)"
               type="button"
             />
           }
@@ -2513,11 +2650,8 @@ export function ChatTranscript({
    */
   if (restoring) {
     return (
-      <div className="flex size-full min-h-0 flex-col overflow-hidden">
-        <div
-          className={cn("flex flex-col gap-6 py-6", column)}
-          data-transcript-column
-        >
+      <Stack className="size-full min-h-0 overflow-hidden">
+        <Stack className={cn("gap-6 py-6", column)} data-transcript-column>
           <RestoringTranscript />
           {/*
            * A message typed while history loads is parked, not lost, and must be seen to be: a
@@ -2537,8 +2671,8 @@ export function ChatTranscript({
               text={message.text}
             />
           ))}
-        </div>
-      </div>
+        </Stack>
+      </Stack>
     );
   }
 

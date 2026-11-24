@@ -1,4 +1,5 @@
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { offersStandingRule } from "@openbot/shared/standing-rule";
 import { approvalPhrase } from "@openbot/shared/tool-name";
@@ -151,7 +152,7 @@ export function InlineApproval({
         ) : null}
       </AnimatePresence>
       {request?.result?.pauseReason ? (
-        <section aria-label="Paused action">
+        <Stack as="section" aria-label="Paused action" gap={2}>
           <Text as="p">{request.result.pauseReason}</Text>
           {request.result.content && (
             <CodeBlock
@@ -162,7 +163,7 @@ export function InlineApproval({
               width="100%"
             />
           )}
-        </section>
+        </Stack>
       ) : pending ? null : (
         fallback
       )}
@@ -186,11 +187,11 @@ export function ConversationApprovals({ threadId }: { threadId: string }) {
   );
   if (ids.length === 0) return null;
   return (
-    <div className="space-y-2">
+    <Stack gap={2}>
       {ids.map((id) => (
         <InlineApproval key={id} toolCallId={id} fallback={null} />
       ))}
-    </div>
+    </Stack>
   );
 }
 
@@ -219,10 +220,10 @@ export function PendingApprovals({
   const ids = toolCallIds.filter((id) => waiting.has(id));
   if (ids.length === 0) return null;
   return (
-    <div className="mt-2 space-y-2">
+    <Stack className="mt-2" gap={2}>
       {ids.map((id) => (
         <InlineApproval key={id} toolCallId={id} fallback={null} />
       ))}
-    </div>
+    </Stack>
   );
 }

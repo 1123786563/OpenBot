@@ -1,3 +1,6 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { IconArrowUpRight, IconWorld } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ResearchSource } from "@/lib/plugins/research-results";
@@ -7,7 +10,7 @@ const FIRST_SHOWN = 5;
 
 /** An excerpt longer than this is cut to a few lines until the person asks for the rest. */
 const LONG_EXCERPT = 240;
-/** How many lines a long excerpt shows until it is opened: `line-clamp-4` below. */
+/** How many lines a long excerpt shows until it is opened: `maxLines={4}` below. */
 const CLAMP_LINES = 4;
 
 /**
@@ -29,7 +32,8 @@ export function ResearchResults({
   const shown = all ? sources : sources.slice(0, FIRST_SHOWN);
   const hidden = sources.length - shown.length;
   return (
-    <section
+    <Stack
+      as="section"
       aria-label={label}
       className="min-w-0 overflow-hidden rounded-md border border-border bg-background"
     >
@@ -39,15 +43,15 @@ export function ResearchResults({
         ))}
       </ul>
       {hidden > 0 || all ? (
-        <button
-          className="w-full border-t border-border px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+        <Button
+          className="w-full justify-start rounded-none border-t border-border text-xs"
+          label={all ? "Show fewer" : `Show ${hidden} more`}
           onClick={() => setAll(!all)}
-          type="button"
-        >
-          {all ? "Show fewer" : `Show ${hidden} more`}
-        </button>
+          size="sm"
+          variant="ghost"
+        />
       ) : null}
-    </section>
+    </Stack>
   );
 }
 
@@ -65,42 +69,62 @@ function SourceEntry({ source }: { source: ResearchSource }) {
         rel="noopener noreferrer"
         className="group flex min-w-0 items-start gap-1 text-sm font-medium text-foreground"
       >
-        <span className="min-w-0 break-words underline decoration-transparent underline-offset-2 group-hover:decoration-current">
+        <Text
+          className="min-w-0 break-words underline decoration-transparent underline-offset-2 group-hover:decoration-current"
+          type="inherit"
+        >
           {source.title ?? source.site}
-        </span>
+        </Text>
         <IconArrowUpRight
           aria-hidden
           className="mt-0.5 size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground"
           stroke={2}
         />
       </a>
-      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <Stack
+        as="p"
+        direction="horizontal"
+        align="center"
+        gap={1.5}
+        className="mt-0.5 min-w-0 text-xs text-muted-foreground"
+      >
         <IconWorld aria-hidden className="size-3.5 shrink-0" stroke={2} />
-        <span className="truncate">{source.site}</span>
+        <Text as="span" className="truncate" color="inherit" type="inherit">
+          {source.site}
+        </Text>
         {date ? (
           <>
-            <span aria-hidden>·</span>
-            <span className="shrink-0">{date}</span>
+            <Text as="span" aria-hidden color="inherit" type="inherit">
+              ·
+            </Text>
+            <Text as="span" className="shrink-0" color="inherit" type="inherit">
+              {date}
+            </Text>
           </>
         ) : null}
-      </p>
+      </Stack>
       {source.excerpt ? (
         <>
-          <p
-            className={`mt-1.5 whitespace-pre-line break-words text-xs leading-relaxed text-foreground/80 ${
-              long && !open ? "line-clamp-4" : ""
-            }`}
-          >
-            {source.excerpt}
-          </p>
-          {long ? (
-            <button
-              className="mt-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setOpen(!open)}
-              type="button"
+          <Stack className="text-foreground/80">
+            <Text
+              as="p"
+              className="mt-1.5 whitespace-pre-line break-words"
+              color="inherit"
+              maxLines={long && !open ? 4 : 0}
+              size="sm"
+              type="inherit"
             >
-              {open ? "Show less" : "Show all"}
-            </button>
+              {source.excerpt}
+            </Text>
+          </Stack>
+          {long ? (
+            <Button
+              className="mt-1"
+              label={open ? "Show less" : "Show all"}
+              onClick={() => setOpen(!open)}
+              size="sm"
+              variant="ghost"
+            />
           ) : null}
         </>
       ) : null}

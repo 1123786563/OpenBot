@@ -192,7 +192,7 @@ test("a command that printed JSON with an error field still worked", async () =>
 test("an edit is a diff of what it replaced, in red, and what it put in, in green", async () => {
   const view = live(recorded.edit);
   const edit = await card(view, "Edited a file");
-  expect(edit.getByText("greet.py").getAttribute("title")).toBe(
+  expect(edit.getByText("greet.py").getAttribute("aria-label")).toBe(
     "/private/tmp/claude-harness-run/work4/greet.py",
   );
   expect(edit.getByText("+1")).toBeTruthy();
@@ -201,8 +201,12 @@ test("an edit is a diff of what it replaced, in red, and what it put in, in gree
   const added = edit.getByText("Added:").parentElement;
   expect(removed?.textContent).toBe('Removed:     return f"Hello, {name}!"');
   expect(added?.textContent).toBe('Added:     return f"Hi, {name}!"');
-  expect(removed?.parentElement?.className).toContain("bg-red-500/10");
-  expect(added?.parentElement?.className).toContain("bg-emerald-500/10");
+  expect(removed?.parentElement?.className).toContain(
+    "bg-(--color-error-muted)",
+  );
+  expect(added?.parentElement?.className).toContain(
+    "bg-(--color-success-muted)",
+  );
 });
 
 test("an edit that replaced every occurrence says so", async () => {

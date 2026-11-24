@@ -1,7 +1,9 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { useCopilotChatConfiguration } from "@copilotkit/react-core/v2";
 import { humanise, readToolName } from "@openbot/shared/tool-name";
 import { useQuery } from "@tanstack/react-query";
-import { useContext, useState } from "react";
+import { Fragment, useContext, useState } from "react";
 import { TurnInFlightContext } from "@/components/gallery/streaming";
 import { subagentStepsQueryOptions } from "@/lib/subagents/queries";
 import { toVisibleChatItems, type VisibleChatItem } from "./chat-messages";
@@ -78,24 +80,35 @@ export function SubtaskStep({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary className="flex cursor-pointer list-none items-center gap-1.5">
-          <span
+          <Text
+            as="span"
             aria-hidden
-            className="tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"
+            className="tool-line-chevron shrink-0 transition-transform"
+            color="secondary"
+            size="sm"
           >
             ▸
-          </span>
-          <span className="flex min-w-0 items-center gap-2">
+          </Text>
+          <Stack
+            as="span"
+            direction="horizontal"
+            align="center"
+            gap={2}
+            className="min-w-0"
+          >
             <StepIcon kind="subtask" />
             {/* Shimmers while it works, as every running step does. See `StepRow`. */}
-            <span
+            <Text
+              as="span"
               className={running ? "shrink-0 tool-line-running" : "shrink-0"}
+              color="inherit"
             >
               {step.label}
-            </span>
+            </Text>
             {step.detail ? (
-              <span className="truncate text-muted-foreground">
+              <Text as="span" className="truncate" color="secondary">
                 {step.detail}
-              </span>
+              </Text>
             ) : null}
             <SubtaskStatus
               count={count}
@@ -103,13 +116,17 @@ export function SubtaskStep({
               running={running}
               step={step}
             />
-          </span>
+          </Stack>
         </summary>
-        <div className="mt-1.5 space-y-2 pl-5">
+        <Stack className="mt-1.5 pl-5" gap={2}>
           {step.subtask?.task ? (
-            <p className="whitespace-pre-wrap break-words text-muted-foreground">
+            <Text
+              as="p"
+              className="whitespace-pre-wrap break-words"
+              color="secondary"
+            >
               {step.subtask.task}
-            </p>
+            </Text>
           ) : null}
           {handedBack ? <HandedBack {...handedBack} /> : null}
           {step.output ? <StepOutput output={step.output} /> : null}
@@ -120,7 +137,7 @@ export function SubtaskStep({
               ))}
             </ol>
           ) : null}
-        </div>
+        </Stack>
       </details>
     </li>
   );
@@ -141,26 +158,42 @@ function SubtaskStatus({
   const steps = count > 0 ? `${count} ${count === 1 ? "step" : "steps"}` : "";
   if (running)
     return (
-      <span className="shrink-0 text-muted-foreground">
+      <Text as="span" className="shrink-0" color="secondary">
         {steps ? `Working · ${steps}` : "Working"}
-      </span>
+      </Text>
     );
   if (step.pending)
     return (
-      <span className="shrink-0 text-muted-foreground">Not completed</span>
+      <Text as="span" className="shrink-0" color="secondary">
+        Not completed
+      </Text>
     );
   if (step.refused)
-    return <span className="shrink-0 text-destructive">Blocked</span>;
+    return (
+      <Stack as="span" className="shrink-0 text-(--color-text-error)">
+        <Text as="span" color="inherit" type="inherit">
+          Blocked
+        </Text>
+      </Stack>
+    );
   if (handedBack)
-    return <span className="shrink-0 text-muted-foreground">Handed back</span>;
+    return (
+      <Text as="span" className="shrink-0" color="secondary">
+        Handed back
+      </Text>
+    );
   if (step.failed)
     return (
-      <span className="shrink-0 text-amber-600 dark:text-amber-500">
-        Didn't finish
-      </span>
+      <Stack as="span" className="shrink-0 text-(--color-text-warning)">
+        <Text as="span" color="inherit" type="inherit">
+          Didn't finish
+        </Text>
+      </Stack>
     );
   return steps ? (
-    <span className="shrink-0 text-muted-foreground">{steps}</span>
+    <Text as="span" className="shrink-0" color="secondary">
+      {steps}
+    </Text>
   ) : null;
 }
 
@@ -177,27 +210,27 @@ function HandedBack({ tool, args }: { tool: string; args: unknown }) {
       ? Object.entries(args as Record<string, unknown>)
       : [];
   return (
-    <section aria-label="Handed back" className="space-y-1">
-      <p>
+    <Stack as="section" aria-label="Handed back" gap={1}>
+      <Text as="p">
         It stopped before a step that needs your approval. If the step still
         needs doing, the Bot asks you in this conversation.
-      </p>
-      <p className="font-medium">
+      </Text>
+      <Text as="p" weight="medium">
         {label}
         {detail ? ` on ${detail}` : ""}
-      </p>
+      </Text>
       {inputs.length ? (
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
           {inputs.map(([key, value]) => (
-            <div className="contents" key={key}>
+            <Fragment key={key}>
               <dt>{key}</dt>
               <dd className="min-w-0 break-words text-foreground/80">
                 {typeof value === "string" ? value : JSON.stringify(value)}
               </dd>
-            </div>
+            </Fragment>
           ))}
         </dl>
       ) : null}
-    </section>
+    </Stack>
   );
 }
