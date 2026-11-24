@@ -38,6 +38,7 @@ const UNFINISHED = "Signing out did not finish. Try again.";
 beforeAll(() => GlobalRegistrator.register());
 afterEach(async () => {
   cleanup();
+  queryClient.clear();
   await pinLocale("en");
 });
 afterAll(async () => {
