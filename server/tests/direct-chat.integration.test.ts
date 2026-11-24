@@ -467,6 +467,7 @@ function web(
       },
     },
   );
+  let app: ReturnType<typeof createApp>;
   if (managed) {
     const args = new Array(createApp.length) as unknown as Parameters<
       typeof createApp
@@ -485,7 +486,9 @@ function web(
         managed.testCredit.casdoor,
       ),
     };
-    return createApp(...args);
+    app = createApp(...args);
+  } else {
+    app = new Hono<{ Variables: AppVariables }>();
   }
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
     context,
@@ -494,25 +497,6 @@ function web(
     context.set("actor", actor);
     await next();
   };
-  const app = new Hono<{ Variables: AppVariables }>();
-  app.route(
-    "/api/channels",
-    createChannelRoutes(
-      channelStore,
-      requireUser,
-      undefined,
-      createAuditStore(db),
-    ),
-  );
-  app.route("/api/channels", createChannelAttachmentRoutes(db, requireUser));
-  app.route("/api/attachments", createAttachmentRoutes(db, requireUser));
-  app.route(
-    "/api/approvals",
-    createApprovalRoutes(
-      createApprovalService(createApprovalStore(db)),
-      requireUser,
-    ),
-  );
   const routineStore = createRoutineStore(db);
   const routineRunner = createRoutineRunner({
     routineStore,
@@ -528,12 +512,35 @@ function web(
       },
     ),
   });
-  app.route(
-    "/api/routines",
-    createRoutineRoutes(routineStore, requireUser, { runner: routineRunner }),
-  );
-  app.route("/api/groups", createGroupRoutes(groupConversations, requireUser));
-  app.route("/", copilot.handler);
+  if (!managed) {
+    app.route(
+      "/api/channels",
+      createChannelRoutes(
+        channelStore,
+        requireUser,
+        undefined,
+        createAuditStore(db),
+      ),
+    );
+    app.route("/api/channels", createChannelAttachmentRoutes(db, requireUser));
+    app.route("/api/attachments", createAttachmentRoutes(db, requireUser));
+    app.route(
+      "/api/approvals",
+      createApprovalRoutes(
+        createApprovalService(createApprovalStore(db)),
+        requireUser,
+      ),
+    );
+    app.route(
+      "/api/routines",
+      createRoutineRoutes(routineStore, requireUser, { runner: routineRunner }),
+    );
+    app.route(
+      "/api/groups",
+      createGroupRoutes(groupConversations, requireUser),
+    );
+    app.route("/", copilot.handler);
+  }
   return Object.assign(app, {
     copilotHandler: copilot.handler,
     sweepLearning: copilot.sweepLearning,
