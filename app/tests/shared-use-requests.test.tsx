@@ -10,7 +10,7 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SharedUseRequests } from "../src/components/approvals/shared-use-requests";
 
@@ -84,8 +84,12 @@ describe("Shared account requests", () => {
     expect(
       await view.findByText("Helpdesk wants the shared Team GitHub account"),
     ).toBeTruthy();
-    expect(view.getByText("Now: Only its owner")).toBeTruthy();
-    expect(view.getByText("Asked: Everyone, and outside input")).toBeTruthy();
+    expect(view.getByText("Current access: Only its owner")).toBeTruthy();
+    expect(
+      view.getByText(
+        "Requested access: Everyone. The Bot may use this account when triggered by outside events",
+      ),
+    ).toBeTruthy();
     expect(
       view.getByText(
         "An action was blocked. This Bot reaches more people than approved.",
@@ -97,7 +101,14 @@ describe("Shared account requests", () => {
     role = "admin";
     const view = draw();
     await userEvent.click(await view.findByRole("button", { name: "Approve" }));
-    expect(posted).toEqual(["/api/approvals/shared-use/r1/approve"]);
+    expect(posted).toEqual([]);
+    const confirmation = await view.findByRole("alertdialog");
+    await userEvent.click(
+      within(confirmation).getByRole("button", { name: "Approve request" }),
+    );
+    await waitFor(() =>
+      expect(posted).toEqual(["/api/approvals/shared-use/r1/approve"]),
+    );
   });
 
   test("a request another admin already answered says so", async () => {
@@ -105,8 +116,14 @@ describe("Shared account requests", () => {
     alreadyDecided = true;
     const view = draw();
     await userEvent.click(await view.findByRole("button", { name: "Decline" }));
+    const confirmation = await view.findByRole("alertdialog");
+    await userEvent.click(
+      within(confirmation).getByRole("button", { name: "Decline request" }),
+    );
     expect(
-      await view.findByText("That request has already been decided."),
+      await view.findByText(
+        "This request is no longer awaiting a decision. Close this dialog to review the list.",
+      ),
     ).toBeTruthy();
   });
 

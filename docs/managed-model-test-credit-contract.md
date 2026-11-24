@@ -23,12 +23,12 @@ OpenBot sends the executing Person's bound bearer token on every request. The co
 
 | Endpoint | Request | Response |
 | --- | --- | --- |
-| `GET /v1/quote` | No body | Published default `route` and publication `priceVersion`. The ledger checks the configured route against that version at reservation. |
-| `POST /v1/reserve` | `operationId`, `applicationId: "openbot"`, `creditType: "test"`, `route`, `priceVersion`, `resumable: false` | `reserved` with an opaque `permit`, `existing` for a recorded operation, or `denied` with `reason` |
+| `GET /v1/quote` | | The current publication's Test Credit quote: `route`, `priceVersion`, `price` and `maxChargeMicrocredits`. 404 when no route is published. |
+| `POST /v1/reserve` | `operationId`, `route`, `priceVersion` from the quote, `applicationId: "openbot"`, `creditType: "test"`, `resumable: false`, and `budgetId` with `stepId` for a step under an execution budget | `reserved` with an opaque `permit`, `existing` for a recorded operation, or `denied` with `reason` |
 | `POST /v1/dispatch` | `operationId`, `permit`, `messages` (roles and text) | `completed` with `text`, `reconciling` if the supplier may have been reached, or `denied` with `reason` |
 | `POST /v1/reconcile` | `operationId` | `pending`, `settled`, `released` or `absent` |
 
-Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized`, `route_unavailable`, `pilot_closed` and `unavailable`. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
+Denial reasons are `insufficient_credits`, `execution_limit`, `not_authorized` and `route_unavailable`. A new reservation is also refused with `pilot_closed` once the trial's wind-down switch is set, and with `unavailable` while a restore from backup holds the account. `resumable: false` tells the ledger that nothing retries this operation by its ID, so a refusal leaves no resume point behind: a person who was refused sends again, as a new operation. Reconciliation accepts only an operation ID. Usage and prices come from trusted service records. OpenBot asks for reconciliation after dispatch, on ambiguous reservation responses and when an existing operation needs recovery.
 
 ## Direct-chat Run recovery
 

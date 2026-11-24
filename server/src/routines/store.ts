@@ -125,6 +125,7 @@ export type Routine = {
   title: string | null;
   /** The goal it runs, when it was made for one or its firing ran one. See `routineRunsGoal`. */
   goalId: string | null;
+  budgetId: string | null;
   cron: string;
   timezone: string;
   enabled: boolean;
@@ -194,6 +195,7 @@ export type RoutineInput = {
    * id the instruction names, if any. Never found from a title: see `routineRunsGoal`.
    */
   goalId?: string;
+  budgetId?: string;
   cron: string;
   timezone?: string;
 };
@@ -213,6 +215,7 @@ export type RoutineRunContext = {
   agentId: string;
   channelId: string;
   instruction: string;
+  budgetId?: string | null;
   /**
    * Read at the moment of running, so a routine switched off after its firing was dispatched (or a
    * Run now that raced a pause) is closed as skipped instead of run. Paused never runs.
@@ -300,6 +303,7 @@ export type RoutineStore = {
   advanceNextRun(id: string, from: Date, computeFrom?: Date): Promise<boolean>;
   /** Open a run row. Its status stays null until something finishes it. */
   insertRun(routineId: string, firingKey?: string): Promise<{ runId: string }>;
+  reopenBillingRun?(runId: string): Promise<boolean>;
   /**
    * The runner's read: an opened run row, joined to the routine it fires.
    *
@@ -318,7 +322,7 @@ export type RoutineStore = {
    */
   routineForFiring(
     id: string,
-  ): Promise<{ id: string; enabled: boolean } | null>;
+  ): Promise<{ id: string; enabled: boolean; budgetId?: string | null } | null>;
   /** Close a run row with its outcome, and the capped error when there was one. */
   finishRun(
     runId: string,
@@ -371,6 +375,7 @@ function toRoutine(row: RoutineRow): Routine {
     instruction: row.instruction,
     title: row.title,
     goalId: row.goalId,
+    budgetId: row.budgetId,
     cron: row.cron,
     timezone: row.timezone,
     enabled: row.enabled,
@@ -896,6 +901,7 @@ export function createRoutineStore(database: Database): RoutineStore {
               instruction,
               title,
               goalId: goal?.id ?? null,
+              budgetId: input.budgetId ?? null,
               cron: input.cron,
               timezone,
               nextRunAt,
@@ -1205,7 +1211,7 @@ export function createRoutineStore(database: Database): RoutineStore {
       await database
         .insert(routineRuns)
         .values({ id: runId, routineId })
-        .onConflictDoNothing();
+        .onConflictDoNothing({ target: routineRuns.id });
       return { runId };
     },
 
@@ -1256,6 +1262,7 @@ export function createRoutineStore(database: Database): RoutineStore {
           agentId: routines.agentId,
           channelId: routines.channelId,
           instruction: routines.instruction,
+          budgetId: routines.budgetId,
           enabled: routines.enabled,
         })
         .from(routineRuns)
@@ -1274,11 +1281,35 @@ export function createRoutineStore(database: Database): RoutineStore {
       // A single select, not owner-scoped — the sweep's read, like `dueRoutines`. A routine id here
       // comes from a work item's own payload, not from a person, so there is no owner to check.
       const [row] = await database
-        .select({ id: routines.id, enabled: routines.enabled })
+        .select({
+          id: routines.id,
+          enabled: routines.enabled,
+          budgetId: routines.budgetId,
+        })
         .from(routines)
         .where(eq(routines.id, id))
         .limit(1);
       return row ?? null;
+    },
+
+    async reopenBillingRun(runId) {
+      const [row] = await database
+        .update(routineRuns)
+        .set({
+          status: null,
+          error: null,
+          finishedAt: null,
+          startedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(routineRuns.id, runId),
+            sql`(${routineRuns.status} = 'skipped' or
+            (${routineRuns.status} = 'waiting' and ${routineRuns.error} ~ ' Operation [0-9a-f]{64}$'))`,
+          ),
+        )
+        .returning({ id: routineRuns.id });
+      return Boolean(row);
     },
 
     async finishRun(runId, status, error, waiting) {

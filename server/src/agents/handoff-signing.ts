@@ -18,6 +18,7 @@ export function handoffDeliveryRunAssertion(
     botId: work.toBotId,
     actorId: work.actorId,
     runId,
+    ...(work.budgetId ? { budgetId: work.budgetId } : {}),
     threadId: work.threadId,
     depth: work.depth,
     ...(work.initiator ? { initiator: work.initiator } : {}),

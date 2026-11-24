@@ -139,7 +139,11 @@ export type ApprovalCandidate = {
   ownConnectionRead?: true;
   /** The caller requires a fresh one-time answer even when a standing rule would allow the write. */
   requireOneTime?: true;
-  dispatch?: "explicit" | "corsair-slack-goal" | "corsair-shared-goal";
+  dispatch?:
+    | "budgeted"
+    | "explicit"
+    | "corsair-slack-goal"
+    | "corsair-shared-goal";
   /**
    * The app marks this tool as destroying something: MCP's `destructiveHint`, or a broker's
    * destructive flag, as recorded when the app was listed (`mcpTools.destructive`). It asks as

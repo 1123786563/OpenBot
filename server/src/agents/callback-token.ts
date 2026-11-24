@@ -79,6 +79,11 @@ export type RunAssertion = {
   actorId: string;
   /** The run itself, so a trail can tie a tool call to the answer it informed. */
   runId: string;
+  /** The shared Test Credit execution budget for every descendant run. */
+  budgetId?: string;
+  /** Host-owned identity of a recorded model decision, stable across Run attempts. */
+  coordinationOperationId?: string;
+  billingTaskId?: string;
   /**
    * The conversation this run belongs to.
    *
@@ -185,6 +190,9 @@ export function readRunAssertion(
       botId: payload.botId,
       actorId: payload.actorId,
       runId: payload.runId,
+      ...(typeof payload.budgetId === "string" && payload.budgetId
+        ? { budgetId: payload.budgetId }
+        : {}),
       ...(typeof payload.threadId === "string" && payload.threadId
         ? { threadId: payload.threadId }
         : {}),

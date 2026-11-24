@@ -1116,6 +1116,7 @@ async function ask(
 export function createAuditAskRoutes(options: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   complete: ModelCompleter;
+  platformBudgetId?: string;
   vocabulary: () => Promise<AuditVocabulary>;
   auditStore?: AuditStore;
   /** For a test. Defaults to the clock. */
@@ -1163,12 +1164,32 @@ export function createAuditAskRoutes(options: {
           })
         : Promise.resolve();
 
+    const budgetId = options.platformBudgetId;
+    const complete: ModelCompleter = budgetId
+      ? (() => {
+          const runId = crypto.randomUUID();
+          let call = 0;
+          return (prompt, signal, modelOptions) =>
+            options.complete(prompt, signal, {
+              ...modelOptions,
+              billing: {
+                source: "admin",
+                personId: actor.id,
+                conversationId: "audit-trail",
+                botId: "audit-ask",
+                runId,
+                step: `audit-ask-${++call}`,
+                funding: { kind: "platform", budget: { id: budgetId } },
+              },
+            });
+        })()
+      : options.complete;
     try {
       const answer = await answerAuditQuestion({
         question,
         asked,
         vocabulary: await options.vocabulary(),
-        complete: options.complete,
+        complete,
         signal: context.req.raw.signal,
       });
       await record({

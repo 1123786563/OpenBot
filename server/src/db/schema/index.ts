@@ -19,6 +19,7 @@ export * from "./learning";
 export * from "./lifecycle";
 export * from "./memory";
 export * from "./opik";
+export * from "./paid-credit";
 export * from "./passwords";
 export * from "./personal-saas";
 export * from "./plugins";

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createManagedModel } from "../src/managed-model";
+import { createManagedModel } from "../src/managed-model-trial";
 import { createReflectModelGateway } from "../src/memory/reflect-model";
 
 test("a Hindsight model callback uses authenticated run scope and Test Credit admission", async () => {

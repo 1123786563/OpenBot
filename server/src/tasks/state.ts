@@ -239,11 +239,13 @@ export function waitingLine(
 export const FAILED_LINE = ":failed";
 /** The suffix of the person's ask, recorded as their line when a task's turn starts. */
 export const ASK_LINE = ":input";
+export const BILLING_LINE = ":billing";
 
 export type TaskRow = typeof botTasks.$inferSelect;
 
 /** What a task's conversation is doing, and its thread, as one read of the ledgers found them. */
 export type TaskState = {
+  billingOperationId?: string;
   /** The person's "done", unless a turn accepted after it superseded it. */
   resolvedAt: Date | null;
   /** What the effective turn was asked, so Try again asks the same. */
@@ -576,7 +578,18 @@ export async function readTaskStates(
       }
       continue;
     }
-    if (turn.finished) continue;
+    if (turn.finished) {
+      const operationId = turn.input?.billingOperationId;
+      if (
+        row.budgetId &&
+        !entry.resolvedAt &&
+        typeof operationId === "string"
+      ) {
+        entry.billingOperationId = operationId;
+        entry.needsInput = true;
+      }
+      continue;
+    }
     // Working while queued, running, or below the attempt cap after a throw or restart.
     if (turn.live || turn.attempts < TASK_RUNS) {
       entry.working = true;

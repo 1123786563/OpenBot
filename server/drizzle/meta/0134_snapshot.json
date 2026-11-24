@@ -1,6 +1,6 @@
 {
-  "id": "f8f7ac0c-372a-4425-91f7-f8e64d2abc14",
-  "prevId": "c349e991-bd36-4c68-a5a0-ad95bdfb17e9",
+  "id": "a308fceb-a138-4856-8a04-602e1b482011",
+  "prevId": "dcdc314d-52df-4aa9-9dda-b7014036d587",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2285,6 +2285,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "budget_id": {
+          "name": "budget_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -7629,6 +7635,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "budget_id": {
+          "name": "budget_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -8789,12 +8801,6 @@
             "as": "case when group_thread_id is null then thread_id end",
             "type": "stored"
           }
-        },
-        "dispatched_skill_versions": {
-          "name": "dispatched_skill_versions",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16055,6 +16061,24 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "budget_id": {
+          "name": "budget_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "step_id": {
+          "name": "step_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result_text": {
+          "name": "result_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -16123,6 +16147,33 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "test_credit_operations_budget_idx": {
+          "name": "test_credit_operations_budget_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "budget_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -16161,6 +16212,21 @@
           "columnsFrom": [
             "account_id",
             "external_authorization_id"
+          ],
+          "columnsTo": [
+            "account_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "test_credit_budget_fk": {
+          "name": "test_credit_budget_fk",
+          "tableFrom": "test_credit_operations",
+          "tableTo": "test_credit_budgets",
+          "columnsFrom": [
+            "account_id",
+            "budget_id"
           ],
           "columnsTo": [
             "account_id",
@@ -16913,107 +16979,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.direct_chat_skill_shares": {
-      "name": "direct_chat_skill_shares",
-      "schema": "",
-      "columns": {
-        "proposal_id": {
-          "name": "proposal_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recipient_id": {
-          "name": "recipient_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "direct_chat_skill_shares_recipient_idx": {
-          "name": "direct_chat_skill_shares_recipient_idx",
-          "columns": [
-            {
-              "expression": "recipient_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "direct_chat_skill_shares_proposal_id_direct_chat_proposal_reviews_proposal_id_fk": {
-          "name": "direct_chat_skill_shares_proposal_id_direct_chat_proposal_reviews_proposal_id_fk",
-          "tableFrom": "direct_chat_skill_shares",
-          "tableTo": "direct_chat_proposal_reviews",
-          "columnsFrom": [
-            "proposal_id"
-          ],
-          "columnsTo": [
-            "proposal_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "direct_chat_skill_shares_recipient_id_users_id_fk": {
-          "name": "direct_chat_skill_shares_recipient_id_users_id_fk",
-          "tableFrom": "direct_chat_skill_shares",
-          "tableTo": "users",
-          "columnsFrom": [
-            "recipient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "direct_chat_skill_shares_thread_id_intelligence_channel_mappings_thread_id_fk": {
-          "name": "direct_chat_skill_shares_thread_id_intelligence_channel_mappings_thread_id_fk",
-          "tableFrom": "direct_chat_skill_shares",
-          "tableTo": "intelligence_channel_mappings",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "direct_chat_skill_shares_proposal_id_recipient_id_pk": {
-          "name": "direct_chat_skill_shares_proposal_id_recipient_id_pk",
-          "columns": [
-            "proposal_id",
-            "recipient_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.approval_team_rule_saves": {
       "name": "approval_team_rule_saves",
       "schema": "",
@@ -17071,6 +17036,229 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.test_credit_budgets": {
+      "name": "test_credit_budgets",
+      "schema": "",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credit_type": {
+          "name": "credit_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "limit_microcredits": {
+          "name": "limit_microcredits",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "test_credit_budgets_account_fk": {
+          "name": "test_credit_budgets_account_fk",
+          "tableFrom": "test_credit_budgets",
+          "tableTo": "test_credit_accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "test_credit_budgets_pk": {
+          "name": "test_credit_budgets_pk",
+          "columns": [
+            "account_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "test_credit_budget_credit_type": {
+          "name": "test_credit_budget_credit_type",
+          "value": "\"credit_type\" = 'test'"
+        },
+        "test_credit_budget_state": {
+          "name": "test_credit_budget_state",
+          "value": "\"state\" IN ('active', 'paused', 'completed')"
+        },
+        "test_credit_budget_limit_positive": {
+          "name": "test_credit_budget_limit_positive",
+          "value": "\"limit_microcredits\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.lago_usage_events": {
+      "name": "lago_usage_events",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource": {
+          "name": "resource",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_microcredits": {
+          "name": "amount_microcredits",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "failure": {
+          "name": "failure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "lago_usage_events_pending_idx": {
+          "name": "lago_usage_events_pending_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lago_usage_events_account_id_test_credit_accounts_id_fk": {
+          "name": "lago_usage_events_account_id_test_credit_accounts_id_fk",
+          "tableFrom": "lago_usage_events",
+          "tableTo": "test_credit_accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "lago_usage_events_account_id_operation_id_unique": {
+          "name": "lago_usage_events_account_id_operation_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "account_id",
+            "operation_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "lago_usage_events_amounts": {
+          "name": "lago_usage_events_amounts",
+          "value": "\"lago_usage_events\".\"input_tokens\" >= 0 AND \"lago_usage_events\".\"output_tokens\" >= 0 AND \"lago_usage_events\".\"amount_microcredits\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     }
   },

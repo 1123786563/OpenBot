@@ -233,7 +233,7 @@ const personalSaasMigrations = [
   [
     "0119_approval_team_rule_saves",
     "70e3f715230bc2bdd7adee874dd5c965fe37d498f6e8d74a53738cc0bef0bf8a",
-    1795520000000,
+    1795415414732,
   ],
 ] as const;
 
@@ -247,6 +247,134 @@ const intelligenceSkillMigrations = [
     "0113_direct_chat_dispatched_skill_versions",
     "51b9f4636b47ee64c81bba5d9680bb239d0cbf448ca5d488bf686c89cd8646b4",
     1795445478392,
+  ],
+] as const;
+
+const billingMigrations = [
+  [
+    "0120_test_credit_execution_budgets",
+    "4a2d8ec221556b8a646eafd3ec5dbd9b1b430d06ebd3f236333e59e27576fd7b",
+    1795415414735,
+  ],
+  [
+    "0121_lago_usage_events",
+    "312cae12c893c36010415bd52520e105a6bbc3625e8ee115ece30f581417fc7f",
+    1795415414736,
+  ],
+  [
+    "0122_pilot_provider_cost_limits",
+    "b3700385f22f0545007d22db1de4cf841e85c02fd66eb20dc5b89a8289f82596",
+    1795415414737,
+  ],
+  [
+    "0123_paid_credit_ledger",
+    "e625831e9b6f83f76f494899f2f2e51575528895847ab2335221bae75bf4b414",
+    1795415414738,
+  ],
+  [
+    "0124_paid_credit_allocations",
+    "cf9cd92d84ded23fae4574d96cd1dd545a324b0907ae51f17d7d066c51b42f9b",
+    1795415414739,
+  ],
+  [
+    "0125_operation_paid_shares",
+    "34014c8765c4a0b41af93b6aedbba27a24b4817024337353d7ca7210aa55bb13",
+    1795415414740,
+  ],
+  [
+    "0126_allocation_consumed_amounts",
+    "304d2eaa4827ee514ab7124e4729a7093e12237ad805881d95be75a744eff1de",
+    1795415414741,
+  ],
+  [
+    "0127_paid_refunds_and_suspension",
+    "0a9ce1001c2314b140920a81af66a75d075245d4b9dbc7fc5326c347dcdb0ec5",
+    1795415414742,
+  ],
+  [
+    "0128_dispute_manual_review",
+    "ffac7473e9a7dd03938123a6ed1245add8ad56d0509f0b01b7313783bbde66c0",
+    1795415414743,
+  ],
+  [
+    "0129_paid_corrections",
+    "a89bba0abdd3eef5bfd8a22bd5482e52b19b350ecbd6d0e6dabeac5612765cc8",
+    1795415414744,
+  ],
+  [
+    "0130_pilot_closure_and_budget_types",
+    "c2a36e11e71af75010320a4ba28292565c034bc3dca0362d7d6ba89d1a0ff221",
+    1795415414745,
+  ],
+  [
+    "0131_resume_points_and_app",
+    "7c3ac130341cedd7b1088e596c6208dab0e071d36a49cba44718812504f8d0e8",
+    1795415414746,
+  ],
+  [
+    "0132_app_paths_restore_and_channel_evidence",
+    "8dbd83ab042f0677e3ed9b1daf7f049ca858ee4fad9ccbd0d6e87872056d4874",
+    1795415414747,
+  ],
+  [
+    "0133_direct_chat_test_credit",
+    "c26f68803aa03394470689682b0121c12d87ef5cac5e7f1d120dd939020f375e",
+    1795415414748,
+  ],
+  [
+    "0134_bifrost_reconciliation",
+    "fb6581d8b833199f33c8335d7478a2c1e41ea8f9030f534872642e3887f7ffb8",
+    1795415414749,
+  ],
+  [
+    "0135_background_model_budget_quote",
+    "ffa7724ea82fb5309e4ad26371a684c903c4e08c515d62317cf9f0f99baab939",
+    1795415414750,
+  ],
+  [
+    "0136_coordination_budget_ancestry",
+    "9bb4ba72a4d4aa287a0d7c02413992fbb94dbe55a55cc54efe4af5c75db101fb",
+    1795415414751,
+  ],
+  [
+    "0137_shared_pilot_provider_cost",
+    "86f5c942795d2106ecf41e281982eca5e56175f2e4bf49d000f3a9ff792925fc",
+    1795415414752,
+  ],
+  [
+    "0138_credit_pack_checkout",
+    "9088686cea4d7c054cc0592d91b79aeab16c7b1eabeb960eed457c3d6961defb",
+    1795418391864,
+  ],
+  [
+    "0139_paid_order_disputes",
+    "c27d5d2858a8236c18a80bf576bd0a0a61e0e83fe66b1a72627f863e8780f8d2",
+    1795422552671,
+  ],
+  [
+    "0140_checkout_switch_and_suspension_history",
+    "873e7178b43d9168d0e292c6bb7574b3faf7af76a98650254a535409afb2f2bf",
+    1795424497937,
+  ],
+  [
+    "0141_paid_correction_balance",
+    "43c5db9e5e1bd1622e4aefb7645ba89d1a6b4a3186f5ffb4f31e0d25a7e4ebdf",
+    1795424551038,
+  ],
+  [
+    "0142_billing_pilot_signoffs",
+    "86635b0451ac30a5c6211ef179d1d86ccf8b229ec5d03647216a6537d1ea2e42",
+    1795431037811,
+  ],
+  [
+    "0143_background_tool_results",
+    "6176620b0ce3651075b184cd2eeb0fc4dd39ef2bbc114e2d8eb678768ac431f0",
+    1795435400991,
+  ],
+  [
+    "0144_billing_paid_path_policy",
+    "67fd31bfc11491cd310a056b8c8ad763d705a562b6523c4e5094065e9f73968e",
+    1795443105536,
   ],
 ] as const;
 
@@ -276,6 +404,7 @@ export function canMergeMigrationHistories(
     ...bifrostMigrations,
     ...personalSaasMigrations,
     ...intelligenceSkillMigrations,
+    ...billingMigrations,
   ].map(([tag, hash, when]) => ({ tag, hash, when }));
   const byTag = new Map(folder.map((entry) => [entry.tag, entry]));
   if (
@@ -308,6 +437,7 @@ export function canMergeMigrationHistories(
       ...corsairMigrations,
       ...bifrostMigrations,
       ...personalSaasMigrations,
+      ...billingMigrations,
     ],
   ];
   const prefixLength = applied.length - base.length;

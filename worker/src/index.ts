@@ -17,6 +17,14 @@
  * tries again on the next tick. So every phase below gets its own try/catch, and nothing here ever
  * lets a phase's error reach the top and take the process down.
  */
+import {
+  loadBifrostEvidenceReader,
+  recoverBifrostEvidence,
+} from "../../server/src/billing/bifrost-evidence";
+import { directChatCasdoorProvider } from "../../server/src/billing/direct-chat-test-credit-config";
+import { createDirectChatCreditRecovery } from "../../server/src/billing/direct-chat-test-credit-recovery";
+import { loadLagoUsageExporter } from "../../server/src/billing/lago-usage";
+import { createTestCreditLedger } from "../../server/src/billing/test-credit";
 import { createDatabase } from "../../server/src/db/client";
 import { createRoutineStore } from "../../server/src/routines/store";
 import {
@@ -57,6 +65,18 @@ const { workerSharedSecret, serverInternalUrl, databaseUrl, owner } =
   environment;
 
 const database = createDatabase(databaseUrl);
+const casdoor = directChatCasdoorProvider(process.env);
+const testCreditLedger = createTestCreditLedger(database);
+const readBifrostEvidence = casdoor && loadBifrostEvidenceReader(process.env);
+const recoverBilledConversations =
+  casdoor &&
+  createDirectChatCreditRecovery(database, testCreditLedger, casdoor);
+let lagoUsage: ReturnType<typeof loadLagoUsageExporter>;
+try {
+  lagoUsage = loadLagoUsageExporter(database, process.env);
+} catch {
+  writeRuntimeLog("lago_usage_export_failed");
+}
 const queue = createWorkQueue(database);
 const routineStore = createRoutineStore(database);
 writeRuntimeLog("worker_started");
@@ -140,6 +160,22 @@ async function runOneTick(): Promise<void> {
     });
   }
 
+  if (readBifrostEvidence) {
+    try {
+      await recoverBifrostEvidence(testCreditLedger, readBifrostEvidence);
+    } catch {
+      writeRuntimeLog("bifrost_evidence_recovery_failed");
+    }
+  }
+
+  if (recoverBilledConversations) {
+    try {
+      await recoverBilledConversations();
+    } catch {
+      writeRuntimeLog("billed_conversation_recovery_failed");
+    }
+  }
+
   // The purge phase, on its own much longer cadence and its own try/catch: a purge failure this hour
   // is worth logging and retrying next hour, not a reason to stop offering and firing routines.
   // Also on the very first tick: a laptop restarted every 40 minutes would otherwise never survive
@@ -153,6 +189,15 @@ async function runOneTick(): Promise<void> {
       writeRuntimeLog("routine_queue_purged", { purged });
     } catch {
       writeRuntimeLog("routine_queue_purge_failed");
+    }
+  }
+  if (lagoUsage) {
+    try {
+      const { unavailable, paused } = await lagoUsage.flush();
+      if (unavailable) writeRuntimeLog("lago_usage_export_failed");
+      if (paused > 0) writeRuntimeLog("lago_usage_export_paused");
+    } catch {
+      writeRuntimeLog("lago_usage_export_failed");
     }
   }
 }

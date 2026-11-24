@@ -21,6 +21,11 @@ import {
   useConversationQuestion,
 } from "@/components/approvals/question-notice";
 import { ChannelWorkRows } from "@/components/channels/channel-work";
+import {
+  type ChatCreditReceipt,
+  chatCreditReceipt,
+  useChatCreditConfirmation,
+} from "@/components/channels/chat-credit-confirmation";
 import { attachmentModality } from "@/components/channels/chat-messages";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ModelPicker } from "@/components/channels/composer/model-picker";
@@ -28,6 +33,7 @@ import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { FirstMessageDraftCopy } from "@/components/channels/first-message-draft-copy";
 import { ProgressRow } from "@/components/channels/progress-row";
+import { TestCreditModelPicker } from "@/components/channels/test-credit-model-picker";
 import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
@@ -44,6 +50,7 @@ import {
   carryingOnAfterApproval,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { conversationCreditQuoteQueryOptions } from "@/lib/billing/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import {
   recordChannelActivityMutationOptions,
@@ -91,8 +98,10 @@ import {
   type StoredRun,
   withCurrentA2uiVersions,
 } from "@/lib/copilot/thread-messages";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
 import { useConversationModel } from "@/lib/models/run-model";
+import { testCreditModelQuery } from "@/lib/models/test-credit-model";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import { publishedSandboxedQueryOptions } from "@/lib/sandboxed/queries";
 import {
@@ -553,6 +562,13 @@ export function ChannelChat({
   }, [agent, runtimeAgentId, queries]);
 
   const { data: user } = useQuery(currentUserQueryOptions());
+  const { data: deployment } = useQuery(deploymentCapabilitiesQueryOptions());
+  const { confirmCredit, creditDialog } = useChatCreditConfirmation();
+  const [creditReceipt, setCreditReceipt] = useState<ChatCreditReceipt>();
+  const managedDraft = useRef<
+    { threadId: string; text: string; message: Message } | undefined
+  >(undefined);
+
   const ownerId = user?.id;
   const firstOwner = useRef(ownerId);
   firstOwner.current = ownerId;
@@ -1239,6 +1255,14 @@ export function ChannelChat({
       voiceSignal?: AbortSignal;
       beforeFirstSend?: () => Promise<void>;
     },
+    credit?: {
+      testCreditQuote?: {
+        route: string;
+        priceVersion: string;
+        creditType?: "paid";
+      };
+      rerunOfMessageId?: string;
+    },
   ) => {
     // Wait briefly for the runtime agent instance before adding the message.
     if (!isReadyRef.current) {
@@ -1337,7 +1361,11 @@ export function ChannelChat({
         ...target.messages.filter((message) => message.id !== sent.id),
         sent,
       ]);
-    } else {
+    } else if (
+      !credit ||
+      !sent ||
+      !target.messages.some(({ id }) => id === sent.id)
+    ) {
       target.addMessage(
         sent ?? {
           content: toMessageContent(trimmed, attachments),
@@ -1382,7 +1410,12 @@ export function ChannelChat({
        */
       for (let carriedOn = false; ; carriedOn = true) {
         await withVoiceContext(copilotkit, target.agentId, voiceHistory, () =>
-          whileObserved(target, () => copilotkit.runAgent({ agent: target })),
+          whileObserved(target, () =>
+            copilotkit.runAgent({
+              agent: target,
+              ...(credit ? { forwardedProps: credit } : {}),
+            }),
+          ),
         );
         if (!streamBroke.current || turnFailure.current !== null) break;
         streamBroke.current = false;
@@ -1472,6 +1505,7 @@ export function ChannelChat({
       voiceSignal?: AbortSignal;
       beforeFirstSend?: () => Promise<void>;
     } = {},
+    creditAction?: { kind: "check" | "rerun"; message: Message },
   ) => {
     const trimmed = text.trim();
     // A pasted screenshot with no caption is still a message to send: `canSendDraft` already
@@ -1497,7 +1531,60 @@ export function ChannelChat({
       void setChannelBusy({ channelId: channel.id, busy: true });
     }
     try {
-      const reply = await deliver(trimmed, attachments, options);
+      let { sent } = options;
+      let credit: Parameters<typeof deliver>[3];
+      if (deployment?.testCreditConversations) {
+        if (attachments.length > 0)
+          throw new Error("Test Credit Conversations accept text messages.");
+        const previous = managedDraft.current;
+        if (creditAction?.kind === "check") {
+          sent = creditAction.message;
+          credit = {};
+        } else {
+          const rerun = creditAction?.kind === "rerun";
+          const quote = await queries
+            .fetchQuery(
+              conversationCreditQuoteQueryOptions(
+                channel.threadId,
+                runtimeAgentId,
+              ),
+            )
+            .catch((error: unknown) => {
+              void queries.invalidateQueries(
+                testCreditModelQuery(runtimeAgentId, channel.threadId),
+              );
+              throw error;
+            });
+          const creditType = await confirmCredit(quote, rerun);
+          if (!creditType) throw new Error("Send cancelled.");
+          credit = {
+            testCreditQuote: {
+              route: quote.route,
+              priceVersion: quote.priceVersion,
+              ...(creditType === "paid" ? { creditType } : {}),
+            },
+            rerunOfMessageId: rerun ? creditAction.message.id : undefined,
+          };
+          sent ??=
+            !rerun &&
+            previous?.threadId === channel.threadId &&
+            previous.text === trimmed
+              ? previous.message
+              : { id: newId(), role: "user", content: trimmed };
+        }
+        managedDraft.current = {
+          threadId: channel.threadId,
+          text: trimmed,
+          message: sent,
+        };
+      }
+      const reply = await deliver(
+        trimmed,
+        attachments,
+        { ...options, sent },
+        credit,
+      );
+      if (credit) managedDraft.current = undefined;
       /*
        * The person left while this turn was running (holding control of the Bot's browser, say) and the turn went on
        * without this screen. The run-finished subscription that tells the roster what the Bot said went with it, so the
@@ -1527,6 +1614,23 @@ export function ChannelChat({
     }
   };
 
+  const creditMessage = agent.messages.findLast(
+    (message) => message.role === "user",
+  );
+  const runCreditAction = async (kind: "check" | "rerun") => {
+    if (creditMessage?.id !== creditReceipt?.userMessageId || !creditMessage)
+      return;
+    try {
+      await say(messageText(creditMessage), [], undefined, {
+        kind,
+        message: creditMessage,
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "Send cancelled.")
+        setRunError(stoppedReason(error));
+    }
+  };
+
   useEffect(() => {
     /*
      * `laterRun` is a RUN_ERROR from a run of a turn still going here after its first run has
@@ -1546,7 +1650,23 @@ export function ChannelChat({
     const subscription = agent.subscribe?.({
       // Both surfaces fall back to the same sentence, from the same place, so a person who uses
       // both is not told two different things about the same silence.
-      onRunErrorEvent: ({ event }) => fail(stoppedReason(event?.message), true),
+      onRunErrorEvent: ({ event }) => {
+        if (
+          event?.code &&
+          !["reconciling", "settled", "released"].includes(event.code)
+        )
+          managedDraft.current = undefined;
+        if (event?.code === "route_unavailable")
+          void queryClient.invalidateQueries(
+            testCreditModelQuery(runtimeAgentId, channel.threadId),
+          );
+        fail(stoppedReason(event?.message), true);
+      },
+      onCustomEvent: ({ event }) => {
+        if (event.name !== "openbot-test-credit-receipt") return;
+        const receipt = chatCreditReceipt(event.value);
+        if (receipt) setCreditReceipt(receipt);
+      },
       onRunFailed: ({ error }) => {
         /*
          * Not the Bot failing: the run's stream reached this browser out of shape, in any run of a
@@ -1598,7 +1718,7 @@ export function ChannelChat({
       },
     });
     return () => subscription?.unsubscribe();
-  }, [agent, runtimeAgentId]);
+  }, [agent, channel.threadId, runtimeAgentId]);
 
   /** Stable reference for effects and component callbacks. */
   /*
@@ -1901,15 +2021,23 @@ export function ChannelChat({
             // The `/` menu exposes only skills granted to this Bot.
             commands={skillCommands}
             modelPicker={
-              <ModelPicker
-                catalogue={
-                  botProfile?.runsOnOpenBotModel ? models.data : undefined
-                }
-                disabled={!channel.active}
-                onChange={runModel.choose}
-                saving={runModel.saving}
-                value={runModel.value}
-              />
+              deployment?.testCreditConversations ? (
+                <TestCreditModelPicker
+                  botId={runtimeAgentId}
+                  threadId={channel.threadId}
+                  disabled={!channel.active || turnsInFlight > 0}
+                />
+              ) : (
+                <ModelPicker
+                  catalogue={
+                    botProfile?.runsOnOpenBotModel ? models.data : undefined
+                  }
+                  disabled={!channel.active}
+                  onChange={runModel.choose}
+                  saving={runModel.saving}
+                  value={runModel.value}
+                />
+              )
             }
             disabled={
               !channel.active || Boolean(first) || Boolean(unresolvedRun)
@@ -2023,6 +2151,34 @@ export function ChannelChat({
                 ) : null}
                 {draftDiscard}
                 {/* What the person allowed for this conversation, each with Turn off. */}
+                {creditDialog}
+                {creditReceipt &&
+                creditReceipt.userMessageId === creditMessage?.id &&
+                deployment?.testCreditConversations ? (
+                  <Stack gap={2}>
+                    <p role="status">{creditReceipt.description}</p>
+                    {channel.active && creditReceipt.canRerun ? (
+                      <Stack direction="horizontal" gap={2} wrap="wrap">
+                        {creditReceipt.pending ? (
+                          <RecoveryButton
+                            label="Check again"
+                            variant="secondary"
+                            size="sm"
+                            isDisabled={turnsInFlight > 0}
+                            onClick={() => void runCreditAction("check")}
+                          />
+                        ) : null}
+                        <RecoveryButton
+                          label="Run again"
+                          variant="secondary"
+                          size="sm"
+                          isDisabled={turnsInFlight > 0}
+                          onClick={() => void runCreditAction("rerun")}
+                        />
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                ) : null}
                 {channel.active ? (
                   <ConversationAllowances threadId={channel.threadId} />
                 ) : null}

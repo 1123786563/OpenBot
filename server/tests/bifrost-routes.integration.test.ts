@@ -6,7 +6,10 @@ import { eq, like, or } from "drizzle-orm";
 import { createBifrostAdminRoutes } from "../src/admin/bifrost-routes";
 import { createDatabase } from "../src/db/client";
 import { enterpriseSettings } from "../src/db/schema";
-import { fixtureTraceReport } from "./support/bifrost-evidence";
+import {
+  fixtureEmbeddingReport,
+  fixtureTraceReport,
+} from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 test("admin verification imports trusted evidence and publishes durable Price Versions", async () => {
@@ -62,6 +65,12 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     const { catalog } = await configure.json();
     const revision = catalog.routes.a.revision;
     const report = fixtureTraceReport(harnessImage, { ...a, revision });
+    const terminalRecord = JSON.stringify({
+      requestId: report.cancellation.upstream.requestId,
+      outcome: "cancelled",
+      terminatedAt: report.cancellation.upstream.terminal.terminatedAt,
+    });
+    report.cancellation.upstream.terminal.recordDigest = `sha256:${Bun.CryptoHasher.hash("sha256", terminalRecord, "hex")}`;
     const publish = () =>
       request("/publication", "POST", { routes: ["a"], defaultRoute: "a" });
     expect((await request("/routes/a/verify", "POST", report)).status).toBe(
@@ -82,6 +91,27 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     await Bun.write(file, JSON.stringify(report));
     expect(
       (await request("/routes/a/verify", "POST", { revision })).status,
+    ).toBe(409);
+    const terminalFile = join(dir, `${revision}.cancel.json`);
+    await Bun.write(terminalFile, "{}");
+    expect(
+      (await request("/routes/a/verify", "POST", { revision })).status,
+    ).toBe(409);
+    const wrongRecord = terminalRecord.replace(
+      report.cancellation.upstream.requestId,
+      "different-request",
+    );
+    const wrongRecordReport = structuredClone(report);
+    wrongRecordReport.cancellation.upstream.terminal.recordDigest = `sha256:${Bun.CryptoHasher.hash("sha256", wrongRecord, "hex")}`;
+    await Bun.write(file, JSON.stringify(wrongRecordReport));
+    await Bun.write(terminalFile, wrongRecord);
+    expect(
+      (await request("/routes/a/verify", "POST", { revision })).status,
+    ).toBe(409);
+    await Bun.write(file, JSON.stringify(report));
+    await Bun.write(terminalFile, terminalRecord);
+    expect(
+      (await request("/routes/a/verify", "POST", { revision })).status,
     ).toBe(200);
     const response = await publish();
     expect(response.status).toBe(201);
@@ -98,6 +128,54 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     expect(
       await (await request(`/price-versions/${release.id}`)).json(),
     ).toEqual(release);
+
+    const embed = {
+      ...a,
+      purpose: "embedding" as const,
+      maxOutputTokens: 0,
+      price: { inputPerMillion: 500_000, outputPerMillion: 0 },
+    };
+    const configured = await request("/configuration", "PUT", {
+      harnessImage,
+      routes: { embed },
+    });
+    expect(configured.status).toBe(200);
+    const embedding = await configured.json();
+    const embeddingRevision = embedding.catalog.routes.embed.revision;
+    const embeddingReport = fixtureEmbeddingReport(harnessImage, {
+      ...embed,
+      revision: embeddingRevision,
+    });
+    await Bun.write(
+      join(dir, `${embeddingRevision}.json`),
+      JSON.stringify(embeddingReport),
+    );
+    expect(
+      (
+        await request("/routes/embed/verify", "POST", {
+          revision: embeddingRevision,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request("/publication", "POST", {
+          routes: ["embed"],
+          defaultRoute: "embed",
+        })
+      ).status,
+    ).toBe(409);
+    const embeddingPublication = await request("/publication", "POST", {
+      routes: ["embed"],
+      defaultRoute: null,
+    });
+    expect(embeddingPublication.status).toBe(201);
+    expect(await embeddingPublication.json()).toMatchObject({
+      active: {
+        defaultRoute: null,
+        options: [{ purpose: "embedding", maxChargeMicrocredits: "50" }],
+      },
+    });
   } finally {
     await database.delete(enterpriseSettings).where(rows);
     await database.$client.close();

@@ -1,3 +1,4 @@
+import { type BillingQuote, billingQuoteSchema } from "@/lib/billing/queries";
 import { ClientError, tryClient } from "@/lib/client";
 
 /**
@@ -25,9 +26,15 @@ export type RoutingDecision = {
 export class CoworkerRoutingRefusedError extends Error {
   constructor(
     message: string,
-    readonly names: readonly string[],
+    readonly names: readonly string[] = [],
   ) {
     super(message);
+  }
+}
+
+export class CoworkerRoutingQuoteRequired extends CoworkerRoutingRefusedError {
+  constructor(readonly quote: BillingQuote) {
+    super("Confirm the Test Credit quote before automatic routing.");
   }
 }
 
@@ -58,6 +65,8 @@ export async function routeMessage(
   text: string,
   agentId?: string,
   skillSlugs: readonly string[] = [],
+  requestId?: string,
+  confirmation?: Pick<BillingQuote, "route" | "priceVersion">,
 ): Promise<RoutingDecision> {
   const asked = routingText(text);
   const response = await tryClient("/api/route", {
@@ -66,13 +75,24 @@ export async function routeMessage(
       text: asked,
       ...(agentId ? { agentId } : {}),
       ...(skillSlugs.length ? { skillSlugs } : {}),
+      ...(requestId ? { requestId } : {}),
+      ...(confirmation ? { confirmation } : {}),
     },
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       error?: unknown;
       names?: unknown;
+      code?: unknown;
+      quote?: unknown;
     } | null;
+    if (response.status === 409 && body?.code === "routing_quote_required") {
+      const quote = billingQuoteSchema.safeParse(body.quote);
+      if (quote.success) throw new CoworkerRoutingQuoteRequired(quote.data);
+      throw new CoworkerRoutingRefusedError(
+        "Couldn't read the routing quote. Try again.",
+      );
+    }
     const message =
       typeof body?.error === "string" ? body.error : "Couldn't pick a Bot.";
     if (

@@ -477,7 +477,8 @@ jobs:
 
   startup:
     name: startup (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    # PR startup checks only need macOS semantics. Use the Intel pool to avoid arm64 queue cancellations.
+    runs-on: ${{ github.event_name == 'pull_request' && matrix.os == 'macos-latest' && 'macos-15-intel' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:

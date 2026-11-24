@@ -14,7 +14,7 @@ import { agents, users } from "../src/db/schema/core";
 import { agentProfiles } from "../src/db/schema/coworker";
 import { memorySources, personalMemories } from "../src/db/schema/memory";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
-import { createManagedModel } from "../src/managed-model";
+import { createManagedModel } from "../src/managed-model-trial";
 import { createHindsight } from "../src/memory/hindsight";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createReflectModelGateway } from "../src/memory/reflect-model";

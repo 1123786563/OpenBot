@@ -114,12 +114,24 @@ const originalTrialStamps = [
 
 test.each([
   { startingPoint: "fresh", mainThrough: 0, trialLength: 0 },
+  { startingPoint: "current main", mainThrough: 120, trialLength: 0 },
+  { startingPoint: "merged billing PR", mainThrough: 119, trialLength: 0 },
+  { startingPoint: "future-dated main", mainThrough: 119, trialLength: 0 },
+  {
+    startingPoint: "future-dated billing PR",
+    mainThrough: 119,
+    trialLength: 0,
+  },
   { startingPoint: "pre-Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Bifrost main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "current Personal SaaS", mainThrough: 93, trialLength: 0 },
   { startingPoint: "published main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "published Intelligence", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "initial billing pilot", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "latest billing pilot", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "partial billing pilot", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "divergent billing pilot", mainThrough: 93, trialLength: 0 },
   { startingPoint: "early trial", mainThrough: 89, trialLength: 1 },
   {
     startingPoint: "full pre-direct-chat trial",
@@ -139,17 +151,47 @@ test.each([
     );
     const main = migrations.filter((entry) => !isIntelligenceMigration(entry));
     const saas = main
-      .slice(93)
-      .filter(
-        (entry) => entry.when <= 1795275600000 && !corsair.includes(entry),
-      );
+      .slice(93, 117)
+      .filter((entry) => !corsair.includes(entry));
+    const initialBilling = startingPoint === "initial billing pilot";
+    const latestBilling = startingPoint === "latest billing pilot";
+    const divergentBilling = startingPoint === "divergent billing pilot";
+    const partialBilling =
+      startingPoint === "partial billing pilot" || divergentBilling;
+    const billingPilot = initialBilling || latestBilling || partialBilling;
+    const mergedBilling = startingPoint === "merged billing PR";
+    const approvalWithFutureStamp = startingPoint.startsWith("future-dated");
+    const futureBilling = startingPoint === "future-dated billing PR";
+    const olderBillingOnly = main.slice(120, 145);
+    const billing = main.slice(110, 113).map((entry, index) => ({
+      ...entry,
+      when: (initialBilling ? 1795189761200 : 1795415414732) + index,
+    }));
     const historicalSaasOrMain = [
       ...main.slice(0, mainThrough),
-      ...(startingPoint === "Corsair main" || startingPoint === "Bifrost main"
+      ...(startingPoint === "Corsair main" ||
+      startingPoint === "Bifrost main" ||
+      billingPilot
         ? corsair
         : []),
-      ...(startingPoint === "Bifrost main" ? bifrost : []),
+      ...(startingPoint === "Bifrost main" || latestBilling || partialBilling
+        ? bifrost
+        : []),
       ...(startingPoint === "current Personal SaaS" ? saas : []),
+      ...(billingPilot ? billing.slice(0, partialBilling ? 1 : 3) : []),
+      ...(approvalWithFutureStamp
+        ? main.slice(119, 120).map((entry) => ({
+            ...entry,
+            when: 1795520000000,
+          }))
+        : []),
+      ...(latestBilling || mergedBilling ? olderBillingOnly : []),
+      ...(futureBilling
+        ? olderBillingOnly.map((entry) => ({
+            ...entry,
+            when: entry.when + 104585266,
+          }))
+        : []),
       ...saas.slice(0, trialLength).map((entry, index) => {
         const when = originalTrialStamps[index];
         if (when === undefined) throw new Error("Missing trial stamp");
@@ -158,7 +200,7 @@ test.each([
     ];
     const historical =
       startingPoint === "published main"
-        ? main.filter(({ when }) => when <= 1795520000000)
+        ? main.slice(0, 145)
         : startingPoint === "published Intelligence"
           ? migrations.filter(
               (entry) =>
@@ -190,6 +232,19 @@ test.each([
           values ('https://casdoor.example', 'participant', 'participant@example.test')`;
         await client`insert into personal_workspaces (owner_id)
           select id from personal_saas_accounts where subject = 'participant'`;
+      }
+      if (billingPilot || mergedBilling || futureBilling) {
+        await client`insert into test_credit_accounts (issuer, subject)
+          values ('https://casdoor.example', 'billing-participant')`;
+      }
+      if (divergentBilling) {
+        await client`update drizzle.__drizzle_migrations
+          set hash = repeat('0', 64) where created_at = 1795415414732`;
+        await expect(applyMigrations(client, folder)).rejects.toBeInstanceOf(
+          MigrationsOutOfReachError,
+        );
+        expect(await exists(client, "personal_saas_accounts")).toBe(false);
+        return;
       }
       if (startingPoint === "divergent trial") {
         await client`update drizzle.__drizzle_migrations set created_at = created_at + 1
@@ -223,6 +278,7 @@ test.each([
       expect(await exists(client, "skill_market_runs")).toBe(true);
       expect(await exists(client, "bifrost_market_reviews")).toBe(true);
       expect(await exists(client, "skill_market_equivalences")).toBe(true);
+      expect(await exists(client, "approval_team_rule_saves")).toBe(true);
       expect([
         ...(await client`select hash, created_at::text
         from drizzle.__drizzle_migrations order by created_at::bigint`),
@@ -232,6 +288,12 @@ test.each([
           created_at: String(when),
         })),
       );
+      if (billingPilot || mergedBilling || futureBilling) {
+        expect(
+          await client`select subject from test_credit_accounts
+            where subject = 'billing-participant'`,
+        ).toHaveLength(1);
+      }
       if (trialLength || startingPoint === "current Personal SaaS") {
         expect([
           ...(await client`select email from personal_saas_accounts

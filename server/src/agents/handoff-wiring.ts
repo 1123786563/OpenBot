@@ -4,6 +4,8 @@ import { workOwner } from "@openbot/shared/work-owner";
 import { eq, inArray } from "drizzle-orm";
 import { type AuditStore, handoffInitiator } from "../audit";
 import { BackgroundConversationBusy } from "../channels/direct-chat";
+import type { BackgroundModel } from "../billing/background-model";
+import { budgetedAgent } from "../billing/background-model-turn";
 import type { GroupConversations } from "../channels/group";
 import type { ChannelStore } from "../channels/routes";
 import type { ThreadIdentity } from "../channels/thread-identity";
@@ -105,9 +107,22 @@ export function createOpenBotHandoffDelivery(options: {
   actorFor: (personId: string) => Promise<AgentActor>;
   mayAddress: (fromBotId: string, toBotId: string) => Promise<boolean>;
   channelStore: ChannelStore;
+  backgroundModel?: BackgroundModel;
+  authorizeBudgetedWork?: Parameters<
+    typeof createHandoffDelivery
+  >[0]["authorizeBudgetedWork"];
+  coordination?: Parameters<typeof createHandoffDelivery>[0]["coordination"];
 }): HandoffDelivery {
   return {
-    async deliver({ work, message, shown, key, signal, beforeDispatch }) {
+    async deliver({
+      work,
+      message,
+      shown,
+      key,
+      signal,
+      beforeDispatch,
+      claim,
+    }) {
       const runId = createHash("sha256").update(key).digest("hex");
       const conversationBotId = work.answerIn ? work.toBotId : work.fromBotId;
       const threadId = work.answerIn ?? work.threadId;
@@ -121,6 +136,32 @@ export function createOpenBotHandoffDelivery(options: {
           return null;
         return actor;
       };
+      let metered: ReturnType<typeof budgetedAgent> | undefined;
+      if (work.budgetId && work.answer === undefined) {
+        if (!claim) throw new Error("The Delegation lease is unavailable.");
+        metered = budgetedAgent(
+          options.backgroundModel,
+          {
+            kind: "delegation",
+            executionId: claim.key,
+            budgetId: work.budgetId,
+            parentRunId: work.runId,
+            personId: work.actorId,
+            botId: work.toBotId,
+          },
+          async () => {
+            await beforeDispatch?.();
+            await options.authorizeBudgetedWork?.(work);
+            if (!(await authorize()) || !(await claim.isCurrent()))
+              throw new Error("The Delegation is no longer authorized.");
+          },
+          options.coordination
+            ? (run) =>
+                options.coordination?.(work, claim, run) ?? Promise.resolve([])
+            : undefined,
+          signal,
+        );
+      }
       const result = await options
         .runBackground({
           source: "handoff",
@@ -140,6 +181,7 @@ export function createOpenBotHandoffDelivery(options: {
               }
             : { handoffFromBotId: work.fromBotId }),
           authorize,
+          metered,
           signal,
           beforeDispatch,
           initiator: handoffInitiator(work.fromBotId, work.initiator),
@@ -168,6 +210,13 @@ export function createOpenBotHandoffDelivery(options: {
  * shutdown can give the connection back. Called only where handing work between Bots is on.
  */
 export async function startHandoffDelivery(deps: {
+  backgroundModel?: BackgroundModel;
+  authorizeBudgetedWork?: Parameters<
+    typeof createHandoffDelivery
+  >[0]["authorizeBudgetedWork"];
+  budgetedCoordination?: Parameters<
+    typeof createHandoffDelivery
+  >[0]["coordination"];
   productTelemetry?: ProductTelemetry;
   config: DeploymentConfig;
   database: Database;
@@ -209,8 +258,14 @@ export async function startHandoffDelivery(deps: {
           actorFor,
           mayAddress: deps.mayAddress,
           channelStore,
+          backgroundModel: deps.backgroundModel,
+          authorizeBudgetedWork: deps.authorizeBudgetedWork,
+          coordination: deps.budgetedCoordination,
         })
       : createHandoffDelivery({
+          backgroundModel: deps.backgroundModel,
+          authorizeBudgetedWork: deps.authorizeBudgetedWork,
+          coordination: deps.budgetedCoordination,
           ...(productTelemetry
             ? {
                 prepareRunInput: (input, work) =>

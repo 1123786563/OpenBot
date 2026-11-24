@@ -334,7 +334,13 @@ for (const { status, notice } of [
         view.getByRole("button", { name: "Retry saved message" }),
       ).toBeTruthy();
     }
-    expect(requests).toEqual([{ text: "/first", skillSlugs: ["first"] }]);
+    expect(requests).toEqual([
+      {
+        text: "/first",
+        skillSlugs: ["first"],
+        requestId: expect.stringMatching(/^[a-f0-9-]{36}$/),
+      },
+    ]);
     expect(starts).toEqual([]);
     expect(view.getByText("/first")).toBeTruthy();
   });

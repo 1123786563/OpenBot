@@ -33,16 +33,16 @@ import {
 } from "../catalogue";
 import { VERSION_ARG } from "../composio";
 import { inspectToolArguments } from "../content-governance";
-import { shareTargetOf } from "../share-target";
-import { type AccountMode, filedUnderPerson } from "../shared-accounts";
+import type { CorsairBotWrites } from "../corsair/bot-write";
 import {
   corsairWriteKey,
-  dispatchTrackedLegacyWrite,
   createCorsairCutover,
-  legacyCorsairScope,
   cutoverRefusal,
+  dispatchTrackedLegacyWrite,
+  legacyCorsairScope,
 } from "../corsair/cutover";
-import type { CorsairBotWrites } from "../corsair/bot-write";
+import { shareTargetOf } from "../share-target";
+import { type AccountMode, filedUnderPerson } from "../shared-accounts";
 import { withReadRetries } from "../transient";
 import { transportFor } from "../transport";
 import { withVendorDeadline } from "../vendor-deadline";
@@ -765,7 +765,11 @@ export function callMethods(context: StoreContext) {
           },
           account: write.action.account,
           requireOneTime: true,
-          ...(goal ? { dispatch: "corsair-shared-goal" } : {}),
+          ...(goal
+            ? { dispatch: "corsair-shared-goal" }
+            : continuation?.budgeted
+              ? { dispatch: "budgeted" }
+              : {}),
           continuation,
           declined: write.action.declined,
         });
@@ -838,7 +842,8 @@ export function callMethods(context: StoreContext) {
            * never answers for another, and the card says which account it is asking about.
            */
           ...(pinned && pinned.among > 1 ? { account: pinned.label } : {}),
-          continuation: currentApprovalContext(),
+          continuation,
+          ...(continuation?.budgeted ? { dispatch: "budgeted" } : {}),
           /*
            * Whether this is a reviewed read of the person's own app: an app they connected with their
            * own account, and a tool a reviewed read list names (`reviewedRead`). A label is not enough

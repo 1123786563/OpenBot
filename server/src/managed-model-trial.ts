@@ -8,6 +8,7 @@ const denial = z.enum([
   "route_unavailable",
   "pilot_closed",
   "unavailable",
+  "trial_ended",
 ]);
 const denied = z.object({ state: z.literal("denied"), reason: denial });
 const reservation = z.discriminatedUnion("state", [
@@ -55,20 +56,35 @@ const reconciliation = z.union([
 ]);
 
 type ModelScope = {
-  source: "direct-chat" | "learning" | "hindsight";
+  source:
+    | "direct-chat"
+    | "learning"
+    | "hindsight"
+    | "routing"
+    | "tool-selection"
+    | "approval"
+    | "admin";
   personId: string;
   runId: string;
   conversationId: string;
   botId: string;
 };
-type ModelOperation = { scope: ModelScope; step: string };
+export type ModelOperation = {
+  scope: ModelScope;
+  step: string;
+  budget?: { id: string; stepId?: string };
+};
 type ModelMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 type BeforeDispatch = () => Promise<boolean | readonly ModelMessage[]>;
 
-function operationId({ scope, step }: ModelOperation) {
+export function managedModelOperationId({
+  scope,
+  step,
+  budget,
+}: ModelOperation) {
   return createHash("sha256")
     .update(
       JSON.stringify([
@@ -79,6 +95,10 @@ function operationId({ scope, step }: ModelOperation) {
         scope.botId,
         scope.runId,
         step,
+        ...(budget ||
+        !["direct-chat", "learning", "hindsight"].includes(scope.source)
+          ? [budget?.id ?? null, budget?.stepId ?? null]
+          : []),
       ]),
     )
     .digest("hex");
@@ -90,14 +110,17 @@ export type ManagedModelResult =
       state: z.infer<typeof denial> | "reconciling" | "settled" | "released";
     };
 
-export function createManagedModel({
-  url,
-  credentials,
-}: {
-  url: URL;
-  credentials: ReadonlyMap<string, string>;
-}) {
-  const credentialsByPerson = new Map(credentials);
+export function createManagedModel(
+  config: { url: URL } & (
+    | { credentials: ReadonlyMap<string, string> }
+    | { token: string }
+  ),
+) {
+  const { url } = config;
+  const credentialsByPerson =
+    "credentials" in config ? new Map(config.credentials) : undefined;
+  const credentialFor = (personId: string) =>
+    "token" in config ? config.token : credentialsByPerson?.get(personId);
 
   async function post(
     token: string,
@@ -129,13 +152,17 @@ export function createManagedModel({
     if (!response.ok) throw new Error("Managed model quote unavailable.");
     // The quote describes the default route. Its Price Version covers the
     // publication, and reserve checks the configured route against it.
-    return publication.parse(await response.json()).priceVersion;
+    const schema =
+      "token" in config
+        ? publication.extend({ priceVersion: z.string().min(1) })
+        : publication;
+    return schema.parse(await response.json()).priceVersion;
   }
 
   async function reconcileOutcome(operation: ModelOperation) {
-    const token = credentialsByPerson.get(operation.scope.personId);
+    const token = credentialFor(operation.scope.personId);
     if (!token) throw new Error("Managed model execution identity required.");
-    const id = operationId(operation);
+    const id = managedModelOperationId(operation);
     const result = reconciliation.parse(
       await post(token, "reconcile", { operationId: id }, 5_000),
     );
@@ -191,9 +218,9 @@ export function createManagedModel({
         beforeRecovery?: () => Promise<boolean>;
       },
     ): Promise<ManagedModelResult> {
-      const token = credentialsByPerson.get(input.scope.personId);
+      const token = credentialFor(input.scope.personId);
       if (!token) return { state: "not_authorized" };
-      const id = operationId(input);
+      const id = managedModelOperationId(input);
       let priceVersion: string;
       try {
         priceVersion = await readPriceVersion(token);
@@ -214,6 +241,9 @@ export function createManagedModel({
               route: input.route,
               priceVersion,
               resumable: false,
+              ...(input.budget
+                ? { budgetId: input.budget.id, stepId: input.budget.stepId }
+                : {}),
             },
             5_000,
           ),

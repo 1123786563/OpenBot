@@ -42,6 +42,7 @@ const ROUTINE: Routine = {
   instruction: "Post the standup summary.",
   title: null,
   goalId: null,
+  budgetId: null,
   cron: "0 9 * * 1-5",
   timezone: "Europe/Madrid",
   enabled: true,

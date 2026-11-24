@@ -4,11 +4,38 @@ The Test Credit service uses the Bifrost catalog's active publication for new re
 
 ## Identity and entry points
 
-The integration target for account authentication is Personal SaaS at `d95e3c87` and `2b8953fc`. Its server verifies Casdoor's issuer and subject on sign-in, stores the unique pair, checks the server-side session, and revalidates the Casdoor account. Adapt that authorization path to return the verified pair to `createTestCreditRoutes`. Billing maps the pair to its own account ID. Email, Bot ID, Person ID, and HTTP request fields do not establish this mapping.
+The Web Conversation pilot resolves the signed-in Person through Better Auth's stored OIDC account link. The configured Casdoor issuer and provider ID select the link. The issuer and provider subject map to one Billing Account. A missing or ambiguous link makes the pilot unavailable to that Person.
 
-A trusted provisioning caller enrolls approved pairs with a fixed batch UUID and integer amount. `POST /claim` issues the enrollment once. `GET /balance`, `GET /quote`, and `GET /operations/:id` use the verified account-session credential. The route factory separates account and execution authentication. The deployment adapter must require a credential attesting to the verified owner of the persisted execution for execution routes. A browser session alone does not grant execution access. Host only the account routes on an account-facing origin, enforce the application's same-origin policy for mutations, and keep execution routes on a controlled origin.
+A trusted provisioning caller enrolls Casdoor identities with a fixed batch UUID and integer amount. `POST /api/billing/claim` claims a pre-enrolled batch once. The signed-in Person can also read `/api/billing/balance`, `/api/billing/quote`, and `/api/billing/operations/:id`. The browser's session grants access to account routes. The public mount refuses execution calls. Controlled callers of `createTestCreditRoutes` can supply their own execution authenticator.
 
-The server client in `server/src/managed-model.ts` derives the operation ID from the persisted execution scope and step, using the same identifier as the #32 candidate at `e393335b`. The direct-chat integration should call it after claiming the persisted Run and checking Conversation access. A worker should use the actor and execution identifiers from its persisted job, and recheck authorization on recovery. Both supply the pinned quote and obtain execution credentials from the verified owner rather than accepting identity fields from the caller.
+In a direct Conversation, the owner sees the published quote and confirms its route and Price Version. The server checks ownership before it claims the Run and persists the operation ID. The Run calls the ledger and controlled executor in the API process. The response includes the charge and released amount, and the Credits page can open the durable receipt. A browser replay and the Worker use the operation ID already recorded on the Run. The Worker can recover the stored reply after evidence arrives or settlement completes. An uncertain result stays pending without a second dispatch.
+
+## Configure the Web Conversation pilot
+
+Register Casdoor as an OIDC provider in the OpenBot deployment and provision the pilot accounts. Enable the pilot on an OpenBot server that uses local Better Auth sessions. Set `OPENBOT_TEST_CREDIT_CONVERSATIONS=enabled`, `TEST_CREDIT_CASDOOR_ISSUER` to the issuer exactly as it appears in the OIDC account link, and `TEST_CREDIT_CASDOOR_PROVIDER_ID` to the registered provider ID. The Worker uses these same three settings.
+
+The API also needs `TEST_CREDIT_BIFROST_URL` for Chat Completions and `TEST_CREDIT_INPUT_METER_URL` for the request meter. Configure their scoped credentials in `TEST_CREDIT_BIFROST_TOKEN` and `TEST_CREDIT_INPUT_METER_TOKEN`. Use the publication's `TEST_CREDIT_GATEWAY_REVISION`, `TEST_CREDIT_GATEWAY_IMAGE_DIGEST`, and `TEST_CREDIT_METERING_REVISION`. Match these to the route verification report before enabling the pilot. The executor checks the meter's proof against the exact request bytes and sends `max_completion_tokens` with the published limit.
+
+For an OpenBot runtime that calls Billing over HTTP, set `TEST_CREDIT_RUNTIME_BINDINGS` on the Billing API only. Supply a secret JSON array of `{ "personId": "...", "subject": "...", "token": "..." }` entries. Use the persisted Person ID in Billing's database, that Person's verified Casdoor subject, and a distinct random bearer of at least 32 characters. Keep the API's configured issuer and provider ID matched to the account link. Point the caller at the private TLS endpoint ending in `/api/billing/` and provision the matching Person-to-token map on the caller. The bearer only grants access to the execution routes. Every request rechecks the verified account link before reading or changing the ledger.
+
+## Auxiliary model calls
+
+The Web Conversation pilot uses the published default chat route for the auxiliary calls below. Verify that its input and output caps fit both the prompts and replies before enabling either feature. The eight-token output cap in the first pilot matrix is unsuitable for these structured replies.
+
+| Product action | Pilot behavior |
+| --- | --- |
+| Send a new Conversation without choosing a Bot, `POST /api/route` | Set `TEST_CREDIT_AUXILIARY_ROUTING=enabled` to enable model routing. It spends the signed-in person's Test Credits through their verified Casdoor link. When a model is needed, the saved start shows the routing rate and maximum and requires confirmation before reserving. The Conversation reply has its own quote. Explicit Bot picks, name matches, and single-Bot rosters skip the model. |
+| Ask a question about the audit trail, `POST /api/admin/audit-events/ask` | Set `TEST_CREDIT_AUDIT_BUDGET_ID` to a confirmed Test Credit budget on the platform Billing Account with issuer `openbot:platform` and subject `audit-ask`. Use the trusted ledger provisioning API to enroll and claim Test Credits for that account and call `createBudget` with a positive microcredit limit. The filter writer, its correction if needed, and the filter readback each reserve under that budget. |
+| Tool preselection in a Bot run, automatic approval review | Model calls are off. Tool selection uses its existing fallback, and approval review asks the person. |
+| Draft a computer boundary, network allowlist, approval rule, capability change, or app grant. Ask a What-if question. | Model calls are off. Manual controls and policy evaluation remain available. |
+| Automatic Conversation titles, dictation, realtime voice, and voice summaries | Model calls are off. |
+| OpenBot's Learning model proxy, `/api/learning-model/v1/chat/completions` | The proxy is off. Downstream Learning and Hindsight acceptance is tracked in [#32](https://github.com/1123786563/OpenBot/issues/32). |
+
+The legacy `OPENBOT_MANAGED_MODEL_TRIAL_*` deployment leaves auxiliary model calls off. The first-party Web Conversation pilot resolves each caller's Billing Account and uses the same verified executor as Direct Chat. Deployments outside these pilots continue to use their configured model helpers.
+
+Missing identity, insufficient funds, an unavailable ledger, or a failed input-meter check blocks inference. Platform-funded calls never debit the asking admin's Billing Account. The meter, Bifrost request, usage evidence, and bill share the operation ID. Replaying a saved Conversation start reuses its routing operation. Audit Ask assigns a separate operation to each step of a submission.
+
+The focused fixture test exercises both HTTP product routes with PostgreSQL, a stored OIDC account link, a published route, and loopback Bifrost and meter responses. It checks budget exhaustion, missing budget, ledger write failure, meter failure, and replay. Production acceptance requires the published route and pinned gateway to handle actual routing and Audit Ask prompts within the verified caps.
 
 ## Execution contract
 
@@ -30,10 +57,53 @@ Trusted adapters call `recordEvidence` with a stable source evidence ID and cumu
 
 A retry keeps the operation ID and returns the existing receipt without sending another request. For an explicit rerun, persist a fresh execution identifier and pass the original operation as `rerunOf` to the managed model. The new request has its own permit, quote, and hold. Account authentication scopes the original operation lookup and the receipt shows the link.
 
+## Cumulative execution budgets
+
+Choose **Create using Credits** on the Routine form or **Use Credits** on a check-in item to start a budgeted execution. The dialog shows the model rate and maximum hold per request. Choose Test Credits or Paid Credits, then confirm the cumulative cap in Credits. The server binds the budget to the published route and Price Version. API callers can get the same fields from `POST /api/billing/budgets/preview` with a Credit type and a limit in microcredits.
+
+Each billed step uses the same reservation, dispatch, and reconciliation functions as Conversations. The step ID stays the same when a worker reclaims the execution. Before dispatch, the API checks the current Person, Bot, conversation, Billing Account, and effective budget. The executor checks access again before it binds the gateway request. A settled step reuses its saved result.
+
+A balance or cap refusal records a resume point without placing a hold. Choose **Continue** on the original Routine run or Task and confirm the updated budget. The new cap includes earlier charges from that execution. If a request is still under reconciliation, **Continue** checks the original request and waits for a usable result. Adding Credits by itself leaves paused work waiting. Scheduled occurrences outside the grace period remain skipped.
+
+The isolated PostgreSQL tests in `server/tests/resume-points.integration.test.ts` exercise the Routine store, durable Task queue, and fixture executor. They verify cumulative spend, explicit continuation, lost replies, and access revocation after reservation. The scheduler test in `server/tests/routine-sweep.integration.test.ts` verifies that a replacement worker reuses the same run ID.
+
+A published tool-capable route can select granted connected-app actions. If an action requires Approval, answer it in the conversation and choose **Continue** on the Routine run or Task. Budgeted actions use human Approval when policy requires a review. The server saves each connected-app result before it reserves Credits for the follow-up model request. That request shares the execution's cumulative cap.
+
+The local #94 test uses both persisted entry points with a loopback gateway and an approved MCP action. It checks that a revoked grant blocks dispatch, a budget refusal preserves the action result, and a replacement worker reuses that result after explicit continuation.
+
+The connected-app path supports one round of actions followed by a text reply. A reply that selects both connected-app and coordination tools pauses before dispatching either. A connector action with an unknown outcome stays blocked. A released, unsent model operation has no automatic replacement. Live acceptance still requires the controlled #89 gateway, approved input meter, read-only evidence proxy, and pre-enrolled Casdoor identity.
+
 ## Integration gates
 
-The ledger migration and fixture verification run on the billing branch. Mounting the account routes, displaying the quote and receipt in Personal SaaS, connecting the persisted Conversation and Worker entry points, and wiring user confirmation for explicit reruns require the accepted #53 authorization path and the #32 caller integration. When combining migrations, reconcile billing migrations `0089` through `0091` and the journal with Personal SaaS's migration sequence. The client in this branch changes the candidate's execution credentials and reservation payload, so wire those together in the same integration.
+The fixture test uses isolated PostgreSQL, signed Better Auth sessions, seeded Casdoor account links, and loopback gateway and meter endpoints. The same admission, settlement, and recovery code runs in the pilot. Live acceptance requires the #89 provider evidence, a controlled Bifrost executor, the approved input meter, and a Casdoor sign-in for pre-enrolled accounts. Personal SaaS onboarding issuance is tracked in #68. Real timeout and late-outcome acceptance is tracked in #91.
 
-Live acceptance still needs the separately tracked #89 provider verification, a bounded controlled executor, and an authenticated Casdoor trial with enrolled accounts. Run concurrent turns against a funded account and verify the real Bifrost execution and settled receipt. The PostgreSQL integration test exercises the HTTP boundary with fixture credentials and execution outcomes.
+## Recover lost replies from Bifrost
 
-Deployment still needs an authenticated gateway evidence reader. The executor receives usage inline and sends `x-openbot-operation-id`. The catalog's verification reports attest to route probes. To recover usage after the inline response is lost, the gateway must durably correlate the dispatch to a unique upstream invocation, scoped to the authorized account and frozen route and metering revision. A read-only service credential must be able to retrieve that invocation's terminal status, authoritative cumulative usage, platform-fault attribution, and a stable evidence ID. The evidence must survive process restarts and remain available for late platform-cost reconciliation. A recovery adapter must persist qualifying evidence in the ledger before cutoff to retain the user hold. Evidence first recorded at or after cutoff goes to platform accounting. Supplier budget accounting and Lago export remain separate billing work.
+Run the Worker reader against the same isolated, digest-pinned gateway deployment that serves the API. On that gateway, enable durable Bifrost logging and retain the content and usage for at least seven days. Limit access to the contents to the billing recovery service and trusted operators. Keep the gateway on an isolated network, expose only authenticated inference to the API, and keep its management listener private. Configure a single upstream key per approved provider and disable caching, transformations, aliases, provider retries and request fallbacks.
+
+Run `bun server/scripts/bifrost-log-proxy.ts` alongside Bifrost. Set `BIFROST_LOG_PROXY_UPSTREAM_ORIGIN` to Bifrost's loopback origin and inject a dedicated random `TEST_CREDIT_BIFROST_LOG_TOKEN`. The proxy listens on loopback port 4207 by default. Use `BIFROST_LOG_PROXY_PORT` to change it. Expose the proxy to the Worker through a private TLS listener. The proxy accepts only authenticated `GET /api/logs/<uuid>` calls and projects matching terminal log fields. It uses Bifrost's exact-ID log endpoint and does not pass Worker credentials to Bifrost.
+
+Set `TEST_CREDIT_BIFROST_LOG_ORIGIN` to the private TLS origin and give the Worker the same `TEST_CREDIT_BIFROST_LOG_TOKEN`. Use a separate token from the inference and meter tokens. Set the Worker's gateway revision, gateway image digest and metering revision to the API's values. Keep the reader bound to that deployment's log store. Gateway rotation requires access to the prior deployment's store for any remaining outstanding invocations.
+
+Before dispatch, OpenBot stores the one-time gateway request UUID and a SHA-256 digest of the exact request bytes. Bifrost logs that UUID, the operation and body digest labels, and a fingerprint of the frozen route and deployment revisions. The Worker reads at most 16 records per tick. It starts checking 90 seconds after binding, retries missing evidence at five-minute intervals, and stops checking seven days after dispatch. Reads have a four-second deadline and a 256 KiB body limit. The Worker corroborates the returned request against its durable binding, model, provider, revisions, terminal status and usage bounds. It stores the qualifying usage and reply together under the account lock. Evidence stored at or after the 24-hour cutoff affects platform accounting only. Recovery issues read requests exclusively.
+
+The reader accepts successful non-streaming chat completions with a textual reply and consistent terminal usage. Missing or conflicting evidence, opaque errors and cancellation remain unknown. The Bifrost log does not independently prove provider-side cancellation, zero cost or platform fault. The existing #89 publication gate still requires live provider evidence.
+
+To run the pinned-image acceptance test, start the image recorded in [the #89 build evidence](evidence/bifrost-zhipu-family-cap-fixed6.image.json) with a fresh log store. Point its single `zhipu/glm-5.3-flash` route at an isolated OpenAI-compatible fixture with the native `/api/paas/v4/chat/completions` path. Use a fixture key and return one assistant message with text `Recovered isolated reply.`, finish reason `stop`, and usage of two input and three output tokens. Set `TEST_PINNED_BIFROST_ORIGIN` to the gateway's loopback origin and run:
+
+```sh
+bun test --no-env-file --env-file=.env.test server/tests/bifrost-evidence.test.ts
+```
+
+The test drops the completed inference reply, reads the actual gateway log through the scoped proxy, and verifies that recovery leaves the inference dispatch count at one.
+
+## Record a verified paid correction
+
+After verifying the case, submit it to `POST /api/admin/billing/corrections` with a signed-in administrator session. Send `accountId`, a positive decimal string in `amountMicrocredits`, a customer-visible `reason`, and a customer-visible case reference in `evidence`. The server records the signed-in administrator's ID.
+
+- Use `kind: "overcharge_refund"` and the charged `operationId` to correct a settled paid charge. The ledger restores credits to a source that can still be spent and issues non-expiring Correction Credits for the portion that cannot return. A verified case can be corrected after the execution reconciliation deadline.
+- Use `kind: "fault_compensation"` to book separately approved compensation as non-expiring Correction Credits. Include `operationId` when the case concerns a specific operation. The original Billing Period and renewal anchor still apply.
+
+Reuse the same case reference, operation, kind, amount and reason when retrying a submission. A successful response contains the original correction ID on retry. A conflicting retry or an amount larger than the remaining settled charge returns `409`.
+
+The customer can see the correction under **Billing → Usage**, alongside the original charge. The correction shows the original operation and Billing Period where applicable, the case reference, the operator and the available balance before and after booking. For an RMB return, use the original order's refund flow.

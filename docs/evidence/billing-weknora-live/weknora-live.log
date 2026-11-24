@@ -1,0 +1,41 @@
+# github.com/Tencent/WeKnora/internal/application/service.test
+ld: warning: ignoring duplicate libraries: '-lc++'
+=== RUN   TestLocalOpenBotManagedTxtAcceptance
+INFO [2026-11-22 17:58:06.395] [] knowledge_create.go:43[createKnowledgeFromFile] | Start creating knowledge from file
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:60[createKnowledgeFromFile] | Knowledge base ID: kb-1, file: managed.txt
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:68[createKnowledgeFromFile] | Getting knowledge base configuration
+WARNING[2026-11-22 17:58:06.396] [] knowledge.go:576[checkStorageEngineConfigured] | [storage] checkStorageEngineConfigured: no KB/tenant provider, fallback to global fileSvc (kb=kb-1)
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:108[createKnowledgeFromFile] | Checking file type: managed.txt
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:119[createKnowledgeFromFile] | Calculating file hash
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:128[createKnowledgeFromFile] | Checking if file exists, tenant ID: 1
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:212[createKnowledgeFromFile] | Preparing knowledge record
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:241[createKnowledgeFromFile] | Saving file, knowledge ID: 3e12839d-c69b-4a9b-8a72-7978c9e3a110
+INFO [2026-11-22 17:58:06.396] [] knowledge_util.go:371[resolveFileService] | [storage] resolveFileService fallback default: kb=kb-1 provider="" tenant_cfg=false
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:251[createKnowledgeFromFile] | Saving knowledge record to database
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:269[createKnowledgeFromFile] | Enqueuing document processing task to Asynq
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:330[createKnowledgeFromFile] | Enqueued document process task: id=task-1 queue=default knowledge_id=3e12839d-c69b-4a9b-8a72-7978c9e3a110
+INFO [2026-11-22 17:58:06.396] [] knowledge_create.go:340[createKnowledgeFromFile] | Knowledge from file created successfully, ID: 3e12839d-c69b-4a9b-8a72-7978c9e3a110
+    live_acceptance_test.go:54: resource=weknora:tenant:1:kb:kb-1 operation=d82c4abd-b3c6-587a-b136-5482333562b6 expected_dimensions=384
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:3932[ProcessDocument] | Processing document task: knowledge_id=3e12839d-c69b-4a9b-8a72-7978c9e3a110, file_path=stored/3e12839d-c69b-4a9b-8a72-7978c9e3a110, retry=0/0
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:4550[convert] | [convert] kb=kb-1 fileType=txt isURL=false engine="" rules=[]
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_util.go:371[resolveFileService] | [storage] resolveFileService fallback default: kb=kb-1 provider="" tenant_cfg=false
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:4676[callDocReaderWithTimeout] | [convert] docreader call ok in 750ns for "managed.txt"
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:4319[ProcessDocument] | Document text normalization completed in 9µs (knowledge=3e12839d-c69b-4a9b-8a72-7978c9e3a110 input_bytes=35 output_bytes=35)
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:4453[ProcessDocument] | Split document into 1 chunks for knowledge 3e12839d-c69b-4a9b-8a72-7978c9e3a110
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:4455[ProcessDocument] | Document chunking completed in 40.417µs (knowledge=3e12839d-c69b-4a9b-8a72-7978c9e3a110 input_bytes=35 chunks=1)
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:513[processChunks] | Cleaning up existing chunks and index data for knowledge: 3e12839d-c69b-4a9b-8a72-7978c9e3a110
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:527[processChunks] | Successfully deleted existing index data for knowledge: 3e12839d-c69b-4a9b-8a72-7978c9e3a110
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:538[processChunks] | Cleanup completed, starting to process new chunks
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:541[processChunks] | [DocReader] ========== 解析结果概览 ==========
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:542[processChunks] | [DocReader] 知识ID: 3e12839d-c69b-4a9b-8a72-7978c9e3a110, 知识库ID: kb-1
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:543[processChunks] | [DocReader] 总Chunk数量: 1
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:554[processChunks] | [DocReader] 包含图片的Chunk数: 0, 总图片数: 0
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:560[processChunks] | [DocReader] Chunk #0 (seq=0): 内容长度=35, 图片数=0, 范围=[0-35]
+DEBUG[2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:562[processChunks] | [DocReader] Chunk #0 内容预览: Contents from the normal TXT parser
+INFO [2026-11-22 17:58:06.396] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110] knowledge_process.go:581[processChunks] | [DocReader] ========== 解析结果概览结束 ==========
+INFO [2026-11-22 17:58:06.697] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110]                      | processChunks batch index successfully, with 1 index
+INFO [2026-11-22 17:58:06.697] [document_process=3e12839d-c69b-4a9b-8a72-7978c9e3a110]                      | processChunks successfully
+    live_acceptance_test.go:64: completed and indexed one TXT chunk using settled operation d82c4abd-b3c6-587a-b136-5482333562b6
+--- PASS: TestLocalOpenBotManagedTxtAcceptance (0.30s)
+PASS
+ok  	github.com/Tencent/WeKnora/internal/application/service	2.756s

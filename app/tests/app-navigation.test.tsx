@@ -259,6 +259,7 @@ test("Admin is in the list for admins only", () => {
     "goals",
     "capabilities",
     "connections",
+    "credits",
     "settings",
   ]);
 });
@@ -276,6 +277,7 @@ test("the personal edition has no Admin or Capabilities, and a feature list in A
     "routines",
     "goals",
     "connections",
+    "credits",
     "team-features",
     "settings",
   ]);

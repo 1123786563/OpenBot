@@ -13,8 +13,10 @@ import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createDatabase } from "../src/db/client";
 import {
   enterpriseSettings,
+  lagoUsageEvents,
   testCreditAccounts,
   testCreditBatches,
+  testCreditBudgets,
   testCreditEnrollments,
   testCreditEvidence,
   testCreditIssuanceBudgets,
@@ -24,6 +26,255 @@ import {
 import { createManagedModel, type ModelOperation } from "../src/managed-model";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+
+test("execution budgets authorize each step and preserve completed steps across resume", async () => {
+  const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const ledger = createTestCreditLedger(database);
+  const identity = {
+    issuer: `https://casdoor.example.test/${crypto.randomUUID()}`,
+    subject: crypto.randomUUID(),
+  };
+  const batchId = crypto.randomUUID();
+  try {
+    await ledger.enroll({ identity, batchId, amount: 5n });
+    await ledger.claim(identity, batchId);
+    const budgetId = `task-${crypto.randomUUID()}`;
+    const budget = await ledger.createBudget(identity, {
+      budgetId,
+      creditType: "test",
+      limitMicrocredits: 2n,
+      confirmed: false,
+    });
+    expect(budget).toMatchObject({
+      budgetId,
+      creditType: "test",
+      limitMicrocredits: "2",
+      confirmed: false,
+    });
+    await expect(
+      ledger.reserve(identity, {
+        operationId: crypto.randomUUID(),
+        route: "missing",
+        priceVersion: crypto.randomUUID(),
+        budgetId,
+      }),
+    ).resolves.toMatchObject({ state: "denied", reason: "execution_limit" });
+    await expect(
+      ledger.confirmBudget(identity, budgetId, 3n),
+    ).resolves.toMatchObject({
+      limitMicrocredits: "3",
+      confirmed: true,
+    });
+    await expect(
+      ledger.reserve(identity, {
+        operationId: crypto.randomUUID(),
+        route: "missing",
+        priceVersion: crypto.randomUUID(),
+        budgetId,
+      }),
+    ).resolves.toMatchObject({ state: "denied", reason: "route_unavailable" });
+  } finally {
+    await database.transaction(async (tx) => {
+      const accounts = tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, identity.issuer));
+      await tx
+        .delete(testCreditOperations)
+        .where(inArray(testCreditOperations.accountId, accounts));
+      await tx
+        .delete(lagoUsageEvents)
+        .where(inArray(lagoUsageEvents.accountId, accounts));
+      await tx
+        .delete(testCreditBudgets)
+        .where(inArray(testCreditBudgets.accountId, accounts));
+      const removed = await tx
+        .delete(testCreditEnrollments)
+        .where(inArray(testCreditEnrollments.accountId, accounts))
+        .returning({ batchId: testCreditEnrollments.batchId });
+      await tx
+        .delete(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, identity.issuer));
+      await tx.delete(testCreditBatches).where(
+        inArray(
+          testCreditBatches.id,
+          removed.map(({ batchId }) => batchId),
+        ),
+      );
+    });
+    await database.$client.close();
+  }
+});
+
+test("parallel child reservations count against every ancestor exactly once", async () => {
+  const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const ledger = createTestCreditLedger(database);
+  const identity = {
+    issuer: "https://issue95.example.test",
+    subject: crypto.randomUUID(),
+  };
+  const batchId = crypto.randomUUID();
+  const root = crypto.randomUUID();
+  const parent = crypto.randomUUID();
+  const children = [
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+  ];
+  const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
+  const catalog = configure(emptyCatalog, {
+    harnessImage,
+    routes: {
+      pilot: {
+        provider: "fixture-a",
+        model: "model-a",
+        gatewayRevision: "a",
+        meteringRevision: "a",
+        maxInputTokens: 3,
+        maxOutputTokens: 16,
+        tools: false,
+        price: { inputPerMillion: 250_000, outputPerMillion: 78_125 },
+      },
+    },
+  });
+  const pilot = catalog.routes.pilot;
+  if (!pilot) throw new Error("Missing fixture route");
+  const { catalog: published } = publish(
+    verify(
+      catalog,
+      "pilot",
+      fixtureTraceReport(harnessImage, pilot),
+      "fixture",
+    ),
+    ["pilot"],
+    "pilot",
+    "fixture",
+  );
+  const [original] = await database
+    .select()
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  try {
+    await database
+      .insert(enterpriseSettings)
+      .values({
+        key: pilotCatalogKey,
+        value: published,
+      })
+      .onConflictDoUpdate({
+        target: enterpriseSettings.key,
+        set: { value: published },
+      });
+    const quote = await ledger.quote();
+    if (!quote) throw new Error("Missing published quote");
+    const bound = BigInt(quote.maxChargeMicrocredits);
+    await ledger.enroll({ identity, batchId, amount: bound * 20n });
+    await ledger.claim(identity, batchId);
+    const create = (
+      budgetId: string,
+      limitMicrocredits: bigint,
+      childOf?: {
+        budgetId: string;
+        kind: "delegation" | "subagent";
+        botId: string;
+      },
+    ) =>
+      ledger.createBudget(identity, {
+        budgetId,
+        creditType: "test",
+        limitMicrocredits,
+        childOf,
+        modelQuote: quote,
+      });
+    await create(root, bound);
+    await create(parent, bound * 2n, {
+      budgetId: root,
+      kind: "delegation",
+      botId: "parent",
+    });
+    await Promise.all(
+      children.map((id, index) =>
+        create(id, index === 2 ? bound - 1n : bound, {
+          budgetId: parent,
+          kind: index === 1 ? "subagent" : "delegation",
+          botId: id,
+        }),
+      ),
+    );
+    await expect(
+      ledger.reserve(identity, {
+        operationId: crypto.randomUUID(),
+        route: quote.route,
+        priceVersion: quote.priceVersion,
+        budgetId: children[2],
+        creditType: "test",
+      }),
+    ).resolves.toMatchObject({ state: "denied", reason: "execution_limit" });
+    const attempts = await Promise.all(
+      children.map((budgetId) =>
+        ledger.reserve(identity, {
+          operationId: crypto.randomUUID(),
+          route: quote.route,
+          priceVersion: quote.priceVersion,
+          budgetId,
+          creditType: "test",
+        }),
+      ),
+    );
+    expect(attempts.map(({ state }) => state).sort()).toEqual([
+      "denied",
+      "denied",
+      "reserved",
+    ]);
+    expect(attempts[2]).toMatchObject({
+      state: "denied",
+      reason: "execution_limit",
+    });
+    const won = attempts.find(
+      (result) => result.state === "reserved" && result.permit,
+    );
+    if (won?.state !== "reserved" || !won.permit)
+      throw new Error("Missing reservation");
+    const used = async (id: string) =>
+      (await ledger.budget(identity, id))?.usedMicrocredits;
+    expect(
+      await Promise.all([used(root), used(parent), used(children[2] ?? "")]),
+    ).toEqual([bound.toString(), bound.toString(), "0"]);
+    expect(await ledger.balance(identity)).toMatchObject({
+      reservedMicrocredits: bound.toString(),
+      availableMicrocredits: (bound * 19n).toString(),
+    });
+    const cancel = {
+      operationId: won.operation.operationId,
+      permit: won.permit,
+    };
+    await Promise.all([
+      ledger.discardReservation(identity, cancel),
+      ledger.discardReservation(identity, cancel),
+    ]);
+    expect(await Promise.all([used(root), used(parent)])).toEqual(["0", "0"]);
+    expect(await ledger.balance(identity)).toMatchObject({
+      reservedMicrocredits: "0",
+      chargedMicrocredits: "0",
+      availableMicrocredits: (bound * 20n).toString(),
+    });
+    expect(await ledger.reconcile(identity, cancel.operationId)).toMatchObject({
+      state: "released",
+      releasedMicrocredits: bound.toString(),
+    });
+  } finally {
+    if (original)
+      await database
+        .update(enterpriseSettings)
+        .set({ value: original.value })
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    else
+      await database
+        .delete(enterpriseSettings)
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    await database.$client.close();
+  }
+});
 
 test("pilot routes isolate accounts and settle one of two concurrent admissions exactly once", async () => {
   const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -37,6 +288,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   let token = firstToken;
   const secondToken = crypto.randomUUID();
   let sends = 0;
+  let gatewayRequestId: string | null = null;
   const sent: { model: string; max_completion_tokens: number }[] = [];
   const externalGateway = process.env.OPENBOT_TEST_BIFROST_FIXTURE_URL;
   let lastOperationId: string | null = null;
@@ -50,6 +302,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       const input = await request.json();
       sent.push(input);
       sends++;
+      gatewayRequestId = request.headers.get("x-request-id");
       if (!externalGateway)
         expect(request.headers.get("x-openbot-operation-id")).toBe(
           lastOperationId,
@@ -72,14 +325,15 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     },
   });
   const execute = createBifrostCreditExecutor({
+    limitField: "max_completion_tokens",
     endpoint: new URL("/v1/chat/completions", externalGateway ?? gateway.url),
     gatewayRevision: "a",
     meteringRevision: "a",
-    countInputTokens: async (_route, { body }) => {
-      const { messages } = JSON.parse(body);
-      if (messages[0]?.content === "withdraw-while-metering")
-        await duringMetering?.();
-      return messages[0]?.content === "oversized" ? 4 : 1;
+    countInputTokens: async (_route, messages) => {
+      const first = messages[0];
+      const prompt = first?.role === "user" ? first.content : undefined;
+      if (prompt === "withdraw-while-metering") await duringMetering?.();
+      return prompt === "oversized" ? 4 : 1;
     },
   });
   const api = createTestCreditRoutes({
@@ -103,7 +357,8 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     async execute(input) {
       lastOperationId = input.operationId;
       lastDispatchAccountId = input.accountId;
-      switch (input.messages[0]?.content) {
+      const first = input.messages[0];
+      switch (first?.role === "user" ? first.content : undefined) {
         case "zero":
           return {
             outcome: "zero_cost",
@@ -328,6 +583,24 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
       reservedMicrocredits: "2",
       chargedMicrocredits: "1",
       releasedMicrocredits: "1",
+    });
+    const [exported] = await database
+      .select()
+      .from(lagoUsageEvents)
+      .where(eq(lagoUsageEvents.operationId, operationId));
+    const [binding] = await database
+      .select({ requestId: testCreditOperations.gatewayRequestId })
+      .from(testCreditOperations)
+      .where(eq(testCreditOperations.id, operationId));
+    expect(binding?.requestId).toBeTruthy();
+    if (!externalGateway) expect(binding?.requestId).toBe(gatewayRequestId);
+    expect(exported).toMatchObject({
+      eventId: binding?.requestId,
+      operationId,
+      inputTokens: 1n,
+      outputTokens: 4n,
+      amountMicrocredits: 1n,
+      state: "pending",
     });
     expect(
       (await request(`/operations/${operationId}`, undefined, secondToken))
@@ -812,6 +1085,9 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
           .select({ id: testCreditAccounts.id })
           .from(testCreditAccounts)
           .where(eq(testCreditAccounts.issuer, issuer));
+        await tx
+          .delete(lagoUsageEvents)
+          .where(inArray(lagoUsageEvents.accountId, accountIds));
         await tx
           .delete(testCreditEvidence)
           .where(inArray(testCreditEvidence.accountId, accountIds));

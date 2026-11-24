@@ -1,4 +1,5 @@
 import type { BaseEvent } from "@ag-ui/client";
+import type { DirectChatCreditRequest } from "../../billing/direct-chat-test-credit";
 import type { RunContextVersion } from "@openbot/toolkit/run-context";
 import { sql } from "drizzle-orm";
 import {
@@ -36,6 +37,10 @@ export const directChatRuns = pgTable(
     id: text("id").notNull(),
     userMessageId: text("user_message_id").notNull(),
     prompt: text("prompt").notNull(),
+    testCreditOperationId: text("test_credit_operation_id"),
+    testCreditRequest: jsonb(
+      "test_credit_request",
+    ).$type<DirectChatCreditRequest>(),
     assistantMessageId: text("assistant_message_id"),
     reply: text("reply"),
     status: text("status")
@@ -68,6 +73,11 @@ export const directChatRuns = pgTable(
       table.threadId,
       table.userMessageId,
     ),
+    index("direct_chat_runs_credit_recovery_idx")
+      .on(table.startedAt)
+      .where(
+        sql`${table.testCreditOperationId} IS NOT NULL AND ${table.status} <> 'completed'`,
+      ),
     check(
       "direct_chat_runs_status_check",
       sql`${table.status} in ('running', 'completed', 'failed')`,

@@ -244,6 +244,6 @@ test("a goal's activity row says Goal and opens the Bot's goals", async () => {
   const title = await view.findByText("Close the month 1");
   const row = title.closest("a");
   expect(row?.getAttribute("href")).toBe("/bots/scout/responsibilities");
-  expect(row?.textContent).toContain("Goal · running");
+  expect(row?.textContent).toContain("Goal · Running");
   expect(row?.textContent).not.toMatch(/responsibilit/i);
 });

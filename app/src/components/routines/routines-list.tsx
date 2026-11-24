@@ -14,6 +14,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useId, useRef, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { ContinueBudgetedWork } from "@/components/billing/execution-budget-dialog";
 import {
   PageEmpty,
   PageRows,
@@ -50,6 +51,7 @@ import {
   nothingIsFiring,
   type RoutineRecord,
   type RoutineRunRecord,
+  routineKeys,
   routineRunsQueryOptions,
   routinesAccessDenied,
   routinesQueryOptions,
@@ -242,6 +244,13 @@ function RoutineRuns({
                     : "Open conversation"}
                 </Link>
               )}
+              {run.billingOperationId && !routine.channel.gone ? (
+                <ContinueBudgetedWork
+                  operationId={run.billingOperationId}
+                  path={`/api/routines/${encodeURIComponent(routine.id)}/runs/${encodeURIComponent(run.id)}/continue`}
+                  queryKey={routineKeys.all}
+                />
+              ) : null}
               {run.error ? (
                 <span className="basis-full text-muted-foreground">
                   {run.error}

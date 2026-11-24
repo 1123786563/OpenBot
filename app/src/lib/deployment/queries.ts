@@ -43,6 +43,7 @@ export type DeploymentCapabilities = {
   skillMarket?: boolean;
   transcription?: boolean;
   voice?: boolean;
+  testCreditConversations?: boolean;
 };
 
 export const deploymentKeys = {
@@ -86,6 +87,7 @@ export function deploymentCapabilitiesQueryOptions() {
         skillMarket?: boolean;
         transcription?: boolean;
         voice?: boolean;
+        testCreditConversations?: boolean;
       };
 
       return {
@@ -100,6 +102,9 @@ export function deploymentCapabilitiesQueryOptions() {
         skillMarket: body.skillMarket === true,
         transcription: body.transcription === true,
         voice: body.voice === true,
+        ...(body.testCreditConversations === true
+          ? { testCreditConversations: true }
+          : {}),
       };
     },
   });

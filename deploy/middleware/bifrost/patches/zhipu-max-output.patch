@@ -1,0 +1,96 @@
+--- a/zhipu-core/providers/openai/chat.go
++++ b/zhipu-core/providers/openai/chat.go
+@@ -33,12 +33,30 @@
+ 
+ 	if bifrostReq.Params != nil {
+ 		openaiReq.ChatParameters = *bifrostReq.Params
+-		if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
++		isZhipuGLM := strings.HasPrefix(bifrostReq.Model, "glm-")
++		if isZhipuGLM {
++			// Zhipu's native chat API enforces max_tokens, including reasoning usage.
++			// The gate is the GLM family, not one model: every glm-* chat model on the
++			// zhipu provider ignores max_completion_tokens and must receive max_tokens.
++			openaiReq.MaxTokens = openaiReq.ChatParameters.MaxCompletionTokens
++			openaiReq.ChatParameters.MaxCompletionTokens = nil
++		} else if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
+ 			openaiReq.ChatParameters.MaxCompletionTokens = schemas.Ptr(MinMaxCompletionTokens)
+ 		}
+ 		// Drop user field if it exceeds OpenAI's 64 character limit
+ 		openaiReq.ChatParameters.User = SanitizeUserField(openaiReq.ChatParameters.User)
+ 		openaiReq.ExtraParams = bifrostReq.Params.ExtraParams
++		if isZhipuGLM && openaiReq.ExtraParams != nil {
++			// The HTTP layer may merge passthrough extra params after this conversion.
++			// Remove the OpenAI spelling so it cannot overwrite the native Zhipu cap.
++			extraParams := make(map[string]interface{}, len(openaiReq.ExtraParams))
++			for key, value := range openaiReq.ExtraParams {
++				if key != "max_completion_tokens" && key != "max_tokens" {
++					extraParams[key] = value
++				}
++			}
++			openaiReq.ExtraParams = extraParams
++		}
+ 
+ 		// Normalize tool parameters for deterministic JSON serialization (improves prompt caching)
+ 		if len(openaiReq.ChatParameters.Tools) > 0 {
+--- a/zhipu-core/providers/openai/chat_test.go
++++ b/zhipu-core/providers/openai/chat_test.go
+@@ -108,0 +109,59 @@
++func TestToOpenAIChatRequest_ZhipuCapRemovesConflictingPassthrough(t *testing.T) {
++	maxTokens := 8
++	request := &schemas.BifrostChatRequest{
++		Provider: schemas.ModelProvider("zhipu"),
++		Model:    "glm-5.3-flash",
++		Input: []schemas.ChatMessage{{
++			Role:    schemas.ChatMessageRoleUser,
++			Content: &schemas.ChatMessageContent{ContentStr: schemas.Ptr("hello")},
++		}},
++		Params: &schemas.ChatParameters{
++			MaxCompletionTokens: &maxTokens,
++			ExtraParams: map[string]interface{}{
++				"max_completion_tokens": maxTokens,
++				"temperature":           0.2,
++			},
++		},
++	}
++
++	ctx := schemas.NewBifrostContext(nil, schemas.NoDeadline)
++	converted := ToOpenAIChatRequest(ctx, request)
++	if converted.MaxTokens == nil || *converted.MaxTokens != maxTokens {
++		t.Fatalf("expected native max_tokens=%d, got %#v", maxTokens, converted.MaxTokens)
++	}
++	if converted.ChatParameters.MaxCompletionTokens != nil {
++		t.Fatalf("expected max_completion_tokens to be cleared")
++	}
++	if _, ok := converted.ExtraParams["max_completion_tokens"]; ok {
++		t.Fatalf("expected conflicting max_completion_tokens passthrough to be removed")
++	}
++	if _, ok := converted.ExtraParams["max_tokens"]; ok {
++		t.Fatalf("expected conflicting max_tokens passthrough to be removed")
++	}
++	if converted.ExtraParams["temperature"] != 0.2 {
++		t.Fatalf("expected unrelated passthrough parameter to survive")
++	}
++}
++
++func TestToOpenAIChatRequest_CustomZhipuCapRemovesConflictingPassthrough(t *testing.T) {
++	maxTokens := 8
++	request := &schemas.BifrostChatRequest{
++		Provider: schemas.OpenAI,
++		Model:    "glm-5.3",
++		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser}},
++		Params: &schemas.ChatParameters{
++			MaxCompletionTokens: &maxTokens,
++			ExtraParams:         map[string]interface{}{"max_completion_tokens": maxTokens},
++		},
++	}
++	ctx := schemas.NewBifrostContext(nil, schemas.NoDeadline)
++	ctx.SetValue(schemas.BifrostContextKeyIsCustomProvider, true)
++	converted := ToOpenAIChatRequest(ctx, request)
++	if converted.MaxTokens == nil || *converted.MaxTokens != maxTokens {
++		t.Fatalf("expected native max_tokens=%d, got %#v", maxTokens, converted.MaxTokens)
++	}
++	if _, ok := converted.ExtraParams["max_completion_tokens"]; ok {
++		t.Fatalf("expected conflicting max_completion_tokens passthrough to be removed")
++	}
++}
++

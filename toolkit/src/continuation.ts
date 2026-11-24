@@ -53,6 +53,7 @@ export type ApprovalContinuation = {
   forwardedProps: unknown;
   initiator?: AuditInitiator;
   sourceVersions?: RunContextVersion[];
+  budgeted?: true;
   marketSkill?: MarketSkillSnapshot;
 };
 

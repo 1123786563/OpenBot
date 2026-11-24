@@ -28,18 +28,28 @@ import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import type { AgentActor } from "../agents/profile-types";
 import { BackgroundConversationBusy } from "../channels/direct-chat";
+import {
+  BackgroundModelWaiting,
+  backgroundModelOperationId,
+} from "../billing/background-model";
 import type { ChannelStore } from "../channels/routes";
 import type { mountCopilotRuntime } from "../copilot";
 import { isMarketVersionPause } from "../skill-market/disablements";
 import type { RoutineStore } from "./store";
 
-export type RoutineRunner = { run(routineRunId: string): Promise<void> };
+export type RoutineRunner = {
+  run(
+    routineRunId: string,
+    continuation?: { ownerUserId: string; routineId: string },
+  ): Promise<void>;
+};
 
 export function createRoutineTurn(
   runBackground: NonNullable<
     ReturnType<typeof mountCopilotRuntime>["runBackground"]
   >,
   actorFor: (personId: string) => Promise<AgentActor>,
+  metered?: Parameters<typeof runBackground>[0]["metered"],
 ): TurnRunner {
   return ({
     ownerUserId,
@@ -48,6 +58,7 @@ export function createRoutineTurn(
     agentId,
     threadId,
     instruction,
+    signal,
   }) => {
     if (!runId) throw new Error("A Routine firing requires a Run ID.");
     return runBackground({
@@ -58,6 +69,8 @@ export function createRoutineTurn(
       personId: ownerUserId,
       agentId,
       prompt: frameFiring(instruction),
+      metered,
+      signal,
       authorize: () => actorFor(ownerUserId).catch(() => null),
       initiator: { kind: "routine", id: routineId },
     }).then(({ replyText, shared }) => ({
@@ -100,14 +113,27 @@ export function createRoutineRunner(options: {
 }): RoutineRunner {
   const { routineStore, channelStore, runTurn } = options;
 
-  async function runOnce(routineRunId: string): Promise<void> {
+  async function runOnce(
+    routineRunId: string,
+    continuation?: { ownerUserId: string; routineId: string },
+  ): Promise<void> {
     const context = await routineStore.runContext(routineRunId);
     /*
      * A deleted routine's queued run is nobody's problem. The routine is gone, its runs cascaded
      * with it, and there is no row left to finish — so there is nothing to record and nothing to
      * say to anybody. The firing is dropped on the floor deliberately.
      */
-    if (!context || context.status) return;
+    if (!context) return;
+    if (continuation) {
+      if (
+        context.ownerUserId !== continuation.ownerUserId ||
+        context.routineId !== continuation.routineId ||
+        !context.budgetId ||
+        (context.status !== "waiting" && context.status !== "skipped")
+      )
+        return;
+      if (!(await routineStore.reopenBillingRun?.(routineRunId))) return;
+    } else if (context.status) return;
     /*
      * PAUSED NEVER RUNS, checked here at the moment of running rather than only when the firing was
      * offered: a person who switched the routine off after the dispatch, or a Run now that raced a
@@ -122,19 +148,31 @@ export function createRoutineRunner(options: {
       return;
     }
 
-    const { routineId, ownerUserId, agentId, channelId, instruction, source } =
-      context;
+    const {
+      routineId,
+      ownerUserId,
+      agentId,
+      channelId,
+      instruction,
+      budgetId,
+      source,
+    } = context;
     // Everything below is done AS the owner: their channel, their thread, their grants.
     const owner: AgentActor = { id: ownerUserId, role: "user" };
 
     /** One activity record, from the routine's Bot, or a logged miss. Never a throw. */
-    async function say(text: string): Promise<void> {
+    async function say(text: string, phase = "reply"): Promise<void> {
       try {
-        await channelStore.recordActivity(owner, channelId, {
-          text,
-          agentId,
-          at: new Date(),
-        });
+        await channelStore.recordActivity(
+          owner,
+          channelId,
+          {
+            text,
+            agentId,
+            at: new Date(),
+          },
+          budgetId ? { id: `${routineRunId}:${phase}` } : undefined,
+        );
       } catch (error) {
         /*
          * A channel that cannot be written to must not turn a recorded outcome into an unrecorded
@@ -204,9 +242,51 @@ export function createRoutineRunner(options: {
           agentId,
           threadId,
           instruction,
+          ...(budgetId
+            ? {
+                budget: { id: budgetId, stepId: routineRunId },
+                userMessage: {
+                  id: routineRunId,
+                  role: "user",
+                  content: instruction,
+                },
+              }
+            : {}),
         }));
       } catch (error) {
         if (error instanceof BackgroundConversationBusy) return;
+        if (
+          budgetId &&
+          error instanceof Error &&
+          error.name === "PlatformRequestError" &&
+          "status" in error &&
+          error.status === 409
+        )
+          return;
+        if (budgetId) {
+          const waiting =
+            error instanceof BackgroundModelWaiting
+              ? error
+              : new BackgroundModelWaiting(
+                  backgroundModelOperationId(
+                    {
+                      kind: "routine",
+                      executionId: routineRunId,
+                      personId: ownerUserId,
+                      budgetId,
+                    },
+                    "reply",
+                  ),
+                  "reconciling",
+                );
+          await routineStore.finishRun(
+            routineRunId,
+            "waiting",
+            `${waiting.message} Operation ${waiting.operationId}`,
+          );
+          await say(waiting.message, "billing");
+          return;
+        }
         if (error instanceof HeadlessToolSuspension) {
           await routineStore.finishRun(
             routineRunId,
@@ -272,10 +352,10 @@ export function createRoutineRunner(options: {
 
   const running = new Map<string, Promise<void>>();
   return {
-    async run(routineRunId) {
+    async run(routineRunId, continuation) {
       const existing = running.get(routineRunId);
       if (existing) return existing;
-      const turn = runOnce(routineRunId);
+      const turn = runOnce(routineRunId, continuation);
       running.set(routineRunId, turn);
       /*
        * `run` never throws. Every outcome a routine can have — a gone channel, a refused model, a

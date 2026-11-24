@@ -8,7 +8,10 @@ import { computerGuidance } from "@openbot/shared/bot-prompt";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
-import { createTurnRunner as createToolkitTurnRunner } from "@openbot/toolkit/run-turn";
+import {
+  createTurnRunner as createToolkitTurnRunner,
+  EXECUTION_BUDGET_PROP,
+} from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createActivityStore } from "./activity/activity";
@@ -38,6 +41,7 @@ import { wireCoordination } from "./agents/coordination-wiring";
 import { createAgentFetch } from "./agents/endpoint";
 import { createHandoffDesk } from "./agents/handoff";
 import { createHandoffRunner } from "./agents/handoff-runner";
+import { HANDOFF_TOOL } from "./agents/handoff-tool";
 import { startHandoffDelivery } from "./agents/handoff-wiring";
 import { runsIsolated } from "./agents/isolation";
 import {
@@ -91,7 +95,21 @@ import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
+import {
+  createPilotAuxiliaryModel,
+  disabledAuxiliaryModel,
+} from "./billing/auxiliary-model";
+import { createBackgroundModel } from "./billing/background-model";
+import { budgetedTurn } from "./billing/background-model-turn";
+import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
+import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
+import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
+import { loadIndependentAppBilling } from "./billing/independent-app-config";
+import { createPaidCreditLedger } from "./billing/paid-ledger";
+import { reconcilePilotClosure } from "./billing/pilot-closure";
 import { createTestCreditLedger } from "./billing/test-credit";
+import { loadTestCreditRuntimeAuthentication } from "./billing/test-credit-runtime-auth";
+import { loadWeKnoraBilling } from "./billing/weknora-config";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
 import { personBrowserEgressPolicy } from "./browser/egress";
@@ -408,7 +426,14 @@ import { readAuditEvent, readWhatIfVocabulary } from "./what-if";
 import { repeatAfterEach } from "./work/loop";
 import { createWorkQueue, type WorkOfferedListener } from "./work/queue";
 
-const config = loadConfig();
+const deployment = loadConfig();
+const directChatTestCredit = loadDirectChatTestCredit(process.env);
+const auxiliaryPilot = Boolean(
+  directChatTestCredit || deployment.managedModelTrial,
+);
+const config = auxiliaryPilot
+  ? { ...deployment, transcription: undefined, voice: undefined }
+  : deployment;
 const legacyIntelligence =
   config.runtime.intelligence ?? disabledIntelligenceSettings;
 // Before anything resolves a capability or reads an enterprise setting. See edition.ts.
@@ -688,13 +713,42 @@ const entra: ReturnType<typeof createEntra> | undefined =
 const auth: AuthService | undefined =
   organizationAuth ??
   (betterAuth && entra ? withEntraBearer(betterAuth, entra) : betterAuth);
+const weknoraBilling = loadWeKnoraBilling(process.env);
+const independentApplication = loadIndependentAppBilling(process.env);
+const billingCasdoor = (
+  directChatTestCredit ??
+  weknoraBilling ??
+  independentApplication
+)?.casdoor;
+if (
+  billingCasdoor &&
+  (!betterAuth ||
+    organizationAuth ||
+    config.singleUser ||
+    config.runtime.mode !== "openbot")
+)
+  throw new Error(
+    "Test Credit requires OpenBot with local OIDC session authentication.",
+  );
+const casdoorBillingIdentity = billingCasdoor
+  ? createCasdoorBillingIdentity(database, billingCasdoor)
+  : undefined;
+const authenticateTestCreditRuntime = loadTestCreditRuntimeAuthentication(
+  process.env.TEST_CREDIT_RUNTIME_BINDINGS,
+  directChatTestCredit ? casdoorBillingIdentity : undefined,
+);
 const { resolveRequestActor, identifyUser, identifyActor } = createRequestActor(
   {
     singleUser: config.singleUser,
     // Answered only on the capture pass. Called per request, after the Recorder's wiring below exists.
     resolveRecorder: (request) => recorderExtension.resolve(request),
     getSession: async (headers) =>
-      (await auth?.api.getSession({ headers })) ?? null,
+      (await auth?.api.getSession({
+        headers,
+        ...(directChatTestCredit
+          ? { query: { disableCookieCache: true } }
+          : {}),
+      })) ?? null,
     rolesForUser: (id) => roleRepository.rolesForUser(id),
   },
 );
@@ -811,7 +865,9 @@ const actorFor = async (
     role: roles.includes("admin") ? "admin" : "user",
   };
 };
-const channelSourceForRun = async (run: RunAssertion) => {
+const channelSourceForRun = async (
+  run: Pick<RunAssertion, "actorId" | "threadId" | "botId" | "handoff">,
+) => {
   if (!run.threadId) return null;
   const sources = await database
     .select({ channelId: channels.id, botId: channelAgents.agentId })
@@ -883,11 +939,13 @@ const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);
  * Where local Intelligence's Learning thinks on the person's plan, with a record of what became of
  * each call so Settings can say why a run failed. Absent off a plan or without Desktop's secret.
  */
-const learningModelEndpoint = learningModelEndpointFor(
-  runtimeModel.plan,
-  process.env.OPENBOT_LEARNING_MODEL_TOKEN,
-  createLearningModelCalls(),
-);
+const learningModelEndpoint = auxiliaryPilot
+  ? undefined
+  : learningModelEndpointFor(
+      runtimeModel.plan,
+      process.env.OPENBOT_LEARNING_MODEL_TOKEN,
+      createLearningModelCalls(),
+    );
 // And before any Bot's model is resolved: behind a gateway, the API that model takes tools on (chooseOpenAIApi).
 if (chooseOpenAIApi(runtimeModel) === "responses")
   console.info(
@@ -909,25 +967,49 @@ const resolveDeploymentModelKey = () =>
     environment: process.env,
   });
 
+const pilotDeployment = {
+  evidence: "deployment",
+  deploymentId: process.env.DEPLOYMENT_ID?.trim(),
+  buildVersion: process.env.OPENBOT_BUILD_VERSION?.trim(),
+  imageDigest: process.env.OPENBOT_BILLING_IMAGE_DIGEST?.trim(),
+} satisfies import("./billing/pilot-signoffs").PilotDeployment;
+const testCreditLedger = createTestCreditLedger(
+  database,
+  undefined,
+  pilotDeployment,
+);
+const platformAuditBudgetId =
+  process.env.TEST_CREDIT_AUDIT_BUDGET_ID?.trim() || undefined;
+const pilotAuxiliaryModel =
+  directChatTestCredit && casdoorBillingIdentity
+    ? createPilotAuxiliaryModel({
+        ledger: testCreditLedger,
+        execute: directChatTestCredit.execute,
+        identityOf: casdoorBillingIdentity,
+        platformBudgetId: platformAuditBudgetId,
+      })
+    : disabledAuxiliaryModel;
+
 /**
  * Pass one of tool selection, on the model the built-in Bots run on: their key, or their plan's
  * harness. See `createSkillChooser`. Built once rather than per request, because it holds nothing
  * about a person.
  */
-const chooseSkills = createSkillChooser(
-  runtimeModel,
-  resolveDeploymentModelKey,
-);
+const chooseSkills = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createSkillChooser(runtimeModel, resolveDeploymentModelKey);
 
 /**
  * The approval reviewer's model: the deployment's own, with its key or on its plan's harness (see
  * `createModelCompleter`). On a plan it threw on every call and failed closed, so Auto-review asked
  * the person about everything. It still fails closed on an error or a timeout (`reviewAction`).
  */
-const reviewActions = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-});
+const reviewActions = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+    });
 
 /**
  * Writes a boundary from an admin's description, and reads it back (computer/policy-translate.ts).
@@ -935,33 +1017,39 @@ const reviewActions = createModelCompleter({
  * is waiting for a rule, which is a longer answer than a router's one name, and a reasoning model
  * spends seconds before it starts.
  */
-const writeBoundaries = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-  timeoutMs: 45_000,
-  // Room for the thinking a current Claude model does before it answers, which counts against it.
-  maxTokens: 16_000,
-});
+const writeBoundaries = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+      timeoutMs: 45_000,
+      // Room for the thinking a current Claude model does before it answers, which counts against it.
+      maxTokens: 16_000,
+    });
 
 /**
  * Reads an admin's question about the audit trail as filters, and reads the filters back
  * (audit-ask.ts). The deployment's own model, given as long as a boundary's writer for the same
  * reason: an admin pressed Ask and is waiting.
  */
-const askTheAuditTrail = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-  timeoutMs: 45_000,
-  maxTokens: 16_000,
-});
+const askTheAuditTrail = auxiliaryPilot
+  ? pilotAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+      timeoutMs: 45_000,
+      maxTokens: 16_000,
+    });
 
 /** Reads "what would happen if…" as one action (what-if.ts), for an admin who pressed Ask. */
-const readWhatIfQuestions = createModelCompleter({
-  model: runtimeModel,
-  resolveApiKey: resolveDeploymentModelKey,
-  timeoutMs: 45_000,
-  maxTokens: 16_000,
-});
+const readWhatIfQuestions = auxiliaryPilot
+  ? disabledAuxiliaryModel
+  : createModelCompleter({
+      model: runtimeModel,
+      resolveApiKey: resolveDeploymentModelKey,
+      timeoutMs: 45_000,
+      maxTokens: 16_000,
+    });
 
 /*
  * The pair a headless turn is driven through, built ONCE.
@@ -1720,33 +1808,42 @@ const stallGuard = createStallGuard({
   auditStore: bootAuditStore,
 });
 
+const intentRouterCompleter = createModelCompleter({
+  model: runtimeModel,
+  /*
+   * Picking a Bot sits between send and the conversation opening; see `routingModelFor`. Never a
+   * model the admin's allowlist leaves out: the router then stays on the deployment's own model,
+   * which the allowlist already governs for every run.
+   */
+  fastModel: () => {
+    const fast = routingModelFor(runtimeModel, process.env);
+    const allowlist = enterpriseControls()?.snapshot()?.settings.modelAllowlist;
+    return fast &&
+      (!allowlist?.enabled ||
+        allowlist.models.includes(`${runtimeModel.provider}/${fast}`))
+      ? fast
+      : undefined;
+  },
+  resolveApiKey: () =>
+    resolveModelApiKey({
+      encryptionKey: config.keyEncryptionKey,
+      reader: credentialStore,
+      provider: runtimeModel.provider,
+      keyId: tenantPackage.model.credentialSecretRef,
+      environment: process.env,
+    }),
+});
+const pilotRoutingModel =
+  process.env.TEST_CREDIT_AUXILIARY_ROUTING === "enabled"
+    ? pilotAuxiliaryModel
+    : disabledAuxiliaryModel;
 const intentRouter = createIntentRouter({
-  complete: createModelCompleter({
-    model: runtimeModel,
-    /*
-     * Picking a Bot sits between send and the conversation opening; see `routingModelFor`. Never a
-     * model the admin's allowlist leaves out: the router then stays on the deployment's own model,
-     * which the allowlist already governs for every run.
-     */
-    fastModel: () => {
-      const fast = routingModelFor(runtimeModel, process.env);
-      const allowlist =
-        enterpriseControls()?.snapshot()?.settings.modelAllowlist;
-      return fast &&
-        (!allowlist?.enabled ||
-          allowlist.models.includes(`${runtimeModel.provider}/${fast}`))
-        ? fast
-        : undefined;
-    },
-    resolveApiKey: () =>
-      resolveModelApiKey({
-        encryptionKey: config.keyEncryptionKey,
-        reader: credentialStore,
-        provider: runtimeModel.provider,
-        keyId: tenantPackage.model.credentialSecretRef,
-        environment: process.env,
-      }),
-  }),
+  complete: (prompt, options) =>
+    (auxiliaryPilot ? pilotRoutingModel : intentRouterCompleter)(
+      prompt,
+      undefined,
+      options,
+    ),
 });
 
 // Said once at boot: whether the key can call the model the Bots run on. A key without access to it
@@ -1840,7 +1937,29 @@ const recorderExtension = createRecorderExtension({
   // A connection is made or ended exactly when its row is written: both in one transaction.
   auditFor: createAuditStore,
 });
-const testCreditLedger = createTestCreditLedger(database);
+const backgroundModel =
+  directChatTestCredit && casdoorBillingIdentity
+    ? createBackgroundModel({
+        ledger: testCreditLedger,
+        identityOf: casdoorBillingIdentity,
+        execute: directChatTestCredit.execute,
+      })
+    : undefined;
+const paidCreditLedger = createPaidCreditLedger(
+  database,
+  undefined,
+  undefined,
+  pilotDeployment,
+);
+const creditPackTestChannel = loadCreditPackTestChannel(process.env);
+const alipayCreditPackTestChannel = loadCreditPackTestChannel(
+  process.env,
+  "alipay",
+);
+const closureChannels = [
+  creditPackTestChannel,
+  alipayCreditPackTestChannel,
+].filter((channel) => channel !== undefined);
 const testCreditCutoffSweep = repeatAfterEach(async () => {
   try {
     await testCreditLedger.sweepCutoffs();
@@ -1848,6 +1967,25 @@ const testCreditCutoffSweep = repeatAfterEach(async () => {
     console.error(
       JSON.stringify({
         type: "test-credit-cutoff-sweep-error",
+        error: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+  }
+}, 60_000);
+
+const pilotClosureSweep = repeatAfterEach(async () => {
+  try {
+    for (const { accountId } of await paidCreditLedger.closedPilotAccounts()) {
+      await reconcilePilotClosure(
+        accountId,
+        { credit: testCreditLedger, paid: paidCreditLedger },
+        closureChannels,
+      );
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        type: "pilot-closure-sweep-error",
         error: error instanceof Error ? error.name : "UnknownError",
       }),
     );
@@ -2280,7 +2418,7 @@ const selectionForActor = (actorId: string): ToolSelection => ({
   // The deployment's own model and key, the same pair the intent router uses, so selection is
   // never a second thing to configure. It throws on a missing key, which reads as "could not
   // choose" and leaves the whole catalogue offered.
-  choose: chooseSkills,
+  choose: (prompt, signal) => chooseSkills(prompt, signal),
   record: async (botId, selection) => {
     await recordAuditEvent(bootAuditStore, {
       eventType: "mcp.tools_discovered",
@@ -2410,43 +2548,143 @@ const routineAgentRunner = new IntelligenceAgentRunner({
   authToken: routineIntelligence.ɵgetRunnerAuthToken(),
 });
 
-const routineRunner = createRoutineRunner({
-  routineStore,
-  channelStore,
-  runTurn: !config.runtime.intelligence
-    ? (input) => {
-        if (!copilotRuntime.runBackground)
-          throw new Error("OpenBot background Runs unavailable.");
-        return createRoutineTurn(copilotRuntime.runBackground, actorFor)(input);
-      }
-    : createTurnRunner({
+const budgetedDelegationTools = async (run: RunAssertion) =>
+  (await coordination.toolsForRun(run)).filter(
+    ({ name }) => name === HANDOFF_TOOL,
+  );
+
+const requireOpenBillingTask = async (ownerUserId: string, taskId: string) => {
+  const task = await taskStore.locate(ownerUserId, taskId);
+  if (!task || task.resolvedAt) throw new Error("This task is no longer open.");
+};
+
+const meteredTurn = (
+  kind: "routine" | "task",
+  fallback: Parameters<typeof budgetedTurn>[4],
+) =>
+  budgetedTurn(
+    backgroundModel,
+    kind,
+    (agent, failure) => {
+      if (kind === "routine" && !config.runtime.intelligence)
+        return (turn) => {
+          if (!copilotRuntime.runBackground)
+            throw new Error("OpenBot background Runs unavailable.");
+          return createRoutineTurn(copilotRuntime.runBackground, actorFor, {
+            agent,
+            failure,
+          })(turn);
+        };
+      return createTurnRunner({
         prepareRunInput: prepareProductRunInput,
         onKnownStop: productTelemetry.stopKnown,
         admission: serverTurnAdmission,
         intelligence: routineIntelligence,
         runner: routineAgentRunner,
-        components: componentCatalog,
-        buildAgentFor,
-        toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-          if (!computerGateway) return [];
-          const actor = await actorFor(ownerUserId);
-          const profile = await agentProfileStore.get(actor, agentId);
-          if (!profile)
-            throw new Error("That Bot is not available to this owner.");
-          // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-          if (!canUseComputer(profile, actor)) return [];
-          return createHeadlessComputerTools({
-            gateway: computerGateway,
-            seat: await computerGateway.seatFor(agentId, actor.id),
-            actor: { id: actor.id, userId: actor.id, initiator },
-            auditStore: bootAuditStore,
-            ...(signInService ? { signIn: signInService } : {}),
-          });
-        },
-        learningContainerForThread: (input) =>
-          copilotRuntime.learning?.containerForThread(input) ??
-          Promise.resolve(undefined),
+        buildAgentFor: async () => agent,
+      });
+    },
+    async ({ ownerUserId, routineId, threadId, agentId, signal, budget }) => {
+      const actor = await actorFor(ownerUserId);
+      const source = await channelSourceForRun({
+        actorId: ownerUserId,
+        threadId,
+        botId: agentId,
+      });
+      if (!source || !(await agentProfileStore.get(actor, agentId)))
+        throw new Error("The Bot or conversation is no longer available.");
+      if (
+        kind === "routine" &&
+        !(await routineStore.routineForFiring(routineId))?.enabled
+      )
+        throw new Error("This routine is paused.");
+      if (kind === "task") {
+        const taskId = budget?.stepId?.slice("task-".length);
+        if (!taskId) throw new Error("The billing Task is unavailable.");
+        await requireOpenBillingTask(ownerUserId, taskId);
+      }
+      const admitted = await serverTurnAdmission({
+        ownerUserId,
+        agentId,
+        threadId,
+        signal,
+      });
+      if (admitted?.aborted)
+        throw new Error("The headless turn was cancelled.");
+    },
+    fallback,
+    ({ ownerUserId, agentId, initiator, budget }, run) =>
+      restrictCoordinationForRun(initiator, async () => {
+        const parent = {
+          actorId: ownerUserId,
+          botId: agentId,
+          runId: run.runId,
+          threadId: run.threadId,
+          budgetId: run.budgetId,
+          coordinationOperationId: run.operationId,
+          ...(kind === "task" && budget?.stepId
+            ? { billingTaskId: budget.stepId.slice("task-".length) }
+            : {}),
+          initiator: initiator ?? PERSON_INITIATOR,
+        };
+        return [
+          ...(await budgetedDelegationTools(parent)),
+          subagents.toolForRun(parent),
+        ];
+      })(),
+    ({ ownerUserId, agentId, initiator }) =>
+      grantedTools({
+        store: pluginStore,
+        botId: agentId,
+        actorId: ownerUserId,
+        initiator,
+        credentialActorFor: teamBots.credentialActorFor(ownerUserId, agentId),
       }),
+  );
+
+const routineRunner = createRoutineRunner({
+  routineStore,
+  channelStore,
+  runTurn: meteredTurn(
+    "routine",
+    !config.runtime.intelligence
+      ? (input) => {
+          if (!copilotRuntime.runBackground)
+            throw new Error("OpenBot background Runs unavailable.");
+          return createRoutineTurn(
+            copilotRuntime.runBackground,
+            actorFor,
+          )(input);
+        }
+      : createTurnRunner({
+          prepareRunInput: prepareProductRunInput,
+          onKnownStop: productTelemetry.stopKnown,
+          admission: serverTurnAdmission,
+          intelligence: routineIntelligence,
+          runner: routineAgentRunner,
+          components: componentCatalog,
+          buildAgentFor,
+          toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
+            if (!computerGateway) return [];
+            const actor = await actorFor(ownerUserId);
+            const profile = await agentProfileStore.get(actor, agentId);
+            if (!profile)
+              throw new Error("That Bot is not available to this owner.");
+            // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
+            if (!canUseComputer(profile, actor)) return [];
+            return createHeadlessComputerTools({
+              gateway: computerGateway,
+              seat: await computerGateway.seatFor(agentId, actor.id),
+              actor: { id: actor.id, userId: actor.id, initiator },
+              auditStore: bootAuditStore,
+              ...(signInService ? { signIn: signInService } : {}),
+            });
+          },
+          learningContainerForThread: (input) =>
+            copilotRuntime.learning?.containerForThread(input) ??
+            Promise.resolve(undefined),
+        }),
+  ),
 });
 
 /**
@@ -2457,6 +2695,24 @@ const routineRunner = createRoutineRunner({
  * without resuming its thread, because the action goes back to the conversation instead.
  */
 const subagents = createSubagents({
+  backgroundModel,
+  authorizeBudgetedTurn: async (
+    { ownerUserId, agentId, threadId, signal },
+    parent,
+  ) => {
+    if (parent.billingTaskId)
+      await requireOpenBillingTask(ownerUserId, parent.billingTaskId);
+    const actor = await actorFor(ownerUserId);
+    if (!(await agentProfileStore.get(actor, agentId)))
+      throw new Error("The Bot is no longer available.");
+    const admitted = await serverTurnAdmission({
+      ownerUserId,
+      agentId,
+      threadId,
+      signal,
+    });
+    if (admitted.aborted) throw new Error("The subagent was cancelled.");
+  },
   turn: {
     prepareRunInput: prepareProductRunInput,
     onKnownStop: productTelemetry.stopKnown,
@@ -2538,6 +2794,9 @@ const actorAgentResolver = createActorAgentResolver({
         botId,
         threadId: input.threadId,
         runId: input.runId,
+        ...(typeof input.forwardedProps?.[EXECUTION_BUDGET_PROP] === "string"
+          ? { budgetId: input.forwardedProps[EXECUTION_BUDGET_PROP] }
+          : {}),
         // The subagent carries on the asking run's task, on the asking run's surface.
         ...productTelemetry.lineageOf(actorId, input.forwardedProps),
         auditRootTaskId:
@@ -2572,6 +2831,10 @@ const copilotRuntime = mountCopilotRuntime(
     directChat: {
       database,
       profiles: agentProfileStore,
+      testCredit: directChatTestCredit && {
+        ledger: testCreditLedger,
+        ...directChatTestCredit,
+      },
       reflect: directChatReflect,
       memoryVersionsCurrent: memoryIngestion.memoryVersionsCurrent,
       groupThread: groupStore.thread,
@@ -3090,10 +3353,11 @@ const taskRunner = createTaskRunner({
   queue: createWorkQueue(database),
   owner: workOwner("tasks"),
   scopeFor: deliveryScopeFor,
+  canStartBudget: backgroundModel?.canStart,
   runTask: createTaskTurn({
     channels: channelStore,
     actorFor,
-    runTurn: approvalContinuationRunner,
+    runTurn: meteredTurn("task", approvalContinuationRunner),
   }),
 });
 // The backstop for a task's turn a crash or a restart left behind; Start runs one at once.
@@ -3303,6 +3567,26 @@ let workOfferedListener: WorkOfferedListener | undefined;
 
 if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
   workOfferedListener = await startHandoffDelivery({
+    backgroundModel,
+    authorizeBudgetedWork: async (work) => {
+      if (work.billingTaskId)
+        await requireOpenBillingTask(work.actorId, work.billingTaskId);
+    },
+    budgetedCoordination: (work, claim, run) =>
+      restrictCoordinationForRun(work.initiator, async () =>
+        budgetedDelegationTools({
+          botId: work.toBotId,
+          actorId: work.actorId,
+          runId: run.runId,
+          threadId: work.threadId,
+          budgetId: run.budgetId,
+          coordinationOperationId: run.operationId,
+          billingTaskId: work.billingTaskId,
+          depth: work.depth,
+          initiator: work.initiator,
+          handoff: { key: claim.key, owner: claim.owner },
+        }),
+      )(),
     productTelemetry,
     config,
     database,
@@ -3376,26 +3660,30 @@ const channelSummaries = {
   }),
   owner: workOwner("summariser"),
 };
-repeatAfterEach(async () => {
-  try {
-    await offerChannelsAwaitingSummary(channelSummaries);
-    const report = await summariseClaimedChannels(channelSummaries);
-    if (report.written.length > 0) {
-      console.info(
-        JSON.stringify({ type: "channel-summaries", written: report.written }),
+if (!auxiliaryPilot)
+  repeatAfterEach(async () => {
+    try {
+      await offerChannelsAwaitingSummary(channelSummaries);
+      const report = await summariseClaimedChannels(channelSummaries);
+      if (report.written.length > 0) {
+        console.info(
+          JSON.stringify({
+            type: "channel-summaries",
+            written: report.written,
+          }),
+        );
+      }
+      // Same pass: one statement, deletes by age, and two replicas running it changes nothing.
+      await forgetSettledSummaries(channelSummaries);
+    } catch (error) {
+      // Never fatal, and never loud enough to drown the log: a deployment with no model configured
+      // reaches this on every pass, and it has not gone wrong, it simply has no titles.
+      console.warn(
+        "[channels] conversations could not be named:",
+        error instanceof Error ? error.message : error,
       );
     }
-    // Same pass: one statement, deletes by age, and two replicas running it changes nothing.
-    await forgetSettledSummaries(channelSummaries);
-  } catch (error) {
-    // Never fatal, and never loud enough to drown the log: a deployment with no model configured
-    // reaches this on every pass, and it has not gone wrong, it simply has no titles.
-    console.warn(
-      "[channels] conversations could not be named:",
-      error instanceof Error ? error.message : error,
-    );
-  }
-}, 10_000);
+  }, 10_000);
 
 /*
  * Enterprise controls (server/src/admin): capability switches, SSO-required, SCIM offboarding,
@@ -3582,14 +3870,16 @@ const app = createApp(
     ? createProviderOAuthProxy(process.env.OPENBOT_MODEL_OAUTH_FILE.trim())
     : undefined,
   createUserPreferencesStore(database),
-  {
-    store: createVoiceSessionStore(database, channelStore),
-    summarize: createVoiceSummarizer({
-      model: runtimeModel,
-      resolveApiKey: resolveRuntimeModelApiKey,
-    }),
-    channels: channelStore,
-  },
+  auxiliaryPilot
+    ? undefined
+    : {
+        store: createVoiceSessionStore(database, channelStore),
+        summarize: createVoiceSummarizer({
+          model: runtimeModel,
+          resolveApiKey: resolveRuntimeModelApiKey,
+        }),
+        channels: channelStore,
+      },
   {
     store: learningSettings,
     autoAssign: learningAutoAssign,
@@ -3753,6 +4043,7 @@ const app = createApp(
     approvalRules: { vocabulary: () => loadRuleVocabulary(database) },
     auditQuestions: {
       complete: askTheAuditTrail,
+      platformBudgetId: auxiliaryPilot ? platformAuditBudgetId : undefined,
       vocabulary: () => readAuditVocabulary(database, () => policyStore.get()),
     },
     // The stores the live path decides from: the same boundary, controls snapshot, grants and gate.
@@ -3900,6 +4191,25 @@ const app = createApp(
   identityStore,
   identityGithubCallback,
   profileStore,
+  // A person's bill: Test Credit balance, the paid side, and budgets (#107).
+  {
+    testLedger: testCreditLedger,
+    runtime:
+      authenticateTestCreditRuntime && directChatTestCredit
+        ? {
+            authenticate: authenticateTestCreditRuntime,
+            execute: directChatTestCredit.execute,
+          }
+        : undefined,
+    paidLedger: paidCreditLedger,
+    creditPackTestChannel,
+    alipayCreditPackTestChannel,
+    casdoorIdentityOf: casdoorBillingIdentity,
+    weknora: weknoraBilling,
+    independentApplication,
+    testCreditConversations: directChatTestCredit !== undefined,
+    canStartBackgroundBudget: backgroundModel?.canStart,
+  },
 );
 if (reflectGateway) {
   app.post(REFLECT_MODEL_CALLBACK_PATH, (context) =>
@@ -3997,6 +4307,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     evaluationCleanup?.stop();
     stopScheduledLearning?.();
     testCreditCutoffSweep.stop();
+    pilotClosureSweep.stop();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);
     for (const sweep of deliverySweeps) sweep.stop();

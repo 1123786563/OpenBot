@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { measureInput } from "../billing/input-meter";
 import {
+  bifrostRouteProof,
   createBifrostCreditExecutor,
   UnsentBifrostRequest,
 } from "../billing/test-credit-bifrost";
@@ -16,13 +18,6 @@ const settings = z.object({
   TEST_CREDIT_INPUT_METER_URL: z.url(),
   TEST_CREDIT_INPUT_METER_TOKEN: setting,
   TEST_CREDIT_METERING_REVISION: setting,
-});
-
-const measurement = z.object({
-  gatewayRevision: setting,
-  meteringRevision: setting,
-  inputTokenUpperBound: z.number().int().nonnegative(),
-  requestSha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
 
 export function loadPersonalTestCreditExecutor(
@@ -59,38 +54,16 @@ export function loadPersonalTestCreditExecutor(
     gatewayRevision: config.TEST_CREDIT_GATEWAY_REVISION,
     gatewayToken: config.TEST_CREDIT_BIFROST_TOKEN,
     meteringRevision: config.TEST_CREDIT_METERING_REVISION,
-    async countInputTokens(
-      { gatewayRevision, meteringRevision },
-      { body, digest, requestId, operationId },
-      signal,
-    ) {
+    limitField: "max_completion_tokens",
+    async countInputTokens(route, _messages, request, signal) {
       const timeout = AbortSignal.timeout(5_000);
-      const headers = new Headers({
-        authorization: `Bearer ${config.TEST_CREDIT_INPUT_METER_TOKEN}`,
-        "content-type": "application/json",
-        "x-request-id": requestId,
-        "x-openbot-bifrost-gateway-revision": gatewayRevision,
-        "x-openbot-bifrost-metering-revision": meteringRevision,
-      });
-      if (operationId) headers.set("x-openbot-operation-id", operationId);
-      const response = await fetch(meter, {
-        method: "POST",
-        redirect: "error",
+      return measureInput({
+        endpoint: meter,
+        token: config.TEST_CREDIT_INPUT_METER_TOKEN,
+        request,
+        revision: route,
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-        headers,
-        body,
       });
-      if (!response.ok) throw new Error("Test Credit input meter unavailable.");
-      const measured = measurement.parse(await response.json());
-      if (
-        measured.gatewayRevision !== gatewayRevision ||
-        measured.meteringRevision !== meteringRevision ||
-        measured.requestSha256 !== digest
-      )
-        throw new Error(
-          "Test Credit input meter returned an invalid request proof.",
-        );
-      return measured.inputTokenUpperBound;
     },
   });
   return (input: Parameters<TestCreditExecutor>[0]) => {
@@ -99,6 +72,6 @@ export function loadPersonalTestCreditExecutor(
       config.TEST_CREDIT_GATEWAY_IMAGE_DIGEST
     )
       throw new UnsentBifrostRequest("route_unavailable");
-    return execute(input);
+    return execute({ ...input, routeProof: bifrostRouteProof(input.route) });
   };
 }

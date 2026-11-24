@@ -18,7 +18,7 @@
  * shows, and the pick is kept for when it is offered again. An effort is only ever sent to a model
  * that takes it.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import type { RuntimeModel } from "../copilot";
@@ -40,7 +40,7 @@ export class ModelChoiceError extends Error {
 export type ConversationModel = { model: string | null; effort: string | null };
 
 type Saved = {
-  provider: string;
+  provider?: string;
   model?: string | null;
   effort?: string | null;
 } | null;
@@ -140,8 +140,8 @@ export function createModelChoices(deps: {
         .set({
           modelSelection:
             next.model === null && next.effort === null
-              ? null
-              : { provider: model.provider, ...next },
+              ? sql`nullif(${intelligenceChannelMappings.modelSelection} - array['provider', 'model', 'effort'], '{}'::jsonb)`
+              : sql`coalesce(${intelligenceChannelMappings.modelSelection}, '{}'::jsonb) || ${JSON.stringify({ provider: model.provider, ...next })}::text::jsonb`,
           updatedAt: new Date(),
         })
         .where(

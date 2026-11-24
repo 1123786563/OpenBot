@@ -894,7 +894,7 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
      * The person chose to act on it: the item is started, once, and becomes a task in a conversation
      * of its own, where the ask runs as their own turn and every send or change meets approval.
      */
-    async start(ownerUserId: string, suggestionId: string) {
+    async start(ownerUserId: string, suggestionId: string, budgetId?: string) {
       if (!deps.tasks)
         throw new ProactiveRefusedError("Starting a task isn't available yet.");
       const suggestion = await deps.store.suggestion(ownerUserId, suggestionId);
@@ -917,6 +917,7 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
       try {
         const task = await deps.tasks.startFromItem({
           ownerUserId,
+          ...(budgetId ? { budgetId } : {}),
           item: {
             id: started.id,
             agentId: started.agentId,

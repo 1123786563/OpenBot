@@ -1739,7 +1739,8 @@ fn run(args: &[String], here: &Path) {
     fn callback_on(port: u16, code: &str, state: &str) -> std::io::Result<String> {
         let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
         let mut stream = std::net::TcpStream::connect_timeout(&address, Duration::from_secs(2))?;
-        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+        // Leave time for the relay to wait for its upstream before the fixture replies.
+        stream.set_read_timeout(Some(Duration::from_secs(20)))?;
         write!(
             stream,
             "GET /auth/callback?code={code}&scope=openid&state={state} HTTP/1.1\r\n\
@@ -1781,8 +1782,15 @@ fn run(args: &[String], here: &Path) {
     */
     #[cfg(unix)]
     const FAKE_CHATGPT_OAUTH: &str = r#"
-import http.server, json, secrets, time, urllib.parse
+import http.server, json, secrets, socketserver, time, urllib.parse
 from pathlib import Path
+
+# Keep the OS-assigned port reserved before the relay starts. TCPServer binds
+# the numeric loopback address without HTTPServer's reverse hostname lookup.
+upstream = socketserver.TCPServer(
+    ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler, bind_and_activate=False
+)
+upstream.server_bind()
 
 def login_chatgpt(*, store_path=None, host="localhost", port=1455, callback_path="/auth/callback", open_browser=True, timeout=300.0):
     state = secrets.token_urlsafe(32)
@@ -1812,7 +1820,9 @@ def login_chatgpt(*, store_path=None, host="localhost", port=1455, callback_path
     # Long enough that the attempt's own callback reaches the relay before this server listens. The
     # relay must hold it until the server is up, not answer it as a second one.
     time.sleep(0.5)
-    server = http.server.HTTPServer((host, port), Handler)
+    server = upstream
+    server.RequestHandlerClass = Handler
+    server.server_activate()
     server.timeout = 1.0
     deadline = time.monotonic() + timeout
     try:
@@ -1832,15 +1842,6 @@ def login_chatgpt(*, store_path=None, host="localhost", port=1455, callback_path
     path.write_text(json.dumps({"access_token": "synthetic-access", "refresh_token": "synthetic-refresh"}))
 "#;
 
-    #[cfg(unix)]
-    fn free_port() -> u16 {
-        std::net::TcpListener::bind(("127.0.0.1", 0))
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port()
-    }
-
     /**
     The login program itself, run by Python against the stand-in above: the relay keeps redirects
     that are not this attempt's first away from the vendor's server.
@@ -1857,29 +1858,27 @@ def login_chatgpt(*, store_path=None, host="localhost", port=1455, callback_path
     #[test]
     #[cfg(unix)]
     fn the_relay_keeps_other_redirects_away_from_the_sign_in_in_progress() {
-        // Its relay and upstream take free ports; no other port test may take one in between.
-        let _ports = crate::test_support::hold_ports();
         let root = crate::test_support::temp_root("chatgpt-relay");
         let package = root.join("langchain_openai");
         std::fs::create_dir_all(&package).unwrap();
         std::fs::write(package.join("__init__.py"), "").unwrap();
         std::fs::write(package.join("chatgpt_oauth.py"), FAKE_CHATGPT_OAUTH).unwrap();
         let store = root.join(".langchain").join("chatgpt-auth.json");
-        // Two different ports: a port given back can be handed out again at once.
-        let relay = free_port();
-        let loopback = std::iter::repeat_with(free_port)
-            .find(|port| *port != relay)
-            .unwrap();
-        // Rendered as `render_login` does, with this test's ports, its store, and loopback for the
-        // relay: a test has no business listening on the network.
-        let program = CHATGPT_LOGIN
-            .replace("__RELAY_PORT__", &relay.to_string())
-            .replace("__LOOPBACK_PORT__", &loopback.to_string())
+        let relay_program = CHATGPT_LOGIN
+            .replace("__RELAY_PORT__", "0")
+            .replace("__LOOPBACK_PORT__", "fixture_upstream_port")
+            .replace(
+                "listener.listen(8)",
+                "listener.listen(8)\n    print('FIXTURE_RELAY_PORT=' + str(listener.getsockname()[1]))",
+            )
             .replace(
                 "__STORE_PATH__",
                 &format!("{:?}", store.display().to_string()),
             )
             .replace("(\"0.0.0.0\",", "(\"127.0.0.1\",");
+
+        let program =
+            format!("from langchain_openai.chatgpt_oauth import upstream\nfixture_upstream_port = upstream.server_address[1]\n{relay_program}");
 
         let mut python = std::process::Command::new("python3")
             .args(["-u", "-c", &program])
@@ -1897,11 +1896,23 @@ def login_chatgpt(*, store_path=None, host="localhost", port=1455, callback_path
         let mut err = python.stderr.take().unwrap();
         std::thread::spawn(move || drain(&mut err, held));
         let began = Instant::now();
-        let url = loop {
-            if let Some(url) = openai_url_in(&output.lock().unwrap()) {
-                break url;
+        let (url, relay) = loop {
+            let said = output.lock().unwrap().clone();
+            let relay = said.lines().find_map(|line| {
+                line.strip_prefix("FIXTURE_RELAY_PORT=")
+                    .and_then(|port| port.parse::<u16>().ok())
+            });
+            if let (Some(url), Some(relay)) = (openai_url_in(&said), relay) {
+                break (url, relay);
             }
-            assert!(began.elapsed() < Duration::from_secs(20), "no link printed");
+            assert!(
+                python.try_wait().unwrap().is_none(),
+                "fixture exited:\n{said}"
+            );
+            assert!(
+                began.elapsed() < Duration::from_secs(20),
+                "fixture never announced the login link and relay port:\n{said}"
+            );
             std::thread::sleep(Duration::from_millis(50));
         };
         let state = url
@@ -1925,7 +1936,8 @@ def login_chatgpt(*, store_path=None, host="localhost", port=1455, callback_path
             "{crowded}"
         );
 
-        let first = callback_on(relay, "ac.first", &state).unwrap();
+        let first = callback_on(relay, "ac.first", &state)
+            .expect("the relay forwards the first valid callback and returns the upstream reply");
         assert!(first.contains("You're signed in"), "{first}");
 
         let again = callback_on(relay, "ac.again", &state).unwrap();
