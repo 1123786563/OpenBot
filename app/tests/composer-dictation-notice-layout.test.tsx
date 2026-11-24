@@ -39,7 +39,13 @@ async function bundle(): Promise<string> {
       join(import.meta.dir, "composer-dictation-notice.fixture.tsx"),
     ],
     target: "browser",
-    define: { "process.env.NODE_ENV": JSON.stringify("production") },
+    // The theme scope reads its accent from Vite's environment; unset, it keeps its own defaults.
+    define: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+      "import.meta.env.VITE_OPENBOT_ASTRYX_ACCENT_LIGHT": '""',
+      "import.meta.env.VITE_OPENBOT_ASTRYX_ACCENT_DARK": '""',
+      "import.meta.env.VITE_OPENBOT_ASTRYX_BRAND_LOGO": '""',
+    },
   });
   if (!built.success) throw new AggregateError(built.logs, "bundle failed");
   const script = built.outputs.find((output) => output.kind === "entry-point");
@@ -70,18 +76,32 @@ function packageStylesheet(id: string): string {
 async function stylesheet(classes: string[]): Promise<string> {
   const tailwind = dirname(Bun.resolveSync("tailwindcss/package.json", APP));
   const entry = join(APP, "src", "styles.css");
-  const compiler = await compile(readFileSync(entry, "utf8"), {
-    base: dirname(entry),
-    loadStylesheet: async (id, base) => {
-      const path =
-        id === "tailwindcss"
-          ? join(tailwind, "index.css")
-          : id.startsWith(".")
-            ? join(base, id)
-            : packageStylesheet(id);
-      return { path, base: dirname(path), content: readFileSync(path, "utf8") };
+  // The app's stylesheet imports, in the order `main.tsx` loads them: the composer's controls are
+  // Astryx components, which draw their surface from Astryx's own stylesheets.
+  const sources = [
+    "@astryxdesign/core/reset.css",
+    "@astryxdesign/core/astryx.css",
+    "@astryxdesign/theme-neutral/theme.css",
+  ].map((id) => `@import "${id}";`);
+  const compiler = await compile(
+    [...sources, readFileSync(entry, "utf8")].join("\n"),
+    {
+      base: dirname(entry),
+      loadStylesheet: async (id, base) => {
+        const path =
+          id === "tailwindcss"
+            ? join(tailwind, "index.css")
+            : id.startsWith(".")
+              ? join(base, id)
+              : packageStylesheet(id);
+        return {
+          path,
+          base: dirname(path),
+          content: readFileSync(path, "utf8"),
+        };
+      },
     },
-  });
+  );
   return compiler.build(classes);
 }
 

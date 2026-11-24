@@ -1,7 +1,15 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Composer } from "@/components/channels/composer/composer";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -108,9 +116,7 @@ test("a failed send puts the words back rather than throwing at nobody", async (
 
   expect(typedText(container)).toContain("ship it");
   // Back to a composer that can be sent from again, rather than one stuck mid-send.
-  expect((getByLabelText("Send message") as HTMLButtonElement).disabled).toBe(
-    false,
-  );
+  expect(isDisabled(getByLabelText("Send message"))).toBe(false);
 });
 
 /**
@@ -144,4 +150,28 @@ test("a failed send keeps what was typed while it was in flight", async () => {
   expect(restored).toContain("first");
   expect(restored).toContain("second");
   expect(restored.indexOf("first")).toBeLessThan(restored.indexOf("second"));
+});
+
+/*
+ * Keyboard only: from the box, Tab reaches Send and Enter sends what the box holds.
+ */
+test("Send is reached by Tab and sent with Enter", async () => {
+  const sent: boolean[] = [];
+  const { container, getByLabelText } = render(
+    <Composer
+      compact
+      initialValue="ship it"
+      onSubmit={(draft) => {
+        sent.push(draft.isEmpty);
+      }}
+    />,
+  );
+  const send = getByLabelText("Send message");
+  const user = userEvent.setup({ document });
+  editorOf(container).focus();
+  for (let step = 0; document.activeElement !== send && step < 6; step++)
+    await user.tab();
+  expect(document.activeElement).toBe(send);
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(sent).toEqual([false]));
 });
