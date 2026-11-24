@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import {
   ChatTranscript,
   ServerToolLine,
@@ -66,6 +66,6 @@ test("a reply's code block is highlighted for both themes", async () => {
 
 test("code in a tool's answer is highlighted too", async () => {
   const view = render(<ServerToolLine name="mcp__docs__fetch" result={CODE} />);
-  (view.container.querySelector("details") as HTMLDetailsElement).open = true;
+  fireEvent.click(view.getByRole("button", { expanded: false }));
   await token(view.container, "def");
 });
