@@ -53,8 +53,15 @@ export function personalTestCreditExecution(
       operationId,
       ...(priorOperation?.dispatchedAt ? { rerunOfOperationId } : {}),
       ...quote,
+      creditType: "test",
     });
-    if (reservation.state === "denied" || !reservation.permit) return;
+    // A retried run can encounter a hold created before this entry pinned its funding type.
+    if (
+      reservation.state === "denied" ||
+      !reservation.permit ||
+      reservation.operation.creditType !== "test"
+    )
+      return;
     const result = await dispatchTestCredit({
       ledger,
       execute,
