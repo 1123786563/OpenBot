@@ -1,3 +1,4 @@
+import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { useCopilotChatConfiguration } from "@copilotkit/react-core/v2";
@@ -75,20 +76,12 @@ export function SubtaskStep({
 
   return (
     <li className="min-w-0">
-      <details
-        className="tool-line min-w-0"
-        onToggle={(event) => setOpen(event.currentTarget.open)}
-      >
-        <summary className="flex cursor-pointer list-none items-center gap-1.5">
-          <Text
-            as="span"
-            aria-hidden
-            className="tool-line-chevron shrink-0 transition-transform"
-            color="secondary"
-            size="sm"
-          >
-            ▸
-          </Text>
+      <Collapsible
+        chevronPosition="start"
+        className="min-w-0"
+        isOpen={open}
+        onOpenChange={setOpen}
+        trigger={
           <Stack
             as="span"
             direction="horizontal"
@@ -117,7 +110,8 @@ export function SubtaskStep({
               step={step}
             />
           </Stack>
-        </summary>
+        }
+      >
         <Stack className="mt-1.5 pl-5" gap={2}>
           {step.subtask?.task ? (
             <Text
@@ -138,7 +132,7 @@ export function SubtaskStep({
             </ol>
           ) : null}
         </Stack>
-      </details>
+      </Collapsible>
     </li>
   );
 }

@@ -274,13 +274,20 @@ test("a run of reads and searches is one line, as Claude Code folds it, that ope
       ],
     ),
   );
-  const line = await view.findByText("Read 1 file and searched for 4 patterns");
+  await view.findByText("Read 1 file and searched for 4 patterns");
   // One row for the run, not five.
   expect(cards(view)).toEqual([]);
-  (line.closest("details") as HTMLDetailsElement).open = true;
+  const trigger = view.getByRole("button", {
+    name: "Read 1 file and searched for 4 patterns",
+  });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
   // Each step says what it found, as it would standing alone. Read numbers the empty line after the
   // final newline too.
-  expect(readableLines(view.container, "ol > li details > summary")).toEqual([
+  expect(
+    readableLines(view.container, "ol > li button[aria-expanded]"),
+  ).toEqual([
     "Read 39 linesgreet.py",
     'Found 2 files"def " in workspace',
     'Found 2 matches"def " in greet.py',
