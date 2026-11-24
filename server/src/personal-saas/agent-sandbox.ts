@@ -2,6 +2,9 @@ import { and, eq, gt, inArray, lt, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
+  personalSaasAccounts,
+  personalWorkspaceClosures,
+  personalWorkspaces,
   personalWorkspaceAgentSandboxes as sandboxes,
   personalWorkspaceAgenticSpaces as spaces,
 } from "../db/schema/personal-saas";
@@ -56,6 +59,7 @@ export type AgentSandboxProvider = {
   // storageBytes is the account's Computer reservation. prepare refuses before
   // allocating unless the durable storage is confirmed to be exactly that size;
   // storageUsage reports its used bytes, or null when they cannot be confirmed.
+  eraseStorage?(storage: typeof spaces.$inferSelect): Promise<void>;
   storageUsage?(
     storage: typeof spaces.$inferSelect,
     storageBytes: number,
@@ -216,14 +220,14 @@ export function agentSandboxComputer(
       const result = await read(workspaceId);
       if (result.status !== "not_started" && !result.stopped)
         throw new Error("Workspace Computer cleanup unconfirmed");
-      // Instance deletion does not erase AgenticFS. Keep closure pending
-      // until the durable storage cleanup contract in #146 is implemented.
       const [storage] = await database
-        .select({ workspaceId: spaces.workspaceId })
+        .select()
         .from(spaces)
         .where(eq(spaces.workspaceId, workspaceId));
-      if (storage)
+      if (!storage) return;
+      if (!provider.eraseStorage)
         throw new Error("Workspace Computer storage cleanup unconfirmed");
+      await provider.eraseStorage(storage);
     },
     async start(
       workspaceId: string,
@@ -252,19 +256,40 @@ export function agentSandboxComputer(
         flashWorkerExit: null,
         flashDestroyedAt: null,
       };
-      const [row] = await database
-        .insert(sandboxes)
-        .values(reservation)
-        .onConflictDoUpdate({
-          target: sandboxes.workspaceId,
-          set: reservation,
-          setWhere: and(
-            eq(sandboxes.phase, "stopped"),
-            lte(sandboxes.epoch, lease.epoch),
-            lt(sandboxes.issuedAt, lease.issuedAt),
-          ),
-        })
-        .returning();
+      const row = await database.transaction(async (tx) => {
+        // Serialize the reservation with closure acceptance on the owner row.
+        // Every pre-closure generation is then visible to the cutoff sweep.
+        const [owner] = await tx
+          .select({ id: personalSaasAccounts.id })
+          .from(personalSaasAccounts)
+          .innerJoin(
+            personalWorkspaces,
+            eq(personalWorkspaces.ownerId, personalSaasAccounts.id),
+          )
+          .where(eq(personalWorkspaces.id, workspaceId))
+          .for("update", { of: personalSaasAccounts });
+        if (!owner) return;
+        const [closure] = await tx
+          .select({ id: personalWorkspaceClosures.id })
+          .from(personalWorkspaceClosures)
+          .where(eq(personalWorkspaceClosures.workspaceId, workspaceId))
+          .limit(1);
+        if (closure) return;
+        const [reserved] = await tx
+          .insert(sandboxes)
+          .values(reservation)
+          .onConflictDoUpdate({
+            target: sandboxes.workspaceId,
+            set: reservation,
+            setWhere: and(
+              eq(sandboxes.phase, "stopped"),
+              lte(sandboxes.epoch, lease.epoch),
+              lt(sandboxes.issuedAt, lease.issuedAt),
+            ),
+          })
+          .returning();
+        return reserved;
+      });
       if (!row) return false;
       try {
         // An error leaves an ambiguous allocation. Reconcile by generation;

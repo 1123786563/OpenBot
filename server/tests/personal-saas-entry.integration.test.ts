@@ -5375,6 +5375,59 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
   );
   const storages = [ownerStorage, otherStorage];
   const nas = nasFixture();
+  const accessPoints = new Map(
+    storages.map((storage) => [storage.accessPointId, storage]),
+  );
+  let failDelete = true;
+  const cleanupCalls: string[] = [];
+  const cleanupNas = createNasClient({
+    region: "cn-hangzhou",
+    accessKeyId: "fixture",
+    accessKeySecret: "fixture",
+    async fetch(input, init) {
+      const action = new Headers(init.headers).get("x-acs-action");
+      const query = new URL(input).searchParams;
+      if (action === "DescribeAccessPoint" || action === "DeleteAccessPoint") {
+        const id = query.get("AccessPointId") ?? "";
+        expect(id).toBe(ownerStorage.accessPointId);
+        const point = accessPoints.get(id);
+        if (!point)
+          return Response.json(
+            { Code: "InvalidAccessPointId.NotFound" },
+            { status: 404 },
+          );
+        if (action === "DescribeAccessPoint")
+          return Response.json({
+            AccessPoint: {
+              FileSystemId: point.fileSystemId,
+              AccessPointId: point.accessPointId,
+              AgenticSpaceId: point.agenticSpaceId,
+              Status: "active",
+            },
+          });
+        expect(instances.has("fixture-3")).toBe(false);
+        cleanupCalls.push(action);
+        accessPoints.delete(id);
+      } else {
+        const id = query.get("AgenticSpaceId") ?? "";
+        expect(id).toBe(ownerStorage.agenticSpaceId);
+        const space = nas.spaces.get(id);
+        if (!space)
+          return Response.json(
+            { Code: "InvalidAgenticSpace.NotFound" },
+            { status: 400 },
+          );
+        if (action === "GetAgenticSpace")
+          return Response.json({ AgenticSpace: space });
+        expect(action).toBe("DeleteAgenticSpace");
+        cleanupCalls.push("DeleteAgenticSpace");
+        if (failDelete) return Response.json({}, { status: 503 });
+        nas.spaces.delete(id);
+        roots.delete(id);
+      }
+      return Response.json({ RequestId: "fixture" });
+    },
+  });
   for (const { fileSystemId, agenticSpaceId } of storages)
     nas.running(fileSystemId, agenticSpaceId);
   await Promise.all(
@@ -5400,6 +5453,7 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
   const allocations: { id: string; mount: string }[] = [];
   const destroyed: string[] = [];
   let failSetup = false;
+  let failOwnerExit = false;
   let quotaCode = "ENOSPC";
   let refusal =
     "workspace_storage_quota_exceeded: The workspace file storage limit has been reached. Remove files before writing more.";
@@ -5462,6 +5516,8 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
       if (!instances.has(id))
         return Response.json({ code: 404 }, { status: 404 });
       if (request.method === "DELETE") {
+        if (id === "fixture-3" && failOwnerExit)
+          return new Response(null, { status: 503 });
         destroyed.push(id);
         instances.delete(id);
         return new Response(null, { status: 204 });
@@ -5488,8 +5544,10 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     )
       return new Response(null, { status: 403 });
     if (url.pathname === "/health") return new Response(null, { status: 200 });
-    const bot = instance.ownerId === owner.workspaceId ? owner : other;
-    expect(request.headers.get("x-openbot-bot-id")).toBe(bot.botId);
+    const bot = [owner, other, replacement].find(
+      (candidate) => candidate?.workspaceId === instance.ownerId,
+    );
+    expect(request.headers.get("x-openbot-bot-id")).toBe(bot?.botId);
     const root = roots.get(instance.storageId);
     if (!root) throw new Error("Mount missing in fixture");
     return (
@@ -5539,7 +5597,10 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
         },
       };
     },
-    nas: nas.client,
+    nas: {
+      ...nas.client,
+      eraseWorkspaceStorage: cleanupNas.eraseWorkspaceStorage,
+    },
   };
   const replica = () =>
     newApp(
@@ -5600,6 +5661,13 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
           expect(await tool("computer_read_file", { path })).toMatchObject({
             text: "other",
           });
+        } else if (instruction === "Read and write surviving fixture") {
+          expect(await tool("computer_read_file", { path })).toMatchObject({
+            text: "other",
+          });
+          expect(
+            await tool("computer_write_file", { path, contents: "survived" }),
+          ).toMatchObject({ ok: true });
         } else {
           expect(await tool("computer_list_files", { path: "notes" })).toEqual({
             ok: true,
@@ -5618,7 +5686,17 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
         return { replyText: "Verified files" };
       },
       { agentSandbox: createAgentSandboxProvider(options, database, now) },
+      undefined,
+      undefined,
+      async (_step, target) => ({
+        status:
+          target.workspaceId === owner.workspaceId
+            ? "confirmed"
+            : "unconfirmed",
+      }),
     );
+  let replacement: typeof owner | undefined;
+  const priorApp = app;
   let service = replica();
   function computer(session: string, operation = "") {
     return service.request(`/api/workspace/computer${operation}`, {
@@ -5752,20 +5830,107 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     expect(crossWorkspace.status).toBe(404);
     await run(other, "Check isolation");
     await run(owner, "Read retained fixture");
-    expect((await computer(owner.session, "/stop")).status).toBe(202);
-    expect((await computer(other.session, "/stop")).status).toBe(202);
+    failOwnerExit = true;
     expect(allocations).toEqual([
       { id: "fixture-1", mount: `${ownerStorage.accessPointDomain}:/` },
       { id: "fixture-2", mount: `${ownerStorage.accessPointDomain}:/` },
       { id: "fixture-3", mount: `${ownerStorage.accessPointDomain}:/` },
       { id: "fixture-4", mount: `${otherStorage.accessPointDomain}:/` },
     ]);
+    app = service;
+    clockTime = undefined;
+    const closed = await confirmClosure(
+      await proveClosure(owner.session, owner.account),
+    );
+    expect(closed.status).toBe(200);
+    const { operationId } = await closed.json();
+    expect((await computer(owner.session, "/start")).status).toBe(401);
+    await service.sweepWorkspaceClosures();
+    expect(cleanupCalls).toEqual([]);
+    await Bun.sleep(workspaceComputerLeaseMs + 100);
+    await service.renewWorkspaceComputers?.();
+    await service.sweepWorkspaceClosures();
+    expect(instances.has("fixture-3")).toBe(true);
+    expect(cleanupCalls).toEqual([]);
+    failOwnerExit = false;
+    await service.renewWorkspaceComputers?.();
+    await service.sweepWorkspaceClosures();
+    expect(cleanupCalls).toEqual(["DeleteAccessPoint", "DeleteAgenticSpace"]);
+    const status = cookie(
+      await authenticate(owner.account),
+      "__Host-openbot-closure-status=",
+    );
+    const reopen = () =>
+      send("/workspace/closure/reprovision", {
+        method: "POST",
+        headers: {
+          origin,
+          cookie: status,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ operationId }),
+      });
+    expect(await (await closureStatus(status)).json()).toMatchObject({
+      onlineCleanup: { computerVolume: { status: "retrying" } },
+    });
+    expect((await reopen()).status).toBe(409);
+
+    failDelete = false;
+    service = replica();
+    app = service;
+    await service.sweepWorkspaceClosures();
+    await service.sweepWorkspaceClosures();
+    expect(cleanupCalls).toEqual([
+      "DeleteAccessPoint",
+      "DeleteAgenticSpace",
+      "DeleteAgenticSpace",
+    ]);
+    expect(accessPoints.has(otherStorage.accessPointId)).toBe(true);
+    expect(nas.spaces.has(otherStorage.agenticSpaceId)).toBe(true);
+    clockTime = undefined;
+    expect(await (await closureStatus(status)).json()).toMatchObject({
+      onlineCleanup: { computerVolume: { status: "confirmed" } },
+    });
+    expect((await reopen()).status).toBe(303);
+    const session = cookie(
+      await authenticate(owner.account),
+      "__Host-openbot-personal=",
+    );
+    const reopened = await workspace(session);
+    expect(reopened.id).not.toBe(owner.workspaceId);
+    replacement = {
+      ...owner,
+      session,
+      workspaceId: reopened.id,
+      botId: reopened.personalAssistant.id,
+    };
+    const storage = workspaceStorage(
+      reopened.id,
+      reopened.id.replaceAll("-", ""),
+    );
+    expect(storage.agenticSpaceId).not.toBe(ownerStorage.agenticSpaceId);
+    expect(storage.accessPointId).not.toBe(ownerStorage.accessPointId);
+    await database.insert(personalWorkspaceAgenticSpaces).values(storage);
+    storages.push(storage);
+    nas.running(storage.fileSystemId, storage.agenticSpaceId);
+    await mkdir(join(dir, storage.agenticSpaceId));
+    roots.set(
+      storage.agenticSpaceId,
+      createWorkspace(join(dir, storage.agenticSpaceId)),
+    );
+    expect((await computer(other.session, "/stop")).status).toBe(202);
+    clockTime = Date.now() + 10;
+    expect((await computer(other.session, "/start")).status).toBe(202);
+    await run(other, "Read and write surviving fixture");
+    expect((await computer(replacement.session, "/start")).status).toBe(202);
+    await run(replacement, "Check isolation");
   } finally {
+    app = priorApp;
     clockTime = undefined;
     runtime.mockRestore();
     await rm(dir, { recursive: true, force: true });
   }
-});
+}, 35_000);
 
 test("Flash allocates only when NAS confirms the bound space is sized like the Computer reservation", async () => {
   const owner = await isolationOwner();

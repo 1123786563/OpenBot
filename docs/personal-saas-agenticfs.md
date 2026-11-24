@@ -24,7 +24,7 @@
    );
    ```
 
-   Set `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES=10737418240` and `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES` to the existing attachment allowance plus that reservation, `10804527104` for the 64 MiB default, per ADR 0013. The reservation must equal the space's `Quota.SizeLimit`. Durable erasure and closure verification are tracked by #146.
+   Set `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES=10737418240` and `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES` to the existing attachment allowance plus that reservation, `10804527104` for the 64 MiB default, per ADR 0013. The reservation must equal the space's `Quota.SizeLimit`.
 
 OpenBot reads the binding by the authenticated Workspace ID and mounts one Access Point root at `/mnt/openbot-workspace`. Flash gets the VPC and role in create-time metadata. Before installing the worker, OpenBot requires an NFS v3 mount at that exact path. The lease watchdog supplies that path to the existing file worker. Each stop or failed worker setup destroys only the sandbox instance. The mounted create request has a 20-second deadline within the existing 30-second setup reservation. An ambiguous Flash create result follows the existing generation reconciliation path and can hold the slot until instance disposition is confirmed. A missing binding fails before Flash allocation.
 
@@ -47,3 +47,10 @@ Whether NAS refuses a write at the quota at once or only after its accounting de
 4. Exercise a failed setup after allocation on a disposable generation with known sandbox ID. Verify OpenBot releases its slot only after deletion confirmation, and a new start with the correct configuration reads the same file from the same AgenticSpace. Repeat the lifecycle cutoff check with a mounted worker, including loss of storage connectivity while a file operation is in progress. Record confirmed PID exit and provider deletion separately.
 
 Local tests use an HTTP Flash fixture, an offline NAS fixture, real PostgreSQL, and the shared file handlers against separate filesystem roots. They cover mount metadata, missing provisioning, restart, failed setup cleanup, authorization, file tool behavior, the quota check before allocation, the recognizable refusal and the split usage with unknown readings. Target-cloud mount, IAM denial and timing evidence are collected separately under #144. The write refusal at the hard quota and the attachment allowance beside it are collected under #147.
+
+
+## Verify workspace closure
+
+[#146](https://github.com/1123786563/OpenBot/issues/146) uses the server's NAS identity for closure. Grant it `DescribeAccessPoint`, `DeleteAccessPoint` and `DeleteAgenticSpace` in addition to `GetAgenticSpace`. Keep the Workspace binding available until the closure completes. Enroll a reopened Workspace against its new Workspace ID and provision a fresh AgenticSpace and Access Point for that ID.
+
+In the target cloud, write a distinct synthetic file through each Workspace's Bot. Close the first Workspace and record the old Flash instance and process exit evidence, the NAS access point and AgenticSpace readback, and the operation's cleanup status. Read and write through the second Bot after cleanup. Reopen the first account's Workspace, enroll its new storage and verify the new Bot cannot list or read the old file.

@@ -282,6 +282,9 @@ export function createAgentSandboxProvider(
 
   return {
     allocationScope,
+    async eraseStorage(storage) {
+      await config.nas.eraseWorkspaceStorage(storage);
+    },
     async storageUsage(storage, storageBytes) {
       const space = await boundSpace(storage);
       return reservationMismatch(space, storage, storageBytes)

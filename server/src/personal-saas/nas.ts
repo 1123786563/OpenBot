@@ -65,7 +65,7 @@ type NasConfig = {
 };
 
 // Shared Alibaba NAS control-plane client. The signer and request function
-// serve every operation; #146 adds the access point and deletion calls here.
+// serve quota reads and workspace storage erasure.
 export function createNasClient(config: NasConfig) {
   if (!/^[a-z0-9-]+$/.test(config.region))
     throw new Error("Invalid NAS region");
@@ -147,7 +147,90 @@ export function createNasClient(config: NasConfig) {
     return body;
   }
 
+  async function confirmErased({
+    read,
+    remove,
+    missing,
+    deleting,
+  }: {
+    read: () => Promise<"present" | "deleting" | "absent">;
+    remove: () => Promise<unknown>;
+    missing: (error: unknown) => boolean;
+    deleting: string;
+  }) {
+    const observe = () =>
+      read().catch((error: unknown) => {
+        if (missing(error)) return "absent";
+        throw error;
+      });
+    const state = await observe();
+    if (state === "absent") return;
+    if (state === "present") {
+      await remove().catch((error: unknown) => {
+        if (!missing(error)) throw error;
+      });
+    }
+    if ((await observe()) !== "absent") throw new NasError(deleting);
+  }
+
   return {
+    async eraseWorkspaceStorage(binding: {
+      fileSystemId: string;
+      accessPointId: string;
+      agenticSpaceId: string;
+    }) {
+      const FileSystemId = binding.fileSystemId;
+      const AccessPointId = binding.accessPointId;
+      const AgenticSpaceId = binding.agenticSpaceId;
+      const access = { FileSystemId, AccessPointId };
+      const space = { FileSystemId, AgenticSpaceId };
+
+      await confirmErased({
+        async read() {
+          const { AccessPoint: point } = z
+            .object({
+              AccessPoint: z.object({
+                FileSystemId: z.literal(FileSystemId),
+                AccessPointId: z.literal(AccessPointId),
+                AgenticSpaceId: z.literal(AgenticSpaceId),
+                Status: z.string().min(1),
+              }),
+            })
+            .parse(await call("DescribeAccessPoint", access));
+          return point.Status.toLowerCase() === "deleting"
+            ? "deleting"
+            : "present";
+        },
+        remove: () => call("DeleteAccessPoint", access),
+        missing: (error) =>
+          error instanceof NasError &&
+          error.detail.status === 404 &&
+          error.detail.code === "InvalidAccessPointId.NotFound",
+        deleting: "NAS access point erasure unconfirmed",
+      });
+
+      await confirmErased({
+        async read() {
+          const { AgenticSpace: current } = z
+            .object({
+              AgenticSpace: z.object({
+                FileSystemId: z.literal(FileSystemId),
+                AgenticSpaceId: z.literal(AgenticSpaceId),
+                Status: agenticSpace.shape.Status,
+              }),
+            })
+            .parse(await call("GetAgenticSpace", space));
+          if (current.Status === "Deleted") return "absent";
+          return current.Status === "Deleting" ? "deleting" : "present";
+        },
+        remove: () => call("DeleteAgenticSpace", space),
+        missing: (error) =>
+          error instanceof NasError &&
+          (error.detail.status === 400 || error.detail.status === 404) &&
+          error.detail.code === "InvalidAgenticSpace.NotFound",
+        deleting: "NAS AgenticSpace erasure unconfirmed",
+      });
+    },
     async getAgenticSpace(space: {
       fileSystemId: string;
       agenticSpaceId: string;

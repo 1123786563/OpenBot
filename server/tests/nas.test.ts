@@ -216,3 +216,130 @@ test("NAS gives up on a read that never answers", async () => {
   );
   expect(error).toMatchObject({ name: "TimeoutError" });
 }, 10_000);
+
+test("workspace storage erasure resumes after access point deletion and verifies exact NAS absence", async () => {
+  const binding = { ...vector.space, accessPointId: "ap-fixture" };
+  let accessPointExists = true;
+  let spaceExists = true;
+  let failSpaceDelete = true;
+  const deletes: string[] = [];
+  const { fetch } = fixture((request) => {
+    const params = new URL(request.url).searchParams;
+    expect(params.get("FileSystemId")).toBe(binding.fileSystemId);
+    const action = request.headers.get("x-acs-action");
+    if (action?.endsWith("AccessPoint")) {
+      expect(params.get("AccessPointId")).toBe(binding.accessPointId);
+      if (action === "DeleteAccessPoint") {
+        deletes.push(action);
+        accessPointExists = false;
+        return Response.json({ RequestId: "fixture" });
+      }
+      return accessPointExists
+        ? Response.json({
+            AccessPoint: {
+              FileSystemId: binding.fileSystemId,
+              AgenticSpaceId: binding.agenticSpaceId,
+              AccessPointId: binding.accessPointId,
+              Status: "active",
+            },
+          })
+        : Response.json(
+            { Code: "InvalidAccessPointId.NotFound" },
+            { status: 404 },
+          );
+    }
+    expect(params.get("AgenticSpaceId")).toBe(binding.agenticSpaceId);
+    if (action === "DeleteAgenticSpace") {
+      deletes.push(action);
+      if (failSpaceDelete) return Response.json({}, { status: 503 });
+      spaceExists = false;
+      return Response.json({ RequestId: "fixture" });
+    }
+    expect(action).toBe("GetAgenticSpace");
+    return spaceExists
+      ? Response.json(spaceResponse)
+      : Response.json(
+          { Code: "InvalidAgenticSpace.NotFound" },
+          { status: 400 },
+        );
+  });
+  const client = createNasClient({
+    ...vector,
+    nonce: () => vector.nonce,
+    fetch,
+  });
+  await expect(client.eraseWorkspaceStorage(binding)).rejects.toThrow("503");
+  failSpaceDelete = false;
+  await client.eraseWorkspaceStorage(binding);
+  await client.eraseWorkspaceStorage(binding);
+  expect(deletes).toEqual([
+    "DeleteAccessPoint",
+    "DeleteAgenticSpace",
+    "DeleteAgenticSpace",
+  ]);
+});
+
+test("workspace storage erasure refuses an access point describing a different space", async () => {
+  const binding = { ...vector.space, accessPointId: "ap-fixture" };
+  const { fetch, requests } = fixture(() =>
+    Response.json({
+      AccessPoint: {
+        FileSystemId: binding.fileSystemId,
+        AccessPointId: binding.accessPointId,
+        AgenticSpaceId: "agentic-other",
+        Status: "active",
+      },
+    }),
+  );
+  await expect(
+    createNasClient({
+      ...vector,
+      nonce: () => vector.nonce,
+      fetch,
+    }).eraseWorkspaceStorage(binding),
+  ).rejects.toThrow();
+  expect(
+    requests.map((request) => request.headers.get("x-acs-action")),
+  ).toEqual(["DescribeAccessPoint"]);
+});
+
+test("workspace storage erasure waits for access point absence after an acknowledged delete", async () => {
+  const binding = { ...vector.space, accessPointId: "ap-fixture" };
+  let deleting = false;
+  const { fetch, requests } = fixture((request) => {
+    const action = request.headers.get("x-acs-action");
+    if (action === "DeleteAccessPoint") {
+      deleting = true;
+      return Response.json({ RequestId: "fixture" });
+    }
+    expect(action).toBe("DescribeAccessPoint");
+    return Response.json({
+      AccessPoint: {
+        FileSystemId: binding.fileSystemId,
+        AccessPointId: binding.accessPointId,
+        AgenticSpaceId: binding.agenticSpaceId,
+        Status: deleting ? "deleting" : "active",
+      },
+    });
+  });
+  const client = createNasClient({
+    ...vector,
+    nonce: () => vector.nonce,
+    fetch,
+  });
+  await expect(client.eraseWorkspaceStorage(binding)).rejects.toThrow(
+    "access point erasure unconfirmed",
+  );
+  await expect(client.eraseWorkspaceStorage(binding)).rejects.toThrow(
+    "access point erasure unconfirmed",
+  );
+  expect(
+    requests.map((request) => request.headers.get("x-acs-action")),
+  ).toEqual([
+    "DescribeAccessPoint",
+    "DeleteAccessPoint",
+    "DescribeAccessPoint",
+    "DescribeAccessPoint",
+    "DescribeAccessPoint",
+  ]);
+});

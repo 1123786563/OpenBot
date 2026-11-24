@@ -327,6 +327,9 @@ export function createPersonalSaasApp(
     reconcile: config.closureCleanup,
     stopped: computer?.stopped,
     eraseComputer: computer?.eraseStorage,
+    agenticStorage: Boolean(
+      config.computer && "agentSandbox" in config.computer,
+    ),
     eraseThread: config.botRuntime?.eraseThread,
   });
   const native = nativeAuth({
