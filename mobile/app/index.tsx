@@ -11,8 +11,14 @@ import {
 import { api, type Conversation } from "../src/api";
 import { authClient, serverUrl, signIn, signInEnterprise } from "../src/auth";
 import { registerPush, unregisterPush } from "../src/notifications";
+import { personalSaasMode } from "../src/personal-saas-contract";
+import { PersonalSaasHome } from "../src/personal-saas-home";
 import { useLoad } from "../src/use-load";
 export default function Home() {
+  return personalSaasMode ? <PersonalSaasHome /> : <OrganizationHome />;
+}
+
+function OrganizationHome() {
   const { data: session, isPending } = authClient.useSession();
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");

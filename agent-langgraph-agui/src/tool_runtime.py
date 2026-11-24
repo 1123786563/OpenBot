@@ -243,6 +243,10 @@ def current_tools() -> RunTools:
     return _current.get() or RunTools()
 
 
+class RunRefused(RuntimeError):
+    """A safe refusal message that the Harness can return to the caller."""
+
+
 class UnofferedToolError(ValueError):
     pass
 
@@ -286,6 +290,8 @@ class ToolAwareAgent(WholeThreadAgent):
                     if event.type in (EventType.RUN_FINISHED, EventType.RUN_ERROR):
                         ended = True
                     yield event
+        except RunRefused as error:
+            yield RunErrorEvent(type=EventType.RUN_ERROR, message=str(error))
         except UnofferedToolError:
             yield RunErrorEvent(
                 type=EventType.RUN_ERROR,

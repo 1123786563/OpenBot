@@ -107,7 +107,7 @@ export function createOpenBotHandoffDelivery(options: {
   channelStore: ChannelStore;
 }): HandoffDelivery {
   return {
-    async deliver({ work, message, shown, key }) {
+    async deliver({ work, message, shown, key, signal, beforeDispatch }) {
       const runId = createHash("sha256").update(key).digest("hex");
       const conversationBotId = work.answerIn ? work.toBotId : work.fromBotId;
       const threadId = work.answerIn ?? work.threadId;
@@ -140,6 +140,8 @@ export function createOpenBotHandoffDelivery(options: {
               }
             : { handoffFromBotId: work.fromBotId }),
           authorize,
+          signal,
+          beforeDispatch,
           initiator: handoffInitiator(work.fromBotId, work.initiator),
         })
         .catch((error: unknown) => {

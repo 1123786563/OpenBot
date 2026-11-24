@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import {
   applyMigrations,
@@ -9,6 +10,8 @@ import {
   type MigrationsJournal,
   MigrationsOutOfReachError,
 } from "../src/db/apply-migrations";
+import { isIntelligenceMigration } from "../src/db/merge-migration-histories";
+import { readMigrationFolder } from "../src/db/migration-reach";
 import { testDatabaseUrl } from "./support/database";
 
 /**
@@ -54,7 +57,7 @@ afterAll(async () => {
   } finally {
     await admin.end({ timeout: 5 });
   }
-});
+}, 30_000);
 
 type Entry = { tag: string; when: number; sql: string };
 
@@ -101,6 +104,147 @@ const exists = async (client: postgres.Sql, table: string) => {
   `;
   return row?.present !== null && row?.present !== undefined;
 };
+
+// Stamps recorded by the trial before its migrations moved after SkillHub.
+const originalTrialStamps = [
+  1795158327499, 1795160662134, 1795162001225, 1795173234015, 1795174523931,
+  1795174795281, 1795176012983, 1795177502282, 1795178829465, 1795181383402,
+  1795184138210, 1795184939036, 1795231535117,
+];
+
+test.each([
+  { startingPoint: "fresh", mainThrough: 0, trialLength: 0 },
+  { startingPoint: "pre-Corsair main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "Bifrost main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "current Personal SaaS", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "published main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "published Intelligence", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "early trial", mainThrough: 89, trialLength: 1 },
+  {
+    startingPoint: "full pre-direct-chat trial",
+    mainThrough: 89,
+    trialLength: 12,
+  },
+  { startingPoint: "legacy integration", mainThrough: 90, trialLength: 13 },
+  { startingPoint: "divergent trial", mainThrough: 89, trialLength: 12 },
+])(
+  "migrating from the $startingPoint journal into SkillHub and Personal SaaS",
+  async ({ startingPoint, mainThrough, trialLength }) => {
+    const folder = fileURLToPath(new URL("../drizzle", import.meta.url));
+    const migrations = await readMigrationFolder(folder);
+    const corsair = migrations.filter(({ tag }) => /_corsair_/.test(tag));
+    const bifrost = migrations.filter(({ tag }) =>
+      /_(bifrost_market_reviews|skill_market_equivalences)$/.test(tag),
+    );
+    const main = migrations.filter((entry) => !isIntelligenceMigration(entry));
+    const saas = main
+      .slice(93)
+      .filter(
+        (entry) => entry.when <= 1795275600000 && !corsair.includes(entry),
+      );
+    const historicalSaasOrMain = [
+      ...main.slice(0, mainThrough),
+      ...(startingPoint === "Corsair main" || startingPoint === "Bifrost main"
+        ? corsair
+        : []),
+      ...(startingPoint === "Bifrost main" ? bifrost : []),
+      ...(startingPoint === "current Personal SaaS" ? saas : []),
+      ...saas.slice(0, trialLength).map((entry, index) => {
+        const when = originalTrialStamps[index];
+        if (when === undefined) throw new Error("Missing trial stamp");
+        return { ...entry, when };
+      }),
+    ];
+    const historical =
+      startingPoint === "published main"
+        ? main.filter(({ when }) => when <= 1795520000000)
+        : startingPoint === "published Intelligence"
+          ? migrations.filter(
+              (entry) =>
+                main.slice(0, 93).includes(entry) ||
+                isIntelligenceMigration(entry) ||
+                corsair.includes(entry) ||
+                bifrost.includes(entry),
+            )
+          : historicalSaasOrMain;
+    const legacyFolder = await folderOf(
+      await Promise.all(
+        historical.map(async ({ tag, when }) => ({
+          tag,
+          when,
+          sql: await readFile(join(folder, `${tag}.sql`), "utf8"),
+        })),
+      ),
+    );
+    const client = postgres(await throwawayDatabase(), {
+      max: 1,
+      onnotice: () => {},
+    });
+    try {
+      if (historical.length) await applyMigrations(client, legacyFolder);
+      const directChat = "direct_chat_runs";
+      expect(await exists(client, directChat)).toBe(mainThrough >= 90);
+      if (trialLength || startingPoint === "current Personal SaaS") {
+        await client`insert into personal_saas_accounts (issuer, subject, email)
+          values ('https://casdoor.example', 'participant', 'participant@example.test')`;
+        await client`insert into personal_workspaces (owner_id)
+          select id from personal_saas_accounts where subject = 'participant'`;
+      }
+      if (startingPoint === "divergent trial") {
+        await client`update drizzle.__drizzle_migrations set created_at = created_at + 1
+          where created_at = 1795184939036`;
+        await expect(applyMigrations(client, folder)).rejects.toBeInstanceOf(
+          MigrationsOutOfReachError,
+        );
+        expect(await exists(client, directChat)).toBe(false);
+        return;
+      }
+
+      if (startingPoint === "Corsair main") {
+        await client`insert into corsair_integrations (id, name) values ('merge-fixture', 'merge fixture')`;
+      }
+      await applyMigrations(client, folder);
+      await applyMigrations(client, folder);
+      expect(await exists(client, "corsair_accounts")).toBe(true);
+      expect(await exists(client, "corsair_github_connections")).toBe(true);
+      if (startingPoint === "Corsair main") {
+        expect(
+          await client`select id from corsair_integrations where id = 'merge-fixture'`,
+        ).toHaveLength(1);
+      }
+      expect(await exists(client, directChat)).toBe(true);
+      expect(await exists(client, "personal_intelligence_runs")).toBe(true);
+      expect(await exists(client, "opik_runs")).toBe(true);
+      expect(await exists(client, "skill_market_installations")).toBe(true);
+      expect(await exists(client, "skill_market_version_disablements")).toBe(
+        true,
+      );
+      expect(await exists(client, "skill_market_runs")).toBe(true);
+      expect(await exists(client, "bifrost_market_reviews")).toBe(true);
+      expect(await exists(client, "skill_market_equivalences")).toBe(true);
+      expect([
+        ...(await client`select hash, created_at::text
+        from drizzle.__drizzle_migrations order by created_at::bigint`),
+      ]).toEqual(
+        migrations.map(({ hash, when }) => ({
+          hash,
+          created_at: String(when),
+        })),
+      );
+      if (trialLength || startingPoint === "current Personal SaaS") {
+        expect([
+          ...(await client`select email from personal_saas_accounts
+          join personal_workspaces on personal_workspaces.owner_id = personal_saas_accounts.id
+          where subject = 'participant'`),
+        ]).toEqual([{ email: "participant@example.test" }]);
+      }
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+  },
+  60_000,
+);
 
 describe("a database that ran a branch before the branch was merged", () => {
   test("is refused, rather than migrated past the work it cannot reach", async () => {

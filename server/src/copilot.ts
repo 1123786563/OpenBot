@@ -145,7 +145,7 @@ import {
   type PersonalSkillSources,
 } from "./learning/runtime";
 import type { LearningSettingsStore } from "./learning/settings";
-import { createManagedModel } from "./managed-model";
+import { createManagedModel } from "./managed-model-trial";
 import {
   type LoadPersonalMemory,
   PersonalMemoryMiddleware,

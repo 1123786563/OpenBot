@@ -12,6 +12,7 @@ import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { channelQueryOptions } from "@/lib/channels/queries";
 import { client, tryClient } from "@/lib/client";
+import { groupQueryOptions } from "@/lib/groups";
 
 /** A conversation with several Bots. The channel is an ordinary channel with more than one Bot. */
 export const Route = createFileRoute("/_authed/_app/group/$channelId")({
@@ -27,6 +28,8 @@ function RouteComponent() {
     select: (location) => location.state.__TSR_key,
   });
   const channel = useQuery(channelQueryOptions(channelId));
+  const group = useQuery(groupQueryOptions(channelId));
+  const visibleChannel = group.data ? channel.data : undefined;
   useMarkOpenChannelRead(channelId);
   return (
     <ConversationSurface>
@@ -36,11 +39,11 @@ function RouteComponent() {
       >
         <SidebarToggle />
         <ChannelAvatar
-          participantIds={channel.data?.agentIds ?? []}
+          participantIds={visibleChannel?.agentIds ?? []}
           size={22}
         />
         <h1 className="min-w-0 truncate text-sm tracking-tight">
-          {channel.data?.name ?? "Group conversation"}
+          {visibleChannel?.name ?? "Group conversation"}
         </h1>
         <GroupLearningPermission channelId={channelId} />
         <GroupPeopleButton
@@ -48,7 +51,7 @@ function RouteComponent() {
           onLeave={() => void navigate({ to: "/" })}
         />
       </div>
-      {(channel.data?.agentIds ?? []).map((agentId) => (
+      {(visibleChannel?.agentIds ?? []).map((agentId) => (
         <BotPausedBanner agentId={agentId} key={agentId} />
       ))}
       {/* Remounted per channel so one group's transcript never flashes in another. */}

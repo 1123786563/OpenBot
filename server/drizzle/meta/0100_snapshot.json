@@ -8657,9 +8657,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "stop_reason": {
-          "name": "stop_reason",
-          "type": "text",
+        "dispatched_at": {
+          "name": "dispatched_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -8669,9 +8669,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "dispatched_at": {
-          "name": "dispatched_at",
-          "type": "timestamp with time zone",
+        "stop_reason": {
+          "name": "stop_reason",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }
@@ -12206,6 +12206,59 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.recorder_recording_events": {
+      "name": "recorder_recording_events",
+      "schema": "",
+      "columns": {
+        "recording_id": {
+          "name": "recording_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event": {
+          "name": "event",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "recorder_recording_events_recording_id_recorder_recordings_id_fk": {
+          "name": "recorder_recording_events_recording_id_recorder_recordings_id_fk",
+          "tableFrom": "recorder_recording_events",
+          "tableTo": "recorder_recordings",
+          "columnsFrom": [
+            "recording_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "recorder_recording_events_recording_id_seq_pk": {
+          "name": "recorder_recording_events_recording_id_seq_pk",
+          "columns": [
+            "recording_id",
+            "seq"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.recorder_recordings": {
       "name": "recorder_recordings",
       "schema": "",
@@ -12311,59 +12364,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.recorder_recording_events": {
-      "name": "recorder_recording_events",
-      "schema": "",
-      "columns": {
-        "recording_id": {
-          "name": "recording_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event": {
-          "name": "event",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "recorder_recording_events_recording_id_recorder_recordings_id_fk": {
-          "name": "recorder_recording_events_recording_id_recorder_recordings_id_fk",
-          "tableFrom": "recorder_recording_events",
-          "tableTo": "recorder_recordings",
-          "columnsFrom": [
-            "recording_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "recorder_recording_events_recording_id_seq_pk": {
-          "name": "recorder_recording_events_recording_id_seq_pk",
-          "columns": [
-            "recording_id",
-            "seq"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -12532,6 +12532,101 @@
       },
       "isRLSEnabled": false
     },
+    "public.opik_evaluation_grants": {
+      "name": "opik_evaluation_grants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_sha256": {
+          "name": "content_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "opik_eval_grants_active_source_idx": {
+          "name": "opik_eval_grants_active_source_idx",
+          "columns": [
+            {
+              "expression": "memory_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"opik_evaluation_grants\".\"revoked_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "opik_eval_grants_revoked_idx": {
+          "name": "opik_eval_grants_revoked_idx",
+          "columns": [
+            {
+              "expression": "revoked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"opik_evaluation_grants\".\"revoked_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.opik_evaluations": {
       "name": "opik_evaluations",
       "schema": "",
@@ -12629,101 +12724,6 @@
           ]
         }
       },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.opik_evaluation_grants": {
-      "name": "opik_evaluation_grants",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "memory_id": {
-          "name": "memory_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_sha256": {
-          "name": "content_sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "purpose": {
-          "name": "purpose",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_at": {
-          "name": "granted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "opik_eval_grants_active_source_idx": {
-          "name": "opik_eval_grants_active_source_idx",
-          "columns": [
-            {
-              "expression": "memory_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"opik_evaluation_grants\".\"revoked_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "opik_eval_grants_revoked_idx": {
-          "name": "opik_eval_grants_revoked_idx",
-          "columns": [
-            {
-              "expression": "revoked_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"opik_evaluation_grants\".\"revoked_at\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -12925,45 +12925,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.personal_learning_auto_approval": {
-      "name": "personal_learning_auto_approval",
-      "schema": "",
-      "columns": {
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "personal_learning_auto_approval_person_id_users_id_fk": {
-          "name": "personal_learning_auto_approval_person_id_users_id_fk",
-          "tableFrom": "personal_learning_auto_approval",
-          "tableTo": "users",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.direct_chat_proposal_reviews": {
       "name": "direct_chat_proposal_reviews",
       "schema": "",
@@ -12989,6 +12950,45 @@
           "tableTo": "direct_chat_analyses",
           "columnsFrom": [
             "proposal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.personal_learning_auto_approval": {
+      "name": "personal_learning_auto_approval",
+      "schema": "",
+      "columns": {
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "personal_learning_auto_approval_person_id_users_id_fk": {
+          "name": "personal_learning_auto_approval_person_id_users_id_fk",
+          "tableFrom": "personal_learning_auto_approval",
+          "tableTo": "users",
+          "columnsFrom": [
+            "person_id"
           ],
           "columnsTo": [
             "id"
@@ -13121,85 +13121,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.skill_market_sources": {
-      "name": "skill_market_sources",
-      "schema": "",
-      "columns": {
-        "command": {
-          "name": "command",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "registry": {
-          "name": "registry",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "skill_market_source_key": {
-          "name": "skill_market_source_key",
-          "columns": [
-            {
-              "expression": "registry",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "namespace",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "skill_market_sources_command_skills_slug_fk": {
-          "name": "skill_market_sources_command_skills_slug_fk",
-          "tableFrom": "skill_market_sources",
-          "tableTo": "skills",
-          "columnsFrom": [
-            "command"
-          ],
-          "columnsTo": [
-            "slug"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.skill_market_installations": {
       "name": "skill_market_installations",
       "schema": "",
@@ -13310,6 +13231,85 @@
           ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.skill_market_sources": {
+      "name": "skill_market_sources",
+      "schema": "",
+      "columns": {
+        "command": {
+          "name": "command",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "registry": {
+          "name": "registry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "skill_market_source_key": {
+          "name": "skill_market_source_key",
+          "columns": [
+            {
+              "expression": "registry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "skill_market_sources_command_skills_slug_fk": {
+          "name": "skill_market_sources_command_skills_slug_fk",
+          "tableFrom": "skill_market_sources",
+          "tableTo": "skills",
+          "columnsFrom": [
+            "command"
+          ],
+          "columnsTo": [
+            "slug"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

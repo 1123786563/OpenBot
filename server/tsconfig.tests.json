@@ -15,5 +15,12 @@
   // `server/tests/typecheck-baseline.txt`, and the gate fails only on an error that is not in it —
   // see `scripts/typecheck-tests.ts`.
   "extends": "./tsconfig.json",
-  "include": ["src", "scripts", "../scripts/composio-smoke.ts", "tests"]
+  "compilerOptions": { "paths": { "@/*": ["../app/src/*"] } },
+  "include": [
+    "src",
+    "scripts",
+    "../scripts/composio-smoke.ts",
+    "../app/src/vite-env.d.ts",
+    "tests"
+  ]
 }

@@ -48,6 +48,7 @@ import type { ApprovalService } from "./service";
 import {
   ApprovalRefusedError,
   type ApprovalRuleInput,
+  ApprovalRuleSaveConflictError,
   RULE_BEHAVIOURS,
 } from "./types";
 
@@ -569,6 +570,12 @@ export function createApprovalRuleDraftRoutes(options: {
   });
 
   routes.post("/batch", options.requireUser, adminOnly, async (context) => {
+    const key = z
+      .uuid()
+      .optional()
+      .safeParse(context.req.header("Idempotency-Key"));
+    if (!key.success)
+      return context.json({ error: "The save key must be a UUID." }, 400);
     const body = await context.req.json().catch(() => null);
     const rows = await rowsFrom(body);
     if ("error" in rows) return context.json({ error: rows.error }, 400);
@@ -586,17 +593,37 @@ export function createApprovalRuleDraftRoutes(options: {
     // The compile gate a save makes, as a boundary's does: a rule that matches nothing reads as
     // protection and is not, so it is refused with what is wrong, and nothing is saved.
     const check = checkRuleRows(rows.rules, await options.vocabulary());
-    if (!check.ok)
+    if (!check.ok && !key.data)
       return context.json(
         { error: check.error, problems: check.problems },
         400,
       );
-    const saved = await options.service.createTeamRules(
-      context.var.actor.id,
-      rows.rules,
-      authoring.data,
-    );
-    return context.json({ rules: saved }, 201);
+    const failedCheck = new Error("Team rule validation failed");
+    try {
+      const saved = await options.service.createTeamRules(
+        context.var.actor.id,
+        rows.rules,
+        authoring.data,
+        key.data
+          ? {
+              requestId: key.data,
+              validate: () => {
+                if (!check.ok) throw failedCheck;
+              },
+            }
+          : undefined,
+      );
+      return context.json({ rules: saved }, 201);
+    } catch (error) {
+      if (error === failedCheck && !check.ok)
+        return context.json(
+          { error: check.error, problems: check.problems },
+          400,
+        );
+      if (error instanceof ApprovalRuleSaveConflictError)
+        return context.json({ error: error.message }, 409);
+      throw error;
+    }
   });
 
   return routes;

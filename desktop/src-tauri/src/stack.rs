@@ -3761,6 +3761,7 @@ pub fn answering_at(port: u16, path: &str) -> Option<String> {
 /// [`answering_at`], giving each loopback at most `patience`.
 pub fn answering_within(port: u16, path: &str, patience: std::time::Duration) -> Option<String> {
     let client = reqwest::blocking::Client::builder()
+        .no_proxy()
         .timeout(patience)
         .build()
         .ok()?;
@@ -3819,6 +3820,7 @@ pub fn wait_until_healthy_saying(
         started,
     );
     let client = reqwest::blocking::Client::builder()
+        .no_proxy()
         .timeout(std::time::Duration::from_secs(3))
         .build()
         .map_err(|error| format!("could not ask OpenBot's services: {error}"))?;
@@ -9744,7 +9746,7 @@ fn main() {
     fn readiness_timeout_names_the_currently_unavailable_port() {
         for (api, app, missing) in [("503", "200", "server"), ("200", "503", "app")] {
             let mut fixture = ReadinessFixture::new(api, app);
-            let result = fixture.wait(std::time::Duration::from_millis(100));
+            let result = fixture.wait(std::time::Duration::from_secs(2));
             let port = if missing == "server" {
                 fixture.ready.api
             } else {

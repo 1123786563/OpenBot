@@ -238,6 +238,24 @@ test("saved guidance changes what the live reviewer decides about the next actio
   });
 });
 
+test("two editors saving from the same version cannot overwrite each other", async () => {
+  const auditBefore = (await guidanceRows()).length;
+  const results = await Promise.all([
+    call("", "PUT", { text: GUIDANCE.deals, basedOn: null }),
+    call("", "PUT", { text: GUIDANCE.outsideEmail, basedOn: null }),
+  ]);
+  expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
+  const winner = results.find((response) => response.ok);
+  if (!winner) throw new Error("Expected one save to succeed.");
+  const { guidance } = await winner.json();
+  expect(
+    guidance === GUIDANCE.deals || guidance === GUIDANCE.outsideEmail,
+  ).toBe(true);
+  expect((await call("", "DELETE", { basedOn: null })).status).toBe(409);
+  expect(await (await call("", "GET")).json()).toEqual({ guidance });
+  expect(await guidanceRows()).toHaveLength(auditBefore + 1);
+});
+
 test("the backtest replays the reviewer with the guidance over requests people decided, and says where it disagrees", async () => {
   await seedDecided(service, ana, bot);
 

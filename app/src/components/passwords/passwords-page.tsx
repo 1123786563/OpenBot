@@ -1,12 +1,17 @@
 import { IconKey, IconLockOff, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   PageEmpty,
   PageRows,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import {
+  SettingsListSearch,
+  settingsSearchTerms,
+} from "@/components/settings/settings-list-search";
 import {
   ActionUnavailable,
   useActionConfirmation,
@@ -21,6 +26,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { deleteSavedLoginMutationOptions } from "@/lib/passwords/mutations";
 import { savedLoginsQueryOptions } from "@/lib/passwords/queries";
@@ -35,53 +41,82 @@ import { queryClient } from "@/query-client";
  * Under Settings. The personal edition calls it Saved logins, and links to it from Connections too.
  */
 export function PasswordsPage() {
+  const firstMatch = useRef<HTMLDivElement>(null);
+  const pageHeading = useRef<HTMLHeadingElement>(null);
+  const [search, setSearch] = useState("");
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const logins = useQuery(savedLoginsQueryOptions());
+  const saved = canKeepCachedRead(logins.error) ? logins.data : undefined;
+  const entries = saved?.passwordManager ? saved.logins : [];
+  const terms = settingsSearchTerms(search);
+  const matches = entries.filter(({ origin, username }) => {
+    const searchable = `${origin} ${username}`.toLowerCase();
+    return terms.every((term) => searchable.includes(term));
+  });
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const remove = useMutation(deleteSavedLoginMutationOptions(queryClient));
   return (
     <PageShell
+      headingRef={pageHeading}
       title={personal ? "Saved logins" : "Passwords"}
       description="Manage saved website logins. Bots cannot see your passwords, and you approve each use."
     >
       <PageSection title={personal ? undefined : "Saved logins"}>
         {confirmation}
         {logins.isPending ? (
-          <p role="status">Loading saved logins…</p>
-        ) : logins.error && !logins.data ? (
-          <>
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load your saved logins.
-            </p>
-            <Button
-              onClick={() => void logins.refetch()}
-              size="sm"
-              variant="outline"
-            >
-              Try again
-            </Button>
-          </>
-        ) : !logins.data?.passwordManager ? (
-          <PageEmpty icon={IconLockOff} title="Saved passwords are off">
-            An admin turned them off. Your logins are kept but won't be offered.
+          <ReadStatus kind="loading" message="Loading saved logins…" />
+        ) : logins.isError ? (
+          <ReadError
+            description={
+              saved?.passwordManager && saved.logins.length
+                ? "Showing the last list we could load."
+                : undefined
+            }
+            message="Couldn't load your saved logins."
+            retry={logins.refetch}
+            retryBelow
+            retrying={logins.isFetching}
+          />
+        ) : null}
+        {entries.length ? (
+          <SettingsListSearch
+            noun="saved logins"
+            placeholder="Website or username"
+            value={search}
+            onChange={setSearch}
+            onEnter={() => firstMatch.current?.focus()}
+            matches={matches.length}
+            total={entries.length}
+          />
+        ) : null}
+        {logins.isSuccess && saved && !saved.passwordManager ? (
+          <PageEmpty icon={IconLockOff} title="Saving website logins is off">
+            Your saved logins are kept. OpenBot will offer them during sign-in
+            when saving is turned back on.
           </PageEmpty>
-        ) : logins.data.logins.length === 0 ? (
+        ) : logins.isSuccess && saved?.logins.length === 0 ? (
           <PageEmpty icon={IconKey} title="No saved logins yet">
-            Choose Save to Passwords when you sign a Bot in to a website.
+            Select “Save this login” when you sign a Bot in to a website.
           </PageEmpty>
-        ) : (
+        ) : matches.length > 0 ? (
           <PageRows>
-            {logins.data.logins.map((login, index) => (
+            {matches.map((login, index) => (
               <Fragment key={login.id}>
                 {index > 0 ? <Separator /> : null}
                 <Item size="sm">
                   <ItemMedia variant="icon">
                     <IconKey />
                   </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>{login.origin}</ItemTitle>
-                    <ItemDescription>
+                  <ItemContent style={{ minInlineSize: 0 }}>
+                    <ItemTitle
+                      className="wrap-anywhere"
+                      ref={index === 0 ? firstMatch : undefined}
+                      tabIndex={-1}
+                    >
+                      {login.origin}
+                    </ItemTitle>
+                    <ItemDescription className="line-clamp-none wrap-anywhere">
                       {login.username}
                       {login.lastUsedAt
                         ? ` · last used ${new Date(login.lastUsedAt).toLocaleDateString()}`
@@ -92,7 +127,9 @@ export function PasswordsPage() {
                     <Button
                       aria-label={`Delete saved login for ${login.username} at ${login.origin}`}
                       size="sm"
+                      className="min-h-11"
                       variant="ghost"
+                      disabled={!logins.isSuccess}
                       onClick={(event) =>
                         requestConfirmation({
                           title: `Delete saved login for ${login.origin}?`,
@@ -103,6 +140,8 @@ export function PasswordsPage() {
                             "Deletion could not be confirmed. Try again to check whether this login is still saved.",
                           successMessage: `Saved login for ${login.origin} deleted.`,
                           trigger: event.currentTarget,
+                          fallbackFocus: () =>
+                            firstMatch.current ?? pageHeading.current,
                           refresh: () => logins.refetch(),
                           run: async () => {
                             const latest = await logins.refetch({
@@ -135,7 +174,7 @@ export function PasswordsPage() {
               </Fragment>
             ))}
           </PageRows>
-        )}
+        ) : null}
       </PageSection>
     </PageShell>
   );

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { canMergeMigrationHistories } from "../src/db/merge-migration-histories";
+import {
+  canMergeMigrationHistories,
+  isIntelligenceMigration,
+} from "../src/db/merge-migration-histories";
 import {
   migrationsOutOfReach,
   readMigrationFolder,
@@ -9,32 +12,49 @@ import {
 const folder = await readMigrationFolder(
   fileURLToPath(new URL("../drizzle/", import.meta.url)),
 );
-const mainTags = /^(?:009[012]_skill_market|009[3456]_corsair)/;
-const bifrostTags =
-  /^009[78]_(?:bifrost_market_reviews|skill_market_equivalences)$/;
-const intelligenceIntegrationTip = 1795228622495; // 0102_background_conversation_runs
+const skillMarket = /^009[012]_skill_market/;
+const corsair = /^010[5-8]_corsair/;
+const bifrost =
+  /^011[78]_(?:bifrost_market_reviews|skill_market_equivalences)$/;
+const shared = ({ when }: (typeof folder)[number]) => when <= 1795157993281;
 const integrations = [
-  ["Corsair main", (tag: string) => mainTags.test(tag)],
+  ["Corsair main", ({ tag }) => skillMarket.test(tag) || corsair.test(tag)],
   [
     "Bifrost main",
-    (tag: string) => mainTags.test(tag) || bifrostTags.test(tag),
+    ({ tag }) =>
+      skillMarket.test(tag) || corsair.test(tag) || bifrost.test(tag),
   ],
   [
     "main with Bifrost reviews only",
-    (tag: string) =>
-      mainTags.test(tag) || tag === "0097_bifrost_market_reviews",
+    ({ tag }) =>
+      skillMarket.test(tag) ||
+      corsair.test(tag) ||
+      tag === "0117_bifrost_market_reviews",
   ],
   [
-    "intelligence integration",
-    (tag: string, when: number) =>
-      when <= intelligenceIntegrationTip && !tag.includes("_corsair"),
+    "early intelligence integration",
+    (entry) =>
+      entry.when <= 1795228622495 &&
+      (isIntelligenceMigration(entry) || skillMarket.test(entry.tag)),
   ],
-] as const;
+  [
+    "published intelligence integration",
+    (entry) =>
+      isIntelligenceMigration(entry) ||
+      skillMarket.test(entry.tag) ||
+      corsair.test(entry.tag) ||
+      bifrost.test(entry.tag),
+  ],
+  [
+    "published main",
+    (entry) => entry.when <= 1795520000000 && !isIntelligenceMigration(entry),
+  ],
+] satisfies [string, (entry: (typeof folder)[number]) => boolean][];
 
-describe("reconciling the published intelligence and Corsair journals", () => {
+describe("reconciling the published intelligence and main journals", () => {
   for (const [name, accepts] of integrations) {
     const applied = folder
-      .filter(({ tag, when }) => when <= 1795157993281 || accepts(tag, when))
+      .filter((entry) => shared(entry) || accepts(entry))
       .map(({ hash, when }) => ({ hash, createdAt: when }));
 
     test(`fills verified migration gaps from ${name}`, () => {

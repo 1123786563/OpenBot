@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BrokerDirectoryPage } from "@/components/manage/broker-directory-page";
+import { BrokerDirectory } from "@/components/plugins/broker-directory";
 
 /** Arcade's directory, behind the guard that it answers only on an Arcade deployment. */
 export const Route = createFileRoute("/_authed/admin/plugins/arcade")({
-  component: () => <BrokerDirectoryPage provider="arcade" />,
+  component: () => <BrokerDirectory provider="arcade" />,
 });

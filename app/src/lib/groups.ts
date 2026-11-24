@@ -4,7 +4,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { type AgentChannel, channelKeys } from "@/lib/channels/queries";
-import { client } from "@/lib/client";
+import { ClientError, canKeepCachedRead, client } from "@/lib/client";
 
 /** One line of a group conversation: a person's message (`agentId` null) or one Bot's reply. */
 export type GroupMessage = {
@@ -65,13 +65,26 @@ export const groupKeys = {
 export function groupQueryOptions(channelId: string) {
   return queryOptions({
     queryKey: groupKeys.detail(channelId),
-    queryFn: async (): Promise<GroupConversation> => {
-      const response = await client(
-        `/api/groups/${encodeURIComponent(channelId)}`,
-        { fallback: "This group conversation could not be loaded." },
-      );
-      return (await response.json()) as GroupConversation;
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<GroupConversation | null> => {
+      try {
+        const response = await client(
+          `/api/groups/${encodeURIComponent(channelId)}`,
+          { fallback: "This group conversation could not be loaded.", signal },
+        );
+        return (await response.json()) as GroupConversation;
+      } catch (error) {
+        if (error instanceof ClientError && !canKeepCachedRead(error)) {
+          // A later temporary failure must not expose the conversation after access is lost.
+          cache.setQueryData(queryKey, null);
+        }
+        throw error;
+      }
     },
+    retry: (failures, error) => failures < 1 && canKeepCachedRead(error),
     refetchInterval: (query) =>
       query.state.data?.messages.some(
         (message) =>

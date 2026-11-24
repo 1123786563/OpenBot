@@ -14,6 +14,7 @@ mod desktop_telemetry;
 mod intelligence_bridge;
 mod notice;
 mod outside_links;
+mod personal_cloud;
 mod zoom;
 
 #[cfg(test)]
@@ -10082,6 +10083,11 @@ fn settle_menu_stop(shell: &Shell, fallback_root: &Path, stopped: Stopped) -> Op
 fn chose(app: &tauri::AppHandle, item: &str) {
     match item {
         "open" => show_whichever_applies(app),
+        personal_cloud::MENU_ID => {
+            if let Err(error) = personal_cloud::show(app) {
+                log::warn!("[personal-cloud] could not open cloud window: {error}");
+            }
+        }
         // Stop without quitting: the stack is what costs something to leave running, and somebody
         // who wants it stopped does not necessarily want the application gone.
         "stop" => stop_from_menu(app.clone(), AskedFrom::Menu),
@@ -10337,6 +10343,20 @@ fn install_menus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<
         .map(MenuEntry::Plain)
     };
 
+    let cloud_entry = || {
+        MenuItem::with_id(
+            app,
+            personal_cloud::MENU_ID,
+            personal_cloud::MENU_LABEL,
+            true,
+            None::<&str>,
+        )
+        .map(MenuEntry::Plain)
+    };
+    let cloud_enabled = app
+        .try_state::<personal_cloud::Cloud>()
+        .is_some_and(|cloud| cloud.enabled());
+
     /*
      * The menu bar's menu, laid out as Mac menu bar apps have theirs: what is running, with a
      * status dot, then the things to do, each with an icon, then About, then Quit.
@@ -10371,6 +10391,9 @@ fn install_menus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<
                 None::<&str>,
             )?),
         ];
+        if cloud_enabled {
+            entries.push(cloud_entry()?);
+        }
         entries.push(MenuEntry::Icon(IconMenuItem::with_id(
             app,
             "status",
@@ -10429,6 +10452,9 @@ fn install_menus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<
             true,
             None::<&str>,
         )?));
+        if cloud_enabled {
+            entries.push(cloud_entry()?);
+        }
         entries.push(MenuEntry::Plain(MenuItem::with_id(
             app,
             "status",
@@ -10929,8 +10955,13 @@ fn main() {
         // A second launch is somebody looking for the window they already have, not a request for a
         // second stack. Without this both copies bind the same ports and the loser reports a
         // failure that belongs to the winner.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            restore_after_second_instance(app);
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if !argv.iter().skip(1).any(|arg| {
+                arg.parse::<tauri::Url>()
+                    .is_ok_and(|url| personal_cloud::is_return_uri(&url))
+            }) {
+                restore_after_second_instance(app);
+            }
         }))
         // The `openbot://` links a click on a Windows notification opens. Right after the
         // single-instance plugin, whose `deep-link` feature hands it a second launch's link.
@@ -10957,11 +10988,18 @@ fn main() {
         .plugin(desktop_page::plugin())
         .plugin(outside_links_guard())
         .manage(Shell::default())
+        .manage(personal_cloud::Cloud::configured())
         .manage(cloud_connection::CloudConnection::default())
         .invoke_handler(cloud_connection::protect_ipc(tauri::generate_handler![
             cloud_connection::saved_cloud_origin,
             cloud_connection::open_cloud,
             cloud_connection::disconnect_cloud,
+            personal_cloud::personal_cloud_action,
+            personal_cloud::personal_cloud_recover,
+            personal_cloud::personal_cloud_workspace,
+            personal_cloud::personal_cloud_start_bot_run,
+            personal_cloud::personal_cloud_bot_run,
+            personal_cloud::personal_cloud_show_local,
             back_end_wait_ended,
             start_early_downloads,
             early_downloads_now,
@@ -11122,7 +11160,11 @@ fn main() {
                 let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
                     for link in event.urls() {
-                        open_from_link(&handle, &link);
+                        if personal_cloud::is_return_uri(&link) {
+                            personal_cloud::receive(&handle, link);
+                        } else {
+                            open_from_link(&handle, &link);
+                        }
                     }
                 });
                 // OpenBot started by a click on a notification: its page, once OpenBot shows.

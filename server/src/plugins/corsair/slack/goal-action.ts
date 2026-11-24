@@ -1,4 +1,3 @@
-import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -19,6 +18,7 @@ import type {
   ResponsibilityRunContext,
   ResponsibilityStore,
 } from "../../../responsibilities/types";
+import { corsairWriteKey, dispatchCorsairWrite } from "../cutover";
 import {
   GITHUB_EVENT_ACCESS_ENDED,
   githubQueuedRunAuthorization,
@@ -114,6 +114,7 @@ export function createSlackGoalAction(
     async resume(
       record: ApprovalRecord,
       responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">,
+      beforeDispatch?: () => Promise<void>,
     ) {
       const { action, ownerUserId: owner, id: approvalId } = record;
       if (record.status === "completed") return;
@@ -311,6 +312,7 @@ export function createSlackGoalAction(
             action.args,
           );
           await log("corsair.slack.write_started", { writeKey });
+          await beforeDispatch?.();
           let message: Awaited<ReturnType<typeof provider.postMessage>>;
           try {
             message = await dispatchCorsairWrite(
@@ -381,6 +383,7 @@ export function createSlackGoalAction(
           })
           .where(waiting);
       } else if (binding?.run.status === "waiting") {
+        await beforeDispatch?.();
         await responsibilityStore.resumeWaiting(owner, action.runId, result);
       }
       await approvals.finish(owner, approvalId);

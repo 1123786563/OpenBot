@@ -90,6 +90,7 @@ let apps: ComposioApp[] = [];
 let servers: PluginServer[] = [];
 let connected: string[] = [];
 let provider: PluginsProvider = "composio";
+let refuseAdd = false;
 const writes: string[] = [];
 
 const originalFetch = global.fetch;
@@ -97,12 +98,19 @@ beforeEach(() => {
   writes.length = 0;
   connected = [];
   servers = [];
+  refuseAdd = false;
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const path = String(input).split("?")[0] ?? "";
       if (init?.method === "POST" && path === "/api/plugins/composio/apps") {
         const { slug } = JSON.parse(String(init.body)) as { slug: string };
         writes.push(`add ${slug}`);
+        if (refuseAdd) {
+          return Response.json(
+            { error: "Try again shortly." },
+            { status: 503 },
+          );
+        }
         servers = [...servers, server(provider, slug)];
         apps = apps.map((row) =>
           row.slug === slug ? { ...row, enabled: true } : row,
@@ -280,6 +288,37 @@ describe("Add in the personal edition", () => {
     expect(history.location.search).toContain("connect=true");
     expect(writes).toEqual(["add posthog"]);
     expect(tabs).toHaveLength(0);
+  });
+
+  test("a failed confirmed Add closes its unused tab and offers a real retry", async () => {
+    provider = "composio";
+    apps = [{ ...app("slack", "Slack", "consent", false), permissionCount: 1 }];
+    refuseAdd = true;
+    const { view, user } = draw("personal");
+
+    const row = await view.findByTestId("directory-slack");
+    await user.click(within(row).getByRole("button", { name: "Add" }));
+    const dialog = view.getByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    const retry = await within(dialog).findByRole("button", {
+      name: "Try again",
+    });
+    expect(writes).toEqual(["add slack"]);
+    expect(tabs[0]?.closed).toBe(true);
+    expect(view.queryByText("Added Slack.")).toBeNull();
+
+    refuseAdd = false;
+    await user.click(retry);
+    await waitFor(() => {
+      expect(writes).toEqual([
+        "add slack",
+        "add slack",
+        "connect composio-slack",
+      ]);
+      expect(tabs[1]?.url).toBe("https://sign-in.example/composio-slack");
+    });
+    expect(await view.findByText("Added Slack.")).toBeTruthy();
   });
 });
 

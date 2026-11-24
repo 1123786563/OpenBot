@@ -321,17 +321,19 @@ async def answer(state: MessagesState):
         raise
 
 
-builder = StateGraph(MessagesState)
-builder.add_node("answer", answer)
-builder.add_edge(START, "answer")
-builder.add_node("tools", execute_tools)
-builder.add_conditional_edges("answer", next_step)
-builder.add_edge("tools", "answer")
-# A checkpointer, because the AG-UI integration reads a thread's state by id and LangGraph refuses
-# to without one. In memory rather than in Postgres: OpenBot's database is where a conversation
-# lives, and two stores remembering the same thread is how they come to disagree. So this one is
-# never used across runs either: `WholeThreadAgent` gives every run its own, empty.
-graph = builder.compile(checkpointer=MemorySaver())
+def build_graph(answer_node, tool_node=execute_tools):
+    builder = StateGraph(MessagesState)
+    builder.add_node("answer", answer_node)
+    builder.add_edge(START, "answer")
+    builder.add_node("tools", tool_node)
+    builder.add_conditional_edges("answer", next_step)
+    builder.add_edge("tools", "answer")
+    # AG-UI reads thread state by id. WholeThreadAgent gives each run an empty checkpoint
+    # because the conversation history comes from OpenBot.
+    return builder.compile(checkpointer=MemorySaver())
+
+
+graph = build_graph(answer)
 
 app = FastAPI()
 

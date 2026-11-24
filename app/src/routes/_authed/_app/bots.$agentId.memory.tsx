@@ -34,14 +34,13 @@ function MemoryPage() {
         {(agent) => (
           <>
             <p className="mt-6 text-muted-foreground text-sm">
-              What your Bots remember about you is in{" "}
               <Link
                 className="underline underline-offset-4"
                 to="/capabilities/memory"
               >
-                Capabilities
-              </Link>
-              .
+                Review your saved memories
+              </Link>{" "}
+              to see what your Bots remember about you.
             </p>
             <MemorySources agentId={agent.id} />
             <ProactiveResearchSettings agentId={agent.id} />

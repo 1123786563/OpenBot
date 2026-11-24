@@ -8,6 +8,7 @@ type DeploymentButtonProps = Pick<
   "aria-pressed" | "disabled" | "form" | "onClick" | "type"
 > & {
   children: string;
+  className?: string;
   icon?: ReactNode;
   size?: "sm" | "lg";
   variant?: "default" | "outline" | "destructive";

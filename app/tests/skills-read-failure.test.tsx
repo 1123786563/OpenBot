@@ -44,8 +44,10 @@ afterEach(cleanup);
 afterAll(() => GlobalRegistrator.unregister());
 
 const originalFetch = global.fetch;
+let pluginsResponse: () => Response;
 
 beforeEach(() => {
+  pluginsResponse = () => new Response(null, { status: 500 });
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0]) => {
       const path = String(input).split("?")[0];
@@ -64,8 +66,8 @@ beforeEach(() => {
         });
       }
       if (path === "/api/agents") return json({ agents: [] });
-      // The one read under test: a 500 with no body, the shape a broken server sends.
-      return new Response(null, { status: 500 });
+      if (path === "/api/plugins") return pluginsResponse();
+      return new Response(null, { status: 404 });
     },
     { preconnect: originalFetch.preconnect },
   );
@@ -75,9 +77,11 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-/** A client the failing query settles on in one attempt, so no test waits on a retry. */
+/** Run any configured retries without adding a delay to the test. */
 function failingQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
+  });
 }
 
 /** A client already holding a plugins page with no skills in it: the honest empty answer. */
@@ -181,7 +185,9 @@ test("a person's skills page says the skills failed to load, not that they have 
   await waitForFailedRead(client);
 
   expect(await view.findByText("Couldn't load your skills.")).toBeTruthy();
-  expect(await view.findByRole("button", { name: "Retry" })).toBeTruthy();
+  expect(
+    await view.findByRole("button", { name: "Retry skills" }),
+  ).toBeTruthy();
   expect(
     view.queryByText("No skills yet. Write one with New skill."),
   ).toBeNull();
@@ -190,12 +196,58 @@ test("a person's skills page says the skills failed to load, not that they have 
 test("a person with genuinely no skills is still told so", async () => {
   const client = answeredEmpty();
   const view = renderSkills(client);
-  await waitForFailedRead(client);
+  pluginsResponse = () => Response.json(client.getQueryData(pluginKeys.page()));
 
   expect(
     await view.findByText("No skills yet. Write one with New skill."),
   ).toBeTruthy();
   expect(view.queryByText("Couldn't load your skills.")).toBeNull();
+});
+
+test("cached skills remain readable during an outage and stay hidden after access is denied", async () => {
+  const client = answeredEmpty();
+  client.setQueryData<PluginsPage>(pluginKeys.page(), (page) =>
+    page
+      ? {
+          ...page,
+          skills: [
+            {
+              id: "skill-1",
+              slug: "triage",
+              ownerUserId: "user-1",
+              title: "Triage invoices",
+              summary: "Check receipts",
+              instructions: "Review the receipts.",
+              origin: "manual",
+              installedBy: "user-1",
+              grantedTo: [],
+              tools: [],
+            },
+          ],
+        }
+      : page,
+  );
+  const view = renderSkills(client);
+  const retry = () =>
+    fireEvent.click(view.getByRole("button", { name: "Retry skills" }));
+
+  expect(await view.findByText("Couldn't refresh your skills.")).toBeTruthy();
+  expect(view.getByText("Triage invoices")).toBeTruthy();
+  expect(
+    view.queryByRole("button", { name: "Actions for Triage invoices" }),
+  ).toBeNull();
+  expect(view.queryByRole("link", { name: "New skill" })).toBeNull();
+
+  pluginsResponse = () => new Response(null, { status: 403 });
+  retry();
+  expect(await view.findByText("Skills access is unavailable.")).toBeTruthy();
+  expect(view.queryByText("Triage invoices")).toBeNull();
+
+  pluginsResponse = () => new Response(null, { status: 503 });
+  retry();
+  expect(await view.findByText("Couldn't load your skills.")).toBeTruthy();
+  expect(view.queryByText("Triage invoices")).toBeNull();
+  expect(view.queryByText(/No skills yet/)).toBeNull();
 });
 
 test("the admin skills page says the skills failed to load, not that there are none", async () => {
@@ -247,11 +299,20 @@ test("a deployment with genuinely no skills still says so on the admin page", as
 
 test("opening a skill to edit says it failed to load, not that it no longer exists", async () => {
   const client = failingQueryClient();
-  const view = renderAlone(client, () => <EditSkill slug="triage" />);
+  const view = renderAlone(client, () => (
+    <EditSkill
+      onSubmit={async () => {
+        throw new Error("A skill that failed to load cannot be saved");
+      }}
+      slug="triage"
+    />
+  ));
   await waitForFailedRead(client);
 
   expect(await view.findByText("Couldn't load this skill.")).toBeTruthy();
-  expect(await view.findByRole("button", { name: "Retry" })).toBeTruthy();
+  expect(
+    await view.findByRole("button", { name: "Retry loading this skill" }),
+  ).toBeTruthy();
   expect(
     view.queryByText("This skill was deleted, or it isn't yours to edit."),
   ).toBeNull();

@@ -26,13 +26,15 @@ export function ReadError({
   retrying,
   retryLabel = "Retry",
   retryBelow = false,
+  focusAfterRetry,
 }: {
   message: string;
   description?: string;
-  retry: () => unknown;
+  retry?: (() => unknown) | undefined;
   retrying?: boolean;
   retryLabel?: string;
   retryBelow?: boolean;
+  focusAfterRetry?: () => HTMLElement | null;
 }) {
   const restoreFocus = useRef<(() => void) | null>(null);
   useLayoutEffect(
@@ -44,7 +46,7 @@ export function ReadError({
     [],
   );
 
-  const action = (
+  const action = retry ? (
     <Button
       clickAction={async (event) => {
         const button = event.currentTarget;
@@ -53,7 +55,9 @@ export function ReadError({
           document.activeElement === button
         ) {
           const regions: HTMLElement[] = [];
-          const selector = "section, [role=tabpanel], main, [role=main]";
+          const dialogs = "[role=dialog], [role=alertdialog]";
+          const selector = `section, [role=tabpanel], main, [role=main], ${dialogs}`;
+          const dialog = button.closest<HTMLElement>(dialogs);
           let region = button.closest<HTMLElement>(selector);
           while (region) {
             regions.push(region);
@@ -61,13 +65,19 @@ export function ReadError({
               region.parentElement?.closest<HTMLElement>(selector) ?? null;
           }
           const address = window.location.href;
-          restoreFocus.current = () => {
+          const restoreRecoveredFocus = () => {
             const movedOn = () =>
               button.isConnected ||
-              document.activeElement !== document.body ||
+              (document.activeElement !== document.body &&
+                document.activeElement !== dialog) ||
               window.location.href !== address;
             const focusRecoveredContent = () => {
               if (movedOn()) return true;
+              const preferred = focusAfterRetry?.();
+              if (preferred?.isConnected) {
+                preferred.focus();
+                if (document.activeElement === preferred) return true;
+              }
               for (const region of regions) {
                 if (!region.isConnected) continue;
                 const target =
@@ -98,6 +108,10 @@ export function ReadError({
             document.addEventListener("focusin", stop, { once: true });
             observer.observe(scope, { childList: true, subtree: true });
           };
+          // Let the dialog finish its queued focus restoration before choosing a target.
+          restoreFocus.current = dialog
+            ? () => window.setTimeout(restoreRecoveredFocus, 50)
+            : restoreRecoveredFocus;
         }
         await retry();
       }}
@@ -107,7 +121,7 @@ export function ReadError({
       size={retryBelow ? "lg" : "sm"}
       variant="secondary"
     />
-  );
+  ) : undefined;
   return (
     <Banner
       description={description}

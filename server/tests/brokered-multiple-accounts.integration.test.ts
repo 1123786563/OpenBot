@@ -17,7 +17,7 @@ import {
   mcpTools,
   pluginGrants,
 } from "../src/db/schema";
-import { useComposioClient } from "../src/plugins/composio";
+import { useComposioClient as installComposioClient } from "../src/plugins/composio";
 import {
   buildComposioClient,
   type ComposioVendor,
@@ -209,7 +209,7 @@ function composioHolding(toolkit: string, accounts: HeldAccount[]) {
     },
   };
   const client = buildComposioClient(vendor);
-  useComposioClient(client.actions);
+  installComposioClient(client.actions);
   return { broker: client.broker, asked };
 }
 
@@ -370,7 +370,7 @@ async function fetchEmails(
 }
 
 afterEach(async () => {
-  useComposioClient(null);
+  installComposioClient(null);
   if (made.length === 0) return;
   await database
     .delete(brokeredAccounts)

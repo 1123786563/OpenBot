@@ -1,3 +1,4 @@
+import { Text } from "@astryxdesign/core/Text";
 import type {
   LearningSharingMode,
   PersonalLearningSharing,
@@ -17,6 +18,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { LearnedSkillDialog } from "@/components/learning/learned-skill-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +26,7 @@ import {
   ItemActions,
   ItemContent,
   ItemDescription,
+  ItemFooter,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -88,14 +91,10 @@ function emptySentence(
   personal: boolean,
 ): string {
   if (personal) {
-    return data.skills === null
-      ? "Couldn't read your Skills from the backend just now. Reload the page to try again."
-      : "No skills learned from your recordings and conversations yet. Once there are, they show up here.";
+    return "No skills learned from your recordings and conversations yet. Once there are, they show up here.";
   }
   if (data.unavailable === "off")
     return "An admin has turned off automatic learning, so no skills are learned from your recordings.";
-  if (data.skills === null)
-    return "Couldn't read your Skills from the backend just now. Your choice above still applies to them.";
   return mode === "choose"
     ? "No Skills learned from your recordings yet. Once there are, each one you open here reaches every Bot."
     : "No Skills learned from your recordings yet. Once there are, they show up here.";
@@ -125,31 +124,45 @@ export function LearningSharing() {
   );
   const capabilities = useQuery(deploymentCapabilitiesQueryOptions());
   const [reading, setReading] = React.useState<string | null>(null);
-  // Which edition decides the layout, so nothing draws until it is known. A failed read counts as the team edition.
-  if (sharing.isPending || capabilities.isPending) return null;
+  const skillsHeading = React.useRef<HTMLHeadingElement>(null);
   const personal = capabilities.data?.edition === "personal";
-  if (sharing.error) {
+  if (sharing.isPending || capabilities.isPending || sharing.error) {
     return (
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't load your Learning settings.
-        </p>
-        <Button
-          disabled={sharing.isFetching}
-          onClick={() => void sharing.refetch()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {sharing.isFetching ? "Retrying…" : "Retry"}
-        </Button>
-      </div>
+      <PageSection headingRef={skillsHeading} title="Your skills">
+        {sharing.error ? (
+          <ReadError
+            focusAfterRetry={() => skillsHeading.current}
+            message="Couldn't load your Learning settings."
+            retry={sharing.refetch}
+            retryBelow
+            retryLabel="Retry your skills"
+            retrying={sharing.isFetching}
+          />
+        ) : (
+          <ReadStatus kind="loading" message="Loading your skills…" />
+        )}
+      </PageSection>
     );
   }
   const data = sharing.data;
   // Shown at once while the save is on its way, as a switch is.
   const mode = (setMode.isPending ? setMode.variables : undefined) ?? data.mode;
-  const failure = setMode.error ?? setOpen.error ?? requestShare.error;
+  const saving =
+    setMode.isPending || setOpen.isPending || requestShare.isPending;
+  const skillListError =
+    data.skills === null && data.unavailable !== "off" ? (
+      <ReadError
+        focusAfterRetry={() => skillsHeading.current}
+        message="Couldn’t load the skill list"
+        description={
+          personal ? undefined : "Your sharing choice still applies."
+        }
+        retry={sharing.refetch}
+        retryBelow
+        retryLabel="Retry skill list"
+        retrying={sharing.isFetching}
+      />
+    ) : null;
   // The dialog shows the title its row did.
   const readingSkill = data.skills?.find((skill) => skill.name === reading);
   const readingTitle = readingSkill
@@ -161,11 +174,14 @@ export function LearningSharing() {
     const none = data.skills === null || data.skills.length === 0;
     return (
       <PageSection
+        headingRef={skillsHeading}
         title="Your skills"
         // Said only over skills to open: above the empty state it would point at nothing.
         description={none ? undefined : "Open a skill to read what it does."}
       >
-        {data.skills === null || data.skills.length === 0 ? (
+        {skillListError ? (
+          skillListError
+        ) : data.skills === null || data.skills.length === 0 ? (
           <PageEmpty>{emptySentence(data, mode, true)}</PageEmpty>
         ) : (
           <PageRows>
@@ -224,12 +240,14 @@ export function LearningSharing() {
                 render={
                   <button
                     aria-pressed={mode === choice.mode}
-                    disabled={
-                      setMode.isPending ||
+                    disabled={!data.sharingAllowed && choice.mode !== "closed"}
+                    aria-disabled={
+                      saving ||
                       (!data.sharingAllowed && choice.mode !== "closed")
                     }
                     onClick={() => {
-                      if (mode !== choice.mode) setMode.mutate(choice.mode);
+                      if (!saving && mode !== choice.mode)
+                        setMode.mutate(choice.mode);
                     }}
                     type="button"
                   />
@@ -256,12 +274,25 @@ export function LearningSharing() {
             </React.Fragment>
           ))}
         </PageRows>
+        {setMode.error ? (
+          <Text
+            as="p"
+            role="alert"
+            size="sm"
+            style={{ color: "var(--color-text-error)" }}
+          >
+            {setMode.error.message}
+          </Text>
+        ) : null}
       </PageSection>
       <PageSection
+        headingRef={skillsHeading}
         title="Your skills"
         description={SKILLS_DESCRIPTION[data.sharingAllowed ? mode : "closed"]}
       >
-        {data.skills === null || data.skills.length === 0 ? (
+        {skillListError ? (
+          skillListError
+        ) : data.skills === null || data.skills.length === 0 ? (
           <PageEmpty>{emptySentence(data, mode, false)}</PageEmpty>
         ) : (
           <PageRows>
@@ -275,6 +306,16 @@ export function LearningSharing() {
                 mode !== "closed" &&
                 skill.approvedBy === "person" &&
                 skill.sharing !== "approved";
+              const requestHere = requestShare.variables === skill.name;
+              const failedRequest = requestHere ? requestShare.error : null;
+              const openError =
+                setOpen.variables?.name === skill.name ? setOpen.error : null;
+              const retryRequest =
+                Boolean(failedRequest) &&
+                data.sharingAllowed &&
+                needsAdmin &&
+                skill.sharing !== "requested" &&
+                (mode !== "choose" || open);
               return (
                 <React.Fragment key={skill.name}>
                   {index > 0 ? <Separator /> : null}
@@ -321,12 +362,15 @@ export function LearningSharing() {
                               aria-label={`Open ${skillTitle(skill.name, skill.description)} to everyone`}
                               checked={open}
                               // An open Skill can always be closed; opening one waits for an admin.
-                              disabled={
-                                setOpen.isPending ||
-                                requestShare.isPending ||
-                                (!data.sharingAllowed && !open)
+                              disabled={!data.sharingAllowed && !open}
+                              aria-disabled={
+                                saving || (!data.sharingAllowed && !open)
                               }
+                              readOnly={saving}
                               onCheckedChange={(checked) => {
+                                if (saving) return;
+                                if (!checked && requestHere)
+                                  requestShare.reset();
                                 if (
                                   checked &&
                                   needsAdmin &&
@@ -355,7 +399,7 @@ export function LearningSharing() {
                           </span>
                         ) : (
                           <Button
-                            disabled={requestShare.isPending}
+                            disabled={saving}
                             onClick={() => requestShare.mutate(skill.name)}
                             size="sm"
                             type="button"
@@ -365,6 +409,56 @@ export function LearningSharing() {
                           </Button>
                         )}
                       </ItemActions>
+                      {requestHere && requestShare.isPending ? (
+                        <ItemFooter>
+                          <Text as="p" role="status" size="sm">
+                            Sending sharing request…
+                          </Text>
+                        </ItemFooter>
+                      ) : null}
+                      {openError || failedRequest ? (
+                        <ItemFooter style={{ flexWrap: "wrap" }}>
+                          <Text
+                            as="p"
+                            role="alert"
+                            size="sm"
+                            style={{ color: "var(--color-text-error)" }}
+                          >
+                            {openError?.message ?? failedRequest?.message}
+                          </Text>
+                          {retryRequest && mode === "choose" ? (
+                            <Button
+                              className="confirmation-action"
+                              disabled={saving}
+                              onClick={(event) => {
+                                const row =
+                                  event.currentTarget.closest(
+                                    "[data-slot=item]",
+                                  );
+                                requestShare.mutate(skill.name, {
+                                  onSuccess: () =>
+                                    requestAnimationFrame(() => {
+                                      if (
+                                        document.activeElement === document.body
+                                      ) {
+                                        row
+                                          ?.querySelector<HTMLElement>(
+                                            "[role=switch]",
+                                          )
+                                          ?.focus();
+                                      }
+                                    }),
+                                });
+                              }}
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              Retry sharing request
+                            </Button>
+                          ) : null}
+                        </ItemFooter>
+                      ) : null}
                     </Item>
                   ) : (
                     // No switch here, so the whole row opens the Skill.
@@ -403,11 +497,6 @@ export function LearningSharing() {
           source={{ kind: "personal" }}
         />
       </PageSection>
-      {failure ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {failure.message}
-        </p>
-      ) : null}
     </>
   );
 }

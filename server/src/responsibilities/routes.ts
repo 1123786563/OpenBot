@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { z } from "zod";
 import type { AppVariables } from "../auth/guards";
 import { afterExposureChange } from "../plugins/exposure-change";
 import type { SharedUseStore } from "../plugins/shared-use-store";
@@ -60,11 +61,23 @@ export function createResponsibilityRoutes(
         throw new ResponsibilityRefusedError(
           "Supply a repository and webhook secret.",
         );
+      const requestId = z
+        .uuid()
+        .optional()
+        .safeParse("requestId" in input ? input.requestId : undefined);
+      if (!requestId.success) {
+        throw new ResponsibilityRefusedError(
+          "Start a new request to add this repository.",
+        );
+      }
       return context.json(
         {
           binding: await bindings.create(context.var.actor.id, {
             repository: input.repository,
             secret: input.secret,
+            ...(requestId.data
+              ? { requestId: requestId.data.toLowerCase() }
+              : {}),
           }),
         },
         201,

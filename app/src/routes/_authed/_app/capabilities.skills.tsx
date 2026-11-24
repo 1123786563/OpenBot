@@ -1,10 +1,16 @@
-import { IconDots, IconPlus } from "@tabler/icons-react";
+import { IconDots, IconListSearch, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { CapabilitiesShell } from "@/components/capabilities/capabilities-shell";
 import { DetailPanel } from "@/components/layout/detail-panel";
-import { PageRows, PageSection } from "@/components/layout/page-shell";
+import {
+  PageEmpty,
+  PageRows,
+  PageSection,
+} from "@/components/layout/page-shell";
 import { ReadError } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
@@ -13,7 +19,7 @@ import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -32,9 +39,15 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { ClientError } from "@/lib/client";
-import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import {
+  removeSkillMutationOptions,
+  saveSkillMutationOptions,
+} from "@/lib/plugins/mutations";
+import {
+  pluginsPageQueryOptions,
+  skillsAccessDenied,
+} from "@/lib/plugins/queries";
+import type { SkillFormValues } from "@/lib/skills/form";
 
 /**
  * Personal `/` skills. They are instructions, not capabilities, and can only be granted to Bots the
@@ -60,6 +73,63 @@ export const Route = createFileRoute("/_authed/_app/capabilities/skills")({
 /** Placeholder rows while the list loads: enough to fill the view, not to suggest a count. */
 const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 
+function PersonalSkillEditor({
+  slug,
+  status,
+}: {
+  slug: string | undefined;
+  status: "loading" | "unavailable" | "ready";
+}) {
+  const navigate = Route.useNavigate();
+  const queryClient = useQueryClient();
+  const saveSkill = useMutation(saveSkillMutationOptions(queryClient));
+  const hasDraft = useRef(false);
+  const rememberDraft = useCallback((dirty: boolean) => {
+    hasDraft.current = dirty;
+  }, []);
+  const submitting = useRef(false);
+
+  async function save(values: SkillFormValues) {
+    if (submitting.current || status !== "ready") return;
+    submitting.current = true;
+    try {
+      await saveSkill.mutateAsync(values);
+      await navigate({ search: {}, ignoreBlocker: true, replace: true });
+    } finally {
+      submitting.current = false;
+    }
+  }
+
+  const form = {
+    error: saveSkill.error,
+    onDirtyChange: rememberDraft,
+    onSubmit: save,
+    saving: saveSkill.isPending,
+  };
+
+  return (
+    <>
+      {slug === undefined ? (
+        <NewSkill {...form} status={status} />
+      ) : (
+        <EditSkill {...form} slug={slug} />
+      )}
+      <DraftLeaveConfirmation
+        description="The name, instructions, and tools you entered will be lost."
+        hasDraft={hasDraft}
+        leavesDraft={({ next }) => {
+          if (next.routeId !== "/_authed/_app/capabilities/skills") return true;
+          if (slug === undefined) return next.search.new !== true;
+          return next.search.new === true || next.search.edit !== slug;
+        }}
+        saving={saveSkill.isPending}
+        submitting={submitting}
+        title="Discard unsaved skill changes?"
+      />
+    </>
+  );
+}
+
 function SkillsPage() {
   const queryClient = useQueryClient();
   const { new: isCreating, edit: editingSlug } = Route.useSearch();
@@ -82,9 +152,10 @@ function SkillsPage() {
    * them and the list is empty for a reason that is not "you have no skills".
    */
   const loading = skillsPending || profile.isPending;
-  const denied =
-    skillsError instanceof ClientError &&
-    (skillsError.status === 401 || skillsError.status === 403);
+  const denied = skillsAccessDenied(skillsError);
+  const cannotIdentifyOwner = !me;
+  const readIssue = cannotIdentifyOwner || skillsError !== null;
+  const canCreate = !loading && !readIssue;
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const removeSkill = useMutation(removeSkillMutationOptions(queryClient));
 
@@ -97,17 +168,29 @@ function SkillsPage() {
    * another person's lands in neither list. Not a leak, but an administrator cannot see here what
    * they are entitled to. Worth an owner column or a third section before this page is called done.
    */
-  const skills = denied || !me ? [] : (data?.skills ?? []);
+  const skills = denied || cannotIdentifyOwner ? [] : (data?.skills ?? []);
   const mine = skills.filter((skill) => skill.ownerUserId === me?.id);
   const deployment = skills.filter((skill) => skill.ownerUserId === null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const [search, setSearch] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = words.length
+    ? mine.filter(({ title, slug, summary }) => {
+        const text = `${title} /${slug} ${summary ?? ""}`.toLowerCase();
+        return words.every((word) => text.includes(word));
+      })
+    : mine;
 
   return (
     <DetailPanel
       detail={
-        showCreate ? (
-          <NewSkill />
-        ) : editingSlug ? (
-          <EditSkill slug={editingSlug} />
+        showCreate || showEdit ? (
+          <PersonalSkillEditor
+            key={showCreate ? "new" : `edit:${editingSlug}`}
+            slug={showCreate ? undefined : editingSlug}
+            status={loading ? "loading" : readIssue ? "unavailable" : "ready"}
+          />
         ) : null
       }
       onClose={() => navigate({ search: {} })}
@@ -118,22 +201,21 @@ function SkillsPage() {
 
         <PageSection
           action={
-            <Button
-              className="min-h-11"
-              id="new-personal-skill"
-              render={(props) => (
-                <Link
-                  search={{ new: true }}
-                  to="/capabilities/skills"
-                  {...props}
-                />
-              )}
-              size="sm"
-              variant="ghost"
-            >
-              <IconPlus />
-              New skill
-            </Button>
+            canCreate ? (
+              <Link
+                className={buttonVariants({
+                  className: "min-h-11",
+                  size: "sm",
+                  variant: "ghost",
+                })}
+                id="new-personal-skill"
+                search={{ new: true }}
+                to="/capabilities/skills"
+              >
+                <IconPlus />
+                New skill
+              </Link>
+            ) : undefined
           }
           description={
             <>
@@ -141,8 +223,61 @@ function SkillsPage() {
               instruction. Only you see yours, and they work on Bots you own.
             </>
           }
+          headingRef={heading}
           title="Your skills"
         >
+          {!loading && readIssue ? (
+            <section className="mt-4">
+              <ReadError
+                description={
+                  skills.length > 0
+                    ? "Showing the last loaded skills. Refresh the list to make changes."
+                    : denied
+                      ? "Check that you still have access, then try again."
+                      : undefined
+                }
+                focusAfterRetry={() => heading.current}
+                message={
+                  denied
+                    ? "Skills access is unavailable."
+                    : skills.length > 0
+                      ? "Couldn't refresh your skills."
+                      : "Couldn't load your skills."
+                }
+                retry={() =>
+                  cannotIdentifyOwner ? profile.refetch() : refetchSkills()
+                }
+                retryBelow
+                retryLabel="Retry skills"
+                retrying={
+                  cannotIdentifyOwner ? profile.isFetching : skillsFetching
+                }
+              />
+            </section>
+          ) : null}
+          {!loading && mine.length > 0 ? (
+            <Input
+              aria-label="Search your skills"
+              className="mt-4 min-h-12"
+              maxLength={200}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && search) {
+                  event.preventDefault();
+                  setSearch("");
+                }
+              }}
+              placeholder="Search by name, command, or description"
+              ref={input}
+              type="search"
+              value={search}
+            />
+          ) : null}
+          {!loading && mine.length > 0 && words.length > 0 ? (
+            <p className="mt-2 text-muted-foreground text-sm" role="status">
+              {matches.length} of {mine.length} skills match
+            </p>
+          ) : null}
           {/*
            * Placeholder rows while the two queries are still in flight: the alternative is the
            * empty state standing there saying this person has written no skills, which is a claim
@@ -172,16 +307,7 @@ function SkillsPage() {
                 ))}
               </PageRows>
             </div>
-          ) : !data || !me || denied ? (
-            <section className="mt-4">
-              <ReadError
-                message="Couldn't load your skills."
-                retry={() => (!me ? profile.refetch() : refetchSkills())}
-                retryBelow
-                retrying={!me ? profile.isFetching : skillsFetching}
-              />
-            </section>
-          ) : mine.length === 0 ? (
+          ) : readIssue && mine.length === 0 ? null : mine.length === 0 ? (
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
@@ -189,9 +315,26 @@ function SkillsPage() {
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
+          ) : matches.length === 0 ? (
+            <PageEmpty
+              action={
+                <Button
+                  className="min-h-11"
+                  onClick={() => {
+                    setSearch("");
+                    input.current?.focus();
+                  }}
+                  variant="outline"
+                >
+                  Clear search
+                </Button>
+              }
+              icon={IconListSearch}
+              title="No matching skills"
+            />
           ) : (
             <PageRows>
-              {mine.map((skill, index) => (
+              {matches.map((skill, index) => (
                 <StaggerItem index={index} key={skill.id}>
                   <Item size="sm">
                     <ItemContent>
@@ -208,87 +351,91 @@ function SkillsPage() {
                         </ItemDescription>
                       ) : null}
                     </ItemContent>
-                    <ItemActions>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              aria-label={`Actions for ${skill.title}`}
-                              className="min-h-11 min-w-11"
-                              id={`skill-actions-${skill.id}`}
-                              variant="ghost"
-                              size="icon-sm"
-                            >
-                              <IconDots />
-                            </Button>
-                          }
-                        ></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuGroup>
-                            <DropdownMenuItem
-                              className="min-h-11"
-                              onClick={() =>
-                                navigate({ search: { edit: skill.slug } })
-                              }
-                            >
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              aria-label={`Delete ${skill.title}`}
-                              className="min-h-11"
-                              onClick={() => {
-                                requestConfirmation({
-                                  title: `Delete ${skill.title}?`,
-                                  description:
-                                    "Your Bots will stop offering this skill. Deletion is permanent.",
-                                  confirmLabel: "Delete skill",
-                                  pendingLabel: "Deleting…",
-                                  failureMessage:
-                                    "Couldn't delete this skill. Try again.",
-                                  successMessage: "Skill deleted.",
-                                  trigger:
-                                    document.getElementById(
-                                      `skill-actions-${skill.id}`,
-                                    ) ?? undefined,
-                                  fallbackFocus: () =>
-                                    document.getElementById(
-                                      "new-personal-skill",
-                                    ),
-                                  refresh: () => refetchSkills(),
-                                  run: async () => {
-                                    const { data: latest } =
-                                      await refetchSkills({
-                                        throwOnError: true,
-                                      });
-                                    const current = latest?.skills.find(
-                                      (candidate) =>
-                                        candidate.slug === skill.slug,
-                                    );
-                                    if (
-                                      current?.id !== skill.id ||
-                                      current.ownerUserId !== me?.id ||
-                                      current.title !== skill.title ||
-                                      current.instructions !==
-                                        skill.instructions
-                                    ) {
-                                      throw new ActionUnavailable(
-                                        "This skill changed or is no longer available. Return to the list to review it.",
+                    {readIssue ? null : (
+                      <ItemActions>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                aria-label={`Actions for ${skill.title}`}
+                                className="min-h-11 min-w-11"
+                                id={`skill-actions-${skill.id}`}
+                                variant="ghost"
+                                size="icon-sm"
+                              >
+                                <IconDots />
+                              </Button>
+                            }
+                          ></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem
+                                className="min-h-11"
+                                onClick={() =>
+                                  navigate({ search: { edit: skill.slug } })
+                                }
+                              >
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                aria-label={`Delete ${skill.title}`}
+                                className="min-h-11"
+                                onClick={() => {
+                                  requestConfirmation({
+                                    title: `Delete ${skill.title}?`,
+                                    description:
+                                      "Your Bots will stop offering this skill. Deletion is permanent.",
+                                    confirmLabel: "Delete skill",
+                                    pendingLabel: "Deleting…",
+                                    failureMessage:
+                                      "Couldn't delete this skill. Try again.",
+                                    successMessage: "Skill deleted.",
+                                    trigger:
+                                      document.getElementById(
+                                        `skill-actions-${skill.id}`,
+                                      ) ?? undefined,
+                                    fallbackFocus: () =>
+                                      input.current ??
+                                      document.getElementById(
+                                        "new-personal-skill",
+                                      ) ??
+                                      heading.current,
+                                    refresh: () => refetchSkills(),
+                                    run: async () => {
+                                      const { data: latest } =
+                                        await refetchSkills({
+                                          throwOnError: true,
+                                        });
+                                      const current = latest?.skills.find(
+                                        (candidate) =>
+                                          candidate.slug === skill.slug,
                                       );
-                                    }
-                                    await removeSkill.mutateAsync(skill.slug);
-                                  },
-                                });
-                              }}
-                              variant="destructive"
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </ItemActions>
+                                      if (
+                                        current?.id !== skill.id ||
+                                        current.ownerUserId !== me?.id ||
+                                        current.title !== skill.title ||
+                                        current.instructions !==
+                                          skill.instructions
+                                      ) {
+                                        throw new ActionUnavailable(
+                                          "This skill changed or is no longer available. Return to the list to review it.",
+                                        );
+                                      }
+                                      await removeSkill.mutateAsync(skill.slug);
+                                    },
+                                  });
+                                }}
+                                variant="destructive"
+                              >
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </ItemActions>
+                    )}
                   </Item>
-                  {index !== mine?.length - 1 && <Separator />}
+                  {index !== matches.length - 1 && <Separator />}
                 </StaggerItem>
               ))}
             </PageRows>

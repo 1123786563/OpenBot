@@ -124,7 +124,7 @@ export function GuidanceBacktestField({
   return (
     <div aria-live="polite" className="flex flex-col gap-3">
       <Field aria-labelledby="guidance-backtest">
-        <FieldLabel id="guidance-backtest">On recent decisions</FieldLabel>
+        <FieldLabel id="guidance-backtest">Test on recent decisions</FieldLabel>
         {preview.calls === 0 ? (
           <FieldDescription>
             No requests your people decided yet. You can test guidance once
@@ -133,12 +133,13 @@ export function GuidanceBacktestField({
         ) : (
           <>
             <FieldDescription>
-              Replays the reviewer with this guidance over the last{" "}
-              {plural(preview.calls, "request")} your people decided. That's{" "}
-              {plural(preview.calls, "model call")}, one for each.
+              Optional. Run the reviewer on the last{" "}
+              {plural(preview.calls, "request")} your team decided and compare
+              the answers. This uses {plural(preview.calls, "model call")}.
             </FieldDescription>
             <div>
               <Button
+                className="min-h-11"
                 disabled={run.isPending}
                 onClick={() => run.mutate(text)}
                 size="sm"

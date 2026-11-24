@@ -2,7 +2,7 @@ import { IconChevronLeft } from "@tabler/icons-react";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { Button } from "../ui/button";
+import { buttonVariants } from "../ui/button";
 import { PageColumn, PageHeader, type ShellWidth } from "./page-parts";
 import { SidebarToggle, useSidebarToggleVisible } from "./sidebar-toggle";
 
@@ -28,6 +28,7 @@ export function PageShell({
   className,
   description,
   eyebrow,
+  headingRef,
   title,
   width = "prose",
   backButton,
@@ -38,6 +39,7 @@ export function PageShell({
   className?: string;
   description?: React.ReactNode;
   eyebrow?: React.ReactNode;
+  headingRef?: React.Ref<HTMLHeadingElement>;
   title: string;
   width?: ShellWidth;
   backButton?: {
@@ -75,6 +77,7 @@ export function PageShell({
   const header = (
     <PageHeader
       eyebrow={eyebrow}
+      headingRef={headingRef}
       title={title}
       action={action}
       description={description}
@@ -85,18 +88,16 @@ export function PageShell({
     <div className="max-w-7xl w-full h-14 flex items-center gap-1 px-3">
       {showToggle ? <SidebarToggle /> : null}
       {!!backButton && (
-        <Button
-          variant="ghost"
-          render={(props) => (
-            // linkProps last, as the Link renders elsewhere on these screens, so a page can
-            // intercept its own Back trail (an edited form asks before leaving) without the
-            // button's undefined handlers clobbering it.
-            <Link {...props} {...backButton.linkProps} />
-          )}
+        <Link
+          {...backButton.linkProps}
+          className={buttonVariants({
+            variant: "ghost",
+            className: "min-h-12",
+          })}
         >
-          <IconChevronLeft />
+          <IconChevronLeft aria-hidden />
           {backButton.label}
-        </Button>
+        </Link>
       )}
     </div>
   ) : null;

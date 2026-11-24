@@ -8,5 +8,11 @@ export const Route = createFileRoute(
 
 function RouteComponent() {
   const { key, agentId } = Route.useParams();
-  return <PluginBotPage agentId={agentId} pluginKey={key} />;
+  return (
+    <PluginBotPage
+      agentId={agentId}
+      key={JSON.stringify([key, agentId])}
+      pluginKey={key}
+    />
+  );
 }

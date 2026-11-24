@@ -5,7 +5,7 @@ import type {
 import { recorderPaths } from "@openbot/shared/recorder-api";
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { BROWSER_CLOSED_POLL_MS, BROWSER_POLL_MS } from "@/lib/browser/queries";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 import {
   askConnectWait,
   type ConnectWait,
@@ -43,12 +43,25 @@ export const recorderConnectionsQueryOptions = (options?: {
   queryOptions({
     queryKey: recorderKeys.connections(),
     // Two top-level keys, so no envelope key: without one, client() returns the Response.
-    queryFn: async (): Promise<RecorderConnectionsResponse> =>
-      (
-        await client(recorderPaths.connections, {
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<RecorderConnectionsResponse | null> => {
+      try {
+        const response = await client(recorderPaths.connections, {
           fallback: "Couldn't load your connected browsers.",
-        })
-      ).json(),
+        });
+        return response.json();
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData(queryKey, null);
+        }
+        throw error;
+      }
+    },
     refetchInterval: options?.awaiting
       ? 2000
       : options?.listed
@@ -140,7 +153,7 @@ export const recordingsQueryOptions = (options?: { waiting?: boolean }) =>
         ? `?cursor=${encodeURIComponent(pageParam)}`
         : "";
       const response = await client(`${recorderPaths.recordings}${suffix}`, {
-        fallback: "Couldn't load your recordings. Reload the page.",
+        fallback: "Couldn't load your recordings.",
       });
       return response.json();
     },

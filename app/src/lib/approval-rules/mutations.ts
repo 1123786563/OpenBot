@@ -18,10 +18,14 @@ export const saveTeamRulesMutationOptions = (queryClient: QueryClient) =>
     mutationFn: (variables: {
       rules: ApprovalRuleInput[];
       authoring?: ApprovalRuleAuthoring;
+      requestId?: string;
     }) =>
       client("/api/approvals/team/rules/batch", {
         method: "POST",
-        body: variables,
+        body: { rules: variables.rules, authoring: variables.authoring },
+        headers: variables.requestId
+          ? { "Idempotency-Key": variables.requestId }
+          : undefined,
         fallback: FALLBACK,
       }),
     onSuccess: () =>

@@ -1,3 +1,5 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { Stack } from "@astryxdesign/core/Stack";
 import {
   DOESNT_UPDATE_ITSELF,
   type UpdateReadiness,
@@ -39,6 +41,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   checkAppUpdateMutationOptions,
   installAppUpdateMutationOptions,
@@ -87,23 +90,47 @@ const READINESS: Record<IntelligenceReadiness, string> = {
  */
 function ComputerPage() {
   const inDesktop = desktopShell() !== null;
+  const heading = React.useRef<HTMLHeadingElement>(null);
   return (
     <DevicePage
       description="See what OpenBot runs on this computer and how much memory it uses. Restart a part when it gets stuck."
+      headingRef={heading}
       title="This computer"
     >
       {inDesktop ? (
-        <ComputerSections />
+        <ComputerSections focusAfterRetry={() => heading.current} />
       ) : (
         <PageSection>
-          <PageEmpty>This page is only in the OpenBot desktop app.</PageEmpty>
+          <PageEmpty
+            title="Manage this computer in OpenBot Desktop"
+            action={
+              <AstryxButton
+                as="a"
+                href="openbot://open?path=%2Fsettings%2Fthis-computer"
+                label="Open in OpenBot Desktop"
+                size="lg"
+                style={{
+                  minHeight: "var(--spacing-11)",
+                  paddingInline: "var(--spacing-3)",
+                }}
+                variant="primary"
+              />
+            }
+          >
+            OpenBot Desktop must be installed on this computer. If the link
+            doesn’t open, launch the app and go to Settings → This computer.
+          </PageEmpty>
         </PageSection>
       )}
     </DevicePage>
   );
 }
 
-function ComputerSections() {
+function ComputerSections({
+  focusAfterRetry,
+}: {
+  focusAfterRetry: () => HTMLElement | null;
+}) {
   // The quick read draws the page at once; the measured one fills the memory figures in after.
   const listed = useQuery(desktopStatusQueryOptions({ memory: false }));
   const measured = useQuery(desktopStatusQueryOptions({ memory: true }));
@@ -113,6 +140,14 @@ function ComputerSections() {
     enabled: Boolean(data?.intelligenceStack),
   });
   const retryStatus = () => Promise.all([listed.refetch(), measured.refetch()]);
+  const stale = measured.isError || (listed.isError && !measured.isSuccess);
+  const ensureCurrentStatus = async () => {
+    const fresh = await listed.refetch();
+    if (fresh.error)
+      throw new ActionIncomplete(
+        "Couldn’t verify this computer’s status. Try again before making changes.",
+      );
+  };
 
   if (!data && (listed.isPending || measured.isPending))
     return (
@@ -125,6 +160,7 @@ function ComputerSections() {
     return (
       <ReadError
         message="Couldn't read what OpenBot runs on this computer."
+        focusAfterRetry={focusAfterRetry}
         retry={retryStatus}
         retryBelow
         retrying={listed.isFetching || measured.isFetching}
@@ -133,12 +169,30 @@ function ComputerSections() {
   const isMeasured = measured.data !== undefined;
   return (
     <>
-      <OpenBotSection measured={isMeasured} status={data} />
+      {stale ? (
+        <ReadError
+          message="Couldn’t refresh this computer’s status."
+          description="Showing the last known status. Retry to resume device controls."
+          retry={retryStatus}
+          retryBelow
+          retryLabel="Retry status"
+          retrying={listed.isFetching || measured.isFetching}
+          focusAfterRetry={focusAfterRetry}
+        />
+      ) : null}
+      <OpenBotSection
+        measured={isMeasured}
+        status={data}
+        stale={stale}
+        ensureCurrentStatus={ensureCurrentStatus}
+      />
       {data.intelligenceStack && (
         <IntelligenceSection
           measured={isMeasured}
           readiness={readiness.data}
           status={data}
+          stale={stale}
+          ensureCurrentStatus={ensureCurrentStatus}
         />
       )}
       <MachineSection readiness={readiness.data} status={data} />
@@ -149,16 +203,20 @@ function ComputerSections() {
 function OpenBotSection({
   measured,
   status,
+  stale,
+  ensureCurrentStatus,
 }: {
   /** Container memory has been read; before that a total would count the processes alone. */
   measured: boolean;
   status: DesktopStatus;
+  stale: boolean;
+  ensureCurrentStatus: () => Promise<void>;
 }) {
   const restart = useMutation(restartOpenBotMutationOptions(queryClient));
   const stop = useMutation(stopOpenBotMutationOptions());
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const memory = totalMemory([...status.processes, ...status.containers]);
-  const busy = restart.isPending || stop.isPending;
+  const busy = stale || restart.isPending || stop.isPending;
   return (
     <PageSection title="App">
       <PageRows>
@@ -210,7 +268,10 @@ function OpenBotSection({
                       pendingLabel: "Restarting OpenBot…",
                       failureMessage: "Couldn't restart OpenBot. Try again.",
                       trigger: event.currentTarget,
-                      run: () => restart.mutateAsync(),
+                      run: async () => {
+                        await ensureCurrentStatus();
+                        return restart.mutateAsync();
+                      },
                     })
                   }
                   variant="outline"
@@ -231,7 +292,10 @@ function OpenBotSection({
                     pendingLabel: "Stopping OpenBot…",
                     failureMessage: "Couldn't stop OpenBot. Try again.",
                     trigger: event.currentTarget,
-                    run: () => stop.mutateAsync(),
+                    run: async () => {
+                      await ensureCurrentStatus();
+                      return stop.mutateAsync();
+                    },
                   })
                 }
                 variant="outline"
@@ -263,11 +327,15 @@ function IntelligenceSection({
   measured,
   readiness,
   status,
+  stale,
+  ensureCurrentStatus,
 }: {
   /** Container memory has been read. */
   measured: boolean;
   readiness: IntelligenceReadiness | undefined;
   status: DesktopStatus;
+  stale: boolean;
+  ensureCurrentStatus: () => Promise<void>;
 }) {
   const intelligence = useMutation(intelligenceMutationOptions(queryClient));
   const { requestConfirmation, confirmation } = useActionConfirmation();
@@ -311,7 +379,7 @@ function IntelligenceSection({
                 <DeviceAction
                   aria-label="Restart OpenBot services"
                   className="local-service-action"
-                  disabled={intelligence.isPending}
+                  disabled={stale || intelligence.isPending}
                   onClick={(event) => {
                     let servicesStopped = false;
                     requestConfirmation({
@@ -325,6 +393,7 @@ function IntelligenceSection({
                       trigger: event.currentTarget,
                       fallbackFocus: () => startButton.current,
                       run: async () => {
+                        await ensureCurrentStatus();
                         if (!servicesStopped) {
                           await intelligence.mutateAsync("stop");
                           servicesStopped = true;
@@ -346,7 +415,7 @@ function IntelligenceSection({
                 <DeviceAction
                   aria-label="Stop OpenBot services"
                   className="local-service-action"
-                  disabled={intelligence.isPending}
+                  disabled={stale || intelligence.isPending}
                   onClick={(event) =>
                     requestConfirmation({
                       title: "Stop OpenBot’s services?",
@@ -357,7 +426,10 @@ function IntelligenceSection({
                       failureMessage: "Couldn't stop the services. Try again.",
                       trigger: event.currentTarget,
                       fallbackFocus: () => startButton.current,
-                      run: () => intelligence.mutateAsync("stop"),
+                      run: async () => {
+                        await ensureCurrentStatus();
+                        return intelligence.mutateAsync("stop");
+                      },
                     })
                   }
                   variant="outline"
@@ -370,7 +442,7 @@ function IntelligenceSection({
                 ref={startButton}
                 aria-label="Start OpenBot services"
                 className="local-service-action"
-                disabled={intelligence.isPending}
+                disabled={stale || intelligence.isPending}
                 onClick={() => intelligence.mutate("start")}
                 variant="outline"
               >
@@ -398,24 +470,88 @@ function MachineSection({
   readiness: IntelligenceReadiness | undefined;
   status: DesktopStatus;
 }) {
+  const [snapshot, setSnapshot] = React.useState<{
+    kind: "review" | "manual";
+    text: string;
+  } | null>(null);
   const [copied, setCopied] = React.useState(false);
+  const helpId = React.useId();
+  const snapshotId = React.useId();
+  const manual = React.useRef<HTMLTextAreaElement>(null);
+  React.useLayoutEffect(() => {
+    if (snapshot?.kind === "manual") {
+      manual.current?.focus();
+      manual.current?.select();
+    }
+  }, [snapshot]);
   return (
     <PageSection
       action={
         <Button
+          aria-describedby={helpId}
+          className="min-h-11"
           onClick={async () => {
-            await navigator.clipboard.writeText(diagnostics(status, readiness));
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
+            const text = snapshot?.text ?? diagnostics(status, readiness);
+            try {
+              await navigator.clipboard.writeText(text);
+              setCopied(true);
+            } catch {
+              setCopied(false);
+              setSnapshot({ kind: "manual", text });
+            }
           }}
           size="sm"
           variant="outline"
         >
-          {copied ? "Copied" : "Copy diagnostics"}
+          Copy diagnostics
         </Button>
       }
       title="Details"
     >
+      <p className="mt-2 text-sm text-muted-foreground" id={helpId}>
+        For help with this computer, review the diagnostic snapshot before
+        sharing it. It includes the installation path, app version, service
+        status, and memory readings.
+      </p>
+      <Button
+        aria-controls={snapshot ? snapshotId : undefined}
+        aria-expanded={snapshot !== null}
+        className="min-h-11"
+        onClick={() => {
+          setCopied(false);
+          setSnapshot(
+            snapshot
+              ? null
+              : { kind: "review", text: diagnostics(status, readiness) },
+          );
+        }}
+        size="sm"
+        variant="ghost"
+      >
+        {snapshot ? "Hide diagnostics" : "Review diagnostics"}
+      </Button>
+      {copied ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Diagnostics copied.
+        </p>
+      ) : null}
+      {snapshot ? (
+        <Stack gap={2}>
+          {snapshot.kind === "manual" && !copied ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Clipboard unavailable. Copy the selected diagnostics below.
+            </p>
+          ) : null}
+          <Textarea
+            aria-label="Diagnostic snapshot"
+            id={snapshotId}
+            readOnly
+            ref={manual}
+            rows={4}
+            value={snapshot.text}
+          />
+        </Stack>
+      ) : null}
       <PageRows>
         <Item size="sm">
           <RowMark>

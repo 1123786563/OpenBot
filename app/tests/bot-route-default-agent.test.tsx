@@ -18,6 +18,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
 import { Route as BotRoute } from "@/routes/_authed/_app/bot";
@@ -195,7 +196,7 @@ test("/bot reports a failed initial roster load instead of claiming there are no
   const view = renderBot(queryClientWithFailingAgents());
 
   expect(await view.findByText("Couldn't load your Bots.")).toBeTruthy();
-  expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Retry Bot list" })).toBeTruthy();
   expect(view.queryByText("There are no Bots yet.")).toBeNull();
 });
 
@@ -223,9 +224,7 @@ test("/bot preserves an explicit unknown agent as a clear missing-bot state", as
     "/bot?agent=missing-agent",
   );
 
-  expect(
-    await view.findByText('There\'s no Bot called "missing-agent".'),
-  ).toBeTruthy();
+  expect(await view.findByText("We couldn't find this Bot.")).toBeTruthy();
   expect(view.queryByTestId("copilot-chat")).toBeNull();
 });
 
@@ -282,7 +281,86 @@ test("/bot reports an explicit agent detail load failure", async () => {
 
   const message = await view.findByText("Couldn't load this Bot.");
   expect(message.closest('[role="alert"]')).toBeTruthy();
-  expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Retry this Bot" })).toBeTruthy();
+  expect(view.queryByTestId("copilot-chat")).toBeNull();
+});
+
+test("/bot can open a bookmarked Bot when the roster is unavailable", async () => {
+  const client = queryClientWithFailingAgents();
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof global.fetch>[0]) =>
+      String(input) === "/api/agents/general-assistant"
+        ? Response.json({ agent: GENERAL_ASSISTANT })
+        : fallback(input),
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = renderBot(client, "/bot?agent=general-assistant");
+  expect(
+    await view.findByRole("heading", { name: "General Assistant" }),
+  ).toBeTruthy();
+  expect(view.getByText(GENERAL_ASSISTANT.roleDescription)).toBeTruthy();
+  expect(view.queryByText("Couldn't load your Bots.")).toBeNull();
+});
+
+test("/bot opens a named bookmark without waiting for the roster response", async () => {
+  let releaseRoster: ((response: Response) => void) | undefined;
+  const pendingRoster = new Promise<Response>((resolve) => {
+    releaseRoster = resolve;
+  });
+  const client = queryClientWithFailingAgents();
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof global.fetch>[0]) => {
+      if (String(input) === "/api/agents") return pendingRoster;
+      if (String(input) === "/api/agents/general-assistant")
+        return Response.json({ agent: GENERAL_ASSISTANT });
+      return fallback(input);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  try {
+    const view = renderBot(client, "/bot?agent=general-assistant");
+    expect(
+      await view.findByRole("heading", { name: "General Assistant" }),
+    ).toBeTruthy();
+    expect(client.getQueryState(agentKeys.list(false))?.fetchStatus).toBe(
+      "fetching",
+    );
+  } finally {
+    releaseRoster?.(Response.json({ agents: [GENERAL_ASSISTANT] }));
+  }
+});
+
+test("/bot does not use a detail response belonging to another Bot", async () => {
+  const view = renderBot(
+    queryClientWithAgentsAndFetchedAgent(
+      [PICKED_HARNESS],
+      "wrong-response",
+      Response.json({ agent: GENERAL_ASSISTANT }),
+    ),
+    "/bot?agent=wrong-response",
+  );
+  expect(await view.findByText("Couldn't load this Bot.")).toBeTruthy();
+  expect(
+    view.getByRole("link", { name: "Open LangGraph" }).getAttribute("href"),
+  ).toBe("/bot?agent=picked-harness");
+  expect(view.queryByTestId("copilot-chat")).toBeNull();
+});
+
+test("/bot gives a denied bookmark a way back to the Bot list", async () => {
+  const view = renderBot(
+    queryClientWithAgentsAndFetchedAgent(
+      [GENERAL_ASSISTANT],
+      "restricted",
+      new Response(null, { status: 403 }),
+    ),
+    "/bot?agent=restricted",
+  );
+  expect(await view.findByText("This Bot is unavailable to you.")).toBeTruthy();
+  expect(
+    view.getByRole("link", { name: "Browse Bots" }).getAttribute("href"),
+  ).toBe("/bots");
   expect(view.queryByTestId("copilot-chat")).toBeNull();
 });
 
@@ -328,9 +406,12 @@ test("/bot opens a live Computer sidebar with ownership controls and preserves t
   // Taking control is offered inside the Computer, never beside the header's icon.
   expect(view.queryByRole("button", { name: "Take control" })).toBeNull();
   const chat = view.getByTestId("copilot-chat");
-  fireEvent.input(view.getByRole("textbox", { name: "Message" }), {
-    target: { value: "Keep this conversation" },
-  });
+  await userEvent
+    .setup({ document })
+    .type(
+      view.getByRole("textbox", { name: "Message" }),
+      "Keep this conversation",
+    );
   fireEvent.click(toggle);
   const sidebarElement = await view.findByRole("region", {
     name: "Computer sidebar",
@@ -358,7 +439,10 @@ test("/bot opens a live Computer sidebar with ownership controls and preserves t
   expect(chat.dataset.agentId).toBe("general-assistant");
   expect(view.getByDisplayValue("Keep this conversation")).toBeTruthy();
   expect(view.getByRole("button", { name: "Open Computer" })).toBeTruthy();
-  fireEvent.click(view.getByRole("button", { name: "Start fresh" }));
+  fireEvent.click(view.getByRole("button", { name: "New chat with this Bot" }));
+  fireEvent.click(
+    await view.findByRole("button", { name: "Start new conversation" }),
+  );
   await waitFor(() =>
     expect(view.getByTestId("copilot-chat").dataset.threadId).not.toBe(
       chat.dataset.threadId,
@@ -375,7 +459,7 @@ test("a quick chat draft stays with its Bot after reload and starting fresh", as
   const route = "/bot?agent=general-assistant";
   const first = renderBot(client, route);
   const box = await first.findByRole("textbox", { name: "Message" });
-  fireEvent.input(box, { target: { value: "Keep my draft" } });
+  await userEvent.setup({ document }).type(box, "Keep my draft");
   first.unmount();
 
   const other = renderBot(client, "/bot?agent=picked-harness");
@@ -388,7 +472,12 @@ test("a quick chat draft stays with its Bot after reload and starting fresh", as
   const reopened = renderBot(client, route);
   await reopened.findByDisplayValue("Keep my draft");
   const oldChat = reopened.getByTestId("copilot-chat");
-  fireEvent.click(reopened.getByRole("button", { name: "Start fresh" }));
+  fireEvent.click(
+    reopened.getByRole("button", { name: "New chat with this Bot" }),
+  );
+  fireEvent.click(
+    await reopened.findByRole("button", { name: "Start new conversation" }),
+  );
   await waitFor(() => expect(oldChat.isConnected).toBe(false));
   expect(await reopened.findByDisplayValue("Keep my draft")).toBeTruthy();
 });

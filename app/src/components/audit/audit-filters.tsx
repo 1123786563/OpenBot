@@ -17,6 +17,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -38,7 +39,7 @@ import {
   DID_NOT_HAPPEN_EVENT_TYPES,
   REFUSED_EVENT_TYPES,
 } from "@/lib/audit/outcome";
-import type { AuditVocabulary } from "@/lib/audit/queries";
+import { type AuditVocabulary, auditAccessDenied } from "@/lib/audit/queries";
 
 /**
  * Admin's filters on the trail, as chips: the one place a filter is set, beside the search.
@@ -52,6 +53,9 @@ import type { AuditVocabulary } from "@/lib/audit/queries";
 
 /** Two filters that each name event types, or each name one value, both have to hold. */
 const MATCHES_NOTHING = "none";
+const FILTER_MENU_CHOICE =
+  "focus:bg-muted focus:text-foreground focus:**:text-foreground max-sm:min-h-11";
+const FILTER_SUBMENU_TRIGGER = `${FILTER_MENU_CHOICE} data-popup-open:bg-muted data-popup-open:text-foreground data-open:bg-muted data-open:text-foreground`;
 
 /**
  * The trail's own filters and the outcome, which the page asks for by event type: Blocked and Did
@@ -193,6 +197,11 @@ type Names = {
   labels: AuditFilterLabels;
   vocabulary: AuditVocabulary | undefined;
   nameFor: (botId: string) => string;
+  recovery?: {
+    error: Error;
+    retry: () => Promise<unknown>;
+    retrying: boolean;
+  };
 };
 
 function appName(key: string, names: Names): string {
@@ -306,9 +315,11 @@ function FilterOptions({
   names: Names;
 }) {
   const vocabulary = names.vocabulary;
+  const recovery = names.recovery;
   const tick = (key: ListKey, value: string, label: string) => (
     <DropdownMenuCheckboxItem
       checked={listOf(filters, key).includes(value)}
+      className={FILTER_MENU_CHOICE}
       key={value}
       onCheckedChange={(on) => onChange(toggled(filters, key, value, on))}
     >
@@ -324,16 +335,58 @@ function FilterOptions({
       value={(filters[key] as string | undefined) ?? ""}
     >
       {options.map((option) => (
-        <DropdownMenuRadioItem key={option.value} value={option.value}>
+        <DropdownMenuRadioItem
+          className={FILTER_MENU_CHOICE}
+          key={option.value}
+          value={option.value}
+        >
           <span className="truncate">{option.label}</span>
         </DropdownMenuRadioItem>
       ))}
     </DropdownMenuRadioGroup>
   );
-  const loading = (
-    <DropdownMenuLabel className="font-normal text-muted-foreground">
-      {vocabulary ? "Nothing to choose yet" : "Loading…"}
-    </DropdownMenuLabel>
+  const loading = recovery ? (
+    <DropdownMenuGroup>
+      <DropdownMenuLabel className="font-normal" role="status">
+        {auditAccessDenied(recovery.error)
+          ? "You don’t have access to these filter choices."
+          : "Couldn’t load filter choices."}
+      </DropdownMenuLabel>
+      <DropdownMenuItem
+        aria-disabled={recovery.retrying}
+        className={FILTER_MENU_CHOICE}
+        closeOnClick={false}
+        onClick={async (event) => {
+          if (recovery.retrying) return;
+          const menu = event.currentTarget.closest('[role="menu"]');
+          await recovery.retry();
+          requestAnimationFrame(() => {
+            if (
+              !(menu instanceof HTMLElement) ||
+              !menu.isConnected ||
+              (document.activeElement !== document.body &&
+                !menu.contains(document.activeElement))
+            )
+              return;
+            (
+              menu.querySelector<HTMLElement>(
+                '[role="menuitemcheckbox"], [role="menuitemradio"]',
+              ) ?? menu
+            ).focus();
+          });
+        }}
+      >
+        {recovery.retrying
+          ? "Loading filter choices…"
+          : "Retry loading filter choices"}
+      </DropdownMenuItem>
+    </DropdownMenuGroup>
+  ) : (
+    <DropdownMenuGroup>
+      <DropdownMenuLabel className="font-normal text-muted-foreground">
+        {vocabulary ? "Nothing to choose yet" : "Loading…"}
+      </DropdownMenuLabel>
+    </DropdownMenuGroup>
   );
 
   switch (filterKey) {
@@ -384,9 +437,14 @@ function FilterOptions({
           ...called.map((tool) => tool.tool),
         ]),
       ];
-      return shown.length
-        ? shown.map((tool) => tick("tool", tool, humanise(tool)))
-        : loading;
+      return shown.length ? (
+        <>
+          {shown.map((tool) => tick("tool", tool, humanise(tool)))}
+          {recovery ? loading : null}
+        </>
+      ) : (
+        loading
+      );
     }
     case "effect":
       return choose(
@@ -578,6 +636,7 @@ export function AuditFilterChips({
   onOpen,
   labels,
   vocabulary,
+  recovery,
   nameFor,
 }: {
   filters: ChipFilters;
@@ -585,9 +644,10 @@ export function AuditFilterChips({
   onOpen: () => void;
   labels: AuditFilterLabels;
   vocabulary: AuditVocabulary | undefined;
+  recovery?: Names["recovery"];
   nameFor: (botId: string) => string;
 }) {
-  const names: Names = { labels, vocabulary, nameFor };
+  const names: Names = { labels, vocabulary, nameFor, recovery };
   const present = (Object.keys(FILTER_TITLES) as ChipKey[]).filter((key) => {
     const value = filters[key];
     return Array.isArray(value) ? value.length > 0 : Boolean(value);
@@ -624,13 +684,14 @@ export function AuditFilterChips({
         <DropdownMenuContent className="w-auto min-w-52">
           {addable.map((key) => (
             <DropdownMenuSub key={key}>
-              <DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger className={FILTER_SUBMENU_TRIGGER}>
                 {FILTER_TITLES[key]}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-auto min-w-56 max-w-80">
                 {key === "eventType" ? (
                   TYPE_GROUPS.map((group) => (
                     <DropdownMenuItem
+                      className={FILTER_MENU_CHOICE}
                       key={group.label}
                       onClick={() =>
                         onChange({ ...filters, eventType: [...group.types] })
@@ -652,10 +713,13 @@ export function AuditFilterChips({
           ))}
           {!filters.from ? (
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Time</DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger className={FILTER_SUBMENU_TRIGGER}>
+                Time
+              </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-auto min-w-44">
                 {SINCE.map((since) => (
                   <DropdownMenuItem
+                    className={FILTER_MENU_CHOICE}
                     key={since.label}
                     onClick={() => {
                       const { to: _until, ...rest } = filters;

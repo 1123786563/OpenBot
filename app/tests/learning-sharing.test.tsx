@@ -268,9 +268,7 @@ test("Skills Intelligence did not deliver show a plain unavailable line, and the
     unavailable: "unavailable",
   };
   const view = draw();
-  await view.findByText(
-    "Couldn't read your Skills from the backend just now. Your choice above still applies to them.",
-  );
+  await view.findByText("Couldn’t load the skill list");
   fireEvent.click(choice(view, "Only my Bots"));
   await waitFor(() =>
     expect(sent).toContainEqual({
@@ -340,7 +338,10 @@ test("a read that fails says so, and a save that fails says why", async () => {
   failRead = true;
   const failed = draw();
   await failed.findByText("Couldn't load your Learning settings.");
-  expect(failed.getByRole("button", { name: "Retry" })).toBeTruthy();
+  expect(failed.getByRole("heading", { name: "Your skills" })).toBeTruthy();
+  expect(
+    failed.getByRole("button", { name: "Retry your skills" }),
+  ).toBeTruthy();
   cleanup();
   queryClient.clear();
   failRead = false;
@@ -379,14 +380,14 @@ test("pressing a Your skills row opens its SKILL.md where there is no switch", a
 });
 
 /** Fetch stub that records POSTs, on top of the default one. */
-function recordPosts() {
+function recordPosts(respond = () => Response.json({ ok: true })) {
   const posts: string[] = [];
   const inner = global.fetch;
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0], init?: RequestInit) => {
       if (init?.method === "POST") {
         posts.push(String(path));
-        return Response.json({ ok: true });
+        return respond();
       }
       return inner(path, init);
     },
@@ -532,6 +533,42 @@ test("a skill already asked about is switched on without a second request", asyn
   await waitFor(() => expect(sent).toHaveLength(1));
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(posts).toEqual([]);
+});
+
+test("retrying a failed sharing request does not write the skill switch again", async () => {
+  answer = {
+    ...answer,
+    mode: "choose",
+    skills: [approvedByPerson("refund-order", false, "none")],
+  };
+  const posts = recordPosts(() => {
+    if (posts.length === 1) {
+      return Response.json(
+        { error: "Sharing request unavailable" },
+        { status: 503 },
+      );
+    }
+    answer = {
+      ...answer,
+      skills: [approvedByPerson("refund-order", true, "requested")],
+    };
+    return Response.json({ ok: true });
+  });
+  const view = draw();
+  const toggle = await view.findByRole("switch", {
+    name: "Open Refund order to everyone",
+  });
+  fireEvent.click(toggle);
+  const retry = await view.findByRole("button", {
+    name: "Retry sharing request",
+  });
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(retry);
+  await view.findByText("Asked to share");
+  expect(sent).toHaveLength(1);
+  expect(posts).toEqual(
+    Array(2).fill("/api/settings/learning/skills/refund-order/share-request"),
+  );
 });
 
 test("while an admin has sharing off, Your skills says only your Bots use them, whatever the saved mode", async () => {

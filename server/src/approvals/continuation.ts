@@ -12,6 +12,7 @@ import {
   routineRuns,
 } from "../db/schema";
 import type { DeliveryScope } from "../delivery/types";
+import { runWithDecisionAccess } from "../personal-saas/decision-access";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import {
   isMarketVersionPause,
@@ -69,6 +70,12 @@ export async function continueApproval(
     actorFor,
   } = deps;
   const request = await approvalService.store.get(ownerUserId, approvalId);
+  if (request.action.executionInvalidated) return;
+  const origin = {
+    runId: request.action.runId,
+    createdAt: request.createdAt,
+    epoch: request.action.executionEpoch,
+  };
   pauseReason ??=
     (await marketRunPauseReason(database, request.action)) ?? undefined;
   const [waitingRun] = await database
@@ -82,6 +89,7 @@ export async function continueApproval(
     )
     .limit(1);
   if (waitingRun) {
+    await approvalService.store.checkDecisionAccess?.(ownerUserId, origin);
     if (pauseReason) {
       await database
         .update(responsibilityRuns)
@@ -120,15 +128,25 @@ export async function continueApproval(
     outcome = await groupConversations.continueWaiting(
       approvalId,
       () =>
-        approvalContinuationRunner({
-          ownerUserId: ownerUserId,
-          routineId: "approval",
-          agentId: request.action.botId,
-          threadId: snapshot.threadId,
-          instruction: "",
-          initiator: snapshot.initiator ?? PERSON_INITIATOR,
-          continuation: { snapshot, result, messageId },
-        }),
+        runWithDecisionAccess(
+          database,
+          ownerUserId,
+          origin,
+          async (execution) => {
+            const resumed = await approvalContinuationRunner({
+              ownerUserId,
+              routineId: "approval",
+              agentId: request.action.botId,
+              threadId: snapshot.threadId,
+              instruction: "",
+              initiator: snapshot.initiator ?? PERSON_INITIATOR,
+              continuation: { snapshot, result, messageId },
+              ...execution,
+            });
+            await execution.beforeDispatch?.();
+            return resumed;
+          },
+        ),
       pauseReason,
     );
   } catch (error) {

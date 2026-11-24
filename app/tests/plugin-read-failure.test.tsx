@@ -69,14 +69,16 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-/** A client the failing query settles on in one attempt, so no test waits on a retry. */
+/** Use the query's retries without real backoff in these fixtures. */
 function failingQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return new QueryClient({ defaultOptions: { queries: { retryDelay: 0 } } });
 }
 
 /** A client already holding a plugins page that genuinely lacks this connector. */
 function answeredWithout() {
-  const client = failingQueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+  });
   const page: PluginsPage = {
     catalogue: [],
     servers: [],
@@ -235,7 +237,6 @@ test("a connector's admin page says the plugin list failed, not that there is no
 test("a list that genuinely lacks the connector still says it is not a plugin", async () => {
   const client = answeredWithout();
   const view = renderAdmin(client, `/admin/plugins/${APP_KEY}`);
-  await waitForFailedRead(client);
 
   expect(await view.findByText("Not a plugin")).toBeTruthy();
   expect(view.queryByText("Couldn't load plugins.")).toBeNull();
@@ -263,7 +264,6 @@ test("a list that genuinely lacks the connector still says it is not enabled, on
     client,
     `/admin/plugins/${APP_KEY}/tools/${TOOL_NAME}`,
   );
-  await waitForFailedRead(client);
 
   expect(await view.findByText("This connector is off")).toBeTruthy();
   expect(view.queryByText("Couldn't load plugins.")).toBeNull();

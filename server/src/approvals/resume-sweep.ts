@@ -14,6 +14,10 @@ import type { createDirectChatRoutes } from "../channels/direct-chat";
 import { matchingRun, stopDirectChatRun } from "../channels/direct-chat-replay";
 import type { GroupConversations } from "../channels/group";
 import { approvalRequests, directChatRuns } from "../db/schema";
+import {
+  decisionInvalidated,
+  runWithDecisionAccess,
+} from "../personal-saas/decision-access";
 import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import type { createSlackGoalAction } from "../plugins/corsair/slack/goal-action";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
@@ -35,7 +39,9 @@ export function createApprovalResumeTick(
   deps: ApprovalContinuationDependencies & {
     approvalQueue: WorkQueue;
     approvalOwner: string;
-    executeApprovedAction: ApprovalResumeDependencies["execute"];
+    executeApprovedAction: ReturnType<
+      typeof import("./execute").createApprovedActionExecutor
+    >;
     contextCurrent?: (action: ApprovalAction) => Promise<boolean>;
     traceRuns?: boolean;
     slackGoalAction?: ReturnType<typeof createSlackGoalAction>;
@@ -53,8 +59,8 @@ export function createApprovalResumeTick(
     approvalQueue,
     approvalOwner,
     approvalService,
-    executeApprovedAction,
     database,
+    executeApprovedAction,
     groupConversations,
     approvalContinuationRunner,
     responsibilityStore,
@@ -108,9 +114,25 @@ export function createApprovalResumeTick(
           request.action.dispatch === "corsair-slack-goal" &&
           deps.slackGoalAction
         ) {
-          const outcome = await deps.slackGoalAction.resume(
-            request,
-            responsibilityStore,
+          const slackGoalAction = deps.slackGoalAction;
+          if (request.action.executionInvalidated) {
+            await finish();
+            return;
+          }
+          const outcome = await runWithDecisionAccess(
+            database,
+            input.ownerUserId,
+            {
+              runId: request.action.runId,
+              createdAt: request.createdAt,
+              epoch: request.action.executionEpoch,
+            },
+            ({ beforeDispatch }) =>
+              slackGoalAction.resume(
+                request,
+                responsibilityStore,
+                beforeDispatch,
+              ),
           );
           if (outcome === "retry") throw new GithubEventAccessRetry();
           await finish();
@@ -201,7 +223,18 @@ export function createApprovalResumeTick(
                 if (error instanceof RunContextRevokedError) await pause(true);
                 throw error;
               }
-              return executeApprovedAction(action);
+              if (request.action.executionInvalidated)
+                throw new Error(decisionInvalidated);
+              return runWithDecisionAccess(
+                database,
+                input.ownerUserId,
+                {
+                  runId: action.runId,
+                  createdAt: request.createdAt,
+                  epoch: request.action.executionEpoch,
+                },
+                (execution) => executeApprovedAction(action, execution),
+              );
             }),
           continue: async (outcome) => {
             if (

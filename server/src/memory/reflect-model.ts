@@ -1,6 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import type { ManagedModel } from "../managed-model";
+import type { ManagedModel } from "../managed-model-trial";
 
 export const REFLECT_MODEL_CALLBACK_PATH =
   "/internal/hindsight/v1/chat/completions";

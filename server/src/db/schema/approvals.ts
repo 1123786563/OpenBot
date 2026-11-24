@@ -4,6 +4,7 @@ import {
   check,
   index,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -198,6 +199,19 @@ export const approvalTeamRules = pgTable(
       sql`${table.behaviour} IN ('allow', 'pre_approved', 'ask', 'hand_off')`,
     ),
   ],
+);
+
+export const approvalTeamRuleSaves = pgTable(
+  "approval_team_rule_saves",
+  {
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    ruleIds: text("rule_ids").array().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.actorId, table.requestId] })],
 );
 
 /**

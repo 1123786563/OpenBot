@@ -677,12 +677,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "pinned_at": {
           "name": "pinned_at",
           "type": "timestamp with time zone",
@@ -701,6 +695,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -924,38 +924,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.conversation_evidence_withdrawals": {
-      "name": "conversation_evidence_withdrawals",
-      "schema": "",
-      "columns": {
-        "channel_id": {
-          "name": "channel_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "processed_at": {
-          "name": "processed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -8610,91 +8578,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.direct_chat_run_events": {
-      "name": "direct_chat_run_events",
-      "schema": "",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cursor": {
-          "name": "cursor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event": {
-          "name": "event",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "direct_chat_run_events_created_idx": {
-          "name": "direct_chat_run_events_created_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk": {
-          "name": "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk",
-          "tableFrom": "direct_chat_run_events",
-          "tableTo": "direct_chat_runs",
-          "columnsFrom": [
-            "thread_id",
-            "run_id"
-          ],
-          "columnsTo": [
-            "thread_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "direct_chat_run_events_thread_id_run_id_cursor_pk": {
-          "name": "direct_chat_run_events_thread_id_run_id_cursor_pk",
-          "columns": [
-            "thread_id",
-            "run_id",
-            "cursor"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.direct_chat_runs": {
       "name": "direct_chat_runs",
       "schema": "",
@@ -8741,6 +8624,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
         "event_cursor": {
           "name": "event_cursor",
           "type": "integer",
@@ -8759,13 +8649,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {
@@ -11814,61 +11697,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.recorder_capture_trajectories": {
-      "name": "recorder_capture_trajectories",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "recording_id": {
-          "name": "recording_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "recorder_capture_trajectories_recording_idx": {
-          "name": "recorder_capture_trajectories_recording_idx",
-          "columns": [
-            {
-              "expression": "recording_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "recorder_capture_trajectories_recording_id_recorder_recordings_id_fk": {
-          "name": "recorder_capture_trajectories_recording_id_recorder_recordings_id_fk",
-          "tableFrom": "recorder_capture_trajectories",
-          "tableTo": "recorder_recordings",
-          "columnsFrom": [
-            "recording_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.recorder_connect_codes": {
       "name": "recorder_connect_codes",
       "schema": "",
@@ -12119,6 +11947,240 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.recorder_trajectory_bindings": {
+      "name": "recorder_trajectory_bindings",
+      "schema": "",
+      "columns": {
+        "trajectory_id": {
+          "name": "trajectory_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "recorder_trajectory_bindings_user_idx": {
+          "name": "recorder_trajectory_bindings_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "recorder_trajectory_bindings_user_id_users_id_fk": {
+          "name": "recorder_trajectory_bindings_user_id_users_id_fk",
+          "tableFrom": "recorder_trajectory_bindings",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.direct_chat_run_events": {
+      "name": "direct_chat_run_events",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event": {
+          "name": "event",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "direct_chat_run_events_created_idx": {
+          "name": "direct_chat_run_events_created_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk": {
+          "name": "direct_chat_run_events_thread_id_run_id_direct_chat_runs_thread_id_id_fk",
+          "tableFrom": "direct_chat_run_events",
+          "tableTo": "direct_chat_runs",
+          "columnsFrom": [
+            "thread_id",
+            "run_id"
+          ],
+          "columnsTo": [
+            "thread_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "direct_chat_run_events_thread_id_run_id_cursor_pk": {
+          "name": "direct_chat_run_events_thread_id_run_id_cursor_pk",
+          "columns": [
+            "thread_id",
+            "run_id",
+            "cursor"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.conversation_evidence_withdrawals": {
+      "name": "conversation_evidence_withdrawals",
+      "schema": "",
+      "columns": {
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.recorder_capture_trajectories": {
+      "name": "recorder_capture_trajectories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "recording_id": {
+          "name": "recording_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "recorder_capture_trajectories_recording_idx": {
+          "name": "recorder_capture_trajectories_recording_idx",
+          "columns": [
+            {
+              "expression": "recording_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "recorder_capture_trajectories_recording_id_recorder_recordings_id_fk": {
+          "name": "recorder_capture_trajectories_recording_id_recorder_recordings_id_fk",
+          "tableFrom": "recorder_capture_trajectories",
+          "tableTo": "recorder_recordings",
+          "columnsFrom": [
+            "recording_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.recorder_recording_events": {
       "name": "recorder_recording_events",
       "schema": "",
@@ -12265,68 +12327,6 @@
         "recorder_recordings_user_id_users_id_fk": {
           "name": "recorder_recordings_user_id_users_id_fk",
           "tableFrom": "recorder_recordings",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.recorder_trajectory_bindings": {
-      "name": "recorder_trajectory_bindings",
-      "schema": "",
-      "columns": {
-        "trajectory_id": {
-          "name": "trajectory_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "recorder_trajectory_bindings_user_idx": {
-          "name": "recorder_trajectory_bindings_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "recorder_trajectory_bindings_user_id_users_id_fk": {
-          "name": "recorder_trajectory_bindings_user_id_users_id_fk",
-          "tableFrom": "recorder_trajectory_bindings",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"

@@ -3,12 +3,12 @@ import { createHmac } from "node:crypto";
 import { createOpenTagTransport } from "../src/delivery/opentag";
 import type { ConverseResult } from "../src/delivery/router";
 import { createDeliveryWebhookRoutes } from "../src/delivery/routes";
+import type { DeliveryStore } from "../src/delivery/store";
 import { createTwilioTransport } from "../src/delivery/twilio";
-import type { DeliveryBinding } from "../src/delivery/types";
 
 const SECRET = "x".repeat(48);
 const APPROVAL = "0f8fad5b-d9cb-469f-a165-70867728950e";
-const bound: DeliveryBinding = {
+const bound: NonNullable<Awaited<ReturnType<DeliveryStore["findBinding"]>>> = {
   id: "b1",
   ownerUserId: "owner",
   channelId: "ch",
@@ -19,6 +19,9 @@ const bound: DeliveryBinding = {
   identity: "U1",
   address: "U1",
   enabled: true,
+  mentionId: null,
+  optedOutAt: null,
+  createdAt: new Date(0),
 };
 type IdentityAdapter = {
   redeem(

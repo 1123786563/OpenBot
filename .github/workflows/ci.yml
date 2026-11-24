@@ -406,6 +406,9 @@ jobs:
       # from that Bot's own dependency tree.
       - run: bun install --frozen-lockfile
         working-directory: agent-mastra
+      # Workspace storage tests import dockerode from the Supervisor's own lockfile.
+      - run: bun install --frozen-lockfile
+        working-directory: supervisor
       # Same for the desktop app: root test discovery imports its React tests, whose JSX runtime is
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
@@ -491,9 +494,8 @@ jobs:
 
   python-harness:
     name: python harness regressions
-    # shortcut: upstream runs this CPU-bound job on a paid 16-core runner; this fork has no
-    # openbot-ubuntu-16core runner registered, so jobs queued forever. Stay on the standard runner.
-    runs-on: ubuntu-latest
+    # The upstream larger runner is available only for its trusted main and release jobs.
+    runs-on: ${{ github.repository == 'CopilotKit/OpenBot' && github.event_name != 'pull_request' && 'openbot-ubuntu-16core' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

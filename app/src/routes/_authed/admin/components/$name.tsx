@@ -9,15 +9,26 @@ import {
   IconUsers,
   IconWorld,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, type RefObject, useRef, useState } from "react";
 import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { AdminComponentPreview } from "@/components/component-preview";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SettingsItemBackground } from "@/components/settings/background";
-import { Button } from "@/components/ui/button";
+import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -46,6 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   saveComponentDraftMutationOptions,
   setComponentFunctionMutationOptions,
@@ -55,11 +67,9 @@ import {
 import {
   type ComponentRecord,
   componentListQueryOptions,
-  type DataFunctionSummary,
   dataFunctionsQueryOptions,
 } from "@/lib/components/queries";
 import { RENDERABLE_NAMES } from "@/lib/copilot/gallery-registry";
-import { queryClient } from "@/query-client";
 
 /**
  * Governance for one compiled component: publication, per-Bot grants, the model-facing description,
@@ -84,22 +94,14 @@ export const Route = createFileRoute("/_authed/admin/components/$name")({
 function RouteComponent() {
   const { name } = Route.useParams();
   const components = useQuery(componentListQueryOptions());
-  const agents = useQuery(agentListQueryOptions());
-  const dataFunctions = useQuery(dataFunctionsQueryOptions());
-
-  const setGrant = useMutation(setComponentGrantMutationOptions(queryClient));
-  const setFunction = useMutation(
-    setComponentFunctionMutationOptions(queryClient),
-  );
-  const setPublished = useMutation(
-    setComponentPublishedMutationOptions(queryClient),
-  );
-  const saveDraft = useMutation(saveComponentDraftMutationOptions(queryClient));
+  const heading = useRef<HTMLHeadingElement>(null);
 
   /*
    * Read out of the list rather than held in state, so a change made here is reflected here.
    */
-  const component = components.data?.find((entry) => entry.name === name);
+  const component = canKeepCachedRead(components.error)
+    ? components.data?.find((entry) => entry.name === name)
+    : undefined;
 
   /*
    * Pending first, as the list page's own placeholder shape: the alternative is worse than a
@@ -123,23 +125,21 @@ function RouteComponent() {
     );
   }
 
-  if (components.error) {
+  if (components.error && !component) {
     return (
-      <CapabilityPage backButton={BACK} title={fallbackTitle(name)}>
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load this component.
-          </p>
-          <Button
-            disabled={components.isFetching}
-            onClick={() => void components.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {components.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+      <CapabilityPage
+        backButton={BACK}
+        headingRef={heading}
+        title={fallbackTitle(name)}
+      >
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't load this component."
+          retry={components.refetch}
+          retryBelow
+          retryLabel="Retry component"
+          retrying={components.isFetching}
+        />
       </CapabilityPage>
     );
   }
@@ -181,18 +181,10 @@ function RouteComponent() {
      * the last one opened would be what a save wrote back.
      */
     <ComponentDetail
-      bots={agents.data ?? []}
       component={component}
-      dataFunctions={dataFunctions.data ?? []}
+      components={components}
+      heading={heading}
       key={component.name}
-      onPublish={(published) => setPublished.mutate({ name, published })}
-      onSaveDraft={(description) => saveDraft.mutate({ description, name })}
-      onSetFunction={(functionName, granted) =>
-        setFunction.mutate({ functionName, granted, name })
-      }
-      onSetGrant={(agentId, granted) =>
-        setGrant.mutate({ agentId, granted, name })
-      }
     />
   );
 }
@@ -234,12 +226,14 @@ function SheetRow({
   label,
   summary,
   onOpen,
+  buttonRef,
   testId,
 }: {
   icon: ReactNode;
   label: string;
   summary: string;
   onOpen: () => void;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
   testId: string;
 }) {
   return (
@@ -250,7 +244,14 @@ function SheetRow({
        * replace the row's own — which is how this first drew as three empty rows. The button takes
        * its accessible name from the title and summary inside instead.
        */
-      render={<button data-testid={testId} onClick={onOpen} type="button" />}
+      render={
+        <button
+          data-testid={testId}
+          onClick={onOpen}
+          ref={buttonRef}
+          type="button"
+        />
+      }
       size="sm"
     >
       <ItemMedia variant="icon">{icon}</ItemMedia>
@@ -277,55 +278,136 @@ function SheetRow({
  */
 function ComponentDetail({
   component,
-  bots,
-  dataFunctions,
-  onSetGrant,
-  onSetFunction,
-  onPublish,
-  onSaveDraft,
+  components,
+  heading,
 }: {
   component: ComponentRecord;
-  bots: { id: string; name: string }[];
-  dataFunctions: DataFunctionSummary[];
-  onSetGrant: (agentId: string, granted: boolean) => void;
-  onSetFunction: (functionName: string, granted: boolean) => void;
-  onPublish: (published: boolean) => void;
-  onSaveDraft: (description: string) => void;
+  components: UseQueryResult<ComponentRecord[]>;
+  heading: RefObject<HTMLHeadingElement | null>;
 }) {
+  const queryClient = useQueryClient();
+  const botsQuery = useQuery(agentListQueryOptions());
+  const functionsQuery = useQuery(dataFunctionsQueryOptions());
+  const bots = botsQuery.data ?? [];
+  const dataFunctions = functionsQuery.data ?? [];
+  const setGrant = useMutation(setComponentGrantMutationOptions(queryClient));
+  const setFunction = useMutation(
+    setComponentFunctionMutationOptions(queryClient),
+  );
+  const setPublished = useMutation(
+    setComponentPublishedMutationOptions(queryClient),
+  );
+  const publishDescription = useMutation(
+    setComponentPublishedMutationOptions(queryClient),
+  );
+  const saveDraft = useMutation(saveComponentDraftMutationOptions(queryClient));
+  const { confirmation, requestConfirmation } = useActionConfirmation();
+  const publicationSwitch = useRef<HTMLButtonElement>(null);
+  const descriptionButton = useRef<HTMLButtonElement>(null);
+  const grantsHeading = useRef<HTMLHeadingElement>(null);
+  const functionsHeading = useRef<HTMLHeadingElement>(null);
+  const savingDraft = useRef(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [draft, setDraft] = useState(component.draftDescription);
+  const [notice, setNotice] = useState("");
   const withheld = new Set(component.withheldFrom);
   const heldFunctions = new Set(component.functions);
+  const isPlaygroundComponent = component.kind === "sandboxed";
   const renderable =
-    RENDERABLE_NAMES.has(component.name) || component.kind === "sandboxed";
+    RENDERABLE_NAMES.has(component.name) || isPlaygroundComponent;
+  const canWrite = renderable && components.isSuccess;
+  const draftChanged = draft !== component.draftDescription;
+  const descriptionMissing = draftChanged && !draft.trim();
+  const publicationBusy =
+    setPublished.isPending || publishDescription.isPending;
+
+  function confirmDescriptionPublication(trigger: HTMLButtonElement) {
+    requestConfirmation({
+      title: "Publish this description?",
+      description: `Bots allowed to use ${component.title} will read the saved draft. The component stays published and Bot access stays the same.`,
+      confirmLabel: "Publish description",
+      pendingLabel: "Publishing…",
+      failureMessage: "Couldn't publish the description. Try again.",
+      successMessage: "Description published.",
+      variant: "default",
+      trigger,
+      fallbackFocus: () => publicationSwitch.current,
+      run: async () => {
+        const latest = await components.refetch({ throwOnError: true });
+        const current = latest.data?.find(
+          (entry) => entry.name === component.name,
+        );
+        if (
+          !current?.published ||
+          current.draftDescription !== component.draftDescription
+        ) {
+          throw new ActionUnavailable(
+            "The saved draft or publication status changed. Review the current settings and try again.",
+          );
+        }
+        if (current.hasUnpublishedChanges) {
+          await publishDescription.mutateAsync({
+            name: component.name,
+            published: true,
+          });
+        }
+      },
+    });
+  }
 
   const granted = bots.filter((bot) => !withheld.has(bot.id));
   const held = dataFunctions.filter((fn) => heldFunctions.has(fn.name));
 
-  const grantSummary =
-    bots.length === 0
-      ? "No Bots yet"
-      : granted.length === bots.length
-        ? `All ${bots.length} Bots`
-        : granted.length === 0
-          ? "No Bots"
-          : `${granted.length} of ${bots.length} Bots`;
+  const grantSummary = botsQuery.isError
+    ? "Couldn't check Bots"
+    : botsQuery.isPending
+      ? "Checking Bots…"
+      : bots.length === 0
+        ? "No Bots yet"
+        : granted.length === bots.length
+          ? `All ${bots.length} Bots`
+          : granted.length === 0
+            ? "No Bots"
+            : `${granted.length} of ${bots.length} Bots`;
 
-  const functionSummary =
-    dataFunctions.length === 0
-      ? "This deployment has no data functions"
-      : held.length === 0
-        ? "Nothing. It shows only what the Bot passes it."
-        : held.map((fn) => fn.name).join(", ");
+  const functionSummary = functionsQuery.isError
+    ? "Couldn't check data functions"
+    : functionsQuery.isPending
+      ? "Checking data functions…"
+      : dataFunctions.length === 0
+        ? "This deployment has no data functions"
+        : held.length === 0
+          ? "Nothing. It shows only what the Bot passes it."
+          : held.map((fn) => fn.name).join(", ");
 
   return (
     <CapabilityPage
       backButton={BACK}
       description={
-        component.publishedDescription ?? "Not published. No Bot can see it."
+        component.published
+          ? (component.publishedDescription ?? undefined)
+          : "Not published. No Bot can see it."
       }
+      headingRef={heading}
       title={component.title}
     >
+      {confirmation}
+      {components.isError ? (
+        <ReadError
+          description="Showing the last loaded settings. Retry to make changes."
+          focusAfterRetry={() => heading.current}
+          message="Couldn't refresh this component."
+          retry={components.refetch}
+          retryBelow
+          retryLabel="Retry component"
+          retrying={components.isFetching}
+        />
+      ) : null}
+      {notice ? (
+        <p className="text-muted-foreground text-sm" role="status">
+          {notice}
+        </p>
+      ) : null}
       {/*
        * The render at the top of the page. Bordered and rounded rather than bleeding to the edges:
        * inside a prose column that is what the tiles do, and a page has no dialog edge to reach for.
@@ -372,12 +454,16 @@ function ComponentDetail({
             </ItemMedia>
             <ItemContent>
               <ItemTitle>Published</ItemTitle>
-              <ItemDescription>
-                {component.published
-                  ? "Bots can answer with it."
-                  : "No Bot can use it."}
-                {component.hasUnpublishedChanges
-                  ? " The description has unpublished changes."
+              <ItemDescription className="line-clamp-none">
+                {publicationBusy
+                  ? "Updating publication…"
+                  : !renderable
+                    ? "Publication is unavailable in this build."
+                    : component.published
+                      ? "Bots can answer with it."
+                      : "No Bot can use it."}
+                {component.hasUnpublishedChanges && !isPlaygroundComponent
+                  ? " A saved description draft is ready to publish."
                   : null}
               </ItemDescription>
             </ItemContent>
@@ -390,21 +476,81 @@ function ComponentDetail({
                 aria-label="Published"
                 checked={component.published}
                 data-testid={`publish-${component.name}`}
-                disabled={!renderable}
-                onCheckedChange={onPublish}
+                ref={publicationSwitch}
+                disabled={!canWrite || publicationBusy || saveDraft.isPending}
+                onCheckedChange={(published) =>
+                  setPublished.mutate({ name: component.name, published })
+                }
               />
             </ItemActions>
           </Item>
+          {setPublished.isError ? (
+            <p className="px-4 py-2 text-destructive text-sm" role="alert">
+              Couldn't change publication. Try the Published switch again.
+            </p>
+          ) : null}
 
           <Separator />
 
-          <SheetRow
-            icon={<IconFileText />}
-            label="Description"
-            onOpen={() => setSheet("description")}
-            summary={component.draftDescription || "Nothing yet"}
-            testId={`description-${component.name}`}
-          />
+          {isPlaygroundComponent ? (
+            <Item size="sm">
+              <ItemMedia variant="icon">
+                <IconFileText />
+              </ItemMedia>
+              <ItemContent className="min-w-0">
+                <ItemTitle>Description</ItemTitle>
+                <ItemDescription className="line-clamp-none wrap-anywhere">
+                  Open {component.title} under Saved here to edit and publish
+                  its draft in Playground.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Link
+                  className={buttonVariants({
+                    className: "min-h-11",
+                    variant: "outline",
+                  })}
+                  hash="playground-saved"
+                  to="/admin/playground"
+                >
+                  Open Playground
+                </Link>
+              </ItemActions>
+            </Item>
+          ) : (
+            <>
+              <SheetRow
+                icon={<IconFileText />}
+                label="Description"
+                buttonRef={descriptionButton}
+                onOpen={() => {
+                  saveDraft.reset();
+                  setNotice("");
+                  setDraft(component.draftDescription);
+                  setSheet("description");
+                }}
+                summary={component.draftDescription || "Nothing yet"}
+                testId={`description-${component.name}`}
+              />
+              {component.published && component.hasUnpublishedChanges ? (
+                <Item size="sm">
+                  <Button
+                    className="min-h-11"
+                    disabled={
+                      !canWrite || publicationBusy || saveDraft.isPending
+                    }
+                    onClick={(event) =>
+                      confirmDescriptionPublication(event.currentTarget)
+                    }
+                    type="button"
+                    variant="outline"
+                  >
+                    Publish description
+                  </Button>
+                </Item>
+              ) : null}
+            </>
+          )}
 
           <Separator />
 
@@ -452,70 +598,105 @@ function ComponentDetail({
        * reset on close either way, so reopening reads what is actually stored rather than what was
        * abandoned.
        */}
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) {
-            setSheet(null);
-            setDraft(component.draftDescription);
-          }
-        }}
+      <SettingsDraftDialog
+        title="Description"
+        description="Bots read the published description when deciding whether to use this component. Save your draft, then publish it from Configuration."
         open={sheet === "description"}
+        dirty={draftChanged}
+        saving={saveDraft.isPending}
+        opener={descriptionButton}
+        onClose={() => setSheet(null)}
+        action={
+          <Button
+            className="min-h-11"
+            disabled={
+              !draftChanged ||
+              !draft.trim() ||
+              !canWrite ||
+              saveDraft.isPending ||
+              publicationBusy
+            }
+            onClick={async () => {
+              if (savingDraft.current) return;
+              savingDraft.current = true;
+              try {
+                await saveDraft.mutateAsync({
+                  name: component.name,
+                  description: draft,
+                });
+                setNotice("Description draft saved.");
+                setSheet(null);
+              } catch {
+                // The dialog shows the mutation error beside the preserved draft.
+              } finally {
+                savingDraft.current = false;
+              }
+            }}
+            type="button"
+          >
+            {saveDraft.isPending ? "Saving draft…" : "Save draft"}
+          </Button>
+        }
       >
-        <DialogContent {...astryxScope}>
-          <DialogHeader>
-            <DialogTitle>Description</DialogTitle>
-            <DialogDescription>
-              What the model reads when it decides to use this. It has no effect
-              until the component is published.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="mt-4">
-            <Textarea
-              aria-label="Description"
-              onChange={(event) => setDraft(event.target.value)}
-              rows={6}
-              value={draft}
-            />
-          </DialogBody>
-          <DialogFooter className="mt-4">
-            <Button
-              onClick={() => {
-                setSheet(null);
-                setDraft(component.draftDescription);
-              }}
-              size="sm"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                onSaveDraft(draft);
-                setSheet(null);
-              }}
-              size="sm"
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <Textarea
+          aria-describedby={
+            descriptionMissing ? "component-description-error" : undefined
+          }
+          aria-invalid={descriptionMissing}
+          aria-label="Description"
+          onChange={(event) => setDraft(event.target.value)}
+          readOnly={!canWrite || saveDraft.isPending}
+          rows={6}
+          value={draft}
+        />
+        {descriptionMissing ? (
+          <p
+            className="mt-3 text-destructive text-sm"
+            id="component-description-error"
+          >
+            Enter a description before saving.
+          </p>
+        ) : null}
+        {saveDraft.isError ? (
+          <p className="mt-3 text-destructive text-sm" role="alert">
+            Couldn't save this description. Your draft is still here.
+          </p>
+        ) : null}
+      </SettingsDraftDialog>
 
       {/* Grants take effect as they are switched, so there is nothing here to save or to discard. */}
       <Dialog
-        onOpenChange={(open) => !open && setSheet(null)}
+        onOpenChange={(open, event) => {
+          if (open) return;
+          if (setGrant.isPending) event.cancel();
+          else setSheet(null);
+        }}
         open={sheet === "grants"}
       >
         <DialogContent {...astryxScope}>
           <DialogHeader>
-            <DialogTitle>Available to</DialogTitle>
+            <DialogTitle ref={grantsHeading} tabIndex={-1}>
+              Available to
+            </DialogTitle>
             <DialogDescription>
-              Turn a Bot off and it never learns this component exists. Changes
-              apply right away.
+              {renderable
+                ? "Turn a Bot off to withhold this component from it."
+                : "This build cannot draw this component. You can review the saved settings."}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
-            {bots.length === 0 ? (
+            {botsQuery.isPending ? (
+              <ReadStatus kind="loading" message="Loading Bots…" />
+            ) : botsQuery.isError ? (
+              <ReadError
+                focusAfterRetry={() => grantsHeading.current}
+                message="Couldn't load Bots."
+                retry={botsQuery.refetch}
+                retryBelow
+                retryLabel="Retry Bots"
+                retrying={botsQuery.isFetching}
+              />
+            ) : bots.length === 0 ? (
               <p className="text-muted-foreground text-sm">No Bots yet.</p>
             ) : (
               <div className="flex flex-col">
@@ -533,7 +714,14 @@ function ComponentDetail({
                             aria-label={bot.name}
                             checked={has}
                             data-testid={`grant-${component.name}-${bot.id}`}
-                            onCheckedChange={(next) => onSetGrant(bot.id, next)}
+                            disabled={!canWrite || setGrant.isPending}
+                            onCheckedChange={(next) =>
+                              setGrant.mutate({
+                                name: component.name,
+                                agentId: bot.id,
+                                granted: next,
+                              })
+                            }
                           />
                         </ItemActions>
                       </Item>
@@ -542,9 +730,19 @@ function ComponentDetail({
                 })}
               </div>
             )}
+            {setGrant.isError ? (
+              <p className="mt-3 text-destructive text-sm" role="alert">
+                Couldn't change Bot access. Try the switch again.
+              </p>
+            ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
-            <Button onClick={() => setSheet(null)} size="sm">
+            <Button
+              className="min-h-11"
+              disabled={setGrant.isPending}
+              onClick={() => setSheet(null)}
+              size="sm"
+            >
               Done
             </Button>
           </DialogFooter>
@@ -552,21 +750,37 @@ function ComponentDetail({
       </Dialog>
 
       <Dialog
-        onOpenChange={(open) => !open && setSheet(null)}
+        onOpenChange={(open, event) => {
+          if (open) return;
+          if (setFunction.isPending) event.cancel();
+          else setSheet(null);
+        }}
         open={sheet === "functions"}
       >
         <DialogContent {...astryxScope}>
           <DialogHeader>
-            <DialogTitle>Can read</DialogTitle>
+            <DialogTitle ref={functionsHeading} tabIndex={-1}>
+              Can read
+            </DialogTitle>
             <DialogDescription>
               The data this component can fetch to draw itself. This is separate
               from Available to. With all of these off, it shows only what the
-              Bot passes it. Every read shows in Audit. Changes apply right
-              away.
+              Bot passes it. Every read shows in Audit.
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
-            {dataFunctions.length === 0 ? (
+            {functionsQuery.isPending ? (
+              <ReadStatus kind="loading" message="Loading data functions…" />
+            ) : functionsQuery.isError ? (
+              <ReadError
+                focusAfterRetry={() => functionsHeading.current}
+                message="Couldn't load data functions."
+                retry={functionsQuery.refetch}
+                retryBelow
+                retryLabel="Retry data functions"
+                retrying={functionsQuery.isFetching}
+              />
+            ) : dataFunctions.length === 0 ? (
               <p className="text-muted-foreground text-sm">
                 This deployment has no data functions.
               </p>
@@ -587,8 +801,13 @@ function ComponentDetail({
                             aria-label={fn.name}
                             checked={has}
                             data-testid={`function-${component.name}-${fn.name}`}
+                            disabled={!canWrite || setFunction.isPending}
                             onCheckedChange={(next) =>
-                              onSetFunction(fn.name, next)
+                              setFunction.mutate({
+                                name: component.name,
+                                functionName: fn.name,
+                                granted: next,
+                              })
                             }
                           />
                         </ItemActions>
@@ -598,9 +817,19 @@ function ComponentDetail({
                 })}
               </div>
             )}
+            {setFunction.isError ? (
+              <p className="mt-3 text-destructive text-sm" role="alert">
+                Couldn't change data access. Try the switch again.
+              </p>
+            ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
-            <Button onClick={() => setSheet(null)} size="sm">
+            <Button
+              className="min-h-11"
+              disabled={setFunction.isPending}
+              onClick={() => setSheet(null)}
+              size="sm"
+            >
               Done
             </Button>
           </DialogFooter>

@@ -37,7 +37,7 @@ import {
   directChatSkillShares as shares,
   users,
 } from "../db/schema";
-import type { ManagedModel, ManagedModelResult } from "../managed-model";
+import type { ManagedModel, ManagedModelResult } from "../managed-model-trial";
 import { readLearningSource } from "./evidence";
 
 type Analysis = typeof analyses.$inferSelect;

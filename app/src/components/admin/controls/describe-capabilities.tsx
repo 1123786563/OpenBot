@@ -58,16 +58,20 @@ const SCOPE_ICONS = {
   group: IconUsersGroup,
 };
 
-/** What a switch is set to, in the overrides dialog's words: a group grants, the rest turn on or off. */
+/** What a switch is set to, in the overrides dialog's words. */
 function settingWords(change: CapabilityChange): {
   text: string;
   className: string;
 } {
   if (change.allowed === null)
-    return { text: "Inherit", className: "text-muted-foreground" };
-  if (!change.allowed) return { text: "Off", className: "text-destructive" };
+    return {
+      text: change.scopeKind === "group" ? "No grant" : "Use default",
+      className: "text-muted-foreground",
+    };
+  if (!change.allowed)
+    return { text: "Blocked", className: "text-destructive" };
   return {
-    text: change.scopeKind === "group" ? "Grant" : "On",
+    text: "Allowed",
     className: "text-emerald-600 dark:text-emerald-400",
   };
 }
@@ -110,8 +114,10 @@ export function ChangeRows({
                   <Icon />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle>{title}</ItemTitle>
-                  <ItemDescription>{scopeWords(change)}</ItemDescription>
+                  <ItemTitle className="wrap-anywhere">{title}</ItemTitle>
+                  <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
+                    {scopeWords(change)}
+                  </ItemDescription>
                   {wrong.map((problem) => (
                     <p className="text-destructive text-sm" key={problem.field}>
                       {problem.message}
@@ -126,6 +132,8 @@ export function ChangeRows({
                   </span>
                   <Button
                     aria-label={`Remove change ${row}`}
+                    className="size-12"
+                    data-permission-change={row}
                     onClick={() => onRemove(index)}
                     size="icon-sm"
                     type="button"
@@ -146,7 +154,7 @@ export function ChangeRows({
 
 /** Why a person has a permission or not, after "Now" or "After this,". */
 function answerWords(answer: CapabilityAnswer): string {
-  const state = answer.allowed ? "on" : "off";
+  const state = answer.allowed ? "allowed" : "blocked";
   switch (answer.decidedBy) {
     case "default":
       return `${state} by default`;
@@ -155,7 +163,7 @@ function answerWords(answer: CapabilityAnswer): string {
     case "role":
       return `${state} for ${answer.scopeId === "admin" ? "admins" : "members"}`;
     case "group":
-      return `on through ${answer.scopeId}`;
+      return `${state} through ${answer.scopeId}`;
   }
 }
 
@@ -237,8 +245,10 @@ function mediaOf(event: AuditEvent): ReplayRow["media"] {
  * in Audit's own cells, as a boundary's preview lists what it would stop.
  */
 export function PermissionsPreview({
+  compact = false,
   preview,
 }: {
+  compact?: boolean;
   preview: UseQueryResult<CapabilityPreview>;
 }) {
   if (preview.error)
@@ -248,6 +258,7 @@ export function PermissionsPreview({
         <ReadError
           message={preview.error.message}
           retry={() => preview.refetch()}
+          retryBelow
           retryLabel="Retry preview"
           retrying={preview.isFetching}
         />
@@ -324,16 +335,30 @@ export function PermissionsPreview({
               const verdict = verdictOf(person);
               return (
                 <Fragment key={person.id}>
-                  <Item size="sm">
-                    <ItemMedia
-                      className="translate-y-0.5 self-start"
-                      variant="icon"
-                    >
-                      <IconUser />
-                    </ItemMedia>
+                  <Item className={compact ? "px-0" : undefined} size="sm">
+                    {compact ? null : (
+                      <ItemMedia
+                        className="translate-y-0.5 self-start"
+                        variant="icon"
+                      >
+                        <IconUser />
+                      </ItemMedia>
+                    )}
                     <ItemContent className="min-w-0">
-                      <ItemTitle>{nameOf(person)}</ItemTitle>
-                      <ItemDescription className="line-clamp-none">
+                      <ItemTitle className="wrap-anywhere">
+                        {nameOf(person)}
+                      </ItemTitle>
+                      {compact ? (
+                        <p
+                          className={cn(
+                            "font-medium text-sm",
+                            verdict.className,
+                          )}
+                        >
+                          {verdict.text}
+                        </p>
+                      ) : null}
+                      <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
                         {person.role === "admin" ? "Admin" : "Member"}
                         {person.groups.length > 0
                           ? ` in ${person.groups.join(", ")}`
@@ -357,7 +382,7 @@ export function PermissionsPreview({
                           );
                           return (
                             <div
-                              className="mt-1.5 text-sm"
+                              className="mt-1.5 wrap-anywhere text-sm"
                               key={capability.capability}
                             >
                               <p>
@@ -376,13 +401,18 @@ export function PermissionsPreview({
                           );
                         })}
                     </ItemContent>
-                    <ItemActions className="self-start">
-                      <span
-                        className={cn("font-medium text-sm", verdict.className)}
-                      >
-                        {verdict.text}
-                      </span>
-                    </ItemActions>
+                    {compact ? null : (
+                      <ItemActions className="self-start">
+                        <span
+                          className={cn(
+                            "font-medium text-sm",
+                            verdict.className,
+                          )}
+                        >
+                          {verdict.text}
+                        </span>
+                      </ItemActions>
+                    )}
                   </Item>
                   {index !== data.people.length - 1 && <Separator />}
                 </Fragment>

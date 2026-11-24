@@ -2,12 +2,13 @@ import type { LauncherState } from "@openbot/shared/openbot-browser";
 import type { RecordingRow } from "@openbot/shared/recorder-api";
 import { IconVideo } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import React, { type ReactNode } from "react";
+import React, { type ReactNode, useRef } from "react";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -18,6 +19,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { canKeepCachedRead } from "@/lib/client";
 import { recordingsQueryOptions } from "@/lib/recorder/queries";
 import { RecordingDetails } from "./recording-details";
 import { RecordingLearning } from "./recording-learning";
@@ -75,20 +77,45 @@ export function YourRecordings({
   action?: ReactNode;
 }) {
   const recordings = useInfiniteQuery(recordingsQueryOptions({ waiting }));
+  const heading = useRef<HTMLHeadingElement>(null);
   if (recordings.isPending) return null;
-  const unavailable = recordings.data?.pages.at(-1)?.unavailable;
-  const rows = recordings.data?.pages.flatMap((page) => page.recordings) ?? [];
+  const keep = canKeepCachedRead(recordings.error);
+  const pages = keep ? recordings.data?.pages : undefined;
+  const unavailable = pages?.at(-1)?.unavailable;
+  const rows = pages?.flatMap((page) => page.recordings) ?? [];
+  const hasNextPage = keep && recordings.hasNextPage;
 
-  // A failed "Show more" or refresh keeps the rows already loaded: the error goes below them, where Show more retries.
+  // Pagination retries stay with Show more. A failed refresh has its own recovery above the list.
   const failure = recordings.error;
+  const retryRead =
+    (failure && !recordings.isFetchNextPageError) ||
+    !keep ||
+    (unavailable === "unreachable" && !hasNextPage);
   const section = (
-    <PageSection action={action} title="Your recordings">
-      {failure && rows.length === 0 ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {failure.message}
-        </p>
-      ) : rows.length === 0 && !recordings.hasNextPage && !unavailable ? (
-        variant === "pane" ? (
+    <PageSection action={action} headingRef={heading} title="Your recordings">
+      {retryRead ? (
+        <ReadError
+          message={
+            rows.length
+              ? "Couldn't refresh your recordings."
+              : "Couldn't load your recordings."
+          }
+          description={
+            rows.length
+              ? "Showing recordings from the last successful check."
+              : unavailable === "unreachable"
+                ? "Couldn't reach the backend to list your recordings."
+                : undefined
+          }
+          focusAfterRetry={() => heading.current}
+          retry={recordings.refetch}
+          retryBelow
+          retrying={recordings.isFetching}
+          retryLabel="Retry recordings"
+        />
+      ) : null}
+      {rows.length === 0 && !hasNextPage && (!unavailable || retryRead) ? (
+        retryRead ? null : variant === "pane" ? (
           // One line under the browser, not a box: every bit of height here is taken from the page above.
           <p className="mt-1 text-muted-foreground text-sm">{EMPTY}</p>
         ) : (
@@ -106,17 +133,21 @@ export function YourRecordings({
                     <ItemMedia variant="icon">
                       <IconVideo />
                     </ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>{row.title ?? "Untitled recording"}</ItemTitle>
-                      <ItemDescription>
+                    <ItemContent className="min-w-0">
+                      <ItemTitle className="block w-auto wrap-anywhere">
+                        {row.title ?? "Untitled recording"}
+                      </ItemTitle>
+                      <ItemDescription className="line-clamp-none">
                         {new Date(row.recordedAt).toLocaleString()}
                       </ItemDescription>
                     </ItemContent>
                     {ended || recordings.data?.pages[0]?.canManage ? (
-                      <ItemActions>
-                        <span className="text-muted-foreground text-sm">
-                          {ended}
-                        </span>
+                      <ItemActions className="max-sm:basis-full">
+                        {ended ? (
+                          <p className="text-muted-foreground text-sm">
+                            {ended}
+                          </p>
+                        ) : null}
                         {recordings.data?.pages[0]?.canManage ? (
                           <>
                             {row.ended === "succeeded" ? (
@@ -135,21 +166,19 @@ export function YourRecordings({
               );
             })}
           </PageRows>
-          {unavailable ? (
+          {unavailable && !retryRead ? (
             <p className="mt-4 text-muted-foreground text-sm">
               {unavailable === "unreachable"
                 ? "Couldn't reach the backend to list your recordings. Try again in a moment."
                 : "The backend isn't available, so your recordings can't be listed."}
             </p>
           ) : null}
-          {failure ? (
-            <p className="mt-4 text-destructive text-sm">
-              {recordings.isFetchNextPageError
-                ? "Couldn't load more recordings. Try again."
-                : "Couldn't refresh your recordings."}
+          {failure && !retryRead ? (
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              Couldn't load more recordings. Try again.
             </p>
           ) : null}
-          {recordings.hasNextPage ? (
+          {hasNextPage ? (
             <Button
               className="mt-3"
               disabled={recordings.isFetchingNextPage}

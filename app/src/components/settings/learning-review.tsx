@@ -14,6 +14,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { ProposalDialog } from "@/components/learning/proposal-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -98,42 +99,53 @@ function GroupError({ state }: { state: StartState | undefined }) {
  */
 export function LearningReview() {
   const review = useQuery(personalReviewQueryOptions());
-  if (review.isPending) return null;
-  if (review.error) {
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
+  if (review.isPending || review.error) {
     return (
-      <HStack wrap="wrap" gap={3}>
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't load what your Bots learned.
-        </p>
-        <Button
-          disabled={review.isFetching}
-          onClick={() => void review.refetch()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {review.isFetching ? "Retrying…" : "Retry"}
-        </Button>
-      </HStack>
+      <PageSection headingRef={sectionHeading} title="New skills">
+        {review.error ? (
+          <ReadError
+            focusAfterRetry={() => sectionHeading.current}
+            message="Couldn't load what your Bots learned."
+            retry={review.refetch}
+            retryBelow
+            retryLabel="Retry skill review"
+            retrying={review.isFetching}
+          />
+        ) : (
+          <ReadStatus kind="loading" message="Loading new skills…" />
+        )}
+      </PageSection>
     );
   }
   if (!review.data) return null;
   return "mode" in review.data ? (
-    <ConversationLearning review={review.data} />
+    <ConversationLearning
+      review={review.data}
+      sectionHeading={sectionHeading}
+    />
   ) : (
     <LegacyLearningReview
       reviewData={review.data}
       refetchReview={review.refetch}
+      sectionHeading={sectionHeading}
     />
   );
 }
 
-function ConversationLearning({ review }: { review: OpenBotPersonalReview }) {
+function ConversationLearning({
+  review,
+  sectionHeading,
+}: {
+  review: OpenBotPersonalReview;
+  sectionHeading: React.RefObject<HTMLHeadingElement | null>;
+}) {
   const saveAutoApprove = useMutation(
     saveAutoApproveMutationOptions(queryClient),
   );
   return (
     <PageSection
+      headingRef={sectionHeading}
       title="Conversation Learning"
       description="Review skills and start Learning for your conversations with Bots."
     >
@@ -186,9 +198,11 @@ function ConversationLearning({ review }: { review: OpenBotPersonalReview }) {
 function LegacyLearningReview({
   reviewData,
   refetchReview,
+  sectionHeading,
 }: {
   reviewData: PersonalReview;
   refetchReview: () => Promise<unknown>;
+  sectionHeading: React.RefObject<HTMLHeadingElement | null>;
 }) {
   const decide = useMutation(
     reviewPersonalProposalMutationOptions(queryClient),
@@ -343,7 +357,11 @@ function LegacyLearningReview({
   };
 
   return (
-    <PageSection title={heading.title} description={heading.description}>
+    <PageSection
+      title={heading.title}
+      description={heading.description}
+      headingRef={sectionHeading}
+    >
       {autoApproveOn !== null && (
         <PageRows>
           <Item size="sm">

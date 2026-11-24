@@ -1,23 +1,27 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
-import { agents, users } from "../src/db/schema/core";
+import { agents, credentials, users } from "../src/db/schema/core";
+import { personalSaasAccounts } from "../src/db/schema/personal-saas";
 import {
   responsibilityEvents,
   responsibilityRuns,
 } from "../src/db/schema/responsibilities";
 import { workItems } from "../src/db/schema/work";
+import { createResponsibilityBindingStore } from "../src/responsibilities/bindings";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import {
   ResponsibilityNotFoundError,
   ResponsibilityRefusedError,
 } from "../src/responsibilities/types";
+import { createWorkQueue } from "../src/work/queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const prefix = `responsibilities-${randomUUID()}`;
-const ownerId = `${prefix}-owner`;
+const ownerId = randomUUID();
 const strangerId = `${prefix}-stranger`;
 const botId = `${prefix}-bot`;
 const channelId = `${prefix}-channel`;
@@ -33,6 +37,8 @@ const store = createResponsibilityStore(database, {
   },
 });
 const keys: string[] = [];
+const bindingRequestId = randomUUID();
+const bindingIds: string[] = [];
 
 beforeAll(async () => {
   await database.insert(users).values([
@@ -57,8 +63,44 @@ afterAll(async () => {
         ),
       );
   await database.delete(users).where(inArray(users.id, [ownerId, strangerId]));
+  if (bindingIds.length)
+    await database
+      .delete(credentials)
+      .where(inArray(credentials.keyId, bindingIds));
   await database.delete(agents).where(eq(agents.id, botId));
   await database.$client.close();
+});
+
+test("repeating a GitHub binding request creates one binding and one credential", async () => {
+  const vault = createCredentialStore(database);
+  const bindings = createResponsibilityBindingStore(database, {
+    store: vault,
+    reader: vault,
+    encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+  });
+  const input = {
+    repository: "acme/web",
+    secret: "fixture-secret",
+    requestId: bindingRequestId,
+  };
+  const [first, retry] = await Promise.all([
+    bindings.create(ownerId, input),
+    bindings.create(ownerId, input),
+  ]);
+  bindingIds.push(first.id);
+  expect(retry).toEqual(first);
+  expect(await bindings.list(ownerId)).toHaveLength(1);
+  const stored = await database
+    .select({ id: credentials.id })
+    .from(credentials)
+    .where(eq(credentials.keyId, first.id));
+  expect(stored).toHaveLength(1);
+  const other = await bindings.create(strangerId, input);
+  bindingIds.push(other.id);
+  expect(other.id).not.toBe(first.id);
+  await expect(
+    bindings.create(ownerId, { ...input, repository: "acme/other" }),
+  ).rejects.toBeInstanceOf(ResponsibilityRefusedError);
 });
 async function goal() {
   return store.create(ownerId, {
@@ -204,4 +246,63 @@ test("waiting response resumes the same run once with stored pending tool contex
   expect((await store.get(ownerId, value.id)).lastResult).toBe(
     "Graph rendered.",
   );
+});
+
+test("a Responsibility run from an expired authorization stays stopped after a fresh event", async () => {
+  await database.delete(workItems).where(inArray(workItems.key, keys));
+  const at = Date.now();
+  const status = {
+    source: "active" as const,
+    observedAt: at,
+    confirmedAt: at,
+    epoch: 0,
+    disablements: [],
+  };
+  await database.insert(personalSaasAccounts).values({
+    id: ownerId,
+    issuer: "test",
+    subject: ownerId,
+    email: "goal@example.test",
+    status,
+  });
+  try {
+    const created = await goal();
+    const requested = await event(created.id);
+    await database
+      .update(personalSaasAccounts)
+      .set({
+        status: {
+          ...status,
+          epoch: 1,
+          executionCutoffs: [
+            { epoch: 1, cutoffAt: at, reason: "account_status_unconfirmed" },
+          ],
+        },
+      })
+      .where(eq(personalSaasAccounts.id, ownerId));
+    const queue = createWorkQueue(database);
+    const claim = {
+      kind: "responsibility.run",
+      owner: ownerId,
+      leaseMs: 30_000,
+      limit: 100,
+    };
+    expect((await queue.claim(claim)).map(({ key }) => key)).not.toContain(
+      requested.runIds[0],
+    );
+    expect(await queue.interrupted(claim.kind, ownerId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: requested.runIds[0] }),
+      ]),
+    );
+    const fresh = await event(created.id);
+    expect((await queue.claim(claim)).map(({ key }) => key)).toContain(
+      fresh.runIds[0],
+    );
+  } finally {
+    await database.delete(workItems).where(eq(workItems.accountId, ownerId));
+    await database
+      .delete(personalSaasAccounts)
+      .where(eq(personalSaasAccounts.id, ownerId));
+  }
 });

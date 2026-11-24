@@ -173,6 +173,9 @@ export type ApprovalAction = ApprovalCandidate & {
    * declined or still-pending action is recognised as the same thing.
    */
   equivalence?: string;
+  /** Personal Workspace authorization epoch when this request opened. */
+  executionEpoch?: number;
+  executionInvalidated?: true;
   /** How many times the person had spoken in the conversation when this was asked. */
   userTurns?: number;
 };
@@ -239,6 +242,14 @@ export type ApprovalRuleInput = {
   scope: string;
   behaviour: RuleBehaviour;
 };
+export type ApprovalRuleSave = { requestId: string; validate: () => void };
+
+export class ApprovalRuleSaveConflictError extends Error {}
+export class ReviewerGuidanceConflictError extends Error {
+  constructor() {
+    super("Saved guidance changed while you were editing.");
+  }
+}
 /**
  * Where saved rules came from, when they were not typed into the form: a sentence in plain English
  * that the deployment's model wrote them from, and the admin then saved. The boundary's own shape
@@ -263,6 +274,8 @@ export type ApprovalTeamSettings = {
  */
 export type ReviewerGuidanceChange = {
   text: string | null;
+  /** The saved text the editor started from. Null means no previous guidance. */
+  basedOn?: string | null;
   /** The admin's email, as the trail's other admin rows name them. */
   actor?: string;
   reading?: { summary: string | null; explanation: string };
@@ -309,6 +322,7 @@ export type ApprovalPolicyStore = {
     by: string,
     input: readonly ApprovalRuleInput[],
     authoring?: ApprovalRuleAuthoring,
+    request?: ApprovalRuleSave,
   ): Promise<ApprovalTeamRule[]>;
   /**
    * The newest requests across every person, for replaying candidate rules over what people were
@@ -392,6 +406,10 @@ export type ApprovalGate = (
   candidate: ApprovalCandidate,
 ) => Promise<ApprovalPermit | undefined>;
 export type ApprovalStore = {
+  checkDecisionAccess?(
+    ownerUserId: string,
+    origin: { runId: string; createdAt?: Date; epoch?: number },
+  ): Promise<void>;
   enabled(ownerUserId: string): Promise<boolean>;
   setEnabled(ownerUserId: string, enabled: boolean): Promise<void>;
   open(action: ApprovalAction): Promise<ApprovalRecord>;

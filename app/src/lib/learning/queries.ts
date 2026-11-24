@@ -18,7 +18,7 @@ import type {
   SharingRequest,
 } from "@openbot/shared/learning";
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 export const learningKeys = {
   all: ["learning"] as const,
@@ -71,9 +71,16 @@ export function personalLearningQueryOptions() {
 export function learningSettingsQueryOptions() {
   return queryOptions({
     queryKey: learningKeys.settings,
-    queryFn: (): Promise<LearningSettings> =>
-      client("/api/admin/learning/settings", "settings", {
+    queryFn: ({ client: cache, queryKey }): Promise<LearningSettings | null> =>
+      client<LearningSettings>("/api/admin/learning/settings", "settings", {
         fallback: "Learning settings could not be loaded.",
+      }).catch((error: unknown) => {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        )
+          cache.setQueryData(queryKey, null);
+        throw error;
       }),
   });
 }

@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -39,6 +40,8 @@ export const deliveryBindings = pgTable(
     address: text("address").notNull(),
     mentionId: text("mention_id"),
     enabled: boolean("enabled").notNull().default(true),
+    personalResumeEpoch: integer("personal_resume_epoch").notNull().default(0),
+    personalResumedAt: timestamp("personal_resumed_at", { withTimezone: true }),
     /**
      * When an SMS recipient replied STOP (Twilio Advanced Opt-Out); null while they may be texted.
      * Separate from `enabled`: the person stays connected and START clears it.

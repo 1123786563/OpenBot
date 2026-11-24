@@ -8,7 +8,6 @@ import {
 } from "@openbot/shared/harnesses";
 import {
   IconCheck,
-  IconInfoCircle,
   IconLock,
   IconPlugConnected,
   IconUsers,
@@ -19,7 +18,13 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { MotionConfig, motion, useReducedMotion } from "motion/react";
-import { type ComponentProps, useEffect, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
@@ -46,11 +51,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   type AgentFormValues,
   agentFormSchema,
@@ -95,18 +95,24 @@ export function NewBotSheet({
   onClose,
   onCreated,
   finalFocus,
+  onOpenChangeComplete,
 }: {
   open: boolean;
   onClose: () => void;
   finalFocus?: ComponentProps<typeof SheetContent>["finalFocus"];
+  onOpenChangeComplete?: ComponentProps<typeof Sheet>["onOpenChangeComplete"];
   /** The new Bot's id, so the caller can take the person to it. */
   onCreated: (agentId: string) => void;
 }) {
+  const submitting = useRef(false);
   return (
     <Sheet
-      onOpenChange={(next) => {
-        if (!next) onClose();
+      onOpenChange={(next, event) => {
+        if (next) return;
+        if (submitting.current) event.cancel();
+        else onClose();
       }}
+      onOpenChangeComplete={onOpenChangeComplete}
       open={open}
     >
       <SheetContent
@@ -117,7 +123,7 @@ export function NewBotSheet({
         variant="inset"
       >
         {/* Inside the popup, so it unmounts on close and a reopened sheet starts empty. */}
-        <NewBotFlow onCreated={onCreated} />
+        <NewBotFlow onCreated={onCreated} submitting={submitting} />
       </SheetContent>
     </Sheet>
   );
@@ -189,10 +195,23 @@ function defaultInstructions(name: string, runtime: Runtime): string {
  * The body is the one part of the sheet that scrolls, and it has to say so: a flex child with
  * `min-h-0` and no overflow of its own shrinks and paints over the footer instead.
  */
-function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
+function NewBotFlow({
+  onCreated,
+  submitting,
+}: {
+  onCreated: (agentId: string) => void;
+  submitting: RefObject<boolean>;
+}) {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
+  const createError = useRef<HTMLParagraphElement>(null);
+  const failed = createAgent.isError;
+  useEffect(() => {
+    if (failed && document.activeElement === document.body) {
+      createError.current?.focus();
+    }
+  }, [failed]);
   const capabilityQuery = useQuery(agentCapabilitiesQueryOptions());
   const capabilities = capabilityQuery.data;
   const builtInAvailable = capabilities?.builtInAvailable ?? true;
@@ -216,6 +235,7 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
   const [visibility, setVisibility] = useState<Visibility>("private");
   /** Run it here unless the person picks otherwise: the answer that needs nothing set up. */
   const [runtime, setRuntime] = useState<Runtime | null>({ kind: "builtin" });
+  const [frameworkQuery, setFrameworkQuery] = useState("");
   const custom = !builtInAvailable;
   const [endpoint, setEndpoint] = useState("");
   const [key, setKey] = useState("");
@@ -223,6 +243,7 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
   const [tried, setTried] = useState(false);
   /** Continue on the address is dialling it, before anything is created. */
   const [checking, setChecking] = useState(false);
+  const [busy, setBusy] = useState(false);
   /** Why the server could not reach the address on the last Continue, in its own words. */
   const [unreachable, setUnreachable] = useState<string>();
   /** The Bot just made, held for the moment the sheet spends saying so before it hands over. */
@@ -276,7 +297,6 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
       ? "Enter your agent's address."
       : agentFormSchema.shape.endpoint.safeParse(endpoint).error?.issues[0]
           ?.message;
-  const busy = checking || createAgent.isPending;
   const canContinue =
     !busy &&
     (step === "about"
@@ -408,9 +428,17 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
   }
 
   const submit = () => {
-    if (!canContinue) return;
+    if (!canContinue || submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
     // The failure is shown from the mutation's own state; nothing more to do with it here.
-    void Promise.resolve(advance()).catch(() => undefined);
+    void Promise.resolve()
+      .then(advance)
+      .catch(() => undefined)
+      .finally(() => {
+        submitting.current = false;
+        setBusy(false);
+      });
   };
 
   return (
@@ -433,7 +461,7 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
           return;
         }
         event.preventDefault();
-        if (!isComposing(event)) submit();
+        if (!isComposing(event) && step !== "runtime") submit();
       }}
       onSubmit={(event) => {
         event.preventDefault();
@@ -511,6 +539,8 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
                   setRuntime(chosen);
                   go("endpoint");
                 }}
+                onQuery={setFrameworkQuery}
+                query={frameworkQuery}
               />
             ) : (
               <EndpointStep
@@ -533,22 +563,52 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
         </MotionConfig>
 
         {createAgent.error ? (
-          <p className="mt-6 text-destructive text-sm" role="alert">
+          <p
+            className="mt-6 text-destructive text-sm"
+            ref={createError}
+            role="alert"
+            tabIndex={-1}
+          >
             {createAgent.error.message}
           </p>
         ) : null}
       </div>
 
-      <SheetFooter className="flex-row flex-wrap items-center justify-between border-t border-border">
+      <SheetFooter className="grid grid-cols-[auto_minmax(0,1fr)] items-center border-t border-border sm:flex sm:flex-row">
+        {step === "about" && builtInAvailable && (
+          <Button
+            className="col-span-2 min-h-11 justify-self-start sm:mr-auto"
+            type="button"
+            variant="ghost"
+            size="lg"
+            disabled={busy}
+            onClick={() => {
+              const parsed = agentFormSchema.shape.name.safeParse(name);
+              if (!parsed.success) {
+                setNameError(parsed.error.issues[0]?.message);
+                document.getElementById("new-bot-name")?.focus();
+                return;
+              }
+              setNameError(undefined);
+              go("runtime");
+            }}
+          >
+            <IconPlugConnected className="size-4" />
+            Connect a custom agent
+          </Button>
+        )}
         {step === "about" ? (
           <SheetClose
-            render={<Button className="px-4" size="lg" variant="ghost" />}
+            render={
+              <Button className="min-h-11 px-4" size="lg" variant="ghost" />
+            }
+            disabled={busy}
           >
             Cancel
           </SheetClose>
         ) : (
           <Button
-            className="px-4"
+            className="min-h-11 px-4"
             disabled={busy}
             onClick={() => go(previous())}
             size="lg"
@@ -558,48 +618,27 @@ function NewBotFlow({ onCreated }: { onCreated: (agentId: string) => void }) {
             Back
           </Button>
         )}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          {step === "about" && builtInAvailable && (
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              disabled={busy}
-              onClick={() => {
-                const parsed = agentFormSchema.shape.name.safeParse(name);
-                if (!parsed.success) {
-                  setNameError(parsed.error.issues[0]?.message);
-                  document.getElementById("new-bot-name")?.focus();
-                  return;
-                }
-                setNameError(undefined);
-                go("runtime");
-              }}
-            >
-              <IconPlugConnected className="size-4" />
-              Connect a custom agent
-            </Button>
-          )}
-          {step !== "runtime" && (
-            <AstryxButton
-              className="bot-primary-action"
-              isDisabled={!canContinue}
-              isLoading={busy}
-              size="lg"
-              type="submit"
-              variant="primary"
-              label={
-                checking
-                  ? "Checking connection…"
-                  : createAgent.isPending
-                    ? "Creating Bot…"
-                    : step === "endpoint" || (step === "about" && !custom)
-                      ? "Create Bot"
-                      : "Continue"
-              }
-            />
-          )}
-        </div>
+        {step !== "runtime" && (
+          <AstryxButton
+            className="bot-primary-action ml-auto max-w-full whitespace-normal rounded-md"
+            isDisabled={!canContinue}
+            isLoading={busy}
+            size="lg"
+            type="submit"
+            variant="primary"
+            label={
+              checking
+                ? "Checking connection…"
+                : busy
+                  ? createAgent.isSuccess
+                    ? "Setting up apps…"
+                    : "Creating Bot…"
+                  : step === "endpoint" || (step === "about" && !custom)
+                    ? "Create Bot"
+                    : "Continue"
+            }
+          />
+        )}
       </SheetFooter>
     </form>
   );
@@ -754,6 +793,7 @@ function AboutStep({
           <span className="font-normal text-muted-foreground">Optional</span>
         </FieldLabel>
         <Textarea
+          aria-describedby="new-bot-instructions-help"
           autoComplete="off"
           id="new-bot-instructions"
           maxLength={1000}
@@ -762,6 +802,10 @@ function AboutStep({
           rows={5}
           value={instructions}
         />
+        <FieldDescription id="new-bot-instructions-help">
+          A Bot hosted here gets general assistant instructions if you leave
+          this blank.
+        </FieldDescription>
       </Field>
       {personal ? (
         <BusinessComputerLink />
@@ -933,41 +977,18 @@ function IsolatedOption({
           onCheckedChange={(next) => onChange(next === true)}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <label
-              className={cn(
-                "font-medium text-sm",
-                reason === null ? "cursor-pointer" : "opacity-50",
-              )}
-              htmlFor="new-bot-isolated"
-            >
-              Isolated
-            </label>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    aria-label="What Isolated means"
-                    className="text-muted-foreground"
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <IconInfoCircle className="size-3.5" />
-                  </Button>
-                }
-              />
-              <TooltipContent className="block text-pretty">
-                {isolatedExplained(isPublic)}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <p
-            className="text-pretty text-muted-foreground text-xs"
-            id="new-bot-isolated-summary"
+          <label
+            className={cn(
+              "font-medium text-sm",
+              reason === null ? "cursor-pointer" : "opacity-50",
+            )}
+            htmlFor="new-bot-isolated"
           >
-            {reason ?? "A computer of its own, instead of sharing yours."}
-          </p>
+            Isolated
+          </label>
+          <FieldDescription id="new-bot-isolated-summary">
+            {reason ?? isolatedExplained(isPublic)}
+          </FieldDescription>
         </div>
       </div>
     </FieldSet>
@@ -987,8 +1008,21 @@ const OPTION_CLASSES =
  * new question rather than the control on the previous screen. The sheet body scrolls;
  * an inner scroller would give this list a second scrollbar.
  */
-function RuntimeStep({ onChoose }: { onChoose: (runtime: Runtime) => void }) {
+function RuntimeStep({
+  onChoose,
+  onQuery,
+  query,
+}: {
+  onChoose: (runtime: Runtime) => void;
+  onQuery: (query: string) => void;
+  query: string;
+}) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const term = query.trim().toLowerCase();
+  const frameworks = CONNECTION_OPTIONS.filter((harness) =>
+    `${harness.name} ${summaryFor(harness)}`.toLowerCase().includes(term),
+  );
   useEffect(() => heading.current?.focus(), []);
 
   return (
@@ -1001,7 +1035,40 @@ function RuntimeStep({ onChoose }: { onChoose: (runtime: Runtime) => void }) {
         Connect a custom agent
       </h2>
 
-      {CONNECTION_OPTIONS.map((harness) => (
+      <Field className="mb-2">
+        <FieldLabel htmlFor="new-bot-framework">Find a framework</FieldLabel>
+        <HStack gap={2}>
+          <Input
+            className="min-h-11 min-w-0 flex-1"
+            id="new-bot-framework"
+            onChange={(event) => onQuery(event.target.value)}
+            ref={search}
+            type="search"
+            value={query}
+          />
+          {query ? (
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                onQuery("");
+                search.current?.focus();
+              }}
+              type="button"
+              variant="ghost"
+            >
+              Clear
+            </Button>
+          ) : null}
+        </HStack>
+        {term ? (
+          <FieldDescription role="status">
+            {frameworks.length === 0
+              ? "No frameworks match this search."
+              : `${frameworks.length} matching ${frameworks.length === 1 ? "framework" : "frameworks"}`}
+          </FieldDescription>
+        ) : null}
+      </Field>
+      {frameworks.map((harness) => (
         <button
           className={OPTION_CLASSES}
           key={harness.id}

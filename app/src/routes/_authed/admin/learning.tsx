@@ -13,7 +13,8 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { NativeLearningHistory } from "@/components/admin/controls/native-learning-history";
 import {
   PeopleProposalsSection,
@@ -28,6 +29,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { LearnedSkillDialog } from "@/components/learning/learned-skill-dialog";
 import { ProposalDialog } from "@/components/learning/proposal-dialog";
 import { Button } from "@/components/ui/button";
@@ -44,6 +46,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { skillTitle } from "@/lib/learning/display";
 import {
@@ -381,11 +384,16 @@ function LegacyLearningPage() {
   const [draft, setDraft] = useState<LearningSettings | null>(null);
   const [selected, setSelected] = useState("");
   const [saved, setSaved] = useState(false);
+  const submitting = useRef(false);
+  const participationHeading = useRef<HTMLHeadingElement>(null);
   const overview = useQuery(
     learningOverviewQueryOptions(selected || undefined),
   );
   const delivery = useQuery(learningDeliveryQueryOptions(selected));
-  const settings = draft ?? settingsQuery.data;
+  const settings =
+    settingsQuery.data !== null && canKeepCachedRead(settingsQuery.error)
+      ? (draft ?? settingsQuery.data)
+      : undefined;
   // About what is saved, so it steps aside while an edit is in progress.
   const automaticNote =
     settingsQuery.data && !draft
@@ -399,7 +407,20 @@ function LegacyLearningPage() {
       setSaved(true);
       await queryClient.invalidateQueries({ queryKey: learningKeys.all });
     },
+    onSettled: () => {
+      submitting.current = false;
+    },
   });
+  const changed =
+    draft !== null &&
+    settingsQuery.data != null &&
+    JSON.stringify(withoutReviewKeys(draft)) !==
+      JSON.stringify(withoutReviewKeys(settingsQuery.data));
+  const canSave =
+    changed &&
+    settingsQuery.isSuccess &&
+    !settingsQuery.isFetching &&
+    !save.isPending;
   function change(next: LearningSettings) {
     setDraft(next);
     setSaved(false);
@@ -426,7 +447,7 @@ function LegacyLearningPage() {
       >
         <div className="grid gap-4">
           <label className="grid gap-2 text-sm" htmlFor="learning-roster-bot">
-            Show the container for
+            Review skills for
             {agents.error ? (
               /* Without the roster every option would read as its raw id; say the read failed
                  and offer the retry rather than naming Bots by their ids. */
@@ -605,18 +626,32 @@ function LegacyLearningPage() {
       {/* The review workflow first: it is what this page is opened for. Participation
           configures what new conversations use, and nothing there changes the lists below. */}
       <PageSection
+        headingRef={participationHeading}
         title="Participation"
         description="Container changes apply to new conversations. Existing ones keep their first container. Containers must already exist in the same project. Until you save here, OpenBot uses that project's openbot container."
       >
         {settingsQuery.isPending && (
-          <p role="status">Loading Learning settings…</p>
+          <ReadStatus kind="loading" message="Loading Learning settings…" />
         )}
         {settingsQuery.error && (
-          <SectionReadError
-            error={settingsQuery.error}
-            fallback="Couldn't load the learning settings."
+          <ReadError
+            description={
+              settings
+                ? changed
+                  ? "Your changes are still here. Retry before saving."
+                  : "Showing the last loaded settings. Retry before saving."
+                : undefined
+            }
+            focusAfterRetry={() => participationHeading.current}
+            message={
+              settings
+                ? "Couldn't refresh participation settings."
+                : "Couldn't load participation settings."
+            }
+            retry={settingsQuery.refetch}
+            retryBelow
+            retryLabel="Retry participation settings"
             retrying={settingsQuery.isFetching}
-            onRetry={() => void settingsQuery.refetch()}
           />
         )}
         {settings && (
@@ -624,104 +659,111 @@ function LegacyLearningPage() {
             className="grid gap-5"
             onSubmit={(event) => {
               event.preventDefault();
+              if (!canSave || submitting.current) return;
+              submitting.current = true;
               save.mutate(withoutReviewKeys(settings));
             }}
           >
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={settings.enabled}
-                onChange={(event) =>
-                  change({ ...settings, enabled: event.target.checked })
+            <fieldset className="grid min-w-0 gap-5" disabled={save.isPending}>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={settings.enabled}
+                  onChange={(event) =>
+                    change({ ...settings, enabled: event.target.checked })
+                  }
+                />
+                Turn on automatic learning and skill delivery
+              </label>
+              <TargetFields
+                label="Default"
+                target={settings.defaultTarget}
+                onChange={(defaultTarget) =>
+                  change({ ...settings, defaultTarget })
                 }
               />
-              Turn on automatic learning and skill delivery
-            </label>
-            <TargetFields
-              label="Default"
-              target={settings.defaultTarget}
-              onChange={(defaultTarget) =>
-                change({ ...settings, defaultTarget })
-              }
-            />
-            {automaticNote && (
-              <p role="status" className="text-sm">
-                {automaticNote}
-              </p>
-            )}
-            {!draft && automatic.data?.state === "absent" && (
-              <ContainerSetup automatic={automatic.data} />
-            )}
-            <p className="text-muted-foreground text-sm">
-              With no default, Bots without their own container are left out.
-              IDs are 1 to 64 lowercase letters, numbers and single hyphens.
-              Leave revision empty to use the latest published skills.
-            </p>
-            <fieldset className="grid gap-4">
-              <legend className="mb-3 font-medium">
-                Per-Bot participation
-              </legend>
-              {(agents.error || hiddenAgents.error) && (
-                <p role="alert" className="text-destructive">
-                  Couldn't load the Bot list. Saved settings for each Bot are
-                  below.
+              {automaticNote && (
+                <p role="status" className="text-sm">
+                  {automaticNote}
                 </p>
               )}
-              {botIds.map((id) => {
-                const override = settings.agents[id];
-                const mode = !Object.hasOwn(settings.agents, id)
-                  ? "inherit"
-                  : override === null
-                    ? "exclude"
-                    : "container";
-                return (
-                  <div key={id} className="grid gap-3 rounded-lg border p-4">
-                    <label className="grid gap-2 text-sm font-medium">
-                      {nameFor(id)}
-                      <select
-                        className={selectClass}
-                        aria-label={`${nameFor(id)} participation`}
-                        value={mode}
-                        onChange={(event) => {
-                          const mappings = { ...settings.agents };
-                          if (event.target.value === "inherit")
-                            delete mappings[id];
-                          else
-                            mappings[id] =
-                              event.target.value === "exclude"
-                                ? null
-                                : {
-                                    containerId:
-                                      settings.defaultTarget?.containerId ?? "",
-                                  };
-                          change({ ...settings, agents: mappings });
-                        }}
-                      >
-                        <option value="inherit">Use deployment default</option>
-                        <option value="exclude">Leave out of Learning</option>
-                        <option value="container">
-                          Use a specific container
-                        </option>
-                      </select>
-                    </label>
-                    {mode === "container" && (
-                      <TargetFields
-                        label={nameFor(id)}
-                        target={override ?? null}
-                        onChange={(target) =>
-                          change({
-                            ...settings,
-                            agents: {
-                              ...settings.agents,
-                              [id]: target ?? { containerId: "" },
-                            },
-                          })
-                        }
-                      />
-                    )}
-                  </div>
-                );
-              })}
+              {!draft && automatic.data?.state === "absent" && (
+                <ContainerSetup automatic={automatic.data} />
+              )}
+              <p className="text-muted-foreground text-sm">
+                With no default, Bots without their own container are left out.
+                IDs are 1 to 64 lowercase letters, numbers and single hyphens.
+                Leave revision empty to use the latest published skills.
+              </p>
+              <fieldset className="grid gap-4">
+                <legend className="mb-3 font-medium">
+                  Per-Bot participation
+                </legend>
+                {(agents.error || hiddenAgents.error) && (
+                  <p role="alert" className="text-destructive">
+                    Couldn't load the Bot list. Saved settings for each Bot are
+                    below.
+                  </p>
+                )}
+                {botIds.map((id) => {
+                  const override = settings.agents[id];
+                  const mode = !Object.hasOwn(settings.agents, id)
+                    ? "inherit"
+                    : override === null
+                      ? "exclude"
+                      : "container";
+                  return (
+                    <div key={id} className="grid gap-3 rounded-lg border p-4">
+                      <label className="grid gap-2 text-sm font-medium">
+                        {nameFor(id)}
+                        <select
+                          className={selectClass}
+                          aria-label={`${nameFor(id)} participation`}
+                          value={mode}
+                          onChange={(event) => {
+                            const mappings = { ...settings.agents };
+                            if (event.target.value === "inherit")
+                              delete mappings[id];
+                            else
+                              mappings[id] =
+                                event.target.value === "exclude"
+                                  ? null
+                                  : {
+                                      containerId:
+                                        settings.defaultTarget?.containerId ??
+                                        "",
+                                    };
+                            change({ ...settings, agents: mappings });
+                          }}
+                        >
+                          <option value="inherit">
+                            Use deployment default
+                          </option>
+                          <option value="exclude">Leave out of Learning</option>
+                          <option value="container">
+                            Use a specific container
+                          </option>
+                        </select>
+                      </label>
+                      {mode === "container" && (
+                        <TargetFields
+                          label={nameFor(id)}
+                          target={override ?? null}
+                          onChange={(target) =>
+                            change({
+                              ...settings,
+                              agents: {
+                                ...settings.agents,
+                                [id]: target ?? { containerId: "" },
+                              },
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </fieldset>
             </fieldset>
             <div className="flex items-center justify-end gap-3">
               {saved && (
@@ -729,7 +771,7 @@ function LegacyLearningPage() {
                   Settings saved.
                 </p>
               )}
-              <Button type="submit" disabled={save.isPending}>
+              <Button type="submit" disabled={!canSave}>
                 {save.isPending ? "Saving…" : "Save Learning settings"}
               </Button>
             </div>
@@ -742,6 +784,13 @@ function LegacyLearningPage() {
           </form>
         )}
       </PageSection>
+      <DraftLeaveConfirmation
+        description="Your unsaved participation settings will be lost if you leave."
+        hasDraft={Boolean(settings) && changed}
+        saving={save.isPending}
+        submitting={submitting}
+        title="Leave without saving?"
+      />
       <AnalysisRuns agentId={selected || undefined} />
       <PublishedSkills agentId={selected || undefined} />
       <WhoApprovesSection />

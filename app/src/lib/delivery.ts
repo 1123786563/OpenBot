@@ -109,7 +109,17 @@ export function removePushDeviceMutationOptions(queryClient: QueryClient) {
 export function removeDeliveryBindingMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: removeDeliveryBinding,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: deliveryKey }),
+    onSuccess: (_, id) => {
+      queryClient.setQueryData<Reachability>(
+        deliveryKey,
+        (previous) =>
+          previous && {
+            ...previous,
+            bindings: previous.bindings.filter((binding) => binding.id !== id),
+          },
+      );
+      return queryClient.invalidateQueries({ queryKey: deliveryKey });
+    },
   });
 }
 

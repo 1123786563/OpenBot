@@ -176,3 +176,37 @@ test("every label and value on This computer is in plain words, and the technica
     queryClient.clear();
   }
 });
+
+test("reviewing diagnostics leaves the clipboard alone and copies the reviewed snapshot", async () => {
+  const copies: string[] = [];
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: async (text: string) => {
+        copies.push(text);
+      },
+    },
+  });
+  status = RUNNING;
+  const Page = ThisComputerRoute.options.component as ComponentType;
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <Page />
+    </QueryClientProvider>,
+  );
+  await userEvent.click(
+    await view.findByRole("button", { name: "Review diagnostics" }),
+  );
+  const snapshot = view.getByRole("textbox", {
+    name: "Diagnostic snapshot",
+  });
+  if (!(snapshot instanceof HTMLTextAreaElement)) {
+    throw new Error("Expected the diagnostic snapshot to be a text area.");
+  }
+  expect(snapshot.readOnly).toBe(true);
+  expect(snapshot.value).toContain(RUNNING.root);
+  expect(copies).toEqual([]);
+  await userEvent.click(view.getByRole("button", { name: "Copy diagnostics" }));
+  expect(copies).toEqual([snapshot.value]);
+  expect(await view.findByText("Diagnostics copied.")).toBeTruthy();
+});

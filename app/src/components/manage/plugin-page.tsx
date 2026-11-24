@@ -8,10 +8,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ASK_FIRST_TITLE } from "@/components/approvals/ask-first-copy";
 import {
-  ConnectionAction,
   ConnectionDialogContent,
   ConnectionPage,
 } from "@/components/connections/connection-surface";
@@ -20,6 +19,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { AccessRequestsSection } from "@/components/plugins/access-requests";
 import { AccountModeDialog } from "@/components/plugins/account-mode-dialog";
 import {
@@ -54,6 +54,7 @@ import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { grantSummary } from "@/lib/agents/grant-summary";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { ClientError, canKeepCachedRead } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { storeMcpToken } from "@/lib/credentials/mutations";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -169,8 +170,12 @@ function ToolInWords({
   const { label, summary } = toolInWords(serverId, tool);
   return (
     <>
-      <ItemTitle>{label}</ItemTitle>
-      {summary ? <ItemDescription>{summary}</ItemDescription> : null}
+      <ItemTitle className="block w-auto wrap-anywhere">{label}</ItemTitle>
+      {summary ? (
+        <ItemDescription className="line-clamp-none wrap-anywhere">
+          {summary}
+        </ItemDescription>
+      ) : null}
     </>
   );
 }
@@ -244,16 +249,25 @@ export function connectionKindFor(
  * buttons — somebody reading with a screen reader has to be told the controls are gone and why,
  * not left to notice their absence.
  */
-function ConnectionStateUnreadable() {
-  const paths = useManagePaths();
+function ConnectionStateUnreadable({
+  title,
+  retry,
+  retrying,
+}: {
+  title: string;
+  retry: () => Promise<unknown>;
+  retrying: boolean;
+}) {
   return (
     <Item size="sm">
       <ItemContent>
-        <ItemTitle>Your account</ItemTitle>
-        <ItemDescription role="alert">
-          Couldn't load whether you've connected an account here. Reload the
-          page, or check {paths.deploymentName}'s logs if it keeps happening.
-        </ItemDescription>
+        <ItemTitle>{title}</ItemTitle>
+        <ReadError
+          message="Couldn't check the account connection."
+          retry={retry}
+          retrying={retrying}
+          retryBelow
+        />
       </ItemContent>
     </Item>
   );
@@ -275,6 +289,7 @@ export function PluginPage({
   const alwaysOn = key === ALWAYS_ON_APP;
   const queryClient = useQueryClient();
   const plugins = useQuery(pluginsPageQueryOptions());
+  const heading = useRef<HTMLHeadingElement>(null);
   const provider = pluginsProvider(plugins.data);
   /*
    * The administrator's OWN connections, not the deployment's.
@@ -285,9 +300,13 @@ export function PluginPage({
    * only ever returns the caller's, so this cannot become a list of who has connected what.
    */
   const connections = useQuery(connectionsQueryOptions());
-  const { data: agents } = useQuery(agentListQueryOptions());
+  const { data: agents, isSuccess: visibleRosterLoaded } = useQuery(
+    agentListQueryOptions(),
+  );
   /* The ones this person has hidden, so a grant one of them holds is still on this page. */
-  const { data: hiddenAgents } = useQuery(agentListQueryOptions(true));
+  const { data: hiddenAgents, isSuccess: hiddenRosterLoaded } = useQuery(
+    agentListQueryOptions(true),
+  );
   /*
    * The row itself rather than whether there is one, because the brokered row below wants what the
    * last re-check found and that is written on this same row. Asking a second time for it would be
@@ -367,10 +386,7 @@ export function PluginPage({
     ...registerOAuthClientMutationOptions(queryClient),
     ...report,
   });
-  const refresh = useMutation({
-    ...refreshPluginServerMutationOptions(queryClient),
-    ...report,
-  });
+  const refresh = useMutation(refreshPluginServerMutationOptions(queryClient));
   const ownerGrants = useMutation({
     ...setOwnerGrantsMutationOptions(queryClient),
     ...report,
@@ -463,6 +479,12 @@ export function PluginPage({
 
   const auth = connectionKindFor(server, entry?.auth);
   const title = entry?.title ?? server?.title ?? key;
+  const toolsProblem =
+    refresh.error instanceof ClientError && refresh.error.status === 409
+      ? refresh.error.message
+      : refresh.isError
+        ? "Couldn't refresh tools. Try again."
+        : toolsListError(server?.lastError ?? null, { title, personal });
 
   /* Bound once because the brokered row below is told it twice — once inside the whole
      disconnected sentence and once on its own — and two copies of it would drift. */
@@ -588,6 +610,7 @@ export function PluginPage({
    * before it landed and the screen behind is now stale about them.
    */
   const grantSelected = async () => {
+    if (plugins.isError) return;
     setError(null);
     const total = selectedBots.size * selectedRefs.size;
     setGranting({ done: 0, total });
@@ -609,31 +632,45 @@ export function PluginPage({
     }
   };
 
-  /*
-   * Nothing rather than a placeholder, so no sentence asserts anything while the fetch is open —
-   * AND BOTH READS ARE WAITED FOR. `recorded`, `verified`, `verifiedAt`, `probe` and `checkable`
-   * all come off the connections read and this gated on `plugins` alone, so a connections read
-   * still in flight drew the brokered row with the whole of its state defaulted to "you have never
-   * connected this". The personal screen had the identical gap; see its own note.
-   */
-  if (plugins.isPending || connections.isPending) {
+  // The catalogue can identify the app while the account read still gates account actions.
+  const loadingApp = plugins.isPending && plugins.errorUpdateCount === 0;
+  const checkingAccount =
+    connections.isPending &&
+    Boolean(entry || server) &&
+    canKeepCachedRead(plugins.error);
+  if (loadingApp || checkingAccount) {
     return (
-      <ConnectionPage title={appPageTitle(key)}>
-        <div aria-busy="true" aria-label="Loading" role="status">
+      <ConnectionPage
+        backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        description={
+          checkingAccount ? (entry?.summary ?? server?.summary) : undefined
+        }
+        headingRef={heading}
+        title={checkingAccount ? title : appPageTitle(key)}
+      >
+        <ReadStatus
+          kind="loading"
+          message={
+            loadingApp
+              ? "Loading app details…"
+              : "Checking the account connection…"
+          }
+        />
+        <section aria-hidden="true">
           <PageRows>
             {LOADING_ROWS.map((key, index) => (
-              <div key={key}>
+              <React.Fragment key={key}>
+                {index > 0 ? <Separator /> : null}
                 <Item size="sm">
                   <ItemContent className="gap-1.5">
                     <Skeleton className="h-3.5 w-40" />
                     <Skeleton className="h-3 w-64" />
                   </ItemContent>
                 </Item>
-                {index !== LOADING_ROWS.length - 1 && <Separator />}
-              </div>
+              </React.Fragment>
             ))}
           </PageRows>
-        </div>
+        </section>
       </ConnectionPage>
     );
   }
@@ -645,30 +682,26 @@ export function PluginPage({
    * is no evidence for the first. Nothing on this page survives the failure: the title, the tools
    * and the grants are all that one response.
    */
-  if (!plugins.data) {
+  if (
+    !plugins.data ||
+    !canKeepCachedRead(plugins.error) ||
+    (plugins.isError && !entry && !server)
+  ) {
     return (
       <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        headingRef={heading}
         title={appPageTitle(key)}
       >
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            {personal ? "Couldn't load your apps." : "Couldn't load plugins."}
-          </p>
-          <ConnectionAction
-            disabled={plugins.isFetching || connections.isFetching}
-            onClick={() => {
-              void plugins.refetch();
-              void connections.refetch();
-            }}
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching || connections.isFetching
-              ? "Retrying…"
-              : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message={
+            personal ? "Couldn't load your apps." : "Couldn't load plugins."
+          }
+          retry={() => Promise.all([plugins.refetch(), connections.refetch()])}
+          retrying={plugins.isFetching || connections.isFetching}
+          retryBelow
+        />
       </ConnectionPage>
     );
   }
@@ -708,8 +741,20 @@ export function PluginPage({
     <ConnectionPage
       backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
       description={entry?.summary ?? server?.summary}
+      headingRef={heading}
       title={title}
     >
+      {plugins.isError ? (
+        <ReadError
+          description="Showing the last loaded plugin details."
+          focusAfterRetry={() => heading.current}
+          message="Couldn't refresh plugin details."
+          retry={plugins.refetch}
+          retryBelow
+          retryLabel="Retry plugin details"
+          retrying={plugins.isFetching}
+        />
+      ) : null}
       {error ? (
         <p className="break-words text-destructive text-sm" role="alert">
           {error}
@@ -1143,7 +1188,11 @@ export function PluginPage({
               <>
                 <Separator />
                 {connectionsUnreadable ? (
-                  <ConnectionStateUnreadable />
+                  <ConnectionStateUnreadable
+                    retry={connections.refetch}
+                    retrying={connections.isFetching}
+                    title={shared ? "Team account" : "Your account"}
+                  />
                 ) : server?.sharedOnly && !shared ? (
                   /*
                    * NO PERSONAL CONNECT FOR AN APP THAT CAN ONLY HOLD A SHARED ACCOUNT. It signs in
@@ -1165,7 +1214,7 @@ export function PluginPage({
                     edition={paths.edition}
                     connectedDescription={`Connected${sharedConnection?.displayName ? ` as ${sharedConnection.displayName}` : ""}${sharedConnection?.connectedBy ? ` by ${sharedConnection.connectedBy}` : ""}. Every Bot with these tools acts as this account.`}
                     disconnectedDescription="No team account is connected. Bots with these tools are refused."
-                    heading="Team account"
+                    sharedAccount
                     notice="Sign in as the team account, not your own."
                     provider={provider}
                     title={title}
@@ -1209,7 +1258,11 @@ export function PluginPage({
               <>
                 <Separator />
                 {connectionsUnreadable ? (
-                  <ConnectionStateUnreadable />
+                  <ConnectionStateUnreadable
+                    retry={connections.refetch}
+                    retrying={connections.isFetching}
+                    title="Your account"
+                  />
                 ) : (
                   <Item size="sm">
                     <ItemContent>
@@ -1361,6 +1414,7 @@ export function PluginPage({
           action={
             <div className="flex gap-1.5">
               <Button
+                className="min-h-11"
                 onClick={() => refresh.mutate(key)}
                 size="sm"
                 type="button"
@@ -1377,11 +1431,13 @@ export function PluginPage({
               {/* Not in the personal edition, where every Bot has every tool already. */}
               {!personal && server.tools.length > 0 && bots.length > 0 ? (
                 <Button
+                  className="min-h-11"
                   onClick={() => {
                     setSelectedBots(new Set());
                     setSelectedRefs(new Set());
                     setDialog("grant");
                   }}
+                  disabled={plugins.isError}
                   size="sm"
                   type="button"
                   variant="outline"
@@ -1403,10 +1459,21 @@ export function PluginPage({
             names={server.skippedTools ?? []}
             serverId={personal ? key : undefined}
           />
+          {toolsProblem && server.tools.length > 0 ? (
+            <section className="mt-3 space-y-1 text-sm" role="alert">
+              <p className="break-words text-destructive">{toolsProblem}</p>
+              <p className="text-muted-foreground">
+                Showing tools from the last successful refresh.
+              </p>
+            </section>
+          ) : refresh.isSuccess && !toolsProblem && !plugins.isError ? (
+            <p className="mt-3 text-muted-foreground text-sm" role="status">
+              Tools refreshed.
+            </p>
+          ) : null}
           {server.tools.length === 0 ? (
             <PageEmpty icon={IconTool} title="No tools listed">
-              {toolsListError(server.lastError, { title, personal }) ??
-                "Refresh tools to check again."}
+              {toolsProblem ?? "Refresh tools to check again."}
             </PageEmpty>
           ) : (
             <PageRows>
@@ -1422,19 +1489,21 @@ export function PluginPage({
                     }
                     size="sm"
                   >
-                    <ItemContent>
+                    <ItemContent className="min-w-0">
                       {personal ? (
                         <ToolInWords serverId={key} tool={tool} />
                       ) : (
                         <>
-                          <ItemTitle className="font-mono text-xs">
+                          <ItemTitle className="block w-auto wrap-anywhere font-mono text-sm">
                             {tool.name}
                           </ItemTitle>
-                          <ItemDescription>{tool.description}</ItemDescription>
+                          <ItemDescription className="line-clamp-none wrap-anywhere">
+                            {tool.description}
+                          </ItemDescription>
                         </>
                       )}
                     </ItemContent>
-                    <ItemActions>
+                    <ItemActions className="flex-wrap max-sm:basis-full">
                       {/*
                        * How many Bots hold it, not which. The names were here as a chip each and
                        * turned every row into a wrapping cluster of controls — twenty-four of them
@@ -1445,7 +1514,11 @@ export function PluginPage({
                        */}
                       {personal ? null : (
                         <span className="text-muted-foreground text-xs">
-                          {grantSummary(tool.grantedTo.length, bots.length)}
+                          {visibleRosterLoaded && hiddenRosterLoaded
+                            ? grantSummary(tool.grantedTo.length, bots.length)
+                            : tool.grantedTo.length === 1
+                              ? "1 Bot granted"
+                              : `${tool.grantedTo.length} Bots granted`}
                         </span>
                       )}
                       {/*
@@ -1459,7 +1532,9 @@ export function PluginPage({
                             : "text-muted-foreground text-xs"
                         }
                       >
-                        {tool.effect === "write" ? "Changes things" : "Reads"}
+                        {tool.effect === "write"
+                          ? "Makes changes"
+                          : "Read only"}
                       </span>
                       {personal ? null : (
                         <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -1483,7 +1558,7 @@ export function PluginPage({
            */}
           {!personal && server.tools.length > 0 && bots.length > 0 ? (
             <>
-              <p className="mt-8 font-medium text-sm">By Bot</p>
+              <h3 className="mt-8 font-medium text-sm">By Bot</h3>
               <PageRows>
                 {bots.map((bot, index) => (
                   <React.Fragment key={bot.id}>
@@ -1849,6 +1924,7 @@ export function PluginPage({
               </Button>
               <Button
                 disabled={
+                  plugins.isError ||
                   granting !== null ||
                   selectedBots.size === 0 ||
                   selectedRefs.size === 0

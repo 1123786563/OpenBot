@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, canKeepCachedRead, client } from "@/lib/client";
 
 export type CredentialStatus = {
   id: string;
@@ -18,10 +18,20 @@ export const credentialKeys = {
 export function credentialListQueryOptions() {
   return queryOptions({
     queryKey: credentialKeys.list(),
-    queryFn: async (): Promise<CredentialStatus[]> => {
-      return client("/api/admin/credentials", "credentials", {
-        fallback: "Could not load credentials",
-      });
+    retry: (failures, error) => failures < 1 && canKeepCachedRead(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<CredentialStatus[]> => {
+      try {
+        return await client("/api/admin/credentials", "credentials", {
+          fallback: "Could not load credentials",
+        });
+      } catch (error) {
+        if (error instanceof ClientError && !canKeepCachedRead(error))
+          cache.setQueryData(queryKey, []);
+        throw error;
+      }
     },
   });
 }

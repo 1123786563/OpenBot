@@ -220,6 +220,23 @@ const tile = (view: ReturnType<typeof draw>["view"], key: string) =>
   view.getByTestId(`account-${key}`);
 
 describe("Connections in the personal edition", () => {
+  test("Routines is searchable as a built-in tool without an account tile", async () => {
+    const { view, user } = draw("personal");
+    const heading = await view.findByRole("heading", {
+      name: "Built-in tools",
+    });
+    const group = heading.closest("section");
+    if (!group) throw new Error("Expected a section for built-in tools.");
+    const routines = within(group).getByRole("link", { name: /^Routines/ });
+    expect(routines.getAttribute("href")).toBe("/connections/routines");
+    expect(view.queryByTestId("account-routines")).toBeNull();
+    await user.type(
+      await view.findByRole("textbox", { name: "Search connections" }),
+      "routines",
+    );
+    expect(view.queryByText(/Nothing matches/)).toBeNull();
+    expect(view.queryByTestId("account-notion")).toBeNull();
+  });
   test("is one searchable list of every app that connects in one press, with no apps-versus-accounts split", async () => {
     const { view } = draw("personal");
     await view.findByTestId("account-notion");
@@ -336,7 +353,7 @@ describe("an app under Connections in the personal edition", () => {
     const { view } = draw("personal", "/connections/routines");
     expect(
       await view.findByText(
-        "Routines are work your Bots do on a schedule. Every Bot can set one up for you.",
+        "Schedule work with the built-in Routines tool. Every Bot can set up a routine for you.",
       ),
     ).toBeTruthy();
     expect(

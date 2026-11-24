@@ -332,15 +332,33 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
   const dropped = quoted(sql, /DROP TABLE (?:IF EXISTS )?"([^"]+)"/gi).map(
     ([table]) => table!,
   );
-  /*
-   * The third capture is everything the statement says after the name — the type, and whatever
-   * `DEFAULT` and `NOT NULL` follow it. See {@link declared}: the name alone says a column arrived
-   * and nothing about what arrived.
-   */
-  const columnsAdded = quoted(
-    sql,
-    /ALTER TABLE "([^"]+)" ADD COLUMN (?:IF NOT EXISTS )?"([^"]+)"([^;]*)/gi,
-  );
+  // An ALTER TABLE can add several columns. Keep each full declaration so
+  // declared() can read its type, default and nullability.
+  const columnsAdded = Array.from(
+    sql.matchAll(/ALTER TABLE\s+"([^"]+)"([^;]*)/gi),
+  ).flatMap((statement) => {
+    const [, table, actions] = statement;
+    return Array.from(
+      actions!.matchAll(
+        /(?:^|,)\s*ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"([^"]+)"([\s\S]*?)(?=,\s*(?:ADD|ALTER|DROP|RENAME)\b|$)/gi,
+      ),
+      (action) => ({
+        table,
+        name: action[1]!,
+        declaration: action[2]!,
+        index:
+          statement.index +
+          statement[0].length -
+          actions!.length +
+          action.index,
+      }),
+    );
+  });
+  const nullabilityChanges = [
+    ...sql.matchAll(
+      /ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" (SET|DROP) NOT NULL/gi,
+    ),
+  ];
   const columnsDropped = quoted(
     sql,
     /ALTER TABLE "([^"]+)" DROP COLUMN (?:IF EXISTS )?"([^"]+)"/gi,
@@ -386,21 +404,26 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
   for (const table of [...is].filter((name) => was.has(name))) {
     const columnsWas = columnNames(before, table);
     const columnsIs = columnNames(after, table);
-    const named = (list: string[][], column: string) =>
-      list.some(([on, which]) => on === table && which === column);
-
     for (const column of columnsIs)
-      if (!columnsWas.has(column) && !named(columnsAdded, column))
+      if (
+        !columnsWas.has(column) &&
+        !columnsAdded.some(
+          (added) => added.table === table && added.name === column,
+        )
+      )
         problems.push(
           `the snapshot adds "${table}"."${column}", the migration never adds it`,
         );
     for (const column of columnsWas)
-      if (!columnsIs.has(column) && !named(columnsDropped, column))
+      if (
+        !columnsIs.has(column) &&
+        !columnsDropped.some(([on, which]) => on === table && which === column)
+      )
         problems.push(
           `the snapshot drops "${table}"."${column}", the migration never drops it`,
         );
-    for (const [on, column] of columnsAdded)
-      if (on === table && !(columnsIs.has(column!) && !columnsWas.has(column!)))
+    for (const { table: on, name: column } of columnsAdded)
+      if (on === table && !(columnsIs.has(column) && !columnsWas.has(column)))
         problems.push(
           `the migration adds "${table}"."${column}", the snapshot does not add it`,
         );
@@ -415,18 +438,30 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
      * the snapshot really holds are asked — one it does not is already reported above, and asking
      * twice would name a single mistake in two sentences.
      */
-    for (const [on, column, tail] of columnsAdded) {
+    for (const {
+      table: on,
+      name: column,
+      declaration,
+      index,
+    } of columnsAdded) {
       if (on !== table) continue;
-      const added = columnIn(after, table, column!);
+      const added = columnIn(after, table, column);
       if (!added) continue;
-      const statement = declared(tail ?? "");
+      const statement = declared(declaration);
       if (added.type !== statement.type)
         problems.push(
           `the migration adds "${table}"."${column}" as ${statement.type}, the snapshot calls it ${added.type}`,
         );
-      if ((added.notNull ?? false) !== statement.notNull)
+      const lastChange = nullabilityChanges.findLast(
+        (change) =>
+          change[1] === table && change[2] === column && change.index > index,
+      );
+      const notNull = lastChange
+        ? lastChange[3]?.toUpperCase() === "SET"
+        : statement.notNull;
+      if ((added.notNull ?? false) !== notNull)
         problems.push(
-          `the migration adds "${table}"."${column}" ${statement.notNull ? "NOT NULL" : "nullable"}, the snapshot says the opposite`,
+          `the migration leaves "${table}"."${column}" ${notNull ? "NOT NULL" : "nullable"}, the snapshot says the opposite`,
         );
     }
 
@@ -511,13 +546,36 @@ describe("the migration journal", () => {
       [102, "0091_skill_market_version_disablements"],
       [103, "0101_intelligence_deletion_cleanup"],
       [104, "0092_skill_market_runs"],
-      [105, "0093_corsair_slack_personal"],
-      [106, "0094_corsair_slack_shared"],
-      [107, "0095_corsair_shared_storage"],
-      [108, "0096_corsair_revocation"],
-      [109, "0102_background_conversation_runs"],
-      [110, "0097_bifrost_market_reviews"],
-      [111, "0098_skill_market_equivalences"],
+      [105, "0093_personal_saas_entry"],
+      [106, "0094_personal_saas_assistant_bot"],
+      [107, "0095_personal_saas_native_codes"],
+      [108, "0096_personal_saas_57_integration_grants"],
+      [109, "0097_personal_saas_account_cutoff"],
+      [110, "0098_personal_workspace_suspensions"],
+      [111, "0099_personal_saas_67_support_access"],
+      [112, "0100_personal_work_recovery"],
+      [113, "0101_personal_saas_automation_resume"],
+      [114, "0102_personal_workspace_closure"],
+      [115, "0103_personal_workspace_cleanup"],
+      [116, "0104_personal_intelligence_cleanup"],
+      [117, "0105_corsair_slack_personal"],
+      [118, "0106_corsair_slack_shared"],
+      [119, "0107_corsair_shared_storage"],
+      [120, "0108_corsair_revocation"],
+      [121, "0102_background_conversation_runs"],
+      [122, "0109_personal_workspace_reprovision"],
+      [123, "0110_test_credit"],
+      [124, "0111_test_credit_reconciliation"],
+      [125, "0112_test_credit_cutoff_index"],
+      [126, "0113_test_credit_one_time_grants"],
+      [127, "0114_personal_workspace_cleanup_jsonb"],
+      [128, "0115_weknora_external_spending"],
+      [129, "0116_test_credit_embedding_replay"],
+      [130, "0117_bifrost_market_reviews"],
+      [131, "0118_skill_market_equivalences"],
+      [132, "0112_direct_chat_skill_shares"],
+      [133, "0113_direct_chat_dispatched_skill_versions"],
+      [134, "0119_approval_team_rule_saves"],
     ]);
     const mislabelled = entries
       .filter((entry, index) => {

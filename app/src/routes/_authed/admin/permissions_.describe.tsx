@@ -1,11 +1,12 @@
 import { HStack } from "@astryxdesign/core/Stack";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   ChangeRows,
   PermissionsPreview,
 } from "@/components/admin/controls/describe-capabilities";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { GovernancePage } from "@/components/astryx-pilot/governance";
 import { DescribeField } from "@/components/boundaries/describe-rule";
 import { ReadingStatus } from "@/components/boundaries/rule-reading";
@@ -59,21 +60,31 @@ function DescribePermissionsPage() {
   } | null>(null);
   const [description, setDescription] = useState("");
   const [writing, setWriting] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  const impact = useRef<HTMLElement>(null);
+  const undo = useRef<HTMLButtonElement>(null);
+  const restoredRow = useRef<number | null>(null);
   const submitting = useRef(false);
   const hasDraft = description.trim() !== "" || written !== null;
-  useBlocker({
-    enableBeforeUnload: hasDraft,
-    shouldBlockFn: ({ current, next }) =>
-      hasDraft &&
-      current.pathname !== next.pathname &&
-      !window.confirm("Leave without saving your permission changes?"),
-  });
   const descriptionChanged =
     written !== null && written.text !== description.trim();
+  const showDraft = written !== null && !descriptionChanged && !writing;
+
+  useLayoutEffect(() => {
+    if (removed) undo.current?.focus();
+    if (restoredRow.current !== null) {
+      form.current
+        ?.querySelector<HTMLButtonElement>(
+          `[data-permission-change="${restoredRow.current}"]`,
+        )
+        ?.focus();
+      restoredRow.current = null;
+    }
+  }, [removed]);
 
   const preview = useQuery({
     ...capabilityChangesPreviewQueryOptions(changes),
-    enabled: !descriptionChanged && changes.length > 0,
+    enabled: showDraft && changes.length > 0,
   });
   const current =
     preview.isSuccess && preview.fetchStatus === "idle" ? preview.data : null;
@@ -118,6 +129,7 @@ function DescribePermissionsPage() {
     >
       <form
         noValidate
+        ref={form}
         onSubmit={(event) => {
           event.preventDefault();
           saveChanges();
@@ -127,12 +139,14 @@ function DescribePermissionsPage() {
           footer={
             <>
               <Button
+                className="min-h-12"
+                disabled={save.isPending}
                 render={(props) => <Link {...props} to="/admin/permissions" />}
                 variant="outline"
               >
                 Cancel
               </Button>
-              <Button disabled={!ready} type="submit">
+              <Button className="min-h-12" disabled={!ready} type="submit">
                 {save.isPending ? "Saving…" : "Save changes"}
               </Button>
             </>
@@ -142,12 +156,15 @@ function DescribePermissionsPage() {
             <DescribeField
               action="Write changes"
               disabled={save.isPending}
-              description="Say in a sentence who may or may not do something, and your model writes the changes from this OpenBot's roles and groups. A second reading that never sees your words says what the changes do."
+              description="Describe what everyone, a role, or a group should be allowed or blocked from doing. You’ll review the proposed changes and who they affect."
               id="permissions-english"
+              example="Contractors can't use their own computer."
               label="Describe the change"
-              onTextChange={setDescription}
+              onTextChange={(text) => {
+                if (save.isError) save.reset();
+                setDescription(text);
+              }}
               onWritingChange={setWriting}
-              placeholder="Contractors can't use their own computer"
               text={description}
               write={async (described) => {
                 const translation = await translateCapabilityChanges(described);
@@ -158,20 +175,16 @@ function DescribePermissionsPage() {
                 return null;
               }}
             />
-            {descriptionChanged ? (
+            {descriptionChanged && !writing ? (
               <ReadStatus
                 kind="loading"
                 message="Your description changed. Choose Write changes to update the draft before saving."
               />
             ) : null}
-            {written ? (
+            {showDraft && !edited ? (
               <ReadingStatus
                 check={written.check}
-                edited={
-                  edited
-                    ? "You've removed a change since they were written. The check and the reading above are for the written changes, not your edit."
-                    : null
-                }
+                edited={null}
                 explanation={written.explanation}
                 failed={
                   // No changes says so itself, with the model's reason.
@@ -184,13 +197,24 @@ function DescribePermissionsPage() {
                 warning={written.warning}
               />
             ) : null}
-            {changes.length > 0 ? (
+            {showDraft && changes.length > 0 ? (
+              <Button
+                className="min-h-12 self-start"
+                onClick={() => impact.current?.focus()}
+                type="button"
+                variant="outline"
+              >
+                Review impact
+              </Button>
+            ) : null}
+            {showDraft && changes.length > 0 ? (
               <FieldSet
                 disabled={writing || save.isPending || descriptionChanged}
               >
                 <ChangeRows
                   changes={changes}
                   onRemove={(index) => {
+                    if (save.isError) save.reset();
                     setRemoved({ index, change: changes[index] });
                     setChanges(changes.filter((_, at) => at !== index));
                   }}
@@ -201,15 +225,19 @@ function DescribePermissionsPage() {
                 />
               </FieldSet>
             ) : null}
-            {removed ? (
+            {showDraft && removed ? (
               <HStack gap={3} vAlign="center" wrap="wrap">
                 <p className="text-muted-foreground text-sm" role="status">
-                  Removed one change.
+                  {changes.length > 0
+                    ? "Change removed. Review the updated impact before saving."
+                    : "There are no changes to save. Undo the last removal or write changes again."}
                 </p>
                 <Button
                   disabled={writing || save.isPending || descriptionChanged}
                   onClick={() => {
                     const at = Math.min(removed.index, changes.length);
+                    if (save.isError) save.reset();
+                    restoredRow.current = at + 1;
                     setChanges([
                       ...changes.slice(0, at),
                       removed.change,
@@ -218,6 +246,8 @@ function DescribePermissionsPage() {
                     setRemoved(null);
                   }}
                   size="sm"
+                  className="min-h-12"
+                  ref={undo}
                   type="button"
                   variant="outline"
                 >
@@ -225,14 +255,21 @@ function DescribePermissionsPage() {
                 </Button>
               </HStack>
             ) : null}
-            {!descriptionChanged &&
+            {showDraft &&
             current &&
             !current.check.ok &&
             current.check.problems.length === 0 ? (
               <p className="text-destructive text-sm">{current.check.error}</p>
             ) : null}
-            {!descriptionChanged && changes.length > 0 ? (
-              <PermissionsPreview preview={preview} />
+            {showDraft && changes.length > 0 ? (
+              <section
+                aria-label="Permission impact"
+                className="scroll-mt-4 rounded-lg"
+                ref={impact}
+                tabIndex={-1}
+              >
+                <PermissionsPreview preview={preview} />
+              </section>
             ) : null}
           </FieldGroup>
           {save.error ? (
@@ -242,6 +279,12 @@ function DescribePermissionsPage() {
           ) : null}
         </PageCard>
       </form>
+      <DraftLeaveConfirmation
+        hasDraft={hasDraft}
+        saving={save.isPending}
+        submitting={submitting}
+        title="Discard permission changes?"
+      />
     </GovernancePage>
   );
 }

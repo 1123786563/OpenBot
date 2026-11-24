@@ -47,10 +47,10 @@ export const NAMESPACE = (() => {
  * its own instead, which everyone who uses that Bot shares. The kind is part of every name, so a
  * person and a Bot can never derive the same container whatever their ids are.
  */
-export type ComputerKind = "person" | "bot";
+export type ComputerKind = "person" | "bot" | "workspace";
 
 export function isComputerKind(value: unknown): value is ComputerKind {
-  return value === "person" || value === "bot";
+  return value === "person" || value === "bot" || value === "workspace";
 }
 
 /**
@@ -114,7 +114,7 @@ export function namesFor(kind: unknown, id: unknown): NameResult {
   if (!isComputerKind(kind)) {
     return {
       ok: false,
-      reason: "A computer belongs to a person or a bot.",
+      reason: "A computer belongs to a person, a bot, or a workspace.",
     };
   }
   const refused = checkId(id, kind);

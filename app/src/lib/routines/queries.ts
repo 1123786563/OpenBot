@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 /**
  * One standing instruction, as the Routines page sees it.
@@ -65,6 +65,13 @@ export const routineKeys = {
   runs: (id: string) => ["routines", id, "runs"] as const,
 };
 
+export function routinesAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 /** One firing of a routine, scheduled or Run now. */
 export type RoutineRunRecord = {
   id: string;
@@ -80,9 +87,26 @@ export type RoutineRunRecord = {
 export function routineRunsQueryOptions(id: string) {
   return queryOptions({
     queryKey: routineKeys.runs(id),
-    queryFn: (): Promise<RoutineRunRecord[]> =>
-      client(`/api/routines/${encodeURIComponent(id)}/runs`, "runs", {
-        fallback: "This routine's runs could not be loaded.",
+    retry: (failures, error) => failures < 1 && !routinesAccessDenied(error),
+    queryFn: ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<RoutineRunRecord[]> =>
+      client<RoutineRunRecord[]>(
+        `/api/routines/${encodeURIComponent(id)}/runs`,
+        "runs",
+        {
+          fallback: "This routine's runs could not be loaded.",
+          signal,
+        },
+      ).catch((error: unknown) => {
+        if (routinesAccessDenied(error)) {
+          cache.setQueryData<RoutineRunRecord[]>(queryKey, (history) =>
+            history ? [] : undefined,
+          );
+        }
+        throw error;
       }),
     // A run in flight settles within minutes; poll so Running turns into its outcome.
     refetchInterval: 5_000,
@@ -98,9 +122,31 @@ export function routineRunsQueryOptions(id: string) {
 export function routinesQueryOptions() {
   return queryOptions({
     queryKey: routineKeys.list(),
-    queryFn: async (): Promise<RoutinesPage> => {
+    retry: (failures, error) => failures < 1 && !routinesAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<RoutinesPage> => {
       const response = await client("/api/routines", {
         fallback: "Your routines could not be loaded.",
+        signal,
+      }).catch((error: unknown) => {
+        if (routinesAccessDenied(error)) {
+          cache.setQueryData<RoutinesPage>(queryKey, (current) =>
+            current
+              ? { routines: [], sweep: { lastSweptAt: null, working: false } }
+              : undefined,
+          );
+          cache.setQueriesData<RoutineRunRecord[]>(
+            {
+              queryKey: routineKeys.all,
+              predicate: (query) => query.queryKey[2] === "runs",
+            },
+            (history) => (history ? [] : undefined),
+          );
+        }
+        throw error;
       });
       const body = (await response.json()) as Partial<RoutinesPage>;
       return {

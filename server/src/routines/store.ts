@@ -36,6 +36,7 @@ import {
   lte,
   ne,
   notExists,
+  notLike,
   or,
   sql,
 } from "drizzle-orm";
@@ -1137,6 +1138,8 @@ export function createRoutineStore(database: Database): RoutineStore {
         .where(
           and(
             eq(routines.enabled, true),
+            // Personal SaaS schedules run through the account-authorized worker.
+            notLike(routines.ownerUserId, "personal-workspace:%"),
             // The comparison Postgres makes against its own clock. A replica's `Date.now()` here
             // would decide what is due from a clock the row was never written by.
             lte(routines.nextRunAt, sql`now()`),
@@ -1257,7 +1260,12 @@ export function createRoutineStore(database: Database): RoutineStore {
         })
         .from(routineRuns)
         .innerJoin(routines, eq(routines.id, routineRuns.routineId))
-        .where(eq(routineRuns.id, runId))
+        .where(
+          and(
+            eq(routineRuns.id, runId),
+            notLike(routines.ownerUserId, "personal-workspace:%"),
+          ),
+        )
         .limit(1);
       return row ?? null;
     },

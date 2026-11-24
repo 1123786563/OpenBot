@@ -75,7 +75,7 @@ import {
   lockLearningSettings,
 } from "../learning/direct-chat";
 import { setSharedLearningPermission } from "../learning/evidence";
-import type { ManagedModel, ManagedModelResult } from "../managed-model";
+import type { ManagedModel, ManagedModelResult } from "../managed-model-trial";
 import { runFeedback, saveRunFeedback } from "../opik/feedback";
 import { marketRunPauseReason } from "../skill-market/disablements";
 import { reflectCommand } from "./direct-chat-command";
@@ -154,6 +154,8 @@ export type BackgroundTurn = {
   agentId: string;
   prompt: string;
   shown?: string;
+  signal?: AbortSignal;
+  beforeDispatch?: () => Promise<void>;
   authorize: () => Promise<AgentActor | null>;
   initiator: AuditInitiator;
 } & (
@@ -1709,6 +1711,7 @@ export function createDirectChatRoutes(deps: {
     };
 
     for (;;) {
+      input.signal?.throwIfAborted();
       const actor = await authorize();
       if (!actor) {
         await database.transaction(async (tx) => {
@@ -1914,7 +1917,9 @@ export function createDirectChatRoutes(deps: {
               authorize,
               key,
               input.agentId,
-              controller.signal,
+              input.signal
+                ? AbortSignal.any([controller.signal, input.signal])
+                : controller.signal,
               input,
               checkpoint.continuation,
             );
@@ -2032,6 +2037,7 @@ export function createDirectChatRoutes(deps: {
       return false;
     };
     if (!(await shouldContinue())) return;
+    await background?.beforeDispatch?.();
     const dispatchTime = new Date();
     const [dispatched] = await database
       .update(directChatRuns)
@@ -2108,6 +2114,7 @@ export function createDirectChatRoutes(deps: {
       event: BaseEvent,
       options?: Parameters<typeof appendDirectChatEventInTransaction>[3],
     ) {
+      if (!runnable || signal.aborted) return false;
       const versions = learnedVersions;
       const externalOutcome =
         options?.externalOutcome === "executed" ? "executed" : undefined;
@@ -2174,6 +2181,7 @@ export function createDirectChatRoutes(deps: {
         return;
       }
       if (background?.literalAnswer) {
+        await background.beforeDispatch?.();
         if (!(await shouldContinue())) return;
         await appendDirectChatEvent(database, key, terminal(key, "completed"), {
           traceRuns,
@@ -2215,6 +2223,7 @@ export function createDirectChatRoutes(deps: {
           messages: conversation,
           beforeRecovery: shouldContinue,
           beforeDispatch: async () => {
+            await background?.beforeDispatch?.();
             if (!(await shouldContinue())) return false;
             const current = usesLearningGuidance ? await currentGuidance() : [];
             if (!current) return false;
@@ -2329,6 +2338,7 @@ export function createDirectChatRoutes(deps: {
       let waitingApprovalId: string | undefined;
       const completion = withRunContext(runContext, async () => {
         await verifyRunContext();
+        await background?.beforeDispatch?.();
         return agent.runAgent(input, {
           onEvent: ({ event }) => {
             if (continuation && event.type === EventType.RUN_STARTED) return;

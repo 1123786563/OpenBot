@@ -32,15 +32,20 @@ export type TeamBotsData = {
 
 export const teamBotKeys = { all: ["team-bots"] as const };
 
+export async function loadTeamBots(
+  signal?: AbortSignal,
+): Promise<TeamBotsData> {
+  const response = await client("/api/team-bots", {
+    fallback: "Team Bots could not be loaded.",
+    signal,
+  });
+  return response.json();
+}
+
 export function teamBotsQueryOptions() {
   return queryOptions({
     queryKey: teamBotKeys.all,
-    queryFn: async (): Promise<TeamBotsData> => {
-      const response = await client("/api/team-bots", {
-        fallback: "Team Bots could not be loaded.",
-      });
-      return (await response.json()) as TeamBotsData;
-    },
+    queryFn: ({ signal }) => loadTeamBots(signal),
   });
 }
 
