@@ -22,8 +22,9 @@ const sharedCreditTags = [
   "0111_test_credit_reconciliation",
   "0112_test_credit_cutoff_index",
 ];
-// Existing merged billing journals use stamps before main added Approval rule saves.
-const billingStampShift = 104585266;
+// The original Approval migration was dated ahead of the deployment clock.
+const futureApprovalStamp = 1795520000000;
+const futureBillingStampShift = 104585266;
 const priorSharedCreditStamps = [1795415414732, 1795415414733, 1795415414734];
 
 // The stamps before the billing branch first incorporated the market migrations.
@@ -85,9 +86,6 @@ export async function reconcileBillingPilotMigrations(
 
   const shared = [...folder.slice(0, sharedEnd), ...corsair];
   const billingOnly = folder.slice(newBilling, 145);
-  const billingOnlyStamps = billingOnly.map(
-    ({ when }) => when - billingStampShift,
-  );
   const billing = [...sameCreditSql, ...billingOnly];
   const appliedByStamp = new Map(
     applied.map(({ createdAt, hash }) => [createdAt, hash]),
@@ -110,29 +108,33 @@ export async function reconcileBillingPilotMigrations(
 
   const prior = previousPrefix(
     [...shared, ...market],
-    [...priorSharedCreditStamps, ...billingOnlyStamps],
+    priorSharedCreditStamps,
     billing,
   );
   // The older pilot ended at background tool results, before the paid path policy.
   const original = previousPrefix(
     shared,
-    [
-      ...originalBillingStamps,
-      ...billingOnlyStamps.slice(
-        originalBillingStamps.length - sameCreditSql.length,
-      ),
-    ],
+    originalBillingStamps,
     billing.slice(0, -1),
   );
   const previouslyMerged = previousPrefix(
     folder.slice(0, newBilling - 1),
-    billingOnlyStamps,
+    [],
     billingOnly,
+  );
+  const futureApproval = previousPrefix(
+    folder.slice(0, newBilling - 1),
+    [
+      futureApprovalStamp,
+      ...billingOnly.map(({ when }) => when + futureBillingStampShift),
+    ],
+    folder.slice(newBilling - 1, 145),
   );
   const previous = [
     { entries: prior, firstStamp: priorSharedCreditStamps[0] },
     { entries: original, firstStamp: originalBillingStamps[0] },
-    { entries: previouslyMerged, firstStamp: billingOnlyStamps[0] },
+    { entries: previouslyMerged, firstStamp: billingOnly[0]?.when },
+    { entries: futureApproval, firstStamp: futureApprovalStamp },
   ].find(
     ({ entries, firstStamp }) =>
       firstStamp !== undefined &&

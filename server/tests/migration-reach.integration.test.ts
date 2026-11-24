@@ -115,6 +115,12 @@ test.each([
   { startingPoint: "fresh", mainThrough: 0, trialLength: 0 },
   { startingPoint: "current main", mainThrough: 120, trialLength: 0 },
   { startingPoint: "merged billing PR", mainThrough: 119, trialLength: 0 },
+  { startingPoint: "future-dated main", mainThrough: 119, trialLength: 0 },
+  {
+    startingPoint: "future-dated billing PR",
+    mainThrough: 119,
+    trialLength: 0,
+  },
   { startingPoint: "pre-Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Bifrost main", mainThrough: 93, trialLength: 0 },
@@ -150,10 +156,9 @@ test.each([
       startingPoint === "partial billing pilot" || divergentBilling;
     const billingPilot = initialBilling || latestBilling || partialBilling;
     const mergedBilling = startingPoint === "merged billing PR";
-    const olderBillingOnly = migrations.slice(120, 145).map((entry) => ({
-      ...entry,
-      when: entry.when - 104585266,
-    }));
+    const approvalWithFutureStamp = startingPoint.startsWith("future-dated");
+    const futureBilling = startingPoint === "future-dated billing PR";
+    const olderBillingOnly = migrations.slice(120, 145);
     const billing = migrations.slice(110, 113).map((entry, index) => ({
       ...entry,
       when: (initialBilling ? 1795189761200 : 1795415414732) + index,
@@ -170,7 +175,19 @@ test.each([
         : []),
       ...(startingPoint === "current Personal SaaS" ? saas : []),
       ...(billingPilot ? billing.slice(0, partialBilling ? 1 : 3) : []),
+      ...(approvalWithFutureStamp
+        ? migrations.slice(119, 120).map((entry) => ({
+            ...entry,
+            when: 1795520000000,
+          }))
+        : []),
       ...(latestBilling || mergedBilling ? olderBillingOnly : []),
+      ...(futureBilling
+        ? olderBillingOnly.map((entry) => ({
+            ...entry,
+            when: entry.when + 104585266,
+          }))
+        : []),
       ...saas.slice(0, trialLength).map((entry, index) => {
         const when = originalTrialStamps[index];
         if (when === undefined) throw new Error("Missing trial stamp");
@@ -200,7 +217,7 @@ test.each([
         await client`insert into personal_workspaces (owner_id)
           select id from personal_saas_accounts where subject = 'participant'`;
       }
-      if (billingPilot || mergedBilling) {
+      if (billingPilot || mergedBilling || futureBilling) {
         await client`insert into test_credit_accounts (issuer, subject)
           values ('https://casdoor.example', 'billing-participant')`;
       }
@@ -254,7 +271,7 @@ test.each([
           created_at: String(when),
         })),
       );
-      if (billingPilot || mergedBilling) {
+      if (billingPilot || mergedBilling || futureBilling) {
         expect(
           await client`select subject from test_credit_accounts
             where subject = 'billing-participant'`,
