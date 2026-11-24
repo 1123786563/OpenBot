@@ -12,6 +12,7 @@ const folder = await readMigrationFolder(
 const mainTags = /^(?:009[012]_skill_market|009[3456]_corsair)/;
 const bifrostTags =
   /^009[78]_(?:bifrost_market_reviews|skill_market_equivalences)$/;
+const intelligenceIntegrationTip = 1795228622495; // 0102_background_conversation_runs
 const integrations = [
   ["Corsair main", (tag: string) => mainTags.test(tag)],
   [
@@ -25,14 +26,15 @@ const integrations = [
   ],
   [
     "intelligence integration",
-    (tag: string) => !tag.includes("_corsair") && !bifrostTags.test(tag),
+    (tag: string, when: number) =>
+      when <= intelligenceIntegrationTip && !tag.includes("_corsair"),
   ],
 ] as const;
 
 describe("reconciling the published intelligence and Corsair journals", () => {
   for (const [name, accepts] of integrations) {
     const applied = folder
-      .filter(({ tag, when }) => when <= 1795157993281 || accepts(tag))
+      .filter(({ tag, when }) => when <= 1795157993281 || accepts(tag, when))
       .map(({ hash, when }) => ({ hash, createdAt: when }));
 
     test(`fills verified migration gaps from ${name}`, () => {
