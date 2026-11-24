@@ -6,7 +6,14 @@ The [route and profile inventory](astryx-web-route-inventory.md) lists the Web r
 
 ## Deploy the current Web build
 
-1. Record the release commit and archive the deployed bundle with its digest and hashed assets.
+1. From the checkout the build was cut from, archive the deployed bundle being replaced. The script records `git rev-parse HEAD`, the SHA-256 of `index.html`, and every static asset's SHA-256, then keeps the three most recent archives. Do not archive a build containing uncommitted changes: the record names `HEAD`, not the dirty working tree.
+
+   ```sh
+   bun scripts/web-build-archive.ts archive /absolute/path/to/candidate \
+     --store /absolute/path/to/web-archives --keep 3
+   ```
+
+   This prints the archive directory, for example `/absolute/path/to/web-archives/1795517717491-4769ba42299cd699e36cd9acaeba1b63f8fda0fb`; its manifest is the same path plus `.json`. Repeat the command for the enabled candidate after step 2, before switching it.
 2. Build the candidate with the deployment's tenant package. Set `VITE_OPENBOT_ASTRYX_BRAND_LOGO`, `VITE_OPENBOT_ASTRYX_ACCENT_LIGHT`, and `VITE_OPENBOT_ASTRYX_ACCENT_DARK` at build time if the deployment supplies those values.
 
    ```sh
@@ -16,12 +23,24 @@ The [route and profile inventory](astryx-web-route-inventory.md) lists the Web r
    bun run --cwd app build --outDir /absolute/path/to/candidate
    ```
 
-3. Serve the candidate at the existing public origin. If OpenBot serves the bundle, put it under `APP_DIST_DIR` (`/app/app/dist` in the stock image). Keep the previous hashed assets reachable during rollout so open tabs can still load their chunks.
+3. Serve the candidate at the existing public origin. If OpenBot serves the bundle, put it under `APP_DIST_DIR` (`/app/app/dist` in the stock image). Keep the previous hashed assets reachable during rollout so open tabs can still load their chunks. Hashed filenames identify their contents, so copy them into the candidate without overwriting its own:
+
+   ```sh
+   cp -Rn /absolute/path/to/web-archives/<previous>/assets/. /absolute/path/to/candidate/assets/
+   ```
 4. Canary one deployment. Verify sign-in, role checks, a Bot, a Conversation, a saved draft, old bookmarks, and both appearances. Compare asset failures, JavaScript errors, and API authorization rates with the baseline. Repeat in the other edition before expanding rollout.
 
 ## Roll back the current deployment
 
-Restore the previous compatible Web artifact at the same origin. Restore its HTML and asset routing and verify its recorded digest. Reload with the existing session and check role access, saved data, and bookmarks. If you need to restore the legacy interface after #18, use the archived #17 legacy artifact or rebuild it at the pinned revision below.
+Restore the previous compatible Web artifact at the same origin. The restore command copies an archive into a new staging directory and fails unless every recorded digest matches; it never overwrites a non-empty target.
+
+```sh
+bun scripts/web-build-archive.ts restore /absolute/path/to/web-archives/<previous> \
+  --to /absolute/path/to/previous-build
+cp -Rn /absolute/path/to/candidate/assets/. /absolute/path/to/previous-build/assets/
+```
+
+Switch `APP_DIST_DIR` (or the isolated drill's `dist` symlink) to the staged directory, so a failed restore is never the served build. The candidate's hashed assets stay beside the restored files so tabs opened on the candidate can still load their chunks. Reload with the existing session and check role access, saved data, and bookmarks. If you need to restore the legacy interface after #18, use the archived #17 legacy artifact or rebuild it at the pinned revision below.
 
 ## Isolated reproduction
 
@@ -52,6 +71,27 @@ The rehearsal used two instances of `server/src/index.ts`, separate PostgreSQL 1
    ```
 
 4. Build the two historical bundles with the fixture brand and add the test SVG to the enabled output. Create one disposable directory per edition under `app`, copy `app/serve.ts` into each, and point each directory's `dist` symlink at the legacy artifact. Launch both copies with the correct `SERVER_PORT` and with `APP_PORT=34920` (Personal) or `34921` (Team). Use a same-directory symlink rename to switch each artifact pointer atomically.
-5. Install the locked Chromium with `bunx playwright-core install chromium`. Create `/tmp/openbot-issue17` or supply an existing `ISSUE17_DIR`; the harness saves browser storage there. Run `bun scripts/acceptance/astryx-rollout.mjs personal before` and the same command for `team`. Run `enabled` after enabling each canary and `rollback` after restoring its off bundle. Capture stdout as JSON. The harness creates a private Bot and Conversation through the real API on the first pass, saves a component draft and checks those same records on later passes.
+5. Install the locked Chromium with `bunx playwright-core install chromium`. Create `/tmp/openbot-issue17` or supply an existing `ISSUE17_DIR`; the harness saves browser storage there. Run `bun scripts/acceptance/astryx-rollout.mjs personal before` and the same command for `team`. After archiving both bundles and carrying the previous assets into the candidate, pass their manifests as comma-separated `ISSUE17_BUILDS`. The last manifest names the currently served build: its `index.html` must match the origin, and every manifest's hashed assets must still be served.
+
+   ```sh
+   # After switching the canary to the candidate.
+   ISSUE17_BUILDS=/absolute/path/to/web-archives/<previous>.json,/absolute/path/to/web-archives/<candidate>.json \
+     bun scripts/acceptance/astryx-rollout.mjs personal enabled
+
+   # After restoring the old bundle at the same origin; leave first, restore last.
+   ISSUE17_BUILDS=/absolute/path/to/web-archives/<candidate>.json,/absolute/path/to/web-archives/<previous>.json \
+     bun scripts/acceptance/astryx-rollout.mjs personal rollback
+   ```
+
+   The harness checks the recorded bytes before opening the browser, records the fetched digests in its JSON output, and exits non-zero on a missing or changed asset or `index.html`. Set `ISSUE17_ORIGIN` only to point the same drill at another rehearsal origin. Repeat both commands for `team`. The harness creates a private Bot and Conversation through the real API on the first pass, saves a component draft and checks those same records on later passes.
 
 The Team fixture uses Better Auth sessions with a real PostgreSQL backing store. The rehearsal uses no model turns, connected-app consent round trips, external identity-provider exchange, active browser/computer, or generated Bot output. Personal drafts were verified through the component API. Team drafts were additionally opened in the Admin editor. Unsent composer text was lost on reload on the off build as well as Astryx. The new-composition recipient link remained usable. Existing pre-release shell bundles use the deployment name but apply their own marks and colors. The custom Astryx mark and accent checks apply to the enabled bundle.
+
+## Archive and asset-check tests
+
+The tests use temporary build directories and a local static server; they do not run the two-edition drill.
+
+```sh
+bun test --no-env-file --env-file=.env.test \
+  scripts/web-build-archive.test.ts scripts/acceptance/astryx-rollout.test.ts
+```

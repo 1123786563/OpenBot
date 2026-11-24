@@ -2,17 +2,34 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chromium } from "playwright-core";
+import { verifyServedBuilds } from "../web-build-archive.ts";
 
 const edition = process.argv[2];
 const outputDir = process.env.ISSUE17_DIR ?? "/tmp/openbot-issue17";
 const phase = process.argv[3];
 const origin =
-  edition === "personal" ? "http://127.0.0.1:34920" : "http://127.0.0.1:34921";
+  process.env.ISSUE17_ORIGIN ??
+  (edition === "personal"
+    ? "http://127.0.0.1:34920"
+    : "http://127.0.0.1:34921");
 const retired = phase === "retired";
 const enabled = phase === "enabled" || retired;
 const team = edition === "team";
 assert(["personal", "team"].includes(edition));
 assert(["before", "enabled", "rollback", "red", "retired"].includes(phase));
+
+const report = [];
+// Before the browser: the origin must serve the archived builds it was switched or rolled back to.
+const builds = (process.env.ISSUE17_BUILDS ?? "").split(",").filter(Boolean);
+assert(
+  builds.length > 0 || phase === "before" || phase === "red",
+  "ISSUE17_BUILDS is required once a build has been switched or rolled back",
+);
+if (builds.length > 0) {
+  const { checked, problems } = await verifyServedBuilds(origin, ...builds);
+  report.push({ servedBuilds: checked });
+  assert.deepEqual(problems, [], "served builds differ from their archives");
+}
 
 const browser = await chromium.launch();
 const storageState = `${outputDir}/${edition}-browser.json`;
@@ -34,7 +51,6 @@ async function signIn(target, role) {
   ]);
 }
 
-const report = [];
 const page = await context.newPage();
 page.setDefaultTimeout(7000);
 page.setDefaultNavigationTimeout(10000);
