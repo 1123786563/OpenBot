@@ -30,6 +30,7 @@ import type {
   PrivateShareInput,
   ShareAudience,
 } from "../proactive/private-share";
+import { createWorkQueue } from "../work/queue";
 import type { RunAssertion } from "./callback-token";
 import {
   ESCALATE_TOOL,
@@ -352,7 +353,7 @@ export async function readCoordinationHandoffClaim(
   claim: NonNullable<RunAssertion["handoff"]>,
 ): ReturnType<CoordinationRunAuthority["delegationFor"]> {
   const [row] = await database
-    .select({ payload: workItems.payload })
+    .select({ payload: workItems.payload, accountId: workItems.accountId })
     .from(workItems)
     .where(
       and(
@@ -365,6 +366,15 @@ export async function readCoordinationHandoffClaim(
     )
     .limit(1);
   if (!row) return null;
+  if (
+    row.accountId &&
+    !(await createWorkQueue(database).executionExpiry?.({
+      kind: HANDOFF_KIND,
+      key: claim.key,
+      owner: claim.owner,
+    }))
+  )
+    return null;
   const parsed = delegatedWork.safeParse(row.payload);
   if (!parsed.success)
     throw new Error("The active handoff claim has invalid work context.");

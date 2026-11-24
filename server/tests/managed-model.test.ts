@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createManagedModel } from "../src/managed-model";
+import { createManagedModel } from "../src/managed-model-trial";
 
 const scope = {
   source: "direct-chat" as const,

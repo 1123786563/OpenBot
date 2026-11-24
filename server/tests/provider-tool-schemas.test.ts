@@ -6,8 +6,8 @@ import {
   useArcadeClient,
 } from "../src/plugins/arcade";
 import {
+  useComposioClient as installComposioClient,
   listTools as listComposioTools,
-  useComposioClient,
 } from "../src/plugins/composio";
 import {
   buildComposioClient,
@@ -41,7 +41,7 @@ import { providerSchemaFaults } from "./support/provider-schema-rules";
  */
 
 afterEach(() => {
-  useComposioClient(null);
+  installComposioClient(null);
   useArcadeClient(null);
 });
 
@@ -124,7 +124,9 @@ const arcade = fixture.arcade as Record<string, unknown[]>;
 
 async function composioSchemas(toolkit: string) {
   const rows = composio[toolkit] ?? [];
-  useComposioClient(buildComposioClient(composioWith(toolkit, rows)).actions);
+  installComposioClient(
+    buildComposioClient(composioWith(toolkit, rows)).actions,
+  );
   const listed = await listComposioTools({ url: `composio://${toolkit}` });
   expect(listed.map((tool) => tool.name).sort()).toEqual(
     rows.map((row) => row.slug).sort(),

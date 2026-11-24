@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Database } from "../../db/client";
 import {
   type AuditStore,
   createAuditStore,
   withAuditTransaction,
 } from "../../audit";
+import type { Database } from "../../db/client";
+import type { BrokerProvider } from "../access";
 import { dispatchWhileConnected, RevocationRefusal } from "./revocation";
 
 export const corsairApp = z.enum(["github", "slack"]);
@@ -33,24 +34,44 @@ export const cutoverObservationMs = 7 * 24 * 60 * 60 * 1000;
 
 export { RevocationRefusal as cutoverRefusal };
 
+function scopeKey({ workspaceId, app }: Scope) {
+  return JSON.stringify([workspaceId, app]);
+}
+
+function lockKey(scope: string) {
+  return sql`hashtextextended(${`corsair-tool-route:${scope}`}, 0)`;
+}
+
+async function readCutover(
+  db: Pick<Database, "execute">,
+  scope: string,
+): Promise<State> {
+  const [row] = await db.execute<{ payload: unknown }>(sql`
+    select payload from audit_events where event_type = ${changed}
+      and target_type = 'corsair_migration_scope' and target_id = ${scope}
+    order by created_at desc, id desc limit 1
+  `);
+  return row ? stateSchema.parse(row.payload) : { kind: "legacy" };
+}
+
+export async function corsairTriggerExclusions(
+  tx: Transaction,
+  binding: Scope,
+) {
+  const scope = scopeKey(binding);
+  await tx.execute(sql`select pg_advisory_xact_lock_shared(${lockKey(scope)})`);
+  const current = await readCutover(tx, scope);
+  return new Set(current.kind === "legacy" ? [] : current.excluded);
+}
+
 export function createCorsairCutover(
   database: Database,
-  { workspaceId, app }: Scope,
+  binding: Scope,
   drainMs = 5000,
 ) {
-  const scope = JSON.stringify([workspaceId, app]);
-  const key = sql`hashtextextended(${`corsair-tool-route:${scope}`}, 0)`;
-
-  async function read(
-    db: Pick<Database, "execute"> = database,
-  ): Promise<State> {
-    const [row] = await db.execute<{ payload: unknown }>(sql`
-      select payload from audit_events where event_type = ${changed}
-        and target_type = 'corsair_migration_scope' and target_id = ${scope}
-      order by created_at desc, id desc limit 1
-    `);
-    return row ? stateSchema.parse(row.payload) : { kind: "legacy" };
-  }
+  const { app } = binding;
+  const scope = scopeKey(binding);
+  const key = lockKey(scope);
 
   async function transition(
     actorId: string,
@@ -69,7 +90,7 @@ export function createCorsairCutover(
         );
         await tx.execute(sql`select pg_advisory_xact_lock(${key})`);
         acquiring = false;
-        const current = await read(tx);
+        const current = await readCutover(tx, scope);
         const audit = createAuditStore(tx, deferTap);
         const next = await decide(current, tx, audit);
         if (!next || next === current) return next;
@@ -97,12 +118,9 @@ export function createCorsairCutover(
   }
 
   return {
-    read: () => read(),
-    async triggerExclusions(tx: Transaction) {
-      await tx.execute(sql`select pg_advisory_xact_lock_shared(${key})`);
-      const current = await read(tx);
-      return new Set(current.kind === "legacy" ? [] : current.excluded);
-    },
+    read: () => readCutover(database, scope),
+    triggerExclusions: (tx: Transaction) =>
+      corsairTriggerExclusions(tx, binding),
     review(
       actorId: string,
       record: (
@@ -212,7 +230,7 @@ export function createCorsairCutover(
             "The tool route is draining. Retry after the route is settled.",
             409,
           );
-        const current = await read(tx);
+        const current = await readCutover(tx, scope);
         const active = current.kind === "legacy" ? "legacy" : "corsair";
         if (active !== path)
           throw new RevocationRefusal(
@@ -380,7 +398,7 @@ export async function dispatchTrackedLegacyWrite<
     actorId: string;
     botId: string;
     ref: string;
-    provider: "composio" | "arcade";
+    provider: BrokerProvider;
     vendorUserId: string;
     accountId?: string;
     credentialActorId: string;

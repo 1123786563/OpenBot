@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { callTool } from "../src/plugins/builtin-routines";
 import { catalogueEntry, classifyTool } from "../src/plugins/catalogue";
 import { createSlackTriggerIngest } from "../src/responsibilities/slack";
-import { useTriggerTools } from "../src/responsibilities/trigger-tools";
+import { useTriggerTools as installTriggerTools } from "../src/responsibilities/trigger-tools";
 import {
   parseTriggerConfig,
   type SlackAccess,
@@ -32,7 +32,7 @@ function install() {
     createdAt: new Date(),
     updatedAt: new Date(),
   };
-  useTriggerTools({
+  installTriggerTools({
     publicUrl: "https://openbot.example.test",
     emailDomain: null,
     responsibilities: {
@@ -65,7 +65,7 @@ function install() {
   });
   return calls;
 }
-afterEach(() => useTriggerTools(null));
+afterEach(() => installTriggerTools(null));
 
 test("create_trigger is attributed to the connection and never echoes the key", async () => {
   const calls = install();

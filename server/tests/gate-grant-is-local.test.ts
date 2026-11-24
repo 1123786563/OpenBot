@@ -18,7 +18,7 @@ import {
   mcpTools,
 } from "../src/db/schema";
 import type { ConnectedAppBroker } from "../src/plugins/broker";
-import { useComposioClient } from "../src/plugins/composio";
+import { useComposioClient as installComposioClient } from "../src/plugins/composio";
 import { createPluginStore } from "../src/plugins/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -74,7 +74,7 @@ const credentialsStub = {} as never;
 
 /** The ids the transport was actually handed, which is the only place identity is observable. */
 function recordingTransport(sentAs: string[]) {
-  useComposioClient({
+  installComposioClient({
     listActions: async () => [],
     execute: async ({ userId }) => {
       sentAs.push(userId);
@@ -136,7 +136,7 @@ beforeEach(async () => {
     .values({ id: bot, name: "Helper", type: "built_in", configuration: {} });
 });
 afterEach(async () => {
-  useComposioClient(null);
+  installComposioClient(null);
   await clean();
 });
 

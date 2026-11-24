@@ -101,9 +101,6 @@ function SignScreen() {
     openfuse_request: openFuseRequest,
     returnTo,
   } = Route.useSearch();
-  const resumeRequest = openFuseResumePath(openFuseRequest)
-    ? openFuseRequest
-    : returnTo;
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
@@ -131,7 +128,7 @@ function SignScreen() {
       await signInWithEmailDomain(
         email,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, resumeRequest),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       const message =
@@ -154,7 +151,7 @@ function SignScreen() {
       await signInWith(
         provider,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, resumeRequest),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       setError(

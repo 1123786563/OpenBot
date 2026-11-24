@@ -1,3 +1,4 @@
+import { runAuthorizedWork } from "../work/execution";
 /**
  * Proactive check-ins: a Bot looking through its owner's connected apps in the background, quietly,
  * and reaching out only when something needs them.
@@ -554,6 +555,8 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
     runId: string,
     trigger: ProactiveRunTrigger,
     signal: AbortSignal,
+    beforeDispatch?: () => Promise<void>,
+    onText?: (text: string) => void,
   ) {
     const setting = await deps.store.byId(settingId);
     if (!setting?.enabled) return;
@@ -625,6 +628,8 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
           initiator: proactiveInitiator(runId),
           runId,
           signal,
+          beforeDispatch,
+          onText,
         });
       } catch (error) {
         thrown = error;
@@ -661,7 +666,7 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
       await deps.store.recordRun(setting.id, status, lastError);
       recorded = true;
       // Items recorded before a failure are still the person's, so they wait for a ping too.
-      if (raised > 0)
+      if (raised > 0 && !signal.aborted)
         await tryPing(setting.ownerUserId).catch(
           logged("proactive-ping-error"),
         );
@@ -689,6 +694,8 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
     work: (
       payload: Record<string, unknown>,
       signal: AbortSignal,
+      beforeDispatch?: () => Promise<void>,
+      onText?: (text: string) => void,
     ) => Promise<void>,
   ) {
     const [item] = await deps.queue.claim({
@@ -717,7 +724,19 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
     }, RUN_LEASE_MS / 3);
     renew.unref?.();
     try {
-      await work(item.payload, controller.signal);
+      await runAuthorizedWork(
+        deps.queue,
+        item,
+        deps.owner,
+        (guard) =>
+          work(
+            item.payload,
+            guard?.signal ?? controller.signal,
+            guard?.beforeDispatch,
+            guard?.onText,
+          ),
+        { signal: controller.signal },
+      );
       await deps.queue.finish({ kind, key: item.key, owner: deps.owner });
     } catch (error) {
       // One attempt only: a background run is not worth repeating a partial read for.
@@ -799,7 +818,11 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
      * check-in, so both presses offer the same key, and the next press after any check-in, skipped
      * or not, offers a new one.
      */
-    async runNow(ownerUserId: string, id: string): Promise<RunNowResponse> {
+    async runNow(
+      ownerUserId: string,
+      id: string,
+      recovery?: { key: string; interruptedRunId: string },
+    ): Promise<RunNowResponse> {
       const setting = await deps.store.get(ownerUserId, id);
       if (!setting.enabled)
         throw new ProactiveRefusedError(
@@ -808,7 +831,10 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
       const latest = await deps.store.latestRun(setting.id);
       if (latest?.outcome === "running")
         throw new ProactiveRefusedError("This Bot is checking in now.");
-      const last = await deps.store.lastCheckIn(setting.id);
+      const last = await deps.store.lastCheckIn(
+        setting.id,
+        recovery?.interruptedRunId,
+      );
       const wait = last
         ? RUN_NOW_GAP_MS - (now().getTime() - last.startedAt.getTime())
         : 0;
@@ -828,22 +854,32 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
           why: SKIPPED_BECAUSE[gate.skip],
         };
       }
-      const payload = { settingId: setting.id, runId, trigger: "run_now" };
+      const payload = {
+        settingId: setting.id,
+        ownerUserId,
+        runId,
+        trigger: "run_now",
+      };
       const offered = await deps.queue.offer({
         kind: PROACTIVE_RUN_KIND,
-        key: `${setting.id}:now:${latest?.id ?? "first"}`,
+        key: recovery?.key ?? `${setting.id}:now:${latest?.id ?? "first"}`,
         payload,
       });
       /*
        * Already offered and already done: that Run now came up after check-ins were turned off and
        * ran nothing, so no newer check-in moved the key on. This one is new work under its own key.
        */
-      if (offered === "already" && !(await deps.store.runQueued(setting.id)))
-        await deps.queue.offer({
+      if (offered === "refused")
+        throw new ProactiveRefusedError("Bot work authorization ended.");
+      if (offered === "already" && !(await deps.store.runQueued(setting.id))) {
+        const fresh = await deps.queue.offer({
           kind: PROACTIVE_RUN_KIND,
           key: `${setting.id}:now:${runId}`,
           payload,
         });
+        if (fresh === "refused")
+          throw new ProactiveRefusedError("Bot work authorization ended.");
+      }
       return { queued: true };
     },
     /** Hide: remembered for thirty days and told to every later check-in. */
@@ -901,6 +937,15 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
      * One scheduling pass: close check-ins a stopped replica left running, ping whoever is due one,
      * offer what is due, then run at most one check-in.
      */
+    async drainRuns() {
+      return drain(
+        PROACTIVE_RUN_KIND,
+        async (payload, signal, beforeDispatch, onText) => {
+          const { settingId, runId, trigger } = payloadSchema.parse(payload);
+          await run(settingId, runId, trigger, signal, beforeDispatch, onText);
+        },
+      );
+    },
     async sweep() {
       await deps.store.closeStaleRuns(RUN_LEASE_MS);
       await pingPass();
@@ -909,13 +954,16 @@ export function createProactiveEngine(deps: ProactiveEngineDeps) {
         await deps.queue.offer({
           kind: PROACTIVE_RUN_KIND,
           key: `${setting.id}:${runId}`,
-          payload: { settingId: setting.id, runId, trigger: "schedule" },
+          authorizedSince: setting.updatedAt.getTime(),
+          payload: {
+            settingId: setting.id,
+            ownerUserId: setting.ownerUserId,
+            runId,
+            trigger: "schedule",
+          },
         });
       }
-      await drain(PROACTIVE_RUN_KIND, async (payload, signal) => {
-        const { settingId, runId, trigger } = payloadSchema.parse(payload);
-        await run(settingId, runId, trigger, signal);
-      });
+      await this.drainRuns();
     },
   };
 }

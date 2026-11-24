@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { listTools, useArcadeClient } from "../src/plugins/arcade";
+import {
+  useArcadeClient as installArcadeClient,
+  listTools,
+} from "../src/plugins/arcade";
 import fixture from "./fixtures/arcade-catalogue.json";
 
-afterEach(() => useArcadeClient(null));
+afterEach(() => installArcadeClient(null));
 
 type Query = { toolkit: string; limit: number; offset: number };
 
@@ -23,7 +26,7 @@ function pagesOf(total: number) {
 /** Records every query the client was sent, so assertions are on what went OUT. */
 function recording(answer: (q: Query) => Promise<{ items: unknown[] }>) {
   const sent: Record<string, unknown>[] = [];
-  useArcadeClient({
+  installArcadeClient({
     listTools: async (q) => {
       sent.push({ ...q });
       return answer(q);

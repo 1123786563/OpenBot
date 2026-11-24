@@ -185,6 +185,8 @@ export type ComputerTransportOptions = {
   token?: string;
   allowPrivateHosts?: boolean;
   timeoutMs?: number;
+  signal?: AbortSignal;
+  redirect?: RequestRedirect;
   fetchImpl?: typeof fetch;
 };
 
@@ -288,6 +290,10 @@ export function createComputerTransport(
     caller?: AbortSignal,
     timeoutMsOverride?: number,
   ): Promise<Response> {
+    if (options.signal)
+      caller = caller
+        ? AbortSignal.any([caller, options.signal])
+        : options.signal;
     if (caller?.aborted) {
       throw new ComputerStoppedError("The action was stopped.");
     }
@@ -311,6 +317,7 @@ export function createComputerTransport(
       response = await startMarketRequest(() =>
         doFetch(`${target}${path}`, {
           ...init,
+          ...(options.redirect ? { redirect: options.redirect } : {}),
           headers: {
             ...(init?.headers as Record<string, string> | undefined),
             ...seatHeaders(botId),

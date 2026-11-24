@@ -134,7 +134,7 @@ jobs:
         with:
           bun-version: 1.4.3
           no-cache: true
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
       - name: Install pinned AzureSignTool
@@ -186,6 +186,7 @@ jobs:
           WINDOWS_SIGNING: keyvault
           # To read the release's container-images.json when this build is a candidate.
           GH_TOKEN: ${{ github.token }}
+          OPENBOT_PERSONAL_SAAS_URL: ${{ vars.OPENBOT_PERSONAL_SAAS_URL }}
           OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_ID: ${{ vars.OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_ID }}
           OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_SECRET: ${{ secrets.OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_SECRET }}
           OPENBOT_GOOGLE_MODEL_OAUTH_QUOTA_PROJECT: ${{ vars.OPENBOT_GOOGLE_MODEL_OAUTH_QUOTA_PROJECT }}
