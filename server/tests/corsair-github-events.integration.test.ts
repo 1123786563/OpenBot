@@ -583,7 +583,7 @@ test("the normal Approval resume ends the event Run when GitHub revokes read acc
 test("a GitHub-triggered Approval posts the pinned Slack action after a transient source failure", async () => {
   const f = await waitingSlackGoal();
   try {
-    await f.useDefault(await f.connect("second"));
+    await f.selectDefaultConnection(await f.connect("second"));
     f.setAccess("retry");
     await f.approve();
     await f.tick();
@@ -843,7 +843,7 @@ async function waitingSlackGoal(ambiguous?: "found" | "unknown") {
       .parse(await response.json()).connection.id;
   };
   const connectionId = await connect("first");
-  const useDefault = async (connectionId: string) =>
+  const selectDefaultConnection = async (connectionId: string) =>
     expect(
       (
         await slack.request("/connections/default", {
@@ -853,7 +853,7 @@ async function waitingSlackGoal(ambiguous?: "found" | "unknown") {
         })
       ).status,
     ).toBe(200);
-  await useDefault(connectionId);
+  await selectDefaultConnection(connectionId);
   expect(
     (
       await slack.request(`/bots/${f.botId}/grant`, {
@@ -975,7 +975,7 @@ async function waitingSlackGoal(ambiguous?: "found" | "unknown") {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ status: "pending" });
     },
-    useDefault,
+    selectDefaultConnection,
     revokeWriteScope: () => {
       hasWriteScope = false;
     },

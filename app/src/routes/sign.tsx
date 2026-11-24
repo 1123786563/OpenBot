@@ -1,10 +1,9 @@
 import { Stack } from "@astryxdesign/core/Stack";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ProviderLogo } from "@/components/auth/provider-logo";
@@ -107,19 +106,22 @@ function SignScreen() {
     openfuse_request: openFuseRequest,
     returnTo,
   } = Route.useSearch();
-  const resumeRequest = openFuseResumePath(openFuseRequest)
-    ? openFuseRequest
-    : returnTo;
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const {
     data: options,
+    isError: optionsError,
     isFetching: checkingOptions,
     refetch: reloadOptions,
   } = useQuery({ ...authProvidersQueryOptions(), retryOnMount: false });
   const providers = options?.providers ?? [];
+  const optionsUnavailable =
+    options !== undefined &&
+    !options.sso &&
+    (options.ssoRequired || providers.length === 0);
   const [email, setEmail] = useState("");
 
   /**
@@ -137,7 +139,7 @@ function SignScreen() {
       await signInWithEmailDomain(
         email,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, resumeRequest),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       /*
@@ -169,7 +171,7 @@ function SignScreen() {
       await signInWith(
         provider,
         undefined,
-        resumeUrlFor(window.location.origin, flowId, resumeRequest),
+        resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       setError(
@@ -260,6 +262,8 @@ function SignScreen() {
         </motion.div>
         <motion.h1
           className="text-2xl font-medium tracking-tight text-center mt-8"
+          ref={heading}
+          tabIndex={-1}
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
@@ -272,18 +276,40 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          {!options && (
+          {(!options || optionsUnavailable) && (
             <ReadError
-              description={t(
-                "sign.options.loadFailedDescription",
-                "Check your connection and try again.",
-              )}
-              message={t(
-                "sign.options.loadFailed",
-                "Couldn't load sign-in options.",
-              )}
+              description={
+                !options || optionsError
+                  ? t(
+                      "sign.options.loadFailedDescription",
+                      "Check your connection and try again.",
+                    )
+                  : t(
+                      "sign.options.unusableDescription",
+                      "Ask your IT help desk or the person who invited you to check sign-in for this workspace. Check again when it’s ready.",
+                    )
+              }
+              focusAfterRetry={() => heading.current}
+              message={
+                !options || optionsError
+                  ? t(
+                      "sign.options.loadFailed",
+                      "Couldn't load sign-in options.",
+                    )
+                  : options.ssoRequired
+                    ? t(
+                        "sign.required.unavailable",
+                        "Company sign-in is required but unavailable.",
+                      )
+                    : t("sign.unconfigured", "Sign-in isn’t set up yet.")
+              }
               retry={reloadOptions}
               retryBelow
+              retryLabel={
+                optionsUnavailable
+                  ? t("sign.options.checkAgain", "Check sign-in options")
+                  : undefined
+              }
               retrying={checkingOptions}
             />
           )}
@@ -295,21 +321,9 @@ function SignScreen() {
               )}
             </p>
           ) : null}
-          {providers.length > 0 && !options?.ssoRequired ? (
-            providerButtons
-          ) : options && !options.sso ? (
-            <Text as="p" justify="center" type="supporting">
-              {options.ssoRequired
-                ? t(
-                    "sign.required.unavailable",
-                    "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
-                  )
-                : t(
-                    "sign.unconfigured",
-                    "Sign-in isn’t set up yet. Contact your OpenBot administrator for access.",
-                  )}
-            </Text>
-          ) : null}
+          {providers.length > 0 && !options?.ssoRequired
+            ? providerButtons
+            : null}
           {/*
            * The way in for a company that runs its own identity provider.
            *
@@ -368,6 +382,12 @@ function SignScreen() {
               <summary className="sign-in-admin-summary cursor-pointer text-center text-muted-foreground">
                 {t("sign.admin.signIn", "Admin sign-in")}
               </summary>
+              <p className="mt-2 text-muted-foreground">
+                {t(
+                  "sign.admin.restore",
+                  "Use this if you administer this workspace and need to restore company sign-in.",
+                )}
+              </p>
               <div className="mt-3">{providerButtons}</div>
             </details>
           ) : null}

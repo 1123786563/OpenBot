@@ -25,7 +25,7 @@
  * raises on two of the three, and a stub never passes through it.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { useArcadeClient } from "../src/plugins/arcade";
+import { useArcadeClient as installArcadeClient } from "../src/plugins/arcade";
 import { createArcadeClient } from "../src/plugins/arcade-adapter";
 import type { AccountRef } from "../src/plugins/shared-accounts";
 
@@ -151,7 +151,7 @@ function engine(shape: Shape): Engine {
 afterEach(() => {
   running?.stop();
   running = null;
-  useArcadeClient(null);
+  installArcadeClient(null);
   if (wasBaseURL === undefined) delete process.env.ARCADE_BASE_URL;
   else process.env.ARCADE_BASE_URL = wasBaseURL;
 });
@@ -233,7 +233,7 @@ describe("a vendor body this deployment cannot read answers with a refusal", () 
       expect(thrown.message).not.toContain("is not an object");
       running?.stop();
       running = null;
-      useArcadeClient(null);
+      installArcadeClient(null);
     }
   });
 });

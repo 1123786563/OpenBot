@@ -29,9 +29,10 @@ function IdeasPage() {
   const roster = useQuery(agentListQueryOptions());
   const { data: user } = useQuery(currentUserQueryOptions());
   const chosen = useChosenBotId(user?.id);
+  const available = roster.data?.filter(({ hidden }) => !hidden) ?? [];
   const bot = agent
-    ? roster.data?.find(({ id, hidden }) => id === agent && !hidden)
-    : resolveChosenBot(roster.data, chosen);
+    ? available.find(({ id }) => id === agent)
+    : resolveChosenBot(available, chosen);
   const navigate = Route.useNavigate();
 
   return (
@@ -49,38 +50,41 @@ function IdeasPage() {
             message="Couldn’t load your Bots"
             retry={roster.refetch}
           />
-        ) : agent && !bot ? (
-          <PageEmpty icon={IconBulb} title="This Bot is unavailable">
-            It may have been hidden or your access may have changed.{" "}
-            <Link
-              className="underline underline-offset-4"
-              replace
-              search={{}}
-              to="/ideas"
-            >
-              Browse Ideas for available Bots
-            </Link>
-            .
-          </PageEmpty>
-        ) : bot ? (
+        ) : available.length > 0 ? (
           <>
             <BotScopeSelect
-              bots={roster.data}
+              bots={available}
               onChange={(id) => {
                 if (user) chooseBot(user.id, id);
                 void navigate({ search: { agent: id }, replace: true });
               }}
-              value={bot.id}
+              value={bot?.id ?? ""}
             />
-            <SuggestionsInbox agentId={bot.id} key={bot.id} showEmpty />
-            <ProactiveResearchSettings
-              agentId={bot.id}
-              key={`settings-${bot.id}`}
-              showIdeasLink={false}
-            />
+            {bot ? (
+              <>
+                <SuggestionsInbox
+                  agentId={bot.id}
+                  key={bot.id}
+                  searchable
+                  showEmpty
+                />
+                <ProactiveResearchSettings
+                  agentId={bot.id}
+                  key={`settings-${bot.id}`}
+                  showIdeasLink={false}
+                />
+              </>
+            ) : (
+              <PageEmpty icon={IconBulb} title="This Bot is unavailable">
+                Choose a Bot to see its ideas and check-ins.
+              </PageEmpty>
+            )}
           </>
         ) : (
-          <PageEmpty icon={IconBulb} title="No Bots yet">
+          <PageEmpty
+            icon={IconBulb}
+            title={roster.data?.length ? "No Bots available" : "No Bots yet"}
+          >
             <Link
               className="underline underline-offset-4"
               search={{ new: true }}

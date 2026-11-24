@@ -8,7 +8,13 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterContextProvider,
+} from "@tanstack/react-router";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType } from "react";
@@ -37,15 +43,19 @@ afterAll(async () => {
 
 const originalFetch = global.fetch;
 let instructions = "";
+let instructionsUnavailable = false;
 
 beforeEach(() => {
   queryClient.clear();
   instructions = "";
+  instructionsUnavailable = false;
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0]) => {
       const path = String(input);
       if (path === "/api/settings/instructions")
-        return Response.json({ instructions });
+        return instructionsUnavailable
+          ? Response.json({ error: "Unavailable" }, { status: 503 })
+          : Response.json({ instructions });
       if (path === "/api/me")
         return Response.json({
           user: { id: "ada", email: "ada@example.com", name: "Ada" },
@@ -67,10 +77,16 @@ function draw() {
     name: "Ada",
     needsName: false,
   } as never);
+  const router = createRouter({
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: createRootRoute(),
+  });
   return render(
     <QueryClientProvider client={queryClient}>
-      <NameRow />
-      <StandingInstructionsRow />
+      <RouterContextProvider router={router as never}>
+        <NameRow />
+        <StandingInstructionsRow />
+      </RouterContextProvider>
     </QueryClientProvider>,
   );
 }
@@ -85,14 +101,34 @@ test("the name is a row that states it and opens a dialog to change it", async (
     (within(dialog).getByLabelText("Name") as HTMLInputElement).value,
   ).toBe("Ada");
   expect(
-    within(dialog).getByRole("button", { name: "Save name" }),
-  ).toBeTruthy();
+    within(dialog)
+      .getByRole("button", { name: "Save name" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+});
+
+test("closing an edited setting asks whether to discard the draft", async () => {
+  const view = draw();
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: /^Name/ }));
+  const dialog = await view.findByRole("dialog");
+  const name = within(dialog).getByRole("textbox", { name: "Name" });
+  await user.clear(name);
+  await user.type(name, "Ada Lovelace");
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  const discard = await view.findByRole("alertdialog", {
+    name: "Discard unsaved changes?",
+  });
+  await user.click(
+    within(discard).getByRole("button", { name: "Keep editing" }),
+  );
+  expect(name instanceof HTMLInputElement && name.value).toBe("Ada Lovelace");
 });
 
 test("standing instructions are a row that says what they are, or that there are none yet", async () => {
   const view = draw();
   const row = await view.findByRole("button", {
-    name: /None yet\. Tell every Bot how you want things done\./,
+    name: /Applies to every Bot in every conversation\. None yet\./,
   });
   await userEvent.setup({ document }).click(row);
   const dialog = await view.findByRole("dialog");
@@ -108,8 +144,32 @@ test("standing instructions are a row that says what they are, or that there are
   queryClient.setQueryData(settingsKeys.instructions(), instructions);
   const written = draw();
   expect(
-    await written.findByRole("button", { name: /Write in British English\./ }),
+    await written.findByRole("button", {
+      name: /Applies to every Bot in every conversation\. Write in British English\./,
+    }),
   ).toBeTruthy();
+});
+
+test("standing instructions recover from a failed read inside the editor", async () => {
+  instructionsUnavailable = true;
+  const view = draw();
+  const user = userEvent.setup({ document });
+  await user.click(
+    view.getByRole("button", { name: /^Standing instructions/ }),
+  );
+  const dialog = within(await view.findByRole("dialog"));
+  const retry = await dialog.findByRole("button", { name: "Retry" });
+  expect(dialog.queryByRole("button", { name: "Save" })).toBeNull();
+
+  instructions = "Use British English.";
+  instructionsUnavailable = false;
+  await user.click(retry);
+  const field = await dialog.findByRole("textbox", {
+    name: "Standing instructions",
+  });
+  expect(field instanceof HTMLTextAreaElement && field.value).toBe(
+    instructions,
+  );
 });
 
 /*
@@ -131,11 +191,18 @@ describe("the General page speaks the interface language", () => {
       needsName: false,
     } as never);
     const Page = generalSettingsRoute.options.component as ComponentType;
+    // The dialogs' leave guard reads the router, as the layout always gives them one.
+    const router = createRouter({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      routeTree: createRootRoute(),
+    });
     return render(
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <Page />
-        </ThemeProvider>
+        <RouterContextProvider router={router as never}>
+          <ThemeProvider>
+            <Page />
+          </ThemeProvider>
+        </RouterContextProvider>
       </QueryClientProvider>,
     );
   }
@@ -167,6 +234,21 @@ describe("the General page speaks the interface language", () => {
     expect(view.getByRole("heading", { name: "关于你" })).toBeTruthy();
     expect(rowTitle(view, "深色主题")).toBeTruthy();
     expect(view.getByText("在 OpenBot 中使用深色外观。")).toBeTruthy();
+    // The jump nav main added names itself and its three sections in the interface language.
+    const sections = view.getByRole("navigation", { name: "通用设置分区" });
+    expect(
+      within(sections)
+        .getAllByRole("link")
+        .map((link) => [link.textContent, link.getAttribute("href")]),
+    ).toEqual([
+      ["关于你", "#about-you"],
+      ["外观", "#appearance"],
+      ["键盘快捷键", "#keyboard-shortcuts"],
+    ]);
+    expect(
+      view.getByText("在侧边栏中优先显示对话标题或 Bot 名称。"),
+    ).toBeTruthy();
+    expect(rowTitle(view, "消息列表突出显示")).toBeTruthy();
     expect(view.getByRole("heading", { name: "键盘快捷键" })).toBeTruthy();
     expect(rowTitle(view, "新对话")).toBeTruthy();
     expect(
@@ -209,7 +291,7 @@ describe("the General page speaks the interface language", () => {
     ).toBeTruthy();
     expect(
       within(dialog).getByPlaceholderText(
-        "我们是两个人，不是一个团队。用英式英语书写，不要把我们的产品称为平台。",
+        "使用英式英语，日期按日–月–年的顺序书写。",
       ),
     ).toBeTruthy();
     expect(within(dialog).getByText("已用 25 / 4000 个字符")).toBeTruthy();
@@ -234,17 +316,172 @@ describe("the General page speaks the interface language", () => {
     const view = drawPage();
     const row = view.getByRole("button", { name: /^常设指令/ });
     await waitFor(
-      () => expect(row.textContent).toContain("无法加载你的指令。"),
+      () => expect(row.textContent).toContain("无法加载你的常设指令。"),
       { timeout: 3000 },
     );
     await userEvent.setup({ document }).click(row);
     const dialog = await view.findByRole("dialog");
     expect(
       await within(dialog).findByText(
-        "无法加载你的常设指令",
+        "无法加载你的常设指令。",
         {},
         { timeout: 3000 },
       ),
+    ).toBeTruthy();
+  });
+
+  test("in Chinese closing an edited setting asks whether to discard the draft", async () => {
+    await pinLocale("zh-CN");
+    const view = draw();
+    const user = userEvent.setup({ document });
+    await user.click(view.getByRole("button", { name: /^姓名/ }));
+    const dialog = await view.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "取消" })).toBeTruthy();
+    const name = within(dialog).getByRole("textbox", { name: "姓名" });
+    await user.clear(name);
+    await user.type(name, "Ada Lovelace");
+    await user.click(within(dialog).getByRole("button", { name: "取消" }));
+    const discard = await view.findByRole("alertdialog", {
+      name: "放弃未保存的更改？",
+    });
+    expect(
+      within(discard).getByText("关闭此编辑器后，你的更改会丢失。"),
+    ).toBeTruthy();
+    await user.click(within(discard).getByRole("button", { name: "继续编辑" }));
+    expect(name instanceof HTMLInputElement && name.value).toBe("Ada Lovelace");
+    await user.click(within(dialog).getByRole("button", { name: "取消" }));
+    await user.click(
+      within(
+        await view.findByRole("alertdialog", { name: "放弃未保存的更改？" }),
+      ).getByRole("button", { name: "放弃更改" }),
+    );
+    expect(view.queryByRole("dialog")).toBeNull();
+  });
+
+  test("in Chinese the instructions row says what they apply to, or that there are none", async () => {
+    await pinLocale("zh-CN");
+    const view = drawPage();
+    expect(view.getByText("适用于每个对话中的每个 Bot。")).toBeTruthy();
+    // Awaited, because the row says it is loading until the read has answered.
+    expect(await view.findByText("还没有内容。")).toBeTruthy();
+  });
+
+  test("in Chinese both rows say they are loading, and then that the read failed", async () => {
+    await pinLocale("zh-CN");
+    let answer: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    global.fetch = Object.assign(
+      async () => {
+        await gate;
+        return new Response(null, { status: 500 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    // A cache of this test's own, with no retries, so neither read waits to fail.
+    const fresh = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const router = createRouter({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      routeTree: createRootRoute(),
+    });
+    const view = render(
+      <QueryClientProvider client={fresh}>
+        <RouterContextProvider router={router as never}>
+          <NameRow />
+          <StandingInstructionsRow />
+        </RouterContextProvider>
+      </QueryClientProvider>,
+    );
+    const nameRow = () => view.getByRole("button", { name: /^姓名/ });
+    const instructionsRow = () =>
+      view.getByRole("button", { name: /^常设指令/ });
+    expect(nameRow().textContent).toContain("正在加载你的名字…");
+    expect(instructionsRow().textContent).toContain("正在加载你的常设指令…");
+
+    answer();
+    await waitFor(
+      () => expect(nameRow().textContent).toContain("无法加载你的名字。"),
+      { timeout: 3000 },
+    );
+    await waitFor(
+      () =>
+        expect(instructionsRow().textContent).toContain(
+          "无法加载你的常设指令。",
+        ),
+      { timeout: 3000 },
+    );
+  });
+
+  test("in Chinese a stale read says so on both rows, and the dialogs offer a refresh", async () => {
+    await pinLocale("zh-CN");
+    // Both reads have an answer cached and refuse to refresh it: the rows keep what they had.
+    let patches = 0;
+    global.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0]) => {
+        if (String(input) === "/api/me/profile") {
+          patches += 1;
+          return Response.json({
+            profile: { name: "Ada Lovelace", needsName: false },
+          });
+        }
+        return new Response(null, { status: 503 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    instructions = "Write in British English.";
+    queryClient.setQueryData(settingsKeys.instructions(), instructions);
+    const view = draw();
+    const user = userEvent.setup({ document });
+    const nameRow = view.getByRole("button", { name: /^姓名/ });
+    const instructionsRow = view.getByRole("button", { name: /^常设指令/ });
+    await waitFor(
+      () =>
+        expect(instructionsRow.textContent).toContain(
+          "上次加载 · 保存前请刷新。",
+        ),
+      { timeout: 3000 },
+    );
+    expect(instructionsRow.textContent).toContain("Write in British English.");
+
+    await user.click(nameRow);
+    const nameDialog = within(await view.findByRole("dialog"));
+    const name = nameDialog.getByRole("textbox", { name: "姓名" });
+    await user.type(name, " Lovelace");
+    await user.click(nameDialog.getByRole("button", { name: "保存名字" }));
+    expect(patches).toBe(1);
+    await waitFor(
+      () =>
+        expect(
+          view.getByRole("button", { name: /^姓名/ }).textContent,
+        ).toContain("上次加载 · 保存前请刷新。"),
+      { timeout: 3000 },
+    );
+    expect(view.getByRole("status").textContent).toBe("你的名字已保存。");
+    // Asked for again: the rows were drawn anew by the save and the failed refresh.
+    await user.click(view.getByRole("button", { name: /^姓名/ }));
+    const nameAgain = within(await view.findByRole("dialog"));
+    expect(nameAgain.getByText("无法刷新你的名字。")).toBeTruthy();
+    expect(
+      nameAgain.getByText("显示的是上次加载的名字。保存前请刷新。"),
+    ).toBeTruthy();
+    expect(nameAgain.getByRole("button", { name: "刷新名字" })).toBeTruthy();
+
+    // The open dialog hides the page behind it from assistive technology, so it closes first.
+    await user.click(nameAgain.getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
+    await user.click(view.getByRole("button", { name: /^常设指令/ }));
+    const instructionsDialog = within(await view.findByRole("dialog"));
+    expect(instructionsDialog.getByText("无法刷新你的常设指令。")).toBeTruthy();
+    expect(
+      instructionsDialog.getByText(
+        "显示的是上次加载的常设指令。保存前请刷新。",
+      ),
+    ).toBeTruthy();
+    expect(
+      instructionsDialog.getByRole("button", { name: "刷新常设指令" }),
     ).toBeTruthy();
   });
 

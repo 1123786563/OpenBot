@@ -17,7 +17,10 @@ import { client } from "@/lib/client";
  * to one Bot, which is how a Bot's own Activity page links here.
  */
 export const Route = createFileRoute("/_authed/admin/audit")({
-  validateSearch: z.object({ bot: z.string().optional() }),
+  validateSearch: z.object({
+    bot: z.string().optional(),
+    permissions: z.literal(true).optional().catch(undefined),
+  }),
   component: AdminAuditPage,
 });
 
@@ -28,7 +31,7 @@ export const Route = createFileRoute("/_authed/admin/audit")({
  * another name, as the audit tests do. The route's own `validateSearch` has already checked it.
  */
 function AdminAuditPage() {
-  const { bot } = useSearch({ strict: false }) as { bot?: string };
+  const { bot, permissions } = useSearch({ strict: false });
   const navigate = useNavigate();
   const openObserve = useQuery({
     queryKey: ["admin", "audit", "openobserve"],
@@ -57,7 +60,10 @@ function AdminAuditPage() {
         }
         ask
         bot={bot}
-        onClearBot={() => navigate({ to: "/admin/audit" })}
+        onScopeChange={(search) =>
+          navigate({ to: "/admin/audit", search, replace: true })
+        }
+        permissionsOnly={permissions === true}
       >
         <RecordingSection />
       </AuditPage>

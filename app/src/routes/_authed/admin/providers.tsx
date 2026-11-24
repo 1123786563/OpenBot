@@ -7,7 +7,7 @@ import {
   ModelUsageSection,
   ProviderSection,
 } from "@/components/admin/controls/model-sections";
-import { Button } from "@/components/ui/button";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { enterpriseOverviewQueryOptions } from "@/lib/enterprise/queries";
 import { availableModelsQueryOptions } from "@/lib/models/queries";
 
@@ -31,7 +31,7 @@ export function ProvidersPage() {
    * the sections stay quiet about it and this banner is the single place it is said.
    */
   const settings = useQuery(enterpriseOverviewQueryOptions());
-  const team = available.data?.exposure === "allowed";
+  const team = available.data?.exposure !== "all";
   return (
     <AstryxAdminPage
       description={
@@ -41,21 +41,15 @@ export function ProvidersPage() {
       }
       title="Providers"
     >
-      {settings.isError ? (
-        <div className="mb-8 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load these settings.
-          </p>
-          <Button
-            disabled={settings.isFetching}
-            onClick={() => void settings.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {settings.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+      {settings.isPending && settings.errorUpdateCount === 0 ? (
+        <ReadStatus kind="loading" message="Loading model settings…" />
+      ) : !settings.isSuccess ? (
+        <ReadError
+          message="Couldn't load these settings."
+          retry={settings.refetch}
+          retrying={settings.isFetching}
+          retryBelow
+        />
       ) : null}
       <ProviderSection />
       <ModelChoiceSection />

@@ -7,6 +7,7 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { toast } from "@/components/ui/toast";
 import { useTranslation } from "@/i18n";
 import { browserStateQueryOptions } from "@/lib/browser/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import type { RecorderStore } from "@/lib/recorder/bridge";
 import { elapsed, RecordingMark, useSecondsSince } from "./recording";
 
@@ -26,7 +27,12 @@ export const TEACH_A_BOT = "Teach a Bot";
  */
 export function BrowserNavItem() {
   const state = useQuery(browserStateQueryOptions());
-  if (state.isPending || !state.data?.available) return null;
+  if (
+    state.isPending ||
+    !state.data?.available ||
+    !canKeepCachedRead(state.error)
+  )
+    return null;
   return (
     <SidebarMenuItem>
       <BrowserPageLink activity={state.data.activity} />

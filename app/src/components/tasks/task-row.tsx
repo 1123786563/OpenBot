@@ -8,7 +8,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { BoardRow } from "@/components/needs-you/board-row";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Item,
   ItemContent,
@@ -73,9 +73,11 @@ function nextLine({ task, status }: ListedTask): string | null {
 export function TaskRow({
   listed,
   botName,
+  canChange = true,
 }: {
   listed: ListedTask;
   botName: string;
+  canChange?: boolean;
 }) {
   // Subscribes this row to the interface language, so choosing another one redraws its time in place.
   useTranslation();
@@ -113,8 +115,9 @@ export function TaskRow({
           <ItemDescription className="text-foreground">{next}</ItemDescription>
         ) : null}
         <ItemFooter className="mt-2 flex-wrap justify-start">
-          {status === "failed" ? (
+          {canChange && status === "failed" ? (
             <Button
+              className="min-h-11"
               disabled={busy}
               onClick={() => again.mutate(task.id)}
               size="sm"
@@ -122,20 +125,20 @@ export function TaskRow({
               {again.isPending ? "Starting…" : "Try again"}
             </Button>
           ) : null}
-          <Button
-            render={
-              <Link
-                params={{ channelId: task.channelId }}
-                to="/channel/$channelId"
-              />
-            }
-            size="sm"
-            variant={openFirst ? "default" : "outline"}
+          <Link
+            className={buttonVariants({
+              className: "min-h-11",
+              size: "sm",
+              variant: openFirst ? "default" : "outline",
+            })}
+            params={{ channelId: task.channelId }}
+            to="/channel/$channelId"
           >
             Open
-          </Button>
-          {status === "resolved" ? (
+          </Link>
+          {canChange && status === "resolved" ? (
             <Button
+              className="min-h-11"
               disabled={busy}
               onClick={() => resolve.mutate({ id: task.id, done: false })}
               size="sm"
@@ -143,8 +146,9 @@ export function TaskRow({
             >
               {resolve.isPending ? "Reopening…" : "Reopen"}
             </Button>
-          ) : (
+          ) : canChange ? (
             <Button
+              className="min-h-11"
               disabled={busy}
               onClick={() => resolve.mutate({ id: task.id, done: true })}
               size="sm"
@@ -152,7 +156,7 @@ export function TaskRow({
             >
               {resolve.isPending ? "Saving…" : "Mark done"}
             </Button>
-          )}
+          ) : null}
         </ItemFooter>
         {error ? (
           <p className="mt-1 text-destructive text-sm" role="alert">

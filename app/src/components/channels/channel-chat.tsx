@@ -26,6 +26,7 @@ import { toAgentOptions } from "@/components/channels/composer";
 import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
+import { FirstMessageDraftCopy } from "@/components/channels/first-message-draft-copy";
 import { ProgressRow } from "@/components/channels/progress-row";
 import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
@@ -135,6 +136,12 @@ const SEND_WITHOUT_RUNTIME_AFTER_MS = 1500;
 
 /** What a turn that never left the browser says, with the person's words back in the box. */
 const NOT_SENT = "Your message wasn't sent. Try again.";
+const FIRST_MESSAGE_ACTION_LABEL = {
+  check: "Check for message",
+  connect: "Check Bot connection",
+  resend: "Resend message",
+  retry: "Send message",
+} satisfies Record<FirstMessageRecovery["action"], string>;
 
 type ChannelActivitySignature = {
   agentId: string;
@@ -549,7 +556,6 @@ export function ChannelChat({
   const [firstError, setFirstError] = useState<FirstMessageRecovery | null>(
     null,
   );
-  const [copyStatus, setCopyStatus] = useState("");
   const {
     requestConfirmation: requestDraftDiscard,
     confirmation: draftDiscard,
@@ -1594,10 +1600,10 @@ export function ChannelChat({
         () => {
           setCheckingFirstMessage(false);
           setFirstError({
-            action: "check",
+            action: "connect",
             message: channel.active
-              ? "The Bot hasn’t connected. Your message is saved here."
-              : "This Bot is unavailable. Your message is saved here.",
+              ? "The Bot hasn’t connected. Your browser has saved the message."
+              : "Your browser has saved the message.",
           });
         },
         channel.active ? SEND_WITHOUT_RUNTIME_AFTER_MS : 0,
@@ -1658,7 +1664,7 @@ export function ChannelChat({
           setFirstError({
             action: "check",
             message:
-              "Your message is saved here. Delivery is still unconfirmed.",
+              "Your browser has saved the message. Check this conversation again to see if it arrived.",
           });
       })
       .finally(() => {
@@ -1794,47 +1800,47 @@ export function ChannelChat({
                 {first && firstError ? (
                   <Stack gap={2}>
                     <ConversationReadError
-                      title="Couldn't confirm the first message."
-                      description={firstError.message}
-                      retryLabel={
-                        firstError.action === "check"
-                          ? "Check again"
-                          : firstError.action === "resend"
-                            ? "Resend message"
-                            : "Try again"
+                      title={
+                        firstError.action === "retry"
+                          ? "The first message wasn’t sent."
+                          : "The first message is unconfirmed."
                       }
-                      retry={() => {
-                        if (checkingFirstMessage) return;
-                        resendFirstMessage.current =
-                          firstError.action === "resend";
-                        setCheckingFirstMessage(true);
-                        setFirstAttempt((attempt) => attempt + 1);
-                      }}
+                      description={firstError.message}
+                      retryLabel={FIRST_MESSAGE_ACTION_LABEL[firstError.action]}
+                      retry={
+                        channel.active
+                          ? () => {
+                              if (checkingFirstMessage) return;
+                              resendFirstMessage.current =
+                                firstError.action === "resend";
+                              setCheckingFirstMessage(true);
+                              setFirstAttempt((attempt) => attempt + 1);
+                            }
+                          : undefined
+                      }
                       retrying={checkingFirstMessage}
                       retryBelow
                     />
 
+                    {first.start.draft.attachments.length > 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        {first.start.draft.text
+                          ? "Only message text will be copied. "
+                          : null}
+                        Add the attachments again if you send a new message.
+                      </p>
+                    ) : null}
                     <Stack direction="horizontal" gap={2} wrap="wrap">
-                      {first.start.draft.text && navigator.clipboard ? (
-                        <Button
-                          size="sm"
-                          label="Copy draft"
-                          onClick={() =>
-                            void navigator.clipboard
-                              .writeText(first.start.draft.text)
-                              .then(
-                                () => setCopyStatus("Draft copied."),
-                                () =>
-                                  setCopyStatus(
-                                    "Couldn't copy the draft. You can select it in the conversation.",
-                                  ),
-                              )
-                          }
+                      {first.start.draft.text ? (
+                        <FirstMessageDraftCopy
+                          key={first.id}
+                          label="Copy saved text"
+                          text={first.start.draft.text}
                         />
                       ) : null}
                       <Button
                         size="sm"
-                        label="Discard browser copy"
+                        label="Discard saved copy"
                         isDisabled={checkingFirstMessage}
                         onClick={(event) => {
                           const owner = user?.id;
@@ -1842,8 +1848,8 @@ export function ChannelChat({
                           requestDraftDiscard({
                             title: "Discard the copy saved in this browser?",
                             description:
-                              "The message may have reached the Thread. This removes the saved copy from this browser and leaves any delivered message in the Thread.",
-                            confirmLabel: "Discard browser copy",
+                              "This removes the copy saved in this browser. Any message that reached the conversation stays there.",
+                            confirmLabel: "Discard saved copy",
                             pendingLabel: "Discarding copy…",
                             failureMessage:
                               "Couldn't remove the saved copy. Try again.",
@@ -1861,7 +1867,6 @@ export function ChannelChat({
                         }}
                       />
                     </Stack>
-                    {copyStatus ? <p role="status">{copyStatus}</p> : null}
                   </Stack>
                 ) : first ? (
                   <p role="status">

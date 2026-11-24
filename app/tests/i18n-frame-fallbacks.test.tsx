@@ -139,7 +139,11 @@ test("a page's own sentences and retry label are left as the page wrote them", a
  * The app's own wiring: an unknown address is the root route's missing page, a load that throws is
  * the router's own error screen.
  */
-function theAppAt(address: string, broken: () => boolean = () => false) {
+function theAppAt(
+  address: string,
+  broken: () => boolean = () => false,
+  initialEntries?: string[],
+) {
   const root = createRootRoute({
     notFoundComponent: () => <MissingPage standalone />,
   });
@@ -153,7 +157,9 @@ function theAppAt(address: string, broken: () => boolean = () => false) {
   });
   const router = createRouter({
     routeTree: root.addChildren([page]),
-    history: createMemoryHistory({ initialEntries: [address] }),
+    history: createMemoryHistory({
+      initialEntries: initialEntries ?? [address],
+    }),
     defaultErrorComponent: RouteLoadError,
   });
   return render(<RouterProvider router={router} />);
@@ -164,7 +170,7 @@ test("the missing-page screen speaks the interface language", async () => {
   const before = await view.findByRole("link", { name: "Open workspace" });
   view.getByRole("main", { name: "Page not found" });
   view.getByText(
-    "Check the address or open your workspace to find your conversations and Bots.",
+    "Check the address below, or open your workspace to find your conversations and Bots.",
   );
 
   await pinLocale("zh-CN");
@@ -173,7 +179,7 @@ test("the missing-page screen speaks the interface language", async () => {
   expect(before.getAttribute("href")).toBe("/");
   view.getByRole("main", { name: "页面不存在" });
   view.getByRole("heading", { name: "页面不存在" });
-  view.getByText("请检查地址，或打开工作区查找你的对话和 Bot。");
+  view.getByText("请检查下方地址，或打开工作区查找你的对话和 Bot。");
   expect(view.queryByRole("heading", { name: "Page not found" })).toBeNull();
 });
 
@@ -184,7 +190,7 @@ test("the failed-load screen speaks the interface language, and its retry still 
   await view.findByRole("heading", { name: "This page couldn’t load" });
   view.getByRole("region", { name: "This page couldn’t load" });
   view.getByText(
-    "Try loading this page again, or return to your workspace to keep working.",
+    "Try again. If the page still won’t open, check your connection or open your workspace to keep working.",
   );
   const retry = view.getByRole("button", { name: "Try again" });
 
@@ -193,7 +199,9 @@ test("the failed-load screen speaks the interface language, and its retry still 
   expect(view.getByRole("button", { name: "重试" })).toBe(retry);
   view.getByRole("region", { name: "此页面未能加载" });
   view.getByRole("heading", { name: "此页面未能加载" });
-  view.getByText("请重新加载此页面，或返回工作区继续工作。");
+  view.getByText(
+    "请重试。如果页面仍无法打开，请检查你的网络连接，或打开工作区继续工作。",
+  );
   view.getByRole("link", { name: "打开工作区" });
 
   broken = false;
@@ -201,6 +209,70 @@ test("the failed-load screen speaks the interface language, and its retry still 
 
   await view.findByText("The page loaded.");
   expect(view.queryByRole("button", { name: "重试" })).toBeNull();
+});
+
+test("a page reached from another one offers a way back, in the interface language", async () => {
+  const view = theAppAt("/nowhere", () => false, ["/page", "/nowhere"]);
+  const back = await view.findByRole("button", { name: "Go back" });
+  view.getByText("Check the address below, or return to the previous page.");
+
+  await pinLocale("zh-CN");
+
+  expect(view.getByRole("button", { name: "返回" })).toBe(back);
+  view.getByText("请检查下方地址，或返回上一页。");
+
+  // A pointer press on it is a real press: the router's own history moves back a page.
+  await userEvent.setup({ document }).click(back);
+  await view.findByText("The page loaded.");
+});
+
+test("the failed-load screen says why it failed, in the interface language", async () => {
+  const online = navigator.onLine;
+  try {
+    // No connection: the screen says so and its retry cannot run.
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    const offline = theAppAt("/page", () => true);
+    await offline.findByRole("heading", { name: "This page couldn’t load" });
+    offline.getByText("You’re offline. Reconnect to try again.");
+    expect(
+      offline
+        .getByRole("button", { name: "Try again" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+
+    await pinLocale("zh-CN");
+    offline.getByText("你已离线。请重新连接后再试。");
+    offline.getByRole("button", { name: "重试" });
+
+    // Connected, and the page fails a second time: the screen says that too.
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    cleanup();
+    const repeated = theAppAt("/page", () => true);
+    const user = userEvent.setup({ document });
+    await repeated.findByRole("heading", { name: "此页面未能加载" });
+    await user.click(repeated.getByRole("button", { name: "重试" }));
+    expect(
+      await repeated.findByText(
+        "此页面仍然无法加载。你可以重试，或打开工作区。",
+      ),
+    ).toBeTruthy();
+
+    await pinLocale("en");
+    repeated.getByText(
+      "The page still couldn’t load. You can try again or open your workspace.",
+    );
+  } finally {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: online,
+    });
+  }
 });
 
 test("a toast's close button speaks the interface language", async () => {

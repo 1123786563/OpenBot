@@ -1,3 +1,4 @@
+import { humanise } from "@openbot/shared/tool-name";
 import {
   WHAT_IF_INITIATOR_WORDS,
   WHAT_IF_INITIATORS,
@@ -8,7 +9,6 @@ import {
   type WhatIfIntent,
   type WhatIfVocabulary,
 } from "@openbot/shared/what-if";
-import { humanise } from "@openbot/shared/tool-name";
 import { IconChevronDown } from "@tabler/icons-react";
 import { type ReactNode, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,7 @@ export function ActionChips({
           value={action.bot}
         >
           {(vocabulary?.bots ?? []).map((entry) => (
-            <DropdownMenuRadioItem key={entry.id} value={entry.id}>
+            <DropdownMenuRadioItem closeOnClick key={entry.id} value={entry.id}>
               <span className="truncate">{entry.name}</span>
             </DropdownMenuRadioItem>
           ))}
@@ -119,7 +119,11 @@ export function ActionChips({
           <DropdownMenuGroup>
             <DropdownMenuLabel>People</DropdownMenuLabel>
             {(vocabulary?.people ?? []).map((entry) => (
-              <DropdownMenuRadioItem key={entry.id} value={entry.id}>
+              <DropdownMenuRadioItem
+                closeOnClick
+                key={entry.id}
+                value={entry.id}
+              >
                 <span className="truncate">{entry.name ?? entry.email}</span>
               </DropdownMenuRadioItem>
             ))}
@@ -130,7 +134,11 @@ export function ActionChips({
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Anyone in a group</DropdownMenuLabel>
                 {vocabulary.groups.map((group) => (
-                  <DropdownMenuRadioItem key={group} value={`group:${group}`}>
+                  <DropdownMenuRadioItem
+                    closeOnClick
+                    key={group}
+                    value={`group:${group}`}
+                  >
                     <span className="truncate">{group}</span>
                   </DropdownMenuRadioItem>
                 ))}
@@ -152,7 +160,7 @@ export function ActionChips({
           value={action.initiator}
         >
           {WHAT_IF_INITIATORS.map((kind) => (
-            <DropdownMenuRadioItem key={kind} value={kind}>
+            <DropdownMenuRadioItem closeOnClick key={kind} value={kind}>
               {WHAT_IF_INITIATOR_WORDS[kind]}
             </DropdownMenuRadioItem>
           ))}
@@ -181,8 +189,10 @@ export function ActionChips({
           }
           value={action.surface}
         >
-          <DropdownMenuRadioItem value="app">An app</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="computer">
+          <DropdownMenuRadioItem closeOnClick value="app">
+            An app
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem closeOnClick value="computer">
             Its computer
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
@@ -201,7 +211,11 @@ export function ActionChips({
               value={action.app}
             >
               {(vocabulary?.apps ?? []).map((entry) => (
-                <DropdownMenuRadioItem key={entry.id} value={entry.id}>
+                <DropdownMenuRadioItem
+                  closeOnClick
+                  key={entry.id}
+                  value={entry.id}
+                >
                   <span className="truncate">{entry.name}</span>
                 </DropdownMenuRadioItem>
               ))}
@@ -219,7 +233,11 @@ export function ActionChips({
                 value={action.tool}
               >
                 {app.tools.map((entry) => (
-                  <DropdownMenuRadioItem key={entry.name} value={entry.name}>
+                  <DropdownMenuRadioItem
+                    closeOnClick
+                    key={entry.name}
+                    value={entry.name}
+                  >
                     <span className="truncate">{humanise(entry.name)}</span>
                     <span className="ml-auto ps-3 text-muted-foreground text-xs">
                       {entry.effect === "write" ? "Changes" : "Reads"}
@@ -257,7 +275,7 @@ export function ActionChips({
               value={action.intent}
             >
               {WHAT_IF_INTENTS.map((entry) => (
-                <DropdownMenuRadioItem key={entry} value={entry}>
+                <DropdownMenuRadioItem closeOnClick key={entry} value={entry}>
                   {WHAT_IF_INTENT_WORDS[entry]}
                 </DropdownMenuRadioItem>
               ))}

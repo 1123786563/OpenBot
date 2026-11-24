@@ -1,6 +1,9 @@
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconAlertTriangle,
   IconBan,
+  IconChevronDown,
   IconDeviceDesktop,
   IconDownload,
   IconEyeOff,
@@ -14,7 +17,14 @@ import {
   useInfiniteQuery,
   useQuery,
 } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { AskTheTrail, AuditAnswerNote } from "@/components/audit/ask-the-trail";
 import type { AuditEvent } from "@/components/audit/audit-cells";
 import {
@@ -26,6 +36,13 @@ import {
 import { AuditTable } from "@/components/audit/audit-table";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { explainable, WhyButton } from "@/components/what-if/why-button";
 import { useBotNames } from "@/lib/agents/bot-names";
@@ -40,6 +57,7 @@ import {
   REFUSED_EVENT_TYPES,
 } from "@/lib/audit/outcome";
 import {
+  auditAccessDenied,
   auditEventsQueryOptions,
   auditExportUrl,
   auditVocabularyQueryOptions,
@@ -80,7 +98,7 @@ const FILTERS = [
     search: eventTypeFilter(DID_NOT_HAPPEN_EVENT_TYPES),
   },
   {
-    label: "Nobody watching",
+    label: "Background actions",
     icon: IconEyeOff,
     search: "?initiatorKind=routine,handoff,responsibility,memory",
   },
@@ -160,6 +178,8 @@ export function AuditPage({
   children,
   description = ADMIN_DESCRIPTION,
   onClearBot,
+  onScopeChange,
+  permissionsOnly = false,
 }: {
   action?: ReactNode;
   /**
@@ -171,6 +191,8 @@ export function AuditPage({
   children?: ReactNode;
   description?: string;
   onClearBot?: () => void;
+  onScopeChange?: (scope: { bot?: string; permissions?: true }) => void;
+  permissionsOnly?: boolean;
 } = {}) {
   const paths = useManagePaths();
   const [view, setView] = useState<string>(FILTERS[0].search);
@@ -179,35 +201,78 @@ export function AuditPage({
    * A Bot's own Activity page links here with `bot`, which arrives as that Bot's chip, so the one Bot
    * filter there is the chip, and taking it off takes it out of the address too.
    */
-  const [chips, setChipState] = useState<ChipFilters>(() =>
-    ask && bot ? { bot } : {},
-  );
+  const [chips, setChipState] = useState<ChipFilters>(() => ({
+    ...(ask && bot ? { bot } : {}),
+    ...(ask && permissionsOnly ? { eventType: ["capability.changed"] } : {}),
+  }));
+  const previousBot = useRef(bot);
   useEffect(() => {
-    if (ask && bot)
-      setChipState((current) =>
-        current.bot === bot ? current : { ...current, bot },
-      );
+    const prior = previousBot.current;
+    previousBot.current = bot;
+    if (!ask || (!bot && !prior)) return;
+    setChipState((current) =>
+      current.bot === bot || (!bot && current.bot !== prior)
+        ? current
+        : { ...current, bot },
+    );
   }, [ask, bot]);
+  useEffect(() => {
+    if (!ask) return;
+    setChipState((current) => {
+      const types = current.eventType ?? [];
+      if (types.includes("capability.changed") === permissionsOnly)
+        return current;
+      return {
+        ...current,
+        eventType: permissionsOnly
+          ? [...types, "capability.changed"]
+          : types.filter((type) => type !== "capability.changed"),
+      };
+    });
+  }, [ask, permissionsOnly]);
   const setChips = (next: ChipFilters) => {
     setChipState(next);
-    if (bot && next.bot !== bot) onClearBot?.();
+    const removesBot = Boolean(bot && next.bot !== bot);
+    const removesPermissions =
+      permissionsOnly && !next.eventType?.includes("capability.changed");
+    if (removesBot || removesPermissions) {
+      onScopeChange?.({
+        ...(bot && !removesBot ? { bot } : {}),
+        ...(permissionsOnly && !removesPermissions
+          ? { permissions: true }
+          : {}),
+      });
+      if (removesBot) onClearBot?.();
+    }
   };
   const [answer, setAnswer] = useState<
     (AuditAnswer & { question: string }) | null
   >(null);
   // This deployment's Bots, apps and rules, asked for the first time a chip menu opens.
   const [vocabularyWanted, setVocabularyWanted] = useState(false);
-  const vocabulary = useQuery({
-    ...auditVocabularyQueryOptions(),
-    enabled: ask && vocabularyWanted,
-  }).data;
   // The stored event names and OpenBot's own working are Admin's to read; the personal edition's
   // Activity is anybody's page. Its route has the edition loaded before this draws.
   const edition = useQuery(deploymentCapabilitiesQueryOptions()).data?.edition;
   const asked = ask ? withFilters(view, chips) : withBot(view, bot);
   const search = edition === "personal" ? withoutOpenBotWorking(asked) : asked;
   const [query, setQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
+  const olderEventsButton = useRef<{
+    element: HTMLButtonElement;
+    hadFocus: boolean;
+    pages: number;
+    previousIds: Set<string>;
+    search: string;
+    query: string;
+  } | null>(null);
+  const eventLog = useRef<HTMLDivElement>(null);
+  const [unmatchedPage, setUnmatchedPage] = useState<{
+    search: string;
+    query: string;
+  } | null>(null);
+  const resultSummary = useRef<HTMLSpanElement>(null);
   const hasTextSearch = query.trim().length > 0;
+  const searchScopeId = useId();
   const exportScopeId = useId();
   const showExportScope = hasTextSearch || !ask;
   // A page at a time, newest first; "Show older events" under the last row asks for the next.
@@ -219,6 +284,57 @@ export function AuditPage({
     ...auditEventsQueryOptions(search),
     placeholderData: keepPreviousData,
   });
+  const accessDenied = auditAccessDenied(events.error);
+  const vocabulary = useQuery({
+    ...auditVocabularyQueryOptions(),
+    enabled: ask && vocabularyWanted && !accessDenied,
+  });
+  const loaded =
+    !accessDenied &&
+    !events.isPlaceholderData &&
+    Boolean(events.data?.pages.length);
+  const moreToLoad =
+    !accessDenied && events.hasNextPage && !events.isPlaceholderData;
+  const pagesLoaded = events.data?.pages.length ?? 0;
+  useLayoutEffect(() => {
+    const opener = olderEventsButton.current;
+    if (!opener || events.isFetchingNextPage) return;
+    olderEventsButton.current = null;
+    if (
+      events.isPlaceholderData ||
+      accessDenied ||
+      pagesLoaded <= opener.pages ||
+      search !== opener.search ||
+      query !== opener.query
+    )
+      return;
+    const newRow = Array.from(
+      eventLog.current?.querySelectorAll<HTMLTableRowElement>(
+        "[data-audit-event-id]",
+      ) ?? [],
+    ).find((row) => {
+      const id = row.dataset.auditEventId;
+      return id && !opener.previousIds.has(id);
+    });
+    if (!newRow) setUnmatchedPage({ search, query });
+    const doc = opener.element.ownerDocument;
+    const hasPaginationFocus =
+      doc.activeElement === opener.element ||
+      (!opener.element.isConnected && doc.activeElement === doc.body);
+    if (!opener.hadFocus || !hasPaginationFocus) return;
+    if (newRow) newRow.focus();
+    else if (!opener.element.isConnected) resultSummary.current?.focus();
+  }, [
+    accessDenied,
+    events.isFetchingNextPage,
+    events.isPlaceholderData,
+    pagesLoaded,
+    query,
+    search,
+  ]);
+  useEffect(() => {
+    if (accessDenied) setAnswer(null);
+  }, [accessDenied]);
   // Activity names a skill by the title its page shows; the trail keeps only its slug.
   const skills = useQuery({
     ...pluginsPageQueryOptions(),
@@ -226,7 +342,7 @@ export function AuditPage({
   }).data?.skills;
   const rows = withSkillTitles(
     oneRowPerAction(
-      events.isPlaceholderData
+      accessDenied || events.isPlaceholderData
         ? []
         : (events.data?.pages.flatMap((page) => page.events) ?? []),
     ),
@@ -243,7 +359,7 @@ export function AuditPage({
    * the filter matches; the filename carries the day it was pulled.
    */
   async function exportCsv() {
-    if (exporting) return;
+    if (!loaded || exporting) return;
     setExporting(true);
     setExportError(null);
     setExportCapped(null);
@@ -281,7 +397,7 @@ export function AuditPage({
      * Audit rows and recording controls scroll together so wrapped controls cannot crowd out the log.
      */
     <PageShell
-      action={action}
+      action={accessDenied ? undefined : action}
       description={description}
       title={paths.auditLabel}
       width="full"
@@ -292,6 +408,7 @@ export function AuditPage({
           className={
             children ? "flex flex-col sm:h-[60vh] sm:min-h-80" : "contents"
           }
+          ref={eventLog}
         >
           {/*
            * Above the table rather than in its toolbar: a question being typed and its answer outlast
@@ -299,16 +416,18 @@ export function AuditPage({
            */}
           {ask ? (
             <div className="flex shrink-0 flex-col gap-2 px-4 pb-3">
-              <AskTheTrail
-                onAnswer={(next) => {
-                  setAnswer(next);
-                  // The answer is the whole question, so it starts from every event. One the trail
-                  // can't give clears the chips too, so no earlier filters stand under it as its rows.
-                  setView(FILTERS[0].search);
-                  setChips(next.filters);
-                }}
-              />
-              {answer ? (
+              {accessDenied ? null : (
+                <AskTheTrail
+                  onAnswer={(next) => {
+                    setAnswer(next);
+                    // The answer is the whole question, so it starts from every event. One the trail
+                    // can't give clears the chips too, so no earlier filters stand under it as its rows.
+                    setView(FILTERS[0].search);
+                    setChips(next.filters);
+                  }}
+                />
+              )}
+              {answer && !accessDenied ? (
                 <AuditAnswerNote
                   answer={answer}
                   edited={
@@ -323,7 +442,7 @@ export function AuditPage({
             deploymentName={paths.deploymentName}
             events={rows}
             footer={
-              events.hasNextPage ? (
+              moreToLoad ? (
                 <div className="flex flex-col items-center gap-2 py-3">
                   {events.isFetchNextPageError ? (
                     <p className="text-destructive text-sm" role="alert">
@@ -332,71 +451,124 @@ export function AuditPage({
                   ) : null}
                   <Button
                     className="max-sm:min-h-11"
-                    disabled={events.isFetchingNextPage}
-                    onClick={() => events.fetchNextPage()}
+                    aria-disabled={events.isFetching}
+                    onClick={(event) => {
+                      if (events.isFetching) return;
+                      const button = event.currentTarget;
+                      setUnmatchedPage(null);
+                      olderEventsButton.current = {
+                        element: button,
+                        hadFocus: button.ownerDocument.activeElement === button,
+                        pages: pagesLoaded,
+                        previousIds: new Set(rows.map((row) => row.id)),
+                        query,
+                        search,
+                      };
+                      void events.fetchNextPage({ cancelRefetch: false });
+                    }}
                     size="sm"
                     variant="outline"
                   >
                     {events.isFetchingNextPage
                       ? "Loading…"
-                      : "Show older events"}
+                      : events.isFetchNextPageError
+                        ? "Retry loading older events"
+                        : "Show older events"}
                   </Button>
                 </div>
               ) : null
             }
-            moreToLoad={events.hasNextPage}
+            moreToLoad={moreToLoad}
             nameFor={nameFor}
             query={query}
             storedNames={edition !== "personal"}
             {...(ask ? { rowAction: whyFor } : {})}
-            toolbar={({ count, filters }) => (
+            toolbar={({ count, filters, hasColumnFilters }) => (
               <div className="flex shrink-0 flex-col gap-3 border-border border-b px-4 pb-3">
                 {/*
                  * The saved views are one control with one answer, so they are drawn as a segmented
                  * group: the pressed one is filled, the rest sit flat inside the same outline.
                  */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground text-xs">View</span>
-                  <fieldset
-                    aria-label="View"
-                    className="inline-flex min-w-0 flex-wrap items-center gap-0.5 rounded-lg border border-border p-0.5"
-                  >
-                    {FILTERS.map((filter) => {
-                      const active = view === filter.search;
-                      return (
-                        <Button
-                          aria-pressed={active}
-                          className={cn(
-                            "h-6 px-2 font-normal max-sm:min-h-11",
-                            active
-                              ? "bg-muted text-foreground"
-                              : "text-muted-foreground",
-                          )}
-                          key={filter.label}
-                          onClick={() => setView(filter.search)}
-                          size="xs"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <filter.icon />
-                          {filter.label}
-                        </Button>
-                      );
-                    })}
-                  </fieldset>
-                </div>
+                {ask ? (
+                  <>
+                    <AuditViewMenu
+                      className="sm:hidden"
+                      value={view}
+                      onChange={setView}
+                    />
+                    <div className="hidden flex-wrap items-center gap-2 sm:flex">
+                      <span className="text-muted-foreground text-xs">
+                        View
+                      </span>
+                      <fieldset
+                        aria-label="View"
+                        className="inline-flex min-w-0 flex-wrap items-center gap-0.5 rounded-lg border border-border p-0.5"
+                      >
+                        {FILTERS.map((filter) => {
+                          const active = view === filter.search;
+                          return (
+                            <Button
+                              aria-pressed={active}
+                              className={cn(
+                                "h-6 px-2 font-normal max-sm:min-h-11",
+                                active
+                                  ? "bg-muted text-foreground"
+                                  : "text-muted-foreground",
+                              )}
+                              key={filter.label}
+                              onClick={() => setView(filter.search)}
+                              size="xs"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <filter.icon />
+                              {filter.label}
+                            </Button>
+                          );
+                        })}
+                      </fieldset>
+                    </div>
+                  </>
+                ) : (
+                  <AuditViewMenu value={view} onChange={setView} />
+                )}
+                <p className="text-muted-foreground text-sm" id={searchScopeId}>
+                  Text search applies to loaded events.
+                  {moreToLoad ? " Show older events to search more." : ""}
+                </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative w-64 max-w-full">
                     <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
+                      aria-describedby={searchScopeId}
                       aria-label="Search events"
                       className="h-8 pl-8 max-sm:min-h-11"
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search events…"
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape" && query) {
+                          event.preventDefault();
+                          setQuery("");
+                        }
+                      }}
+                      placeholder="Search loaded events…"
+                      ref={searchInput}
                       type="search"
                       value={query}
                     />
                   </div>
+                  {query ? (
+                    <Button
+                      className="max-sm:min-h-11"
+                      onClick={() => {
+                        setQuery("");
+                        searchInput.current?.focus();
+                      }}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      Clear search
+                    </Button>
+                  ) : null}
                   {/* Beside the other filters, on the row that wraps: it narrows what is asked for. */}
                   {bot && !ask ? (
                     <Button
@@ -414,25 +586,42 @@ export function AuditPage({
                    * Admin's one set of filters: the answer's chips and Add filter, asked of the
                    * server. Anywhere else, the buttons that narrow the rows already loaded.
                    */}
-                  {ask ? (
+                  {ask && !accessDenied ? (
                     <AuditFilterChips
                       filters={chips}
                       labels={answer?.labels ?? NO_LABELS}
                       nameFor={nameFor}
                       onChange={setChips}
                       onOpen={() => setVocabularyWanted(true)}
-                      vocabulary={vocabulary}
+                      vocabulary={
+                        vocabulary.isSuccess
+                          ? (vocabulary.data ?? undefined)
+                          : undefined
+                      }
+                      recovery={
+                        vocabulary.error
+                          ? {
+                              error: vocabulary.error,
+                              retry: vocabulary.refetch,
+                              retrying: vocabulary.isFetching,
+                            }
+                          : undefined
+                      }
                     />
-                  ) : (
+                  ) : ask ? null : (
                     filters
                   )}
-                  {events.data && !events.isPlaceholderData ? (
-                    <span
-                      className="ml-1 text-muted-foreground text-xs tabular-nums"
+                  {loaded ? (
+                    <Text
+                      as="span"
+                      className="ml-1 rounded-sm text-muted-foreground text-xs tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                       data-audit-count
+                      ref={resultSummary}
+                      role="status"
+                      tabIndex={-1}
                     >
                       {count}
-                    </span>
+                    </Text>
                   ) : null}
                   <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
                     <Button
@@ -447,50 +636,76 @@ export function AuditPage({
                       <IconRefresh />
                       {events.isFetching ? "Loading events…" : "Refresh"}
                     </Button>
-                    <Button
-                      className="max-sm:min-h-11"
-                      aria-describedby={
-                        showExportScope ? exportScopeId : undefined
-                      }
-                      disabled={exporting}
-                      onClick={exportCsv}
-                      size="sm"
-                      variant="outline"
-                    >
-                      <IconDownload />
-                      {exporting
-                        ? "Exporting…"
-                        : hasTextSearch
-                          ? "Export CSV without search"
-                          : "Export CSV"}
-                    </Button>
+                    {accessDenied ? null : (
+                      <Button
+                        className="max-sm:min-h-11"
+                        aria-describedby={
+                          showExportScope
+                            ? `${exportScopeId} ${searchScopeId}`
+                            : undefined
+                        }
+                        disabled={!loaded || exporting}
+                        onClick={exportCsv}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <IconDownload />
+                        {exporting
+                          ? "Exporting…"
+                          : hasTextSearch
+                            ? "Export CSV without search"
+                            : "Export CSV"}
+                      </Button>
+                    )}
                   </div>
                 </div>
-                {showExportScope ? (
+                {loaded &&
+                unmatchedPage?.search === search &&
+                unmatchedPage.query === query ? (
+                  <Text
+                    as="p"
+                    color="secondary"
+                    display="block"
+                    role="status"
+                    size="base"
+                  >
+                    No events on that page matched your search or filters.
+                  </Text>
+                ) : null}
+                {showExportScope && !accessDenied ? (
                   <p
-                    className="text-muted-foreground text-sm"
+                    className={
+                      ask || hasTextSearch || hasColumnFilters
+                        ? "text-muted-foreground text-sm"
+                        : "sr-only"
+                    }
                     id={exportScopeId}
                   >
                     {ask
-                      ? "CSV includes events matching the selected view and filters, including older events. Text search applies only to loaded rows."
-                      : "CSV includes events in the selected view and Bot scope, including older events. Table filters and text search apply only to loaded rows."}
+                      ? "CSV includes events matching the selected view and filters, including older events."
+                      : "CSV includes events in the selected view and Bot scope, including older events. Table filters apply to loaded events."}
                   </p>
                 ) : null}
-                {exportError ? (
+                {exportError && !accessDenied ? (
                   <p className="text-destructive text-sm" role="alert">
                     {exportError}
                   </p>
                 ) : null}
-                {exportCapped ? (
+                {exportCapped && !accessDenied ? (
                   <p className="text-muted-foreground text-sm" role="status">
                     The file has the newest {exportCapped.toLocaleString()}{" "}
                     events, not all of them. Narrow the filter or dates to
                     export the rest.
                   </p>
                 ) : null}
-                {events.isError && !events.isFetchNextPageError ? (
+                {accessDenied ? (
                   <p className="text-destructive text-sm" role="alert">
-                    {events.data
+                    You don’t have access to these audit events. Select Refresh
+                    to check again.
+                  </p>
+                ) : events.isError && !events.isFetchNextPageError ? (
+                  <p className="text-destructive text-sm" role="alert">
+                    {rows.length
                       ? "Couldn't refresh these events. The last loaded events are still shown. Select Refresh to try again."
                       : "Couldn't load these events. Select Refresh to try again."}
                   </p>
@@ -498,7 +713,9 @@ export function AuditPage({
                   !events.isPlaceholderData &&
                   rows.length === 0 ? (
                   <PageEmpty icon={IconSearch} title="No matches">
-                    No events match this filter yet.
+                    {moreToLoad
+                      ? "No events on the loaded pages. Older events are available."
+                      : "No events match this filter yet."}
                   </PageEmpty>
                 ) : null}
               </div>
@@ -508,5 +725,49 @@ export function AuditPage({
         {children ? <div className="px-4 pb-16">{children}</div> : null}
       </div>
     </PageShell>
+  );
+}
+
+function AuditViewMenu({
+  className,
+  value,
+  onChange,
+}: {
+  className?: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const current = FILTERS.find(({ search }) => search === value) ?? FILTERS[0];
+  return (
+    <HStack className={className}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button className="max-sm:min-h-11" size="sm" variant="outline" />
+          }
+        >
+          View: {current.label}
+          <IconChevronDown />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="w-max max-w-(--available-width)"
+        >
+          <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+            {FILTERS.map(({ icon: Icon, label, search }) => (
+              <DropdownMenuRadioItem
+                className="focus:bg-muted focus:text-foreground focus:**:text-foreground max-sm:min-h-11"
+                closeOnClick
+                value={search}
+                key={label}
+              >
+                <Icon />
+                {label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </HStack>
   );
 }

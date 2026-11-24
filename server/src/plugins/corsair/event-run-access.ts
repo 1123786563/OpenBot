@@ -22,7 +22,7 @@ export async function githubQueuedRunAuthorization({
   runId,
   personId,
 }: {
-  database: Database;
+  database: Pick<Database, "select">;
   service?: ReturnType<typeof createGithubEventTriggers>;
   runId: string;
   personId: string;

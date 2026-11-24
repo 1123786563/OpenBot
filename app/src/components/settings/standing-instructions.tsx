@@ -1,15 +1,11 @@
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconChevronRight, IconNotes } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Item,
   ItemActions,
@@ -20,6 +16,7 @@ import {
 } from "@/components/ui/item";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/i18n";
+import { canKeepCachedRead } from "@/lib/client";
 import { saveInstructionsMutationOptions } from "@/lib/settings/mutations";
 import {
   INSTRUCTIONS_LIMIT,
@@ -28,179 +25,213 @@ import {
 import { queryClient } from "@/query-client";
 
 /**
- * One box, applied to every coworker in every channel.
- *
- * WHAT IT IS FOR, said on the screen rather than left to be guessed. A coworker's role and this are
- * both durable instructions and a person meeting them for the first time has no reason to know which
- * belongs where, so the description draws the line the prompt draws: the role says what a coworker
- * is for, this says how the person wants things done. Without that sentence the obvious mistake is
- * to write a job description here and get it applied to every coworker at once.
- */
-
-/**
  * The standing instructions as a row on General: what they say, cut to two lines, and a dialog to write them. A free
  * text is a summary and a dialog on these screens, so a long box does not take over the page.
  */
 export function StandingInstructionsRow() {
   const stored = useQuery(instructionsQueryOptions());
+  const save = useMutation(saveInstructionsMutationOptions(queryClient));
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const opener = useRef<HTMLButtonElement>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const submitting = useRef(false);
+  const countId = useId();
+  const formId = useId();
   const { t } = useTranslation();
   const written = stored.data?.trim();
+  const text = draft ?? stored.data ?? "";
+  const length = text.trim().length;
+  const over = length > INSTRUCTIONS_LIMIT;
+  const dirty = draft !== null && text.trim() !== (written ?? "");
+  const readable = stored.data !== undefined && canKeepCachedRead(stored.error);
+  const stale = readable && stored.isError;
+  const canSave = dirty && !over && stored.isSuccess && !save.isPending;
+
+  function close() {
+    setOpen(false);
+    setDraft(null);
+    save.reset();
+  }
   return (
     <>
       <Item
-        render={<button onClick={() => setOpen(true)} type="button" />}
+        render={
+          <button onClick={() => setOpen(true)} ref={opener} type="button" />
+        }
         size="sm"
       >
         <ItemMedia variant="icon">
           <IconNotes />
         </ItemMedia>
-        <ItemContent>
-          <ItemTitle>
+        <ItemContent className="min-w-0">
+          <ItemTitle className="w-auto">
             {t("settings.instructions", "Standing instructions")}
           </ItemTitle>
-          <ItemDescription>
-            {stored.error
-              ? t(
-                  "settings.instructions.loadFailed",
-                  "Couldn't load your instructions.",
-                )
-              : written ||
-                t(
-                  "settings.instructions.empty",
-                  "None yet. Tell every Bot how you want things done.",
-                )}
+          <ItemDescription className="line-clamp-none">
+            {t(
+              "settings.instructions.appliesTo",
+              "Applies to every Bot in every conversation.",
+            )}
           </ItemDescription>
+          <ItemDescription className="wrap-anywhere">
+            {stored.isPending
+              ? t("settings.instructions.loading", "Loading your instructions…")
+              : stored.isError && !readable
+                ? t(
+                    "settings.instructions.loadFailed",
+                    "Couldn’t load your instructions.",
+                  )
+                : written || t("settings.instructions.none", "None yet.")}
+          </ItemDescription>
+          {stale ? (
+            <Text as="p" color="secondary" display="block" size="base">
+              {t("settings.lastLoaded", "Last loaded · Refresh before saving.")}
+            </Text>
+          ) : null}
         </ItemContent>
         <ItemActions>
           <IconChevronRight className="size-4 text-muted-foreground" />
         </ItemActions>
       </Item>
-      <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t("settings.instructions", "Standing instructions")}
-            </DialogTitle>
-            {/*
-             * What this is for, said on the screen rather than left to be guessed: the role says
-             * what a Bot is for, this says how the person wants things done.
-             */}
-            <DialogDescription>
-              {t(
-                "settings.instructions.description",
-                "Applies to every Bot in every conversation. A Bot's role says what it does. This says how you want it done, like your writing style.",
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="mt-4">
-            <StandingInstructionsEditor />
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-/** The box itself, with its count and Save: in the row's dialog. */
-function StandingInstructionsEditor() {
-  const stored = useQuery(instructionsQueryOptions());
-  const save = useMutation(saveInstructionsMutationOptions(queryClient));
-  const { t } = useTranslation();
-
-  const [draft, setDraft] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  /*
-   * The box holds the stored text until somebody types, and their typing after that.
-   *
-   * Null is "has not been edited", which is not the same as "is empty": seeding the state with ""
-   * and then filling it in when the read lands would overwrite whatever they had already started
-   * typing into a box that was ready before the network was.
-   */
-  useEffect(() => {
-    if (stored.data !== undefined && draft === null) setDraft(stored.data);
-  }, [stored.data, draft]);
-
-  const text = draft ?? stored.data ?? "";
-  const over = text.trim().length > INSTRUCTIONS_LIMIT;
-  const unchanged = stored.data !== undefined && text === stored.data;
-
-  const submit = () => {
-    setProblem(null);
-    setSaved(false);
-    save.mutate(text, {
-      onError: (thrown: Error) => setProblem(thrown.message),
-      /* The server trims, so the box settles to what was actually stored rather than what was sent. */
-      onSuccess: (asStored) => {
-        setDraft(asStored);
-        setSaved(true);
-      },
-    });
-  };
-
-  return (
-    <>
-      {stored.isPending ? null : stored.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {stored.error.message}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <Textarea
-            aria-label={t("settings.instructions", "Standing instructions")}
-            className="min-h-40"
-            disabled={save.isPending}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setSaved(false);
-            }}
-            placeholder={t(
-              "settings.instructions.placeholder",
-              "We are two people, not a team. Write in British English, and never call our product a platform.",
-            )}
-            value={text}
-          />
-          <div className="flex flex-row items-center justify-between gap-4">
-            <p
-              className={
-                over
-                  ? "text-destructive text-xs"
-                  : "text-muted-foreground text-xs"
-              }
+      <SettingsDraftDialog
+        title={t("settings.instructions", "Standing instructions")}
+        description={t(
+          "settings.instructions.description",
+          "Applies to every Bot in every conversation. A Bot's role says what it does. This says how you want it done, like your writing style.",
+        )}
+        open={open}
+        dirty={dirty}
+        guardNavigation={submitting}
+        saving={save.isPending}
+        opener={opener}
+        onClose={close}
+        action={
+          readable ? (
+            <Button
+              aria-disabled={!canSave}
+              className="min-h-11"
+              form={formId}
+              type="submit"
             >
-              {t(
-                "settings.instructions.count",
-                "{count} of {limit} characters",
-                { count: text.trim().length, limit: INSTRUCTIONS_LIMIT },
-              )}
-            </p>
-            <div className="flex flex-row items-center gap-3">
-              {/*
-               * One line, and only the news. A save that worked says so until the next keystroke; a
-               * refusal shows the server's own sentence, which names what was wrong with it.
-               */}
-              {problem ? (
-                <span className="text-destructive text-xs" role="alert">
-                  {problem}
-                </span>
-              ) : saved ? (
-                <span className="text-muted-foreground text-xs">
-                  {t("settings.instructions.saved", "Saved")}
-                </span>
-              ) : null}
-              <Button
-                disabled={save.isPending || over || unchanged}
-                onClick={submit}
+              {save.isPending
+                ? t("settings.instructions.saving", "Saving…")
+                : t("settings.instructions.save", "Save")}
+            </Button>
+          ) : undefined
+        }
+      >
+        {stored.isPending ? (
+          <ReadStatus
+            kind="loading"
+            message={t(
+              "settings.instructions.loading",
+              "Loading your instructions…",
+            )}
+          />
+        ) : stored.error ? (
+          <ReadError
+            focusAfterRetry={() => field.current}
+            message={
+              stale
+                ? t(
+                    "settings.instructions.refreshFailed",
+                    "Couldn’t refresh your instructions.",
+                  )
+                : t(
+                    "settings.instructions.loadFailed",
+                    "Couldn’t load your instructions.",
+                  )
+            }
+            description={
+              stale
+                ? dirty
+                  ? t(
+                      "settings.draftKept",
+                      "Your draft is still here. Refresh before saving.",
+                    )
+                  : t(
+                      "settings.instructions.lastLoadedDescription",
+                      "Showing your last loaded instructions. Refresh before saving.",
+                    )
+                : undefined
+            }
+            retry={stored.refetch}
+            retryBelow
+            retryLabel={
+              stale
+                ? t("settings.instructions.refresh", "Refresh instructions")
+                : undefined
+            }
+            retrying={stored.isFetching}
+          />
+        ) : null}
+        {readable ? (
+          <form
+            id={formId}
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!canSave || submitting.current) return;
+              submitting.current = true;
+              try {
+                await save.mutateAsync(text);
+                setDraft(null);
+              } catch {
+                // The response is shown beside the draft.
+              } finally {
+                submitting.current = false;
+              }
+            }}
+          >
+            <VStack gap={2}>
+              <Textarea
+                aria-describedby={countId}
+                aria-invalid={over || undefined}
+                aria-label={t("settings.instructions", "Standing instructions")}
+                className="min-h-40"
+                readOnly={save.isPending}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  save.reset();
+                }}
+                placeholder={t(
+                  "settings.instructions.placeholder",
+                  "Use British English and write dates in day–month–year order.",
+                )}
+                ref={field}
+                value={text}
+              />
+              <Text
+                as="p"
+                className={over ? "text-destructive" : undefined}
+                color="secondary"
+                id={countId}
                 size="sm"
               >
-                {t("settings.instructions.save", "Save")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+                {t(
+                  "settings.instructions.count",
+                  "{count} of {limit} characters",
+                  { count: length, limit: INSTRUCTIONS_LIMIT },
+                )}
+              </Text>
+              {save.error ? (
+                <Text
+                  as="p"
+                  className="text-destructive [overflow-wrap:anywhere]"
+                  role="alert"
+                  size="sm"
+                >
+                  {save.error.message}
+                </Text>
+              ) : save.isSuccess ? (
+                <Text as="p" color="secondary" role="status" size="sm">
+                  {t("settings.instructions.saved", "Saved")}
+                </Text>
+              ) : null}
+            </VStack>
+          </form>
+        ) : null}
+      </SettingsDraftDialog>
     </>
   );
 }

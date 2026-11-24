@@ -55,7 +55,7 @@ function draw(edition: "team" | "personal", at: string) {
 test("in the personal edition, Skills is its own page that goes back to Bots", async () => {
   const view = draw("personal", "/capabilities/skills");
   expect(await view.findByRole("heading", { name: "Skills" })).toBeTruthy();
-  expect(view.getByRole("button", { name: /Bots/ }).getAttribute("href")).toBe(
+  expect(view.getByRole("link", { name: /Bots/ }).getAttribute("href")).toBe(
     "/bots",
   );
   expect(view.queryByRole("navigation", { name: "Capabilities" })).toBeNull();

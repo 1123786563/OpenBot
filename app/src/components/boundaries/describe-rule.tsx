@@ -24,6 +24,7 @@ export function DescribeField({
   id,
   label,
   description,
+  example,
   placeholder,
   action,
   write,
@@ -35,7 +36,8 @@ export function DescribeField({
   id: string;
   label: string;
   description: string;
-  placeholder: string;
+  example?: string;
+  placeholder?: string;
   /** The button: "Write rule". It reads "Writing…" while the model answers. */
   action: string;
   write: (text: string) => Promise<string | null>;
@@ -72,6 +74,9 @@ export function DescribeField({
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <FieldDescription>{description}</FieldDescription>
+      {example ? (
+        <FieldDescription>For example, “{example}”</FieldDescription>
+      ) : null}
       <Textarea
         className="min-h-10"
         id={id}
@@ -96,6 +101,7 @@ export function DescribeField({
       />
       <HStack>
         <Button
+          className="min-h-12"
           disabled={!described || writing || disabled}
           onClick={() => void ask()}
           size="sm"
@@ -138,13 +144,13 @@ export function DescribeRule({
   return (
     <DescribeField
       action="Write rule"
-      description="Say in a sentence what no Bot may do, and your model writes the rule. A second reading that never sees your words says what the rule does."
+      description="Describe the action to block and when to block it. You’ll review the proposed rule before saving."
       disabled={disabled}
       id="rule-description-english"
       label="Describe the rule"
       onTextChange={onTextChange}
       onWritingChange={onWritingChange}
-      placeholder="Bots may not visit social media sites"
+      example="Bots may not visit social media sites."
       text={text}
       write={async (described) => {
         const translation = await translatePolicyRule(described);

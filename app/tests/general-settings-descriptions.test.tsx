@@ -68,7 +68,7 @@ async function renderMessageListPreference() {
 test("nothing clamps the message list emphasis description", async () => {
   const view = await renderMessageListPreference();
   const description = view.getByText(
-    "Choose which line stands out in the sidebar.",
+    "Show the conversation title or the Bot name first in the sidebar.",
   );
   expect(description.className).not.toMatch(/\bline-clamp-\d/);
 });
@@ -78,5 +78,5 @@ test("the message list emphasis row keeps its description slot", async () => {
   const view = await renderMessageListPreference();
   expect(
     view.container.querySelector('[data-slot="item-description"]')?.textContent,
-  ).toBe("Choose which line stands out in the sidebar.");
+  ).toBe("Show the conversation title or the Bot name first in the sidebar.");
 });

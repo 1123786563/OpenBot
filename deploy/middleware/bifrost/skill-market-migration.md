@@ -93,7 +93,7 @@ report records the following for each source version.
 
 ## Record the verified receipt in OpenBot
 
-Apply OpenBot database migration `0098_skill_market_equivalences`. Keep
+Apply OpenBot database migrations through `0118_skill_market_equivalences`. Keep
 publishing and installation writes paused while you record the final receipt.
 Use the same snapshot ID, SkillHub origin and namespace, Bifrost registry ID,
 and Bifrost reader URL as the verification run. Set `DATABASE_URL` to the

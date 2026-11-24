@@ -1,3 +1,4 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconChevronRight,
   IconDeviceDesktop,
@@ -10,26 +11,24 @@ import {
   IconTextCaption,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import type { ZodType } from "zod";
 import { CallbackTokenPanel } from "@/components/agents/callback-token-panel";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { BusinessComputerLink } from "@/components/edition/team-features-dialog";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { ReadError } from "@/components/layout/read-status";
+import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
 import {
-  Dialog,
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
   ItemContent,
-  ItemDescription,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -61,24 +60,35 @@ import { updateAgentMutationOptions } from "@/lib/agents/mutations";
 import {
   type AgentProfile,
   agentCapabilitiesQueryOptions,
+  agentQueryOptions,
 } from "@/lib/agents/queries";
 import { shownSubtitle } from "@/lib/agents/subtitle";
 import { isComposing } from "@/lib/composing";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { myCapabilitiesQueryOptions } from "@/lib/enterprise/queries";
 import { queryClient } from "@/query-client";
-import { BotDetailDialog, BotDetailFormAction } from "./detail-surface";
 
 type TextField = "name" | "title" | "roleDescription" | "instructions";
 
 const TEXT_FIELDS: {
   field: TextField;
   label: string;
+  help: string;
   icon: typeof IconId;
   multiline?: boolean;
 }[] = [
-  { field: "name", label: "Name", icon: IconId },
-  { field: "title", label: "Title", icon: IconTag },
+  {
+    field: "name",
+    label: "Name",
+    help: "Shown wherever people find or talk to this Bot.",
+    icon: IconId,
+  },
+  {
+    field: "title",
+    label: "Short description",
+    help: "Shown under the Bot’s name so people can tell what it’s for.",
+    icon: IconTag,
+  },
   {
     field: "roleDescription",
     // Not "Role": beside "Title" it read as a second job title, when it is the standing
@@ -86,6 +96,7 @@ const TEXT_FIELDS: {
     // The starter Bot is the exception: this is what it does, for the person, and what it is
     // told is the row below.
     label: "What it does",
+    help: "Describe the work people can ask this Bot to do.",
     icon: IconTextCaption,
     multiline: true,
   },
@@ -93,6 +104,7 @@ const TEXT_FIELDS: {
     // Only the starter Bot has this row. See `AgentProfile.instructions`.
     field: "instructions",
     label: "Instructions",
+    help: "Tell this Bot how to respond and what rules to follow.",
     icon: IconNotes,
     multiline: true,
   },
@@ -112,11 +124,36 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
   const update = useMutation(updateAgentMutationOptions(queryClient));
   const [editing, setEditing] = useState<TextField | null>(null);
+  const editTrigger = useRef<HTMLButtonElement>(null);
   const save = (patch: Partial<AgentFormValues>) =>
     update.mutateAsync({
       agentId: agent.id,
       input: profileUpdateInput(agent, patch),
     });
+  async function publish() {
+    const latest = await queryClient.fetchQuery({
+      ...agentQueryOptions(agent.id),
+      staleTime: 0,
+    });
+    if (!latest.canManage) {
+      throw new ActionUnavailable(
+        "You no longer have permission to make this Bot public.",
+      );
+    }
+    if (latest.visibility === "public") return;
+    if (
+      latest.name !== agent.name ||
+      latest.isolationActive !== agent.isolationActive
+    ) {
+      throw new ActionUnavailable(
+        "This Bot’s name or computer changed. Close this dialog and review its settings before making it public.",
+      );
+    }
+    await update.mutateAsync({
+      agentId: latest.id,
+      input: profileUpdateInput(latest, { visibility: "public" }),
+    });
+  }
   const open = TEXT_FIELDS.find((entry) => entry.field === editing);
   /*
    * The subtitle as a person reads it everywhere else (lib/agents/subtitle.ts). Saved back unchanged,
@@ -147,7 +184,13 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
               <Item
                 render={
                   agent.canManage ? (
-                    <button onClick={() => setEditing(field)} type="button" />
+                    <button
+                      onClick={(event) => {
+                        editTrigger.current = event.currentTarget;
+                        setEditing(field);
+                      }}
+                      type="button"
+                    />
                   ) : undefined
                 }
                 size="sm"
@@ -157,7 +200,15 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>{label}</ItemTitle>
-                  <ItemDescription>{shown(field)}</ItemDescription>
+                  <Text
+                    as="p"
+                    color="secondary"
+                    maxLines={agent.canManage ? 2 : undefined}
+                    size="base"
+                    style={{ overflowWrap: "anywhere" }}
+                  >
+                    {shown(field)}
+                  </Text>
                 </ItemContent>
                 {agent.canManage ? (
                   <ItemActions>
@@ -181,6 +232,7 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
               <Separator />
               <VisibilityRow
                 agent={agent}
+                onPublish={publish}
                 onSave={(visibility) => save({ visibility })}
               />
               <Separator />
@@ -199,9 +251,9 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>System owned</ItemTitle>
-                  <ItemDescription>
+                  <Text as="p" color="secondary" size="base">
                     Comes with OpenBot. It doesn't belong to a person.
-                  </ItemDescription>
+                  </Text>
                 </ItemContent>
               </Item>
             </>
@@ -211,10 +263,12 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
       <ConnectionSection agent={agent} />
       {open ? (
         <EditTextDialog
+          help={open.help}
           label={open.label}
           multiline={open.multiline ?? false}
           onClose={() => setEditing(null)}
           onSave={(value) => saveText(open.field, value)}
+          opener={editTrigger}
           schema={TEXT_SCHEMAS[open.field]}
           value={shown(open.field) ?? ""}
         />
@@ -226,31 +280,31 @@ export function SetupSections({ agent }: { agent: AgentProfile }) {
 /** Two named choices that write on pick: no draft worth holding, so no dialog. */
 function VisibilityRow({
   agent,
+  onPublish,
   onSave,
 }: {
   agent: AgentProfile;
+  onPublish: () => Promise<void>;
   onSave: (visibility: AgentProfile["visibility"]) => Promise<unknown>;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const summaryId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const { confirmation, requestConfirmation } = useActionConfirmation();
+  const publicSummary = "Everyone on OpenBot can find and use it.";
   return (
-    <Item size="sm">
+    <Item
+      size="sm"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto minmax(0, 1fr) auto",
+      }}
+    >
       <ItemMedia variant="icon">
         <IconEye />
       </ItemMedia>
-      <ItemContent>
-        <ItemTitle>Visibility</ItemTitle>
-        <ItemDescription>
-          {error ??
-            (agent.visibility === "private"
-              ? agent.isolationActive
-                ? `Only you can see it and start conversations with it. ${ISOLATED_MAKING_PUBLIC}`
-                : "Only you can see it and start conversations with it."
-              : agent.isolationActive
-                ? `Everyone on OpenBot can find and use it. ${ISOLATED_PUBLIC_SHARES_LOGINS}`
-                : "Everyone on OpenBot can find and use it.")}
-        </ItemDescription>
-      </ItemContent>
+      <ItemTitle>Visibility</ItemTitle>
       <ItemActions>
         {agent.canManage ? (
           <Select
@@ -258,11 +312,31 @@ function VisibilityRow({
             // The label map, so the closed trigger says "Private" rather than the raw value.
             items={{ private: "Private", public: "Public" }}
             onValueChange={async (next) => {
-              if (next === agent.visibility) return;
+              if (
+                next === agent.visibility ||
+                (next !== "public" && next !== "private")
+              )
+                return;
               setError(null);
+              if (next === "public") {
+                requestConfirmation({
+                  title: `Make ${agent.name} public?`,
+                  description: agent.isolationActive
+                    ? `${publicSummary} ${ISOLATED_MAKING_PUBLIC}`
+                    : publicSummary,
+                  confirmLabel: "Make public",
+                  pendingLabel: "Making public…",
+                  failureMessage: "Couldn’t make this Bot public. Try again.",
+                  successMessage: `${agent.name} is public.`,
+                  run: onPublish,
+                  trigger: trigger.current ?? undefined,
+                  variant: "default",
+                });
+                return;
+              }
               setSaving(true);
               try {
-                await onSave(next as AgentProfile["visibility"]);
+                await onSave(next);
               } catch (failure) {
                 setError(
                   failure instanceof Error
@@ -275,7 +349,13 @@ function VisibilityRow({
             }}
             value={agent.visibility}
           >
-            <SelectTrigger className="w-28">
+            <SelectTrigger
+              aria-describedby={summaryId}
+              aria-label="Visibility"
+              className="w-28"
+              ref={trigger}
+              style={{ minHeight: "var(--spacing-11)" }}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent {...astryxScope}>
@@ -289,6 +369,23 @@ function VisibilityRow({
           </span>
         )}
       </ItemActions>
+      <ItemContent style={{ gridColumn: "2 / -1" }}>
+        <Text as="p" color="secondary" id={summaryId} size="base">
+          {agent.visibility === "private"
+            ? agent.isolationActive
+              ? `Only you can see it and start conversations with it. ${ISOLATED_MAKING_PUBLIC}`
+              : "Only you can see it and start conversations with it."
+            : agent.isolationActive
+              ? `${publicSummary} ${ISOLATED_PUBLIC_SHARES_LOGINS}`
+              : publicSummary}
+        </Text>
+        {error ? (
+          <Text as="p" role="alert" size="base">
+            {error}
+          </Text>
+        ) : null}
+        {confirmation}
+      </ItemContent>
     </Item>
   );
 }
@@ -353,13 +450,13 @@ function IsolatedRow({
       </ItemMedia>
       <ItemContent>
         <ItemTitle id={`isolated-${agent.id}`}>Isolated</ItemTitle>
-        <ItemDescription className="line-clamp-none">
+        <Text as="p" color="secondary" size="base">
           {error ?? summary}
-        </ItemDescription>
+        </Text>
         {showCheck && checking ? (
-          <ItemDescription role="status">
+          <Text as="p" color="secondary" role="status" size="base">
             Checking whether isolation is available…
-          </ItemDescription>
+          </Text>
         ) : null}
         {showCheck && checkFailed ? (
           <ReadError
@@ -417,25 +514,30 @@ function sharedSummary(isPublic: boolean): string {
  * value before the person finished typing it.
  */
 function EditTextDialog({
+  help,
   label,
   value,
   multiline,
   schema,
   onSave,
   onClose,
+  opener,
 }: {
+  help: string;
   label: string;
   value: string;
   multiline: boolean;
   schema: ZodType<string>;
   onSave: (value: string) => Promise<unknown>;
   onClose: () => void;
+  opener: React.RefObject<HTMLButtonElement | null>;
 }) {
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submitting = useRef(false);
   const submit = async () => {
-    if (saving) return;
+    if (submitting.current) return;
     const parsed = schema.safeParse(draft);
     if (!parsed.success) {
       setError(
@@ -443,6 +545,7 @@ function EditTextDialog({
       );
       return;
     }
+    submitting.current = true;
     setSaving(true);
     try {
       await onSave(parsed.data);
@@ -454,58 +557,62 @@ function EditTextDialog({
           : "Couldn't save. Try again.",
       );
     } finally {
+      submitting.current = false;
       setSaving(false);
     }
   };
   return (
-    <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <BotDetailDialog>
-        <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
-        </DialogHeader>
-        <DialogBody className="mt-4 grid gap-2">
-          {multiline ? (
-            <Textarea
-              aria-label={label}
-              autoFocus
-              onChange={(event) => setDraft(event.target.value)}
-              rows={5}
-              value={draft}
-            />
-          ) : (
-            <Input
-              aria-label={label}
-              autoFocus
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !isComposing(event)) {
-                  event.preventDefault();
-                  void submit();
-                }
-              }}
-              value={draft}
-            />
-          )}
-          {error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </DialogBody>
-        <DialogFooter className="mt-4">
-          <BotDetailFormAction
-            disabled={saving}
-            onClick={onClose}
-            variant="outline"
-          >
-            Cancel
-          </BotDetailFormAction>
-          <BotDetailFormAction disabled={saving} onClick={() => void submit()}>
-            {saving ? "Saving…" : "Save"}
-          </BotDetailFormAction>
-        </DialogFooter>
-      </BotDetailDialog>
-    </Dialog>
+    <SettingsDraftDialog
+      action={
+        <Button
+          className="min-h-11"
+          disabled={saving}
+          onClick={() => void submit()}
+          type="button"
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      }
+      description={help}
+      dirty={draft !== value}
+      guardNavigation={submitting}
+      onClose={onClose}
+      open
+      opener={opener}
+      overlay={astryxScope}
+      saving={saving}
+      title={label}
+    >
+      {multiline ? (
+        <Textarea
+          aria-label={label}
+          autoFocus
+          onChange={(event) => setDraft(event.target.value)}
+          readOnly={saving}
+          rows={5}
+          value={draft}
+        />
+      ) : (
+        <Input
+          aria-label={label}
+          autoFocus
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !isComposing(event)) {
+              event.preventDefault();
+              void submit();
+            }
+          }}
+          readOnly={saving}
+          value={draft}
+        />
+      )}
+      {error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </SettingsDraftDialog>
   );
 }
 
@@ -524,15 +631,17 @@ function ConnectionSection({ agent }: { agent: AgentProfile }) {
           </ItemMedia>
           <ItemContent>
             <ItemTitle>{builtIn ? "Built in" : "Agent URL"}</ItemTitle>
-            <ItemDescription
-              className={
-                builtIn ? undefined : "line-clamp-none break-all font-mono"
-              }
+            <Text
+              as="p"
+              color="secondary"
+              size="base"
+              style={{ overflowWrap: "anywhere" }}
+              type={builtIn ? "body" : "code"}
             >
               {builtIn
                 ? "Runs inside OpenBot. There's nothing to connect."
                 : agent.endpoint}
-            </ItemDescription>
+            </Text>
           </ItemContent>
         </Item>
       </PageRows>

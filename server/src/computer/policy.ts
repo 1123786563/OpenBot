@@ -41,7 +41,7 @@ export type ActionPolicy = {
   labels?: Record<string, RuleLabel>;
 };
 
-export type RuleLabel = { name: string; description: string };
+export type RuleLabel = { name: string; description: string; id?: string };
 
 /**
  * The attributes a rule can be written against.

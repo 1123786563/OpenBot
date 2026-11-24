@@ -227,9 +227,9 @@ test("a description lands as switches with their reading, shows who loses and ke
   // The switches, in the Permissions page's own words: off for everybody, granted to the other groups.
   expect(view.getAllByText("Local computer access")).toHaveLength(4);
   expect(view.getByText("Everybody")).toBeTruthy();
-  expect(view.getByText("Off")).toBeTruthy();
+  expect(view.getByText("Blocked")).toBeTruthy();
   expect(view.getByText("Group: Field Sales (EMEA)")).toBeTruthy();
-  expect(view.getAllByText("Grant")).toHaveLength(3);
+  expect(view.getAllByText("Allowed")).toHaveLength(3);
 
   // Who it changes, as the server worked it out for every person.
   expect(
@@ -243,14 +243,17 @@ test("a description lands as switches with their reading, shows who loses and ke
   expect(view.getAllByText("Loses access")).toHaveLength(3);
   expect(view.getAllByText("Keeps access")).toHaveLength(4);
   expect(
-    view.getAllByText("Now on by default. After this, off for everybody.", {
-      exact: false,
-    }),
+    view.getAllByText(
+      "Now allowed by default. After this, blocked for everybody.",
+      {
+        exact: false,
+      },
+    ),
   ).toHaveLength(3);
   // The contractor who is also an engineer keeps it, through Engineering, as the engineer does.
   expect(
     view.getAllByText(
-      "Now on by default. After this, on through Engineering.",
+      "Now allowed by default. After this, allowed through Engineering.",
       { exact: false },
     ),
   ).toHaveLength(2);
@@ -309,15 +312,13 @@ test("removing a change is called out and shows who the rest would change", asyn
   await view.findByText(
     "3 people lose access and 4 people keep it through a different switch.",
   );
-  expect(view.queryByText(/You've removed a change/)).toBeNull();
+  expect(view.queryByText(/Change removed/)).toBeNull();
 
   // Without Sales's grant, Sam loses it too.
   fireEvent.click(view.getByRole("button", { name: "Remove change 4" }));
 
   expect(
-    view.getByText(
-      "You've removed a change since they were written. The check and the reading above are for the written changes, not your edit.",
-    ),
+    view.getByText("Change removed. Review the updated impact before saving."),
   ).toBeTruthy();
   expect(
     await view.findByText(
@@ -366,12 +367,39 @@ test("a failed preview preserves the draft and a changed description blocks subm
 
   await user.type(description, " for new requests");
   expect(view.getByText(/Your description changed/)).toBeTruthy();
+  expect(view.queryByText("What these changes do")).toBeNull();
+  expect(view.queryByText("Who it changes")).toBeNull();
+  expect(view.queryByRole("button", { name: "Remove change 1" })).toBeNull();
   expect(save.disabled).toBe(true);
   fireEvent.submit(save.form as HTMLFormElement);
   expect(sent.some((entry) => entry.path.endsWith("/batch"))).toBe(false);
   await user.click(view.getByRole("button", { name: "Write changes" }));
   await waitFor(() => expect(save.disabled).toBe(false));
   expect(view.queryByText(/Your description changed/)).toBeNull();
+});
+
+test("the back link protects the draft and the example stays visible while editing", async () => {
+  const { view, router } = open();
+  const description = await view.findByLabelText("Describe the change");
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.type(description, "Block local computers");
+  expect(
+    view.getByText("For example, “Contractors can't use their own computer.”"),
+  ).toBeTruthy();
+  const back = view.getByRole("link", { name: "Permissions" });
+  await user.click(back);
+  await view.findByRole("alertdialog", { name: "Discard permission changes?" });
+  fireEvent.click(view.getByRole("button", { name: "Keep editing" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(router.state.location.pathname).toBe("/admin/permissions/describe");
+  expect(view.getByDisplayValue("Block local computers")).toBeTruthy();
+  await user.click(back);
+  await view.findByRole("alertdialog", { name: "Discard permission changes?" });
+  fireEvent.click(view.getByRole("button", { name: "Discard changes" }));
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe("/admin/permissions"),
+  );
+  expect(sent.some((call) => call.path.endsWith("/batch"))).toBe(false);
 });
 
 test("each saved switch reads on Audit as which permission, for whom, and what it was set to", () => {

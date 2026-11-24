@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 // This import closes a cycle: `./provider-vocabulary` imports `pluginsProvider` from this file.
 // It is safe for one reason, and the reason is the rule. Both live bindings that cross it —
 // `directoryReadFailure` here, `pluginsProvider` there — are `export function` declarations,
@@ -520,14 +520,37 @@ export function connectionSiblingsQueryOptions(serverId: string) {
   });
 }
 
+export function skillsAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 export function pluginsPageQueryOptions() {
   return queryOptions({
     queryKey: pluginKeys.page(),
-    queryFn: async (): Promise<PluginsPage> => {
-      const response = await client("/api/plugins", {
-        fallback: "Couldn't load your apps. Reload the page.",
-      });
-      return response.json();
+    retry: (failures, error) => failures < 1 && !skillsAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<PluginsPage> => {
+      try {
+        const response = await client("/api/plugins", {
+          fallback: "Couldn't load your apps. Reload the page.",
+          signal,
+        });
+        return response.json();
+      } catch (error) {
+        if (skillsAccessDenied(error)) {
+          // A subsequent temporary failure must not bring back revoked skills.
+          cache.setQueryData<PluginsPage>(queryKey, (current) =>
+            current?.skills.length ? { ...current, skills: [] } : current,
+          );
+        }
+        throw error;
+      }
     },
   });
 }

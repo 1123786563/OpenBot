@@ -1,12 +1,10 @@
 import { IconChevronRight, IconClock } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  PageRows,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { useRef } from "react";
+import { ConnectionPage } from "@/components/connections/connection-surface";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import {
   Item,
   ItemActions,
@@ -33,18 +31,18 @@ function routinesSummary(
 /**
  * Connections > Routines: what Routines is, and the way to the Routines page.
  *
- * Routines is listed among the apps because it is one to a Bot: the tools a Bot calls to set up,
- * change and stop a routine. There is nothing to connect or switch, since every Bot has it in every
- * edition, so a person who opens it wants their routines, and this page sends them there.
+ * Routines is a built-in tool available to every Bot. This page leads to the person's schedules.
  */
 export function RoutinesConnectionPage() {
   const routines = useQuery(routinesQueryOptions());
+  const heading = useRef<HTMLHeadingElement>(null);
   const summary = routinesSummary(routines.data?.routines);
   return (
-    <PageShell
+    <ConnectionPage
       action={<NewRoutineButton />}
       backButton={{ label: "Connections", linkProps: { to: "/connections" } }}
-      description="Routines are work your Bots do on a schedule. Every Bot can set one up for you."
+      description="Schedule work with the built-in Routines tool. Every Bot can set up a routine for you."
+      headingRef={heading}
       title="Routines"
     >
       {/* One destination, so no heading: it would only repeat the row's own title. */}
@@ -73,22 +71,15 @@ export function RoutinesConnectionPage() {
          * silently different grey sentence read as "no routines exist".
          */}
         {routines.error ? (
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load your routines.
-            </p>
-            <Button
-              disabled={routines.isFetching}
-              onClick={() => void routines.refetch()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {routines.isFetching ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
+          <ReadError
+            focusAfterRetry={() => heading.current}
+            message="Couldn't load your routines."
+            retry={routines.refetch}
+            retryBelow
+            retrying={routines.isFetching}
+          />
         ) : null}
       </PageSection>
-    </PageShell>
+    </ConnectionPage>
   );
 }

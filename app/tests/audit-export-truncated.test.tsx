@@ -58,11 +58,12 @@ async function exportWith(headers: Record<string, string>, query = "") {
   const label = query ? "Export CSV without search" : "Export CSV";
   const button = view.getByRole("button", { name: label });
   if (query) {
-    const description = button.getAttribute("aria-describedby");
-    expect(description).toBeTruthy();
-    expect(document.getElementById(description ?? "")?.textContent).toContain(
-      "Text search applies only to loaded rows.",
-    );
+    const description = (button.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent)
+      .join(" ");
+    expect(description).toContain("including older events");
+    expect(description).toContain("Text search applies to loaded events.");
   }
   await user.click(button);
   await view.findByRole("button", { name: label });

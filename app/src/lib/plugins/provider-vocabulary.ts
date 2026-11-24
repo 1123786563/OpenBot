@@ -92,7 +92,7 @@ export function providerVocabulary(
  * fallback once spelled a vendor on its own and printed Composio's name on an Arcade deployment.
  */
 export function directoryReadFailure(_provider: PluginsProvider): string {
-  return "Couldn't load the apps you can connect. Reload the page.";
+  return "Couldn't load the apps you can connect.";
 }
 
 /**
@@ -274,15 +274,15 @@ export function brokeredKeyMissing(
  * is the provider's property, and this sentence reports what the server counted rather than what it
  * hopes.
  */
-export function disconnectSiblingsNotice(answer: {
-  siblings: readonly string[];
-  unanswered: number;
-}): string | null {
+export function disconnectSiblingsNotice(
+  answer: { siblings: readonly string[]; unanswered: number },
+  sharedAccount = false,
+): string | null {
   const { siblings, unanswered } = answer;
   const parts: string[] = [];
   if (siblings.length > 0) {
     parts.push(
-      `Disconnecting also ends your access to ${joinNames(siblings)}, which ${siblings.length === 1 ? "shares" : "share"} this connection.`,
+      `Disconnecting also ends ${sharedAccount ? "the team account’s" : "your"} access to ${joinNames(siblings)}, which ${siblings.length === 1 ? "shares" : "share"} this connection.`,
     );
   }
   if (unanswered > 0) {

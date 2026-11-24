@@ -1,6 +1,7 @@
 import { Text } from "@astryxdesign/core/Text";
 import { IconLayoutSidebar } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useId } from "react";
 import { ChannelItemContent } from "@/components/app-sidebar/channel-item-content";
 import { PageRows } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/settings/message-list";
 
 export function MessageListPreference() {
+  const descriptionId = useId();
   const preferences = useUserPreferences();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -41,19 +43,24 @@ export function MessageListPreference() {
         <ItemMedia variant="icon">
           <IconLayoutSidebar />
         </ItemMedia>
-        <ItemContent>
-          <ItemTitle>
+        <ItemContent className="min-w-0">
+          <ItemTitle className="w-auto">
             {t("settings.messageList.title", "Message list emphasis")}
           </ItemTitle>
           {/* Text never truncates; the slot is what aligns the row's icon with its title. */}
-          <Text as="p" data-slot="item-description" type="supporting">
+          <Text
+            as="p"
+            data-slot="item-description"
+            id={descriptionId}
+            type="supporting"
+          >
             {t(
               "settings.messageList.description",
-              "Choose which line stands out in the sidebar.",
+              "Show the conversation title or the Bot name first in the sidebar.",
             )}
           </Text>
         </ItemContent>
-        <ItemActions>
+        <ItemActions className="max-sm:basis-full">
           <Select
             value={emphasis ?? null}
             disabled={!preferences.data || save.isPending}
@@ -64,10 +71,12 @@ export function MessageListPreference() {
             }}
           >
             <SelectTrigger
+              aria-describedby={descriptionId}
               aria-label={t(
                 "settings.messageList.title",
                 "Message list emphasis",
               )}
+              className="max-sm:w-full"
             >
               <SelectValue>
                 {emphasis

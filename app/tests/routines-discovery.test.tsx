@@ -107,7 +107,7 @@ test("Connections > Routines says what Routines is and leads to the Routines pag
   });
   expect(
     await view.findByText(
-      "Routines are work your Bots do on a schedule. Every Bot can set one up for you.",
+      "Schedule work with the built-in Routines tool. Every Bot can set up a routine for you.",
     ),
   ).toBeTruthy();
   const row = await view.findByRole("link", { name: /Your routines/ });
@@ -143,12 +143,16 @@ test("an empty Routines page offers New routine, and a Bot's own page starts it 
 });
 
 test("the Routines page says which Bot each routine belongs to", async () => {
+  const nextRunAt = new Date(Date.now() + 8 * 86_400_000).toISOString();
   const view = draw(<RoutinesList />, {
-    routines: [routine({})],
+    routines: [routine({ nextRunAt })],
     sweep: SWEEP,
   });
   const bot = await view.findByRole("link", { name: /Lead Desk/ });
   expect(bot.getAttribute("href")).toBe("/bots/lead-desk/routines");
+  const nextRun = await view.findByText("next week", { exact: true });
+  expect(nextRun.getAttribute("datetime")).toBe(nextRunAt);
+  expect(nextRun.parentElement?.textContent).toBe("Runs next week");
 });
 
 test("the clock beside the message box opens New routine for this Bot, posting here", async () => {
@@ -244,16 +248,35 @@ test("a transient refresh failure keeps the last loaded routines and runs", asyn
     queryClient.fetchQuery(list),
     queryClient.fetchQuery(history),
   ]);
-  await view.findByText("Showing the last loaded routines.");
+  await view.findByText(
+    "Showing the last loaded routines. Refresh to make changes.",
+  );
   await view.findByText("Showing the last loaded runs.");
   expect(view.getByText("Morning leads")).toBeTruthy();
   expect(view.getByText("Succeeded")).toBeTruthy();
+  expect(
+    view.queryByRole("button", { name: "Run now for Morning leads" }),
+  ).toBeNull();
+  expect(
+    view.queryByRole("button", { name: "Delete Morning leads" }),
+  ).toBeNull();
+  expect(
+    view.queryByRole("switch", { name: "Enable Morning leads" }),
+  ).toBeNull();
 
   status = 403;
   await queryClient.fetchQuery(list).catch(() => undefined);
-  await view.findByText("Couldn’t load Routines");
+  await view.findByText("You don’t have access to these routines.");
   expect(view.queryByText("Morning leads")).toBeNull();
   expect(view.queryByText("No routines yet")).toBeNull();
+
+  status = 503;
+  await queryClient.fetchQuery(list).catch(() => undefined);
+  await view.findByText("Couldn’t load Routines");
+  expect(view.queryByText("Morning leads")).toBeNull();
+  expect(
+    queryClient.getQueryData<RoutineRunRecord[]>(history.queryKey)?.length,
+  ).toBe(0);
 });
 
 test("overlapping routine writes keep feedback on the routine being changed", async () => {

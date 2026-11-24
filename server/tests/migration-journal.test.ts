@@ -331,15 +331,33 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
   const dropped = quoted(sql, /DROP TABLE (?:IF EXISTS )?"([^"]+)"/gi).map(
     ([table]) => table!,
   );
-  /*
-   * The third capture is everything the statement says after the name — the type, and whatever
-   * `DEFAULT` and `NOT NULL` follow it. See {@link declared}: the name alone says a column arrived
-   * and nothing about what arrived.
-   */
-  const columnsAdded = quoted(
-    sql,
-    /ALTER TABLE "([^"]+)" ADD COLUMN (?:IF NOT EXISTS )?"([^"]+)"([^;]*)/gi,
-  );
+  // An ALTER TABLE can add several columns. Keep each full declaration so
+  // declared() can read its type, default and nullability.
+  const columnsAdded = Array.from(
+    sql.matchAll(/ALTER TABLE\s+"([^"]+)"([^;]*)/gi),
+  ).flatMap((statement) => {
+    const [, table, actions] = statement;
+    return Array.from(
+      actions!.matchAll(
+        /(?:^|,)\s*ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"([^"]+)"([\s\S]*?)(?=,\s*(?:ADD|ALTER|DROP|RENAME)\b|$)/gi,
+      ),
+      (action) => ({
+        table,
+        name: action[1]!,
+        declaration: action[2]!,
+        index:
+          statement.index +
+          statement[0].length -
+          actions!.length +
+          action.index,
+      }),
+    );
+  });
+  const nullabilityChanges = [
+    ...sql.matchAll(
+      /ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" (SET|DROP) NOT NULL/gi,
+    ),
+  ];
   const columnsDropped = quoted(
     sql,
     /ALTER TABLE "([^"]+)" DROP COLUMN (?:IF EXISTS )?"([^"]+)"/gi,
@@ -385,21 +403,26 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
   for (const table of [...is].filter((name) => was.has(name))) {
     const columnsWas = columnNames(before, table);
     const columnsIs = columnNames(after, table);
-    const named = (list: string[][], column: string) =>
-      list.some(([on, which]) => on === table && which === column);
-
     for (const column of columnsIs)
-      if (!columnsWas.has(column) && !named(columnsAdded, column))
+      if (
+        !columnsWas.has(column) &&
+        !columnsAdded.some(
+          (added) => added.table === table && added.name === column,
+        )
+      )
         problems.push(
           `the snapshot adds "${table}"."${column}", the migration never adds it`,
         );
     for (const column of columnsWas)
-      if (!columnsIs.has(column) && !named(columnsDropped, column))
+      if (
+        !columnsIs.has(column) &&
+        !columnsDropped.some(([on, which]) => on === table && which === column)
+      )
         problems.push(
           `the snapshot drops "${table}"."${column}", the migration never drops it`,
         );
-    for (const [on, column] of columnsAdded)
-      if (on === table && !(columnsIs.has(column!) && !columnsWas.has(column!)))
+    for (const { table: on, name: column } of columnsAdded)
+      if (on === table && !(columnsIs.has(column) && !columnsWas.has(column)))
         problems.push(
           `the migration adds "${table}"."${column}", the snapshot does not add it`,
         );
@@ -414,18 +437,30 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
      * the snapshot really holds are asked — one it does not is already reported above, and asking
      * twice would name a single mistake in two sentences.
      */
-    for (const [on, column, tail] of columnsAdded) {
+    for (const {
+      table: on,
+      name: column,
+      declaration,
+      index,
+    } of columnsAdded) {
       if (on !== table) continue;
-      const added = columnIn(after, table, column!);
+      const added = columnIn(after, table, column);
       if (!added) continue;
-      const statement = declared(tail ?? "");
+      const statement = declared(declaration);
       if (added.type !== statement.type)
         problems.push(
           `the migration adds "${table}"."${column}" as ${statement.type}, the snapshot calls it ${added.type}`,
         );
-      if ((added.notNull ?? false) !== statement.notNull)
+      const lastChange = nullabilityChanges.findLast(
+        (change) =>
+          change[1] === table && change[2] === column && change.index > index,
+      );
+      const notNull = lastChange
+        ? lastChange[3]?.toUpperCase() === "SET"
+        : statement.notNull;
+      if ((added.notNull ?? false) !== notNull)
         problems.push(
-          `the migration adds "${table}"."${column}" ${statement.notNull ? "NOT NULL" : "nullable"}, the snapshot says the opposite`,
+          `the migration leaves "${table}"."${column}" ${notNull ? "NOT NULL" : "nullable"}, the snapshot says the opposite`,
         );
     }
 

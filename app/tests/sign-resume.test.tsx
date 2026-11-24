@@ -283,11 +283,21 @@ test("a deployment that requires the company account says so, in the interface l
   expect(view.container.querySelector("details > summary")?.textContent).toBe(
     "管理员登录",
   );
+  expect(
+    view.getByText(
+      "如果你是此工作区的管理员，并且需要恢复公司登录，请使用此项。",
+    ),
+  ).toBeTruthy();
 
   await pinLocale("en");
   expect(view.container.querySelector("details > summary")?.textContent).toBe(
     "Admin sign-in",
   );
+  expect(
+    view.getByText(
+      "Use this if you administer this workspace and need to restore company sign-in.",
+    ),
+  ).toBeTruthy();
 });
 
 test("opening a provider names it, in the interface language", async () => {
@@ -327,14 +337,22 @@ test("a deployment with no way in says so, in the interface language", async () 
   await view.findByRole("heading", { name: "Sign in to OpenBot" });
   expect(
     view.getByText(
-      "Sign-in isn’t set up yet. Contact your OpenBot administrator for access.",
+      "Ask your IT help desk or the person who invited you to check sign-in for this workspace. Check again when it’s ready.",
     ),
+  ).toBeTruthy();
+  expect(view.getByText("Sign-in isn’t set up yet.")).toBeTruthy();
+  expect(
+    view.getByRole("button", { name: "Check sign-in options" }),
   ).toBeTruthy();
 
   await pinLocale("zh-CN");
   expect(
-    view.getByText("登录尚未配置。请联系你的 OpenBot 管理员获取访问权限。"),
+    view.getByText(
+      "请让你的 IT 服务台或邀请你加入此工作区的人检查此工作区的登录设置。准备好后再检查一次。",
+    ),
   ).toBeTruthy();
+  expect(view.getByText("登录尚未配置。")).toBeTruthy();
+  expect(view.getByRole("button", { name: "检查登录选项" })).toBeTruthy();
 });
 
 test("a required but unavailable company sign-in says so, in the interface language", async () => {
@@ -345,17 +363,11 @@ test("a required but unavailable company sign-in says so, in the interface langu
   });
   await view.findByRole("heading", { name: "Sign in to OpenBot" });
   expect(
-    view.getByText(
-      "Company sign-in is required but unavailable. Contact your OpenBot administrator for access.",
-    ),
+    view.getByText("Company sign-in is required but unavailable."),
   ).toBeTruthy();
 
   await pinLocale("zh-CN");
-  expect(
-    view.getByText(
-      "需要公司登录，但当前不可用。请联系你的 OpenBot 管理员获取访问权限。",
-    ),
-  ).toBeTruthy();
+  expect(view.getByText("需要公司登录，但当前不可用。")).toBeTruthy();
 });
 
 /** Where a press on this screen has to send the browser back to, with `?flow_id=h1` carried in. */
@@ -531,7 +543,7 @@ test("only same-origin Web pages can be resumed, and an existing flow takes prio
   ]) {
     expect(appReturnPath(value)).toBeUndefined();
   }
-  expect(resumeUrlFor(origin, "flow", webReturn)).toBe(
+  expect(resumeUrlFor(origin, "flow", undefined, webReturn)).toBe(
     `${origin}/api/plugins/arcade/verify?flow_id=flow`,
   );
 });

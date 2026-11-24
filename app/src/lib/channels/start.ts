@@ -186,7 +186,7 @@ export function resumeConversationStart(
         ...groupQueryOptions(channelId),
         staleTime: 0,
       });
-      if (current.messages.some((message) => message.id === id)) {
+      if (current?.messages.some((message) => message.id === id)) {
         finishPendingStart(owner, id, channelId, true);
         return { state: "finished", channelId, group: true };
       }
@@ -215,7 +215,7 @@ export function resumeConversationStart(
 }
 
 export type FirstMessageRecovery = {
-  action: "retry" | "check" | "resend";
+  action: "retry" | "check" | "resend" | "connect";
   message: string;
 };
 
@@ -296,10 +296,10 @@ export async function resumeDirectFirstMessage({
     return {
       action: canResend ? "resend" : "check",
       message: canResend
-        ? "Your message is saved here. It hasn’t appeared in the Thread. Resending keeps a single copy."
-        : historyChecked
-          ? "Your message is saved here. It hasn’t appeared in the Thread yet."
-          : "Your message is saved here. We couldn’t check the full Thread for delivery.",
+        ? "The message hasn’t appeared in this conversation. Resending uses the original message so it appears only once."
+        : !historyChecked
+          ? "The full conversation couldn’t load. Check for the message again to see whether it arrived."
+          : "Check this conversation again before sending another copy. Your browser has saved the message.",
     };
   };
 
@@ -360,7 +360,8 @@ export async function resumeDirectFirstMessage({
     if (submitted) return verify();
     return {
       action: "retry",
-      message: "Your message is saved here. Try again to send it.",
+      message:
+        "Your browser has saved the message. You can try sending it now.",
     };
   }
 }

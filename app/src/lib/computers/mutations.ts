@@ -123,6 +123,9 @@ export function saveActionPolicyMutationOptions(queryClient: QueryClient) {
         body: next,
         fallback: "The boundary could not be saved.",
       }),
-    onSuccess: () => invalidateComputers(queryClient),
+    onSuccess: (policy) => {
+      queryClient.setQueryData(computerKeys.policy(), policy);
+      return invalidateComputers(queryClient);
+    },
   });
 }

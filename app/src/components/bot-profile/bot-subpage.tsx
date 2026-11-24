@@ -18,6 +18,7 @@ export function BotSubpage({
   title,
   description,
   action,
+  headingRef,
   children,
 }: {
   agentId: string;
@@ -25,6 +26,7 @@ export function BotSubpage({
   description: string;
   /** The area's one primary verb, on the title's baseline. */
   action?: React.ReactNode;
+  headingRef?: React.Ref<HTMLHeadingElement>;
   children: (agent: AgentProfile) => React.ReactNode;
 }) {
   const agent = useQuery(agentQueryOptions(agentId));
@@ -41,6 +43,7 @@ export function BotSubpage({
             }
       }
       description={description}
+      headingRef={headingRef}
       title={title}
     >
       <BotDetailsState query={agent}>{children}</BotDetailsState>

@@ -31,6 +31,21 @@ export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
 });
 
+const generalSections = [
+  {
+    id: "about-you",
+    label: navigationMessage("settings.aboutYou", "About you"),
+  },
+  {
+    id: "appearance",
+    label: navigationMessage("settings.appearance", "Appearance"),
+  },
+  {
+    id: "keyboard-shortcuts",
+    label: navigationMessage("settings.shortcuts", "Keyboard shortcuts"),
+  },
+] as const;
+
 /** Marks a message for extraction without translating it at module scope. */
 function navigationMessage(messageId: string, label: string) {
   return { messageId, label };
@@ -74,11 +89,31 @@ function RouteComponent() {
       )}
       title={t("settings.title", "General")}
     >
+      <nav
+        aria-label={t("settings.sections", "General settings sections")}
+        className="mt-3 flex flex-wrap items-center gap-x-4 text-sm"
+      >
+        {generalSections.map(({ id, label }) => (
+          <a
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+            href={`#${id}`}
+            key={id}
+          >
+            {t(label.messageId, label.label)}
+          </a>
+        ))}
+      </nav>
       {/*
        * What OpenBot and every Bot know of the person, first: their name and how they want things done. Both are free
        * text, so both are a summary that opens a dialog.
        */}
-      <PageSection title={t("settings.aboutYou", "About you")}>
+      <PageSection
+        headingId={generalSections[0].id}
+        title={t(
+          generalSections[0].label.messageId,
+          generalSections[0].label.label,
+        )}
+      >
         <PageRows>
           <NameRow />
           <Separator />
@@ -90,15 +125,21 @@ function RouteComponent() {
       {/* Only in OpenBot Desktop, which sends usage data and keeps this choice. */}
       <UsageDataSection />
       <AstryxSurface className="min-w-0 rounded-[var(--radius-container)]">
-        <PageSection title={t("settings.appearance", "Appearance")}>
+        <PageSection
+          headingId={generalSections[1].id}
+          title={t(
+            generalSections[1].label.messageId,
+            generalSections[1].label.label,
+          )}
+        >
           <PageRows>
             <Item size="sm">
               <ItemMedia variant="icon">
                 <IconMoon />
               </ItemMedia>
-              <ItemContent>
+              <ItemContent className="min-w-0">
                 <ItemTitle>{t("settings.darkTheme", "Dark theme")}</ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none">
                   {t(
                     "settings.darkThemeDescription",
                     "Use the dark appearance across OpenBot.",
@@ -125,18 +166,24 @@ function RouteComponent() {
        * actually do rather than what somebody remembered they did. Read-only on purpose: these
        * are not rebindable, and a row with nothing to click says so by having nothing to click.
        */}
-      <PageSection title={t("settings.shortcuts", "Keyboard shortcuts")}>
+      <PageSection
+        headingId={generalSections[2].id}
+        title={t(
+          generalSections[2].label.messageId,
+          generalSections[2].label.label,
+        )}
+      >
         <PageRows>
           {HOTKEYS.map((hotkey, index) => {
             const copy = SHORTCUT_MESSAGES[hotkey.id];
             return (
               <React.Fragment key={hotkey.id}>
                 <Item size="sm">
-                  <ItemContent>
-                    <ItemTitle>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="w-auto">
                       {t(copy.label.messageId, copy.label.label)}
                     </ItemTitle>
-                    <ItemDescription>
+                    <ItemDescription className="line-clamp-none">
                       {t(copy.description.messageId, copy.description.label)}
                     </ItemDescription>
                   </ItemContent>

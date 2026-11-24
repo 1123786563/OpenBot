@@ -93,13 +93,16 @@ beforeEach(() => {
   });
 });
 
-function draw() {
+function draw(initialSearch?: string) {
   const rootRoute = createRootRoute();
   const routeTree = rootRoute.addChildren([
     createRoute({
       getParentRoute: () => rootRoute,
       path: "/",
-      component: BotRoster,
+      component:
+        initialSearch === undefined
+          ? BotRoster
+          : () => <BotRoster search={initialSearch} />,
     }),
     createRoute({
       getParentRoute: () => rootRoute,
@@ -160,9 +163,23 @@ test("a hidden Bot is under Hidden, folded until asked for, and its row opens it
   const view = draw();
   expect(await view.findByText("Hidden")).toBeTruthy();
   expect(view.queryByText("Tucked")).toBeNull();
-  fireEvent.click(view.getByRole("button", { name: "Show" }));
+  fireEvent.click(view.getByRole("button", { name: "Show hidden Bots" }));
   const row = view.getByText("Tucked").closest("a");
   expect(row?.getAttribute("href")).toBe("/bots/tucked");
+});
+
+test("a bookmarked search shows only matching hidden Bots", async () => {
+  serving(
+    [bot({ id: "mine", name: "Mine" })],
+    [
+      bot({ id: "tucked", name: "Tucked", hidden: true }),
+      bot({ id: "another", name: "Another hidden Bot", hidden: true }),
+    ],
+  );
+  const view = draw("tucked");
+  expect(await view.findByText("Tucked")).toBeTruthy();
+  expect(view.queryByText("Another hidden Bot")).toBeNull();
+  expect(view.getByText("1 matching Bot.")).toBeTruthy();
 });
 
 test("with nothing hidden there is no Hidden section", async () => {
@@ -187,7 +204,7 @@ test("a roster that never loaded says so, not that you have no Bots", async () =
   ).toBeNull();
 });
 
-test("a failed refetch keeps the roster it already had, not the error", async () => {
+test("a failed refetch keeps the roster and offers a refresh", async () => {
   queryClient.setQueryData(agentKeys.list(false), [
     bot({ id: "mine", name: "Mine" }),
   ]);
@@ -200,9 +217,8 @@ test("a failed refetch keeps the roster it already had, not the error", async ()
     ),
   );
   expect(view.getByText("Mine")).toBeTruthy();
-  expect(
-    view.queryByText("Couldn't load your Bots. Reload the page."),
-  ).toBeNull();
+  expect(view.getByText("Couldn’t refresh Bots")).toBeTruthy();
+  expect(view.getByRole("button", { name: /^Retry$/ })).toBeTruthy();
 });
 
 test("a Bot with something waiting stays in its own section, with its count", async () => {

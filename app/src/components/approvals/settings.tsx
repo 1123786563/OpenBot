@@ -1,13 +1,14 @@
 import { Text } from "@astryxdesign/core/Text";
 import {
   IconChecklist,
+  IconChevronDown,
   IconEyeCheck,
   IconHandStop,
   IconTerminal2,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   PageEmpty,
   PageRows,
@@ -25,6 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
+  approvalAccessDenied,
   approvalInboxOptions,
   approvalPreferencesMutationOptions,
   createApprovalRuleMutationOptions,
@@ -33,14 +35,17 @@ import {
   updateApprovalRuleMutationOptions,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
+import { ALWAYS_ASKS, ASK_FIRST_TITLE, HANDED_TO_YOU } from "./ask-first-copy";
 import {
-  ALWAYS_ASKS,
-  ASK_FIRST_DESCRIPTION,
-  ASK_FIRST_TITLE,
-  HANDED_TO_YOU,
-} from "./ask-first-copy";
-import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
+  filterApprovalRules,
+  HOST_LABELS,
+  LabelSelect,
+  RuleForm,
+  RuleRow,
+  RuleSearch,
+} from "./rules";
 
 /**
  * The person's own approval settings: whether their Bots ask before changing things, and the rules
@@ -64,12 +69,24 @@ export function ApprovalSettings() {
     updateApprovalRuleMutationOptions(queryClient),
   );
   const revoke = useMutation(revokeApprovalRuleMutationOptions(queryClient));
-  const data = inbox.data;
+  const preferencesHeading = useRef<HTMLHeadingElement>(null);
+  const [ruleSearch, setRuleSearch] = useState("");
+  const ruleSearchInput = useRef<HTMLInputElement>(null);
+  const recoveredFocus = () => preferencesHeading.current;
+  const data = canKeepCachedRead(inbox.error) ? inbox.data : undefined;
   if (!data) {
     return inbox.isError ? (
       <ReadError
+        description={
+          approvalAccessDenied(inbox.error)
+            ? "Check that you still have access, then try again."
+            : undefined
+        }
+        focusAfterRetry={recoveredFocus}
         message="Couldn't load your approval settings."
         retry={inbox.refetch}
+        retryBelow
+        retryLabel="Retry approval settings"
         retrying={inbox.isFetching}
       />
     ) : (
@@ -99,14 +116,30 @@ export function ApprovalSettings() {
     !inbox.isSuccess || revoke.isPending || changeRule.isPending;
   const ruleError = changeRule.error ?? revoke.error;
   const saved = teamRules.length + everyBot.length;
+  const botName = (id: string) =>
+    reachable.find((bot) => bot.id === id)?.name ?? id;
+  const matchingTeamRules = filterApprovalRules(
+    teamRules,
+    ruleSearch,
+    botName,
+    true,
+  );
+  const matchingPersonalRules = filterApprovalRules(
+    everyBot,
+    ruleSearch,
+    botName,
+  );
 
   return (
     <>
       {inbox.isError ? (
         <ReadError
+          focusAfterRetry={recoveredFocus}
           message="Couldn't refresh your approval settings."
-          description="These are your last loaded settings. Reload them before you make any changes."
+          description="These are your last loaded settings. Retry the check before changing them."
           retry={inbox.refetch}
+          retryBelow
+          retryLabel="Retry approval settings"
           retrying={inbox.isFetching}
         />
       ) : null}
@@ -119,23 +152,22 @@ export function ApprovalSettings() {
           .
         </p>
       ) : null}
-      <PageSection
-        description={
-          /*
-           * What asks whatever these settings say (server/src/approvals/policy.ts), in the same words
-           * as onboarding's Welcome (ask-first-copy.ts). A Bot's own workspace is left out of what
-           * always asks on purpose: deleting a file there is an ordinary change, as the last sentence
-           * says.
-           */
-          <>
+      <PageSection headingRef={preferencesHeading} title="Before a Bot acts">
+        <details className="group text-muted-foreground text-sm">
+          <summary className="flex min-h-11 cursor-pointer items-center gap-2 hover:text-foreground">
+            When Bots ask by default
+            <IconChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 group-open:rotate-180"
+            />
+          </summary>
+          <p>
             {ALWAYS_ASKS} They also ask before every edit or command in a folder
             on your own computer. {HANDED_TO_YOU} Bots can create, edit, and
             delete files in their own workspace without asking, unless your
             settings or rules say so.
-          </>
-        }
-        title="Before a Bot acts"
-      >
+          </p>
+        </details>
         {preferences.error ? (
           <ReadError
             message="Couldn't save your approval preference."
@@ -152,19 +184,27 @@ export function ApprovalSettings() {
         ) : null}
         <PageRows>
           <Item size="sm">
-            <ItemMedia variant="icon">
+            <ItemMedia className="self-start" variant="icon">
               <IconHandStop />
             </ItemMedia>
             <ItemContent>
               <ItemTitle>{ASK_FIRST_TITLE}</ItemTitle>
-              <Text as="p" color="secondary" size="sm">
-                {ASK_FIRST_DESCRIPTION}
+              <Text
+                as="p"
+                color="secondary"
+                id="extra-vigilant-description"
+                size="sm"
+              >
+                Ask before changes that your rules haven’t already decided,
+                including routine edits.
               </Text>
             </ItemContent>
             <ItemActions>
               <Switch
+                aria-describedby="extra-vigilant-description"
                 aria-label={ASK_FIRST_TITLE}
                 checked={data.enabled}
+                className="after:top-1/2 after:bottom-auto after:h-11 after:-translate-y-1/2"
                 disabled={preferencesDisabled}
                 onCheckedChange={(enabled) => preferences.mutate({ enabled })}
               />
@@ -174,7 +214,7 @@ export function ApprovalSettings() {
             <>
               <Separator />
               <Item size="sm">
-                <ItemMedia variant="icon">
+                <ItemMedia className="self-start" variant="icon">
                   <IconEyeCheck />
                 </ItemMedia>
                 <ItemContent>
@@ -186,9 +226,10 @@ export function ApprovalSettings() {
                     size="sm"
                   >
                     {enforced ? "An admin requires this. " : ""}
-                    Before a Bot does something that could affect your accounts
-                    or share information, OpenBot checks it against your request
-                    and your rules. If it can't tell, it asks you.
+                    Checks actions that could affect your accounts or share
+                    information against your request and rules. It can ask for
+                    approval or hand the action to you, even if Extra vigilant
+                    is off.
                   </Text>
                 </ItemContent>
                 <ItemActions>
@@ -198,6 +239,7 @@ export function ApprovalSettings() {
                     aria-describedby="auto-review-description"
                     aria-labelledby="auto-review-title"
                     checked={enforced || data.preferences.autoReview}
+                    className="after:top-1/2 after:bottom-auto after:h-11 after:-translate-y-1/2"
                     disabled={enforced || preferencesDisabled}
                     onCheckedChange={(autoReview) =>
                       preferences.mutate({ autoReview })
@@ -223,6 +265,7 @@ export function ApprovalSettings() {
                 </ItemContent>
                 <ItemActions>
                   <LabelSelect
+                    className="min-h-11"
                     disabled={preferencesDisabled}
                     label="Commands on your computer"
                     labels={HOST_LABELS}
@@ -262,9 +305,31 @@ export function ApprovalSettings() {
         {saved === 0 ? (
           <PageEmpty icon={IconChecklist} title="No rules yet" />
         ) : null}
-        {saved > 0 || canAdd ? (
+        {canAdd ? (
           <PageRows>
-            {teamRules.map((rule, index) => (
+            <RuleForm
+              botField={false}
+              canSave={inbox.isSuccess}
+              label="Add a rule"
+              refreshSettings={inbox.refetch}
+              save={addRule}
+            />
+          </PageRows>
+        ) : null}
+        <RuleSearch
+          emptyTitle="No matching rules"
+          first={matchingTeamRules[0] ?? matchingPersonalRules[0]}
+          inputRef={ruleSearchInput}
+          label="Search rules for every Bot"
+          matches={matchingTeamRules.length + matchingPersonalRules.length}
+          onChange={setRuleSearch}
+          team={matchingTeamRules.length > 0}
+          total={saved}
+          value={ruleSearch}
+        />
+        {matchingTeamRules.length + matchingPersonalRules.length > 0 ? (
+          <PageRows>
+            {matchingTeamRules.map((rule, index) => (
               <Fragment key={rule.id}>
                 {index > 0 ? <Separator /> : null}
                 <RuleRow
@@ -277,9 +342,9 @@ export function ApprovalSettings() {
                 />
               </Fragment>
             ))}
-            {everyBot.map((rule, index) => (
+            {matchingPersonalRules.map((rule, index) => (
               <Fragment key={rule.id}>
-                {teamRules.length + index > 0 ? <Separator /> : null}
+                {matchingTeamRules.length + index > 0 ? <Separator /> : null}
                 <RuleRow
                   disabled={rulesDisabled}
                   locked={rulesOff}
@@ -288,21 +353,10 @@ export function ApprovalSettings() {
                   }
                   onRevoke={() => revoke.mutate(rule.id)}
                   rule={rule}
+                  touchTargets
                 />
               </Fragment>
             ))}
-            {canAdd ? (
-              <>
-                {saved > 0 ? <Separator /> : null}
-                <RuleForm
-                  botField={false}
-                  canSave={inbox.isSuccess}
-                  label="Add a rule"
-                  refreshSettings={inbox.refetch}
-                  save={addRule}
-                />
-              </>
-            ) : null}
           </PageRows>
         ) : null}
       </PageSection>

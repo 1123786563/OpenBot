@@ -79,10 +79,10 @@ afterEach(() => {
 const APP_KEY = "slack";
 const BOT_ID = "bot-1";
 
-/** A client the failing queries settle on in one attempt, so no test waits on a retry. */
+/** Queries with their own retry policy settle without a real backoff. */
 function failingQueryClient() {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
   });
 }
 
@@ -281,27 +281,21 @@ test("a failed plugin read draws no switches, so nothing reads as a Bot holding 
   expect(view.queryByText("Turn on every read-only action")).toBeNull();
   // The two section headings the grant list is drawn under: neither belongs on a page built from
   // an answer that never arrived.
-  expect(view.queryByText("Reads")).toBeNull();
-  expect(view.queryByText("Changes things")).toBeNull();
+  expect(view.queryByText("Read-only actions")).toBeNull();
+  expect(view.queryByText("Actions that make changes")).toBeNull();
 });
 
-test("an answer that genuinely lacks the app still says the app is not enabled", async () => {
-  // Seeded, so `plugins.data` is a real answer; the refetch on mount still fails, which is what
-  // separates "the list came back without it" from "the list never came back".
+test("a failed refresh of an old list cannot establish that the app is disabled", async () => {
   const queryClient = stalePluginsClient(pluginsPage());
 
   const view = renderScreen(queryClient);
   await waitForFailedRefetch(queryClient);
 
-  expect(
-    await view.findByText("No app with that name is turned on."),
-  ).toBeTruthy();
-  expect(
-    view.queryByText("Couldn't load plugins. Reload the page."),
-  ).toBeNull();
+  expect(await view.findByText("Couldn't load plugins.")).toBeTruthy();
+  expect(view.queryByText("No app with that name is turned on.")).toBeNull();
 });
 
-test("a failed REFETCH keeps the grant list it already had, not the error", async () => {
+test("a failed refresh keeps the previous grants visible and pauses changes", async () => {
   const queryClient = stalePluginsClient(
     pluginsPage({
       servers: [
@@ -317,6 +311,12 @@ test("a failed REFETCH keeps the grant list it already had, not the error", asyn
   await waitForFailedRefetch(queryClient);
 
   expect(await view.findByText("list_channels")).toBeTruthy();
+  expect(await view.findByText("Couldn't refresh app access.")).toBeTruthy();
+  expect(
+    view
+      .getByRole("switch", { name: /list_channels/ })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   expect(
     view.queryByText("Couldn't load plugins. Reload the page."),
   ).toBeNull();

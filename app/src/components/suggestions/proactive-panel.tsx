@@ -1,3 +1,5 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -7,7 +9,7 @@ import {
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { InlineEmpty } from "@/components/layout/page-parts";
 import {
@@ -15,7 +17,11 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { ReadStatus } from "@/components/layout/read-status";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -48,14 +54,17 @@ import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
 import { channelListQueryOptions } from "@/lib/channels/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   changeProactiveSettingMutationOptions,
   createProactiveSettingMutationOptions,
   type LastCheckIn,
   type ProactiveSetting,
+  type ProactiveSuggestion,
   proactiveAllowedQueryOptions,
   proactiveSettingsQueryOptions,
   proactiveSuggestionsQueryOptions,
+  resolveSuggestionMutationOptions,
 } from "@/lib/proactive";
 import { relativeTime } from "@/lib/relative-time";
 import { useUserPreferences } from "@/lib/settings/message-list";
@@ -80,6 +89,10 @@ const intervalLabel = (minutes: number) =>
 /** How many suggestions show before the rest fold behind "Show more". */
 const SUGGESTIONS_SHOWN = 3;
 
+function searchableText(value: string) {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 /**
  * What the person's Bots found in their check-ins, each with why, its source and its Bot, to Start
  * as a task or Hide. Ideas and Up next present these suggestions on their own.
@@ -87,18 +100,59 @@ const SUGGESTIONS_SHOWN = 3;
 export function SuggestionsInbox({
   agentId,
   showEmpty = false,
+  searchable = false,
 }: {
   agentId?: string;
   showEmpty?: boolean;
+  searchable?: boolean;
 } = {}) {
   const suggestions = useQuery(proactiveSuggestionsQueryOptions());
-  const shown = (suggestions.data ?? []).filter(
+  const readable = canKeepCachedRead(suggestions.error);
+  const scoped = (readable ? (suggestions.data ?? []) : []).filter(
     (suggestion) => agentId === undefined || suggestion.agentId === agentId,
   );
   const bots = useQuery(agentListQueryOptions());
   const [expanded, setExpanded] = useState(false);
+  const [search, setSearch] = useState("");
+  const searchId = useId();
+  const searchInput = useRef<HTMLInputElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const dismiss = useMutation(resolveSuggestionMutationOptions(queryClient));
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const words = searchableText(search.trim()).split(/\s+/).filter(Boolean);
+  const filtering = words.length > 0;
+  const shown = filtering
+    ? scoped.filter(({ title, detail, sourceApp }) => {
+        const content = searchableText(`${title} ${detail} ${sourceApp ?? ""}`);
+        return words.every((word) => content.includes(word));
+      })
+    : scoped;
   const botName = (id: string) =>
     bots.data?.find((bot) => bot.id === id)?.name ?? "Your Bot";
+
+  function confirmDismiss(
+    suggestion: ProactiveSuggestion,
+    trigger: HTMLButtonElement,
+  ) {
+    requestConfirmation({
+      title: `Dismiss ${suggestion.title}?`,
+      description:
+        "This removes the idea and tells your Bot to skip similar ideas in check-ins for 30 days.",
+      confirmLabel: "Dismiss idea",
+      pendingLabel: "Dismissing…",
+      failureMessage: "Couldn’t dismiss this idea. Try again.",
+      successMessage: `Dismissed ${suggestion.title}.`,
+      trigger,
+      fallbackFocus: () => searchInput.current ?? heading.current,
+      run: async () => {
+        const latest = await suggestions.refetch({ throwOnError: true });
+        if (!latest.data?.some(({ id }) => id === suggestion.id)) {
+          throw new ActionUnavailable("This idea is no longer in the list.");
+        }
+        await dismiss.mutateAsync({ id: suggestion.id, action: "dismiss" });
+      },
+    });
+  }
   if (
     !showEmpty &&
     agentId !== undefined &&
@@ -112,33 +166,107 @@ export function SuggestionsInbox({
    * Bot that had piled up sixty of them made its own page 8,000px of suggestions with its settings
    * somewhere underneath. The list arrives newest first.
    */
-  const hidden = expanded ? 0 : Math.max(0, shown.length - SUGGESTIONS_SHOWN);
+  const hidden =
+    expanded || filtering ? 0 : Math.max(0, shown.length - SUGGESTIONS_SHOWN);
   const visible = hidden ? shown.slice(0, SUGGESTIONS_SHOWN) : shown;
   return (
-    <PageSection title="Suggested next steps">
+    <PageSection
+      description={
+        searchable && scoped.length > 0 && suggestions.isSuccess
+          ? "Work on it starts a task. Dismiss tells check-ins to skip similar ideas for 30 days."
+          : undefined
+      }
+      headingRef={heading}
+      title="Suggested next steps"
+    >
+      {confirmation}
       {suggestions.isPending ? (
         <ReadStatus kind="loading" message="Loading suggested next steps…" />
-      ) : suggestions.error ? (
-        <ReadStatus
-          kind="error"
-          message="Couldn’t load suggested next steps"
+      ) : null}
+      {suggestions.isError ? (
+        <ReadError
+          description={
+            scoped.length ? "Showing the last loaded suggestions." : undefined
+          }
+          focusAfterRetry={() => heading.current}
+          message={
+            scoped.length
+              ? "Couldn’t refresh suggested next steps"
+              : "Couldn’t load suggested next steps"
+          }
           retry={suggestions.refetch}
+          retryBelow
+          retrying={suggestions.isFetching}
         />
-      ) : shown.length ? (
+      ) : null}
+      {searchable && (scoped.length > 0 || search) ? (
+        <Stack gap={2} className="mt-3">
+          <Field>
+            <FieldLabel htmlFor={searchId}>Search suggestions</FieldLabel>
+            <Stack direction="horizontal" align="center" gap={2} wrap="wrap">
+              <Input
+                className="min-h-11 w-full sm:max-w-sm"
+                id={searchId}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Title, details or source"
+                ref={searchInput}
+                type="search"
+                value={search}
+              />
+              {search ? (
+                <Button
+                  className="min-h-11"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    searchInput.current?.focus();
+                  }}
+                >
+                  Clear search
+                </Button>
+              ) : null}
+            </Stack>
+          </Field>
+          <Text as="p" color="secondary" role="status" size="sm">
+            {filtering && suggestions.isSuccess
+              ? shown.length
+                ? `${shown.length} matching ${shown.length === 1 ? "suggestion" : "suggestions"}`
+                : "No matching suggestions"
+              : ""}
+          </Text>
+          {!filtering && scoped.length > SUGGESTIONS_SHOWN ? (
+            <Button
+              aria-expanded={expanded}
+              className="min-h-11 self-start"
+              variant="outline"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded
+                ? `Show ${SUGGESTIONS_SHOWN} newest suggestions`
+                : `Show all ${scoped.length} suggestions`}
+            </Button>
+          ) : null}
+        </Stack>
+      ) : null}
+      {shown.length ? (
         <PageRows>
           {visible.map((suggestion, index) => (
             <Fragment key={suggestion.id}>
               {index > 0 ? <Separator /> : null}
               <SuggestionRow
                 botName={botName(suggestion.agentId)}
+                canAct={!suggestions.isError}
+                onDismiss={(trigger) => confirmDismiss(suggestion, trigger)}
                 suggestion={suggestion}
               />
             </Fragment>
           ))}
-          {hidden ? (
+          {hidden && !searchable ? (
             <>
               <Separator />
               <Item
+                className="min-h-11"
                 render={<button type="button" />}
                 onClick={() => setExpanded(true)}
                 size="sm"
@@ -155,12 +283,12 @@ export function SuggestionsInbox({
             </>
           ) : null}
         </PageRows>
-      ) : (
+      ) : suggestions.isSuccess && !filtering ? (
         <InlineEmpty title="Nothing needs you right now">
           When a Bot's check-in finds something that needs you, it shows up
           here.
         </InlineEmpty>
-      )}
+      ) : null}
     </PageSection>
   );
 }
@@ -212,6 +340,7 @@ export function ProactiveResearchSettings({
       action={
         canAdd ? (
           <Button
+            className={fixedBot === undefined ? undefined : "min-h-11"}
             onClick={() => setAdding(true)}
             size={fixedBot === undefined ? "sm" : "default"}
             variant={fixedBot === undefined ? "ghost" : "outline"}
@@ -264,7 +393,12 @@ export function ProactiveResearchSettings({
       ) : shown.length === 0 ? (
         <PageEmpty
           action={
-            <Button onClick={() => setAdding(true)} size="sm" variant="outline">
+            <Button
+              className="min-h-11"
+              onClick={() => setAdding(true)}
+              size="sm"
+              variant="outline"
+            >
               <IconPlus />
               Turn on check-ins
             </Button>

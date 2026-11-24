@@ -1,0 +1,1 @@
+ALTER TABLE "personal_saas_accounts" ADD COLUMN "account_status" jsonb;

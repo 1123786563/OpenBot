@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 /**
  * One computer as Admin sees it: a person's, or an isolated Bot's.
@@ -50,7 +50,7 @@ export type ActionPolicy = {
   labels?: Record<string, RuleLabel>;
 };
 
-export type RuleLabel = { name: string; description: string };
+export type RuleLabel = { name: string; description: string; id?: string };
 
 /**
  * Where one Bot's computer is in its life, as the server's provider reports it.
@@ -103,26 +103,64 @@ export function computerStatusQueryOptions(botId: string) {
  */
 const FLEET_PATH = "/api/computers/fleet";
 
+export function fleetAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 /** No envelope key: the body carries both the list and the isolation mode. */
 export function computerFleetQueryOptions() {
   return queryOptions({
     queryKey: computerKeys.fleet(),
-    queryFn: async (): Promise<ComputerFleet> => {
+    retry: (failures, error) => failures < 1 && !fleetAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<ComputerFleet> => {
       const response = await client(FLEET_PATH, {
         fallback: "The computers could not be listed.",
+        signal,
+      }).catch((error: unknown) => {
+        if (fleetAccessDenied(error)) {
+          cache.setQueryData<ComputerFleet>(queryKey, (current) =>
+            current ? { computers: [] } : undefined,
+          );
+        }
+        throw error;
       });
       return response.json();
     },
   });
 }
 
+export function readActionPolicy(): Promise<ActionPolicy> {
+  return client("/api/computers/policy", "policy", {
+    fallback: "The boundary could not be read.",
+  });
+}
+
 export function actionPolicyQueryOptions() {
   return queryOptions({
     queryKey: computerKeys.policy(),
-    queryFn: (): Promise<ActionPolicy> =>
-      client("/api/computers/policy", "policy", {
-        fallback: "The boundary could not be read.",
-      }),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<ActionPolicy | null> => {
+      try {
+        return await readActionPolicy();
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData<ActionPolicy | null>(queryKey, null);
+        }
+        throw error;
+      }
+    },
   });
 }
 

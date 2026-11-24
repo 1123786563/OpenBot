@@ -1,14 +1,17 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { Switch as AstryxSwitch } from "@astryxdesign/core/Switch";
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconRoute } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Fragment, useId, useRef } from "react";
 
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { ReadError } from "@/components/layout/read-status";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Item,
   ItemContent,
@@ -20,18 +23,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { setUpdateRoutingMutationOptions } from "@/lib/bot-lifecycle/mutations";
+import { setUpdateRouting } from "@/lib/bot-lifecycle/mutations";
 import {
   type UpdateKind,
   type UpdateTransport,
   updateRoutingQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
-import { deliveryQueryOptions } from "@/lib/delivery";
+import { deliveryQueryOptions, type Reachability } from "@/lib/delivery";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { desktopShell } from "@/lib/desktop/shell";
 import { mayOpenSetup } from "@/lib/setup/queries";
 import { cn } from "@/lib/utils";
-import { queryClient } from "@/query-client";
 
 /**
  * How each channel is turned on: Slack and Teams through an OpenTag pairing, text messages through Twilio, push through
@@ -41,23 +43,34 @@ import { queryClient } from "@/query-client";
 export const CHANNEL_SETUP_DOCS =
   "https://github.com/CopilotKit/openbot/blob/main/docs/configuration.md#slack-and-microsoft-teams-opentag-pairing";
 
-const KIND_LABEL: Record<UpdateKind, { title: string; description: string }> = {
+const KIND_LABEL: Record<
+  UpdateKind,
+  {
+    title: string;
+    description: string;
+    deliveryKind: Reachability["deliveries"][number]["kind"];
+  }
+> = {
   progress: {
     title: "Progress",
     description: "Replies and results from work you weren't watching.",
+    deliveryKind: "reply",
   },
   decision: {
-    title: "Decisions",
-    description: "Approvals a Bot needs before it acts.",
+    title: "Approvals",
+    description: "Requests to approve an action before a Bot proceeds.",
+    deliveryKind: "approval",
   },
   question: {
     title: "Questions",
     description: "Things a Bot asked you and is waiting on.",
+    deliveryKind: "question",
   },
   attention: {
     title: "Something needs you",
     description:
       "What your Bots' check-ins found, at most once an hour, every Bot in one message.",
+    deliveryKind: "attention",
   },
 };
 
@@ -71,23 +84,58 @@ const TRANSPORTS: { id: UpdateTransport; label: string }[] = [
 /** Placeholder rows while the routing loads: the four kinds, claiming nothing. */
 const LOADING_ROWS = ["a", "b", "c", "d"];
 
+type RoutingChange = {
+  kind: UpdateKind;
+  transport: UpdateTransport;
+  enabled: boolean;
+  retry?: true;
+};
+
 /**
  * Which channels each kind of update may use, for every one of the person's Bots at once. How much
  * a given Bot sends is that Bot's own Notifications setting, on its page.
  */
 export function UpdateRoutingSection() {
+  const queryClient = useQueryClient();
   const routing = useQuery(updateRoutingQueryOptions());
   const reach = useQuery(deliveryQueryOptions());
+  const heading = useRef<HTMLHeadingElement>(null);
+  const deliveryStatusId = useId();
+  const focusHeading = () => heading.current;
   const save = useMutation({
-    ...setUpdateRoutingMutationOptions(queryClient),
-    /*
-     * A switch that silently springs back is a tap that "didn't take": the revert is right (the
-     * server refused), and this line under the switches says so instead of nothing at all.
-     */
-    onError: () => setSaveFailed(true),
-    onMutate: () => setSaveFailed(false),
+    mutationFn: async (change: RoutingChange) => {
+      const [preferences, channels] = change.retry
+        ? await Promise.all([
+            routing.refetch({ throwOnError: true }),
+            reach.refetch({ throwOnError: true }),
+          ])
+        : [routing, reach];
+      if (!preferences.data || !channels.data?.available[change.transport]) {
+        throw new Error("This delivery channel is unavailable.");
+      }
+      const current = preferences.data[change.kind];
+      const allowed = (transport: UpdateTransport) =>
+        current === "all" || current.includes(transport);
+      if (allowed(change.transport) === change.enabled) return;
+      const selected = TRANSPORTS.map(({ id }) => id).filter((id) =>
+        id === change.transport ? change.enabled : allowed(id),
+      );
+      await setUpdateRouting({
+        queryClient,
+        kind: change.kind,
+        transports: selected.length === TRANSPORTS.length ? "all" : selected,
+      });
+    },
   });
-  const [saveFailed, setSaveFailed] = useState(false);
+  const failed =
+    save.isError || (save.isPending && save.variables?.retry)
+      ? save.variables
+      : undefined;
+  const failedTransport = TRANSPORTS.find(({ id }) => id === failed?.transport);
+  const failedName =
+    failed && failedTransport
+      ? `${KIND_LABEL[failed.kind].title} by ${failedTransport.label}`
+      : undefined;
   /*
    * Who can turn a channel on: an admin, or the one person running OpenBot themselves (the same rule as Settings,
    * Setup). They get the way to; anyone else is told it's their admin's to do.
@@ -96,25 +144,12 @@ export function UpdateRoutingSection() {
   const capabilities = useQuery(deploymentCapabilitiesQueryOptions());
   const setsUp = mayOpenSetup(user.data, capabilities.data);
   /*
-   * A channel this deployment has not set up can carry nothing, so its switch is off and disabled
-   * whatever the stored preference says, rather than on beside a channel that delivers nothing. The
-   * preference itself is left alone: an administrator who configures Slack later finds it as the
-   * person last set it. When the deployment's channels could not be read, the preference is shown
-   * as it is rather than every channel claimed unavailable.
-   */
-  const configured = (transport: UpdateTransport) =>
-    reach.data ? reach.data.available[transport] : true;
-  /*
    * Only the channels that can carry something get a switch. A channel that is not set up has nothing to choose, and
    * four rows of switches nobody can turn on said less than one sentence does. Its stored preference is kept as it is
    * and shows again once the channel is set up.
    */
-  const shown = TRANSPORTS.filter((transport) => configured(transport.id));
-  const choosing =
-    !routing.isPending &&
-    !reach.isPending &&
-    !routing.error &&
-    shown.length > 0;
+  const shown = TRANSPORTS.filter(({ id }) => reach.data?.available[id]);
+  const choosing = routing.isSuccess && reach.isSuccess && shown.length > 0;
   /*
    * OpenBot Desktop runs OpenBot on this computer, and every one of these channels needs OpenBot where the internet can
    * reach it (a phone, OpenTag, Twilio calling it). Its settings are the Desktop's own, so it gets no link to them.
@@ -128,6 +163,7 @@ export function UpdateRoutingSection() {
           ? "Choose where to receive each type of update when you’re away. All updates remain available in the web app."
           : undefined
       }
+      headingRef={heading}
       title="Where updates go"
     >
       {routing.isPending || reach.isPending ? (
@@ -154,20 +190,24 @@ export function UpdateRoutingSection() {
           </PageRows>
         </div>
       ) : routing.error ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load where your updates go.
-          </p>
-          <Button
-            disabled={routing.isFetching}
-            onClick={() => void routing.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {routing.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+        <ReadError
+          focusAfterRetry={focusHeading}
+          message="Couldn't load where your updates go."
+          retry={routing.refetch}
+          retryBelow
+          retryLabel="Retry notification preferences"
+          retrying={routing.isFetching}
+        />
+      ) : reach.error ? (
+        <ReadError
+          description="Check which channels are available before changing where updates go."
+          focusAfterRetry={focusHeading}
+          message="Couldn't check which channels are set up."
+          retry={reach.refetch}
+          retryBelow
+          retryLabel="Retry delivery channels"
+          retrying={reach.isFetching}
+        />
       ) : shown.length === 0 ? (
         <PageEmpty
           action={
@@ -209,95 +249,98 @@ export function UpdateRoutingSection() {
                   </ItemMedia>
                   <ItemContent>
                     <ItemTitle>{KIND_LABEL[kind].title}</ItemTitle>
-                    <ItemDescription>
+                    <ItemDescription className="line-clamp-none">
                       {KIND_LABEL[kind].description}
                     </ItemDescription>
                   </ItemContent>
-                  <ItemFooter className="flex-wrap justify-start gap-x-6 gap-y-3 pl-8">
+                  <ItemFooter className="grid grid-cols-2 items-start justify-start gap-x-3 gap-y-3 sm:gap-x-6 sm:pl-8 lg:grid-cols-4">
                     {shown.map(({ id, label }) => {
                       const checked = allowed(id);
                       const name = `${KIND_LABEL[kind].title} by ${label}`;
-                      const setChecked = (next: boolean) => {
-                        const selected = TRANSPORTS.map((t) => t.id).filter(
-                          (key) => (key === id ? next : allowed(key)),
-                        );
-                        save.mutate({
-                          kind,
-                          transports:
-                            selected.length === TRANSPORTS.length
-                              ? "all"
-                              : selected,
-                        });
-                      };
-                      /*
-                       * A channel switched on whose newest delivery failed is a promise the page
-                       * breaks silently: the switch says SMS, nothing arrives. The reason (the
-                       * delivery's own error) is on the hint's tooltip.
-                       */
                       const latest = reach.data?.deliveries.find(
-                        (delivery) => delivery.transport === id,
+                        (delivery) =>
+                          delivery.transport === id &&
+                          delivery.kind === KIND_LABEL[kind].deliveryKind,
                       );
                       const notGettingThrough =
                         checked && latest?.state === "failed";
+                      const statusId = `${deliveryStatusId}-${kind}-${id}`;
                       return (
-                        <div
-                          className="flex items-center gap-2 text-sm"
+                        <VStack
+                          align="start"
+                          className="min-w-0"
+                          gap={1}
                           key={id}
                         >
-                          <AstryxSwitch
-                            isLabelHidden
-                            isLoading={save.isPending}
-                            label={name}
-                            onChange={setChecked}
-                            size="sm"
-                            value={checked}
-                          />
-                          <span className="leading-tight whitespace-nowrap">
-                            {label}
-                          </span>
-                          {notGettingThrough ? (
-                            <span
-                              className="leading-tight text-amber-700 text-xs dark:text-amber-400"
-                              title={latest.error ?? undefined}
-                            >
-                              Recent deliveries are failing.
+                          <HStack align="center" gap={2}>
+                            <AstryxSwitch
+                              aria-describedby={
+                                notGettingThrough ? statusId : undefined
+                              }
+                              isLabelHidden
+                              isLoading={save.isPending}
+                              label={name}
+                              onChange={(enabled) =>
+                                save.mutate({ kind, transport: id, enabled })
+                              }
+                              size="sm"
+                              value={checked}
+                            />
+                            <span className="text-sm leading-tight">
+                              {label}
                             </span>
+                          </HStack>
+                          {notGettingThrough ? (
+                            latest.error ? (
+                              <details className="max-w-full text-amber-700 text-sm dark:text-amber-400">
+                                <summary
+                                  className="min-h-11 cursor-pointer py-2"
+                                  id={statusId}
+                                >
+                                  Latest {label} delivery failed
+                                </summary>
+                                <p className="[overflow-wrap:anywhere]">
+                                  {latest.error}
+                                </p>
+                              </details>
+                            ) : (
+                              <p
+                                className="text-amber-700 text-sm dark:text-amber-400"
+                                id={statusId}
+                              >
+                                Latest {label} delivery failed
+                              </p>
+                            )
                           ) : null}
-                        </div>
+                        </VStack>
                       );
                     })}
                   </ItemFooter>
                 </Item>
+                {failed?.kind === kind && failedName ? (
+                  <ReadError
+                    description={
+                      reach.data.available[failed.transport]
+                        ? "The switches show your last saved preferences."
+                        : "This channel is no longer set up."
+                    }
+                    focusAfterRetry={focusHeading}
+                    message={`Couldn't save ${failedName}.`}
+                    retry={() =>
+                      save
+                        .mutateAsync({ ...failed, retry: true })
+                        .catch(() => undefined)
+                    }
+                    retryBelow
+                    retryLabel={`Retry saving ${failedName}`}
+                    retrying={save.isPending}
+                  />
+                ) : null}
               </Fragment>
             );
           })}
         </PageRows>
       )}
-      {saveFailed ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          Couldn't save that. The switches show what the server last saved.
-        </p>
-      ) : null}
-      {/*
-       * The channels read failing costs the switches their setup state, not the page its
-       * preferences, so it is said beside them rather than instead of them.
-       */}
-      {!routing.isPending && !reach.isPending && reach.error ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't check which channels are set up.
-          </p>
-          <Button
-            disabled={reach.isFetching}
-            onClick={() => void reach.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {reach.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
-      ) : null}
     </PageSection>
   );
 }

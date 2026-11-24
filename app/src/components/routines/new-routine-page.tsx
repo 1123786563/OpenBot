@@ -1,11 +1,14 @@
 import { useForm } from "@tanstack/react-form";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
 import { PageCard, PageShell } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { RoutineAction } from "@/components/routines/routine-action";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Field,
   FieldDescription,
@@ -97,7 +100,22 @@ function RoutineCreateForm({
   const agents = useQuery(agentListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
   const createRoutine = useMutation(createRoutineMutationOptions(queryClient));
+  const submitting = useRef(false);
+  const botPicker = useRef<HTMLButtonElement>(null);
+  const errorNotice = useRef<HTMLParagraphElement>(null);
+  const failed = createRoutine.isError;
+  useEffect(() => {
+    if (failed && document.activeElement === document.body)
+      errorNotice.current?.focus();
+  }, [failed]);
   const timeZone = browserTimeZone();
+  const timeZoneName =
+    new Intl.DateTimeFormat("en", {
+      timeZone,
+      timeZoneName: "longGeneric",
+    })
+      .formatToParts()
+      .find(({ type }) => type === "timeZoneName")?.value ?? timeZone;
 
   const defaultValues: RoutineFormValues = {
     agentId: presetAgentId ?? "",
@@ -123,7 +141,12 @@ function RoutineCreateForm({
         timezone: timeZone,
         channelId: value.channelId,
       });
-      await navigate({ to: "/routines" });
+      await navigate({
+        to: "/routines",
+        ignoreBlocker: true,
+        replace: true,
+        state: { routineCreated: true },
+      });
     },
   });
 
@@ -134,34 +157,58 @@ function RoutineCreateForm({
   return (
     <PageShell
       backButton={{ label: "Routines", linkProps: { to: "/routines" } }}
-      description="Pick a Bot, say what it should do, and choose when. It posts what it did in a conversation with you."
+      description="Set up recurring work for a Bot and choose where it posts the results."
       title="New routine"
     >
       <form
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          void form.handleSubmit().catch(() => {
-            // The mutation error is rendered below the form.
-          });
+          if (submitting.current || !agents.isSuccess) return;
+          submitting.current = true;
+          void form
+            .handleSubmit()
+            .catch(() => undefined)
+            .finally(() => {
+              submitting.current = false;
+            });
         }}
       >
+        <form.Subscribe
+          selector={(state) => [!state.isDefaultValue, state.isSubmitting]}
+        >
+          {([hasDraft, saving]) => (
+            <DraftLeaveConfirmation
+              description="The Bot, instructions, and schedule you entered will be lost."
+              hasDraft={hasDraft}
+              saving={saving}
+              submitting={submitting}
+              title="Discard this routine draft?"
+            />
+          )}
+        </form.Subscribe>
         <PageCard
           footer={
             <>
-              <Button
-                render={(props) => <Link {...props} to="/routines" />}
-                variant="outline"
+              <Link
+                className={buttonVariants({
+                  className: "min-h-11",
+                  variant: "outline",
+                })}
+                to="/routines"
               >
                 Cancel
-              </Button>
+              </Link>
               <form.Subscribe
                 selector={(state) => [state.canSubmit, state.isSubmitting]}
               >
                 {([canSubmit, isSubmitting]) => (
                   <RoutineAction
                     disabled={
-                      !canSubmit || isSubmitting || createRoutine.isPending
+                      !canSubmit ||
+                      !agents.isSuccess ||
+                      isSubmitting ||
+                      createRoutine.isPending
                     }
                     type="submit"
                   >
@@ -182,25 +229,20 @@ function RoutineCreateForm({
                 return (
                   <Field data-invalid={isInvalid}>
                     <FieldLabel htmlFor={field.name}>Bot</FieldLabel>
-                    {agents.error ? (
-                      /* An empty picker reads as "you have no Bots"; a failed read must say
-                         itself and offer the retry, so the form's other work survives. */
-                      <div className="flex flex-wrap items-center gap-3">
-                        <p className="text-destructive text-sm" role="alert">
-                          Couldn't load your Bots.
-                        </p>
-                        <Button
-                          disabled={agents.isFetching}
-                          onClick={() => void agents.refetch()}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          {agents.isFetching ? "Retrying…" : "Retry"}
-                        </Button>
-                      </div>
+                    {agents.isPending ? (
+                      <ReadStatus kind="loading" message="Loading your Bots…" />
+                    ) : agents.error ? (
+                      <ReadError
+                        focusAfterRetry={() => botPicker.current}
+                        message="Couldn't load your Bots."
+                        retry={agents.refetch}
+                        retryBelow
+                        retryLabel="Retry loading Bots"
+                        retrying={agents.isFetching}
+                      />
                     ) : null}
                     <Select
+                      disabled={!agents.isSuccess}
                       items={botItems}
                       onValueChange={(value) => {
                         const next = String(value ?? "");
@@ -219,8 +261,9 @@ function RoutineCreateForm({
                     >
                       <SelectTrigger
                         aria-invalid={isInvalid}
-                        className="w-full"
+                        className="min-h-11 w-full"
                         id={field.name}
+                        ref={botPicker}
                       >
                         <SelectValue placeholder="Choose a Bot" />
                       </SelectTrigger>
@@ -257,10 +300,12 @@ function RoutineCreateForm({
                 return (
                   <Field data-invalid={isInvalid}>
                     <FieldLabel htmlFor={field.name}>What to do</FieldLabel>
-                    <FieldDescription>
-                      Write it as one run of the work. Leave the schedule out.
+                    <FieldDescription id="routine-instruction-help">
+                      Describe what the Bot should do each time it runs. For
+                      example, “Send me a summary of yesterday’s new leads.”
                     </FieldDescription>
                     <Textarea
+                      aria-describedby="routine-instruction-help"
                       aria-invalid={isInvalid}
                       id={field.name}
                       name={field.name}
@@ -268,7 +313,6 @@ function RoutineCreateForm({
                       onChange={(event) =>
                         field.handleChange(event.target.value)
                       }
-                      placeholder="Send me a summary of yesterday's new leads"
                       rows={3}
                       value={field.state.value}
                     />
@@ -292,7 +336,11 @@ function RoutineCreateForm({
                       }
                       value={field.state.value}
                     >
-                      <SelectTrigger className="min-w-40 flex-1" id="repeat">
+                      <SelectTrigger
+                        aria-describedby="routine-schedule-preview"
+                        className="min-h-11 min-w-40 flex-1"
+                        id="repeat"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent {...astryxScope}>
@@ -321,8 +369,9 @@ function RoutineCreateForm({
                               value={field.state.value}
                             >
                               <SelectTrigger
+                                aria-describedby="routine-schedule-preview"
                                 aria-label="Day of the week"
-                                className="min-w-36 flex-1"
+                                className="min-h-11 min-w-36 flex-1"
                               >
                                 <SelectValue />
                               </SelectTrigger>
@@ -353,8 +402,9 @@ function RoutineCreateForm({
                               value={field.state.value}
                             >
                               <SelectTrigger
+                                aria-describedby="routine-schedule-preview"
                                 aria-label="Day of the month"
-                                className="min-w-24"
+                                className="min-h-11 min-w-24"
                               >
                                 <SelectValue />
                               </SelectTrigger>
@@ -375,8 +425,9 @@ function RoutineCreateForm({
                         <form.Field name="time">
                           {(field) => (
                             <Input
+                              aria-describedby="routine-schedule-preview"
                               aria-label="Time"
-                              className="w-32"
+                              className="min-h-11 w-32"
                               onChange={(event) =>
                                 field.handleChange(event.target.value)
                               }
@@ -393,12 +444,9 @@ function RoutineCreateForm({
               </div>
               <form.Subscribe selector={(state) => state.values}>
                 {(values) => (
-                  <FieldDescription>
-                    <span className="font-medium text-foreground">
-                      {scheduleSentence(values)}
-                    </span>
-                    , your time ({timeZone}). For anything else, like every
-                    other Tuesday, ask the Bot in a conversation.
+                  <FieldDescription id="routine-schedule-preview">
+                    {scheduleSentence(values)} ({timeZoneName}). For a schedule
+                    like every other Tuesday, ask the Bot in a conversation.
                   </FieldDescription>
                 )}
               </form.Subscribe>
@@ -431,10 +479,10 @@ function RoutineCreateForm({
                     {(field) => (
                       <Field>
                         <FieldLabel htmlFor={field.name}>Posts in</FieldLabel>
-                        <FieldDescription>
+                        <FieldDescription id="routine-destination-help">
                           {field.state.value === NEW_CONVERSATION
-                            ? "OpenBot starts a conversation for this routine, named after it."
-                            : "Each run posts in this conversation."}
+                            ? "OpenBot creates one conversation for this routine, with the routine name or the first part of your instructions."
+                            : "Each run posts its result in the selected conversation."}
                         </FieldDescription>
                         <Select
                           disabled={!agentId}
@@ -448,7 +496,11 @@ function RoutineCreateForm({
                               : NEW_CONVERSATION
                           }
                         >
-                          <SelectTrigger className="w-full" id={field.name}>
+                          <SelectTrigger
+                            aria-describedby="routine-destination-help"
+                            className="min-h-11 w-full"
+                            id={field.name}
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent {...astryxScope}>
@@ -480,6 +532,7 @@ function RoutineCreateForm({
                     </FieldDescription>
                     <Input
                       aria-invalid={isInvalid}
+                      className="min-h-11"
                       id={field.name}
                       name={field.name}
                       onBlur={field.handleBlur}
@@ -498,7 +551,12 @@ function RoutineCreateForm({
             </form.Field>
           </FieldGroup>
           {createRoutine.error ? (
-            <p className="mt-5 text-destructive text-sm" role="alert">
+            <p
+              className="mt-5 text-destructive text-sm"
+              role="alert"
+              ref={errorNotice}
+              tabIndex={-1}
+            >
               {createRoutine.error.message}
             </p>
           ) : null}

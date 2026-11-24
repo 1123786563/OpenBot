@@ -1,7 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import type { ComponentProps } from "react";
 import { SkillFields } from "@/components/skills/skill-fields";
-import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
 import { emptySkillForm } from "@/lib/skills/form";
 
 /**
@@ -10,12 +8,15 @@ import { emptySkillForm } from "@/lib/skills/form";
  * The panel rather than a page of its own, so the skills you already have stay on screen while you
  * write the next one — the usual reason to open this is to make a variant of one that exists.
  */
-export function NewSkill() {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-
-  const createSkill = useMutation(saveSkillMutationOptions(queryClient));
-
+export function NewSkill({
+  status,
+  ...form
+}: {
+  status: "loading" | "unavailable" | "ready";
+} & Pick<
+  ComponentProps<typeof SkillFields>,
+  "error" | "onDirtyChange" | "onSubmit" | "saving"
+>) {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
       <header>
@@ -26,15 +27,17 @@ export function NewSkill() {
         </p>
       </header>
 
+      {status !== "ready" ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          {status === "loading"
+            ? "Loading skills…"
+            : "Saving is unavailable. Check the skills list for the latest status."}
+        </p>
+      ) : null}
       <SkillFields
+        {...form}
         defaultValues={emptySkillForm}
-        error={createSkill.error}
-        onSubmit={async (values) => {
-          await createSkill.mutateAsync(values);
-          // Panel closed rather than swapped for a detail view: there is nothing more to say about a
-          // skill than the form just said, and the new row is already behind it in the list.
-          await navigate({ search: {}, to: "/capabilities/skills" });
-        }}
+        saveDisabled={status !== "ready"}
         submitLabel="Save skill"
       />
     </div>

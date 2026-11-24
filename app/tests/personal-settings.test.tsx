@@ -15,7 +15,7 @@ import {
   isRedirect,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { ComputersPage } from "@/components/manage/computers-page";
 import { PluginToolPage } from "@/components/manage/plugin-tool-page";
 import { SkillsPage } from "@/components/manage/skills-page";
@@ -25,7 +25,11 @@ import {
   type HostAccessStatus,
   hostAccessKeys,
 } from "@/lib/computers/host-access";
-import { type ComputerFleet, computerKeys } from "@/lib/computers/queries";
+import {
+  type ComputerFleet,
+  computerFleetQueryOptions,
+  computerKeys,
+} from "@/lib/computers/queries";
 import {
   type DeploymentCapabilities,
   deploymentKeys,
@@ -199,8 +203,7 @@ describe("the personal pages under Settings", () => {
         <RouterProvider router={router as never} />
       </QueryClientProvider>,
     );
-    // The page's back button: an anchor drawn as a button.
-    const back = await view.findByRole("button", { name: "Notion" });
+    const back = await view.findByRole("link", { name: "Notion" });
     expect(back.getAttribute("href")).toBe("/connections/notion");
   });
 });
@@ -264,6 +267,33 @@ describe("the Computer page", () => {
     return view;
   }
 
+  test("only a temporary failure keeps previously loaded devices", async () => {
+    const originalFetch = globalThis.fetch;
+    const client = clientFor("team");
+    const query = computerFleetQueryOptions();
+    client.setQueryData(query.queryKey, fleet);
+    let status = 503;
+    globalThis.fetch = Object.assign(
+      async () => Response.json({ error: "Read denied" }, { status }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const read = () => client.fetchQuery({ ...query, retry: false });
+    try {
+      await expect(read()).rejects.toThrow("Read denied");
+      expect(client.getQueryData(query.queryKey)?.computers.length).toBe(1);
+
+      status = 403;
+      await expect(read()).rejects.toThrow("Read denied");
+      status = 503;
+      await expect(read()).rejects.toThrow("Read denied");
+      expect(client.getQueryData(query.queryKey)?.computers.length).toBe(0);
+      expect(client.getQueryData(query.queryKey)?.isolation).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+      client.clear();
+    }
+  });
+
   test("in the personal edition has nothing only a team deployment can act on", async () => {
     const view = await renderPage("personal");
     const text = view.container.textContent ?? "";
@@ -285,11 +315,61 @@ describe("the Computer page", () => {
       .parentElement?.parentElement as HTMLElement;
     expect(within(browsers).getByText("Personal Assistant")).toBeTruthy();
     expect(
-      within(browsers).getByRole("button", { name: "Stop browser" }),
+      within(browsers).getByRole("button", {
+        name: "Stop browser: Personal Assistant",
+      }),
     ).toBeTruthy();
     expect(
-      within(browsers).getByRole("button", { name: "Reset" }),
+      within(browsers).getByRole("button", {
+        name: "Reset browser profile: Personal Assistant",
+      }),
     ).toBeTruthy();
+  });
+
+  test("an unconfirmed stop shows the reported state and Activity without sending another stop", async () => {
+    const originalFetch = globalThis.fetch;
+    let writes = 0;
+    globalThis.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        if (String(input) !== "/api/computers/fleet")
+          return originalFetch(input, init);
+        if (init?.method === "POST") {
+          writes += 1;
+          return Response.json({ error: "Response lost" }, { status: 503 });
+        }
+        return Response.json({
+          ...fleet,
+          computers: fleet.computers.map((computer) => ({
+            ...computer,
+            running: writes === 0,
+          })),
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      const view = await renderPage("personal");
+      fireEvent.click(
+        view.getByRole("button", { name: "Stop browser: Personal Assistant" }),
+      );
+      const dialog = within(await view.findByRole("alertdialog"));
+      fireEvent.click(dialog.getByRole("button", { name: "Stop browser" }));
+      expect(
+        await dialog.findByText(/Latest device status: No browser running/),
+      ).toBeTruthy();
+      expect(
+        dialog
+          .getByRole("link", { name: "Open Activity" })
+          .getAttribute("href"),
+      ).toBe("/settings/activity");
+      expect(dialog.queryByRole("button", { name: "Try again" })).toBeNull();
+      expect(
+        view.queryByText("Browser stopped for Personal Assistant."),
+      ).toBeNull();
+      expect(writes).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   /**
@@ -333,16 +413,26 @@ describe("the Computer page", () => {
     const own = browserRow(view, "Your OpenBot browser");
     expect(own.textContent).toContain("You record in it with Teach a Bot.");
     expect(
-      within(own).getByRole("button", { name: "Stop browser" }),
+      within(own).getByRole("button", {
+        name: "Stop browser: Your OpenBot browser",
+      }),
     ).toBeTruthy();
     expect(
-      within(own).getByRole("button", { name: "Clear browser data" }),
+      within(own).getByRole("button", {
+        name: "Clear browser data: Your OpenBot browser",
+      }),
     ).toBeTruthy();
-    expect(within(own).queryByRole("button", { name: "Reset" })).toBeNull();
+    expect(
+      within(own).queryByRole("button", { name: /^Reset browser profile:/ }),
+    ).toBeNull();
 
     // The Bot's own row keeps its Reset.
     const bot = browserRow(view, "Personal Assistant");
-    expect(within(bot).getByRole("button", { name: "Reset" })).toBeTruthy();
+    expect(
+      within(bot).getByRole("button", {
+        name: "Reset browser profile: Personal Assistant",
+      }),
+    ).toBeTruthy();
 
     const text = view.container.textContent ?? "";
     expect(text).not.toContain("closes a Bot's browser");
@@ -384,11 +474,17 @@ describe("the Computer page", () => {
     expect(view.getByText("A person's OpenBot browser")).toBeTruthy();
     expect(view.container.textContent).not.toContain("A Bot no longer here");
 
-    within(ada).getByRole("button", { name: "Reset" }).click();
-    const dialog = await view.findByRole("dialog");
-    expect(dialog.textContent).toContain("Reset Ada's OpenBot browser?");
+    within(ada)
+      .getByRole("button", {
+        name: "Reset computer: Ada's OpenBot browser",
+      })
+      .click();
+    const dialog = await view.findByRole("alertdialog");
     expect(dialog.textContent).toContain(
-      "The person is signed out of every site they signed in to in it.",
+      "Reset computer for Ada's OpenBot browser?",
+    );
+    expect(dialog.textContent).toContain(
+      "Files and browser profiles stored on this computer are deleted.",
     );
     expect(dialog.textContent).not.toContain("The Bot is signed out");
   });

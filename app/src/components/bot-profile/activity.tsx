@@ -11,11 +11,15 @@ import {
   IconListDetails,
   IconTargetArrow,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, type RefObject, useRef } from "react";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
-import { ReadStatus } from "@/components/layout/read-status";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -38,10 +42,10 @@ import {
   type BotActivity,
   botActivityQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { relativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
-import { queryClient } from "@/query-client";
 
 const ICONS: Record<ActivityKind, typeof IconBell> = {
   routine: IconCalendarRepeat,
@@ -60,6 +64,89 @@ const KIND_LABEL: Record<ActivityKind, string> = {
   question: "Question",
   follow_up: "Follow-up",
 };
+
+const STATUS_LABEL = new Map([
+  ["active", "Active"],
+  ["cancelled", "Cancelled"],
+  ["delivered", "Result delivered"],
+  ["done", "Finished"],
+  ["failed", "Failed"],
+  ["queued", "Waiting to start"],
+  ["retrying", "Trying again"],
+  ["running", "Running"],
+  ["scheduled", "Scheduled"],
+  ["skipped", "Skipped"],
+  ["stopped", "Stopped"],
+  ["succeeded", "Finished successfully"],
+]);
+
+function activityStatus(item: ActivityItem): string {
+  const status = item.status.toLowerCase();
+  if (status === "waiting for you" || (status === "waiting" && item.needsYou))
+    return "Waiting for you";
+  if (status === "waiting") return "Waiting for a response";
+  const label = STATUS_LABEL.get(status) ?? item.status;
+  return item.needsYou ? `${label} · Needs your attention` : label;
+}
+
+type ActivityAction = (
+  item: ActivityItem,
+  trigger: HTMLButtonElement,
+  fallbackFocus: () => HTMLElement | null,
+) => void;
+
+function useActivityConfirmation(agentId: string) {
+  const queryClient = useQueryClient();
+  const stop = useMutation(stopHandoffMutationOptions(queryClient));
+  const cancel = useMutation(cancelFollowUpMutationOptions(queryClient));
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const request: ActivityAction = (item, trigger, fallbackFocus) => {
+    const stopping = item.stoppable;
+    const action = stopping ? stop : cancel;
+    const activity = botActivityQueryOptions(agentId);
+    requestConfirmation({
+      title: stopping ? "Stop this delegated task?" : "Cancel this follow-up?",
+      description: stopping
+        ? `“${item.title}” will stop. Any work already done will remain.`
+        : `“${item.title}” will no longer run at its scheduled time.`,
+      confirmLabel: stopping ? "Stop task" : "Cancel follow-up",
+      pendingLabel: stopping ? "Stopping…" : "Cancelling…",
+      failureMessage: stopping
+        ? "Couldn't confirm that the task stopped. Trying again checks whether it's still active before stopping it."
+        : "Couldn't confirm that the follow-up was cancelled. Trying again checks whether it's still scheduled before cancelling it.",
+      successMessage: stopping
+        ? "Delegated task stopped."
+        : "Follow-up cancelled.",
+      fallbackFocus,
+      trigger,
+      refresh: () =>
+        queryClient.invalidateQueries({ queryKey: activity.queryKey }),
+      run: async () => {
+        const latest = await queryClient.fetchQuery({
+          ...activity,
+          staleTime: 0,
+          retry: false,
+        });
+        const candidates = [
+          ...(latest?.inProgress ?? []),
+          ...(latest?.scheduled ?? []),
+        ];
+        const target = candidates.find(
+          ({ id, kind }) => id === item.id && kind === item.kind,
+        );
+        if (!(stopping ? target?.stoppable : target?.cancellable)) {
+          throw new ActionUnavailable(
+            stopping
+              ? "This delegated task is no longer running or queued."
+              : "This follow-up is no longer scheduled.",
+          );
+        }
+        await action.mutateAsync({ agentId, id: item.id });
+      },
+    });
+  };
+  return { request, confirmation };
+}
 
 /** Where an item opens: its conversation when it has one, otherwise the screen that owns its kind. */
 function linkFor(item: ActivityItem, agentId: string) {
@@ -84,38 +171,34 @@ function ActivityRow({
   agentId,
   item,
   live = false,
+  onAction,
+  wrapTitle = false,
 }: {
   agentId: string;
   item: ActivityItem;
+  onAction?: (item: ActivityItem, trigger: HTMLButtonElement) => void;
+  wrapTitle?: boolean;
   /** Under way now: a pulsing dot on its icon, amber when it is waiting on the person. */
   live?: boolean;
 }) {
   // Subscribes this row to the interface language, so choosing another one redraws its time in place.
   useTranslation();
-  const stop = useMutation(stopHandoffMutationOptions(queryClient));
-  const cancel = useMutation(cancelFollowUpMutationOptions(queryClient));
   const Icon = ICONS[item.kind];
   const link = linkFor(item, agentId);
   const when = relativeTime(item.at);
-  const control = item.stoppable ? (
-    <Button
-      disabled={stop.isPending}
-      onClick={() => stop.mutate({ agentId, id: item.id })}
-      size="sm"
-      variant="outline"
-    >
-      {stop.isPending ? "Stopping…" : "Stop"}
-    </Button>
-  ) : item.cancellable ? (
-    <Button
-      disabled={cancel.isPending}
-      onClick={() => cancel.mutate({ agentId, id: item.id })}
-      size="sm"
-      variant="outline"
-    >
-      {cancel.isPending ? "Cancelling…" : "Cancel"}
-    </Button>
-  ) : null;
+  const label = item.stoppable ? "Stop" : "Cancel";
+  const control =
+    onAction && (item.stoppable || item.cancellable) ? (
+      <Button
+        aria-label={`${label} ${item.title}`}
+        className="max-sm:min-h-11"
+        onClick={(event) => onAction(item, event.currentTarget)}
+        size="sm"
+        variant="outline"
+      >
+        {label}
+      </Button>
+    ) : null;
   const content = (
     <>
       <ItemMedia className="relative" variant="icon">
@@ -130,13 +213,19 @@ function ActivityRow({
           />
         ) : null}
       </ItemMedia>
-      {/* One line, cut with an ellipsis; the whole title shows on hover. */}
       <ItemContent className="min-w-0">
-        <ItemTitle className="block w-auto truncate" title={item.title}>
+        <ItemTitle
+          className={
+            wrapTitle
+              ? "line-clamp-none [overflow-wrap:anywhere]"
+              : "block w-auto truncate"
+          }
+          title={wrapTitle ? undefined : item.title}
+        >
           {item.title}
         </ItemTitle>
-        <ItemDescription>
-          {KIND_LABEL[item.kind]} · {item.needsYou ? "needs you" : item.status}
+        <ItemDescription className="line-clamp-none [overflow-wrap:anywhere]">
+          {KIND_LABEL[item.kind]} · {activityStatus(item)}
           {when ? ` · ${when}` : ""}
           {item.detail ? ` · ${item.detail}` : ""}
         </ItemDescription>
@@ -151,9 +240,15 @@ function ActivityRow({
     return (
       <Item size="sm">
         {content}
-        <ItemActions>
+        <ItemActions className="max-sm:basis-full max-sm:justify-end">
           {link ? (
-            <Button render={link} size="sm" variant="ghost">
+            <Button
+              aria-label={`Open ${item.title}`}
+              className="max-sm:min-h-11"
+              render={link}
+              size="sm"
+              variant="ghost"
+            >
               Open
             </Button>
           ) : null}
@@ -173,19 +268,51 @@ function ActivityRow({
 function ActivitySection({
   agentId,
   empty,
+  initialLimit,
   items,
   live = false,
+  headingRef,
+  onAction,
   title,
 }: {
   agentId: string;
   empty: string;
+  initialLimit?: number;
   items: ActivityItem[];
   live?: boolean;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
+  onAction?: ActivityAction;
   title: string;
 }) {
+  const localHeading = useRef<HTMLHeadingElement>(null);
+  const heading = headingRef ?? localHeading;
+  const recent = items.slice(0, initialLimit ?? items.length);
+  const earlier = items.slice(recent.length);
+  const rows = (entries: ActivityItem[]) => (
+    <PageRows>
+      {entries.map((item, index) => (
+        <Fragment key={item.id}>
+          {index > 0 ? <Separator /> : null}
+          <ActivityRow
+            agentId={agentId}
+            item={item}
+            live={live}
+            onAction={
+              onAction
+                ? (target, trigger) =>
+                    onAction(target, trigger, () => heading.current)
+                : undefined
+            }
+            wrapTitle
+          />
+        </Fragment>
+      ))}
+    </PageRows>
+  );
   return (
     <PageSection
       className={items.length === 0 ? "mt-6" : undefined}
+      headingRef={heading}
       title={title}
     >
       {items.length === 0 ? (
@@ -193,15 +320,23 @@ function ActivitySection({
           {empty}
         </Text>
       ) : (
-        <PageRows>
-          {items.map((item, index) => (
-            <Fragment key={item.id}>
-              {index > 0 ? <Separator /> : null}
-              <ActivityRow agentId={agentId} item={item} live={live} />
-            </Fragment>
-          ))}
-        </PageRows>
+        rows(recent)
       )}
+      {earlier.length > 0 ? (
+        <details style={{ marginBlockStart: "var(--spacing-3)" }}>
+          <summary
+            style={{
+              cursor: "pointer",
+              minBlockSize: "var(--spacing-11)",
+              paddingBlock: "var(--spacing-3)",
+            }}
+          >
+            {earlier.length} earlier{" "}
+            {earlier.length === 1 ? "completion" : "completions"}
+          </summary>
+          {rows(earlier)}
+        </details>
+      ) : null}
     </PageSection>
   );
 }
@@ -213,7 +348,7 @@ const GLANCE = 3;
  * Running work first, then what is lined up, then the goals that wait to be asked, as many as the
  * Bot's page shows.
  */
-function upcomingOf(activity: BotActivity | undefined) {
+function upcomingOf(activity: BotActivity | null | undefined) {
   return activity
     ? [
         ...activity.inProgress.map((item) => ({ item, live: true })),
@@ -236,20 +371,36 @@ function upcomingOf(activity: BotActivity | undefined) {
  */
 export function BotActivityGlance({ agentId }: { agentId: string }) {
   const activity = useQuery(botActivityQueryOptions(agentId));
+  const heading = useRef<HTMLHeadingElement>(null);
+  const { request, confirmation } = useActivityConfirmation(agentId);
   const upcoming = upcomingOf(activity.data);
-  if (activity.isPending || upcoming.length === 0) return null;
   return (
-    <PageSection title="Activity">
-      <PageRows>
-        {upcoming.map(({ item, live }) => (
-          <Fragment key={item.id}>
-            <ActivityRow agentId={agentId} item={item} live={live} />
-            <Separator />
-          </Fragment>
-        ))}
-        <AllActivityItem activity={activity.data} agentId={agentId} />
-      </PageRows>
-    </PageSection>
+    <>
+      {confirmation}
+      {activity.isPending || upcoming.length === 0 ? null : (
+        <PageSection headingRef={heading} title="Activity">
+          <PageRows>
+            {upcoming.map(({ item, live }) => (
+              <Fragment key={item.id}>
+                <ActivityRow
+                  agentId={agentId}
+                  item={item}
+                  live={live}
+                  onAction={
+                    activity.isSuccess
+                      ? (target, trigger) =>
+                          request(target, trigger, () => heading.current)
+                      : undefined
+                  }
+                />
+                <Separator />
+              </Fragment>
+            ))}
+            <AllActivityItem activity={activity.data} agentId={agentId} />
+          </PageRows>
+        </PageSection>
+      )}
+    </>
   );
 }
 
@@ -280,7 +431,7 @@ function AllActivityItem({
   title = "All activity",
   withIcon = false,
 }: {
-  activity: BotActivity | undefined;
+  activity: BotActivity | null | undefined;
   agentId: string;
   title?: string;
   withIcon?: boolean;
@@ -333,49 +484,66 @@ export function activitySummary(activity: BotActivity): string {
 /** In progress, Scheduled and Completed, read from the ledgers the work already lives in. */
 export function BotActivitySections({ agentId }: { agentId: string }) {
   const activity = useQuery(botActivityQueryOptions(agentId));
-  if (activity.isPending)
-    return <ReadStatus kind="loading" message="Loading Bot activity…" />;
-  if (activity.error)
-    return (
-      <PageSection title="Activity">
-        <ReadStatus
-          kind="error"
-          message="Couldn’t load this Bot’s activity"
-          retry={activity.refetch}
-        />
-      </PageSection>
-    );
+  const { request, confirmation } = useActivityConfirmation(agentId);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const readable = canKeepCachedRead(activity.error) && activity.data !== null;
+  const history = readable ? activity.data : undefined;
+  const current = activity.isSuccess;
   return (
     <>
-      <ActivitySection
-        agentId={agentId}
-        empty="Nothing is running or waiting on you."
-        items={activity.data.inProgress}
-        live
-        title="In progress"
-      />
-      <ActivitySection
-        agentId={agentId}
-        empty="Nothing is scheduled."
-        items={activity.data.scheduled}
-        title="Scheduled"
-      />
-      {/* Only when there is one: most Bots have no goal waiting to be asked. */}
-      {activity.data.onDemand?.length ? (
-        <ActivitySection
-          agentId={agentId}
-          empty=""
-          items={activity.data.onDemand}
-          title="On demand"
-        />
+      {confirmation}
+      {activity.isPending ? (
+        <ReadStatus kind="loading" message="Loading Bot activity…" />
+      ) : activity.isError ? (
+        <section aria-label="Activity status" className="mt-4">
+          <ReadError
+            description={
+              history ? "Showing the last loaded activity." : undefined
+            }
+            focusAfterRetry={() => heading.current}
+            message="Couldn’t load this Bot’s activity"
+            retry={activity.refetch}
+            retryBelow
+            retrying={activity.isFetching}
+          />
+        </section>
       ) : null}
-      <ActivitySection
-        agentId={agentId}
-        empty="No tasks, routines or goals have finished yet."
-        items={activity.data.completed}
-        title="Completed"
-      />
-      <BotActionsSection agentId={agentId} />
+      {history ? (
+        <>
+          <ActivitySection
+            agentId={agentId}
+            empty="Nothing is running or waiting on you."
+            headingRef={heading}
+            items={history.inProgress}
+            live={current}
+            onAction={current ? request : undefined}
+            title="In progress"
+          />
+          <ActivitySection
+            agentId={agentId}
+            empty="Nothing is scheduled."
+            items={history.scheduled}
+            onAction={current ? request : undefined}
+            title="Scheduled"
+          />
+          {history.onDemand?.length ? (
+            <ActivitySection
+              agentId={agentId}
+              empty=""
+              items={history.onDemand}
+              title="On demand"
+            />
+          ) : null}
+          <ActivitySection
+            agentId={agentId}
+            empty="No tasks, routines or goals have finished yet."
+            initialLimit={5}
+            items={history.completed}
+            title="Completed"
+          />
+        </>
+      ) : null}
+      {readable ? <BotActionsSection agentId={agentId} /> : null}
     </>
   );
 }
@@ -412,7 +580,7 @@ function BotActionsSection({ agentId }: { agentId: string }) {
           </ItemMedia>
           <ItemContent>
             <ItemTitle>Every action this Bot took</ItemTitle>
-            <ItemDescription>
+            <ItemDescription className="line-clamp-none">
               See the files, pages and apps it used, and which were allowed,
               blocked or didn't happen.
             </ItemDescription>

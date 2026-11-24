@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { botAttentionQueryOptions } from "@/lib/bot-lifecycle/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   type ProactiveSuggestion,
   proactiveSuggestionsQueryOptions,
@@ -57,14 +58,12 @@ export function useNeedsYouTasks(agentId?: string) {
     channels.data?.find((channel) => channel.id === channelId)?.busy === true;
   const mine = <Row extends { agentId: string }>(row: Row) =>
     agentId === undefined || row.agentId === agentId;
-  const listed = orderTasks(
-    (taskList.data ?? []).filter(mine),
-    busy,
-    Date.now(),
-  );
+  const data = canKeepCachedRead(taskList.error) ? taskList.data : undefined;
+  const listed = orderTasks((data ?? []).filter(mine), busy, Date.now());
   return {
     pending: taskList.isPending,
     error: taskList.error,
+    fetching: taskList.isFetching,
     refetch: taskList.refetch,
     tasks: listed.filter(({ status }) => status !== "resolved"),
     done: listed.filter(({ status }) => status === "resolved"),
@@ -92,10 +91,12 @@ export function useNeedsYou(agentId?: string) {
  * Renders the card, or nothing when there is nothing to list.
  */
 export function NeedsYouRows({
+  canChangeTasks = true,
   lead = [],
   tasks,
   items,
 }: {
+  canChangeTasks?: boolean;
   lead?: ReactNode[];
   tasks: ListedTask[];
   items: ProactiveSuggestion[];
@@ -113,7 +114,13 @@ export function NeedsYouRows({
     ...lead.map((row, index) => ({ key: `lead-${index}`, row })),
     ...tasks.map((listed) => ({
       key: `task-${listed.task.id}`,
-      row: <TaskRow botName={botName(listed.task.agentId)} listed={listed} />,
+      row: (
+        <TaskRow
+          botName={botName(listed.task.agentId)}
+          canChange={canChangeTasks}
+          listed={listed}
+        />
+      ),
     })),
     ...shown.map((item) => ({
       key: `item-${item.id}`,

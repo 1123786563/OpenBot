@@ -22,6 +22,10 @@
  * Postgres.
  */
 import { isDeepStrictEqual } from "node:util";
+import {
+  boundaryRuleId,
+  boundaryRuleIdPattern,
+} from "@openbot/shared/boundary-rule-id";
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { actionPolicy } from "../db/schema";
@@ -275,6 +279,15 @@ function parseLabels(
         : typeof label.description === "string"
           ? label.description.trim()
           : null;
+    if (
+      label?.id !== undefined &&
+      (typeof label.id !== "string" || !boundaryRuleIdPattern.test(label.id))
+    ) {
+      return {
+        ok: false,
+        error: "Each boundary identifier must have the expected format.",
+      };
+    }
     if (!name || name.length > MAX_LABEL_NAME) {
       return {
         ok: false,
@@ -287,8 +300,16 @@ function parseLabels(
         error: `A rule's description must be at most ${MAX_LABEL_DESCRIPTION} characters.`,
       };
     }
-    if (known.has(rule)) labels[rule] = { name, description };
+    if (known.has(rule))
+      labels[rule] = {
+        name,
+        description,
+        ...(label?.id ? { id: label.id } : {}),
+      };
   }
+  const ids = rules.map((rule) => boundaryRuleId(rule, labels[rule]?.id));
+  if (new Set(ids).size !== new Set(rules).size)
+    return { ok: false, error: "Each boundary needs a unique identifier." };
   return { ok: true, labels };
 }
 

@@ -386,6 +386,30 @@ test("an isolated Bot's Visibility row says, before it is made public and while 
   ).toBeTruthy();
 });
 
+test("publishing an isolated Bot requires confirmation and cancel keeps it private", async () => {
+  serve(MANAGED, actor.id, { isolated: true });
+  const view = draw();
+  const user = userEvent.setup({ document });
+  const visibility = await view.findByRole("combobox", { name: "Visibility" });
+  const selectPublic = async () => {
+    await user.click(visibility);
+    await user.click(await view.findByRole("option", { name: "Public" }));
+    await view.findByRole("alertdialog", { name: "Make Expenses public?" });
+  };
+
+  await selectPublic();
+  expect(updates).toHaveLength(0);
+  await user.click(view.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(updates).toHaveLength(0);
+
+  await selectPublic();
+  await user.click(view.getByRole("button", { name: "Make public" }));
+  expect(await view.findByText("Expenses is public.")).toBeTruthy();
+  expect(updates).toHaveLength(1);
+  expect(updates[0]).toMatchObject({ visibility: "public" });
+});
+
 test("other edits leave Isolated alone", async () => {
   serve(MANAGED, actor.id, { isolated: true });
   const view = draw();
@@ -493,7 +517,9 @@ test("the starter's subtitle shows the new wording, and an edit sends back the s
   const view = draw("personal");
   const user = userEvent.setup({ document: view.baseElement.ownerDocument });
 
-  const titled = await view.findByRole("button", { name: /^Title/ });
+  const titled = await view.findByRole("button", {
+    name: /^Short description/,
+  });
   expect(titled.textContent).toContain(shown);
   expect(titled.textContent).not.toContain("LangGraph");
 
@@ -503,7 +529,7 @@ test("the starter's subtitle shows the new wording, and an edit sends back the s
   expect(updates[0]).toMatchObject({ name: "Assistant", title: stored });
 
   // The subtitle's own dialog shows the new wording; saved unchanged, it stays as stored.
-  await user.click(view.getByRole("button", { name: /^Title/ }));
+  await user.click(view.getByRole("button", { name: /^Short description/ }));
   await view.findByDisplayValue(shown);
   await user.click(view.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(updates).toHaveLength(2));

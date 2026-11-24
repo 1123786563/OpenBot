@@ -45,15 +45,24 @@ export function ComponentPreview({
   name,
   kind,
   sandboxed,
+  fullSize = false,
   fill = PREVIEW_FILL,
 }: {
   name: string;
   kind?: string;
   sandboxed?: SandboxedRecord;
+  fullSize?: boolean;
   fill?: number;
 }) {
   const entry = galleryComponent(name);
   if (entry?.preview) {
+    if (fullSize) {
+      return (
+        <section aria-hidden="true" inert style={{ overflowX: "auto" }}>
+          <entry.Component {...entry.preview} />
+        </section>
+      );
+    }
     return (
       <FittedPreview fill={fill}>
         <entry.Component {...entry.preview} />

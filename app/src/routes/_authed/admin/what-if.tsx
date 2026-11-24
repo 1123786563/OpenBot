@@ -1,12 +1,20 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
   EMPTY_WHAT_IF_ACTION,
   missingFrom,
   type WhatIfAction,
 } from "@openbot/shared/what-if";
 import { IconSparkles } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { z } from "zod";
 import {
   GovernanceAction,
@@ -28,7 +36,11 @@ import {
   checkWhatIf,
   type WhatIfChecked,
 } from "@/lib/what-if/check";
-import { whatIfVocabularyQueryOptions } from "@/lib/what-if/queries";
+import {
+  isWhatIfAccessDenied,
+  whatIfKeys,
+  whatIfVocabularyQueryOptions,
+} from "@/lib/what-if/queries";
 
 /**
  * `action` is an action to start from, as JSON: what "Try a change" on an Audit row's "Why did this
@@ -41,6 +53,7 @@ export const Route = createFileRoute("/_authed/admin/what-if")({
 
 /** The longest question the server takes. */
 const QUESTION_LIMIT = 500;
+type RequestKind = "ask" | "check";
 
 function revealHeading(heading: HTMLHeadingElement | null) {
   heading?.focus({ preventScroll: true });
@@ -71,9 +84,10 @@ function actionFrom(raw: string | undefined): WhatIfAction | null {
  */
 function WhatIfPage() {
   const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const queryClient = useQueryClient();
   const vocabulary = useQuery(whatIfVocabularyQueryOptions());
   const [text, setText] = useState("");
-  const [asking, setAsking] = useState(false);
   const [askProblem, setAskProblem] = useState<string | null>(null);
   const [unclear, setUnclear] = useState<string | null>(null);
   /** The question the chips were read from, until the admin starts over. */
@@ -82,16 +96,82 @@ function WhatIfPage() {
     () => actionFrom(search.action) ?? EMPTY_WHAT_IF_ACTION,
   );
   const [checked, setChecked] = useState<WhatIfChecked | null>(null);
-  const [checking, setChecking] = useState(false);
+  const [pending, setPending] = useState<RequestKind | null>(null);
+  const request = useRef<{ kind: RequestKind; controller: AbortController }>(
+    null,
+  );
   const [checkProblem, setCheckProblem] = useState<string | null>(null);
-  const questionRevision = useRef(0);
-  const actionRevision = useRef(0);
   const questionInput = useRef<HTMLInputElement>(null);
   const actionHeading = useRef<HTMLHeadingElement>(null);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const checkTrigger = useRef<HTMLButtonElement | null>(null);
   const exampleId = useId();
+  const stagesId = useId();
   const question = text.trim();
+  const questionChanged = asked !== null && asked !== question;
+  const linkedAction = useRef(search.action);
+  const accessLost =
+    vocabulary.data === null || isWhatIfAccessDenied(vocabulary.error);
+  const vocabularyReady = !accessLost && vocabulary.isSuccess;
+  const asking = pending === "ask";
+  const checking = pending === "check";
+
+  const cancelPending = useCallback(() => {
+    const previous = request.current;
+    if (!previous) return;
+    request.current = null;
+    previous.controller.abort();
+    setPending(null);
+  }, []);
+
+  useEffect(
+    () => () => {
+      const previous = request.current;
+      request.current = null;
+      previous?.controller.abort();
+    },
+    [],
+  );
+
+  const resetScenario = useCallback(
+    (start?: string) => {
+      cancelPending();
+      setText("");
+      setAsked(null);
+      setUnclear(null);
+      setAskProblem(null);
+      setActionState(actionFrom(start) ?? EMPTY_WHAT_IF_ACTION);
+      setChecked(null);
+      setCheckProblem(null);
+    },
+    [cancelPending],
+  );
+
+  const forgetLink = useCallback(() => {
+    linkedAction.current = undefined;
+    if (search.action !== undefined)
+      void navigate({ search: {}, replace: true });
+  }, [navigate, search.action]);
+
+  useLayoutEffect(() => {
+    if (accessLost) {
+      resetScenario();
+      forgetLink();
+    } else if (linkedAction.current !== search.action) {
+      linkedAction.current = search.action;
+      resetScenario(search.action);
+    }
+  }, [accessLost, forgetLink, resetScenario, search.action]);
+
+  const stillAuthorized = () =>
+    queryClient.getQueryData(whatIfKeys.vocabulary) !== null;
+  const revokeScenario = () => {
+    void queryClient.cancelQueries(
+      { queryKey: whatIfKeys.vocabulary, exact: true },
+      { revert: false },
+    );
+    queryClient.setQueryData(whatIfKeys.vocabulary, null);
+  };
 
   useLayoutEffect(() => {
     if (checked && document.activeElement === checkTrigger.current) {
@@ -100,26 +180,36 @@ function WhatIfPage() {
   }, [checked]);
 
   const setAction = (next: WhatIfAction) => {
-    actionRevision.current += 1;
     setActionState(next);
     // The answer below is for the action as it was checked; a change makes it stale.
     setChecked(null);
     setCheckProblem(null);
   };
 
+  function startRequest(kind: RequestKind) {
+    if (request.current) return null;
+    const controller = new AbortController();
+    request.current = { kind, controller };
+    setPending(kind);
+    return controller;
+  }
+
+  function finishRequest(controller: AbortController) {
+    if (request.current?.controller !== controller) return;
+    request.current = null;
+    setPending(null);
+  }
+
   const ask = async (form: HTMLFormElement) => {
-    if (!question || asking || checking) return;
-    const questionVersion = questionRevision.current;
-    const actionVersion = actionRevision.current;
-    const isCurrent = () =>
-      questionVersion === questionRevision.current &&
-      actionVersion === actionRevision.current;
+    if (!question || !vocabularyReady) return;
+    const controller = startRequest("ask");
+    if (!controller) return;
     setAskProblem(null);
     setUnclear(null);
-    setAsking(true);
     try {
-      const reading = await askWhatIf(question);
-      if (!isCurrent()) return;
+      const reading = await askWhatIf(question, controller.signal);
+      if (request.current?.controller !== controller || !stillAuthorized())
+        return;
       if (reading.understood === "no") setUnclear(reading.unclear);
       else {
         setAsked(question);
@@ -129,14 +219,16 @@ function WhatIfPage() {
         }
       }
     } catch (thrown) {
-      if (isCurrent())
+      if (request.current?.controller !== controller) return;
+      if (isWhatIfAccessDenied(thrown)) revokeScenario();
+      else if (stillAuthorized())
         setAskProblem(
           thrown instanceof Error
             ? thrown.message
             : "Couldn't read that question. Try again.",
         );
     } finally {
-      setAsking(false);
+      finishRequest(controller);
     }
   };
 
@@ -155,32 +247,38 @@ function WhatIfPage() {
     JSON.stringify(action) !== JSON.stringify(EMPTY_WHAT_IF_ACTION);
 
   const check = async (trigger: HTMLButtonElement) => {
-    if (missing || checking || asking || vocabulary.isError) return;
-    const version = actionRevision.current;
+    if (missing || !vocabularyReady) return;
+    const controller = startRequest("check");
+    if (!controller) return;
     setChecked(null);
     setCheckProblem(null);
-    setChecking(true);
     try {
-      const result = await checkWhatIf(action, asked ?? undefined);
-      if (version === actionRevision.current) {
+      const result = await checkWhatIf(
+        action,
+        asked ?? undefined,
+        controller.signal,
+      );
+      if (request.current?.controller === controller && stillAuthorized()) {
         checkTrigger.current = trigger;
         setChecked(result);
       }
     } catch (thrown) {
-      if (version === actionRevision.current)
+      if (request.current?.controller !== controller) return;
+      if (isWhatIfAccessDenied(thrown)) revokeScenario();
+      else if (stillAuthorized())
         setCheckProblem(
           thrown instanceof Error
             ? thrown.message
             : "Couldn't check that action. Try again.",
         );
     } finally {
-      setChecking(false);
+      finishRequest(controller);
     }
   };
 
   return (
     <GovernancePage
-      description="Ask what OpenBot would do if a Bot took an action. Every control answers in the order OpenBot checks them, and you see which one decides."
+      description="Simulate whether a Bot action would be allowed, blocked, or need approval. The result shows which control decides."
       title="Test a policy"
     >
       <form
@@ -196,11 +294,12 @@ function WhatIfPage() {
             <IconSparkles />
           </InputGroupAddon>
           <InputGroupInput
-            aria-describedby={exampleId}
+            aria-describedby={`${stagesId} ${exampleId}`}
             aria-label="Ask what would happen"
+            disabled={accessLost}
             maxLength={QUESTION_LIMIT}
             onChange={(event) => {
-              questionRevision.current += 1;
+              if (request.current?.kind === "ask") cancelPending();
               setText(event.target.value);
               setAskProblem(null);
               setUnclear(null);
@@ -212,12 +311,12 @@ function WhatIfPage() {
             }}
             placeholder="Ask about one action a Bot could take"
             ref={questionInput}
-            value={text}
+            value={accessLost ? "" : text}
           />
           <InputGroupAddon align="inline-end">
             <InputGroupButton
               aria-disabled={asking || undefined}
-              disabled={!question || checking}
+              disabled={!question || checking || !vocabularyReady}
               size="sm"
               type="submit"
               variant="default"
@@ -226,11 +325,15 @@ function WhatIfPage() {
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
+        <p className="text-muted-foreground text-sm" id={stagesId}>
+          Ask to prepare an action. Use Check to test it against the current
+          policy.
+        </p>
         <p className="text-muted-foreground text-sm" id={exampleId}>
           For example, could the Sales Bot send an email from Gmail during a
           routine?
         </p>
-        {askProblem ? (
+        {!accessLost && askProblem ? (
           <p
             className="text-destructive text-sm"
             data-what-if-problem
@@ -238,7 +341,7 @@ function WhatIfPage() {
           >
             {askProblem}
           </p>
-        ) : unclear ? (
+        ) : !accessLost && unclear ? (
           <p
             className="text-amber-700 text-sm dark:text-amber-500"
             data-what-if-unclear
@@ -251,11 +354,18 @@ function WhatIfPage() {
 
       <PageSection
         description={
-          asked
-            ? asked === question
-              ? "Review how OpenBot read your question, then check the action."
-              : `This action is based on “${asked}”. Ask again to use your edited question.`
-            : "Ask a question above, or set the action yourself."
+          !accessLost && asked ? (
+            !questionChanged ? (
+              "Review the action OpenBot prepared. Select Check to see what the policy would do."
+            ) : (
+              <Text as="span" style={{ overflowWrap: "anywhere" }}>
+                {`This action is based on “${asked}”.`}
+                {question ? " Ask again to use your edited question." : null}
+              </Text>
+            )
+          ) : (
+            "Ask a question above, or set the action yourself."
+          )
         }
         headingRef={actionHeading}
         title="The action"
@@ -266,51 +376,60 @@ function WhatIfPage() {
             <>
               {/* One step back to nothing: without it, starting a new question means
                   clearing chips one by one. */}
-              {started ? (
+              {started && !accessLost ? (
                 <GovernanceAction
                   label="Start over"
                   variant="outline"
                   onClick={() => {
-                    questionRevision.current += 1;
-                    actionRevision.current += 1;
-                    setText("");
-                    setAsked(null);
-                    setUnclear(null);
-                    setAskProblem(null);
-                    setActionState(EMPTY_WHAT_IF_ACTION);
-                    setChecked(null);
-                    setCheckProblem(null);
+                    resetScenario();
+                    forgetLink();
                     questionInput.current?.focus();
                   }}
                   type="button"
                 />
               ) : null}
               <GovernanceAction
+                aria-describedby={stagesId}
                 aria-disabled={checking || undefined}
                 label={
                   checking ? "Checking…" : checkProblem ? "Try again" : "Check"
                 }
-                disabled={Boolean(missing) || asking || vocabulary.isError}
+                disabled={Boolean(missing) || asking || !vocabularyReady}
                 onClick={(event) => void check(event.currentTarget)}
                 type="button"
               />
             </>
           }
         >
-          {vocabulary.isError ? (
+          {accessLost || vocabulary.isError ? (
             <ReadError
-              message="Couldn't load this OpenBot's Bots and apps."
-              description="Your question and action are still here."
+              message={
+                accessLost
+                  ? "Policy testing access is unavailable."
+                  : "Couldn't load this OpenBot's Bots and apps."
+              }
+              description={
+                accessLost
+                  ? "Check that you still have access, then try again."
+                  : checked
+                    ? "The result below is from your last completed check. Retry before checking again."
+                    : "Your question and action are still here."
+              }
+              focusAfterRetry={() => actionHeading.current}
               retry={vocabulary.refetch}
+              retryLabel="Retry Bots and apps"
               retrying={vocabulary.isFetching}
               retryBelow
             />
-          ) : vocabulary.isPending ? (
+          ) : !vocabulary.data ? (
             <ReadStatus kind="loading" message="Loading Bots and apps…" />
           ) : (
             <ActionChips
               action={action}
-              onChange={setAction}
+              onChange={(next) => {
+                cancelPending();
+                setAction(next);
+              }}
               vocabulary={vocabulary.data}
             />
           )}
@@ -330,12 +449,20 @@ function WhatIfPage() {
         </PageCard>
       </PageSection>
 
-      {checked ? (
+      {checked && !accessLost ? (
         <PageSection
           description="Each control, in the order OpenBot checks them."
           headingRef={resultHeading}
           title="What happens"
         >
+          {questionChanged ? (
+            <p className="mt-3 text-muted-foreground text-sm" role="status">
+              This result is for the action above.
+              {question
+                ? " Select Ask to prepare an action from your edited question."
+                : null}
+            </p>
+          ) : null}
           <WhatIfResultView result={checked.result} />
         </PageSection>
       ) : null}

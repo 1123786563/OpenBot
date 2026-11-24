@@ -37,16 +37,17 @@ import {
   type ReviewModel,
   type ReviewVerdict,
   requestOf,
-  reviewable,
   reviewAction,
+  reviewable,
   safetyRequirement,
   strictestRule,
 } from "./policy";
 import type { ApprovalService } from "./service";
 import {
   type ApprovalRecord,
-  type ApprovalRule,
   ApprovalRefusedError,
+  type ApprovalRule,
+  ReviewerGuidanceConflictError,
   targetSubject,
 } from "./types";
 
@@ -392,6 +393,10 @@ export async function backtestGuidance(input: {
 }
 
 const textInput = z.strictObject({ text: z.string() });
+const saveInput = textInput.extend({
+  basedOn: z.string().nullable().optional(),
+});
+const removeInput = saveInput.pick({ basedOn: true });
 const backtestInput = z.strictObject({
   text: z.string(),
   limit: z.number().int().min(1).max(BACKTEST_MAX).optional(),
@@ -403,9 +408,9 @@ const backtestInput = z.strictObject({
  *
  * - `GET /`: `{ guidance }`, the words in force, or null.
  * - `POST /check`: `{ text }` in, `{ summary, explanation, check }` out. Saves nothing.
- * - `PUT /`: `{ text }`. Read again, and refused with what is wrong unless the words still read as
+ * - `PUT /`: `{ text, basedOn? }`. Read again, and refused with what is wrong unless the words still read as
  *   guidance; then saved, with one `approval.guidance_changed` row.
- * - `DELETE /`: removes the guidance, with one `approval.guidance_changed` row.
+ * - `DELETE /`: removes the guidance, with one `approval.guidance_changed` row. Accepts `{ basedOn? }`.
  * - `GET /backtest?limit=`: `{ calls, skippedSafety }`, how many model calls a replay would make.
  *   Makes none.
  * - `POST /backtest`: `{ text, limit? }` in, the replay out. Writes nothing.
@@ -427,7 +432,11 @@ export function createReviewerGuidanceRoutes(options: {
       ? context.json({ error: "Supply the guidance as text." }, 400)
       : context.json(
           { error: error.message },
-          error instanceof ApprovalRefusedError ? 400 : 500,
+          error instanceof ReviewerGuidanceConflictError
+            ? 409
+            : error instanceof ApprovalRefusedError
+              ? 400
+              : 500,
         ),
   );
 
@@ -483,10 +492,12 @@ export function createReviewerGuidanceRoutes(options: {
   });
 
   routes.put("/", async (context) => {
-    const { text } = textInput.parse(await context.req.json());
+    const { text, basedOn } = saveInput.parse(await context.req.json());
     const problem = guidanceProblem(text);
     if (problem) return context.json({ error: problem }, 400);
     const store = policy();
+    if (basedOn !== undefined && basedOn !== (await store.reviewerGuidance()))
+      throw new ReviewerGuidanceConflictError();
     /*
      * Read again, here. A check only the browser made is not a check: the same words reach this route
      * from anywhere an admin's session does. One more call on a save, which an admin makes rarely.
@@ -498,6 +509,7 @@ export function createReviewerGuidanceRoutes(options: {
       return context.json({ error: reading.check.error, ...reading }, 400);
     const guidance = await store.setReviewerGuidance(context.var.actor.id, {
       text,
+      basedOn,
       actor: context.var.actor.email,
       reading: { summary: reading.summary, explanation: reading.explanation },
     });
@@ -505,8 +517,11 @@ export function createReviewerGuidanceRoutes(options: {
   });
 
   routes.delete("/", async (context) => {
+    const raw = await context.req.text();
+    const { basedOn } = raw ? removeInput.parse(JSON.parse(raw)) : {};
     await policy().setReviewerGuidance(context.var.actor.id, {
       text: null,
+      basedOn,
       actor: context.var.actor.email,
     });
     return context.json({ guidance: null });

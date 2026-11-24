@@ -138,7 +138,7 @@ test("an Intelligence without recordings says so in one line", async () => {
   expect(view.queryByText(/No recordings yet/)).toBeNull();
 });
 
-test("an unavailable backend says so instead of listing rows", async () => {
+test("an unreachable recordings backend can be retried in place", async () => {
   pages[""] = {
     recordings: [],
     nextCursor: null,
@@ -151,6 +151,10 @@ test("an unavailable backend says so instead of listing rows", async () => {
   );
   await view.findByText(/Couldn't reach the backend/);
   expect(view.queryByText(/No recordings yet/)).toBeNull();
+  pages[""] = { recordings: [row({})], nextCursor: null };
+  fireEvent.click(view.getByRole("button", { name: "Retry recordings" }));
+  expect(await view.findByText("Refund an order")).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Retry recordings" })).toBeNull();
 });
 
 test("Show more loads the next page", async () => {
@@ -261,7 +265,7 @@ test("a failed refresh keeps the rows on screen", async () => {
     { timeout: 4000 },
   );
   expect(view.getByText("Refund an order")).toBeTruthy();
-  expect(view.queryByRole("alert")).toBeNull();
+  expect(view.getByRole("button", { name: "Retry recordings" })).toBeTruthy();
 });
 
 test("a list that cannot be requested says so in an alert, with no rows", async () => {
@@ -272,7 +276,7 @@ test("a list that cannot be requested says so in an alert, with no rows", async 
     </QueryClientProvider>,
   );
   const alert = await view.findByRole("alert", {}, { timeout: 4000 });
-  expect(alert.textContent).toBe("Server trouble");
+  expect(alert.textContent).toContain("Couldn't load your recordings.");
   expect(view.queryByText(/No recordings yet/)).toBeNull();
 });
 

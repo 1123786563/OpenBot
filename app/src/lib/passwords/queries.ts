@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, canKeepCachedRead, client } from "@/lib/client";
 
 /**
  * A Bot's request to be signed in to a website, as the private form sees it.
@@ -92,14 +92,24 @@ export function pendingSignInRequestsQueryOptions() {
 export function savedLoginsQueryOptions() {
   return queryOptions({
     queryKey: passwordKeys.logins(),
-    queryFn: async (): Promise<{
+    retry: (failures, error) => failures < 1 && canKeepCachedRead(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<{
       passwordManager: boolean;
       logins: SavedLogin[];
-    }> =>
-      (
-        await client("/api/passwords", {
+    } | null> => {
+      try {
+        const response = await client("/api/passwords", {
           fallback: "Could not load your passwords",
-        })
-      ).json(),
+        });
+        return await response.json();
+      } catch (error) {
+        if (error instanceof ClientError && !canKeepCachedRead(error))
+          cache.setQueryData(queryKey, null);
+        throw error;
+      }
+    },
   });
 }

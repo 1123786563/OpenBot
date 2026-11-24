@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ConnectionAction,
   ConnectionDialogContent,
@@ -18,6 +18,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { DescribeGrants } from "@/components/manage/describe-grants";
 import { appPageTitle } from "@/components/manage/plugin-page";
 import {
@@ -25,7 +26,10 @@ import {
   sharedSectionSentence,
 } from "@/components/plugins/shared-approval-fields";
 import { SkippedToolsNotice } from "@/components/plugins/skipped-tools-notice";
-import { useActionConfirmation } from "@/components/ui/action-confirmation";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import {
   Dialog,
   DialogBody,
@@ -45,6 +49,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { useManagePaths } from "@/lib/manage-paths";
 import {
@@ -54,6 +59,7 @@ import {
 } from "@/lib/plugins/mutations";
 import {
   type PluginTool,
+  pluginKeys,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
 import {
@@ -112,6 +118,7 @@ export function PluginBotPage({
   // Routines is every Bot's, in every edition: there is no switch to take it from one.
   const alwaysOn = key === ALWAYS_ON_APP;
   const paths = useManagePaths();
+  const heading = useRef<HTMLHeadingElement>(null);
   const queryClient = useQueryClient();
   const plugins = useQuery(pluginsPageQueryOptions());
   const agents = useQuery(agentListQueryOptions());
@@ -147,7 +154,22 @@ export function PluginBotPage({
     onError: (thrown: Error) => setError(thrown.message),
   });
 
-  const server = plugins.data?.servers.find((row) => row.id === key);
+  const pluginData = canKeepCachedRead(plugins.error)
+    ? plugins.data
+    : undefined;
+  const accessStale = plugins.isError;
+  const accessError = accessStale ? (
+    <ReadError
+      description="Showing access from the last successful check. Retry before making changes."
+      focusAfterRetry={() => heading.current}
+      message="Couldn't refresh app access."
+      retry={plugins.refetch}
+      retryBelow
+      retryLabel="Retry app access"
+      retrying={plugins.isFetching}
+    />
+  ) : null;
+  const server = pluginData?.servers.find((row) => row.id === key);
   /*
    * Shared only once the server itself says so. `exposure` is fetched for exactly that case — it is
    * this Bot's whole shared-apps picture, and here it is read for one app's current approval, so a
@@ -172,7 +194,7 @@ export function PluginBotPage({
   });
   const [grantingShared, setGrantingShared] = useState(false);
   const appTitle =
-    plugins.data?.catalogue.find((item) => item.key === key)?.title ??
+    pluginData?.catalogue.find((item) => item.key === key)?.title ??
     server?.title ??
     appPageTitle(key);
   const bot =
@@ -211,7 +233,11 @@ export function PluginBotPage({
   };
 
   /* Placeholder rows while the fetches are open, so no sentence asserts anything mid-read. */
-  if (plugins.isPending || agents.isPending || hiddenAgents.isPending) {
+  if (
+    (plugins.isPending && plugins.errorUpdateCount === 0) ||
+    (agents.isPending && agents.errorUpdateCount === 0) ||
+    (hiddenAgents.isPending && hiddenAgents.errorUpdateCount === 0)
+  ) {
     return (
       <ConnectionPage title="Bot">
         <div aria-busy="true" aria-label="Loading" role="status">
@@ -241,7 +267,7 @@ export function PluginBotPage({
    * not be read". Only the first is a fact about this deployment, and a request that never came
    * back is no evidence for it.
    */
-  if (plugins.data && !server) {
+  if (pluginData && !server && !accessStale) {
     return (
       <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
@@ -266,27 +292,16 @@ export function PluginBotPage({
     return (
       <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        headingRef={heading}
         title={appTitle}
       >
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load plugins.
-          </p>
-          <ConnectionAction
-            disabled={
-              plugins.isFetching || agents.isFetching || hiddenAgents.isFetching
-            }
-            onClick={() => {
-              void plugins.refetch();
-              void agents.refetch();
-              void hiddenAgents.refetch();
-            }}
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching ? "Retrying…" : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't load plugins."
+          retry={plugins.refetch}
+          retrying={plugins.isFetching}
+          retryBelow
+        />
       </ConnectionPage>
     );
   }
@@ -303,7 +318,7 @@ export function PluginBotPage({
    * below are still the plugins query's own answer and still true; the name falls back to the id.
    */
   // Both rosters, because a Bot absent from the visible one may simply be hidden.
-  if (agents.data && hiddenAgents.data && !bot) {
+  if (agents.isSuccess && hiddenAgents.isSuccess && !bot) {
     return (
       <ConnectionPage
         backButton={back}
@@ -323,6 +338,8 @@ export function PluginBotPage({
    * is, so it stands in. Screens a person reads go through `useBotNames`, which never shows an id.
    */
   const botName = bot?.name ?? agentId;
+  const botNameUnavailable =
+    !bot && (agents.errorUpdateCount > 0 || hiddenAgents.errorUpdateCount > 0);
   const held = (tool: PluginTool) => tool.grantedTo.includes(agentId);
 
   /*
@@ -366,7 +383,7 @@ export function PluginBotPage({
    * it never reports done while the switch underneath it is still off.
    */
   const confirmSharedGrant = async () => {
-    if (!pendingGrant) return;
+    if (!pendingGrant || accessStale) return;
     setError(null);
     setGrantingShared(true);
     try {
@@ -430,6 +447,7 @@ export function PluginBotPage({
                   aria-label={`Let ${botName} call ${tool.name}`}
                   checked={held(tool)}
                   disabled={
+                    accessStale ||
                     granting !== null ||
                     pendingGrant?.ref === tool.ref ||
                     (setGrant.isPending && setGrant.variables?.ref === tool.ref)
@@ -454,6 +472,14 @@ export function PluginBotPage({
                         failureMessage: `Couldn't let ${botName} call ${tool.name}. Try again.`,
                         variant: "destructive",
                         run: async () => {
+                          if (
+                            queryClient.getQueryState(pluginKeys.page())
+                              ?.status === "error"
+                          ) {
+                            throw new ActionUnavailable(
+                              "App access couldn't be refreshed. Close this dialog and retry the access check.",
+                            );
+                          }
                           await setGrant.mutateAsync({
                             agentId,
                             granted: true,
@@ -495,9 +521,24 @@ export function PluginBotPage({
   return (
     <ConnectionPage
       backButton={back}
-      description={`Which ${appTitle} actions ${botName} can call. Turning one off applies from the next call.`}
-      title={`${botName} and ${appTitle}`}
+      description="An action that's on is allowed for this Bot. Switching it off blocks the next call."
+      headingRef={heading}
+      title={
+        bot ? `${botName} and ${appTitle}` : `${appTitle} access for this Bot`
+      }
     >
+      {accessError}
+      {botNameUnavailable ? (
+        <ReadError
+          description={`You can still review the actions for Bot ID ${agentId}.`}
+          focusAfterRetry={() => heading.current}
+          message="Couldn't check the Bot's name."
+          retry={() => Promise.all([agents.refetch(), hiddenAgents.refetch()])}
+          retryBelow
+          retryLabel="Retry Bot name"
+          retrying={agents.isFetching || hiddenAgents.isFetching}
+        />
+      ) : null}
       {error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {error}
@@ -525,6 +566,7 @@ export function PluginBotPage({
               appKey={key}
               appTitle={appTitle}
               botName={botName}
+              disabled={accessStale}
               sharedNeeded={
                 shared && !sharedApp?.approval
                   ? (sharedApp?.needed ?? {
@@ -561,7 +603,7 @@ export function PluginBotPage({
                 } from this app.`}
               </p>
               <ConnectionAction
-                disabled={granting !== null}
+                disabled={accessStale || granting !== null}
                 onClick={() => void grantEveryRead(ungranted)}
                 type="button"
                 variant="outline"
@@ -579,7 +621,7 @@ export function PluginBotPage({
               sharedSectionSentence("read", shared) ??
               "These only read. Boundaries about writes don't apply to them."
             }
-            title="Reads"
+            title="Read-only actions"
           >
             {reads.length === 0 ? (
               <PageEmpty
@@ -600,7 +642,7 @@ export function PluginBotPage({
               sharedSectionSentence("write", shared) ??
               "These change something at the vendor. Boundaries about writes apply to them."
             }
-            title="Changes things"
+            title="Actions that make changes"
           >
             {writes.length === 0 ? (
               <PageEmpty
@@ -654,7 +696,7 @@ export function PluginBotPage({
                   Cancel
                 </ConnectionAction>
                 <ConnectionAction
-                  disabled={grantingShared}
+                  disabled={accessStale || grantingShared}
                   onClick={() => void confirmSharedGrant()}
                 >
                   {grantingShared ? "Allowing…" : "Allow"}

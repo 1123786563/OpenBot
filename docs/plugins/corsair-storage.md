@@ -1,26 +1,21 @@
 # Corsair storage in PostgreSQL
 
-Migration `0095_corsair_shared_storage` replaces 14 provider pilot tables
-with five Corsair core tables and four OpenBot extension tables. The runtime migrator
-applies it after `0094_corsair_slack_shared`. The historical migration combines generated
-DDL, a data backfill and the drop of the pilot tables in one PostgreSQL transaction.
-It retains connection, installation, Trigger, receipt and Run IDs, credential
-revisions and the data they pin.
+Migration `0107_corsair_shared_storage` creates five Corsair core tables, four
+OpenBot extension tables, and provider views. Migration
+`0108_corsair_revocation` adds revocation-aware views and drops the temporary
+Slack pilot tables. Stop API and worker replicas that read the pilot tables
+before you run the migration. Start replicas with the matching runtime after
+the migration succeeds.
 
-Stop all API and worker replicas running code that reads the pilot tables before
-applying the migration. Start all replicas with the matching runtime after the
-migration succeeds. The old runtime requires the dropped tables, and the new runtime
-requires the migrated records and compatibility views.
+The merged journal retains the SQL and timestamps from Corsair main and
+Personal SaaS. Run the standard runtime migrator for either history. Under the
+migration lock, it verifies the applied journal and runs any missing migrations
+that Drizzle would otherwise skip.
 
-The Corsair pilot recorded this SQL as `0094_corsair_shared_storage`. When upgrading a
-pilot database, run the merged release's standard runtime migrator. Under its database
-migration lock, it recognizes the pilot journal by timestamps and SQL hashes, applies
-main's `0089_direct_chat_runs`, and updates the recorded Corsair timestamps in one
-transaction. The recorded Corsair SQL stays byte-for-byte identical, so already
-applied Corsair migrations retain their data and remaining migrations run in order.
-For future schema changes, generate DDL and put backfills or other custom SQL in
-separate migrations as described in the [development guide](../development.md).
-
+Databases from the standalone Corsair pilot branch require their own upgrade
+path. That branch recorded SQL and journal hashes that differ from Corsair
+main. For future schema changes, put backfills and other custom SQL in separate
+migrations as described in the [development guide](../development.md).
 
 The core columns follow the [Corsair LangChain example](https://github.com/corsairdev/corsair/blob/main/demo/langchain/db.ts) and the `corsair@0.2.15` PostgreSQL ORM. PostgreSQL stores timestamps as `timestamptz` and config, entity data, and event payloads as `jsonb`. IDs and permission expiry remain text. Use a version such as `1.0.0` for entities. The pinned ORM applies JSON decoding to text fields and interprets a version like `"1"` as a number. The OpenBot views read digit-only GitHub repository IDs as exact text without passing them through that decoder.
 

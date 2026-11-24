@@ -4,7 +4,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 export type ApprovalDecision =
   | "allow_once"
   | "allow_conversation"
@@ -120,14 +120,34 @@ export type ApprovalInboxData = {
     createdAt: string;
   }[];
 };
+export function approvalAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 export const approvalInboxOptions = () =>
   queryOptions({
-    queryKey: ["approvals"],
-    queryFn: async (): Promise<ApprovalInboxData> => {
-      const response = await client("/api/approvals", {
-        fallback: "Your approvals could not be loaded.",
-      });
-      return response.json();
+    queryKey: approvalsKey,
+    retry: (failures, error) => failures < 1 && !approvalAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<ApprovalInboxData | null> => {
+      try {
+        const response = await client("/api/approvals", {
+          fallback: "Your approvals could not be loaded.",
+          signal,
+        });
+        return response.json();
+      } catch (error) {
+        if (approvalAccessDenied(error)) {
+          cache.setQueryData<ApprovalInboxData | null>(queryKey, null);
+        }
+        throw error;
+      }
     },
     refetchInterval: 10_000,
   });
@@ -154,7 +174,7 @@ const CARRY_ON_MS = 2 * 5 * 60_000;
 
 /** Whether the server is carrying this conversation on after one of its approvals was decided. */
 export function carryingOnAfterApproval(
-  inbox: ApprovalInboxData | undefined,
+  inbox: ApprovalInboxData | null | undefined,
   threadId: string,
   now = Date.now(),
 ): boolean {

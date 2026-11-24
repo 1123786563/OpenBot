@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import {
   IconBrain,
   IconChartBar,
@@ -9,10 +10,15 @@ import {
   IconShieldLock,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
 import { astryxScope } from "@/components/astryx-pilot/theme";
-import { PageEmpty, PageRows } from "@/components/layout/page-shell";
+import {
+  PageEmpty,
+  PageRows,
+  PageSection,
+} from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -81,57 +87,40 @@ const SOURCE_VENDORS: Partial<Record<ModelSource, string>> = {
  */
 export function ProviderSection() {
   const available = useQuery(availableModelsQueryOptions());
+  const { data, isFetching, refetch, isSuccess } = available;
+  const name = data ? (SOURCE_NAMES[data.source] ?? data.source) : null;
+  const vendor = data ? SOURCE_VENDORS[data.source] : undefined;
   return (
-    <ControlsSection
+    <PageSection
       description="Built-in Bots and the framework picked at setup run on models from this provider."
-      readErrorMessage={false}
       title="Connected"
     >
-      {() => {
-        if (available.isPending)
-          return (
-            <div
-              aria-busy="true"
-              aria-label="Loading the provider"
-              role="status"
-            >
-              <PageRows>
-                <Item size="sm">
-                  <ItemMedia variant="icon">
-                    <Skeleton className="size-full" />
-                  </ItemMedia>
-                  <ItemContent className="gap-1.5">
-                    <Skeleton className="h-3.5 w-32" />
-                    <Skeleton className="h-3 w-56" />
-                  </ItemContent>
-                </Item>
-              </PageRows>
-            </div>
-          );
-        if (available.error)
-          return (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <p className="text-destructive text-sm" role="alert">
-                Couldn't load the provider.
-              </p>
-              <Button
-                disabled={available.isFetching}
-                onClick={() => void available.refetch()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {available.isFetching ? "Retrying…" : "Retry"}
-              </Button>
-            </div>
-          );
-        const { source } = available.data;
-        const name = SOURCE_NAMES[source] ?? source;
-        const vendor = SOURCE_VENDORS[source];
-        return (
+      {available.isPending && available.errorUpdateCount === 0 ? (
+        <div aria-busy="true" aria-label="Loading the provider" role="status">
           <PageRows>
             <Item size="sm">
-              {vendor && markFor(vendor) ? (
+              <ItemMedia variant="icon">
+                <Skeleton className="size-full" />
+              </ItemMedia>
+              <ItemContent className="gap-1.5">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3 w-56" />
+              </ItemContent>
+            </Item>
+          </PageRows>
+        </div>
+      ) : !isSuccess ? (
+        <ReadError
+          message="Couldn't load the provider."
+          retry={refetch}
+          retrying={isFetching}
+          retryBelow
+        />
+      ) : (
+        <VStack gap={3}>
+          <PageRows>
+            <Item size="sm">
+              {vendor && name && markFor(vendor) ? (
                 <ItemMedia>
                   <HarnessMark id={vendor} name={name} />
                 </ItemMedia>
@@ -142,17 +131,27 @@ export function ProviderSection() {
               )}
               <ItemContent>
                 <ItemTitle>{name}</ItemTitle>
-                <ItemDescription>
-                  {available.data.listed
-                    ? `Default ${available.data.default} · ${available.data.models.length} models listed`
-                    : `Default ${available.data.default} · couldn't read its models`}
+                <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
+                  {data.listed
+                    ? `Default ${data.default} · ${data.models.length} models listed`
+                    : `Default ${data.default}`}
                 </ItemDescription>
               </ItemContent>
             </Item>
           </PageRows>
-        );
-      }}
-    </ControlsSection>
+          {!data.listed ? (
+            <ReadError
+              description="The configured default is available. OpenBot checks the provider periodically."
+              message="Couldn't list the provider's models."
+              retry={refetch}
+              retrying={isFetching}
+              retryLabel="Check again"
+              retryBelow
+            />
+          ) : null}
+        </VStack>
+      )}
+    </PageSection>
   );
 }
 
@@ -168,9 +167,11 @@ export function ModelChoiceSection() {
       description={() => {
         const data = available.data;
         if (!data) return "Which models people can pick in each conversation.";
+        if (!data.listed)
+          return `The configured default is ${data.default}. The complete list of choices depends on the provider's catalogue.`;
         return data.exposure === "all"
           ? `People can pick any model your provider lists, and its thinking level, in each conversation. Bots run on ${data.default} until somebody picks another.`
-          : `People pick among the models you allow below, and their thinking level, in each conversation. Until you allow one, every conversation runs on ${data.default}.`;
+          : `People pick among the models you allow below. The default is ${data.default}. Only allowed models can block a run on the default too.`;
       }}
       readErrorMessage={false}
       title="In conversations"
@@ -206,18 +207,22 @@ export function ModelChoiceSection() {
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>
-                  {listing.exposure === "all"
-                    ? "Every listed model"
-                    : allowed === 0
-                      ? "No models allowed yet"
-                      : `${allowed} ${allowed === 1 ? "model" : "models"} allowed`}
+                  {!listing.listed
+                    ? "Model choices unconfirmed"
+                    : listing.exposure === "all"
+                      ? "Every listed model"
+                      : allowed === 0
+                        ? "No models allowed yet"
+                        : `${allowed} ${allowed === 1 ? "model" : "models"} allowed`}
                 </ItemTitle>
-                <ItemDescription>
-                  {listing.exposure === "all"
-                    ? `${listing.models.length} models, kept current from your provider.`
-                    : allowed === 0
-                      ? "People don't see a model picker. Allow models below to offer them."
-                      : "People see them in the composer's model picker, with the default."}
+                <ItemDescription className="line-clamp-none text-base">
+                  {!listing.listed
+                    ? "Check the provider above to see which models people can pick."
+                    : listing.exposure === "all"
+                      ? `${listing.models.length} models, kept current from your provider.`
+                      : allowed === 0
+                        ? "People don't see a model picker. Allow models below to offer them."
+                        : "People see them in the composer's model picker, with the default."}
                 </ItemDescription>
               </ItemContent>
             </Item>
@@ -243,6 +248,13 @@ export function ModelAllowlistSection() {
    */
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const [open, setOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const guardSwitch = useRef<HTMLElement>(null);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const closeEditor = () => {
+    setOpen(false);
+    requestAnimationFrame(() => editButton.current?.focus());
+  };
   return (
     <ControlsSection
       description="The models people may pick in each conversation. With Only allowed models on, a Bot on any other model is refused before it runs, and a remote Bot's own model is checked too."
@@ -253,6 +265,7 @@ export function ModelAllowlistSection() {
         const { modelAllowlist } = data.settings;
         return (
           <>
+            {saved ? <p role="status">Allowed models saved</p> : null}
             <PageRows>
               <Item size="sm">
                 <ItemMedia variant="icon">
@@ -260,7 +273,7 @@ export function ModelAllowlistSection() {
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>Only allowed models</ItemTitle>
-                  <ItemDescription>
+                  <ItemDescription className="line-clamp-none text-sm">
                     {modelAllowlist.enabled
                       ? "Bots can only run on the models listed below."
                       : "Off. Runs on other models, a remote Bot's own included, aren't refused."}
@@ -269,8 +282,10 @@ export function ModelAllowlistSection() {
                 <ItemActions>
                   <Switch
                     aria-label="Only allowed models"
+                    className="after:-inset-y-4"
                     checked={modelAllowlist.enabled}
                     disabled={saving}
+                    ref={guardSwitch}
                     onCheckedChange={(enabled) => {
                       if (enabled) {
                         setSetting("modelAllowlist", {
@@ -288,6 +303,7 @@ export function ModelAllowlistSection() {
                         failureMessage:
                           "Couldn't turn the guard off. Try again.",
                         variant: "destructive",
+                        trigger: guardSwitch.current ?? undefined,
                         run: async () => {
                           await setSettingAsync("modelAllowlist", {
                             ...modelAllowlist,
@@ -301,7 +317,16 @@ export function ModelAllowlistSection() {
               </Item>
               <Separator />
               <Item
-                render={<button onClick={() => setOpen(true)} type="button" />}
+                render={
+                  <button
+                    onClick={() => {
+                      setSaved(false);
+                      setOpen(true);
+                    }}
+                    ref={editButton}
+                    type="button"
+                  />
+                }
                 size="sm"
               >
                 <ItemMedia variant="icon">
@@ -309,7 +334,7 @@ export function ModelAllowlistSection() {
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>Allowed models</ItemTitle>
-                  <ItemDescription>
+                  <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
                     {allowedSummary(modelAllowlist.models)}
                   </ItemDescription>
                 </ItemContent>
@@ -323,13 +348,14 @@ export function ModelAllowlistSection() {
               <AllowedModelsDialog
                 builtInModel={data.builtInModel}
                 initial={modelAllowlist.models}
-                onClose={() => setOpen(false)}
-                onSave={(models) =>
-                  setSettingAsync("modelAllowlist", {
+                onClose={closeEditor}
+                onSave={async (models) => {
+                  await setSettingAsync("modelAllowlist", {
                     ...modelAllowlist,
                     models,
-                  })
-                }
+                  });
+                  setSaved(true);
+                }}
                 open
               />
             ) : null}
@@ -367,6 +393,11 @@ export function AllowedModelsDialog({
 }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const saveErrorMessage = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (saveError) saveErrorMessage.current?.focus();
+  }, [saveError]);
   const available = useQuery({
     ...availableModelsQueryOptions(),
     enabled: open,
@@ -418,85 +449,124 @@ export function AllowedModelsDialog({
 
   return (
     <Dialog
-      onOpenChange={(next) => {
+      onOpenChange={(next, event) => {
+        if (!next && saving) {
+          event.cancel();
+          return;
+        }
         if (!next) onClose();
       }}
       open={open}
     >
-      <DialogContent {...astryxScope} className={"astryx-admin-dialog"}>
+      <DialogContent
+        {...astryxScope}
+        className="astryx-admin-dialog"
+        showCloseButton={!saving}
+      >
         <DialogHeader>
           <DialogTitle>Allowed models</DialogTitle>
         </DialogHeader>
         <DialogBody className="mt-4 flex flex-col gap-3 overflow-y-auto">
           <Input
             aria-label="Search models"
+            className="min-h-11"
+            disabled={saving}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search models"
+            ref={searchInput}
             value={search}
           />
-          {available.isPending ? null : available.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {available.error.message}
-            </p>
+          {available.isPending && available.errorUpdateCount === 0 ? (
+            <ReadStatus kind="loading" message="Loading provider models…" />
+          ) : !available.isSuccess ? (
+            <ReadError
+              description="You can still review saved choices and add a model by its full name."
+              focusAfterRetry={() => searchInput.current}
+              message="Couldn't load provider models."
+              retry={available.refetch}
+              retrying={available.isFetching}
+              retryBelow
+            />
           ) : !available.data.listed ? (
-            <p className="text-muted-foreground text-sm">
-              Couldn't read the provider's models, so only the configured one is
-              listed. Add others by their full name.
-            </p>
+            <ReadError
+              description="You can still review saved choices and add a model by its full name. OpenBot checks the provider periodically."
+              focusAfterRetry={() => searchInput.current}
+              message="Couldn't list the provider's models."
+              retry={available.refetch}
+              retrying={available.isFetching}
+              retryLabel="Check again"
+              retryBelow
+            />
           ) : null}
           {rows.length === 0 ? (
-            <PageEmpty icon={IconSearch} title="No matches" />
+            available.data?.listed ? (
+              <PageEmpty icon={IconSearch} title="No matches" />
+            ) : null
           ) : (
-            <div className="flex flex-col gap-px">
-              {rows.map((model) => (
-                <Item key={model.name} size="sm" variant="muted">
-                  {/* The same mark the composer's picker draws, or its plain model icon. */}
-                  <ItemMedia>
-                    {model.model?.vendor && markFor(model.model.vendor) ? (
-                      <HarnessMark
-                        className="size-4"
-                        id={model.model.vendor}
-                        name={model.label}
+            <VStack>
+              {rows.map((model) => {
+                const isSelected = selected.includes(model.name);
+                const runs = runsByModel.get(model.name);
+                const details = [
+                  model.label !== model.name ? model.name : null,
+                  model.name === defaultName ? "default" : null,
+                  model.model?.efforts?.length
+                    ? `Thinking: ${model.model.efforts.map(effortLabel).join(", ")}`
+                    : null,
+                  runs !== undefined && !isSelected
+                    ? `${runs} ${runs === 1 ? "run" : "runs"} in the last 30 days`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <Item key={model.name} size="sm" variant="muted">
+                    {/* The same mark the composer's picker draws, or its plain model icon. */}
+                    <ItemMedia>
+                      {model.model?.vendor && markFor(model.model.vendor) ? (
+                        <HarnessMark
+                          className="size-4"
+                          id={model.model.vendor}
+                          name={model.label}
+                        />
+                      ) : (
+                        <IconCube
+                          aria-hidden
+                          className="size-4 text-muted-foreground"
+                        />
+                      )}
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle className="wrap-anywhere">
+                        {model.label}
+                      </ItemTitle>
+                      {details ? (
+                        <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
+                          {details}
+                        </ItemDescription>
+                      ) : null}
+                    </ItemContent>
+                    <ItemActions>
+                      <Checkbox
+                        aria-label={`Allow ${model.label}`}
+                        className="relative after:absolute after:-inset-4"
+                        checked={isSelected}
+                        disabled={saving}
+                        onCheckedChange={(checked) =>
+                          toggle(model.name, checked === true)
+                        }
                       />
-                    ) : (
-                      <IconCube
-                        aria-hidden
-                        className="size-4 text-muted-foreground"
-                      />
-                    )}
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>{model.label}</ItemTitle>
-                    <ItemDescription className="text-xs">
-                      <span className="font-mono">{model.name}</span>
-                      {model.name === defaultName ? " · default" : ""}
-                      {model.model?.efforts?.length
-                        ? ` · Thinking: ${model.model.efforts.map(effortLabel).join(", ")}`
-                        : ""}
-                      {runsByModel.has(model.name) &&
-                      !selected.includes(model.name)
-                        ? ` · ${runsByModel.get(model.name)} runs in the last 30 days`
-                        : ""}
-                    </ItemDescription>
-                  </ItemContent>
-                  <ItemActions>
-                    <Checkbox
-                      aria-label={`Allow ${model.label}`}
-                      checked={selected.includes(model.name)}
-                      onCheckedChange={(checked) =>
-                        toggle(model.name, checked === true)
-                      }
-                    />
-                  </ItemActions>
-                </Item>
-              ))}
-            </div>
+                    </ItemActions>
+                  </Item>
+                );
+              })}
+            </VStack>
           )}
           <form
             className="flex items-center gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!otherValid) return;
+              if (!otherValid || saving) return;
               toggle(otherName, true);
               setOther("");
               // A row just added must be on screen: an active search would filter it straight out.
@@ -505,13 +575,15 @@ export function AllowedModelsDialog({
           >
             <Input
               aria-label="Another model"
-              className="font-mono text-xs"
+              className="min-h-11"
+              disabled={saving}
               onChange={(event) => setOther(event.target.value)}
-              placeholder="provider/model, for a model not listed"
+              placeholder="provider/model"
               value={other}
             />
             <Button
-              disabled={!otherValid}
+              className="min-h-11"
+              disabled={!otherValid || saving}
               size="sm"
               type="submit"
               variant="outline"
@@ -520,27 +592,35 @@ export function AllowedModelsDialog({
             </Button>
           </form>
           {defaultName && !selected.includes(defaultName) ? (
-            <p className="text-muted-foreground text-xs">
+            <p className="wrap-anywhere text-muted-foreground text-sm">
               {defaultName} is the default and stays offered. With Only allowed
               models on, a built-in Bot on it is refused unless you allow it.
             </p>
           ) : null}
           {saveError ? (
-            <p className="text-destructive text-sm" role="alert">
+            <p
+              className="text-destructive text-sm"
+              ref={saveErrorMessage}
+              role="alert"
+              tabIndex={-1}
+            >
               Couldn't save the allowed models. Try again.
             </p>
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
           <DeploymentButton
+            className="max-h-none min-h-11"
+            disabled={saving}
             onClick={onClose}
-            size="sm"
+            size="lg"
             type="button"
             variant="outline"
           >
             Cancel
           </DeploymentButton>
           <DeploymentButton
+            className="max-h-none min-h-11"
             disabled={saving}
             onClick={() => {
               /*
@@ -555,7 +635,7 @@ export function AllowedModelsDialog({
                 .catch(() => setSaveError(true))
                 .finally(() => setSaving(false));
             }}
-            size="sm"
+            size="lg"
             type="button"
           >
             {saving ? "Saving…" : "Save"}
@@ -573,85 +653,74 @@ export function AllowedModelsDialog({
 export function ModelUsageSection({ team }: { team: boolean }) {
   const usage = useQuery(modelUsageQueryOptions(30));
   return (
-    <ControlsSection
+    <PageSection
       description={
         team
           ? "Runs on each model in the last 30 days, including runs the allowlist refused."
           : "Runs on each model in the last 30 days."
       }
-      readErrorMessage={false}
       title="Usage"
     >
-      {() =>
-        usage.isPending ? (
-          <div aria-busy="true" aria-label="Loading model usage" role="status">
-            <PageRows>
-              {LOADING_ROWS.map((key, index) => (
-                <Fragment key={key}>
-                  {index > 0 ? <Separator /> : null}
-                  <Item size="sm">
-                    <ItemMedia variant="icon">
-                      <Skeleton className="size-full" />
-                    </ItemMedia>
-                    <ItemContent className="gap-1.5">
-                      <Skeleton className="h-3.5 w-32" />
-                      <Skeleton className="h-3 w-48" />
-                    </ItemContent>
-                  </Item>
-                </Fragment>
-              ))}
-            </PageRows>
-          </div>
-        ) : usage.error ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load model usage.
-            </p>
-            <Button
-              disabled={usage.isFetching}
-              onClick={() => void usage.refetch()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {usage.isFetching ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
-        ) : usage.data.summary.length === 0 ? (
-          <PageEmpty icon={IconChartBar} title="No recent runs">
-            Runs will appear here once a Bot answers.
-          </PageEmpty>
-        ) : (
+      {usage.isPending && usage.errorUpdateCount === 0 ? (
+        <div aria-busy="true" aria-label="Loading model usage" role="status">
           <PageRows>
-            {usage.data.summary.map((row, index) => (
-              <div key={`${row.model}-${row.source}`}>
+            {LOADING_ROWS.map((key, index) => (
+              <Fragment key={key}>
                 {index > 0 ? <Separator /> : null}
                 <Item size="sm">
                   <ItemMedia variant="icon">
-                    <IconChartBar />
+                    <Skeleton className="size-full" />
                   </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>{row.model}</ItemTitle>
-                    <ItemDescription>
-                      {row.runs} runs by {row.people}{" "}
-                      {row.people === 1 ? "person" : "people"}
-                      {row.refused > 0
-                        ? ` · ${row.refused} off the allowlist`
-                        : ""}{" "}
-                      · {row.source}
-                    </ItemDescription>
+                  <ItemContent className="gap-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-48" />
                   </ItemContent>
-                  <ItemActions>
-                    <span className="text-muted-foreground text-sm">
-                      {new Date(row.lastUsedAt).toLocaleDateString()}
-                    </span>
-                  </ItemActions>
                 </Item>
-              </div>
+              </Fragment>
             ))}
           </PageRows>
-        )
-      }
-    </ControlsSection>
+        </div>
+      ) : !usage.isSuccess ? (
+        <ReadError
+          message="Couldn't load model usage."
+          retry={usage.refetch}
+          retrying={usage.isFetching}
+          retryBelow
+        />
+      ) : usage.data.summary.length === 0 ? (
+        <PageEmpty icon={IconChartBar} title="No recent runs">
+          Runs will appear here once a Bot answers.
+        </PageEmpty>
+      ) : (
+        <PageRows>
+          {usage.data.summary.map((row, index) => (
+            <Fragment key={`${row.model}-${row.source}`}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconChartBar />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle className="wrap-anywhere">{row.model}</ItemTitle>
+                  <ItemDescription className="line-clamp-none text-sm">
+                    {row.runs} runs by {row.people}{" "}
+                    {row.people === 1 ? "person" : "people"}
+                    {row.refused > 0
+                      ? ` · ${row.refused} off the allowlist`
+                      : ""}{" "}
+                    · {row.source}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <span className="text-muted-foreground text-sm">
+                    {new Date(row.lastUsedAt).toLocaleDateString()}
+                  </span>
+                </ItemActions>
+              </Item>
+            </Fragment>
+          ))}
+        </PageRows>
+      )}
+    </PageSection>
   );
 }

@@ -1,10 +1,16 @@
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import {
+  type InfiniteData,
+  infiniteQueryOptions,
+  queryOptions,
+} from "@tanstack/react-query";
 import type { AuditEvent } from "@/components/audit/audit-cells";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
+
+const auditLists = ["audit-events", "list"] as const;
 
 export const auditKeys = {
   all: ["audit-events"] as const,
-  list: (search = "") => ["audit-events", "list", { search }] as const,
+  list: (search = "") => [...auditLists, { search }] as const,
   vocabulary: ["audit-events", "vocabulary"] as const,
 };
 
@@ -26,12 +32,24 @@ export type AuditVocabulary = {
 export function auditVocabularyQueryOptions() {
   return queryOptions({
     queryKey: auditKeys.vocabulary,
-    queryFn: async (): Promise<AuditVocabulary> =>
-      (
-        await client("/api/admin/audit-events/vocabulary", {
+    retry: (failures, error) => failures < 1 && !auditAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<AuditVocabulary | null> => {
+      try {
+        const response = await client("/api/admin/audit-events/vocabulary", {
           fallback: "Couldn't load the filters",
-        })
-      ).json(),
+          signal,
+        });
+        return await response.json();
+      } catch (error) {
+        if (auditAccessDenied(error))
+          cache.setQueryData<AuditVocabulary | null>(queryKey, null);
+        throw error;
+      }
+    },
   });
 }
 
@@ -41,6 +59,13 @@ export type AuditEventsPage = {
   /** Where the next, older page starts. Absent on the last page. */
   nextCursor?: string;
 };
+
+export function auditAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
 
 /**
  * The trail for one view (`search`, e.g. `?eventType=...`), a page at a time.
@@ -52,15 +77,38 @@ export function auditEventsQueryOptions(search = "") {
   return infiniteQueryOptions({
     queryKey: auditKeys.list(search),
     initialPageParam: "",
-    queryFn: async ({ pageParam }): Promise<AuditEventsPage> => {
+    retry: (failures, error) => failures < 1 && !auditAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      pageParam,
+      signal,
+    }): Promise<AuditEventsPage> => {
       // `search` is empty or starts with `?`; an older page carries the cursor after it.
       const cursor = pageParam
         ? `${search ? "&" : "?"}cursor=${encodeURIComponent(pageParam)}`
         : "";
       const response = await client(
         `/api/admin/audit-events${search}${cursor}`,
-        { fallback: "Could not load audit events" },
-      );
+        { fallback: "Could not load audit events", signal },
+      ).catch(async (error: unknown) => {
+        if (auditAccessDenied(error)) {
+          // Access applies to the trail across views, including older cached pages.
+          cache.setQueriesData<InfiniteData<AuditEventsPage, string>>(
+            { queryKey: auditLists },
+            (current) =>
+              current?.pages.length ? { pages: [], pageParams: [] } : current,
+          );
+          await cache.cancelQueries({
+            queryKey: auditKeys.vocabulary,
+            exact: true,
+          });
+          cache.setQueryData<AuditVocabulary | null>(
+            auditKeys.vocabulary,
+            null,
+          );
+        }
+        throw error;
+      });
       return response.json();
     },
     getNextPageParam: (page: AuditEventsPage) => page.nextCursor || undefined,
