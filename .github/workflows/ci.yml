@@ -527,10 +527,8 @@ jobs:
 
   python-harness:
     name: python harness regressions
-    # CPU-bound: runs on a 16-core larger runner (org runner group openbot-larger, billed per
-    # minute) for main, releases and pull requests from this repository. Pull requests from forks
-    # stay on the free standard runner.
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
+    # Pull requests use the standard pool. Main and releases use the larger runner.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'openbot-ubuntu-16core' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
