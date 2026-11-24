@@ -365,7 +365,7 @@ test("only same-origin Web pages can be resumed, and an existing flow takes prio
   ]) {
     expect(appReturnPath(value)).toBeUndefined();
   }
-  expect(resumeUrlFor(origin, "flow", webReturn)).toBe(
+  expect(resumeUrlFor(origin, "flow", undefined, webReturn)).toBe(
     `${origin}/api/plugins/arcade/verify?flow_id=flow`,
   );
 });

@@ -3,12 +3,17 @@ import { isThreadBusy } from "@openbot/toolkit/lease";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import { SlackEventAccessRetry } from "../plugins/corsair/slack/event-run-access";
+import { runAuthorizedWork } from "../work/execution";
 import type { WorkQueue } from "../work/queue";
 import type { ResponsibilityRunContext, ResponsibilityStore } from "./types";
 
 export const RESPONSIBILITY_RUN_KIND = "responsibility.run";
 export type RunResponsibilityTurn = (
-  input: ResponsibilityRunContext & { signal: AbortSignal },
+  input: ResponsibilityRunContext & {
+    signal: AbortSignal;
+    beforeDispatch?: () => Promise<void>;
+    onText?: (text: string) => void;
+  },
 ) => Promise<{ replyText: string }>;
 export type ResponsibilityDispatchReport = {
   succeeded: string[];
@@ -56,7 +61,10 @@ export function createResponsibilityEngine(options: {
     ResponsibilityStore,
     "ingestEvent" | "beginRun" | "settleRun" | "requeueRun"
   >;
-  queue: Pick<WorkQueue, "claim" | "renew" | "finish" | "release">;
+  queue: Pick<
+    WorkQueue,
+    "claim" | "renew" | "finish" | "release" | "executionExpiry"
+  >;
   runTurn: RunResponsibilityTurn;
   onReply?: (
     context: ResponsibilityRunContext,
@@ -178,28 +186,46 @@ export function createResponsibilityEngine(options: {
           if (!stopped && !lostLease) scheduleRenewal();
         };
         scheduleRenewal();
+        let succeeded = false;
         try {
-          const result = await runTurn({
-            ...context,
-            signal: controller.signal,
-          });
-          if (lostLease) throw lostLease;
-          await store.settleRun(runId, {
-            status: "succeeded",
-            replyText: result.replyText,
-          });
-          report.succeeded.push(runId);
-          if (onReply) {
-            try {
-              await onReply(context, result.replyText);
-            } catch (error) {
-              report.failed.push({
-                runId,
-                error: `Reply delivery failed: ${errorText(error)}`,
+          await runAuthorizedWork(
+            queue,
+            item,
+            input.owner,
+            async (guard) => {
+              const result = await runTurn({
+                ...context,
+                signal: controller.signal,
+                ...guard,
               });
-            }
-          }
+              if (lostLease) throw lostLease;
+              await guard?.beforeDispatch();
+              await store.settleRun(runId, {
+                status: "succeeded",
+                replyText: result.replyText,
+              });
+              succeeded = true;
+              report.succeeded.push(runId);
+              if (onReply) {
+                try {
+                  await guard?.beforeDispatch();
+                  await onReply(context, result.replyText);
+                } catch (error) {
+                  report.failed.push({
+                    runId,
+                    error: `Reply delivery failed: ${errorText(error)}`,
+                  });
+                }
+              }
+            },
+            {
+              signal: controller.signal,
+              safeFailure: (error) =>
+                isThreadBusy(error) || error instanceof HeadlessToolSuspension,
+            },
+          );
         } catch (error) {
+          if (succeeded) continue;
           if (error instanceof HeadlessToolSuspension) {
             await store.settleRun(runId, {
               status: "waiting",
@@ -252,17 +278,17 @@ export function createResponsibilityEngine(options: {
           stopped = true;
           if (timer) clearTimeout(timer);
           await renewing;
-          if (!released) await finish(item.key);
+          if (!released) await finish(item.key, Boolean(item.authorization));
         }
       }
       return report;
-      async function finish(key: string) {
+      async function finish(key: string, interrupted = false) {
         const finished = await queue.finish({
           kind: RESPONSIBILITY_RUN_KIND,
           key,
           owner: input.owner,
         });
-        if (!finished)
+        if (!finished && !interrupted)
           throw new Error(
             "Responsibility work lease was lost before completion.",
           );

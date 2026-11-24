@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { loadSkillMarketConfig } from "../src/skill-market/config";
+
 import { createSkillMarketRoutes } from "../src/skill-market/routes";
 
 const skill = {
@@ -111,23 +113,28 @@ test("signed-in users share published catalog previews while direct reads enforc
   ).toBe(false);
 });
 
-test("a compatibility confirmation applies only to the reviewed package fingerprint", async () => {
+test("legacy previews remain readable in Bifrost mode with install disabled", async () => {
   const fingerprint = `sha256:${"a".repeat(64)}`;
   let resolvedFingerprint = fingerprint;
   const routes = createSkillMarketRoutes(
     async (_context, next) => next(),
     {
-      baseUrl: "https://registry.example",
-      namespace: "catalog",
-      token: "read",
-      confirmations: {
-        3: {
-          slug: "summarize",
-          version: "1.0.0",
-          versionId: 3,
-          reviewTaskId: 8,
-          reviewerId: "catalog-reviewer",
-          fingerprint,
+      kind: "bifrost",
+      namespace: "bifrost",
+      databaseUrl: "postgres://reader:fixture@localhost:1/bifrost",
+      legacy: {
+        baseUrl: "https://registry.example",
+        namespace: "catalog",
+        token: "read",
+        confirmations: {
+          3: {
+            slug: "summarize",
+            version: "1.0.0",
+            versionId: 3,
+            reviewTaskId: 8,
+            reviewerId: "catalog-reviewer",
+            fingerprint,
+          },
         },
       },
     },
@@ -172,7 +179,12 @@ test("a compatibility confirmation applies only to the reviewed package fingerpr
     },
   );
   const first = await routes.request("/catalog/summarize/versions/1.0.0");
-  expect(await first.json()).toMatchObject({ installable: true, reasons: [] });
+  expect(await first.json()).toMatchObject({
+    installable: false,
+    reasons: [
+      "Select a Bifrost version to install or switch this market skill.",
+    ],
+  });
   resolvedFingerprint = `sha256:${"b".repeat(64)}`;
   const changed = await routes.request("/catalog/summarize/versions/1.0.0");
   expect(await changed.json()).toMatchObject({
@@ -194,4 +206,62 @@ test("a compatibility confirmation applies only to the reviewed package fingerpr
       "Only a package containing a single SKILL.md file is supported.",
     ],
   });
+});
+
+test("Bifrost mode protects the catalog and exact downloads with the market session", async () => {
+  const config = loadSkillMarketConfig({
+    BIFROST_SKILL_MARKET_DATABASE_URL:
+      "postgres://reader:fixture@localhost:1/bifrost",
+  });
+  expect(config).toMatchObject({ kind: "bifrost", namespace: "bifrost" });
+  if (!config) throw new Error("Bifrost market unavailable");
+  const routes = createSkillMarketRoutes(
+    async (context) => context.body(null, 401),
+    config,
+  );
+  for (const path of [
+    "/?q=summarize",
+    "/bifrost/summarize",
+    "/bifrost/summarize/versions/1.0.0",
+    "/bifrost/summarize/versions/1.0.0/download",
+  ]) {
+    expect((await routes.request(path)).status).toBe(401);
+  }
+});
+
+test("a frozen market rejects release writes through both catalog namespaces", async () => {
+  const config = loadSkillMarketConfig({
+    SKILL_MARKET_WRITES_FROZEN: "true",
+    SKILLHUB_URL: "http://skillhub.test",
+    SKILLHUB_CATALOG_NAMESPACE: "catalog",
+    SKILLHUB_READ_TOKEN: "fixture",
+    BIFROST_SKILL_MARKET_DATABASE_URL:
+      "postgres://reader:fixture@localhost:1/bifrost",
+  });
+  if (!config) throw new Error("Market unavailable");
+  const routes = createSkillMarketRoutes(async (context, next) => {
+    context.set("actor", {
+      id: "admin",
+      email: "admin@example.test",
+      role: "admin",
+    });
+    await next();
+  }, config);
+  for (const [method, path] of [
+    ["POST", "/catalog/summarize/versions/1.0.0/install"],
+    ["POST", "/bifrost/summarize/versions/1.0.0/install"],
+    ["POST", "/bifrost/summarize/versions/1.0.0/switch"],
+    ["PUT", "/bifrost/summarize/versions/1.0.0/review"],
+    ["DELETE", "/bifrost/summarize/versions/1.0.0/review"],
+    ["POST", "/bifrost/summarize/command"],
+  ]) {
+    const response = await routes.request(path, { method });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Skill market writes are paused for maintenance.",
+    });
+  }
+  expect(() =>
+    loadSkillMarketConfig({ SKILL_MARKET_WRITES_FROZEN: "treu" }),
+  ).toThrow("SKILL_MARKET_WRITES_FROZEN");
 });

@@ -14,6 +14,7 @@ import {
 } from "@openbot/shared/approval-outcomes";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { PERSON_INITIATOR } from "../audit";
+import { decisionInvalidated } from "../personal-saas/decision-access";
 import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import {
   isMarketVersionPause,
@@ -319,6 +320,8 @@ export function createApprovalService(
     async gate(
       candidate: ApprovalCandidate,
     ): Promise<ApprovalPermit | undefined> {
+      const origin = candidate.continuation ?? currentApprovalContext();
+      if (origin) await store.checkDecisionAccess?.(candidate.actorId, origin);
       const probe = validationProbe.getStore();
       if (probe) {
         probe.action = approvalAction(candidate);
@@ -443,6 +446,7 @@ export function createApprovalService(
           };
         }
       }
+      if (origin) await store.checkDecisionAccess?.(candidate.actorId, origin);
       if (outcome) {
         if (outcome.behaviour === "allow") return;
       } else if (
@@ -458,6 +462,8 @@ export function createApprovalService(
         ...(equivalence ? { equivalence, userTurns } : {}),
       };
       const request = await store.open(action);
+      if (request.action.executionInvalidated)
+        throw new ApprovalAlreadyAnsweredError(decisionInvalidated);
       if (request.decision === "handled")
         return { replay: HANDLED_BY_PERSON, complete: async () => undefined };
       if (request.result) {
@@ -547,7 +553,11 @@ export function createApprovalService(
     },
     async threadInbox(ownerUserId: string, threadId: string) {
       const requests = await store.list(ownerUserId, threadId);
-      return { requests: requests.map((request) => publicApproval(request)) };
+      return {
+        requests: requests.map((request) =>
+          publicApproval(request, request.result?.pauseReason),
+        ),
+      };
     },
     async inbox(ownerUserId: string) {
       const requests = await store.list(ownerUserId);
@@ -702,6 +712,13 @@ export function createApprovalService(
         throw new ApprovalRefusedError(
           "The interrupted conversation is unavailable.",
         );
+      const checkAccess = () =>
+        store.checkDecisionAccess?.(ownerUserId, {
+          runId: request.action.runId,
+          createdAt: request.createdAt,
+          epoch: request.action.executionEpoch,
+        });
+      await checkAccess();
       let result = request.result;
       const pauseReason = await options.marketPause?.(request.action);
       const refused =
@@ -810,6 +827,7 @@ export function createApprovalService(
                     owner: ownerUserId,
                   },
                   async () => {
+                    await checkAccess();
                     const reason = await options.marketPause?.(request.action);
                     if (reason) throw new MarketRunPaused(reason);
                     return dependencies.execute(approved);
@@ -836,6 +854,7 @@ export function createApprovalService(
         // Saved by one process only: whichever saves the answer is the one that continues.
         if (!(await store.saveResult(ownerUserId, id, result))) return;
       }
+      await checkAccess();
       const finalPause =
         pauseReason ?? (await options.marketPause?.(request.action));
       const outcome = await dependencies.continue({
@@ -866,6 +885,11 @@ export function createApprovalService(
       if (request.status === "completed" || request.status === "pending")
         return;
       const continuation = request.action.continuation;
+      await store.checkDecisionAccess?.(ownerUserId, {
+        runId: request.action.runId,
+        createdAt: request.createdAt,
+        epoch: request.action.executionEpoch,
+      });
       let result = request.result;
       if (!result) {
         const text = notCarriedOut(reason);
@@ -934,6 +958,7 @@ function publicApproval(request: ApprovalRecord, pauseReason?: string | null) {
     pauseReason ??= savedError;
   return {
     ...record,
+    ...(action.executionInvalidated ? { invalidated: true } : {}),
     result: request.result
       ? {
           error: request.result.error,

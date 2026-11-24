@@ -22,10 +22,7 @@ import {
 import { type Edition, parseEdition } from "./edition";
 import { proxiedClientSocketUrl } from "./intelligence-gateway-proxy";
 import type { BrokerProvider } from "./plugins/access";
-import {
-  loadSkillMarketConfig,
-  type SkillMarketConfig,
-} from "./skill-market/config";
+import { loadSkillMarketConfig } from "./skill-market/config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
@@ -228,7 +225,7 @@ export type SingleUserAccess = {
 };
 
 export type DeploymentConfig = {
-  skillMarket?: SkillMarketConfig;
+  skillMarket?: ReturnType<typeof loadSkillMarketConfig>;
   /**
    * Browser extension ids OpenBot trusts as the Recorder besides its own fixed id, for a fork or a
    * build signed with another key. From OPENBOT_RECORDER_EXTRA_EXTENSION_IDS, never from NODE_ENV.

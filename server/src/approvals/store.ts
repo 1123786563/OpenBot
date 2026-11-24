@@ -29,6 +29,11 @@ import { botTasks } from "../db/schema/tasks";
 import { workItems } from "../db/schema/work";
 import { currentEdition } from "../edition";
 import {
+  decisionInvalidated,
+  readDecisionAccess,
+  reconcileDecisionHistory,
+} from "../personal-saas/decision-access";
+import {
   type ApprovalAction,
   ApprovalNotFoundError,
   type ApprovalPolicyStore,
@@ -77,7 +82,23 @@ const grantInForce = () =>
     ),
   );
 
-export function createApprovalStore(database: Database): ApprovalStore {
+export function createApprovalStore(
+  database: Database,
+  now = Date.now,
+): ApprovalStore {
+  type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+  const reconcile = (owner: string) =>
+    database.transaction((tx) => reconcileDecisionHistory(tx, owner, now));
+  const verify = async (
+    tx: Transaction,
+    owner: string,
+    origin: Parameters<typeof readDecisionAccess>[3],
+  ) => {
+    const access = await readDecisionAccess(tx, owner, now, origin);
+    if (access?.kind === "denied")
+      throw new ApprovalRefusedError(decisionInvalidated);
+    return access;
+  };
   const owned = (owner: string, id: string) =>
     and(eq(approvalRequests.ownerUserId, owner), eq(approvalRequests.id, id));
   const ruleScope = (action: ApprovalAction) =>
@@ -105,6 +126,9 @@ export function createApprovalStore(database: Database): ApprovalStore {
     return row;
   }
   return {
+    async checkDecisionAccess(owner, origin) {
+      await database.transaction((tx) => verify(tx, owner, origin));
+    },
     async enabled(owner) {
       const [row] = await database
         .select()
@@ -127,8 +151,12 @@ export function createApprovalStore(database: Database): ApprovalStore {
           set: { enabled },
         });
     },
-    get,
+    async get(owner, id) {
+      await reconcile(owner);
+      return get(owner, id);
+    },
     async list(owner, threadId) {
+      await reconcile(owner);
       return database
         .select()
         .from(approvalRequests)
@@ -151,7 +179,16 @@ export function createApprovalStore(database: Database): ApprovalStore {
         .limit(100);
     },
     async open(action) {
+      await reconcile(action.actorId);
       return database.transaction(async (tx) => {
+        const access = await readDecisionAccess(
+          tx,
+          action.actorId,
+          now,
+          action,
+        );
+        if (access?.kind === "denied")
+          throw new ApprovalRefusedError(decisionInvalidated);
         // A request the policy gate opened was opened because something asked for the person; a
         // saved "always" rule was already weighed there and must not approve it behind that.
         const [rule] = action.policy
@@ -169,7 +206,9 @@ export function createApprovalStore(database: Database): ApprovalStore {
             runId: action.runId,
             toolCallId: action.toolCallId,
             actionDigest: action.actionDigest,
-            action,
+            action: access
+              ? { ...action, executionEpoch: access.epoch }
+              : action,
             status: rule ? "approved" : "pending",
             decision: rule ? "allow_always" : null,
             decidedAt: rule ? sql`now()` : null,
@@ -187,13 +226,20 @@ export function createApprovalStore(database: Database): ApprovalStore {
           )
           .limit(1);
         if (!row) throw new ApprovalNotFoundError();
+        if (
+          row.action.executionInvalidated ||
+          (access && row.action.executionEpoch !== access.epoch)
+        )
+          throw new ApprovalRefusedError(decisionInvalidated);
         if (row.actionDigest !== action.actionDigest)
           throw new ApprovalRefusedError("The approved action has changed.");
         return row;
       });
     },
     async decide(owner, id, decision) {
+      await reconcile(owner);
       return withAuditTransaction(database, async (tx, deferTap) => {
+        const access = await verify(tx, owner, undefined);
         const [request] = await tx
           .select()
           .from(approvalRequests)
@@ -201,6 +247,13 @@ export function createApprovalStore(database: Database): ApprovalStore {
           .for("update")
           .limit(1);
         if (!request) throw new ApprovalNotFoundError();
+        await verify(tx, owner, {
+          runId: request.runId,
+          createdAt: request.createdAt,
+          epoch: request.action.executionEpoch,
+        });
+        if (request.action.executionInvalidated)
+          throw new ApprovalRefusedError(decisionInvalidated);
         if (request.status !== "pending")
           throw new ApprovalRefusedError("This request was already decided.");
         const handOff = request.action.policy?.behaviour === "hand_off";
@@ -304,6 +357,9 @@ export function createApprovalStore(database: Database): ApprovalStore {
             .values({
               kind: "approval.resume",
               key: workItemKey,
+              ...(access
+                ? { accountId: owner, accountEpoch: access.epoch }
+                : {}),
               payload: { ownerUserId: owner, approvalId: id },
             })
             .onConflictDoNothing();
@@ -315,7 +371,9 @@ export function createApprovalStore(database: Database): ApprovalStore {
       });
     },
     async consume(owner, id, digest, beforeConsume) {
+      await reconcile(owner);
       return database.transaction(async (tx) => {
+        await verify(tx, owner, undefined);
         const [request] = await tx
           .select()
           .from(approvalRequests)
@@ -326,6 +384,11 @@ export function createApprovalStore(database: Database): ApprovalStore {
         if (request.actionDigest !== digest)
           throw new ApprovalRefusedError("The approved action has changed.");
         if (request.status !== "approved") return false;
+        await verify(tx, owner, {
+          runId: request.runId,
+          createdAt: request.createdAt,
+          epoch: request.action.executionEpoch,
+        });
         if (request.decision === "allow_always") {
           const [rule] = await tx
             .select()

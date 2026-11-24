@@ -1,5 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  notLike,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Database } from "../db/client";
 import { agents } from "../db/schema/core";
 import { agentProfiles } from "../db/schema/coworker";
@@ -16,6 +27,7 @@ import {
   proactiveSuggestions,
 } from "../db/schema/proactive";
 import { workItems } from "../db/schema/work";
+import { createWorkQueue } from "../work/queue";
 import {
   type BindingTransport,
   type DeliveryBinding,
@@ -26,6 +38,18 @@ import {
   type DeliveryState,
   type PushDevice,
 } from "./types";
+
+const {
+  personalResumeEpoch: _personalResumeEpoch,
+  personalResumedAt: _personalResumedAt,
+  ...bindingColumns
+} = getTableColumns(deliveryBindings);
+
+type LegacyBinding = Omit<
+  typeof deliveryBindings.$inferSelect,
+  "personalResumeEpoch" | "personalResumedAt"
+>;
+
 export function createDeliveryStore(database: Database) {
   async function enqueue(
     db: Pick<Database, "insert" | "execute">,
@@ -42,7 +66,7 @@ export function createDeliveryStore(database: Database) {
   return {
     async listBindings(owner: string) {
       return database
-        .select()
+        .select(bindingColumns)
         .from(deliveryBindings)
         .where(eq(deliveryBindings.ownerUserId, owner));
     },
@@ -50,7 +74,7 @@ export function createDeliveryStore(database: Database) {
       return (
         (
           await database
-            .select()
+            .select(bindingColumns)
             .from(deliveryBindings)
             .where(eq(deliveryBindings.id, id))
         )[0] ?? null
@@ -61,11 +85,11 @@ export function createDeliveryStore(database: Database) {
       realm: string,
       identity: string,
       address?: string,
-    ) {
+    ): Promise<LegacyBinding | null> {
       return (
         (
           await database
-            .select()
+            .select(bindingColumns)
             .from(deliveryBindings)
             .where(
               and(
@@ -73,6 +97,7 @@ export function createDeliveryStore(database: Database) {
                 eq(deliveryBindings.realm, realm),
                 eq(deliveryBindings.identity, identity),
                 eq(deliveryBindings.enabled, true),
+                notLike(deliveryBindings.ownerUserId, "personal-workspace:%"),
                 ...(address ? [eq(deliveryBindings.address, address)] : []),
               ),
             )
@@ -81,7 +106,7 @@ export function createDeliveryStore(database: Database) {
     },
     async bindingsFor(scope: DeliveryScope) {
       return database
-        .select()
+        .select(bindingColumns)
         .from(deliveryBindings)
         .where(
           and(
@@ -101,7 +126,7 @@ export function createDeliveryStore(database: Database) {
     async bindingsByUse(owner: string): Promise<DeliveryBinding[]> {
       const usedAt = sql`greatest(${deliveryBindings.createdAt}, (select max(${deliveryInbox.createdAt}) from ${deliveryInbox} where ${deliveryInbox.ownerUserId} = ${deliveryBindings.ownerUserId} and ${deliveryInbox.bindingId} = ${deliveryBindings.id}))`;
       return database
-        .select()
+        .select(bindingColumns)
         .from(deliveryBindings)
         .where(
           and(
@@ -145,7 +170,7 @@ export function createDeliveryStore(database: Database) {
       return database.transaction(async (tx) => {
         const existing = (
           await tx
-            .select()
+            .select(bindingColumns)
             .from(deliveryBindings)
             .where(
               and(
@@ -184,7 +209,7 @@ export function createDeliveryStore(database: Database) {
             },
             setWhere: eq(deliveryBindings.ownerUserId, input.ownerUserId),
           })
-          .returning();
+          .returning(bindingColumns);
         if (!bound)
           throw new DeliveryRefusedError(
             "That identity is already connected to another person.",
@@ -202,7 +227,7 @@ export function createDeliveryStore(database: Database) {
             eq(deliveryBindings.id, id),
           ),
         )
-        .returning();
+        .returning(bindingColumns);
       if (!rows.length)
         throw new DeliveryNotFoundError("Connection not found.");
     },
@@ -423,6 +448,7 @@ export function createDeliveryStore(database: Database) {
     async offerOutbox(
       input: DeliveryScope & {
         dedupeKey: string;
+        authorizedSince?: number;
         bindingId: string | null;
         deviceId: string | null;
         transport: BindingTransport | "push";
@@ -431,13 +457,24 @@ export function createDeliveryStore(database: Database) {
         requestId: string | null;
       },
     ) {
+      const { authorizedSince, ...delivery } = input;
       return database.transaction(async (tx) => {
         const [row] = await tx
           .insert(deliveryOutbox)
-          .values({ ...input, id: randomUUID() })
+          .values({ ...delivery, id: randomUUID() })
           .onConflictDoNothing()
           .returning();
-        if (row) await enqueue(tx, "delivery.outbound", row.id);
+        if (
+          row &&
+          (await createWorkQueue(tx).offer({
+            kind: "delivery.outbound",
+            key: row.id,
+            payload: { ownerUserId: row.ownerUserId },
+            authorizedSince,
+          })) === "refused"
+        ) {
+          throw new DeliveryRefusedError("Bot work authorization ended.");
+        }
         return row ?? null;
       });
     },

@@ -1,4 +1,3 @@
-import { productHeadlessBoundary } from "../telemetry/product-boundaries";
 import { buildResponsibilityTurn } from "@openbot/shared/responsibility-turn";
 import type { ComponentCatalog } from "@openbot/toolkit/ports";
 import {
@@ -23,6 +22,7 @@ import type { mountCopilotRuntime } from "../copilot";
 import type { Database } from "../db/client";
 import type { DeliveryScope } from "../delivery/types";
 import type { createSlackGoalAction } from "../plugins/corsair/slack/goal-action";
+import { productHeadlessBoundary } from "../telemetry/product-boundaries";
 import { markUntrusted } from "../untrusted-content";
 import { createWorkQueue } from "../work/queue";
 import {
@@ -164,6 +164,8 @@ export function createServerResponsibilityEngine(deps: {
           threadId: context.threadId,
           initiator,
           signal: context.signal,
+          beforeDispatch: context.beforeDispatch,
+          onText: context.onText,
           ...(snapshot && toolResult
             ? {
                 continuation: {

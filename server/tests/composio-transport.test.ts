@@ -10,11 +10,11 @@ import {
   type ComposioResult,
   callTool,
   effectOf,
+  useComposioClient as installComposioClient,
   LISTING_LIMIT,
   listNeedsCredential,
   listTools,
   toolkitOf,
-  useComposioClient,
   vendorSentence,
   withheldArguments,
 } from "../src/plugins/composio";
@@ -25,7 +25,7 @@ import { MAX_RESULT_CHARS } from "../src/plugins/mcp";
  *
  * What is under test is the boundary rather than the SDK: which app a connection names, whose id a
  * call is attributed to, what a label means, which version is sent, and what a refusal reads as. The
- * client arrives through {@link useComposioClient}, which is the only seam the module has —
+ * client arrives through {@link installComposioClient}, which is the only seam the module has —
  * `transportFor` resolves a kind to a MODULE, so there is no constructor to pass one to. Same shape
  * as `builtin-routines`.
  *
@@ -34,7 +34,7 @@ import { MAX_RESULT_CHARS } from "../src/plugins/mcp";
  * could open somebody else's mailbox.
  */
 
-afterEach(() => useComposioClient(null));
+afterEach(() => installComposioClient(null));
 
 /**
  * One call as the vendor received it: the four fields that decide what it MEANS, and the arguments.
@@ -519,7 +519,7 @@ describe("listing an app's actions", () => {
 
   test("the listing asks for a page, and for one big enough to be the whole list", async () => {
     const asked: unknown[] = [];
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async (toolkit, page) => {
           asked.push({ toolkit, page });
@@ -565,7 +565,7 @@ describe("listing an app's actions", () => {
    * each has its own test above.
    */
   test("a listing as long as the biggest page is committed rather than called a fragment", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () =>
           Array.from({ length: WHOLE_LISTING }, (_unused, index) => ({
@@ -592,7 +592,7 @@ describe("listing an app's actions", () => {
         return [GMAIL_READ];
       },
     });
-    useComposioClient(client);
+    installComposioClient(client);
 
     expect(await listTools({ url: "composio://gmail" })).toEqual([
       {
@@ -614,7 +614,7 @@ describe("listing an app's actions", () => {
     // REQUIRED HERE ON PURPOSE. Composio's own GMAIL_SEND_EMAIL requires nothing and is offered
     // without its attachment (`composio-file-parameters.test.ts`); the `required` below is what
     // makes this the case no call can satisfy.
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           GMAIL_READ,
@@ -657,7 +657,7 @@ describe("listing an app's actions", () => {
   });
 
   test("a file parameter reached through $defs and a variant is found too", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           GMAIL_READ,
@@ -746,7 +746,7 @@ describe("listing an app's actions", () => {
     ];
 
     for (const { where, schema } of hidden) {
-      useComposioClient(listing(schema));
+      installComposioClient(listing(schema));
       const listed = await listTools({ url: "composio://gmail" });
       // The keyword is carried into the comparison so a failure names which one escaped.
       expect({ where, offered: listed.map((tool) => tool.name) }).toEqual({
@@ -819,7 +819,7 @@ describe("listing an app's actions", () => {
     ];
 
     for (const { where, schema } of carried) {
-      useComposioClient(listing(schema));
+      installComposioClient(listing(schema));
       const listed = await listTools({ url: "composio://gmail" });
       // The keyword is carried into the comparison so a failure names which one escaped.
       expect({ where, offered: listed.map((tool) => tool.name) }).toEqual({
@@ -861,7 +861,7 @@ describe("listing an app's actions", () => {
     ];
 
     for (const { where, schema } of kept) {
-      useComposioClient(listing(schema));
+      installComposioClient(listing(schema));
       const listed = await listTools({ url: "composio://gmail" });
       expect({ where, offered: listed.map((tool) => tool.name) }).toEqual({
         where,
@@ -898,7 +898,7 @@ describe("listing an app's actions", () => {
     ];
 
     for (const { where, schema } of offered) {
-      useComposioClient(listing(schema));
+      installComposioClient(listing(schema));
       const listed = await listTools({ url: "composio://gmail" });
       expect({ where, offered: listed.map((tool) => tool.name) }).toEqual({
         where,
@@ -937,7 +937,7 @@ describe("listing an app's actions", () => {
     ];
 
     for (const [keyword, sub] of keywords) {
-      useComposioClient(listing(underProperty(keyword, sub, false)));
+      installComposioClient(listing(underProperty(keyword, sub, false)));
       const listed = await listTools({ url: "composio://gmail" });
       const staged = listed.find((tool) => tool.name === "GMAIL_STAGES_A_FILE");
       expect({ keyword, schema: staged?.inputSchema }).toEqual({
@@ -1003,7 +1003,7 @@ describe("listing an app's actions", () => {
 
     for (const [index, { where, schema }] of cases.entries()) {
       const asHandedOver = structuredClone(schema);
-      useComposioClient(listing(schema));
+      installComposioClient(listing(schema));
       const listed = await listTools({ url: "composio://gmail" });
       const staged = listed.find((tool) => tool.name === "GMAIL_STAGES_A_FILE");
       expect({ where, schema: staged?.inputSchema }).toEqual({
@@ -1014,7 +1014,7 @@ describe("listing an app's actions", () => {
       expect({ where, schema }).toEqual({ where, schema: asHandedOver });
     }
 
-    useComposioClient(listing(action(true, true)));
+    installComposioClient(listing(action(true, true)));
     const listed = await listTools({ url: "composio://gmail" });
     expect(listed.map((tool) => tool.name)).toEqual(["GMAIL_FETCH_EMAILS"]);
   });
@@ -1074,7 +1074,7 @@ describe("listing an app's actions", () => {
     ];
 
     for (const { where, schema } of required) {
-      useComposioClient(listing(schema));
+      installComposioClient(listing(schema));
       const listed = await listTools({ url: "composio://gmail" });
       expect({ where, offered: listed.map((tool) => tool.name) }).toEqual({
         where,
@@ -1143,7 +1143,7 @@ describe("listing an app's actions", () => {
     for (let level = 0; level < 20_000; level += 1) {
       schema = { type: "object", properties: { deeper: schema } };
     }
-    useComposioClient(listing(schema));
+    installComposioClient(listing(schema));
 
     const failure = await listTools({ url: "composio://gmail" }).then(
       () => null,
@@ -1169,7 +1169,7 @@ describe("listing an app's actions", () => {
    * staging lookup every time, and a grant recorded against a name that can never work.
    */
   test("a file flag that is not a flag is refused rather than read as no file", async () => {
-    useComposioClient(
+    installComposioClient(
       listing({
         type: "object",
         properties: { attachment: { type: "string", file_uploadable: "true" } },
@@ -1225,7 +1225,7 @@ describe("listing an app's actions", () => {
      * faithful copy while wrecking the original would corrupt every later reader of one listing.
      */
     const asHandedOver = structuredClone(schema);
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [{ ...GMAIL_READ, inputParameters: schema }],
       }).client,
@@ -1237,7 +1237,7 @@ describe("listing an app's actions", () => {
   });
 
   test("an action with no schema is still listed, with an open one", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           { slug: "GMAIL_ODD", tags: ["updateHint"], version: "20260903_00" },
@@ -1255,7 +1255,7 @@ describe("listing an app's actions", () => {
   });
 
   test("an action Composio published no version for is listed with no version key", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           { slug: "GMAIL_UNVERSIONED", tags: ["readOnlyHint"] },
@@ -1278,7 +1278,7 @@ describe("listing an app's actions", () => {
   test("a listing nobody was asked for throws rather than answering empty", async () => {
     // `[]` means "the vendor was asked and advertises none" everywhere else in this codebase, and
     // `refreshTools` commits it as a healthy refresh. No client installed is the SHIPPED state —
-    // nothing under `server/src` calls `useComposioClient` — so `[]` here was the only answer a
+    // nothing under `server/src` calls `installComposioClient` — so `[]` here was the only answer a
     // real Composio refresh could produce, and committing it deleted every recorded action.
     const refused = listTools({ url: "composio://gmail" });
 
@@ -1305,7 +1305,7 @@ describe("listing an app's actions", () => {
      * is not testing the guard.
      */
     const asked: unknown[] = [];
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async (toolkit, page) => {
           asked.push({ toolkit, page });
@@ -1336,7 +1336,7 @@ describe("listing an app's actions", () => {
         message: "Expected string, received number",
       },
     ];
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => {
           // What `ToolSchema` throws: `message` is the issue array as JSON, which is what would land
@@ -1366,7 +1366,7 @@ describe("listing an app's actions", () => {
     // this string in the row's `lastError` and an administrator reads it off the Plugins page, so
     // a blank one is a refresh that reports having failed and declines to say about what.
     for (const thrown of [{ status: 502 }, new Error(""), new Error("   ")]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () => {
             throw thrown;
@@ -1391,7 +1391,7 @@ describe("listing an app's actions", () => {
      * `lastError` and an administrator reads it off the Plugins page, where the name of the thing
      * they asked to refresh is the one fact they already have.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => {
           throw new Error("Error executing the tool GMAIL_FETCH_EMAILS");
@@ -1425,7 +1425,7 @@ describe("listing an app's actions", () => {
     const authored =
       'Composio refuses a call whose toolkit version is "latest", and that is the version travelling with this one, so gmail\'s action list was not refreshed and the tools already held are untouched. A dated version is recorded when an app\'s actions are listed, so refreshing gmail\'s tools on its Plugins page replaces "latest" with a version Composio will accept.';
 
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => {
           throw new BrokerRefusalError(authored, {
@@ -1453,7 +1453,7 @@ describe("listing an app's actions", () => {
      * `lastError` for an administrator to read off the Plugins page, and what it used to write was
      * a status code followed by the entire response body.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => {
           throw unwrapped("Composio holds no auth config for gmail.");
@@ -1480,7 +1480,7 @@ describe("listing an app's actions", () => {
      * `message`, so the fallback to the thrown message handed an operator a response dump — the
      * same thing the Zod-dump refusal above exists to stop, arriving through a different door.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => {
           throw dumped({
@@ -1512,7 +1512,7 @@ describe("listing an app's actions", () => {
      * `store.ts` records it on the `mcp_tools` row and a grant is what a person approves against
      * it: an action recorded as safe that deletes a mailbox is approved once and run for ever.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           GMAIL_READ,
@@ -1554,7 +1554,7 @@ describe("listing an app's actions", () => {
      * it, and `?? ""` has always read it that way. Refusing it would abort the WHOLE listing for
      * the app — every other action's effect, version and grant — over a field that reads fine.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () =>
           [
@@ -1604,7 +1604,7 @@ describe("listing an app's actions", () => {
       "an action list",
       [null],
     ]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () => shape as unknown as ComposioAction[],
         }).client,
@@ -1634,7 +1634,7 @@ describe("listing an app's actions", () => {
      * missing, because the thing that names it is the thing that is not there.
      */
     for (const slug of [undefined, null, "", "   ", 7]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () =>
             [
@@ -1664,7 +1664,7 @@ describe("listing an app's actions", () => {
      * That is exactly the loop the test above reasons about, reached by recording rather than by
      * the vendor publishing nothing.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           { slug: "GMAIL_BLANK", tags: ["readOnlyHint"], version: "   " },
@@ -1692,7 +1692,7 @@ describe("listing an app's actions", () => {
      * is what a grant records, and it is the `slug` `callTool` sends back; a row keyed on
      * " GMAIL_FETCH_EMAILS " is a different action from the one anybody granted.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           { ...GMAIL_READ, slug: " GMAIL_FETCH_EMAILS\n" },
@@ -1719,7 +1719,7 @@ describe("listing an app's actions", () => {
      * the trimmed slug, so two spellings of one action arrive downstream as one name rather than
      * as two rows the database will happily keep apart.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () => [
           GMAIL_READ,
@@ -1754,7 +1754,7 @@ describe("listing an app's actions", () => {
      * than repaired.
      */
     for (const tags of [{}, "readOnlyHint", 7, { 0: "readOnlyHint" }]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () =>
             [
@@ -1802,7 +1802,7 @@ describe("listing an app's actions", () => {
       [null],
       ["readOnlyHint", 7],
     ]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () =>
             [
@@ -1844,7 +1844,7 @@ describe("listing an app's actions", () => {
      * list is present, and a label that is not a label is the silent misclassification that guard
      * is about.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () =>
           [
@@ -1884,7 +1884,7 @@ describe("listing an app's actions", () => {
      * refusal on this path does.
      */
     for (const version of [5, { major: 1 }, ["20260903_00"], true]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () =>
             [
@@ -1917,7 +1917,7 @@ describe("listing an app's actions", () => {
      * would turn a healthy refresh into a total failure for every app that publishes one, which is
      * exactly the loss the refusal above is written to avoid.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         listActions: async () =>
           [
@@ -1970,7 +1970,7 @@ describe("listing an app's actions", () => {
       ["Fetch."],
       true,
     ]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () =>
             [
@@ -2021,7 +2021,7 @@ describe("listing an app's actions", () => {
         issues: [{ field: "query", reason: "required" }],
       }),
     ]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () => {
             throw thrown;
@@ -2084,7 +2084,9 @@ describe("listing an app's actions", () => {
         inputParameters: upload,
       },
     ];
-    useComposioClient(recording({ listActions: async () => onlyFiles }).client);
+    installComposioClient(
+      recording({ listActions: async () => onlyFiles }).client,
+    );
 
     const outcome = await listTools({ url: "composio://googledrive" }).then(
       (listed) => `the listing was committed with ${listed.length} actions`,
@@ -2118,7 +2120,7 @@ describe("listing an app's actions", () => {
      * reading as broken for good. The refusal above is about a listing this deployment emptied,
      * not one that arrived empty.
      */
-    useComposioClient(recording({ listActions: async () => [] }).client);
+    installComposioClient(recording({ listActions: async () => [] }).client);
     expect(await listTools({ url: "composio://gmail" })).toEqual([]);
   });
 
@@ -2167,7 +2169,7 @@ describe("listing an app's actions", () => {
     ];
 
     for (const { where, action } of dropped) {
-      useComposioClient(
+      installComposioClient(
         recording({
           listActions: async () =>
             [
@@ -2200,7 +2202,7 @@ describe("listing an app's actions", () => {
 describe("calling one action", () => {
   test("the call runs as the connection's actor, at the recorded version", async () => {
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     const result = await callTool(
       { url: "composio://gmail", actorId: "user_asker" },
@@ -2238,7 +2240,7 @@ describe("calling one action", () => {
      * never show, and discarding it was the defect.
      */
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     for (const app of ["gmail", "slack"]) {
       await callTool(
@@ -2253,7 +2255,7 @@ describe("calling one action", () => {
 
   test("the version is not passed on to the vendor as an argument", async () => {
     const seen: Record<string, unknown>[] = [];
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async (_call, args) => {
           seen.push(args);
@@ -2279,7 +2281,7 @@ describe("calling one action", () => {
 
   test("a call with no recorded version refuses rather than guessing one", async () => {
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     const result = await callTool(
       { url: "composio://gmail", actorId: "user_asker" },
@@ -2320,7 +2322,7 @@ describe("calling one action", () => {
      * `listTools` wrote, and `store.ts` hands it back through `__version` on the next call.
      */
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     const padded = await callTool(
       { url: "composio://gmail", actorId: "user_asker" },
@@ -2370,7 +2372,7 @@ describe("calling one action", () => {
      * most plausibly be hard-coded to.
      */
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     const spelled = {
       userId: "user_victim",
@@ -2411,7 +2413,7 @@ describe("calling one action", () => {
      */
     for (const actorId of [undefined, "", "   ", "\n\t "]) {
       const { client, calls } = recording();
-      useComposioClient(client);
+      installComposioClient(client);
 
       const result = await callTool(
         { url: "composio://gmail", actorId },
@@ -2429,7 +2431,7 @@ describe("calling one action", () => {
   });
 
   test("a thrown failure is reported with the vendor's own sentence", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw Object.assign(
@@ -2493,7 +2495,7 @@ describe("calling one action", () => {
      * padding dropped, the way `vendorSentence` drops it.
      */
     for (const thrown of ["composio unreachable", "  composio unreachable\n"]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () => {
             throw new Error(thrown);
@@ -2520,7 +2522,7 @@ describe("calling one action", () => {
      * handed on for them was a status code followed by the whole response body, which is both the
      * request id this file already refuses to pass on and somebody's context window spent on it.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw unwrapped("Gmail rejected the query: invalid search syntax.");
@@ -2546,7 +2548,7 @@ describe("calling one action", () => {
     // The dump reaching a model, rather than an operator. `unexplained` is the right answer here
     // for the reason it is the right answer to the placeholder: neither says anything the reader
     // can act on, and one of them costs a context window to say it.
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw dumped({
@@ -2583,7 +2585,7 @@ describe("calling one action", () => {
       [RESULT_CAP, false],
       [RESULT_CAP + 1, true],
     ] as const) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () => {
             throw new Error("x".repeat(length));
@@ -2606,7 +2608,7 @@ describe("calling one action", () => {
   });
 
   test("a result is capped visibly rather than silently", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => answered({ body: "x".repeat(60_000) }),
       }).client,
@@ -2662,7 +2664,7 @@ describe("calling one action", () => {
 
     const seen: string[] = [];
     for (const { name, execute } of answers) {
-      useComposioClient(recording({ execute }).client);
+      installComposioClient(recording({ execute }).client);
 
       const result = await callTool(
         { url: "composio://gmail", actorId: "user_asker" },
@@ -2687,7 +2689,9 @@ describe("calling one action", () => {
   });
 
   test("an empty answer says so in words rather than being empty", async () => {
-    useComposioClient(recording({ execute: async () => answered({}) }).client);
+    installComposioClient(
+      recording({ execute: async () => answered({}) }).client,
+    );
 
     const result = await callTool(
       { url: "composio://gmail", actorId: "user_asker" },
@@ -2710,7 +2714,7 @@ describe("calling one action", () => {
     // `ToolExecuteResponseSchema` makes `successful` REQUIRED and resolves `{ data, error,
     // successful }`, so a 200 answer can carry a failure. Reported as a success it is audited as
     // `mcp.call_succeeded` and the failure is handed to the model as though it were content.
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           answered(
@@ -2734,7 +2738,7 @@ describe("calling one action", () => {
   });
 
   test("a successful answer hands the model the action's data and not the envelope", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => ({
           ...answered({ messages: [{ id: "m1" }] }),
@@ -2761,7 +2765,7 @@ describe("calling one action", () => {
   });
 
   test("an unsuccessful answer with no sentence still says something actionable", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => answered({}, { successful: false, error: null }),
       }).client,
@@ -2781,7 +2785,7 @@ describe("calling one action", () => {
   test("a failure carrying only the vendor's placeholder says something actionable", async () => {
     // "Error executing the tool X" is the string this module's own comment calls useless. Echoing it
     // tells a person nothing they did not already know: they asked for that tool.
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw new Error("Error executing the tool GMAIL_FETCH_EMAILS");
@@ -2816,7 +2820,7 @@ describe("calling one action", () => {
      * permission to invent a reason and retry.
      */
     for (const thrown of [{ status: 502 }, new Error(""), new Error("  \n ")]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () => {
             throw thrown;
@@ -2838,7 +2842,7 @@ describe("calling one action", () => {
   });
 
   test("an enormous vendor sentence is capped in a refusal too, and says so", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           answered({}, { successful: false, error: "x".repeat(60_000) }),
@@ -2863,7 +2867,7 @@ describe("calling one action", () => {
   });
 
   test("an enormous thrown message is capped in a refusal too", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw new Error("y".repeat(60_000));
@@ -2886,7 +2890,7 @@ describe("calling one action", () => {
   });
 
   test("our own serialization failure is not reported as the action having failed", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           const data: Record<string, unknown> = { subject: "hello" };
@@ -2926,7 +2930,7 @@ describe("calling one action", () => {
      * Composio answered, and it is this deployment that could not read the answer. That claim is
      * this file's own and survives having no reason to quote.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           answered({
@@ -2967,7 +2971,7 @@ describe("calling one action", () => {
      * present error IS a failure by their own arithmetic. Same rule as `effectOf` uses for
      * contradictory labels — both at once is somebody else's bug, and we take the strict branch.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           answered(
@@ -3007,7 +3011,7 @@ describe("calling one action", () => {
      * `vendorSentence`.
      */
     for (const error of ["", "   ", "\n\t", "\r\n "]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () =>
             answered({ messages: [] }, { successful: true, error }),
@@ -3039,7 +3043,7 @@ describe("calling one action", () => {
      * the batch form, is a list where this expects a record.
      */
     for (const shape of [[], [{ data: { messages: [] }, successful: true }]]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () => shape as unknown as ComposioResult,
         }).client,
@@ -3091,7 +3095,7 @@ describe("calling one action", () => {
     };
 
     for (const [shape, answer] of Object.entries(shapes)) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () => answer as ComposioResult,
         }).client,
@@ -3127,7 +3131,7 @@ describe("calling one action", () => {
      */
     const unreadable = { message: "Quota exceeded.", code: 429 };
 
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           ({
@@ -3149,7 +3153,7 @@ describe("calling one action", () => {
     // The data must not be handed over as content beside a complaint nobody could read.
     expect(claimed.text).not.toContain("m1");
 
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           ({
@@ -3186,7 +3190,7 @@ describe("calling one action", () => {
      * said about it — and a request id and a validation payload are not it.
      */
     for (const successful of [false, true]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () =>
             answered(
@@ -3225,7 +3229,7 @@ describe("calling one action", () => {
      * the refusal to every message that opens with three digits would swap a named cause for
      * advice about a connection that is working, so it has to redden something.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           answered(
@@ -3262,7 +3266,7 @@ describe("calling one action", () => {
      * value for it.
      */
     for (const successful of ["false", 0, null, "true", {}]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () =>
             ({
@@ -3297,7 +3301,7 @@ describe("calling one action", () => {
      * own words still win, and the check is reached only where the alternative would be calling
      * the answer a success.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           ({
@@ -3331,7 +3335,7 @@ describe("calling one action", () => {
      * projection is ours, the adapter is unwritten, and a runtime resolution is not a type.
      */
     for (const shape of [null, undefined, "ok", 7]) {
-      useComposioClient(
+      installComposioClient(
         recording({
           execute: async () => shape as unknown as ComposioResult,
         }).client,
@@ -3367,7 +3371,7 @@ describe("calling one action", () => {
         message: "Required",
       },
     ];
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw Object.assign(new Error(JSON.stringify(issues, null, 2)), {
@@ -3399,7 +3403,7 @@ describe("calling one action", () => {
      * over the thrown message, so a placeholder sitting where the useful sentence usually sits was
      * handed to the model past a check written to stop it.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw Object.assign(
@@ -3455,7 +3459,7 @@ describe("calling one action", () => {
     const authored =
       'Composio refuses a call whose toolkit version is "latest", and that is the version travelling with this one, so GMAIL_FETCH_EMAILS was not run. A dated version is recorded when an app\'s actions are listed, so refreshing gmail\'s tools on its Plugins page replaces "latest" with a version Composio will accept.';
 
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw new BrokerRefusalError(authored, {
@@ -3487,7 +3491,7 @@ describe("calling one action", () => {
      */
     const authored =
       "Composio holds no connected account for this person and gmail, so GMAIL_FETCH_EMAILS was not run.";
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw new BrokerAccountGoneError(authored);
@@ -3508,7 +3512,7 @@ describe("calling one action", () => {
     // Not a verdict on the key: a probe meeting this keeps its "could not find out".
     expect(gone.answered).toBe(false);
 
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw new BrokerRefusalError("Some other authored refusal.");
@@ -3528,7 +3532,7 @@ describe("calling one action", () => {
     // `error.message`. `./broker` raises its class only where the sentence names the step that
     // fixes it; a failure it knows nothing about stays a plain `Error`, and for those the vendor's
     // own nested sentence is still worth far more than a generic top-level message.
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw Object.assign(
@@ -3559,7 +3563,7 @@ describe("calling one action", () => {
      * `undefined` then reached the cap, which measures `.length`, and the engine's own
      * `undefined is not an object` became the second half of a sentence this file wrote.
      */
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => ({
           data: (() => "x") as unknown as Record<string, unknown>,
@@ -3604,7 +3608,7 @@ describe("calling one action", () => {
 describe("what a failed call is evidence of", () => {
   test("a call this transport never sent is not a verdict on anything", async () => {
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     // No recorded version, which this module refuses before dialling. Nothing went out, so nothing
     // about anybody's credential was established.
@@ -3620,7 +3624,7 @@ describe("what a failed call is evidence of", () => {
   });
 
   test("a vendor that threw is not a vendor that answered", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () => {
           throw new Error("connect ETIMEDOUT 104.18.0.1:443");
@@ -3642,7 +3646,7 @@ describe("what a failed call is evidence of", () => {
   });
 
   test("an answer this deployment cannot read is not a verdict either", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         // The envelope's own fields missing, which this module refuses as not being the envelope.
         execute: async () => ({}) as unknown as ComposioResult,
@@ -3660,7 +3664,7 @@ describe("what a failed call is evidence of", () => {
   });
 
   test("a flag neither true nor false is the vendor speaking unreadably, not refusing", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           ({
@@ -3684,7 +3688,7 @@ describe("what a failed call is evidence of", () => {
   });
 
   test("a failure Composio reported IS a verdict on the call it ran", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({
         execute: async () =>
           answered({}, { successful: false, error: "Invalid API key." }),
@@ -3704,7 +3708,7 @@ describe("what a failed call is evidence of", () => {
   });
 
   test("a call that worked is the plainest answer there is", async () => {
-    useComposioClient(
+    installComposioClient(
       recording({ execute: async () => answered({ ok: true }) }).client,
     );
 
@@ -3720,7 +3724,7 @@ describe("what a failed call is evidence of", () => {
 
   test("the account a caller names travels with the call", async () => {
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     await askAction(
       {
@@ -3758,7 +3762,7 @@ describe("what a failed call is evidence of", () => {
    */
   test("an account named as blank space is a refusal rather than a pin nothing holds", async () => {
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     const answer = await askAction(
       { url: "composio://gmail", actorId: "user_asker", accountId: "   " },
@@ -3779,7 +3783,7 @@ describe("what a failed call is evidence of", () => {
    */
   test("an account named as null is the app-level question rather than a pin", async () => {
     const { client, calls } = recording();
-    useComposioClient(client);
+    installComposioClient(client);
 
     await askAction(
       { url: "composio://gmail", actorId: "user_asker", accountId: null },

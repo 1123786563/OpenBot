@@ -9,6 +9,7 @@ import {
   agentProfiles,
   agents,
   auditEvents,
+  personalSaasAccounts,
   pluginGrants,
   workItems,
 } from "../src/db/schema";
@@ -250,4 +251,58 @@ describe("a hop, against the database", () => {
       expecting: "a date range",
     });
   });
+});
+
+test("a handoff from the desk cannot dispatch after the account goes unconfirmed", async () => {
+  const owner = randomUUID();
+  const at = Date.now();
+  const active = {
+    source: "active" as const,
+    observedAt: at,
+    confirmedAt: at,
+    epoch: 0,
+    disablements: [],
+  };
+  await database.insert(personalSaasAccounts).values({
+    id: owner,
+    issuer: "test",
+    subject: owner,
+    email: "handoff@example.test",
+    status: active,
+  });
+  try {
+    await grantTarget();
+    const offered = await desk.send({
+      from: { ...from(), actorId: owner },
+      target: "Target",
+      envelope: { task: "Have a look" },
+    });
+    expect(offered.ok).toBe(true);
+    await database
+      .update(personalSaasAccounts)
+      .set({
+        status: { ...active, confirmedAt: at - 60_001 },
+      })
+      .where(eq(personalSaasAccounts.id, owner));
+    const claimed = await queue.claim({
+      kind: HANDOFF_KIND,
+      owner,
+      leaseMs: 30_000,
+      limit: 100,
+    });
+    expect(claimed.some((item) => item.payload.actorId === owner)).toBe(false);
+    expect(await queue.interrupted(HANDOFF_KIND, owner)).toMatchObject([
+      {
+        interruption: {
+          reason: "account_status_unconfirmed",
+          outcomeUnknown: false,
+        },
+      },
+    ]);
+  } finally {
+    await database.delete(workItems).where(eq(workItems.accountId, owner));
+    await database
+      .delete(personalSaasAccounts)
+      .where(eq(personalSaasAccounts.id, owner));
+  }
 });

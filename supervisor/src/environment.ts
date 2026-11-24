@@ -26,9 +26,10 @@ export function environmentFor(
    * holding any token but this one (`holdsCurrentToken`), a computer created before this holding the
    * deployment's token is replaced, volumes kept, the next time it is asked for.
    */
-  const computerToken = deploymentToken
-    ? computerTokenFor(deploymentToken, { kind: names.kind, id: names.id })
-    : undefined;
+  const computerToken =
+    deploymentToken && names.kind !== "workspace"
+      ? computerTokenFor(deploymentToken, { kind: names.kind, id: names.id })
+      : undefined;
   const spireSocketVolume = env.SPIRE_AGENT_SOCKET_VOLUME;
   // Fail fast here rather than forwarding an invalid mode that crashes the child at
   // `browserModeFromEnv`: whitespace-only is falsy after trim, anything else must be headless
@@ -52,7 +53,7 @@ export function environmentFor(
     ...(names.kind === "bot" ? [`COMPUTER_BOT_ID=${names.id}`] : []),
     // And a person's computer is told it is that person's: Record runs in its Bots' browsers, which it refuses on the
     // computer every person shares (agent-computer's person-access.ts).
-    ...(names.kind === "person" ? [`COMPUTER_PERSON_ID=${names.id}`] : []),
+    ...(names.kind !== "bot" ? [`COMPUTER_PERSON_ID=${names.id}`] : []),
     /*
      * A folder each. A person's computer carries every Bot that person uses, and each keeps its own
      * files and starts its shell there, as each keeps its own browser profile. On an isolated Bot's

@@ -31,6 +31,8 @@ export async function resumePersonQuestion(input: {
   messageId: string;
   /** The ordinary headless runner: computer tools, the question's own initiator. */
   runTurn: TurnRunner;
+  signal?: AbortSignal;
+  beforeDispatch?: () => Promise<void>;
   responsibilities?: Pick<
     ResponsibilityStore,
     "get" | "listRuns" | "resumeWaiting"
@@ -81,6 +83,7 @@ export async function resumePersonQuestion(input: {
       latest?.status === "waiting" &&
       latest.waiting?.kind === PERSON_QUESTION_WAITING
     ) {
+      await input.beforeDispatch?.();
       await input.responsibilities.resumeWaiting(ownerUserId, latest.id, {
         content: `The person answered: ${input.response}`,
       });
@@ -98,6 +101,8 @@ export async function resumePersonQuestion(input: {
       initiator,
       instruction: "",
       userMessage,
+      signal: input.signal,
+      beforeDispatch: input.beforeDispatch,
     });
     return { ...outcome, responsibilityId: responsibility.id };
   }
@@ -109,5 +114,7 @@ export async function resumePersonQuestion(input: {
     initiator,
     instruction: "",
     userMessage,
+    signal: input.signal,
+    beforeDispatch: input.beforeDispatch,
   });
 }
