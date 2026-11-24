@@ -122,7 +122,8 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
                       </ItemTitle>
                     </ItemContent>
                     <ItemActions className="min-w-0">
-                      <span className="truncate font-medium">
+                      {/* An address has no spaces: wrap it anywhere so the whole value is readable. */}
+                      <span className="min-w-0 break-all text-right font-medium">
                         {detail.value}
                       </span>
                     </ItemActions>

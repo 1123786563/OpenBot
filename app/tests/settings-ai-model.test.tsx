@@ -122,6 +122,27 @@ test("a provider's own address shows by name, with the model named in setup", as
   );
 });
 
+// The dialog is the one place the whole address can be read, so it wraps rather than cuts.
+test("a long custom address and model wrap inside the dialog instead of being cut", async () => {
+  const host =
+    "an-internal-openai-compatible-endpoint.with-a-very-long-hostname.company.example.internal";
+  const chosenModel = "an-extremely-long-model-name-chosen-in-setup";
+  connection = {
+    kind: "compatible-endpoint",
+    model: chosenModel,
+    endpointHost: host,
+  };
+  const view = renderGeneral();
+  await userEvent.click(await aiModelRow(view));
+  const dialog = await view.findByRole("dialog");
+  const address = within(dialog).getByText(host);
+  const model = within(dialog).getByText(chosenModel);
+  // Happy DOM does no layout; the real-browser matrix shows the wrapped lines.
+  for (const value of [address, model])
+    expect(value.className).not.toMatch(/\btruncate\b/);
+  expect(address.className).toMatch(/\bbreak-all\b/);
+});
+
 test("Change asks the desktop app to change the AI connection", async () => {
   const view = renderGeneral();
   await userEvent.click(await aiModelRow(view));
