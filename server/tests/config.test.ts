@@ -1457,3 +1457,132 @@ describe("edition", () => {
     expect(() => loadConfig(environment)).toThrow("AGENT_COMPUTER_URL");
   });
 });
+
+test("Opik delivery is opt-in and loads the self-hosted API configuration", () => {
+  expect(loadConfig(baseEnvironment).opik).toBeUndefined();
+  expect(
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_OPIK_API_URL: "http://opik:5173/api/",
+      OPENBOT_OPIK_PROJECT: "openbot-runs",
+      OPENBOT_OPIK_WORKSPACE: "operators",
+      OPENBOT_OPIK_API_KEY: "fixture-key",
+    }).opik,
+  ).toEqual({
+    apiUrl: new URL("http://opik:5173/api/"),
+    project: "openbot-runs",
+    workspace: "operators",
+    apiKey: "fixture-key",
+  });
+  expect(() =>
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_OPIK_API_URL: "file:///tmp/opik",
+    }),
+  ).toThrow("OPENBOT_OPIK_API_URL");
+});
+
+test("platform evaluation requires an operator allowlist, a budget, and a private real endpoint", () => {
+  expect(loadConfig(baseEnvironment).opikEvaluation).toBeUndefined();
+  const setup = {
+    ...baseEnvironment,
+    OPENBOT_OPIK_EVAL_API_URL: "http://opik:5173/api/",
+    OPENBOT_OPIK_EVAL_OPERATORS: "op1, op2, op1",
+    OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT: "10",
+    OPENBOT_OPIK_REAL_EVAL_API_URL: "http://private-opik:5173/api/",
+  };
+  expect(loadConfig(setup).opikEvaluation).toMatchObject({
+    operators: new Set(["op1", "op2"]),
+    dailyCaseLimit: 10,
+    real: { apiUrl: new URL("http://private-opik:5173/api/") },
+  });
+  expect(() =>
+    loadConfig({ ...setup, OPENBOT_OPIK_EVAL_OPERATORS: " " }),
+  ).toThrow("OPENBOT_OPIK_EVAL_OPERATORS");
+  expect(() =>
+    loadConfig({ ...setup, OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT: "0" }),
+  ).toThrow("OPENBOT_OPIK_EVAL_DAILY_CASE_LIMIT");
+  expect(() =>
+    loadConfig({
+      ...setup,
+      OPENBOT_OPIK_REAL_EVAL_API_URL: "http://opik:5173/another/api/",
+    }),
+  ).toThrow("dedicated origin");
+});
+
+test("Hindsight Recall is opt-in and accepts a dedicated HTTP(S) origin", () => {
+  expect(loadConfig(baseEnvironment).hindsight).toBeUndefined();
+  expect(
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_HINDSIGHT_API_URL: "http://hindsight:8888",
+      OPENBOT_HINDSIGHT_API_KEY: "fixture-key",
+    }).hindsight,
+  ).toEqual({ url: new URL("http://hindsight:8888"), apiKey: "fixture-key" });
+  expect(() =>
+    loadConfig({
+      ...baseEnvironment,
+      OPENBOT_HINDSIGHT_API_URL: "http://hindsight:8888/another",
+    }),
+  ).toThrow("OPENBOT_HINDSIGHT_API_URL");
+});
+
+test("Hindsight Reflect is explicit and managed mode requires both service credentials", () => {
+  const service = {
+    OPENBOT_SINGLE_USER: "true",
+    DATABASE_URL: baseEnvironment.DATABASE_URL,
+    KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+    OPENBOT_HINDSIGHT_API_URL: "http://hindsight:8888",
+  };
+  expect(
+    loadConfig({ ...service, OPENBOT_HINDSIGHT_REFLECT: "local" }).hindsight,
+  ).toMatchObject({ reflect: true });
+  expect(() =>
+    loadConfig({ ...service, OPENBOT_HINDSIGHT_REFLECT: "managed" }),
+  ).toThrow("OPENBOT_HINDSIGHT_REFLECT_TOKEN");
+  const managed = loadConfig({
+    ...service,
+    OPENBOT_HINDSIGHT_REFLECT: "managed",
+    OPENBOT_HINDSIGHT_REFLECT_TOKEN: "callback-fixture",
+    OPENBOT_MANAGED_MODEL_TRIAL_URL: "https://managed.example.test",
+    OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "admission-fixture",
+    OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "approved-v1",
+  });
+  expect(managed.hindsight).toMatchObject({ reflect: true });
+  expect(managed.hindsightReflectToken).toBe("callback-fixture");
+});
+
+test("multi-Person model trials require distinct Person credentials", () => {
+  const environment = {
+    DATABASE_URL: baseEnvironment.DATABASE_URL,
+    KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+    OPENBOT_ORGANIZATION_AUTH_URL: "https://auth.example.test",
+    OPENBOT_MANAGED_MODEL_TRIAL_URL: "https://managed.example.test/api/billing",
+    OPENBOT_MANAGED_MODEL_TRIAL_ROUTE: "approved-v1",
+  };
+  expect(() =>
+    loadConfig({
+      ...environment,
+      OPENBOT_MANAGED_MODEL_TRIAL_TOKEN: "shared",
+    }),
+  ).toThrow("single-user mode");
+  expect(() =>
+    loadConfig({
+      ...environment,
+      OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS:
+        '{"alice":"shared","bob":"shared"}',
+    }),
+  ).toThrow("distinct credentials");
+  const trial = loadConfig({
+    ...environment,
+    OPENBOT_MANAGED_MODEL_TRIAL_PERSON_CREDENTIALS:
+      '{"alice":"first","bob":"second"}',
+  }).managedModelTrial;
+  expect(trial?.url.href).toBe("https://managed.example.test/api/billing/");
+  expect(trial?.credentials).toEqual(
+    new Map([
+      ["alice", "first"],
+      ["bob", "second"],
+    ]),
+  );
+});

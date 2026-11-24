@@ -22,15 +22,19 @@
  * within a firing never sees the routine that fails cleanly, once, every single night.
  */
 
+import { frameFiring } from "@openbot/shared/routine-firing";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import type { AgentActor } from "../agents/profile-types";
+import { BackgroundConversationBusy } from "../channels/direct-chat";
 import {
   BackgroundModelWaiting,
   backgroundModelOperationId,
 } from "../billing/background-model";
 import type { ChannelStore } from "../channels/routes";
+import type { mountCopilotRuntime } from "../copilot";
+import { isMarketVersionPause } from "../skill-market/disablements";
 import type { RoutineStore } from "./store";
 
 export type RoutineRunner = {
@@ -39,6 +43,41 @@ export type RoutineRunner = {
     continuation?: { ownerUserId: string; routineId: string },
   ): Promise<void>;
 };
+
+export function createRoutineTurn(
+  runBackground: NonNullable<
+    ReturnType<typeof mountCopilotRuntime>["runBackground"]
+  >,
+  actorFor: (personId: string) => Promise<AgentActor>,
+  metered?: Parameters<typeof runBackground>[0]["metered"],
+): TurnRunner {
+  return ({
+    ownerUserId,
+    routineId,
+    runId,
+    agentId,
+    threadId,
+    instruction,
+    signal,
+  }) => {
+    if (!runId) throw new Error("A Routine firing requires a Run ID.");
+    return runBackground({
+      source: "routine",
+      id: runId,
+      threadId,
+      conversationBotId: agentId,
+      personId: ownerUserId,
+      agentId,
+      prompt: frameFiring(instruction),
+      metered,
+      signal,
+      authorize: () => actorFor(ownerUserId).catch(() => null),
+      initiator: { kind: "routine", id: routineId },
+    }).then(({ replyText, shared }) => ({
+      replyText: shared ? "" : replyText,
+    }));
+  };
+}
 
 /**
  * How much of a failure's reason the channel notification carries.
@@ -193,6 +232,7 @@ export function createRoutineRunner(options: {
       try {
         ({ replyText } = await runTurn({
           ownerUserId,
+          runId: routineRunId,
           telemetry: {
             trigger: source === "run_now" ? "human" : "routine",
             surface: source === "run_now" ? "web" : "unknown",
@@ -214,6 +254,7 @@ export function createRoutineRunner(options: {
             : {}),
         }));
       } catch (error) {
+        if (error instanceof BackgroundConversationBusy) return;
         if (
           budgetId &&
           error instanceof Error &&
@@ -257,6 +298,11 @@ export function createRoutineRunner(options: {
           return;
         }
         const reason = reasonOf(error);
+        if (isMarketVersionPause(reason)) {
+          await routineStore.finishRun(routineRunId, "skipped", reason);
+          await say(reason);
+          return;
+        }
         await routineStore.finishRun(routineRunId, "failed", reason);
 
         /*
@@ -299,13 +345,18 @@ export function createRoutineRunner(options: {
        * order can lose the run row — this one is the browser's order: what was said lands in the
        * channel, and then the firing is closed.
        */
-      await say(replyText);
+      if (replyText) await say(replyText);
       await routineStore.finishRun(routineRunId, "succeeded");
     }
   }
 
+  const running = new Map<string, Promise<void>>();
   return {
     async run(routineRunId, continuation) {
+      const existing = running.get(routineRunId);
+      if (existing) return existing;
+      const turn = runOnce(routineRunId, continuation);
+      running.set(routineRunId, turn);
       /*
        * `run` never throws. Every outcome a routine can have — a gone channel, a refused model, a
        * routine deleted underneath the firing — is recorded on the run row above rather than raised
@@ -314,7 +365,7 @@ export function createRoutineRunner(options: {
        * alternative is a firing that vanishes without a line anywhere.
        */
       try {
-        await runOnce(routineRunId, continuation);
+        await turn;
       } catch (error) {
         console.error(
           JSON.stringify({
@@ -323,6 +374,8 @@ export function createRoutineRunner(options: {
             reason: reasonOf(error),
           }),
         );
+      } finally {
+        running.delete(routineRunId);
       }
     },
   };

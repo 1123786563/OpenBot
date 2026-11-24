@@ -1,3 +1,4 @@
+import { Button } from "@astryxdesign/core/Button";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -109,11 +110,7 @@ function comeForward(why: string) {
 const SETUP_NEEDS_RESTART =
   "Windows needs to restart to finish setting up the software OpenBot runs on. OpenBot opens again after you sign back in.";
 
-export function App() {
-  return <Setup />;
-}
-
-function Setup() {
+export function App({ onCloud }: { onCloud?: () => void } = {}) {
   const [blocker, setBlocker] = useState<Blocker | null>(null);
   // A Windows fix made earlier that only counts once Windows has restarted, and it has not.
   const [restartPending, setRestartPending] = useState(false);
@@ -199,15 +196,14 @@ function Setup() {
   const visibleSetupStep =
     checkingResume || blockerFailure || blocker || running ? null : step;
   /*
-   * The first screen starts the big downloads, without a click: the person opened OpenBot's setup
-   * to install it. The native side downloads only what this computer's install will need, once per
-   * run of the app (`early_downloads.rs`).
+   * With a cloud choice, wait for Install before starting local image downloads. Local-only
+   * setup starts the downloads when it reaches Welcome.
    */
   const onFirstScreen = visibleSetupStep === "welcome";
   useEffect(() => {
-    if (!onFirstScreen || !root.trim()) return;
+    if (onCloud || !onFirstScreen || !root.trim()) return;
     invoke("start_early_downloads", { root: root.trim() }).catch(() => {});
-  }, [onFirstScreen, root]);
+  }, [onCloud, onFirstScreen, root]);
   const lastViewedStep = useRef<SetupStep | null>(null);
   useEffect(() => {
     if (visibleSetupStep === lastViewedStep.current) return;
@@ -835,24 +831,31 @@ function Setup() {
   const quitting = useQuitStatus(false);
   if (quitting) return <ShuttingDown status={quitting} />;
 
-  // Nothing else on this screen can be done until the machine allows it, so nothing else is shown.
+  const cloudEntry = onCloud && (
+    <Button label="Connect to OpenBot Cloud" onClick={onCloud} />
+  );
+
+  // Local setup is blocked, but cloud setup is available without it.
   if (blockerFailure) {
     return (
       <main>
         <div className="sheet">
           <h1>OpenBot could not check Windows setup</h1>
           <Failure problem={blockerFailure} />
+          {cloudEntry}
         </div>
       </main>
     );
   }
 
-  if (restartPending) return <WindowsRestart lede={restartLede} />;
+  if (restartPending)
+    return <WindowsRestart lede={restartLede} cloudEntry={cloudEntry} />;
 
   if (blocker) {
     return (
       <WindowsBlocker
         blocker={blocker}
+        cloudEntry={cloudEntry}
         instruction={instruction}
         onRestartNeeded={() => setRestartPending(true)}
       />
@@ -881,6 +884,11 @@ function Setup() {
     return (
       <main>
         <Welcome
+          onCloud={onCloud}
+          beforeInstall={
+            onCloud &&
+            (() => invoke("start_early_downloads", { root: root.trim() }))
+          }
           onInstall={() => {
             // The default Bot, recorded as a choice of it would be.
             recordSetupEvent(harnessChoiceEvent(DEFAULT_HARNESS));

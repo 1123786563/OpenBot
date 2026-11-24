@@ -507,6 +507,15 @@ const key = (o: Pick<Offence, "file" | "shape" | "context" | "expression">) =>
  */
 const ALLOW: Allowed[] = [
   {
+    file: "server/tests/direct-chat.integration.test.ts",
+    shape: "b",
+    context: ['"approval worker withdrawal persisted state on %s"'],
+    expression:
+      "expect(await(awaitapp.backgroundApproval?.(action,request.id))?.check(),).toBeFalsy()",
+    finding:
+      "The approval test checks that a withdrawn request no longer passes its predicate.",
+  },
+  {
     file: "app/tests/auth-client.test.ts",
     shape: "a",
     context: ['"signInWith"', '"throws what the client said when it refuses"'],

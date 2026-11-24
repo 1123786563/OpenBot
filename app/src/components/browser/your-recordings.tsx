@@ -21,6 +21,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { canKeepCachedRead } from "@/lib/client";
 import { recordingsQueryOptions } from "@/lib/recorder/queries";
+import { RecordingDetails } from "./recording-details";
+import { RecordingLearning } from "./recording-learning";
 
 const STOP_REASONS: Record<string, string> = {
   disconnected: "disconnected",
@@ -139,9 +141,24 @@ export function YourRecordings({
                         {new Date(row.recordedAt).toLocaleString()}
                       </ItemDescription>
                     </ItemContent>
-                    {ended ? (
+                    {ended || recordings.data?.pages[0]?.canManage ? (
                       <ItemActions className="max-sm:basis-full">
-                        <p className="text-muted-foreground text-sm">{ended}</p>
+                        {ended ? (
+                          <p className="text-muted-foreground text-sm">
+                            {ended}
+                          </p>
+                        ) : null}
+                        {recordings.data?.pages[0]?.canManage ? (
+                          <>
+                            {row.ended === "succeeded" ? (
+                              <RecordingLearning
+                                id={row.id}
+                                title={row.title ?? "Untitled recording"}
+                              />
+                            ) : null}
+                            <RecordingDetails row={row} />
+                          </>
+                        ) : null}
                       </ItemActions>
                     ) : null}
                   </Item>

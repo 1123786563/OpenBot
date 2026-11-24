@@ -14,6 +14,7 @@ export type AgentChannel = {
   agentIds: string[];
   threadId: string;
   active: boolean;
+  archived?: boolean;
   /**
    * ISO-8601 when something was last said here, or null for a conversation nobody has used.
    *

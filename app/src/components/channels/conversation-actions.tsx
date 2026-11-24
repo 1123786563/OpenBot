@@ -1,4 +1,9 @@
-import { IconPin, IconPinnedOff, IconTrash } from "@tabler/icons-react";
+import {
+  IconArchive,
+  IconPin,
+  IconPinnedOff,
+  IconTrash,
+} from "@tabler/icons-react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -6,7 +11,10 @@ import {
 } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { setChannelPinnedMutationOptions } from "@/lib/channels/mutations";
+import {
+  setChannelArchivedMutationOptions,
+  setChannelPinnedMutationOptions,
+} from "@/lib/channels/mutations";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { DeleteConversationDialog } from "./delete-conversation-dialog";
 
@@ -22,10 +30,12 @@ import { DeleteConversationDialog } from "./delete-conversation-dialog";
  * pinned conversation, so a conversation missing from the pages loaded so far is not pinned.
  */
 export function ConversationActions({
+  archived,
   channelId,
   leave,
   name,
 }: {
+  archived: boolean;
   channelId: string;
   leave: () => Promise<unknown>;
   name: string;
@@ -41,6 +51,9 @@ export function ConversationActions({
       ),
   }).data;
   const setPinned = useMutation(setChannelPinnedMutationOptions(queryClient));
+  const setArchived = useMutation(
+    setChannelArchivedMutationOptions(queryClient),
+  );
   const [confirming, setConfirming] = useState(false);
 
   return (
@@ -62,6 +75,18 @@ export function ConversationActions({
           {pinned ? "Unpin" : "Pin"}
         </Button>
         <Button
+          aria-label={
+            archived ? "Restore conversation to list" : "Archive conversation"
+          }
+          className="w-full text-sm!"
+          disabled={setArchived.isPending}
+          onClick={() => setArchived.mutate({ channelId, archived: !archived })}
+          variant="outline"
+        >
+          <IconArchive />
+          {archived ? "Restore to list" : "Archive"}
+        </Button>
+        <Button
           aria-label="Delete conversation…"
           className="w-full text-sm!"
           onClick={() => setConfirming(true)}
@@ -72,9 +97,9 @@ export function ConversationActions({
         </Button>
       </div>
       {/* No toast in this app: why a pin did not take is said where it was asked for. */}
-      {setPinned.error ? (
+      {setPinned.error || setArchived.error ? (
         <p className="text-destructive text-xs" role="alert">
-          {setPinned.error.message}
+          {(setPinned.error ?? setArchived.error)?.message}
         </p>
       ) : null}
       <DeleteConversationDialog

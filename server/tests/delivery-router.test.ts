@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { createDeliveryRouter } from "../src/delivery/router";
+import { BackgroundConversationBusy } from "../src/channels/direct-chat";
+import { createDeliveryRouter, type RouterStore } from "../src/delivery/router";
 import {
   type DeliveryBinding,
   type DeliveryInbox,
@@ -27,15 +28,17 @@ function fixture(
   turnHook?: (router: ReturnType<typeof createDeliveryRouter>) => Promise<void>,
 ) {
   const ownedBinding = { ...binding, ...override };
-  const inbox: DeliveryInbox = {
+  const inbox: DeliveryInbox & { realm: string; createdAt: Date } = {
     ...scope,
     id: "in",
     bindingId: "binding",
     source: "slack",
+    realm: "T",
     externalId: "event",
     text: "Hi",
     state: "queued",
     error: null,
+    createdAt: new Date(),
   };
   const outbound: DeliveryOutbox = {
     ...scope,
@@ -105,7 +108,7 @@ function fixture(
       return [{ id: "binding", ownerUserId: "owner", channelId: "channel" }];
     },
     botIdentity: async (agentId: string) => ({ agentId, name: "Research Bot" }),
-  };
+  } as unknown as RouterStore;
   const queue = {
     claim: async ({ kind }: { kind: string }) => [
       {
@@ -225,7 +228,7 @@ test("revoked source ownership and lost lease cannot execute turns or sends", as
 test("uncertain recovered outbound is never silently resent", async () => {
   const f = fixture();
   f.outbound.state = "running";
-  f.store.startOutbox = async () => null;
+  f.store.startOutbox = async () => null as never;
   await f.router.sweep("delivery.outbound");
   expect(f.calls).toHaveLength(0);
   expect(f.statuses).toContainEqual({
@@ -354,6 +357,54 @@ test("a suspended governed turn reports its pending approval", async () => {
   ).toMatchObject({ kind: "waiting", extras: { approvals: ["a9"] } });
   expect(f.statuses.at(-1)).toMatchObject({ state: "accepted" });
 });
+test("the turn's own refusal reaches the inbox; other failures keep the generic copy", async () => {
+  const f = fixture();
+  const make = (runTurn: () => Promise<never>) =>
+    createDeliveryRouter({
+      store: f.store,
+      queue: f.queue,
+      owner: "w",
+      authoriseScope: async () => true,
+      scopeFor: async () => null,
+      runTurn,
+      providers: {},
+    });
+  const converse = (router: ReturnType<typeof createDeliveryRouter>) =>
+    router.converse({
+      transport: "slack",
+      realm: "T",
+      identity: "U",
+      externalId: "m9",
+      text: "go",
+      signal: new AbortController().signal,
+    });
+  const refusal = new Error(
+    "The previous Run has an unverified external outcome.",
+  );
+  refusal.name = "CapabilityRefusedError";
+  expect(await converse(make(() => Promise.reject(refusal)))).toMatchObject({
+    kind: "failed",
+    message: "The previous Run has an unverified external outcome.",
+  });
+  expect(
+    await converse(
+      make(() => Promise.reject(new BackgroundConversationBusy("busy now"))),
+    ),
+  ).toMatchObject({ kind: "failed", message: "busy now" });
+  expect(
+    await converse(make(() => Promise.reject(new Error("ECONNRESET")))),
+  ).toMatchObject({
+    kind: "failed",
+    message: "The agent turn failed. Inspect the conversation before retrying.",
+  });
+  await expect(
+    make(() => Promise.reject(refusal)).sweep("delivery.inbound"),
+  ).rejects.toThrow("unverified external outcome");
+  expect(f.statuses.at(-1)).toMatchObject({
+    state: "failed",
+    error: "The previous Run has an unverified external outcome.",
+  });
+});
 test("chat sends carry the Bot's identity; SMS after STOP is recorded opted out, not sent", async () => {
   const f = fixture();
   await f.router.sweep("delivery.outbound");
@@ -420,6 +471,7 @@ test("the person's update routing decides which transports carry each kind", asy
       projectId: "p",
       platform: "ios" as const,
       enabled: true,
+      createdAt: new Date(),
     },
   ];
   f.store.devices = async () => devices;

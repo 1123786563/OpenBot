@@ -220,6 +220,17 @@ afterAll(async () => {
           ...alternatives,
         ]),
       );
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [bot, anotherBot, emptyBot, spareBot]));
+    await database
+      .delete(skillMarketSources)
+      .where(inArray(skillMarketSources.slug, [slug, collision, racingSource]));
+    await database
+      .delete(skills)
+      .where(
+        inArray(skills.slug, [slug, collision, racingCommand, ...alternatives]),
+      );
     await database.delete(mcpServers).where(eq(mcpServers.id, app));
     await database.delete(users).where(inArray(users.id, [owner, member]));
   } finally {
@@ -2197,8 +2208,13 @@ test("a browser computer approval carries on with the market version that emitte
         resumeWaiting: async () => {
           throw new Error("Unexpected responsibility");
         },
-      } as never,
-      groupConversations: { continueWaiting: (_id, run) => run() },
+      },
+      groupConversations: {
+        continueWaiting: (_id, run) => run(),
+        pauseWaiting: async () => {
+          throw new Error("Unexpected context withdrawal");
+        },
+      },
       approvalContinuationRunner: async (input) => {
         const carry = input.continuation;
         if (!carry) throw new Error("Missing continuation");
@@ -2745,6 +2761,7 @@ for (const phase of [
           groupConversations: {
             continueWaiting: async (_id, run, reason) =>
               reason ? { replyText: reason } : run(),
+            pauseWaiting: never,
           },
           approvalContinuationRunner: never,
           channelStore: { recordActivity: never },

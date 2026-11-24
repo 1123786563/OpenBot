@@ -17,13 +17,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   addGroupMemberMutationOptions,
   groupQueryOptions,
   removeGroupMemberMutationOptions,
 } from "@/lib/groups";
 
-export function GroupPeopleButton({ channelId }: { channelId: string }) {
+/**
+ * Who is in a group, from its top bar: how many people, and a dialog listing them where the creator
+ * can take someone out, anyone else can leave, and anyone in it can add a person who has signed in
+ * here. Everyone added sees the whole conversation.
+ */
+export function GroupPeopleButton({
+  channelId,
+  onLeave,
+}: {
+  channelId: string;
+  onLeave: () => void;
+}) {
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
@@ -40,7 +52,7 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
   const opener = useRef<HTMLButtonElement>(null);
   const dialogTitle = useRef<HTMLHeadingElement>(null);
   const peopleHeading = useRef<HTMLHeadingElement>(null);
-  if (!group.data) return null;
+  if (!group.data || !canKeepCachedRead(group.error)) return null;
   const { bots, people } = group.data;
   const membership = people.find((person) => person.userId === me?.id);
   const botCount = `${bots.length} ${bots.length === 1 ? "Bot" : "Bots"}`;
@@ -96,7 +108,7 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
                     const self = person.userId === me?.id;
                     const name = person.name ?? person.email;
                     const removable =
-                      !person.creator && (self || membership?.creator);
+                      self || (membership?.creator && !person.creator);
                     return (
                       <ListItem
                         key={person.userId}
@@ -142,7 +154,10 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
                                   trigger: event.currentTarget,
                                   run: async () => {
                                     await remove.mutateAsync(person.userId);
-                                    if (self) setOpen(false);
+                                    if (self) {
+                                      setOpen(false);
+                                      onLeave();
+                                    }
                                   },
                                 })
                               }

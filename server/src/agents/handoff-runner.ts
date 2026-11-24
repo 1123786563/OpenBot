@@ -99,7 +99,12 @@ export type HandoffDelivery = {
     claim?: { key: string; owner: string; isCurrent: () => Promise<boolean> };
     /** The signed statement of the run it is starting, carrying its depth. */
     assertion: string;
-  }) => Promise<{ answer: string | null }>;
+    key: string;
+  }) => Promise<{
+    answer: string | null;
+    conversationRunId?: string;
+    relayRequired?: boolean;
+  }>;
 };
 
 export type HandoffRunReport = {
@@ -475,40 +480,44 @@ export function createHandoffRunner(options: {
 
           try {
             const shown = summarise(work);
-            const { answer } = await runAuthorizedWork(
-              queue,
-              item,
-              owner,
-              (guard) =>
-                delivery.deliver({
-                  ...guard,
-                  ...(work.budgetId
-                    ? {
-                        claim: {
-                          key: item.key,
-                          owner,
-                          isCurrent: () =>
-                            queue.renew({
-                              kind: HANDOFF_KIND,
-                              key: item.key,
-                              owner,
-                              leaseMs,
-                            }),
-                        },
-                      }
-                    : {}),
-                  work,
-                  message: attribute(work),
-                  ...(shown ? { shown } : {}),
-                  assertion: sign(work, { key: item.key, owner }),
-                }),
-              {
-                safeFailure: (error) =>
-                  error instanceof ThreadBusyError ||
-                  (error instanceof BackgroundModelWaiting &&
-                    error.awaitingGatewayEvidence),
-              },
-            );
+            const { answer, conversationRunId, relayRequired } =
+              await runAuthorizedWork(
+                queue,
+                item,
+                owner,
+                (guard) =>
+                  delivery.deliver({
+                    ...guard,
+                    key: item.key,
+                    ...(work.budgetId
+                      ? {
+                          claim: {
+                            key: item.key,
+                            owner,
+                            isCurrent: () =>
+                              queue.renew({
+                                kind: HANDOFF_KIND,
+                                key: item.key,
+                                owner,
+                                leaseMs,
+                              }),
+                          },
+                        }
+                      : {}),
+                    work,
+                    message: attribute(work),
+                    ...(shown ? { shown } : {}),
+                    assertion: sign(work, { key: item.key, owner }),
+                  }),
+                {
+                  safeFailure: (error) =>
+                    error instanceof ThreadBusyError ||
+                    (error instanceof BackgroundModelWaiting &&
+                      error.awaitingGatewayEvidence),
+                },
+              );
+            if (!work.answerIn && answer && relayRequired)
+              await relay(work, item.key, answer, item.authorization?.epoch);
             const kept = await queue.finish({
               kind: HANDOFF_KIND,
               key: item.key,
@@ -552,7 +561,7 @@ export function createHandoffRunner(options: {
              * ever. Only for a forward hop with words to carry — a relay of a relay is the loop the
              * `answerIn` check exists to stop, and a wordless turn has nothing to say.
              */
-            if (!work.answerIn && answer) {
+            if (!work.answerIn && answer && !conversationRunId) {
               await relay(
                 work,
                 item.key,
@@ -583,6 +592,7 @@ export function createHandoffRunner(options: {
                 to: work.toBotId,
                 run: work.runId,
                 depth: work.depth,
+                ...(conversationRunId && { conversationRunId }),
                 ms: Date.now() - startedAt,
               },
             });

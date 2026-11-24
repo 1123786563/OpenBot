@@ -1,17 +1,28 @@
 import type {
+  DirectChatReview,
+  directChatLearning,
+  directChatProposal,
+  LearningEvidenceSelection,
+} from "@openbot/shared/direct-chat-learning";
+import type {
   LearningSettings,
   LearningSharingMode,
 } from "@openbot/shared/learning";
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
+  integer,
   pgTable,
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
-import { users } from "./core";
+import type { z } from "zod";
+import { intelligenceChannelMappings, users } from "./core";
 import { jsonb } from "./json";
 
 export const learningSettings = pgTable("learning_settings", {
@@ -127,6 +138,138 @@ export const learningSkillApprovals = pgTable(
     check(
       "learning_skill_approvals_sharing_check",
       sql`${table.sharing} IN ('none', 'requested', 'approved', 'declined')`,
+    ),
+  ],
+);
+
+type DirectChatAnalysisState = NonNullable<
+  z.infer<typeof directChatLearning>["latest"]
+>["state"];
+
+export const directChatAnalyses = pgTable(
+  "direct_chat_analyses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => intelligenceChannelMappings.threadId, {
+        onDelete: "cascade",
+      }),
+    botId: text("bot_id").notNull(),
+    state: text("state").$type<DirectChatAnalysisState>().notNull(),
+    reason: text("reason"),
+    evidenceSources: jsonb("evidence_sources")
+      .$type<
+        (LearningEvidenceSelection & { digest: string; cutoff: string })[]
+      >()
+      .notNull()
+      .default([]),
+    revisesProposalId: uuid("revises_proposal_id"),
+    evidenceRunIds: jsonb("evidence_run_ids").$type<string[]>().notNull(),
+    proposal: jsonb("proposal").$type<z.infer<typeof directChatProposal>>(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("direct_chat_analyses_history_idx").on(
+      table.threadId,
+      table.startedAt,
+      table.id,
+    ),
+    uniqueIndex("direct_chat_analyses_active_idx")
+      .on(table.threadId)
+      .where(sql`${table.state} in ('running', 'reconciling')`),
+    check(
+      "direct_chat_analyses_state_check",
+      sql`${table.state} in ('running', 'reconciling', 'proposed', 'skipped', 'failed', 'cancelled')`,
+    ),
+    check(
+      "direct_chat_analyses_proposal_check",
+      sql`(${table.state} = 'proposed') = (${table.proposal} is not null)`,
+    ),
+  ],
+);
+
+export const directChatLearningSchedules = pgTable(
+  "direct_chat_learning_schedules",
+  {
+    threadId: text("thread_id")
+      .primaryKey()
+      .references(() => intelligenceChannelMappings.threadId, {
+        onDelete: "cascade",
+      }),
+    botId: text("bot_id").notNull(),
+    enabled: boolean("enabled").notNull(),
+    intervalHours: integer("interval_hours").notNull(),
+    nextAt: timestamp("next_at", { withTimezone: true }),
+    evidenceAfter: timestamp("evidence_after", { withTimezone: true }),
+    lastAnalysisId: uuid("last_analysis_id").references(
+      () => directChatAnalyses.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    ownsLastAnalysis: boolean("owns_last_analysis").notNull().default(false),
+    pendingDispatch: boolean("pending_dispatch").notNull().default(false),
+  },
+  (table) => [
+    index("direct_chat_learning_schedules_due_idx")
+      .on(table.nextAt)
+      .where(sql`${table.enabled}`),
+    check(
+      "direct_chat_learning_schedules_interval_check",
+      sql`${table.intervalHours} between 1 and 168`,
+    ),
+  ],
+);
+
+// The decision and its complete delivery scope are recorded together. Approval publishes it.
+export const directChatProposalReviews = pgTable(
+  "direct_chat_proposal_reviews",
+  {
+    proposalId: uuid("proposal_id")
+      .primaryKey()
+      .references(() => directChatAnalyses.id, { onDelete: "cascade" }),
+    review: jsonb("review").$type<DirectChatReview>().notNull(),
+  },
+);
+
+export const personalLearningAutoApproval = pgTable(
+  "personal_learning_auto_approval",
+  {
+    personId: text("person_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull(),
+  },
+);
+
+export const directChatSkillShares = pgTable(
+  "direct_chat_skill_shares",
+  {
+    proposalId: uuid("proposal_id")
+      .notNull()
+      .references(() => directChatProposalReviews.proposalId, {
+        onDelete: "cascade",
+      }),
+    recipientId: text("recipient_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => intelligenceChannelMappings.threadId, {
+        onDelete: "cascade",
+      }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.proposalId, table.recipientId] }),
+    index("direct_chat_skill_shares_recipient_idx").on(
+      table.recipientId,
+      table.threadId,
     ),
   ],
 );

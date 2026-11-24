@@ -14,7 +14,12 @@ import {
   sql,
 } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { memorySources, personalMemories } from "../db/schema/memory";
+import { auditEvents } from "../db/schema/core";
+import {
+  hindsightMemoryProjections,
+  memorySources,
+  personalMemories,
+} from "../db/schema/memory";
 import { lockDefaults, recordOptOut, sourceServerId } from "./defaults";
 import type {
   IntelligenceMemory,
@@ -286,23 +291,23 @@ export function createMemoryStore(
   function eligibleRows(
     ownerUserId: string,
     eligibleSourceIds: string[],
-    formed: { botId: string; heldServerIds: ReadonlySet<string> } | undefined,
-    narrow: { term?: string; intelligenceIds?: string[] },
+    formed: { botId: string; heldSourceRefs: ReadonlySet<string> } | undefined,
+    narrow: {
+      term?: string;
+      ids?: string[];
+      intelligenceIds?: string[];
+      hindsight?: boolean;
+    },
   ) {
-    const held = [...(formed?.heldServerIds ?? [])];
+    const held = [...(formed?.heldSourceRefs ?? [])];
     const formedByThisBot = formed
       ? and(
           eq(personalMemories.formedBy, "bot"),
           eq(personalMemories.formedByAgentId, formed.botId),
-          or(
-            isNull(personalMemories.sourceRef),
-            held.length > 0
-              ? inArray(
-                  sql<string>`split_part(${personalMemories.sourceRef}, '/', 1)`,
-                  held,
-                )
-              : sql`false`,
-          ),
+          // Legacy Bot records without a verifiable source stay visible for review only.
+          held.length > 0
+            ? inArray(personalMemories.sourceRef, held)
+            : sql`false`,
         )
       : undefined;
     const personOrSource = and(
@@ -328,6 +333,17 @@ export function createMemoryStore(
           narrow.term
             ? sql`strpos(lower(${personalMemories.content}), lower(${narrow.term})) > 0`
             : undefined,
+          narrow.hindsight
+            ? and(
+                mirrorEligible,
+                sql`exists (
+                select 1 from ${hindsightMemoryProjections}
+                where ${hindsightMemoryProjections.memoryId} = ${personalMemories.id}
+                  and ${hindsightMemoryProjections.projectedVersion} = ${personalMemories.version}
+              )`,
+              )
+            : undefined,
+          narrow.ids ? inArray(personalMemories.id, narrow.ids) : undefined,
           narrow.intelligenceIds
             ? narrow.intelligenceIds.length > 0
               ? inArray(
@@ -339,10 +355,43 @@ export function createMemoryStore(
         ),
       )
       .orderBy(desc(personalMemories.updatedAt))
-      .limit(40);
+      .limit(narrow.hindsight ? 500 : (narrow.ids?.length ?? 40));
+  }
+
+  function retrieveLocal(
+    ownerUserId: string,
+    eligibleSourceIds: string[],
+    search: string,
+    formed?: { botId: string; heldSourceRefs: ReadonlySet<string> },
+  ) {
+    return eligibleRows(ownerUserId, eligibleSourceIds, formed, {
+      term: search.trim(),
+    });
   }
 
   return {
+    retrieveLocal,
+    async currentBotMemories(
+      ownerUserId: string,
+      eligibleSourceIds: string[],
+      formed: { botId: string; heldSourceRefs: ReadonlySet<string> },
+      ids: string[],
+    ) {
+      if (!ids.length) return [];
+      return eligibleRows(ownerUserId, eligibleSourceIds, formed, { ids });
+    },
+    async recallCandidates(
+      ownerUserId: string,
+      eligibleSourceIds: string[],
+      formed: { botId: string; heldSourceRefs: ReadonlySet<string> },
+      ids?: string[],
+    ) {
+      if (ids?.length === 0) return [];
+      return eligibleRows(ownerUserId, eligibleSourceIds, formed, {
+        ids,
+        hindsight: true,
+      });
+    },
     async list(ownerUserId: string): Promise<MemoryRecord[]> {
       const rows = await database
         .select()
@@ -506,22 +555,46 @@ export function createMemoryStore(
           content: patch.content,
         });
       }
-      const [row] = await database
-        .update(personalMemories)
-        .set({
-          ...patch,
-          ...(patch.content ? { reviewState: "edited" as const } : {}),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(personalMemories.id, id),
-            eq(personalMemories.ownerUserId, ownerUserId),
-            isNull(personalMemories.deletedAt),
-          ),
-        )
-        .returning();
-      if (!row) throw new MemoryNotFoundError();
+      const row = await database.transaction(async (transaction) => {
+        const [row] = await transaction
+          .update(personalMemories)
+          .set({
+            ...patch,
+            version: randomUUID(),
+            ...(patch.content ? { reviewState: "edited" as const } : {}),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(personalMemories.id, id),
+              eq(personalMemories.ownerUserId, ownerUserId),
+              isNull(personalMemories.deletedAt),
+            ),
+          )
+          .returning();
+        if (!row) throw new MemoryNotFoundError();
+        const changes = [
+          ...(patch.content ? ["memory_edited"] : []),
+          ...(patch.reviewState && !patch.content ? ["memory_reviewed"] : []),
+          ...(patch.enabled === undefined
+            ? []
+            : [patch.enabled ? "memory_enabled" : "memory_disabled"]),
+        ];
+        await transaction.insert(auditEvents).values(
+          changes.map((change) => ({
+            eventType: "configuration.changed",
+            targetType: "personal_memory",
+            targetId: row.id,
+            actorUserId: ownerUserId,
+            payload: {
+              change,
+              enabled: row.enabled,
+              reviewState: row.reviewState,
+            },
+          })),
+        );
+        return row;
+      });
       await mirror(ownerUserId, row.id);
       return row;
     },
@@ -539,23 +612,34 @@ export function createMemoryStore(
         return;
       }
       // Imported tombstones prevent the next sync from resurrecting a fact the person deleted.
-      const [row] = await database
-        .update(personalMemories)
-        .set({
-          deletedAt: new Date(),
-          enabled: false,
-          content: "",
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(personalMemories.id, id),
-            eq(personalMemories.ownerUserId, ownerUserId),
-            isNull(personalMemories.deletedAt),
-          ),
-        )
-        .returning({ id: personalMemories.id });
-      if (!row) throw new MemoryNotFoundError();
+      const row = await database.transaction(async (transaction) => {
+        const [row] = await transaction
+          .update(personalMemories)
+          .set({
+            deletedAt: new Date(),
+            enabled: false,
+            content: "",
+            version: randomUUID(),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(personalMemories.id, id),
+              eq(personalMemories.ownerUserId, ownerUserId),
+              isNull(personalMemories.deletedAt),
+            ),
+          )
+          .returning({ id: personalMemories.id });
+        if (!row) throw new MemoryNotFoundError();
+        await transaction.insert(auditEvents).values({
+          eventType: "configuration.changed",
+          targetType: "personal_memory",
+          targetId: row.id,
+          actorUserId: ownerUserId,
+          payload: { change: "memory_deleted" },
+        });
+        return row;
+      });
       await mirror(ownerUserId, row.id);
     },
     /**
@@ -752,6 +836,8 @@ export function createMemoryStore(
                 content: sql`CASE WHEN ${personalMemories.reviewState} = 'edited' OR ${personalMemories.deletedAt} IS NOT NULL THEN ${personalMemories.content} ELSE ${record.content} END`,
                 provenance: `${source.title}: ${record.provenance}`,
                 importDigest: record.digest,
+                reviewState: sql`CASE WHEN ${personalMemories.reviewState} = 'edited' OR ${personalMemories.deletedAt} IS NOT NULL THEN ${personalMemories.reviewState} ELSE 'unreviewed' END`,
+                version: randomUUID(),
                 updatedAt: new Date(),
               },
               setWhere: sql`${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
@@ -768,7 +854,7 @@ export function createMemoryStore(
           })
           .where(eq(memorySources.id, sourceId));
       });
-      // A confirmed import whose content changed upstream is out of step now; mirror it.
+      // A changed upstream import needs review again. Retire its previously accepted copy.
       await mirror(ownerUserId);
     },
     async retrieve(
@@ -780,12 +866,15 @@ export function createMemoryStore(
        * only to the Bot that formed them, and only while it still holds their source app; without
        * this argument none are returned.
        */
-      formed?: { botId: string; heldServerIds: ReadonlySet<string> },
+      formed?: { botId: string; heldSourceRefs: ReadonlySet<string> },
     ): Promise<MemoryRecord[]> {
       const term = search.trim();
-      const local = await eligibleRows(ownerUserId, eligibleSourceIds, formed, {
+      const local = await retrieveLocal(
+        ownerUserId,
+        eligibleSourceIds,
         term,
-      });
+        formed,
+      );
       if (!intelligence) return local;
       if (term) {
         /*

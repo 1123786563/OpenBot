@@ -150,6 +150,7 @@ import { VoiceChatCard } from "./voice-chat-card";
 type ChatTranscriptProps = {
   /** Server-owned thread identity, used only to correlate rendered result messages. */
   threadId?: string;
+  focusMessageId?: string;
   busy?: boolean;
   /**
    * The `/` commands, as JSON from each command to its name: tells a skill chip from a leading
@@ -2156,6 +2157,7 @@ function TranscriptRenderersWatch({
 
 export function ChatTranscript({
   threadId,
+  focusMessageId,
   busy = false,
   commandLabels = "",
   intro,
@@ -2467,6 +2469,25 @@ export function ChatTranscript({
     },
     [drawTo, goToTurnStill, pagesFrom],
   );
+  const focusedMessage = useRef<string | undefined>(undefined);
+  const focusIndex = focusMessageId
+    ? items.findIndex((item) => item.id === focusMessageId)
+    : -1;
+  useLayoutEffect(() => {
+    if (restoring) return;
+    if (!focusMessageId) {
+      focusedMessage.current = undefined;
+      return;
+    }
+    if (focusIndex < 0 || focusedMessage.current === focusMessageId) return;
+    focusedMessage.current = focusMessageId;
+    if (focusIndex < pagesFrom) {
+      jumpRef.current = focusMessageId;
+      drawTo(focusIndex);
+    } else {
+      goToTurnStill(focusMessageId);
+    }
+  }, [focusMessageId, focusIndex, restoring, pagesFrom, drawTo, goToTurnStill]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs after the commit that drew the pages a jump asked for, which is a change of `pagesFrom`.
   useLayoutEffect(() => {
     const id = jumpRef.current;

@@ -38,6 +38,7 @@ export type DeploymentCapabilities = {
    * need of it under Settings. A server from before the switch reads as `team`.
    */
   edition: "team" | "personal";
+  mode?: "openbot" | "intelligence";
   directMessageReplay?: boolean;
   skillMarket?: boolean;
   transcription?: boolean;
@@ -81,6 +82,7 @@ export function deploymentCapabilitiesQueryOptions() {
         selfHostBanner?: boolean;
         localEvaluation?: boolean;
         edition?: string;
+        mode?: "openbot" | "intelligence";
         directMessageReplay?: boolean;
         skillMarket?: boolean;
         transcription?: boolean;
@@ -93,6 +95,9 @@ export function deploymentCapabilitiesQueryOptions() {
         selfHostBanner: body.selfHostBanner === true,
         localEvaluation: body.localEvaluation === true,
         edition: body.edition === "personal" ? "personal" : "team",
+        ...(body.mode === "openbot" || body.mode === "intelligence"
+          ? { mode: body.mode }
+          : {}),
         directMessageReplay: body.directMessageReplay === true,
         skillMarket: body.skillMarket === true,
         transcription: body.transcription === true,

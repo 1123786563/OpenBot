@@ -112,6 +112,8 @@ fake.calls = [];
 export async function invoke(command) {
   fake.calls.push(command);
   switch (command) {
+    case "saved_cloud_origin":
+      return null;
     case "windows_restart_pending":
     case "take_ai_connection_change":
     case "already_running":

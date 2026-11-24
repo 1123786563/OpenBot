@@ -1,5 +1,19 @@
+import {
+  CONTEXT_REVOKED,
+  CONTEXT_REVOKED_MESSAGE,
+  createRunContext,
+  RunContextRevokedError,
+  trackRunContext,
+  verifyRunContext,
+  withRunContext,
+} from "@openbot/toolkit/run-context";
+import { and, eq, exists, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
+import type { createDirectChatRoutes } from "../channels/direct-chat";
+import { matchingRun, stopDirectChatRun } from "../channels/direct-chat-replay";
+import type { GroupConversations } from "../channels/group";
+import { approvalRequests, directChatRuns } from "../db/schema";
 import {
   decisionInvalidated,
   runWithDecisionAccess,
@@ -12,18 +26,33 @@ import {
   continueApproval,
 } from "./continuation";
 import type { ApprovalResumeDependencies, ApprovalService } from "./service";
-import { ApprovalRefusedError } from "./types";
+import { type ApprovalAction, ApprovalRefusedError } from "./types";
 
-/** Claim and retry decided Approvals through the same queue as other work items. */
+/**
+ * One pass of the approval resume loop: claim a decided approval, carry it out, and pick the waiting
+ * turn back up — a responsibility run, a group conversation or a routine run — then tell the channel.
+ *
+ * Moved out of index.ts verbatim. `notify` is taken as a function because index.ts assigns delivery
+ * after this loop is created: the loop reads it when it runs, never when it is built.
+ */
 export function createApprovalResumeTick(
   deps: ApprovalContinuationDependencies & {
     approvalQueue: WorkQueue;
     approvalOwner: string;
-    approvalService: ApprovalService;
     executeApprovedAction: ReturnType<
       typeof import("./execute").createApprovedActionExecutor
     >;
+    contextCurrent?: (action: ApprovalAction) => Promise<boolean>;
+    traceRuns?: boolean;
     slackGoalAction?: ReturnType<typeof createSlackGoalAction>;
+    groupConversations: Pick<
+      GroupConversations,
+      "continueWaiting" | "pauseWaiting"
+    >;
+    backgroundApproval?: ReturnType<
+      typeof createDirectChatRoutes
+    >["backgroundApproval"];
+    approvalService: ApprovalService;
   },
 ): () => Promise<void> {
   const {
@@ -32,8 +61,21 @@ export function createApprovalResumeTick(
     approvalService,
     database,
     executeApprovedAction,
+    groupConversations,
+    approvalContinuationRunner,
     responsibilityStore,
   } = deps;
+  const contextCurrent = (action: ApprovalAction) =>
+    action.continuation?.sourceVersions?.length
+      ? (deps.contextCurrent?.(action) ?? Promise.resolve(false))
+      : Promise.resolve(true);
+  const withSavedContext = <T>(action: ApprovalAction, run: () => Promise<T>) =>
+    withRunContext(createRunContext(), async () => {
+      const versions = action.continuation?.sourceVersions;
+      if (versions?.length)
+        trackRunContext(() => contextCurrent(action), versions);
+      return run();
+    });
   return async () => {
     try {
       const [item] = await approvalQueue.claim({
@@ -96,15 +138,73 @@ export function createApprovalResumeTick(
           await finish();
           return;
         }
+        const background = await deps.backgroundApproval?.(
+          request.action,
+          request.id,
+        );
+        const pause = async (beforeExecution = false) => {
+          const { threadId, runId } = request.action;
+          if (threadId)
+            await database.transaction(async (tx) => {
+              const key = { threadId, runId };
+              if (background) {
+                // A consumed approval with a saved success resolves dispatch even on redelivery.
+                // An execution error can leave the effect uncertain.
+                const savedSuccess = tx
+                  .select({ id: approvalRequests.id })
+                  .from(approvalRequests)
+                  .where(
+                    and(
+                      eq(approvalRequests.id, request.id),
+                      eq(approvalRequests.ownerUserId, input.ownerUserId),
+                      eq(approvalRequests.runId, runId),
+                      sql`${approvalRequests.action}->>'threadId' = ${threadId}`,
+                      isNotNull(approvalRequests.consumedAt),
+                      sql`${approvalRequests.result}->>'content' is not null`,
+                      sql`${approvalRequests.result}->>'error' is null`,
+                    ),
+                  );
+                // Only the worker that consumed this checkpoint can prove it skipped execution.
+                await tx
+                  .update(directChatRuns)
+                  .set({ externalOutcome: beforeExecution ? null : "executed" })
+                  .where(
+                    and(
+                      matchingRun(key),
+                      eq(directChatRuns.waitingApprovalId, request.id),
+                      inArray(directChatRuns.externalOutcome, [
+                        "dispatching",
+                        "unknown",
+                      ]),
+                      beforeExecution ? undefined : exists(savedSuccess),
+                    ),
+                  );
+              }
+              await stopDirectChatRun(
+                tx,
+                key,
+                CONTEXT_REVOKED,
+                Boolean(deps.traceRuns),
+                { waitingApprovalId: background ? request.id : undefined },
+              );
+            });
+          if (!background)
+            await groupConversations.pauseWaiting(
+              input.ownerUserId,
+              request.id,
+            );
+        };
         const resumeDependencies: ApprovalResumeDependencies = {
           // Asked before the action runs: with Use Bots off, or the Bot's model off the allowlist,
           // nothing is carried out and the refusal is final rather than retried.
           refusal: (action) =>
-            headlessTurnRefusal({
-              ownerUserId: action.actorId,
-              agentId: action.botId,
-              threadId: action.threadId,
-            }),
+            background
+              ? background.check()
+              : headlessTurnRefusal({
+                  ownerUserId: action.actorId,
+                  agentId: action.botId,
+                  threadId: action.threadId,
+                }),
           validate: (action) => {
             if (action.dispatch === "corsair-slack-goal")
               throw new ApprovalRefusedError(
@@ -114,26 +214,56 @@ export function createApprovalResumeTick(
               executeApprovedAction(action),
             );
           },
-          execute: async (action) => {
-            const request = await approvalService.store.get(
-              input.ownerUserId,
-              input.approvalId,
-            );
-            if (request.action.executionInvalidated)
-              throw new Error(decisionInvalidated);
-            return runWithDecisionAccess(
-              database,
-              input.ownerUserId,
-              {
-                runId: action.runId,
-                createdAt: request.createdAt,
-                epoch: request.action.executionEpoch,
-              },
-              (execution) => executeApprovedAction(action, execution),
-            );
+          beforeConsume: (action) => withSavedContext(action, verifyRunContext),
+          execute: (action) =>
+            withSavedContext(action, async () => {
+              try {
+                await verifyRunContext();
+              } catch (error) {
+                if (error instanceof RunContextRevokedError) await pause(true);
+                throw error;
+              }
+              if (request.action.executionInvalidated)
+                throw new Error(decisionInvalidated);
+              return runWithDecisionAccess(
+                database,
+                input.ownerUserId,
+                {
+                  runId: action.runId,
+                  createdAt: request.createdAt,
+                  epoch: request.action.executionEpoch,
+                },
+                (execution) => executeApprovedAction(action, execution),
+              );
+            }),
+          continue: async (outcome) => {
+            if (
+              outcome.result.error === CONTEXT_REVOKED_MESSAGE ||
+              !(await contextCurrent(request.action))
+            ) {
+              await pause();
+              return;
+            }
+            // The original Routine or handoff worker resumes the durable Run.
+            if (background) return;
+            try {
+              return await continueApproval(
+                {
+                  ...deps,
+                  approvalContinuationRunner: (turn) =>
+                    withSavedContext(request.action, async () => {
+                      await verifyRunContext();
+                      return approvalContinuationRunner(turn);
+                    }),
+                },
+                input.ownerUserId,
+                outcome,
+              );
+            } catch (error) {
+              if (!(error instanceof RunContextRevokedError)) throw error;
+              await pause();
+            }
           },
-          continue: (outcome) =>
-            continueApproval(deps, input.ownerUserId, outcome),
         };
         abandon = (reason) =>
           approvalService.abandon(

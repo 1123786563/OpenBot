@@ -201,7 +201,11 @@ export function lastStopped(
     stopped.phrases === undefined
   )
     return undefined;
-  if (state.learning && joinedLearningContainer(state.learning) === null)
+  if (
+    state.learning &&
+    state.learning.state !== "openbot" &&
+    joinedLearningContainer(state.learning) === null
+  )
     return undefined;
   return {
     recordingId: stopped.recordingId,

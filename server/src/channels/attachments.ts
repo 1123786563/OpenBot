@@ -938,6 +938,7 @@ export function createChannelAttachmentRoutes(
             and channel_memberships.user_id = ${actor.id}::text
           where channels.id = ${channelId}::text
             and channels.deleted_at is null
+          for key share of channels
         ),
         staged as (
           select count(*)::int as waiting

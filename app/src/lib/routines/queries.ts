@@ -75,6 +75,7 @@ export function routinesAccessDenied(error: unknown): boolean {
 /** One firing of a routine, scheduled or Run now. */
 export type RoutineRunRecord = {
   id: string;
+  conversationRunId?: string;
   status: "running" | "succeeded" | "failed" | "skipped" | "waiting" | "paused";
   startedAt: string;
   finishedAt: string | null;

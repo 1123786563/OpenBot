@@ -341,7 +341,7 @@ h2 {
  * Buttons are OpenBot's `Button`: sentence case in the body face, 10px corners, the near-black
  * primary fill. `lg` (40px) on these screens, as the app's own onboarding sets its Continue.
  */
-button {
+button:not(.astryx-button) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -368,7 +368,7 @@ button {
     opacity 150ms ease-out;
 }
 
-button:hover:not(:disabled) {
+button:not(.astryx-button):hover:not(:disabled) {
   background: var(--action-hover);
 }
 
@@ -376,13 +376,13 @@ button:hover:not(:disabled) {
  * Pressed is instant. With only a hover fade, nothing changed at the moment of the press, and the
  * click read as arriving late.
  */
-button:active:not(:disabled) {
+button:not(.astryx-button):active:not(:disabled) {
   transform: translateY(1px);
   transition: none;
 }
 
 /* The app's disabled button: the same button at half strength. */
-button:disabled {
+button:not(.astryx-button):disabled {
   opacity: 0.5;
   cursor: default;
 }

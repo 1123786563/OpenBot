@@ -21,7 +21,6 @@
  * A second half-right copy grown next to it is the duplicated firing mechanism #235 exists to
  * prevent.
  */
-import { createHash } from "node:crypto";
 import { TURN_LIMITS } from "@openbot/toolkit/limits";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { RoutineRefusedError, type RoutineStore } from "./store";
@@ -415,12 +414,10 @@ export async function dispatchClaimedRoutines(
        * DISPATCH failures only, and a turn that failed is final for this firing — the fatigue rule
        * owns that, not this loop.
        */
-      const { runId } = routine.budgetId
-        ? await options.routineStore.insertRun(
-            routineId,
-            createHash("sha256").update(item.key).digest("hex"),
-          )
-        : await options.routineStore.insertRun(routineId);
+      const { runId } = await options.routineStore.insertRun(
+        routineId,
+        item.key,
+      );
       /*
        * A dispatch that throws leaves the row this attempt opened with no status, AND NOTHING HERE
        * CLOSES IT — the reaper above does, once the row is older than any turn could still be

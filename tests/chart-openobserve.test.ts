@@ -182,12 +182,6 @@ test.skipIf(!helm)(
       "config.otel.logsEndpoint=https://collector.example/ingest",
       "--set-string",
       "secrets.existingSecret=deployment-secrets",
-      "--set",
-      "intelligence.enabled=false",
-      "--set-string",
-      "config.intelligence.apiUrl=https://intelligence.example",
-      "--set-string",
-      "config.intelligence.gatewayWsUrl=wss://intelligence.example",
     );
     expect(server(docs).env).toContainEqual({
       name: "OTEL_EXPORTER_OTLP_LOGS_HEADERS",

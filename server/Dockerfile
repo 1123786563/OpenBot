@@ -47,6 +47,13 @@ RUN bun run --cwd app build
 
 FROM oven/bun:1.4.3 AS runtime
 
+# `pg_isready` for the chart's migrations Job and any shell-level database wait: the image ships
+# without it otherwise, and the Job's wait loop fails with "pg_isready: not found" on a real
+# install (CI only renders the chart, so nothing there pulls the image to notice).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client \
+  && rm -rf /var/lib/apt/lists/*
+
 # Not root. The API opens a socket and talks to Postgres; neither needs privileges, and a Chromium
 # container is a separate image with its own reasons.
 RUN groupadd --system --gid 1001 openbot \

@@ -8,8 +8,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
  * the gateway decides before the browser acts, the browser acts, and the trail records it. Nearly
  * every defect worth catching late lives in those joins rather than inside any one of them.
  *
- * Not part of `bun run test`. It needs a deployment that is actually up, with a licence, a model key
- * and Docker, so it is asked for by name:
+ * Not part of `bun run test`. It needs a deployment that is actually up, with a model key and Docker, so it is asked for by name:
  *
  *   bash scripts/start.sh
  *   bun run test:smoke
@@ -106,19 +105,8 @@ describe.skipIf(!asked)("a deployment that is up", () => {
     const capabilities = await json<{ mode: string; durableHistory: boolean }>(
       "/api/capabilities",
     );
-    expect(capabilities.mode).toBe("intelligence");
+    expect(capabilities.mode).toBe("openbot");
     expect(capabilities.durableHistory).toBe(true);
-  });
-
-  test("holds a licence the runtime accepts, and has Bots registered", async () => {
-    // A licence the runtime refuses leaves the product running and quietly degraded, which is worth
-    // failing a smoke test over.
-    const info = await json<{
-      licenseStatus: string;
-      agents: Record<string, unknown>;
-    }>("/api/copilotkit/info");
-    expect(info.licenseStatus).toBe("valid");
-    expect(Object.keys(info.agents).length).toBeGreaterThan(0);
   });
 
   test("mints thread ids that say which deployment they came from", async () => {

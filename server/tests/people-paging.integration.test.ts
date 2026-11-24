@@ -117,6 +117,7 @@ describe("reading the people in a deployment", () => {
     let cursor: string | undefined;
     for (let page = 0; page < 20; page += 1) {
       const result = await store.list({
+        search: PREFIX,
         limit: 1,
         ...(cursor ? { cursor } : {}),
       });

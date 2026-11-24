@@ -25,6 +25,26 @@ const WORD = /\bIntelligence\b/;
  */
 const NOT_SHOWN: { file: string; text: string; why: string }[] = [
   {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Waiting for Intelligence to finish starting.",
+    why: "a runtime diagnostic written to the structured deployment log",
+  },
+  {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Could not read Intelligence entitlements.",
+    why: "a runtime diagnostic written to the structured deployment log",
+  },
+  {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Intelligence did not confirm entitlement.",
+    why: "a runtime diagnostic written to the structured deployment log",
+  },
+  {
+    file: "server/src/telemetry/runtime-log.ts",
+    text: "Intelligence's licence has expired.",
+    why: "a runtime diagnostic written to the structured deployment log",
+  },
+  {
     file: "server/src/config.ts",
     text: "CopilotKit Intelligence is required and is not configured",
     why: "a boot refusal, printed to the operator's terminal before the server listens",
@@ -63,26 +83,6 @@ const NOT_SHOWN: { file: string; text: string; why: string }[] = [
     file: "server/src/intelligence-entitlement-check.ts",
     text: "Intelligence did not confirm this deployment's entitlement",
     why: "the boot log's advice",
-  },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Waiting for Intelligence to finish starting.",
-    why: "the boot log’s advice",
-  },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Could not read Intelligence entitlements.",
-    why: "the boot log’s advice",
-  },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Intelligence did not confirm entitlement.",
-    why: "the boot log’s advice",
-  },
-  {
-    file: "server/src/telemetry/runtime-log.ts",
-    text: "Intelligence's licence has expired.",
-    why: "the boot log’s advice",
   },
 ];
 

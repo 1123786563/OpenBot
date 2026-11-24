@@ -60,19 +60,18 @@ export async function reconcileBillingPilotMigrations(
   tx: TransactionSql,
   migrationsFolder: string,
   folder: readonly FolderMigration[],
+  main: readonly FolderMigration[],
   applied: AppliedMigration[],
   { migrationsSchema, migrationsTable }: MigrationsJournal,
 ): Promise<AppliedMigration[]> {
-  const sharedEnd = folder.findIndex(({ tag }) => tag === firstSharedSaas);
-  const firstCredit = folder.findIndex(
-    ({ tag }) => tag === sharedCreditTags[0],
-  );
-  const newBilling = folder.findIndex(
+  const sharedEnd = main.findIndex(({ tag }) => tag === firstSharedSaas);
+  const firstCredit = main.findIndex(({ tag }) => tag === sharedCreditTags[0]);
+  const newBilling = main.findIndex(
     ({ tag }) => tag === "0120_test_credit_execution_budgets",
   );
-  const corsair = folder.filter(({ tag }) => corsairTags.has(tag));
-  const market = folder.filter(({ tag }) => marketTags.has(tag));
-  const sameCreditSql = folder.slice(firstCredit, firstCredit + 3);
+  const corsair = main.filter(({ tag }) => corsairTags.has(tag));
+  const market = main.filter(({ tag }) => marketTags.has(tag));
+  const sameCreditSql = main.slice(firstCredit, firstCredit + 3);
   if (
     sharedEnd !== 93 ||
     newBilling !== 120 ||
@@ -84,8 +83,8 @@ export async function reconcileBillingPilotMigrations(
     return applied;
   }
 
-  const shared = [...folder.slice(0, sharedEnd), ...corsair];
-  const billingOnly = folder.slice(newBilling, 145);
+  const shared = [...main.slice(0, sharedEnd), ...corsair];
+  const billingOnly = main.slice(newBilling, 145);
   const billing = [...sameCreditSql, ...billingOnly];
   const appliedByStamp = new Map(
     applied.map(({ createdAt, hash }) => [createdAt, hash]),
@@ -118,17 +117,17 @@ export async function reconcileBillingPilotMigrations(
     billing.slice(0, -1),
   );
   const previouslyMerged = previousPrefix(
-    folder.slice(0, newBilling - 1),
+    main.slice(0, newBilling - 1),
     [],
     billingOnly,
   );
   const futureApproval = previousPrefix(
-    folder.slice(0, newBilling - 1),
+    main.slice(0, newBilling - 1),
     [
       futureApprovalStamp,
       ...billingOnly.map(({ when }) => when + futureBillingStampShift),
     ],
-    folder.slice(newBilling - 1, 145),
+    main.slice(newBilling - 1, 145),
   );
   const previous = [
     { entries: prior, firstStamp: priorSharedCreditStamps[0] },
@@ -145,10 +144,10 @@ export async function reconcileBillingPilotMigrations(
   const alreadyApplied = new Set(
     previous.map(({ migration }) => migration.tag),
   );
-  const lastAppliedIndex = folder.findLastIndex(({ tag }) =>
+  const lastAppliedIndex = main.findLastIndex(({ tag }) =>
     alreadyApplied.has(tag),
   );
-  const throughLast = folder.slice(0, lastAppliedIndex + 1);
+  const throughLast = main.slice(0, lastAppliedIndex + 1);
   const journal = tx`${tx(migrationsSchema)}.${tx(migrationsTable)}`;
   for (const {
     migration: { when, hash },
@@ -159,10 +158,15 @@ export async function reconcileBillingPilotMigrations(
         where created_at = ${previousStamp} and hash = ${hash}`;
     }
   }
-  const migrations = readMigrationFiles({ migrationsFolder });
-  for (const [index, { when, hash, tag }] of throughLast.entries()) {
+  const migrations = new Map(
+    readMigrationFiles({ migrationsFolder }).map((migration, index) => [
+      folder[index]?.tag,
+      migration,
+    ]),
+  );
+  for (const { when, hash, tag } of throughLast) {
     if (alreadyApplied.has(tag)) continue;
-    const migration = migrations[index];
+    const migration = migrations.get(tag);
     if (migration?.hash !== hash || migration.folderMillis !== when) {
       throw new Error(
         `Migration ${tag} changed while reconciling the billing pilot journal.`,

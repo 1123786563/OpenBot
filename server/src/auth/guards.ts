@@ -39,7 +39,9 @@ export type AppVariables = {
   actor: AuthenticatedActor;
 };
 
-export function createRoleRepository(database: Database): RoleRepository {
+export function createRoleRepository(
+  database: Pick<Database, "select">,
+): RoleRepository {
   return {
     rolesForUser: async (userId) => {
       const records = await database

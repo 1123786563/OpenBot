@@ -82,6 +82,8 @@ function OrganizationHome() {
         <RefreshControl
           refreshing={conversations.pending}
           onRefresh={() => {
+            setOlder([]);
+            setOlderCursor(undefined);
             void conversations.refresh();
           }}
         />
@@ -166,20 +168,21 @@ function OrganizationHome() {
             }}
           />
           <Text style={{ fontSize: 20, fontWeight: "600" }}>Conversations</Text>
-          {allConversations.map((conversation) => (
-            <Link
-              key={conversation.id}
-              href={{
-                pathname: "/conversation",
-                params: { channelId: conversation.id },
-              }}
-              style={{ paddingVertical: 12, color: "#2563eb" }}
-            >
-              {conversation.name}
-              {conversation.active ? "" : " (inactive)"}
-            </Link>
-          ))}
-          {nextCursor && (
+          {!conversations.error &&
+            allConversations.map((conversation) => (
+              <Link
+                key={conversation.id}
+                href={{
+                  pathname: "/conversation",
+                  params: { channelId: conversation.id },
+                }}
+                style={{ paddingVertical: 12, color: "#2563eb" }}
+              >
+                {conversation.name}
+                {conversation.active ? "" : " (inactive)"}
+              </Link>
+            ))}
+          {nextCursor && !conversations.error && (
             <Button
               title="Older conversations"
               disabled={busy}
@@ -198,9 +201,7 @@ function OrganizationHome() {
             />
           )}
           {allConversations.length === 0 && (
-            <Text>
-              No conversations yet. Create one in OpenBot on your computer.
-            </Text>
+            <Text>No conversations yet. Open a Bot profile to start one.</Text>
           )}
           <Button
             disabled={busy}

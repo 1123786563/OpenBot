@@ -20,6 +20,7 @@ import {
   speechRecognition,
   startNarration,
 } from "@/lib/browser/narration";
+import { desktopConsentQuery, desktopShell } from "@/lib/desktop/shell";
 import type { DesktopSpeechEvent } from "@/lib/desktop/speech";
 import { installChrome } from "./browser-narration.fixture";
 import {
@@ -78,6 +79,19 @@ async function narrate(options: DesktopShellOptions) {
   await new Promise((resolve) => setTimeout(resolve, 10));
   return { narration, phrases, speaking, statuses, calls };
 }
+
+test("a cloud webview uses browser behavior even when Tauri supplies its JS API", () => {
+  const { shell } = installDesktopShell();
+  Object.assign(shell, { metadata: { currentWebview: { label: "main" } } });
+  expect(desktopShell()).toBe(shell);
+  expect(desktopConsentQuery()).toBe("&from=desktop");
+
+  Object.assign(shell, {
+    metadata: { currentWebview: { label: "cloud-connection-0" } },
+  });
+  expect(desktopShell()).toBeNull();
+  expect(desktopConsentQuery()).toBe("");
+});
 
 describe("which recognition narration listens with", () => {
   test("in the Desktop window, the desktop app's, even where the web view has a recognition of its own", () => {

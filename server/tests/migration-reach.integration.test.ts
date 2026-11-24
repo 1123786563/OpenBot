@@ -10,6 +10,7 @@ import {
   type MigrationsJournal,
   MigrationsOutOfReachError,
 } from "../src/db/apply-migrations";
+import { isIntelligenceMigration } from "../src/db/merge-migration-histories";
 import { readMigrationFolder } from "../src/db/migration-reach";
 import { testDatabaseUrl } from "./support/database";
 
@@ -125,6 +126,8 @@ test.each([
   { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Bifrost main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "current Personal SaaS", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "published main", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "published Intelligence", mainThrough: 93, trialLength: 0 },
   { startingPoint: "initial billing pilot", mainThrough: 93, trialLength: 0 },
   { startingPoint: "latest billing pilot", mainThrough: 93, trialLength: 0 },
   { startingPoint: "partial billing pilot", mainThrough: 93, trialLength: 0 },
@@ -146,7 +149,8 @@ test.each([
     const bifrost = migrations.filter(({ tag }) =>
       /_(bifrost_market_reviews|skill_market_equivalences)$/.test(tag),
     );
-    const saas = migrations
+    const main = migrations.filter((entry) => !isIntelligenceMigration(entry));
+    const saas = main
       .slice(93, 117)
       .filter((entry) => !corsair.includes(entry));
     const initialBilling = startingPoint === "initial billing pilot";
@@ -158,13 +162,13 @@ test.each([
     const mergedBilling = startingPoint === "merged billing PR";
     const approvalWithFutureStamp = startingPoint.startsWith("future-dated");
     const futureBilling = startingPoint === "future-dated billing PR";
-    const olderBillingOnly = migrations.slice(120, 145);
-    const billing = migrations.slice(110, 113).map((entry, index) => ({
+    const olderBillingOnly = main.slice(120, 145);
+    const billing = main.slice(110, 113).map((entry, index) => ({
       ...entry,
       when: (initialBilling ? 1795189761200 : 1795415414732) + index,
     }));
-    const historical = [
-      ...migrations.slice(0, mainThrough),
+    const historicalSaasOrMain = [
+      ...main.slice(0, mainThrough),
       ...(startingPoint === "Corsair main" ||
       startingPoint === "Bifrost main" ||
       billingPilot
@@ -176,7 +180,7 @@ test.each([
       ...(startingPoint === "current Personal SaaS" ? saas : []),
       ...(billingPilot ? billing.slice(0, partialBilling ? 1 : 3) : []),
       ...(approvalWithFutureStamp
-        ? migrations.slice(119, 120).map((entry) => ({
+        ? main.slice(119, 120).map((entry) => ({
             ...entry,
             when: 1795520000000,
           }))
@@ -194,6 +198,18 @@ test.each([
         return { ...entry, when };
       }),
     ];
+    const historical =
+      startingPoint === "published main"
+        ? main.slice(0, 145)
+        : startingPoint === "published Intelligence"
+          ? migrations.filter(
+              (entry) =>
+                main.slice(0, 93).includes(entry) ||
+                isIntelligenceMigration(entry) ||
+                corsair.includes(entry) ||
+                bifrost.includes(entry),
+            )
+          : historicalSaasOrMain;
     const legacyFolder = await folderOf(
       await Promise.all(
         historical.map(async ({ tag, when }) => ({
@@ -254,6 +270,7 @@ test.each([
       }
       expect(await exists(client, directChat)).toBe(true);
       expect(await exists(client, "personal_intelligence_runs")).toBe(true);
+      expect(await exists(client, "opik_runs")).toBe(true);
       expect(await exists(client, "skill_market_installations")).toBe(true);
       expect(await exists(client, "skill_market_version_disablements")).toBe(
         true,

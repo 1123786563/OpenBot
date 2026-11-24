@@ -1,3 +1,4 @@
+import { Button } from "@astryxdesign/core/Button";
 import { type ReactNode, useState } from "react";
 import {
   EarlyDownloadsLine,
@@ -17,7 +18,8 @@ export const BOOK_A_DEMO = "https://open.bot/business";
  * one booking link. Usage data is not said here: it is the last screen's choice
  * (`UsageDataChoice`).
  *
- * The big downloads start while this screen shows, before Install is clicked, and its line says how
+ * In local-only setup the big downloads start while this screen shows. When cloud setup is available,
+ * Install starts the downloads. The line says how
  * far they are (`EarlyDownloadsLine`). Once they are done it says nothing: Install is the next step
  * either way.
  *
@@ -28,9 +30,13 @@ export const BOOK_A_DEMO = "https://open.bot/business";
  */
 export function Welcome({
   onInstall,
+  beforeInstall,
+  onCloud,
   failure,
 }: {
   onInstall: () => void;
+  beforeInstall?: () => Promise<void>;
+  onCloud?: () => void;
   /** A failure from setup itself, shown inside this card rather than under it. */
   failure?: ReactNode;
 }) {
@@ -39,7 +45,12 @@ export function Welcome({
   const short = downloads?.state === "short";
   const install = () => {
     setChecking(true);
-    void earlyDownloadsMeasured().then((now) => {
+    const measured = beforeInstall
+      ? beforeInstall()
+          .catch(() => {})
+          .then(earlyDownloadsMeasured)
+      : earlyDownloadsMeasured();
+    void measured.then((now) => {
       setChecking(false);
       if (now?.state !== "short") onInstall();
     });
@@ -57,8 +68,8 @@ export function Welcome({
       </div>
       <h1>Set up OpenBot (self-contained)</h1>
       <p className="lede big">
-        This version of OpenBot is fully self-contained and runs entirely on
-        your computer, including the OpenBot backend.
+        Install OpenBot to run it entirely on this computer, including the
+        OpenBot backend.
       </p>
       <p className="lede big">
         Depending on your internet speed, setup can take between 1 and 10
@@ -74,6 +85,13 @@ export function Welcome({
         <button type="button" disabled={short || checking} onClick={install}>
           Install
         </button>
+        {onCloud && (
+          <Button
+            label="Connect to OpenBot Cloud"
+            isDisabled={checking}
+            onClick={onCloud}
+          />
+        )}
       </div>
       <EarlyDownloadsLine firstScreen />
       {failure}

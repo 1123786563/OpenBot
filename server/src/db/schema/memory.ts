@@ -6,6 +6,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 import type { MemoryRecord, MemorySource } from "../../memory/types";
 import { agents, users } from "./core";
@@ -91,6 +92,7 @@ export const personalMemories = pgTable(
     intelligenceMemoryId: text("intelligence_memory_id"),
     /** sha256 of the content last written to Intelligence, so an edit is mirrored exactly once. */
     intelligenceDigest: text("intelligence_digest"),
+    version: uuid("version").notNull().defaultRandom(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -118,5 +120,26 @@ export const personalMemories = pgTable(
     uniqueIndex("personal_memories_formed_digest_per_bot_idx")
       .on(table.ownerUserId, table.formedByAgentId, table.importDigest)
       .where(sql`${table.formedBy} = 'bot'`),
+  ],
+);
+
+// This ledger survives cascades of the source, Bot, owner and memory row so remote
+// documents can still be deleted after a dependency outage.
+export const hindsightMemoryProjections = pgTable(
+  "hindsight_memory_projections",
+  {
+    memoryId: text("memory_id").primaryKey(),
+    ownerUserId: text("owner_user_id").notNull(),
+    projectedVersion: uuid("projected_version"),
+    cleanupCompletedAt: timestamp("cleanup_completed_at", {
+      withTimezone: true,
+    }),
+    firstDeletedAt: timestamp("first_deleted_at", { withTimezone: true }),
+    nextCheckAt: timestamp("next_check_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("hindsight_memory_projections_due_idx").on(table.nextCheckAt),
   ],
 );

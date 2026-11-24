@@ -1,5 +1,6 @@
 import { DECLINED_BY_PERSON } from "@openbot/shared/approval-outcomes";
 import { connectAppRefusal } from "@openbot/shared/connect-prompt";
+import { verifyRunContext } from "@openbot/toolkit/run-context";
 import { and, eq, isNull } from "drizzle-orm";
 import { safetyRequirement } from "../../approvals/policy";
 import {
@@ -809,6 +810,7 @@ export function callMethods(context: StoreContext) {
               ...detail,
             },
           });
+        await verifyRunContext();
         const result = await write
           .send(approval.approvalId, approval.approvalDigest)
           .catch(async (error: unknown) => {
@@ -1008,13 +1010,18 @@ export function callMethods(context: StoreContext) {
                 null,
               );
           }
-          return effect === "read"
-            ? withReadRetries(
-                callVendor,
-                undefined,
-                (error) => error instanceof MarketRunPaused,
-              )
-            : invoke(callVendor);
+          if (effect === "read") {
+            return withReadRetries(
+              async () => {
+                await verifyRunContext();
+                return callVendor();
+              },
+              undefined,
+              (error) => error instanceof MarketRunPaused,
+            );
+          }
+          await verifyRunContext();
+          return invoke(callVendor);
         };
         const result = !corsairScope
           ? await dispatch()

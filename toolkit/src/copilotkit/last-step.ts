@@ -1,3 +1,4 @@
+import { verifyRunContext } from "../run-context";
 import {
   type BuiltInAgentClassicConfig,
   type BuiltInAgentConfiguration,
@@ -282,6 +283,7 @@ ${part.delta.trimStart()}`;
           const nextCall = again(current, text, nudge);
           let next: StreamResult;
           try {
+            await verifyRunContext();
             next = await inner.doStream(nextCall);
           } catch {
             // A nudge is a courtesy to the run; failing to send one must not fail the step it follows.
