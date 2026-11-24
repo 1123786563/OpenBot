@@ -84,9 +84,12 @@ test("only the newest waiting card takes the keys", async () => {
   expect(second).toEqual([["production", ""]]);
   expect(
     (
-      within(view.getByRole("group", { name: "First" })).getByRole("radio", {
-        name: "Staging",
-      }) as HTMLInputElement
+      within(view.getByRole("radiogroup", { name: "First" })).getByRole(
+        "radio",
+        {
+          name: "Staging",
+        },
+      ) as HTMLInputElement
     ).checked,
   ).toBe(true);
 });
@@ -123,7 +126,7 @@ test("the words row needs words before it can be sent", async () => {
   const user = userEvent.setup({ document });
   await user.keyboard("3");
   const button = await view.findByRole("button", { name: "Send" });
-  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(button.getAttribute("aria-disabled")).toBe("true");
 });
 
 test("answered, it folds into one line with the answer, and takes no keys", async () => {
