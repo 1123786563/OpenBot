@@ -136,9 +136,11 @@ test("Activity leaves out choosing tools for a run, in every view", async () => 
     },
   ]);
   expect(view.container.textContent).not.toContain("Choose tools for a run");
-  await userEvent
-    .setup({ document })
-    .click(view.getByRole("button", { name: "Nobody watching" }));
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "View: Everything" }));
+  await user.click(
+    await view.findByRole("menuitemradio", { name: "Background actions" }),
+  );
   await waitFor(() => expect(view.getByText("No matches")).toBeTruthy());
 });
 

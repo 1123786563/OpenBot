@@ -1,24 +1,18 @@
 import { ruleTitle } from "@openbot/shared/tool-name";
 import {
   IconChevronRight,
+  IconListSearch,
   IconLock,
   IconPlus,
   IconShieldCheck,
 } from "@tabler/icons-react";
 import { type UseMutationResult, useQuery } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { type RefObject, useId, useRef, useState } from "react";
 import { governanceOverlay } from "@/components/astryx-pilot/governance";
+import { PageEmpty } from "@/components/layout/page-shell";
 import { ReadError } from "@/components/layout/read-status";
+import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -44,6 +38,7 @@ import {
   type HostCommandPolicy,
   type RuleBehaviour,
 } from "@/lib/approvals";
+import { isComposing } from "@/lib/composing";
 import {
   type HostFolderGrant,
   hostAccessQueryOptions,
@@ -67,6 +62,7 @@ export const HOST_LABELS: Record<HostCommandPolicy, string> = {
  * are handled. The keys of `labels` are the values, in the order they are offered.
  */
 export function LabelSelect<T extends string>({
+  className,
   id,
   label,
   labels,
@@ -74,6 +70,7 @@ export function LabelSelect<T extends string>({
   disabled,
   onChange,
 }: {
+  className?: string;
   id?: string;
   /** The trigger's accessible name, where no visible label names it. */
   label?: string;
@@ -90,7 +87,7 @@ export function LabelSelect<T extends string>({
       }}
       value={value}
     >
-      <SelectTrigger aria-label={label} id={id}>
+      <SelectTrigger aria-label={label} className={className} id={id}>
         <SelectValue>{labels[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent {...governanceOverlay}>
@@ -144,6 +141,108 @@ function folderWords(
     : "in a folder that's no longer shared";
 }
 
+export function filterApprovalRules(
+  rules: ApprovalRuleRow[],
+  query: string,
+  botName: (id: string) => string,
+  team = false,
+) {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return rules;
+  return rules.filter((rule) => {
+    const text = [
+      ruleTitle(rule).title,
+      rule.toolRef,
+      rule.scope,
+      rule.effect,
+      EFFECT_WORDS[rule.effect],
+      rule.botId === "*" ? "all bots every bot" : botName(rule.botId),
+      rule.botId,
+      rule.account,
+      BEHAVIOUR_LABELS[rule.behaviour],
+      team ? TEAM_BEHAVIOUR_LABELS[rule.behaviour] : undefined,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return terms.every((word) => text.includes(word));
+  });
+}
+
+export const ruleRowId = (id: string, team?: boolean) =>
+  `${team ? "team-" : ""}approval-rule-${id}`;
+
+export function RuleSearch({
+  label,
+  emptyTitle,
+  value,
+  onChange,
+  inputRef,
+  total,
+  matches,
+  first,
+  team,
+}: {
+  label: string;
+  emptyTitle: string;
+  value: string;
+  onChange: (value: string) => void;
+  inputRef: RefObject<HTMLInputElement | null>;
+  total: number;
+  matches: number;
+  first: ApprovalRuleRow | undefined;
+  team?: boolean;
+}) {
+  if (!total && !value) return null;
+  const filtering = Boolean(value.trim());
+  return (
+    <>
+      <Input
+        aria-label={label}
+        className="mt-4 min-h-12"
+        maxLength={200}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (isComposing(event)) return;
+          if (event.key === "Escape" && value) {
+            event.preventDefault();
+            onChange("");
+          }
+          if (event.key === "Enter" && filtering && first) {
+            event.preventDefault();
+            document.getElementById(ruleRowId(first.id, team))?.focus();
+          }
+        }}
+        placeholder="Search by action, app, Bot, or policy"
+        ref={inputRef}
+        type="search"
+        value={value}
+      />
+      <p className="mt-2 text-muted-foreground text-sm" role="status">
+        {filtering ? `${matches} of ${total} rules match` : null}
+      </p>
+      {filtering && !matches ? (
+        <PageEmpty
+          action={
+            <Button
+              className="min-h-12"
+              onClick={() => {
+                onChange("");
+                inputRef.current?.focus();
+              }}
+              type="button"
+              variant="outline"
+            >
+              Clear search
+            </Button>
+          }
+          icon={IconListSearch}
+          title={emptyTitle}
+        />
+      ) : null}
+    </>
+  );
+}
+
 /**
  * One saved rule, as a row: what it matches, and what a Bot does about it. A locked rule — a team
  * rule seen by a member, or a personal rule the team has switched off — states its behaviour and
@@ -156,13 +255,15 @@ export function RuleRow({
   disabled,
   onRevoke,
   onChange,
+  touchTargets,
 }: {
   rule: ApprovalRuleRow;
   team?: boolean;
   locked?: boolean;
   disabled: boolean;
-  onRevoke: () => void;
+  onRevoke: (trigger: HTMLButtonElement) => void;
   onChange: (behaviour: RuleBehaviour) => void;
+  touchTargets?: boolean;
 }) {
   const labels = team ? TEAM_BEHAVIOUR_LABELS : BEHAVIOUR_LABELS;
   // The action in its approval card's words is the title ("Click", "Any action on Gmail"); the rest
@@ -194,14 +295,19 @@ export function RuleRow({
     .filter(Boolean)
     .join(" ");
   return (
-    <Item size="sm">
+    <Item
+      className="focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+      id={ruleRowId(rule.id, team)}
+      size="sm"
+      tabIndex={-1}
+    >
       <ItemMedia variant="icon">
         {locked ? <IconLock /> : <IconShieldCheck />}
       </ItemMedia>
       <ItemContent>
         <ItemTitle>{title}</ItemTitle>
         {match ? (
-          <ItemDescription className="line-clamp-none break-all">
+          <ItemDescription className="line-clamp-none [overflow-wrap:anywhere]">
             {match}
           </ItemDescription>
         ) : null}
@@ -215,6 +321,7 @@ export function RuleRow({
         ) : (
           <>
             <LabelSelect
+              className={touchTargets ? "confirmation-action" : undefined}
               id={team ? `team-rule-behaviour-${rule.id}` : undefined}
               disabled={disabled}
               label={`Behaviour for ${title}`}
@@ -223,9 +330,17 @@ export function RuleRow({
               value={rule.behaviour}
             />
             <Button
+              aria-label={
+                team || touchTargets
+                  ? `Remove ${title}${match ? `, ${match}` : ""}`
+                  : undefined
+              }
+              className={
+                team || touchTargets ? "confirmation-action" : undefined
+              }
               id={team ? `team-rule-remove-${rule.id}` : undefined}
               disabled={disabled}
-              onClick={onRevoke}
+              onClick={(event) => onRevoke(event.currentTarget)}
               size="sm"
               variant="outline"
             >
@@ -271,8 +386,14 @@ export function RuleForm({
   const blank = forBot ? { ...EMPTY_RULE, botId: forBot } : EMPTY_RULE;
   const [rule, setRule] = useState<ApprovalRuleInput>(blank);
   const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
   const id = useId();
-  // Closing without saving drops what was typed, so the dialog opens blank next time.
+  const dirty =
+    rule.toolRef !== blank.toolRef ||
+    rule.effect !== blank.effect ||
+    rule.scope !== blank.scope ||
+    rule.botId !== blank.botId ||
+    rule.behaviour !== blank.behaviour;
   const close = () => {
     setOpen(false);
     setRule(blank);
@@ -306,6 +427,7 @@ export function RuleForm({
           <button
             disabled={!canSave || save.isPending}
             onClick={show}
+            ref={opener}
             type="button"
           />
         }
@@ -324,94 +446,76 @@ export function RuleForm({
           <IconChevronRight className="size-4 text-muted-foreground" />
         </ItemActions>
       </Item>
-      <Dialog
-        onOpenChange={(next, event) => {
-          if (save.isPending) {
-            event.cancel();
-            return;
-          }
-          if (next) show();
-          else close();
-        }}
+      <SettingsDraftDialog
+        action={
+          <Button
+            className="min-h-11"
+            disabled={!canSave || save.isPending || !rule.toolRef.trim()}
+            form={id}
+            size="sm"
+            type="submit"
+          >
+            {save.isPending ? "Saving…" : "Save rule"}
+          </Button>
+        }
+        description={`Use * to match anything. An app's tools start with its name, so ${TOOL_PATTERN_EXAMPLE} means every Gmail tool. A target of *.example.com means every page on that site.`}
+        dirty={dirty}
+        onClose={close}
         open={open}
+        opener={opener}
+        overlay={governanceOverlay}
+        saving={save.isPending}
+        title={label}
       >
-        <DialogContent {...governanceOverlay}>
-          <DialogHeader>
-            <DialogTitle>{label}</DialogTitle>
-            <DialogDescription>
-              Use * to match anything. An app's tools start with its name, so{" "}
-              {TOOL_PATTERN_EXAMPLE} means every Gmail tool. A target of
-              *.example.com means every page on that site.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="mt-4">
-            {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
+        {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
                 direct child of DialogContent and keeps scrolling. */}
-            <form
-              id={id}
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!canSave || save.isPending || !rule.toolRef.trim()) return;
-                // A failed save keeps the dialog and the draft, so the person can correct it.
-                save.mutate(rule, { onSuccess: close });
-              }}
-            >
-              <FieldGroup>
-                {field(
-                  "toolRef",
-                  "Tool or app",
-                  `${TOOL_PATTERN_EXAMPLE}, computer_click, host/*`,
-                )}
-                {field("effect", "Kind of action", "* , write, read, delegate")}
-                {field("scope", "Target", "*, a site, a folder, a Bot name")}
-                {botField ? field("botId", "Bot", "* for every Bot") : null}
-                <Field>
-                  <FieldLabel htmlFor={`${id}-behaviour`}>Behaviour</FieldLabel>
-                  <LabelSelect
-                    disabled={save.isPending}
-                    id={`${id}-behaviour`}
-                    labels={BEHAVIOUR_LABELS}
-                    onChange={(behaviour) =>
-                      setRule((prior) => ({ ...prior, behaviour }))
-                    }
-                    value={rule.behaviour}
-                  />
-                </Field>
-              </FieldGroup>
-            </form>
-            {save.error ? (
-              <p className="mt-4 text-destructive text-sm" role="alert">
-                {save.error.message}
-              </p>
-            ) : null}
-            {!canSave && !save.isPending && refreshSettings ? (
-              <ReadError
-                message="Reload your approval settings before saving this rule."
-                description="Your draft will stay here."
-                retry={refreshSettings}
+        <form
+          id={id}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!canSave || save.isPending || !rule.toolRef.trim()) return;
+            // A failed save keeps the dialog and the draft, so the person can correct it.
+            save.mutate(rule, { onSuccess: close });
+          }}
+        >
+          <FieldGroup>
+            {field(
+              "toolRef",
+              "Tool or app",
+              `${TOOL_PATTERN_EXAMPLE}, computer_click, host/*`,
+            )}
+            {field("effect", "Kind of action", "* , write, read, delegate")}
+            {field("scope", "Target", "*, a site, a folder, a Bot name")}
+            {botField ? field("botId", "Bot", "* for every Bot") : null}
+            <Field>
+              <FieldLabel htmlFor={`${id}-behaviour`}>Behaviour</FieldLabel>
+              <LabelSelect
+                disabled={save.isPending}
+                id={`${id}-behaviour`}
+                labels={BEHAVIOUR_LABELS}
+                onChange={(behaviour) =>
+                  setRule((prior) => ({ ...prior, behaviour }))
+                }
+                value={rule.behaviour}
               />
-            ) : null}
-          </DialogBody>
-          <DialogFooter className="mt-4">
-            <Button
-              disabled={save.isPending}
-              onClick={close}
-              size="sm"
-              variant="outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={!canSave || save.isPending || !rule.toolRef.trim()}
-              form={id}
-              size="sm"
-              type="submit"
-            >
-              {save.isPending ? "Saving…" : "Save rule"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </Field>
+          </FieldGroup>
+        </form>
+        {save.error ? (
+          <p className="mt-4 text-destructive text-sm" role="alert">
+            {save.error.message}
+          </p>
+        ) : null}
+        {!canSave && !save.isPending && refreshSettings ? (
+          <ReadError
+            message="Reload your approval settings before saving this rule."
+            description="Your draft will stay here."
+            retry={refreshSettings}
+            retryBelow
+            retryLabel="Refresh approval settings"
+          />
+        ) : null}
+      </SettingsDraftDialog>
     </>
   );
 }

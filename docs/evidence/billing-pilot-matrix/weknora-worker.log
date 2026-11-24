@@ -1,0 +1,3 @@
+# github.com/Tencent/WeKnora/internal/application/service.test
+ld: warning: ignoring duplicate libraries: '-lc++'
+ok  	github.com/Tencent/WeKnora/internal/application/service	1.363s

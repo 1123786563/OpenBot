@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 /*
  * The person's tasks: what Start makes of an item a Bot's check-in found. Each runs in a conversation
@@ -36,6 +36,7 @@ export type BotTask = {
   sourceApp: string | null;
   sourceLink: string | null;
   status: TaskStatus;
+  billingOperationId?: string;
   /** Why its turn couldn't finish, in plain words, while `failed`. Null otherwise. */
   failure: string | null;
   failedAt: string | null;
@@ -64,8 +65,26 @@ const moving = (status: TaskStatus) =>
 export const taskListQueryOptions = () =>
   queryOptions({
     queryKey: taskKeys.list,
-    queryFn: (): Promise<BotTask[]> =>
-      client("/api/tasks", "tasks", { fallback: "Couldn't load your tasks" }),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<BotTask[]> => {
+      try {
+        return await client("/api/tasks", "tasks", {
+          fallback: "Couldn't load your tasks",
+          signal,
+        });
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData<BotTask[]>(queryKey, []);
+        }
+        throw error;
+      }
+    },
     refetchInterval: (query) =>
       query.state.data?.some((task) => moving(task.status))
         ? LIVE_MS

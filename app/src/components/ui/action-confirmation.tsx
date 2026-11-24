@@ -1,5 +1,6 @@
 import { Button } from "@astryxdesign/core/Button";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   Dialog,
   DialogBody,
@@ -10,7 +11,14 @@ import {
 } from "@/components/ui/dialog";
 import { ClientError } from "@/lib/client";
 
-export class ActionUnavailable extends Error {}
+export class ActionUnavailable extends Error {
+  constructor(
+    message: string,
+    readonly recovery?: ReactNode,
+  ) {
+    super(message);
+  }
+}
 
 export class ActionIncomplete extends Error {}
 
@@ -31,16 +39,32 @@ type Confirmation = {
 
 type ConfirmationState =
   | { phase: "ready" | "pending"; action: Confirmation }
-  | { phase: "retry" | "unavailable"; action: Confirmation; message: string };
+  | { phase: "retry"; action: Confirmation; message: string }
+  | {
+      phase: "unavailable";
+      action: Confirmation;
+      message: string;
+      recovery?: ReactNode;
+    };
 
-export function useActionConfirmation() {
+export function useActionConfirmation(
+  review?: {
+    content: ReactNode;
+    ready: boolean;
+    onClose: () => void;
+  },
+  options?: { overlayClassName: string },
+) {
   const [state, setState] = useState<ConfirmationState | null>(null);
   const [notice, setNotice] = useState("");
   const remembered = useRef<Confirmation | null>(null);
   const submitting = useRef(false);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const status = useRef<HTMLParagraphElement>(null);
-  const close = () => setState(null);
+  const close = () => {
+    setState(null);
+    review?.onClose();
+  };
 
   function requestConfirmation(action: Confirmation) {
     if (submitting.current) return;
@@ -50,7 +74,7 @@ export function useActionConfirmation() {
   }
 
   async function submit(action: Confirmation) {
-    if (submitting.current) return;
+    if (submitting.current || review?.ready === false) return;
     submitting.current = true;
     setState({ phase: "pending", action });
     try {
@@ -66,7 +90,13 @@ export function useActionConfirmation() {
             : undefined;
       if (message !== undefined) {
         await action.refresh?.().catch(() => undefined);
-        setState({ phase: "unavailable", action, message });
+        setState({
+          phase: "unavailable",
+          action,
+          message,
+          recovery:
+            error instanceof ActionUnavailable ? error.recovery : undefined,
+        });
         cancelButton.current?.focus();
       } else {
         setState({
@@ -111,6 +141,7 @@ export function useActionConfirmation() {
           }}
         >
           <DialogContent
+            {...astryxScope}
             className="break-words"
             finalFocus={() => {
               const opener = remembered.current?.trigger;
@@ -125,17 +156,20 @@ export function useActionConfirmation() {
               );
             }}
             initialFocus={cancelButton}
+            overlayClassName={options?.overlayClassName}
             role="alertdialog"
             showCloseButton={false}
           >
             <DialogTitle>{action?.title}</DialogTitle>
             <DialogBody>
               <DialogDescription>{action?.description}</DialogDescription>
+              {state && !unavailable ? review?.content : null}
               {state && "message" in state && (
                 <p className="text-destructive" role="alert">
                   {state.message}
                 </p>
               )}
+              {state?.phase === "unavailable" ? state.recovery : null}
             </DialogBody>
             <DialogFooter className="flex-wrap">
               <Button
@@ -149,6 +183,7 @@ export function useActionConfirmation() {
               {action && !unavailable && (
                 <Button
                   className="confirmation-action"
+                  isDisabled={review?.ready === false}
                   isLoading={pending}
                   label={
                     pending

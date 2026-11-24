@@ -1,4 +1,3 @@
-import type { TrajectoryGrant } from "@openbot/shared/recorder-api";
 import {
   type CapturedEvent,
   scrubTranscript,
@@ -11,7 +10,7 @@ import {
   type StreamSession,
 } from "../protocol/messages";
 import type { DrainRecord } from "../shared/storage";
-import { fetchGrant, GrantError } from "./grant";
+import { type CaptureGrant, fetchCaptureGrant, GrantError } from "./grant";
 import {
   type Outbox,
   openOutbox,
@@ -325,12 +324,25 @@ export function createOffscreenController(deps: OffscreenControllerDeps): void {
   async function pass(
     stream: Stream,
     trajectoryId: string,
-  ): Promise<TrajectoryGrant> {
+    recordingId: string,
+  ): Promise<CaptureGrant> {
     const { openbotUrl, token } = stream.target;
     const reason = signedOutReason(stream, token);
     if (reason) throw new GrantError({ kind: "signed-out", reason });
     try {
-      return await fetchGrant({ openbotUrl, token }, trajectoryId);
+      const grant = await fetchCaptureGrant(
+        { openbotUrl, token },
+        trajectoryId,
+        recordingId,
+      );
+      if (!("upload" in grant)) return grant;
+      return {
+        upload: async (batch) => {
+          const response = await grant.upload(batch);
+          if (response.status === 401) stream.failedToken = token;
+          return response;
+        },
+      };
     } catch (error) {
       if (error instanceof GrantError && error.verdict.kind === "signed-out")
         stream.failedToken = token;
@@ -433,7 +445,8 @@ export function createOffscreenController(deps: OffscreenControllerDeps): void {
     if (options.live) options.live.stream = stream;
     try {
       const streamer = await createStreamer(session, {
-        fetchGrant: (trajectoryId) => pass(stream, trajectoryId),
+        fetchGrant: (trajectoryId, recordingId) =>
+          pass(stream, trajectoryId, recordingId),
         allowedGatewayUrls: options.allowedGatewayUrls,
         outbox,
         sequencer,

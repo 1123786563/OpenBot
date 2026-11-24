@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from "expo/fetch";
 import { authClient, serverUrl } from "./auth";
 export async function api<T>(
   path: string,
@@ -30,10 +31,27 @@ export async function api<T>(
     );
   return body as T;
 }
+/** Expo fetch exposes streaming responses on both native platforms. */
+export async function streamApi(path: string, input?: RequestInit) {
+  if (!path.startsWith("/api/")) throw new Error("Use an OpenBot API path.");
+  const cookie = await authClient.getCookie();
+  const headers = new Headers(input?.headers);
+  if (cookie) headers.set("Cookie", cookie);
+  return expoFetch(`${serverUrl}${path}`, {
+    method: input?.method,
+    body: typeof input?.body === "string" ? input.body : undefined,
+    headers,
+    credentials: "omit",
+    redirect: "error",
+    signal: input?.signal ?? undefined,
+  });
+}
 export type Conversation = {
   id: string;
   name: string;
   agentIds: string[];
+  threadId: string;
+  direct?: boolean;
   active: boolean;
 };
 export type TranscriptMessage = {

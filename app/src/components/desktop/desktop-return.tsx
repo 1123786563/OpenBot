@@ -2,13 +2,17 @@ import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { desktopShell } from "@/lib/desktop/shell";
-import { confirmBrokeredConnectionMutationOptions } from "@/lib/plugins/mutations";
+import {
+  confirmBrokeredConnectionMutationOptions,
+  invalidatePlugins,
+} from "@/lib/plugins/mutations";
+import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
 
 /**
  * The link that brings OpenBot Desktop's window forward, on the page it is already showing.
@@ -40,15 +44,39 @@ export function DesktopReturn({
   openDesktop?: (link: string) => void;
 }) {
   const navigate = useNavigate();
-  const confirmation = useMutation(
-    confirmBrokeredConnectionMutationOptions(useQueryClient()),
-  );
+  const [outcome, setOutcome] = useState<
+    "connected" | "unconnected" | "inconclusive" | null
+  >(null);
+  const queryClient = useQueryClient();
+  const confirmation = useMutation({
+    ...confirmBrokeredConnectionMutationOptions(queryClient),
+    onSettled: (data) => {
+      setOutcome(
+        data?.connected === true
+          ? "connected"
+          : data?.connected === false
+            ? "unconnected"
+            : "inconclusive",
+      );
+      // Refresh Connections in the background. Its app metadata cannot delay this handoff.
+      void invalidatePlugins(queryClient);
+    },
+  });
+  const plugins = useQuery({
+    ...pluginsPageQueryOptions(),
+    enabled: Boolean(app) && !desktopShell(),
+  });
+  const appName = app
+    ? (plugins.data?.servers.find(({ id }) => id === app)?.title ??
+      plugins.data?.catalogue.find(({ key }) => key === app)?.title)
+    : undefined;
+  const connection = appName ? `the ${appName} connection` : "your connection";
+  const launchId = useId();
   const confirm = confirmation.mutate;
   const started = useRef(false);
   const launched = useRef(false);
-  const [checked, setChecked] = useState(false);
-  const connected = confirmation.data?.connected === true;
-  const canHandBack = !app || connected;
+  const unconnected = outcome === "unconnected";
+  const canHandBack = !app || outcome === "connected";
 
   useEffect(() => {
     if (started.current) return;
@@ -61,17 +89,21 @@ export function DesktopReturn({
       );
       return;
     }
-    if (app) confirm(app, { onSettled: () => setChecked(true) });
+    if (app) confirm(app);
   }, [app, confirm, navigate]);
 
   useEffect(() => {
     if (!canHandBack || desktopShell() || launched.current) return;
     launched.current = true;
-    openDesktop(DESKTOP_LINK);
+    try {
+      openDesktop(DESKTOP_LINK);
+    } catch {
+      // Browser protocol restrictions are recoverable via either visible link.
+    }
   }, [canHandBack, openDesktop]);
 
   return (
-    <AstryxSurface className="min-h-svh">
+    <AstryxSurface className="desktop-return min-h-svh">
       <Stack
         as="main"
         align="center"
@@ -79,7 +111,13 @@ export function DesktopReturn({
         minHeight="100svh"
         style={{ padding: "var(--spacing-6, 1.5rem)" }}
       >
-        <Stack align="center" gap={4} maxWidth="26rem" width="100%">
+        <Stack
+          align="center"
+          gap={4}
+          maxWidth="26rem"
+          width="100%"
+          style={{ overflowWrap: "anywhere" }}
+        >
           <Heading
             level={1}
             weight="semibold"
@@ -89,25 +127,40 @@ export function DesktopReturn({
           </Heading>
           {canHandBack ? (
             <>
-              <Text as="p" justify="center" role="status" type="supporting">
-                {app ? "Account connected. " : ""}
-                If the OpenBot Desktop window is still closed, open it below.
+              {app ? (
+                <Text as="p" justify="center" role="status" type="supporting">
+                  {appName ? `${appName} is connected.` : "Account connected."}
+                </Text>
+              ) : null}
+              <Text as="p" justify="center" type="supporting">
+                If OpenBot Desktop didn’t open, try the button below. If OpenBot
+                Desktop isn’t installed, you can continue in your browser.
               </Text>
               <AstryxButton
                 as="a"
                 href={DESKTOP_LINK}
+                id={launchId}
                 label="Open OpenBot Desktop"
                 size="lg"
                 className="conversation-recovery-action"
                 variant="primary"
               />
             </>
-          ) : !checked ? (
-            <ReadStatus kind="loading" message="Checking your connection…" />
+          ) : outcome === null ? (
+            <ReadStatus kind="loading" message={`Checking ${connection}…`} />
           ) : (
             <ReadError
-              message="Couldn't confirm your connection."
-              description="Check again here, or open Connections in your browser to check the account."
+              message={
+                unconnected
+                  ? `${appName ?? "Your account"} isn’t connected yet.`
+                  : `Couldn’t check ${connection}.`
+              }
+              description={
+                unconnected
+                  ? `Finish signing in to ${appName ?? "the app"}, then check again.`
+                  : "Try again, or view the connection in your browser."
+              }
+              focusAfterRetry={() => document.getElementById(launchId)}
               retry={() =>
                 app ? confirmation.mutateAsync(app).catch(() => {}) : undefined
               }

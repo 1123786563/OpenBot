@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { queryClient } from "@/query-client";
 import type { Stopped } from "./recording";
+import { RecordingLearning } from "./recording-learning";
 
 /** Where the skills learned from recordings are reviewed and listed. */
 export const YOUR_SKILLS = "/settings/learning";
@@ -40,6 +41,7 @@ type Skill = LearningProposal & { container: string };
 export type LearningNext =
   /** Learning can't run on this machine, and why. */
   | { kind: "model"; reason: string }
+  | { kind: "native"; recordingId: string }
   /** Learning is off in the back end. */
   | { kind: "off" }
   /** Couldn't ask. */
@@ -97,7 +99,8 @@ export function useLearningNext(stopped: Stopped) {
     startPersonalLearningRunMutationOptions(queryClient),
   );
 
-  const sources = (review.data?.sources ?? []).filter(
+  const legacy = review.data && "sources" in review.data ? review.data : null;
+  const sources = (legacy?.sources ?? []).filter(
     (source) => source.kind === "recordings",
   );
   const latest = sources
@@ -115,7 +118,7 @@ export function useLearningNext(stopped: Stopped) {
     0,
   );
   // Anything that can mean a new skill: a run moving on, a proposal arriving, one approved.
-  const revision = `${latest?.id ?? ""}:${latest?.status ?? ""}:${waitingCount}:${review.data?.approved ?? 0}`;
+  const revision = `${latest?.id ?? ""}:${latest?.status ?? ""}:${waitingCount}:${legacy?.approved ?? 0}`;
   const skills = useQuery({
     ...recordingSkillsQueryOptions(stopped.title, since, revision),
     enabled: review.isSuccess && sources.length > 0 && !off,
@@ -145,8 +148,10 @@ export function useLearningNext(stopped: Stopped) {
   if (review.error) next = { kind: "unreadable", reason: review.error.message };
   else if (learned) next = { kind: "learned", skill: learned };
   else if (proposed) next = { kind: "proposed", skill: proposed };
-  else if (review.data?.modelProblem)
-    next = { kind: "model", reason: review.data.modelProblem };
+  else if (legacy?.modelProblem)
+    next = { kind: "model", reason: legacy.modelProblem };
+  else if (review.data && "mode" in review.data)
+    next = { kind: "native", recordingId: stopped.recordingId };
   else if (off) next = { kind: "off" };
   else if (running) next = { kind: "learning" };
   else if (skills.error)
@@ -169,7 +174,10 @@ export function useLearningNext(stopped: Stopped) {
   const kind = next.kind;
   useEffect(() => {
     pace.current =
-      kind === "learned" || kind === "model" || kind === "off"
+      kind === "learned" ||
+      kind === "model" ||
+      kind === "off" ||
+      kind === "native"
         ? false
         : kind === "learning"
           ? 10_000
@@ -181,8 +189,8 @@ export function useLearningNext(stopped: Stopped) {
   return {
     loaded: review.isSuccess || review.isError,
     next,
-    canReview: review.data?.canReview ?? false,
-    autoApprove: review.data?.autoApprove ?? null,
+    canReview: legacy?.canReview ?? false,
+    autoApprove: legacy?.autoApprove ?? null,
     /** Why Learn now didn't start, in the server's sentence. */
     learnError: learnNow.error?.message ?? null,
     learning: running,
@@ -274,6 +282,11 @@ export function learningNextWords(
           heading: "Your new skill is waiting for an admin",
           sentence: `Learning made a skill from “${title}”. Once an admin approves it, ask any Bot to do it.`,
         };
+  if (next.kind === "native")
+    return {
+      heading: `Saved “${title}”`,
+      sentence: "Choose a Bot conversation to learn from this recording.",
+    };
   if (next.kind === "model" || next.kind === "off")
     return {
       heading: `Saved “${title}”`,
@@ -363,6 +376,11 @@ export function LearningNextRow({
       sentence =
         "Learning didn't find a skill in this recording. Record it again, and say what you're doing as you go.";
       action = learnNow;
+      break;
+    case "native":
+      heading = "Learn from this recording";
+      sentence = "Draft a skill for review in a conversation you choose.";
+      action = <RecordingLearning id={next.recordingId} title={title} />;
       break;
     case "model":
       tone = "warn";

@@ -21,7 +21,15 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { learningKeys } from "@/lib/learning/queries";
 import { queryClient } from "@/query-client";
 import { LearningPage, runPollInterval } from "@/routes/_authed/admin/learning";
 
@@ -42,11 +50,14 @@ function page() {
     routeTree: rootRoute,
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+    queryClient,
+  };
 }
 
 test("an administrator excludes a Bot and saves without losing the default or pause state", async () => {
@@ -88,6 +99,101 @@ test("an administrator excludes a Bot and saves without losing the default or pa
   await view.findByText("Settings saved.");
 });
 
+test("OpenBot Learning policy saves without querying legacy containers", async () => {
+  let settings: LearningSettings = {
+    enabled: true,
+    defaultTarget: { containerId: "support" },
+    agents: { bot: { containerId: "sales" } },
+  };
+  const requested: string[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      requested.push(path);
+      if (path === "/api/capabilities")
+        return Response.json({ mode: "openbot" });
+      if (path === "/api/admin/learning/settings") {
+        if (init?.method === "PUT") settings = JSON.parse(String(init.body));
+        return Response.json({ settings });
+      }
+      if (path.startsWith("/api/agents")) return Response.json({ agents: [] });
+      return new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = page();
+  fireEvent.click(
+    await view.findByRole("switch", { name: "Allow conversation Learning" }),
+  );
+  fireEvent.click(view.getByRole("button", { name: "Save Learning settings" }));
+  await view.findByText("Settings saved.");
+  expect(settings).toEqual({
+    enabled: false,
+    defaultTarget: { containerId: "support" },
+    agents: { bot: { containerId: "sales" } },
+  });
+  expect(
+    requested.filter((path) => path.startsWith("/api/admin/learning/")),
+  ).toEqual(["/api/admin/learning/settings", "/api/admin/learning/settings"]);
+});
+
+test("native admin opens the evidence from a run and reviews its proposal", async () => {
+  const decisions: unknown[] = [];
+  const id = "0198a012-a20f-77c0-9e33-8992f18e74c2";
+  const operations = "/api/copilotkit/admin/learning";
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/capabilities")
+        return Response.json({ mode: "openbot" });
+      if (path.startsWith("/api/agents")) return Response.json({ agents: [] });
+      if (path.endsWith("/settings"))
+        return Response.json({ settings: { enabled: true, agents: {} } });
+      if (path === `${operations}/proposals/${id}`) {
+        decisions.push(JSON.parse(String(init?.body)));
+        return Response.json({ ok: true });
+      }
+      if (path === operations)
+        return Response.json({
+          runs: [
+            {
+              id,
+              state: "proposed",
+              reason: null,
+              startedAt: "2026-11-05T10:00:00.000Z",
+              evidenceCount: 1,
+              proposal: {
+                title: "Packing checklist",
+                instructions: "Check the label.",
+                canApprove: decisions.length === 0,
+                decision: decisions.length > 0 ? "approve" : null,
+                evidence: [
+                  {
+                    source: { kind: "conversation", id: "shared" },
+                    title: "Shipping",
+                    excerpt: "Compare the address to the shipping label.",
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      return new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = page();
+  fireEvent.click(
+    await view.findByRole("button", { name: /Packing checklist/ }),
+  );
+  await view.findByText("Compare the address to the shipping label.");
+  const approve = view.getByRole("button", { name: "Approve and publish" });
+  await waitFor(() => expect(approve).toHaveProperty("disabled", false));
+  fireEvent.click(approve);
+  await view.findByText("Proposal published.");
+  expect(decisions).toEqual([{ decision: "approve" }]);
+});
+
 test("an unavailable settings store shows an error instead of an editable empty configuration", async () => {
   global.fetch = Object.assign(
     async () =>
@@ -106,6 +212,76 @@ test("an unavailable settings store shows an error instead of an editable empty 
   expect(
     view.queryByRole("button", { name: "Save Learning settings" }),
   ).toBeNull();
+});
+
+test("a failed participation refresh pauses saving and retains the draft", async () => {
+  const settings: LearningSettings = {
+    enabled: true,
+    defaultTarget: { containerId: "support" },
+    agents: {},
+  };
+  let status = 200;
+  const writes: LearningSettings[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/settings")) {
+        if (init?.method === "PUT") writes.push(JSON.parse(String(init.body)));
+        return status === 200
+          ? Response.json({ settings: writes.at(-1) ?? settings })
+          : new Response(null, { status });
+      }
+      if (path.includes("/api/agents")) return Response.json({ agents: [] });
+      return new Response(null, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = page();
+  const field = await view.findByLabelText("Default container ID");
+  const save = view.getByRole("button", { name: "Save Learning settings" });
+  expect(save).toHaveProperty("disabled", true);
+  const user = userEvent.setup({ document });
+  await user.clear(field);
+  await user.type(field, "research");
+  status = 503;
+  await act(() =>
+    view.queryClient.invalidateQueries({ queryKey: learningKeys.settings }),
+  );
+  const retry = await view.findByRole("button", {
+    name: "Retry participation settings",
+  });
+  expect(save).toHaveProperty("disabled", true);
+  fireEvent.submit(save.closest("form")!);
+  expect(writes).toHaveLength(0);
+  expect(field).toHaveProperty("value", "research");
+
+  for (const failure of [403, 503]) {
+    status = failure;
+    await act(() =>
+      view.queryClient.invalidateQueries({ queryKey: learningKeys.settings }),
+    );
+    expect(view.queryClient.getQueryData(learningKeys.settings)).toBeNull();
+    await waitFor(() =>
+      expect(view.queryByLabelText("Default container ID")).toBeNull(),
+    );
+  }
+
+  status = 200;
+  fireEvent.click(retry);
+  const recoveredSave = await view.findByRole("button", {
+    name: "Save Learning settings",
+  });
+  expect(view.getByLabelText("Default container ID")).toHaveProperty(
+    "value",
+    "research",
+  );
+  await waitFor(() => expect(recoveredSave).toHaveProperty("disabled", false));
+  fireEvent.click(recoveredSave);
+  await view.findByText("Settings saved.");
+  expect(writes).toEqual([
+    { ...settings, defaultTarget: { containerId: "research" } },
+  ]);
+  expect(recoveredSave).toHaveProperty("disabled", true);
 });
 
 test("active and hidden Bots both have participation controls", async () => {
@@ -833,7 +1009,10 @@ describe("reviewing proposed skills", () => {
     await view.findByText("Sharing requests", {}, slow);
     expect(
       view.getAllByText("Learning settings could not be accessed.").length,
-    ).toBeGreaterThanOrEqual(4);
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      view.getByText("Couldn't load participation settings."),
+    ).toBeTruthy();
   });
 
   test("Nothing to review is not said while someone's skills could not be read", async () => {

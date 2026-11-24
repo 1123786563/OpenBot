@@ -940,16 +940,22 @@ describe("action recording", () => {
       await Bun.sleep(5);
     }
     await answer;
-    await Bun.sleep(100);
-    const rows = await database
-      .select()
-      .from(actionRecords)
-      .where(
-        and(
-          eq(actionRecords.botId, bot),
-          eq(actionRecords.toolName, "host/run_command"),
-        ),
-      );
+    const readRecords = () =>
+      database
+        .select()
+        .from(actionRecords)
+        .where(
+          and(
+            eq(actionRecords.botId, bot),
+            eq(actionRecords.toolName, "host/run_command"),
+          ),
+        );
+    const deadline = Date.now() + 5_000;
+    let rows = await readRecords();
+    while (!rows.length && Date.now() < deadline) {
+      await Bun.sleep(50);
+      rows = await readRecords();
+    }
     expect(rows.map((row) => [row.surface, row.outcome, row.command])).toEqual([
       ["local", "allowed", "ls -la"],
     ]);

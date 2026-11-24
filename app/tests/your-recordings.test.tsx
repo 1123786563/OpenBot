@@ -138,7 +138,7 @@ test("an Intelligence without recordings says so in one line", async () => {
   expect(view.queryByText(/No recordings yet/)).toBeNull();
 });
 
-test("an unavailable backend says so instead of listing rows", async () => {
+test("an unreachable recordings backend can be retried in place", async () => {
   pages[""] = {
     recordings: [],
     nextCursor: null,
@@ -151,6 +151,10 @@ test("an unavailable backend says so instead of listing rows", async () => {
   );
   await view.findByText(/Couldn't reach the backend/);
   expect(view.queryByText(/No recordings yet/)).toBeNull();
+  pages[""] = { recordings: [row({})], nextCursor: null };
+  fireEvent.click(view.getByRole("button", { name: "Retry recordings" }));
+  expect(await view.findByText("Refund an order")).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Retry recordings" })).toBeNull();
 });
 
 test("Show more loads the next page", async () => {
@@ -261,7 +265,7 @@ test("a failed refresh keeps the rows on screen", async () => {
     { timeout: 4000 },
   );
   expect(view.getByText("Refund an order")).toBeTruthy();
-  expect(view.queryByRole("alert")).toBeNull();
+  expect(view.getByRole("button", { name: "Retry recordings" })).toBeTruthy();
 });
 
 test("a list that cannot be requested says so in an alert, with no rows", async () => {
@@ -272,7 +276,7 @@ test("a list that cannot be requested says so in an alert, with no rows", async 
     </QueryClientProvider>,
   );
   const alert = await view.findByRole("alert", {}, { timeout: 4000 });
-  expect(alert.textContent).toBe("Server trouble");
+  expect(alert.textContent).toContain("Couldn't load your recordings.");
   expect(view.queryByText(/No recordings yet/)).toBeNull();
 });
 
@@ -327,4 +331,102 @@ test("starting or stopping a recording from OpenBot refreshes the list", async (
     expect(invalidated).toContainEqual(recorderKeys.recordings());
   }
   queryClient.invalidateQueries = invalidate;
+});
+
+test("a managed recording can be inspected and disappears on confirmed deletion even while the list refresh is waiting", async () => {
+  const item = row({});
+  let deleted = false;
+  const relative = "/api/recorder/recordings/r1";
+  const refreshed = Promise.withResolvers<Response>();
+  global.fetch = Object.assign(
+    async (path: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = new URL(String(path), "http://x");
+      if (url.pathname === relative && init?.method === "DELETE") {
+        deleted = true;
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === relative)
+        return Response.json({
+          ...item,
+          nextSeq: null,
+          events: [
+            {
+              type: "CUSTOM",
+              name: "outcome",
+              timestamp: 1793629800000,
+              value: { seq: 1, workflow: item.title },
+            },
+          ],
+        });
+      if (deleted) return refreshed.promise;
+      return Response.json({
+        recordings: [item],
+        nextCursor: null,
+        canManage: true,
+      });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <YourRecordings />
+    </QueryClientProvider>,
+  );
+  try {
+    fireEvent.click(
+      await view.findByRole("button", { name: "View recording" }),
+    );
+    expect(await view.findByText(/^outcome ·/)).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "Delete recording" }));
+    fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+    expect(deleted).toBe(false);
+    fireEvent.click(view.getByRole("button", { name: "Delete recording" }));
+    fireEvent.click(view.getByRole("button", { name: "Delete permanently" }));
+    await view.findByText(
+      "No recordings yet. Each task you record shows up here.",
+    );
+    expect(deleted).toBe(true);
+    expect(view.queryByRole("dialog")).toBeNull();
+  } finally {
+    refreshed.resolve(
+      Response.json({ recordings: [], nextCursor: null, canManage: true }),
+    );
+  }
+});
+
+test("malformed recording details show an error before rendering events or pagination", async () => {
+  const item = row({});
+  global.fetch = Object.assign(
+    async (path: Parameters<typeof fetch>[0]) =>
+      String(path).includes("/recordings/r1?")
+        ? Response.json({
+            ...item,
+            events: [
+              {
+                type: "CUSTOM",
+                name: "Invalid event",
+                timestamp: 1,
+                value: { seq: "invalid" },
+              },
+            ],
+            nextSeq: "invalid",
+          })
+        : Response.json({
+            recordings: [item],
+            nextCursor: null,
+            canManage: true,
+          }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <YourRecordings />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await view.findByRole("button", { name: "View recording" }));
+  expect(
+    (await view.findByRole("alert", {}, { timeout: 5_000 })).textContent,
+  ).toBe("Invalid recording details.");
+  expect(view.queryByText(/^Invalid event/)).toBeNull();
+  expect(view.queryByRole("button", { name: "Show more events" })).toBeNull();
 });

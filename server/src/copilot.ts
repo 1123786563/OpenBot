@@ -54,11 +54,13 @@ import { parametersFor } from "@openbot/toolkit/granted-tool";
 import { HeadlessToolsMiddleware } from "@openbot/toolkit/headless-tools";
 import { sanitizeSeededHistory } from "@openbot/toolkit/history-sanitize";
 import { executeNativeApprovalTool } from "@openbot/toolkit/native-approval";
+import { withinRunContext } from "@openbot/toolkit/run-context";
 import {
   observeDetachedRun,
   type PlatformRun,
   stopRecorder,
 } from "@openbot/toolkit/run-stop";
+import { EXECUTION_BUDGET_PROP } from "@openbot/toolkit/run-turn";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
 import { Hono } from "hono";
 import {
@@ -87,7 +89,6 @@ import {
   type PlanModelConfig,
   planModelForEnvironment,
 } from "./agents/plan-model";
-import type { AgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import {
   type RefusingProvider,
@@ -116,6 +117,10 @@ import {
 } from "./approvals/decision-waits";
 import type { AuditInitiator } from "./audit";
 import {
+  createDirectChatTestCredit,
+  type DirectChatTestCreditDependencies,
+} from "./billing/direct-chat-test-credit";
+import {
   attachmentIdsIn,
   newInlineBudget,
   resolveAttachmentParts,
@@ -124,7 +129,6 @@ import {
 import { createDirectChatRoutes } from "./channels/direct-chat";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
-import type { Database } from "./db/client";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import { currentEdition } from "./edition";
@@ -1153,7 +1157,13 @@ export async function buildAgents(
           marketSkill,
         );
         if (loadPersonalMemory)
-          built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
+          built.use(
+            (input, next) =>
+              new Observable((subscriber) =>
+                withinRunContext(() => next.run(input).subscribe(subscriber)),
+              ),
+            new PersonalMemoryMiddleware(agent.id, loadPersonalMemory),
+          );
         return [agent.id, built];
       }),
     ),
@@ -1563,7 +1573,11 @@ async function buildAgent(
       choose: async (prompt, signal) => {
         await marketRun?.check();
         return withMarketDispatch(marketRun?.dispatch, () =>
-          narrowing.choose(prompt, signal),
+          narrowing.choose(prompt, signal, {
+            conversationId: input.threadId,
+            botId: agent.id,
+            runId: input.runId,
+          }),
         );
       },
       signal,
@@ -2005,7 +2019,11 @@ export type ToolSelection = {
     snapshot: MarketSkillSnapshot,
   ) => Promise<MarketRunControl>;
   /** Pass one. Ordinary failures skip narrowing; cancellation stops the run. */
-  choose: (prompt: string, signal?: AbortSignal) => Promise<string | null>;
+  choose: (
+    prompt: string,
+    signal?: AbortSignal,
+    scope?: { conversationId: string; botId: string; runId: string },
+  ) => Promise<string | null>;
   /** Writes the discovery row. Never allowed to fail a run. */
   record?: (botId: string, selection: Selection<GrantedTool>) => Promise<void>;
   /** Overrides the default catalogue size below which nothing is narrowed. */
@@ -3169,12 +3187,12 @@ export async function markAskedRun(
     return;
   }
   if (!isPlainObject(body)) return;
-  const { [ASKED_RUN]: claimed, ...forwardedProps } = isPlainObject(
-    body.forwardedProps,
-  )
-    ? body.forwardedProps
-    : {};
-  if (!run && claimed === undefined) return;
+  const {
+    [ASKED_RUN]: claimed,
+    [EXECUTION_BUDGET_PROP]: claimedBudget,
+    ...forwardedProps
+  } = isPlainObject(body.forwardedProps) ? body.forwardedProps : {};
+  if (!run && claimed === undefined && claimedBudget === undefined) return;
   return new Request(request, {
     body: JSON.stringify({
       ...body,
@@ -3236,7 +3254,18 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
-    directChat?: { database: Database; profiles: AgentProfileStore };
+    directChat?: Pick<
+      Parameters<typeof createDirectChatRoutes>[0],
+      | "database"
+      | "profiles"
+      | "reflect"
+      | "memoryVersionsCurrent"
+      | "learningClock"
+      | "groupThread"
+      | "publishGroupReply"
+      | "backgroundActor"
+      | "mayAddress"
+    > & { testCredit?: DirectChatTestCreditDependencies };
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.
@@ -3296,12 +3325,14 @@ export function mountCopilotRuntime(
     actor: AgentActor;
     botId: string;
     initiator?: AuditInitiator;
-    textOnly?: boolean;
+    marketSkill?: MarketSkillSnapshot | null;
+    depth?: number;
   }): Promise<AbstractAgent | null> => {
     try {
       return await resolver.resolveAgentForActor(input.actor, input.botId, {
         initiator: input.initiator,
-        ...(input.textOnly ? { holdsTools: () => false } : {}),
+        marketSkill: input.marketSkill,
+        depth: input.depth,
       });
     } catch (error) {
       if (error instanceof CoworkerUnavailableError) return null;
@@ -3503,22 +3534,47 @@ export function mountCopilotRuntime(
   });
 
   const handler = intelligence ? sdkHandler : new Hono();
+  let runBackground:
+    | ReturnType<typeof createDirectChatRoutes>["runBackground"]
+    | undefined;
+  let backgroundApproval:
+    | ReturnType<typeof createDirectChatRoutes>["backgroundApproval"]
+    | undefined;
+  let learningConversations:
+    | ReturnType<typeof createDirectChatRoutes>["learningConversations"]
+    | undefined;
+  let sweepLearning: (() => Promise<void>) | undefined;
+  let learnedSkillVersionsCurrent:
+    | ReturnType<typeof createDirectChatRoutes>["learnedSkillVersionsCurrent"]
+    | undefined;
   if (!intelligence) {
     if (!options.directChat)
       throw new Error("OpenBot chat requires its database and Bot profiles.");
     const trial = config.managedModelTrial;
-    handler.route(
-      basePath,
-      createDirectChatRoutes({
-        ...options.directChat,
-        trial: trial && {
-          route: trial.route,
-          model: createManagedModel(trial),
-        },
-        identifyActor,
-        agentFor: (actor, botId) => agentFor({ actor, botId, textOnly: true }),
-      }),
-    );
+    const directChat = createDirectChatRoutes({
+      ...options.directChat,
+      testCredit:
+        options.directChat.testCredit &&
+        createDirectChatTestCredit(
+          options.directChat.database,
+          options.directChat.testCredit,
+        ),
+      trial: trial && {
+        route: trial.route,
+        model: createManagedModel(trial),
+      },
+      traceRuns: Boolean(config.opik),
+      singleUser: config.singleUser,
+      identifyActor,
+      agentFor: (actor, botId, initiator, marketSkill, depth) =>
+        agentFor({ actor, botId, initiator, marketSkill, depth }),
+    });
+    learningConversations = directChat.learningConversations;
+    runBackground = directChat.runBackground;
+    backgroundApproval = directChat.backgroundApproval;
+    handler.route(basePath, directChat.routes);
+    learnedSkillVersionsCurrent = directChat.learnedSkillVersionsCurrent;
+    if (trial) sweepLearning = directChat.sweepLearning;
     handler.get(`${basePath}/info`, (context) =>
       sdkHandler.fetch(context.req.raw),
     );
@@ -3526,6 +3582,11 @@ export function mountCopilotRuntime(
 
   return {
     handler,
+    runBackground,
+    backgroundApproval,
+    sweepLearning,
+    learningConversations,
+    learnedSkillVersionsCurrent,
     learning,
     /**
      * How to reach the platform's runner, exactly as the runtime reaches it.

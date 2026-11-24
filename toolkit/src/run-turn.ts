@@ -85,6 +85,7 @@ export type TurnRunner = (input: {
   agentId: string;
   threadId: string; // the owner's thread for the routine's channel
   instruction: string; // the user message of this turn
+  budget?: { id: string; stepId?: string };
   initiator?: AuditInitiator;
   signal?: AbortSignal;
   /** Revalidates host execution authority after setup, immediately before dispatch. */
@@ -123,6 +124,9 @@ export type TurnRunner = (input: {
    */
   skill?: string;
 }) => Promise<{ replyText: string; components?: DrawnComponent[] }>;
+
+/** Trusted host context used to carry one execution budget through coordination tools. */
+export const EXECUTION_BUDGET_PROP = "openbotExecutionBudgetId";
 
 /** A display component the Bot drew in a turn and the server allowed, with the props it drew. */
 export type DrawnComponent = { name: string; args: Record<string, unknown> };
@@ -712,6 +716,7 @@ export function createTurnRunner(options: {
     depth?: number;
     /** Null on a continuation without recorded market provenance, including legacy rows. */
     marketSkill?: MarketSkillSnapshot | null;
+    budgetId?: string;
   }) => Promise<AbstractAgent>;
   toolsForTurn?: (input: {
     ownerUserId: string;
@@ -774,6 +779,7 @@ export function createTurnRunner(options: {
       agentId,
       threadId,
       instruction,
+      budget,
       initiator: suppliedInitiator,
       continuation,
       signal,
@@ -887,6 +893,7 @@ export function createTurnRunner(options: {
       ...(continuation
         ? { marketSkill: continuation.snapshot.marketSkill ?? null }
         : {}),
+      ...(budget?.id ? { budgetId: budget.id } : {}),
     });
     agent.threadId = threadId;
     /*
@@ -956,6 +963,16 @@ export function createTurnRunner(options: {
       ...(continuation ? { continuation } : {}),
       ...(skill ? { skill } : {}),
     });
+    if (budget?.id) {
+      const forwarded =
+        input.forwardedProps && typeof input.forwardedProps === "object"
+          ? input.forwardedProps
+          : {};
+      input = {
+        ...input,
+        forwardedProps: { ...forwarded, [EXECUTION_BUDGET_PROP]: budget.id },
+      };
+    }
 
     let stated = false;
     if (options.prepareRunInput) {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * A person's standing instructions: keeping them, and guarding them.
  *
@@ -34,9 +35,12 @@ import {
   isNull,
   lte,
   ne,
+  notExists,
   notLike,
+  or,
   sql,
 } from "drizzle-orm";
+import { backgroundMessageId } from "../channels/direct-chat-replay";
 import {
   conversationCalled,
   conversationName,
@@ -45,9 +49,12 @@ import {
 import { oneLine } from "../channels/text";
 import type { Database } from "../db/client";
 import {
+  approvalRequests,
   channelAgents,
   channelMemberships,
   channels,
+  directChatRuns,
+  groupBotThreads,
   intelligenceChannelMappings,
   responsibilities,
   routineRuns,
@@ -118,6 +125,7 @@ export type Routine = {
   title: string | null;
   /** The goal it runs, when it was made for one or its firing ran one. See `routineRunsGoal`. */
   goalId: string | null;
+  budgetId: string | null;
   cron: string;
   timezone: string;
   enabled: boolean;
@@ -187,6 +195,7 @@ export type RoutineInput = {
    * id the instruction names, if any. Never found from a title: see `routineRunsGoal`.
    */
   goalId?: string;
+  budgetId?: string;
   cron: string;
   timezone?: string;
 };
@@ -199,12 +208,14 @@ export type RoutineInput = {
  * told whose they were would be a runner that could be told the wrong answer.
  */
 export type RoutineRunContext = {
+  status?: RoutineRunOutcome | null;
   source?: "schedule" | "run_now" | "trigger";
   routineId: string;
   ownerUserId: string;
   agentId: string;
   channelId: string;
   instruction: string;
+  budgetId?: string | null;
   /**
    * Read at the moment of running, so a routine switched off after its firing was dispatched (or a
    * Run now that raced a pause) is closed as skipped instead of run. Paused never runs.
@@ -215,6 +226,7 @@ export type RoutineRunContext = {
 /** One row of a routine's run history. `status: null` is a run still in flight. */
 export type RoutineRunSummary = {
   id: string;
+  conversationRunId?: string | null;
   status: RoutineRunOutcome | null;
   startedAt: Date;
   finishedAt: Date | null;
@@ -290,7 +302,8 @@ export type RoutineStore = {
    */
   advanceNextRun(id: string, from: Date, computeFrom?: Date): Promise<boolean>;
   /** Open a run row. Its status stays null until something finishes it. */
-  insertRun(routineId: string): Promise<{ runId: string }>;
+  insertRun(routineId: string, firingKey?: string): Promise<{ runId: string }>;
+  reopenBillingRun?(runId: string): Promise<boolean>;
   /**
    * The runner's read: an opened run row, joined to the routine it fires.
    *
@@ -299,6 +312,7 @@ export type RoutineStore = {
    * model can call resolves a run id, so nothing a model can call gets an owner out of one. Null
    * means the routine was deleted between queueing and running, which takes its runs with it.
    */
+  openRunsForRecovery(): Promise<{ id: string }[]>;
   runContext(runId: string): Promise<RoutineRunContext | null>;
   /**
    * The sweep's read, like `dueRoutines` — not owner-scoped. A routine id here comes from a work
@@ -308,7 +322,7 @@ export type RoutineStore = {
    */
   routineForFiring(
     id: string,
-  ): Promise<{ id: string; enabled: boolean } | null>;
+  ): Promise<{ id: string; enabled: boolean; budgetId?: string | null } | null>;
   /** Close a run row with its outcome, and the capped error when there was one. */
   finishRun(
     runId: string,
@@ -361,6 +375,7 @@ function toRoutine(row: RoutineRow): Routine {
     instruction: row.instruction,
     title: row.title,
     goalId: row.goalId,
+    budgetId: row.budgetId,
     cron: row.cron,
     timezone: row.timezone,
     enabled: row.enabled,
@@ -886,6 +901,7 @@ export function createRoutineStore(database: Database): RoutineStore {
               instruction,
               title,
               goalId: goal?.id ?? null,
+              budgetId: input.budgetId ?? null,
               cron: input.cron,
               timezone,
               nextRunAt,
@@ -1040,8 +1056,8 @@ export function createRoutineStore(database: Database): RoutineStore {
     },
 
     async listRuns(ownerUserId, id, limit = 50) {
-      await loadOwned(ownerUserId, id);
-      return await database
+      const routine = await loadOwned(ownerUserId, id);
+      const runs = await database
         .select({
           id: routineRuns.id,
           status: routineRuns.status,
@@ -1054,6 +1070,44 @@ export function createRoutineStore(database: Database): RoutineStore {
         .where(eq(routineRuns.routineId, id))
         .orderBy(desc(routineRuns.startedAt), desc(routineRuns.id))
         .limit(Math.min(Math.max(limit, 1), 100));
+      if (!runs.length) return runs;
+      const linked = await database
+        .select({ id: directChatRuns.id })
+        .from(directChatRuns)
+        .leftJoin(
+          intelligenceChannelMappings,
+          eq(
+            intelligenceChannelMappings.threadId,
+            directChatRuns.directThreadId,
+          ),
+        )
+        .leftJoin(
+          groupBotThreads,
+          eq(groupBotThreads.threadId, directChatRuns.groupThreadId),
+        )
+        .where(
+          and(
+            or(
+              and(
+                eq(intelligenceChannelMappings.channelId, routine.channelId),
+                eq(intelligenceChannelMappings.userId, ownerUserId),
+              ),
+              and(
+                eq(groupBotThreads.channelId, routine.channelId),
+                eq(groupBotThreads.ownerUserId, ownerUserId),
+              ),
+            ),
+            inArray(
+              directChatRuns.userMessageId,
+              runs.map(({ id }) => backgroundMessageId("routine", id)),
+            ),
+          ),
+        );
+      const linkedIds = new Set(linked.map(({ id }) => id));
+      return runs.map((run) => ({
+        ...run,
+        conversationRunId: linkedIds.has(run.id) ? run.id : null,
+      }));
     },
 
     async setEnabled(ownerUserId, id, enabled) {
@@ -1147,16 +1201,50 @@ export function createRoutineStore(database: Database): RoutineStore {
       return moved.length > 0;
     },
 
-    async insertRun(routineId) {
-      const runId = `routine_run_${crypto.randomUUID()}`;
+    async insertRun(routineId, firingKey) {
+      const suffix = firingKey
+        ? createHash("sha256").update(firingKey).digest("hex")
+        : crypto.randomUUID();
+      const runId = `routine_run_${suffix}`;
       // `startedAt` defaults to the database's now, and `status` stays null: null is the in-flight
       // state, which is the reason that column is nullable rather than defaulted to something.
-      const [row] = await database
+      await database
         .insert(routineRuns)
         .values({ id: runId, routineId })
-        .returning({ id: routineRuns.id });
-      if (!row) throw new Error("inserting a routine run returned no row");
-      return { runId: row.id };
+        .onConflictDoNothing({ target: routineRuns.id });
+      return { runId };
+    },
+
+    async openRunsForRecovery() {
+      return database
+        .select({ id: routineRuns.id })
+        .from(routineRuns)
+        .leftJoin(
+          directChatRuns,
+          eq(
+            directChatRuns.userMessageId,
+            sql`${backgroundMessageId("routine", "")} || ${routineRuns.id}`,
+          ),
+        )
+        .leftJoin(
+          approvalRequests,
+          eq(approvalRequests.id, directChatRuns.waitingApprovalId),
+        )
+        .where(
+          and(
+            isNull(routineRuns.status),
+            sql`${routineRuns.startedAt} < now() - interval '15 seconds'`,
+          ),
+        )
+        .orderBy(
+          sql`case when ${directChatRuns.status} = 'running'
+              and ${directChatRuns.waitingApprovalId} is not null
+              and ${approvalRequests.status} is distinct from 'completed'
+            then 1 else 0 end`,
+          asc(routineRuns.startedAt),
+          asc(routineRuns.id),
+        )
+        .limit(20);
     },
 
     async runContext(runId) {
@@ -1169,10 +1257,12 @@ export function createRoutineStore(database: Database): RoutineStore {
         .select({
           routineId: routines.id,
           source: routineRuns.source,
+          status: routineRuns.status,
           ownerUserId: routines.ownerUserId,
           agentId: routines.agentId,
           channelId: routines.channelId,
           instruction: routines.instruction,
+          budgetId: routines.budgetId,
           enabled: routines.enabled,
         })
         .from(routineRuns)
@@ -1191,11 +1281,35 @@ export function createRoutineStore(database: Database): RoutineStore {
       // A single select, not owner-scoped — the sweep's read, like `dueRoutines`. A routine id here
       // comes from a work item's own payload, not from a person, so there is no owner to check.
       const [row] = await database
-        .select({ id: routines.id, enabled: routines.enabled })
+        .select({
+          id: routines.id,
+          enabled: routines.enabled,
+          budgetId: routines.budgetId,
+        })
         .from(routines)
         .where(eq(routines.id, id))
         .limit(1);
       return row ?? null;
+    },
+
+    async reopenBillingRun(runId) {
+      const [row] = await database
+        .update(routineRuns)
+        .set({
+          status: null,
+          error: null,
+          finishedAt: null,
+          startedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(routineRuns.id, runId),
+            sql`(${routineRuns.status} = 'skipped' or
+            (${routineRuns.status} = 'waiting' and ${routineRuns.error} ~ ' Operation [0-9a-f]{64}$'))`,
+          ),
+        )
+        .returning({ id: routineRuns.id });
+      return Boolean(row);
     },
 
     async finishRun(runId, status, error, waiting) {
@@ -1261,6 +1375,17 @@ export function createRoutineStore(database: Database): RoutineStore {
         .where(
           and(
             isNull(routineRuns.status),
+            notExists(
+              database
+                .select({ id: directChatRuns.id })
+                .from(directChatRuns)
+                .where(
+                  eq(
+                    directChatRuns.userMessageId,
+                    sql`${backgroundMessageId("routine", "")} || ${routineRuns.id}`,
+                  ),
+                ),
+            ),
             lte(
               routineRuns.startedAt,
               sql`now() - (${olderThanMs} * interval '1 millisecond')`,

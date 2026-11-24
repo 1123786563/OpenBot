@@ -69,11 +69,12 @@ export function directoryAppState(
 ): DirectoryAppState {
   if (!app.enabled) return { kind: "addable" };
   if (directoryConnect(app) === "none") return { kind: "added" };
-  if (!input.servers || !input.connections) return { kind: "loading" };
+  if (!input.servers) return { kind: "loading" };
   const server = directoryServer(input.servers, input.provider, app.slug);
   // Listed as added by the directory and not yet in the app list: the refetch is on its way.
   if (!server) return { kind: "loading" };
   if (server.accountMode === "shared") return { kind: "added" };
+  if (!input.connections) return { kind: "loading" };
   const connected = personalConnections(input.connections).some(
     (row) => row.serverId === server.id && row.revoked !== true,
   );

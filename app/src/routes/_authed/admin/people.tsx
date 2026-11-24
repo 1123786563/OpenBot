@@ -1,4 +1,6 @@
+import { Text } from "@astryxdesign/core/Text";
 import {
+  IconDots,
   IconLock,
   IconSearch,
   IconShieldCheck,
@@ -7,7 +9,14 @@ import {
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   PageEmpty,
   PageRows,
@@ -15,13 +24,18 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
-import { StaggerItem } from "@/components/layout/stagger";
 import {
   ActionIncomplete,
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -34,12 +48,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { canKeepCachedRead } from "@/lib/client";
+import { isComposing } from "@/lib/composing";
 import { terminateMemberComputersMutationOptions } from "@/lib/enterprise/mutations";
 import {
   setPersonAccessMutationOptions,
   setPersonRoleMutationOptions,
 } from "@/lib/people/mutations";
-import { type Person, peopleListQueryOptions } from "@/lib/people/queries";
+import {
+  type Person,
+  peopleAccessDenied,
+  peopleListQueryOptions,
+} from "@/lib/people/queries";
 import { queryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/admin/people")({
@@ -64,16 +83,95 @@ function describe(person: Person): string {
     .map((provider) => PROVIDER_NAMES[provider] ?? provider)
     .join(", ");
   const when = person.lastSignedInAt
-    ? `last signed in ${new Date(person.lastSignedInAt).toLocaleDateString()}`
-    : "never signed in";
-
-  if (person.revoked)
-    return `Access removed · ${providers || "no provider"} · ${when}`;
-  if (person.configuredAdmin) {
-    return `Admin by configuration · ${when}`;
-  }
+    ? `Last signed in ${new Date(person.lastSignedInAt).toLocaleDateString()}`
+    : "Never signed in";
   const role = person.role === "admin" ? "Admin" : "Member";
-  return `${role} · ${providers || "no provider"} · ${when}`;
+  return [
+    person.revoked ? "Access removed" : null,
+    person.configuredAdmin ? "Admin set in deployment configuration" : role,
+    providers ? `Sign-in: ${providers}` : null,
+    when,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+type PersonOperation = "stop" | "access" | "role";
+
+function PersonActions({
+  person,
+  managed,
+  onAction,
+}: {
+  person: Person;
+  managed: boolean;
+  onAction: (operation: PersonOperation, trigger: HTMLElement) => void;
+}) {
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const options = [
+    { operation: "stop", label: "Stop computers", disabled: false },
+    {
+      operation: "access",
+      label: person.revoked ? "Restore access" : "Remove access",
+      disabled: managed,
+    },
+    {
+      operation: "role",
+      label: person.role === "admin" ? "Remove admin" : "Grant admin",
+      disabled: managed,
+    },
+  ] as const;
+  return (
+    <>
+      <ItemActions className="sm:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                aria-label={`Actions for ${person.email}`}
+                className="min-h-11 min-w-11"
+                ref={menuTrigger}
+                size="icon"
+                variant="outline"
+              />
+            }
+          >
+            <IconDots aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {options.map(({ operation, label, disabled }) => (
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={disabled}
+                key={operation}
+                onClick={() => {
+                  if (menuTrigger.current)
+                    onAction(operation, menuTrigger.current);
+                }}
+              >
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </ItemActions>
+      <ItemActions className="hidden min-w-0 flex-wrap sm:flex">
+        {options.map(({ operation, label, disabled }) => (
+          <Button
+            aria-label={`${label} for ${person.email}`}
+            className="min-h-11"
+            disabled={disabled}
+            key={operation}
+            onClick={(event) => onAction(operation, event.currentTarget)}
+            size="sm"
+            variant="outline"
+          >
+            {label}
+          </Button>
+        ))}
+      </ItemActions>
+    </>
+  );
 }
 
 function PeoplePage() {
@@ -81,20 +179,69 @@ function PeoplePage() {
   const searchInput = useRef<HTMLInputElement>(null);
   const peopleHeading = useRef<HTMLHeadingElement>(null);
   const moreErrorId = useId();
+  const rowTitles = useRef(new Map<string, HTMLDivElement>());
+  const pageAdvance = useRef<{
+    count: number;
+    query: string;
+    trigger: HTMLButtonElement;
+  } | null>(null);
   const { requestConfirmation, confirmation } = useActionConfirmation();
   /*
    * Debounced, so typing a name is one request rather than one per keystroke against an aggregate
    * over every user in the deployment.
    */
   const [query, setQuery] = useState("");
+  const searchChanging = search.trim() !== query;
   useEffect(() => {
-    const timer = setTimeout(() => setQuery(search), 250);
+    const timer = setTimeout(() => setQuery(search.trim()), 250);
     return () => clearTimeout(timer);
   }, [search]);
 
   const people = useInfiniteQuery(peopleListQueryOptions(query));
-  const loaded = canKeepCachedRead(people.error) ? people.data : undefined;
+  const accessDenied = peopleAccessDenied(people.error);
+  const loaded =
+    !searchChanging &&
+    people.data?.pages.length &&
+    canKeepCachedRead(people.error)
+      ? people.data
+      : undefined;
+  const canChange = people.isSuccess || people.isFetchNextPageError;
   const rows = loaded?.pages.flatMap((page) => page.people) ?? [];
+  useLayoutEffect(() => {
+    const advance = pageAdvance.current;
+    if (!advance) return;
+    if (searchChanging || query !== advance.query) {
+      pageAdvance.current = null;
+      return;
+    }
+    if (people.isFetchingNextPage) return;
+    if (people.isError) {
+      pageAdvance.current = null;
+      return;
+    }
+    const firstAdded = rows[advance.count];
+    if (!firstAdded && people.hasNextPage) return;
+    pageAdvance.current = null;
+    const { trigger } = advance;
+    const doc = trigger.ownerDocument;
+    if (
+      doc.activeElement !== trigger &&
+      (trigger.isConnected || doc.activeElement !== doc.body)
+    )
+      return;
+    const target = firstAdded ?? rows.at(-1);
+    (target
+      ? rowTitles.current.get(target.id)
+      : peopleHeading.current
+    )?.focus();
+  }, [
+    people.hasNextPage,
+    people.isError,
+    people.isFetchingNextPage,
+    query,
+    rows,
+    searchChanging,
+  ]);
   const currentUser = useQuery(currentUserQueryOptions());
   const setRole = useMutation(setPersonRoleMutationOptions(queryClient));
   const setAccess = useMutation(setPersonAccessMutationOptions(queryClient));
@@ -102,7 +249,7 @@ function PeoplePage() {
 
   function confirm(
     person: Person,
-    operation: "stop" | "access" | "role",
+    operation: PersonOperation,
     trigger: HTMLElement,
   ) {
     const email = person.email;
@@ -223,9 +370,9 @@ function PeoplePage() {
       title="People"
     >
       <PageSection
-        description="Addresses in INITIAL_ADMIN_EMAILS are always admins. You can't change them here."
+        description="Admins set by deployment configuration can’t be changed here."
         headingRef={peopleHeading}
-        title="Who is here"
+        title="Workspace access"
       >
         {confirmation}
         {/*
@@ -235,31 +382,87 @@ function PeoplePage() {
         <Input
           ref={searchInput}
           aria-label="Search people"
-          className="mt-4"
+          className="mt-4 min-h-11"
+          enterKeyHint="search"
           onChange={(event) => setSearch(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && search && !isComposing(event)) {
+              event.preventDefault();
+              setSearch("");
+            }
+          }}
           placeholder="Search by name or address"
+          type="search"
           value={search}
         />
 
-        {people.isPending ? (
-          <ReadStatus kind="loading" message="Loading people…" />
+        <Text
+          as="p"
+          color="secondary"
+          display="block"
+          role="status"
+          size="base"
+          style={
+            rows.length ? { marginBlockStart: "var(--spacing-2)" } : undefined
+          }
+        >
+          {rows.length > 0 ? (
+            <>
+              {rows.length} {rows.length === 1 ? "person" : "people"} shown.
+              {people.hasNextPage ? " More available." : ""}
+            </>
+          ) : null}
+        </Text>
+
+        {searchChanging ||
+        people.isPending ||
+        (!loaded && people.isFetching && !people.error) ? (
+          <ReadStatus
+            kind="loading"
+            message={search.trim() ? "Searching people…" : "Loading people…"}
+          />
         ) : null}
-        {people.error && (!loaded || !people.isFetchNextPageError) ? (
+        {!searchChanging &&
+        people.error &&
+        (!loaded || !people.isFetchNextPageError) ? (
           <ReadError
             description={
-              rows.length ? "Showing the last loaded people." : undefined
+              rows.length
+                ? "Showing the last loaded people. Retry to make changes."
+                : undefined
             }
             message={
-              rows.length ? "Couldn't refresh people." : "Couldn't load people."
+              accessDenied
+                ? "You don’t have access to this people list."
+                : rows.length
+                  ? "Couldn't refresh people."
+                  : "Couldn't load people."
             }
+            focusAfterRetry={() => peopleHeading.current}
             retry={people.refetch}
             retryBelow
+            retryLabel="Retry people list"
             retrying={people.isFetching}
           />
         ) : null}
         {!loaded || (people.error && rows.length === 0) ? null : rows.length ===
           0 ? (
           <PageEmpty
+            action={
+              query ? (
+                <Button
+                  className="min-h-11"
+                  onClick={() => {
+                    setSearch("");
+                    searchInput.current?.focus();
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  Clear search
+                </Button>
+              ) : undefined
+            }
             icon={query ? IconSearch : IconUsers}
             title={query ? "No matches" : "Nobody has signed in yet"}
           >
@@ -274,7 +477,7 @@ function PeoplePage() {
               const managed = isSelf || person.configuredAdmin;
 
               return (
-                <StaggerItem index={index} key={person.id}>
+                <Fragment key={person.id}>
                   <Item size="sm">
                     <ItemMedia variant="icon">
                       {person.revoked ? (
@@ -286,54 +489,37 @@ function PeoplePage() {
                       )}
                     </ItemMedia>
                     <ItemContent>
-                      <ItemTitle>{person.name ?? person.email}</ItemTitle>
-                      <ItemDescription className="line-clamp-none text-sm [overflow-wrap:anywhere]">
+                      <ItemTitle
+                        aria-describedby={`person-summary-${person.id}`}
+                        className="line-clamp-none [overflow-wrap:anywhere]"
+                        ref={(node) => {
+                          if (node) rowTitles.current.set(person.id, node);
+                          else rowTitles.current.delete(person.id);
+                        }}
+                        tabIndex={-1}
+                      >
+                        {person.name ?? person.email}
+                      </ItemTitle>
+                      <ItemDescription
+                        className="line-clamp-none text-sm [overflow-wrap:anywhere]"
+                        id={`person-summary-${person.id}`}
+                      >
                         {person.name ? `${person.email} · ` : ""}
                         {describe(person)}
                       </ItemDescription>
                     </ItemContent>
-                    <ItemActions className="min-w-0 flex-wrap max-sm:basis-full">
-                      <Button
-                        aria-label={`Stop computers for ${person.email}`}
-                        className="min-h-11"
-                        onClick={(event) =>
-                          confirm(person, "stop", event.currentTarget)
+                    {canChange ? (
+                      <PersonActions
+                        managed={managed}
+                        onAction={(operation, trigger) =>
+                          confirm(person, operation, trigger)
                         }
-                        size="sm"
-                        variant="outline"
-                      >
-                        Stop computers
-                      </Button>
-                      <Button
-                        aria-label={`${person.revoked ? "Restore" : "Remove"} access for ${person.email}`}
-                        className="min-h-11"
-                        disabled={managed}
-                        onClick={(event) =>
-                          confirm(person, "access", event.currentTarget)
-                        }
-                        size="sm"
-                        variant="outline"
-                      >
-                        {person.revoked ? "Restore access" : "Remove access"}
-                      </Button>
-                      <Button
-                        aria-label={`${person.role === "admin" ? "Remove" : "Grant"} admin for ${person.email}`}
-                        className="min-h-11"
-                        disabled={managed}
-                        onClick={(event) =>
-                          confirm(person, "role", event.currentTarget)
-                        }
-                        size="sm"
-                        variant="outline"
-                      >
-                        {person.role === "admin"
-                          ? "Remove admin"
-                          : "Grant admin"}
-                      </Button>
-                    </ItemActions>
+                        person={person}
+                      />
+                    ) : null}
                   </Item>
                   {index !== rows.length - 1 && <Separator />}
-                </StaggerItem>
+                </Fragment>
               );
             })}
           </PageRows>
@@ -362,23 +548,11 @@ function PeoplePage() {
             className="mt-4 min-h-11"
             onClick={(event) => {
               if (people.isFetching) return;
-              const button = event.currentTarget;
-              const document = button.ownerDocument;
-              const focused = document.activeElement === button;
-              void people
-                .fetchNextPage({ cancelRefetch: false })
-                .then((result) => {
-                  if (
-                    focused &&
-                    result.isSuccess &&
-                    !result.hasNextPage &&
-                    (document.activeElement === button ||
-                      (!button.isConnected &&
-                        document.activeElement === document.body))
-                  ) {
-                    peopleHeading.current?.focus();
-                  }
-                });
+              const trigger = event.currentTarget;
+              if (trigger.ownerDocument.activeElement === trigger) {
+                pageAdvance.current = { count: rows.length, query, trigger };
+              }
+              void people.fetchNextPage({ cancelRefetch: false });
             }}
             size="sm"
             variant="outline"

@@ -10,6 +10,11 @@ import {
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
+import {
+  type ResponsibilityRecord,
+  responsibilitiesQueryOptions,
+  responsibilityKeys,
+} from "@/lib/responsibilities";
 import { settleReactWork } from "./settle-react-work";
 
 /** A Bot's Goals page: its own goals, and a new one that needs no Bot picked. */
@@ -26,7 +31,11 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-const goal = (id: string, agentId: string, title: string) => ({
+const goal = (
+  id: string,
+  agentId: string,
+  title: string,
+): ResponsibilityRecord => ({
   id,
   agentId,
   channelId: `channel-${agentId}`,
@@ -117,6 +126,35 @@ test("only this Bot's goals are listed", async () => {
   const view = draw();
   expect(await view.findByText("Reconcile receipts")).toBeTruthy();
   expect(view.queryByText("Keep the wiki fresh")).toBeNull();
+});
+
+test("denied access clears both goals and related cached runs", async () => {
+  const cache = new QueryClient();
+  const query = responsibilitiesQueryOptions();
+  cache.setQueryData<ResponsibilityRecord[]>(query.queryKey, twoGoals());
+  cache.setQueryData(responsibilityKeys.runs("g1"), [{ id: "run-1" }]);
+  let status = 503;
+  global.fetch = Object.assign(
+    async () => Response.json({ error: "Read unavailable" }, { status }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const read = () => cache.fetchQuery({ ...query, retry: false });
+  try {
+    await expect(read()).rejects.toThrow("Read unavailable");
+    expect(
+      cache.getQueryData<ResponsibilityRecord[]>(query.queryKey)?.length,
+    ).toBe(2);
+    status = 403;
+    await expect(read()).rejects.toThrow("Read unavailable");
+    status = 503;
+    await expect(read()).rejects.toThrow("Read unavailable");
+    expect(
+      cache.getQueryData<ResponsibilityRecord[]>(query.queryKey)?.length,
+    ).toBe(0);
+    expect(cache.getQueryData(responsibilityKeys.runs("g1"))).toBeUndefined();
+  } finally {
+    cache.clear();
+  }
 });
 
 test("a new goal needs no Bot picked, and offers only this Bot's conversations", async () => {

@@ -1,14 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
-import { agents, users } from "../src/db/schema/core";
+import { agents, credentials, users } from "../src/db/schema/core";
 import { personalSaasAccounts } from "../src/db/schema/personal-saas";
 import {
   responsibilityEvents,
   responsibilityRuns,
 } from "../src/db/schema/responsibilities";
 import { workItems } from "../src/db/schema/work";
+import { createResponsibilityBindingStore } from "../src/responsibilities/bindings";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import {
   ResponsibilityNotFoundError,
@@ -35,6 +37,8 @@ const store = createResponsibilityStore(database, {
   },
 });
 const keys: string[] = [];
+const bindingRequestId = randomUUID();
+const bindingIds: string[] = [];
 
 beforeAll(async () => {
   await database.insert(users).values([
@@ -59,8 +63,44 @@ afterAll(async () => {
         ),
       );
   await database.delete(users).where(inArray(users.id, [ownerId, strangerId]));
+  if (bindingIds.length)
+    await database
+      .delete(credentials)
+      .where(inArray(credentials.keyId, bindingIds));
   await database.delete(agents).where(eq(agents.id, botId));
   await database.$client.close();
+});
+
+test("repeating a GitHub binding request creates one binding and one credential", async () => {
+  const vault = createCredentialStore(database);
+  const bindings = createResponsibilityBindingStore(database, {
+    store: vault,
+    reader: vault,
+    encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+  });
+  const input = {
+    repository: "acme/web",
+    secret: "fixture-secret",
+    requestId: bindingRequestId,
+  };
+  const [first, retry] = await Promise.all([
+    bindings.create(ownerId, input),
+    bindings.create(ownerId, input),
+  ]);
+  bindingIds.push(first.id);
+  expect(retry).toEqual(first);
+  expect(await bindings.list(ownerId)).toHaveLength(1);
+  const stored = await database
+    .select({ id: credentials.id })
+    .from(credentials)
+    .where(eq(credentials.keyId, first.id));
+  expect(stored).toHaveLength(1);
+  const other = await bindings.create(strangerId, input);
+  bindingIds.push(other.id);
+  expect(other.id).not.toBe(first.id);
+  await expect(
+    bindings.create(ownerId, { ...input, repository: "acme/other" }),
+  ).rejects.toBeInstanceOf(ResponsibilityRefusedError);
 });
 async function goal() {
   return store.create(ownerId, {

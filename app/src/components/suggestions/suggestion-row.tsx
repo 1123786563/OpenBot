@@ -4,7 +4,9 @@ import {
   IconRadar,
   IconX,
 } from "@tabler/icons-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { ExecutionBudgetDialog } from "@/components/billing/execution-budget-dialog";
 import { BoardRow, MetaTag } from "@/components/needs-you/board-row";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
   changeProactiveSettingMutationOptions,
   type ProactiveSetting,
@@ -38,16 +41,22 @@ import { queryClient } from "@/query-client";
 export function SuggestionRow({
   suggestion,
   botName,
+  canAct = true,
   setting,
   inGroup = false,
+  onDismiss,
 }: {
   suggestion: ProactiveSuggestion;
   /** The Bot it came from, said on the row unless the row sits under that Bot's header. */
   botName: string;
+  canAct?: boolean;
   /** The check-in that found it, when it is still there to turn off. */
   setting?: ProactiveSetting;
   inGroup?: boolean;
+  onDismiss?: (trigger: HTMLButtonElement) => void;
 }) {
+  const { data: capabilities } = useQuery(deploymentCapabilitiesQueryOptions());
+  const [budgetOpen, setBudgetOpen] = useState(false);
   const act = useMutation(resolveSuggestionMutationOptions(queryClient));
   const stop = useMutation(changeProactiveSettingMutationOptions(queryClient));
   const pressed = act.isPending ? act.variables.action : null;
@@ -57,55 +66,86 @@ export function SuggestionRow({
   return (
     <BoardRow
       actions={
-        <>
-          <Button
-            disabled={act.isPending}
-            onClick={() => act.mutate({ id: suggestion.id, action: "start" })}
-            size="sm"
-            variant="outline"
-          >
-            {pressed === "start" ? "Starting…" : "Work on it"}
-          </Button>
-          <Button
-            aria-label={`Dismiss ${suggestion.title}`}
-            disabled={act.isPending}
-            onClick={() => act.mutate({ id: suggestion.id, action: "dismiss" })}
-            size="icon-sm"
-            variant="ghost"
-          >
-            <IconX />
-          </Button>
-          {setting?.enabled ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    aria-label={`More for ${suggestion.title}`}
-                    size="icon-sm"
-                    variant="ghost"
-                  />
+        canAct ? (
+          <>
+            <Button
+              className="min-h-11"
+              disabled={act.isPending}
+              onClick={() => act.mutate({ id: suggestion.id, action: "start" })}
+              size="sm"
+              variant="outline"
+            >
+              {pressed === "start" ? "Starting…" : "Work on it"}
+            </Button>
+            {capabilities?.testCreditConversations ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={act.isPending}
+                onClick={() => setBudgetOpen(true)}
+              >
+                Use Credits
+              </Button>
+            ) : null}
+            {budgetOpen ? (
+              <ExecutionBudgetDialog
+                title="Set a Task budget"
+                onClose={() => setBudgetOpen(false)}
+                submit={(budgetId) =>
+                  act.mutateAsync({
+                    id: suggestion.id,
+                    action: "start",
+                    budgetId,
+                  })
                 }
-              >
-                <IconDots />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-max min-w-48 max-w-xs"
-              >
-                <DropdownMenuItem
-                  disabled={stop.isPending}
-                  onClick={() =>
-                    stop.mutate({ setting, change: { kind: "toggle" } })
+              />
+            ) : null}
+            <Button
+              aria-label={`Dismiss ${suggestion.title}`}
+              className="min-h-11 min-w-11"
+              disabled={act.isPending}
+              onClick={(event) => {
+                if (onDismiss) onDismiss(event.currentTarget);
+                else act.mutate({ id: suggestion.id, action: "dismiss" });
+              }}
+              size={onDismiss ? "sm" : "icon-sm"}
+              variant="ghost"
+            >
+              {onDismiss ? "Dismiss" : <IconX />}
+            </Button>
+            {setting?.enabled ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      aria-label={`More for ${suggestion.title}`}
+                      size="icon-sm"
+                      variant="ghost"
+                    />
                   }
                 >
-                  {setting.subject
-                    ? `Stop checking ${setting.subject}`
-                    : "Stop these check-ins"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
-        </>
+                  <IconDots />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-max min-w-48 max-w-xs"
+                >
+                  <DropdownMenuItem
+                    disabled={stop.isPending}
+                    onClick={() =>
+                      stop.mutate({ setting, change: { kind: "toggle" } })
+                    }
+                  >
+                    {setting.subject
+                      ? `Stop checking ${setting.subject}`
+                      : "Stop these check-ins"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </>
+        ) : null
       }
       detail={suggestion.detail}
       icon={
@@ -141,6 +181,7 @@ export function SuggestionRow({
           </span>
         ) : null,
       ]}
+      stackActions
       title={suggestion.title}
     />
   );

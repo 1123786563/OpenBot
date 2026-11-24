@@ -41,7 +41,7 @@ export function useConversationQuestion(
 
 /** The newest open question asked in this conversation, from an inbox read. */
 export function conversationQuestion(
-  inbox: ApprovalInboxData | undefined,
+  inbox: ApprovalInboxData | null | undefined,
   channelId: string,
   threadId: string,
 ): WaitingQuestion | undefined {

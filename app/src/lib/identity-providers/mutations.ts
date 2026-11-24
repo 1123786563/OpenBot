@@ -67,6 +67,7 @@ export function registerIdentityProviderMutationOptions(
   queryClient: QueryClient,
 ) {
   return mutationOptions({
+    gcTime: 0,
     mutationFn: async (input: IdentityProviderInput): Promise<void> => {
       await client("/api/auth/sso/register", {
         method: "POST",

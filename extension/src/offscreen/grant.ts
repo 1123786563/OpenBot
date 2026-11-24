@@ -1,4 +1,5 @@
 import {
+  openBotCaptureGrantSchema,
   RECORDER_AUTHORITY_UNAVAILABLE,
   RECORDER_SIGNED_OUT,
   recorderPaths,
@@ -250,5 +251,67 @@ export async function fetchGrant(
     classifyGrantError(response.status, body, {
       retryAfter: response.headers.get("Retry-After"),
     }),
+  );
+}
+
+export type OpenBotUpload = (batch: {
+  events: object[];
+  dropped: number;
+}) => Promise<Response>;
+export type CaptureGrant = TrajectoryGrant | { upload: OpenBotUpload };
+
+export async function fetchCaptureGrant(
+  target: GrantTarget,
+  trajectoryId: string,
+  recordingId: string,
+): Promise<CaptureGrant> {
+  let response: Response;
+  try {
+    response = await openbotRaw(
+      target,
+      recorderPaths.captureGrant(trajectoryId),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recordingId }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+  } catch {
+    throw new GrantError(classifyGrantError(null, null));
+  }
+  const body: unknown = await response.json().catch(() => null);
+  const error = typeof body === "object" && body !== null ? body : null;
+  // Configured legacy deployments have no local route. A scoped refusal from the local route is authoritative.
+  if (response.status === 404 && (!error || !("code" in error)))
+    return fetchGrant(target, trajectoryId);
+  const grant = openBotCaptureGrantSchema.safeParse(body);
+  if (response.ok && grant.success) {
+    const captureToken = grant.data.token;
+    return {
+      upload: (batch) =>
+        openbotRaw(target, recorderPaths.captureEvents(trajectoryId), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...batch, captureToken }),
+          signal: AbortSignal.timeout(10_000),
+        }),
+    };
+  }
+  throw new GrantError(
+    classifyGrantError(
+      response.status,
+      {
+        code:
+          error && "code" in error && typeof error.code === "string"
+            ? error.code
+            : undefined,
+        reason:
+          error && "reason" in error && typeof error.reason === "string"
+            ? error.reason
+            : undefined,
+      },
+      { retryAfter: response.headers.get("Retry-After") },
+    ),
   );
 }

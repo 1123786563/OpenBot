@@ -488,6 +488,29 @@ test("Tasks groups active work under the status headings in order", async () => 
   ).toBeTruthy();
 });
 
+test("task access denial clears records before any later outage", async () => {
+  const entry = task({ id: "previous", title: "Previously loaded task" });
+  let status = 200;
+  global.fetch = Object.assign(
+    async () =>
+      status === 200
+        ? Response.json({ tasks: [entry] })
+        : Response.json({ error: "Unavailable" }, { status }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const client = new QueryClient();
+  const options = { ...taskListQueryOptions(), retry: false };
+  await expect(client.fetchQuery(options)).resolves.toEqual([entry]);
+
+  status = 403;
+  await expect(client.fetchQuery(options)).rejects.toMatchObject({ status });
+  expect(client.getQueryData(options.queryKey)).toHaveLength(0);
+
+  status = 503;
+  await expect(client.fetchQuery(options)).rejects.toMatchObject({ status });
+  expect(client.getQueryData(options.queryKey)).toHaveLength(0);
+});
+
 test("Tasks shows an empty inbox only after approvals load successfully", async () => {
   window.localStorage.setItem(TASKS_VIEW_STORAGE_KEY, "active");
   serving();
@@ -508,7 +531,7 @@ test("Tasks shows an empty inbox only after approvals load successfully", async 
     { preconnect: fixtureFetch.preconnect },
   );
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
   });
   const rootRoute = createRootRoute({ component: TasksScreen });
   const router = createRouter({

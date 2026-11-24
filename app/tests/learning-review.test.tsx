@@ -148,6 +148,73 @@ function draw() {
   );
 }
 
+test("opens scoped conversation Learning from Settings and reports a refused start", async () => {
+  const originalFixture = global.fetch;
+  const path = "/api/copilotkit/threads/thread-one/learn?agentId=bot-one";
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/settings/learning/review")
+        return Response.json({
+          mode: "openbot",
+          autoApprove: false,
+          conversations: [
+            {
+              channelId: "channel-one",
+              threadId: "thread-one",
+              botId: "bot-one",
+              title: "Plan a launch",
+              botName: "Planner",
+            },
+          ],
+        });
+      if (url === path) {
+        if (init?.method === "POST") {
+          posts.push(url);
+          return Response.json(
+            { error: "Learning model is unavailable." },
+            { status: 503 },
+          );
+        }
+        return Response.json({
+          enabled: true,
+          available: true,
+          scope: {
+            personId: "person-one",
+            threadId: "thread-one",
+            botId: "bot-one",
+          },
+          autoApprove: false,
+          latest: null,
+          lastResult: null,
+          proposals: [
+            {
+              id: "proposal-one",
+              title: "Prepare a checklist",
+              instructions: "List the steps.",
+              state: "pending_review",
+              review: null,
+              evidence: [],
+            },
+          ],
+        });
+      }
+      return originalFixture(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = draw();
+  fireEvent.click(
+    await view.findByRole("button", { name: "Learning for Plan a launch" }),
+  );
+  await view.findByText("Prepare a checklist");
+  fireEvent.click(view.getByRole("button", { name: "Learn now" }));
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Learning model is unavailable.",
+  );
+  expect(posts).toEqual([path]);
+});
+
 test("lists the pending proposals with what each does", async () => {
   const view = draw();
   await view.findByText("Waiting for an admin");

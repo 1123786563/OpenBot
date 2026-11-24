@@ -9,7 +9,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AuditPage } from "@/components/manage/audit-page";
 import { agentKeys } from "@/lib/agents/queries";
@@ -49,7 +49,10 @@ function serve(routes: Record<string, unknown>) {
       const url = new URL(String(input), "http://127.0.0.1");
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
       asked.push({ path: url.pathname, body });
-      if (url.pathname in routes) return Response.json(routes[url.pathname]);
+      if (url.pathname in routes) {
+        const reply = routes[url.pathname];
+        return reply instanceof Response ? reply.clone() : Response.json(reply);
+      }
       return Response.json({ error: "not served" }, { status: 404 });
     },
     { preconnect: originalFetch.preconnect },
@@ -60,7 +63,11 @@ function serve(routes: Record<string, unknown>) {
 function client() {
   const queryClient = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+      queries: {
+        retry: false,
+        retryDelay: 0,
+        staleTime: Number.POSITIVE_INFINITY,
+      },
     },
   });
   queryClient.setQueryData(agentKeys.list(false), [
@@ -114,11 +121,14 @@ function renderWhatIf() {
     ]),
     history: createMemoryHistory({ initialEntries: ["/admin/what-if"] }),
   });
-  return render(
-    <QueryClientProvider client={client()}>
-      <RouterProvider router={router as never} />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={client()}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    ),
+    router,
+  };
 }
 
 test("a question becomes chips, and Check shows every control in order with the one that decides", async () => {
@@ -225,11 +235,14 @@ test("editing the action while a check runs discards the previous action's resul
   });
   const fetchFixture = globalThis.fetch;
   const pending = Promise.withResolvers<Response>();
+  let checkSignal: AbortSignal | null | undefined;
   globalThis.fetch = Object.assign(
-    (input: RequestInfo | URL, init?: RequestInit) =>
-      String(input).endsWith("/api/admin/what-if/check")
-        ? pending.promise
-        : fetchFixture(input, init),
+    (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).endsWith("/api/admin/what-if/check"))
+        return fetchFixture(input, init);
+      checkSignal = init?.signal;
+      return pending.promise;
+    },
     { preconnect: fetchFixture.preconnect },
   );
   const view = renderWhatIf();
@@ -253,9 +266,70 @@ test("editing the action while a check runs discards the previous action's resul
   await user.click(
     await view.findByRole("menuitemradio", { name: "A person chatting" }),
   );
-  pending.resolve(Response.json(answers.checked));
   await view.findByRole("button", { name: "Check" });
+  expect(checkSignal?.aborted).toBe(true);
+  await act(async () => pending.resolve(Response.json(answers.checked)));
   expect(view.queryByText("What happens")).toBeNull();
+});
+
+test("a new Audit link updates the open simulator and Start over clears the link", async () => {
+  serve({ "/api/admin/what-if/vocabulary": answers.vocabulary });
+  const view = renderWhatIf();
+  await view.findByText("Choose a Bot.");
+  const linkedAction = encodeURIComponent(
+    JSON.stringify(JSON.stringify(answers.checked.action)),
+  );
+  await act(async () => {
+    view.router.history.push(`/admin/what-if?action=${linkedAction}`);
+  });
+  const check = await view.findByRole("button", { name: "Check" });
+  await waitFor(() => expect(check).toHaveProperty("disabled", false));
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: "Start over" }));
+  await waitFor(() => expect(view.router.state.location.searchStr).toBe(""));
+  expect(check).toHaveProperty("disabled", true);
+  expect(document.activeElement).toBe(
+    view.getByLabelText("Ask what would happen"),
+  );
+});
+
+test("a denied question clears the old result and a failed retry cannot reopen the scenario", async () => {
+  serve({
+    "/api/admin/what-if/vocabulary": answers.vocabulary,
+    "/api/admin/what-if/ask": {
+      understood: "yes",
+      action: answers.checked.action,
+    },
+    "/api/admin/what-if/check": answers.checked,
+  });
+  const view = renderWhatIf();
+  const user = userEvent.setup({ document });
+  await view.findByText("Choose a Bot.");
+  const input = view.getByLabelText("Ask what would happen");
+  await user.type(input, QUESTION);
+  await user.click(view.getByRole("button", { name: /^Ask$/ }));
+  await user.click(await view.findByRole("button", { name: "Check" }));
+  await view.findByRole("heading", { name: "What happens" });
+  const requests = serve({
+    "/api/admin/what-if/vocabulary": new Response(null, { status: 503 }),
+    "/api/admin/what-if/ask": new Response(null, { status: 403 }),
+  });
+  await user.click(view.getByRole("button", { name: /^Ask$/ }));
+  await view.findByText("Policy testing access is unavailable.");
+  expect(input).toHaveProperty("value", "");
+  expect(input).toHaveProperty("disabled", true);
+  expect(view.queryByRole("heading", { name: "What happens" })).toBeNull();
+
+  const retry = view.getByRole("button", { name: "Retry Bots and apps" });
+  await user.click(retry);
+  await waitFor(() => {
+    expect(
+      requests.filter(({ path }) => path.endsWith("/vocabulary")),
+    ).toHaveLength(2);
+  });
+  expect(input).toHaveProperty("disabled", true);
+  expect(view.queryByRole("heading", { name: "What happens" })).toBeNull();
 });
 
 test("an Audit row a control decided carries Why?, which explains it from the row with today's settings", async () => {

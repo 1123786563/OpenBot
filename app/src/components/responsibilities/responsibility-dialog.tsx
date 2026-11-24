@@ -12,19 +12,16 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { astryxScope } from "@/components/astryx-pilot/theme";
-import { Button } from "@/components/ui/button";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
 import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -42,6 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { markdownComponents } from "@/lib/markdown";
 import {
   type ResponsibilityRecord,
+  responsibilitiesQueryOptions,
   responsibilityActionMutationOptions,
   responsibilityRunsQueryOptions,
   type TriggerRecord,
@@ -107,26 +105,43 @@ export function summaryFor(
 
 /**
  * Everything about one responsibility, opened from its row: what can be done to it now (pause, run,
- * complete — each immediate), its wording (a draft, saved by the footer), where it stands, what
+ * complete), its wording (a draft, saved by the footer), where it stands, what
  * starts it, and its runs.
  */
 export function ResponsibilityDialog({
   goal,
+  canManage = true,
   onClose,
   returnFocus,
 }: {
   goal: ResponsibilityRecord;
+  canManage?: boolean;
   onClose: () => void;
-  returnFocus: React.RefObject<HTMLButtonElement | null>;
+  returnFocus: () => HTMLElement | null;
 }) {
   const formId = useId();
+  const titleField = useRef<HTMLInputElement>(null);
   const [showRuns, setShowRuns] = useState(false);
-  const [title, setTitle] = useState(goal.title);
-  const [instruction, setInstruction] = useState(goal.instruction);
-  const [successCriteria, setSuccessCriteria] = useState(goal.successCriteria);
+  const submitting = useRef(false);
+  const [draft, setDraft] = useState<
+    Partial<
+      Pick<ResponsibilityRecord, "title" | "instruction" | "successCriteria">
+    >
+  >({});
+  const { title, instruction, successCriteria } = { ...goal, ...draft };
   const triggers = useQuery(triggersQueryOptions(goal.id));
   const action = useMutation(responsibilityActionMutationOptions(queryClient));
   const edit = useMutation(updateResponsibilityMutationOptions(queryClient));
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const dirty =
+    title.trim() !== goal.title.trim() ||
+    instruction.trim() !== goal.instruction.trim() ||
+    successCriteria.trim() !== goal.successCriteria.trim();
+  const canSave =
+    canManage &&
+    !edit.isPending &&
+    Boolean(title.trim() && instruction.trim() && successCriteria.trim()) &&
+    dirty;
   const standing = [
     goal.progress
       ? {
@@ -146,249 +161,302 @@ export function ResponsibilityDialog({
       : null,
   ].filter((entry) => entry !== null);
 
+  function confirmCompletion(trigger: HTMLButtonElement) {
+    requestConfirmation({
+      title: `Complete ${goal.title}?`,
+      description:
+        "Completing this goal stops future runs. Its history stays available.",
+      confirmLabel: "Complete goal",
+      pendingLabel: "Completing…",
+      failureMessage: "Couldn’t complete this goal. Try again.",
+      successMessage: `Completed ${goal.title}.`,
+      trigger,
+      fallbackFocus: () => titleField.current,
+      run: async () => {
+        const goals = await queryClient.fetchQuery({
+          ...responsibilitiesQueryOptions(),
+          staleTime: 0,
+        });
+        const latest = goals.find(({ id }) => id === goal.id);
+        if (!latest)
+          throw new ActionUnavailable("This goal is no longer available.");
+        if (latest.status === "completed")
+          return `Already completed ${latest.title}.`;
+        await action.mutateAsync({ id: goal.id, action: "complete" });
+      },
+    });
+  }
+
   return (
-    <Dialog onOpenChange={(next) => !next && onClose()} open>
-      <DialogContent {...astryxScope} finalFocus={returnFocus}>
-        <DialogHeader>
-          <DialogTitle>{goal.title}</DialogTitle>
-          <DialogDescription>
-            {summaryFor(goal, triggers.data)}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody className="mt-4 overflow-y-auto">
-          <div className="overflow-hidden rounded-lg">
-            {goal.status !== "completed" ? (
-              <>
-                <Item size="sm" variant="muted">
-                  <ItemMedia variant="icon">
-                    <IconTarget />
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>Active</ItemTitle>
-                    <ItemDescription>
-                      {goal.status === "active"
-                        ? "Its events and triggers start it."
-                        : "Paused. Its triggers won't start it."}
-                    </ItemDescription>
-                  </ItemContent>
-                  <ItemActions>
-                    <Switch
-                      aria-label="Active"
-                      checked={goal.status === "active"}
-                      disabled={action.isPending}
-                      onCheckedChange={(active) =>
-                        action.mutate({
-                          id: goal.id,
-                          action: active ? "resume" : "pause",
-                        })
-                      }
-                    />
-                  </ItemActions>
-                </Item>
-                <Separator />
-              </>
-            ) : null}
-            {goal.status === "active" ? (
-              <>
-                <Item
-                  render={
-                    <button
-                      disabled={action.isPending}
-                      onClick={() => {
-                        setShowRuns(true);
-                        action.mutate({ id: goal.id, action: "run" });
-                      }}
-                      type="button"
-                    />
+    <SettingsDraftDialog
+      action={
+        <Button
+          className="min-h-11"
+          disabled={!canSave}
+          form={formId}
+          size="sm"
+          type="submit"
+        >
+          {edit.isPending ? "Saving…" : "Save"}
+        </Button>
+      }
+      description={summaryFor(goal, triggers.data)}
+      dirty={dirty}
+      guardNavigation={submitting}
+      onClose={onClose}
+      open
+      opener={returnFocus}
+      overlay={astryxScope}
+      saving={edit.isPending}
+      title={goal.title}
+    >
+      {confirmation}
+      {!canManage ? (
+        <p className="text-muted-foreground text-sm" role="status">
+          Showing the last loaded goal. Return to the list to refresh before
+          making changes.
+        </p>
+      ) : null}
+      <div className="overflow-hidden rounded-lg">
+        {canManage && goal.status !== "completed" ? (
+          <>
+            <Item size="sm" variant="muted">
+              <ItemMedia variant="icon">
+                <IconTarget />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>Active</ItemTitle>
+                <ItemDescription>
+                  {goal.status === "active"
+                    ? "Its events and triggers start it."
+                    : "Paused. Its triggers won't start it."}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Switch
+                  aria-label="Active"
+                  checked={goal.status === "active"}
+                  disabled={action.isPending}
+                  onCheckedChange={(active) =>
+                    action.mutate({
+                      id: goal.id,
+                      action: active ? "resume" : "pause",
+                    })
                   }
-                  size="sm"
-                  variant="muted"
-                >
-                  <ItemMedia variant="icon">
-                    <IconPlayerPlay />
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>Run now</ItemTitle>
-                    <ItemDescription>
-                      Runs it now, for real. The Bot does the work and can post
-                      and take actions.
-                    </ItemDescription>
-                  </ItemContent>
-                </Item>
-                <Separator />
-              </>
-            ) : null}
-            {goal.status !== "completed" ? (
-              <>
-                <Item
-                  render={
-                    <button
-                      disabled={action.isPending}
-                      onClick={() =>
-                        action.mutate({ id: goal.id, action: "complete" })
-                      }
-                      type="button"
-                    />
-                  }
-                  size="sm"
-                  variant="muted"
-                >
-                  <ItemMedia variant="icon">
-                    <IconCircleCheck />
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>Complete</ItemTitle>
-                    <ItemDescription>
-                      Mark it done. Nothing starts it after this.
-                    </ItemDescription>
-                  </ItemContent>
-                </Item>
-                <Separator />
-              </>
-            ) : null}
+                />
+              </ItemActions>
+            </Item>
+            <Separator />
+          </>
+        ) : null}
+        {canManage && goal.status === "active" ? (
+          <>
             <Item
               render={
-                <Link
-                  params={{ channelId: goal.channelId }}
-                  to="/channel/$channelId"
+                <button
+                  disabled={action.isPending}
+                  onClick={() => {
+                    setShowRuns(true);
+                    action.mutate({ id: goal.id, action: "run" });
+                  }}
+                  type="button"
                 />
               }
               size="sm"
               variant="muted"
             >
               <ItemMedia variant="icon">
-                <IconMessage />
+                <IconPlayerPlay />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Open conversation</ItemTitle>
+                <ItemTitle>Run now</ItemTitle>
+                <ItemDescription>
+                  Runs it now, for real. The Bot does the work and can post and
+                  take actions.
+                </ItemDescription>
               </ItemContent>
-              <ItemActions>
-                <IconChevronRight className="size-4 text-muted-foreground" />
-              </ItemActions>
             </Item>
-          </div>
-          {action.error || edit.error ? (
-            <p role="alert" className="text-destructive text-sm">
-              {action.error?.message ?? edit.error?.message}
-            </p>
+            <Separator />
+          </>
+        ) : null}
+        {canManage && goal.status !== "completed" ? (
+          <>
+            <Item
+              render={
+                <button
+                  disabled={action.isPending}
+                  onClick={(event) => confirmCompletion(event.currentTarget)}
+                  type="button"
+                />
+              }
+              size="sm"
+              variant="muted"
+            >
+              <ItemMedia variant="icon">
+                <IconCircleCheck />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>Mark goal complete</ItemTitle>
+                <ItemDescription>
+                  Stop future runs and keep the run history.
+                </ItemDescription>
+              </ItemContent>
+            </Item>
+            <Separator />
+          </>
+        ) : null}
+        <Item
+          render={
+            <Link
+              params={{ channelId: goal.channelId }}
+              to="/channel/$channelId"
+            />
+          }
+          size="sm"
+          variant="muted"
+        >
+          <ItemMedia variant="icon">
+            <IconMessage />
+          </ItemMedia>
+          <ItemContent>
+            <ItemTitle>Open conversation</ItemTitle>
+          </ItemContent>
+          <ItemActions>
+            <IconChevronRight className="size-4 text-muted-foreground" />
+          </ItemActions>
+        </Item>
+      </div>
+      {(action.error && action.variables?.action !== "complete") ||
+      edit.error ? (
+        <p role="alert" className="text-destructive text-sm">
+          {edit.error?.message ?? action.error?.message}
+        </p>
+      ) : null}
+
+      {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
+          direct child of DialogContent and keeps scrolling. */}
+      <form
+        id={formId}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canSave || submitting.current) return;
+          submitting.current = true;
+          edit.mutate(
+            {
+              id: goal.id,
+              patch: { title, instruction, successCriteria },
+            },
+            {
+              onSuccess: onClose,
+              onError: () => {
+                submitting.current = false;
+              },
+            },
+          );
+        }}
+      >
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={`${formId}-title`}>Title</FieldLabel>
+            <Input
+              id={`${formId}-title`}
+              ref={titleField}
+              value={title}
+              readOnly={!canManage || edit.isPending}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDraft((previous) => ({ ...previous, title: value }));
+              }}
+              required
+              maxLength={160}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${formId}-instruction`}>
+              Instruction
+            </FieldLabel>
+            <Textarea
+              id={`${formId}-instruction`}
+              value={instruction}
+              readOnly={!canManage || edit.isPending}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDraft((previous) => ({ ...previous, instruction: value }));
+              }}
+              required
+              maxLength={6000}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${formId}-criteria`}>
+              Success criteria
+            </FieldLabel>
+            <Textarea
+              id={`${formId}-criteria`}
+              value={successCriteria}
+              readOnly={!canManage || edit.isPending}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDraft((previous) => ({
+                  ...previous,
+                  successCriteria: value,
+                }));
+              }}
+              required
+              maxLength={3000}
+            />
+          </Field>
+        </FieldGroup>
+      </form>
+
+      {standing.length || goal.subscriptions.length ? (
+        <div className="overflow-hidden rounded-lg">
+          {standing.map(({ key, label, icon: Icon, text }, index) => (
+            <Fragment key={key}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm" variant="muted">
+                <ItemMedia variant="icon">
+                  <Icon />
+                </ItemMedia>
+                <ItemContent className="min-w-0">
+                  <ItemTitle>{label}</ItemTitle>
+                  <RunMarkdown>{text}</RunMarkdown>
+                </ItemContent>
+              </Item>
+            </Fragment>
+          ))}
+          {goal.subscriptions.length > 0 ? (
+            <>
+              {standing.length ? <Separator /> : null}
+              <Item size="sm" variant="muted">
+                <ItemMedia variant="icon">
+                  <IconWebhook />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>Events</ItemTitle>
+                  <ItemDescription className="line-clamp-none">
+                    {goal.subscriptions
+                      .map(
+                        (subscription) =>
+                          `${SOURCE_LABEL[subscription.source]} · ${subscription.eventType}`,
+                      )
+                      .join(", ")}
+                  </ItemDescription>
+                </ItemContent>
+              </Item>
+            </>
           ) : null}
+        </div>
+      ) : null}
 
-          {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
-              direct child of DialogContent and keeps scrolling. */}
-          <form
-            id={formId}
-            onSubmit={(event) => {
-              event.preventDefault();
-              edit.mutate(
-                {
-                  id: goal.id,
-                  patch: { title, instruction, successCriteria },
-                },
-                { onSuccess: onClose },
-              );
-            }}
-          >
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor={`${formId}-title`}>Title</FieldLabel>
-                <Input
-                  id={`${formId}-title`}
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  required
-                  maxLength={160}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={`${formId}-instruction`}>
-                  Instruction
-                </FieldLabel>
-                <Textarea
-                  id={`${formId}-instruction`}
-                  value={instruction}
-                  onChange={(event) => setInstruction(event.target.value)}
-                  required
-                  maxLength={6000}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={`${formId}-criteria`}>
-                  Success criteria
-                </FieldLabel>
-                <Textarea
-                  id={`${formId}-criteria`}
-                  value={successCriteria}
-                  onChange={(event) => setSuccessCriteria(event.target.value)}
-                  required
-                  maxLength={3000}
-                />
-              </Field>
-            </FieldGroup>
-          </form>
-
-          {standing.length || goal.subscriptions.length ? (
-            <div className="overflow-hidden rounded-lg">
-              {standing.map(({ key, label, icon: Icon, text }, index) => (
-                <Fragment key={key}>
-                  {index > 0 ? <Separator /> : null}
-                  <Item size="sm" variant="muted">
-                    <ItemMedia variant="icon">
-                      <Icon />
-                    </ItemMedia>
-                    <ItemContent className="min-w-0">
-                      <ItemTitle>{label}</ItemTitle>
-                      <RunMarkdown>{text}</RunMarkdown>
-                    </ItemContent>
-                  </Item>
-                </Fragment>
-              ))}
-              {goal.subscriptions.length > 0 ? (
-                <>
-                  {standing.length ? <Separator /> : null}
-                  <Item size="sm" variant="muted">
-                    <ItemMedia variant="icon">
-                      <IconWebhook />
-                    </ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>Events</ItemTitle>
-                      <ItemDescription className="line-clamp-none">
-                        {goal.subscriptions
-                          .map(
-                            (subscription) =>
-                              `${SOURCE_LABEL[subscription.source]} · ${subscription.eventType}`,
-                          )
-                          .join(", ")}
-                      </ItemDescription>
-                    </ItemContent>
-                  </Item>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-
-          <Triggers goal={goal} />
-          <Runs
-            channelId={goal.channelId}
-            goalId={goal.id}
-            onToggle={() => setShowRuns(!showRuns)}
-            shown={showRuns}
-          />
-        </DialogBody>
-        <DialogFooter className="mt-4">
-          <Button onClick={onClose} size="sm" type="button" variant="outline">
-            Cancel
-          </Button>
-          <Button
-            disabled={edit.isPending}
-            form={formId}
-            size="sm"
-            type="submit"
-          >
-            {edit.isPending ? "Saving…" : "Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {canManage ? <Triggers goal={goal} /> : null}
+      <Runs
+        channelId={goal.channelId}
+        goalId={goal.id}
+        onToggle={() => setShowRuns(!showRuns)}
+        shown={showRuns}
+      />
+    </SettingsDraftDialog>
   );
 }
 
@@ -424,6 +492,7 @@ function Runs({
   shown: boolean;
   onToggle: () => void;
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
   const runs = useQuery({
     ...responsibilityRunsQueryOptions(goalId),
     enabled: shown,
@@ -431,15 +500,30 @@ function Runs({
   return (
     <section className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-medium text-sm">Runs</h3>
-        <Button onClick={onToggle} size="sm" type="button" variant="ghost">
+        <h3 ref={heading} tabIndex={-1} className="font-medium text-sm">
+          Runs
+        </h3>
+        <Button
+          className="min-h-11"
+          onClick={onToggle}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
           {shown ? "Hide runs" : "View runs"}
         </Button>
       </div>
-      {!shown ? null : runs.isPending ? null : runs.error ? (
-        <p role="alert" className="text-destructive text-sm">
-          {runs.error.message}
-        </p>
+      {!shown ? null : runs.isPending ? (
+        <ReadStatus kind="loading" message="Loading goal runs…" />
+      ) : runs.error ? (
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn’t load goal runs"
+          retry={runs.refetch}
+          retryBelow
+          retryLabel="Retry loading goal runs"
+          retrying={runs.isFetching}
+        />
       ) : runs.data.length ? (
         <div className="overflow-hidden rounded-lg">
           {runs.data.map((run, index) => (

@@ -1,0 +1,225 @@
+{
+  "version": 2,
+  "harnessImage": "agent-langgraph-agui@sha256:7b1d63ae241ad834887655cbf0c0016e652f3dafe45427e313094469a6da4068",
+  "provider": "zhipu",
+  "model": "glm-5.3-flash",
+  "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+  "meteringRevision": "zhipu-tokenizer-v1",
+  "source": "live-provider",
+  "gatewayImageDigest": "sha256:2fe9cf9c28eee03a9392ee7d032538dc6c9be53c266c70e08fbf6a4e36523cf1",
+  "stream": {
+    "requestSha256": "28540f394cf26bb161c1a73add47d6150d88e3cd99d13d91d2a534d3189b8b92",
+    "meter": {
+      "requestId": "7cf98036-d4b6-4844-b9f6-611d6324fed0",
+      "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+      "meteringRevision": "zhipu-tokenizer-v1",
+      "requestSha256": "28540f394cf26bb161c1a73add47d6150d88e3cd99d13d91d2a534d3189b8b92",
+      "inputTokenUpperBound": 20
+    },
+    "gateway": {
+      "requestId": "7cf98036-d4b6-4844-b9f6-611d6324fed0",
+      "runId": "b0d8ee0f-554d-4ac8-ab23-c9ad4e760ada",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "retryCount": 0,
+      "fallbackIndex": 0,
+      "fallbackCount": 0,
+      "usage": {
+        "inputTokens": 18,
+        "outputTokens": 64
+      }
+    },
+    "upstream": {
+      "requestId": "202611221654584b790221c9f8450f",
+      "gatewayRequestId": "7cf98036-d4b6-4844-b9f6-611d6324fed0",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "outputCap": 64,
+      "usage": {
+        "inputTokens": 18,
+        "outputTokens": 64
+      }
+    },
+    "outputChunks": 64
+  },
+  "cancellation": {
+    "requestSha256": "1825d0a30c8a41b37c0108362f314ab9e5cb6a99480107f574ff511f9f9fc91d",
+    "meter": {
+      "requestId": "6c8feac6-b89b-4ed1-aeb1-0a682fde3d69",
+      "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+      "meteringRevision": "zhipu-tokenizer-v1",
+      "requestSha256": "1825d0a30c8a41b37c0108362f314ab9e5cb6a99480107f574ff511f9f9fc91d",
+      "inputTokenUpperBound": 22
+    },
+    "gateway": {
+      "requestId": "6c8feac6-b89b-4ed1-aeb1-0a682fde3d69",
+      "runId": "65d307d5-ddfc-4092-8870-95b0b5d7ff62",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "retryCount": 0,
+      "fallbackIndex": 0,
+      "fallbackCount": 0
+    },
+    "upstream": {
+      "requestId": "2026112216564876bfc682d3ec4e3d",
+      "gatewayRequestId": "6c8feac6-b89b-4ed1-aeb1-0a682fde3d69",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "outputCap": 64,
+      "outcome": "cancelled",
+      "terminatedAt": "2026-11-22T08:56:48.896303Z"
+    },
+    "outputChunks": 1,
+    "clientAbortedAt": "2026-11-22T08:56:48.767453Z"
+  },
+  "inputLimit": {
+    "requestId": "1368ab32-6876-487f-b794-e81f71b31bfd",
+    "runId": "2eb63c83-a784-4394-bbc7-3c92ed70907c",
+    "requestSha256": "e91682441763ab88e2548183fd6fcd68e0dc8e248cede082fda5ea0c65a17886",
+    "meter": {
+      "requestId": "1368ab32-6876-487f-b794-e81f71b31bfd",
+      "requestSha256": "e91682441763ab88e2548183fd6fcd68e0dc8e248cede082fda5ea0c65a17886",
+      "inputTokenUpperBound": 4515,
+      "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+      "meteringRevision": "zhipu-tokenizer-v1"
+    },
+    "gatewayRequests": 0,
+    "upstreamAttempts": 0
+  },
+  "outputLimit": {
+    "requestSha256": "1825d0a30c8a41b37c0108362f314ab9e5cb6a99480107f574ff511f9f9fc91d",
+    "meter": {
+      "requestId": "5d07a99b-83d4-4984-8c12-7bf67645a59b",
+      "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+      "meteringRevision": "zhipu-tokenizer-v1",
+      "requestSha256": "1825d0a30c8a41b37c0108362f314ab9e5cb6a99480107f574ff511f9f9fc91d",
+      "inputTokenUpperBound": 22
+    },
+    "gateway": {
+      "requestId": "5d07a99b-83d4-4984-8c12-7bf67645a59b",
+      "runId": "2199bc8f-54d3-4822-86d7-58a390f5c758",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "retryCount": 0,
+      "fallbackIndex": 0,
+      "fallbackCount": 0,
+      "usage": {
+        "inputTokens": 20,
+        "outputTokens": 64
+      }
+    },
+    "upstream": {
+      "requestId": "20261122165502f8d4f548ba5841a4",
+      "gatewayRequestId": "5d07a99b-83d4-4984-8c12-7bf67645a59b",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "outputCap": 64,
+      "usage": {
+        "inputTokens": 20,
+        "outputTokens": 64
+      },
+      "stopReason": "length"
+    }
+  },
+  "failure": {
+    "requestSha256": "5810be3458ebdaeb8e25a6c4b5a28bfde25dcd6772d2f5ae9ae334a45590857b",
+    "meter": {
+      "requestId": "9f2bcf5f-f455-4f86-acef-49c5eff81579",
+      "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+      "meteringRevision": "zhipu-tokenizer-v1",
+      "requestSha256": "5810be3458ebdaeb8e25a6c4b5a28bfde25dcd6772d2f5ae9ae334a45590857b",
+      "inputTokenUpperBound": 17
+    },
+    "gateway": {
+      "requestId": "9f2bcf5f-f455-4f86-acef-49c5eff81579",
+      "runId": "57b4286a-9368-4054-9eda-e43690475366",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "retryCount": 0,
+      "fallbackIndex": 0,
+      "fallbackCount": 0
+    },
+    "upstream": {
+      "requestId": "zhipu-429-1302-9f2bcf5f-f455-4f86-acef-49c5eff81579",
+      "gatewayRequestId": "9f2bcf5f-f455-4f86-acef-49c5eff81579",
+      "provider": "zhipu",
+      "model": "glm-5.3-flash",
+      "outputCap": 64,
+      "outcome": "failed"
+    }
+  },
+  "tool": {
+    "invocation": {
+      "requestSha256": "d8f3146735fc98ce088112a5c1fb45ba0ea430378fa0409d216d7b1f36421672",
+      "meter": {
+        "requestId": "2158450b-a78b-42d7-b2c0-1ed5052c9205",
+        "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+        "meteringRevision": "zhipu-tokenizer-v1",
+        "requestSha256": "d8f3146735fc98ce088112a5c1fb45ba0ea430378fa0409d216d7b1f36421672",
+        "inputTokenUpperBound": 185
+      },
+      "gateway": {
+        "requestId": "2158450b-a78b-42d7-b2c0-1ed5052c9205",
+        "runId": "5cf18805-7bc6-4efd-80be-01aafc508449",
+        "provider": "zhipu",
+        "model": "glm-5.3-flash",
+        "retryCount": 0,
+        "fallbackIndex": 0,
+        "fallbackCount": 0,
+        "usage": {
+          "inputTokens": 183,
+          "outputTokens": 54
+        }
+      },
+      "upstream": {
+        "requestId": "20261122165506bbfe9597ec2f4cd1",
+        "gatewayRequestId": "2158450b-a78b-42d7-b2c0-1ed5052c9205",
+        "provider": "zhipu",
+        "model": "glm-5.3-flash",
+        "outputCap": 64,
+        "usage": {
+          "inputTokens": 183,
+          "outputTokens": 54
+        }
+      },
+      "toolCallId": "call_965e24d6e747405f9d439889"
+    },
+    "result": {
+      "requestSha256": "7f5ea7d4eeff58c4383f037e2d79eacda49dd9d4bfac969910b093022da4fd9c",
+      "meter": {
+        "requestId": "764271d3-db95-4876-af5b-e12bbe126f18",
+        "gatewayRevision": "bifrost-zhipu-fixed6-2fe9cf9c",
+        "meteringRevision": "zhipu-tokenizer-v1",
+        "requestSha256": "7f5ea7d4eeff58c4383f037e2d79eacda49dd9d4bfac969910b093022da4fd9c",
+        "inputTokenUpperBound": 216
+      },
+      "gateway": {
+        "requestId": "764271d3-db95-4876-af5b-e12bbe126f18",
+        "runId": "5cf18805-7bc6-4efd-80be-01aafc508449",
+        "provider": "zhipu",
+        "model": "glm-5.3-flash",
+        "retryCount": 0,
+        "fallbackIndex": 0,
+        "fallbackCount": 0,
+        "usage": {
+          "inputTokens": 214,
+          "outputTokens": 40
+        }
+      },
+      "upstream": {
+        "requestId": "202611221655081e5217ee691747bc",
+        "gatewayRequestId": "764271d3-db95-4876-af5b-e12bbe126f18",
+        "provider": "zhipu",
+        "model": "glm-5.3-flash",
+        "outputCap": 64,
+        "usage": {
+          "inputTokens": 214,
+          "outputTokens": 40
+        }
+      },
+      "toolResultFor": "call_965e24d6e747405f9d439889"
+    }
+  },
+  "revision": "e2fd40ab-313f-45a0-acbc-7cab7bb98894",
+  "artifactDigest": "sha256:8e200b7d23921e67f8b50187a10bb56fa65c888e448e76565ca0b92dfc8a3ba2"
+}

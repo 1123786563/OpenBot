@@ -1,10 +1,11 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button as RecoveryButton } from "@astryxdesign/core/Button";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   type MouseEvent,
+  type Ref,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -17,6 +18,7 @@ import {
   type WaitingQuestion,
 } from "@/components/approvals/question-notice";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button } from "@/components/ui/button";
 import {
   MessageContent,
   MessageHeader,
@@ -34,8 +36,10 @@ import {
   readComposeDraft,
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
+import { canKeepCachedRead, client } from "@/lib/client";
 import {
   awaitingFirstReply,
+  type GroupBackgroundRun,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
@@ -88,9 +92,11 @@ let activityReturn: { entry: string; messageId: string } | undefined;
 export function GroupChat({
   channelId,
   historyEntry,
+  runId,
 }: {
   channelId: string;
   historyEntry?: string;
+  runId?: string;
 }) {
   const [returningFromActivity] = useState(() =>
     activityReturn?.entry === historyEntry ? activityReturn : undefined,
@@ -116,9 +122,22 @@ export function GroupChat({
     ]),
   );
   const messages = group.data?.messages ?? [];
-  const working = messages.some(
-    (message) => message.status === "running" || message.status === "queued",
-  );
+  const background = group.data?.backgroundRuns ?? [];
+  const stopRun = useMutation({
+    mutationFn: async (run: GroupBackgroundRun) => {
+      await client(
+        `/api/copilotkit/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}/stop?agentId=${encodeURIComponent(run.agentId)}`,
+        { method: "POST", fallback: "The Bot run could not be stopped." },
+      );
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
+  });
+  const working =
+    background.some(({ status }) => status === "running") ||
+    messages.some(
+      (message) => message.status === "running" || message.status === "queued",
+    );
 
   const inbox = useQuery(approvalInboxOptions());
   const question = groupQuestion(inbox.data, channelId);
@@ -157,6 +176,12 @@ export function GroupChat({
    * down each time a Bot spoke; `atBottom` is where the reader was at their last scroll.
    */
   const viewportRef = useRef<HTMLElement | null>(null);
+  const replyRefresh = useRef<{
+    button: HTMLElement;
+    promptId: string;
+    before: GroupMessage[];
+    checkedAt: number;
+  } | null>(null);
   const restoredActivityFocus = useRef<HTMLElement | null>(null);
   const atBottom = useRef(true);
   // Once per mount, which is once per channel: the route keys `GroupChat` on its channel id.
@@ -169,6 +194,18 @@ export function GroupChat({
     awaitingReply && group.dataUpdatedAt > 0 && awaitingFirstReply(newest);
   const newestIsMine = newest !== undefined && newest.ownerUserId === me?.id;
   const lastKey = `${messages.length}:${newest?.status ?? ""}`;
+  async function refreshReplies(button: HTMLElement) {
+    replyRefresh.current =
+      newest && document.activeElement === button
+        ? {
+            button,
+            promptId: newest.id,
+            before: messages,
+            checkedAt: group.dataUpdatedAt,
+          }
+        : null;
+    await group.refetch();
+  }
   useLayoutEffect(() => {
     const element = viewportRef.current;
     if (element === null || lastKey === "0:") return;
@@ -184,6 +221,47 @@ export function GroupChat({
       atBottom.current = true;
     }
   }, [lastKey, newestIsMine]);
+
+  const focus = useRef<HTMLDivElement>(null);
+  const linkedRun =
+    background.find(({ id }) => id === runId) ??
+    messages.find(({ id }) => id === runId);
+  useLayoutEffect(() => {
+    if (linkedRun) focus.current?.scrollIntoView({ block: "nearest" });
+  }, [linkedRun]);
+
+  useLayoutEffect(() => {
+    const intent = replyRefresh.current;
+    if (
+      !intent ||
+      (messages === intent.before && group.dataUpdatedAt === intent.checkedAt)
+    )
+      return;
+    replyRefresh.current = null;
+    const viewport = viewportRef.current;
+    if (
+      !viewport ||
+      intent.button.isConnected ||
+      document.activeElement !== document.body
+    )
+      return;
+    const promptIndex = messages.findIndex(
+      (message) => message.id === intent.promptId,
+    );
+    const nextReply =
+      promptIndex < 0
+        ? undefined
+        : messages
+            .slice(promptIndex + 1)
+            .find((message) => message.agentId !== null);
+    const target =
+      nextReply &&
+      viewport.querySelector<HTMLElement>(
+        `[data-group-message="${CSS.escape(nextReply.id)}"]`,
+      );
+    if (target) target.focus();
+    else viewport.focus({ preventScroll: true });
+  }, [group.dataUpdatedAt, messages]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
@@ -203,13 +281,17 @@ export function GroupChat({
     atBottom.current = isNearBottom(viewport);
   }, [group.data, returningFromActivity]);
 
-  if (group.isPending)
+  if (group.isPending && group.errorUpdateCount === 0)
     return <ConversationLoading label="Opening group conversation…" />;
-  if (!group.data) {
+  if (!group.data || !canKeepCachedRead(group.error)) {
     return (
       <Stack padding={5}>
         <ConversationReadError
-          title="Couldn't open this group conversation."
+          title={
+            canKeepCachedRead(group.error)
+              ? "Couldn't open this group conversation."
+              : "You can't access this group conversation."
+          }
           description="The messages and participant list are unavailable."
           retry={() => void group.refetch()}
           retryBelow
@@ -221,7 +303,7 @@ export function GroupChat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {group.isError && (
+      {group.isError && !awaitingReply && (
         <ConversationReadError
           title="Couldn't update group messages."
           description="You can still read the messages already loaded."
@@ -244,9 +326,16 @@ export function GroupChat({
           className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-6"
           data-transcript-column
         >
+          {messages.length === 0 && background.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Say something to {bots.map((bot) => bot.name).join(" and ")}.
+              Every Bot answers in turn; start with @Name to ask just one.
+            </p>
+          ) : null}
           {messages.map((message) => (
             <GroupLine
               key={message.id}
+              rowRef={message.id === runId ? focus : undefined}
               message={message}
               name={
                 message.agentId
@@ -279,33 +368,67 @@ export function GroupChat({
               }}
             />
           ))}
+          {background.map((run) => (
+            <MessageRow
+              align="start"
+              key={run.id}
+              ref={run.id === runId ? focus : undefined}
+              className="items-center"
+            >
+              <MessageContent>
+                <strong>{names.get(run.agentId)}</strong>
+                {run.partialReply && (
+                  <p className="whitespace-pre-wrap">{run.partialReply}</p>
+                )}
+                <p>
+                  {run.reason ??
+                    (run.waitingForApproval
+                      ? "Waiting for your approval."
+                      : run.status === "running"
+                        ? "Running"
+                        : run.status === "completed"
+                          ? "Run completed"
+                          : run.externalOutcome !== "unknown"
+                            ? "Run ended"
+                            : null)}
+                  {run.externalOutcome === "unknown" &&
+                    " The external outcome needs verification."}
+                </p>
+              </MessageContent>
+              {run.waitingForApproval && (
+                <Button
+                  disabled={stopRun.isPending}
+                  onClick={() => stopRun.mutate(run)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  Stop run
+                </Button>
+              )}
+            </MessageRow>
+          ))}
+          {stopRun.error && <p role="alert">{stopRun.error.message}</p>}
           {awaitingReply && (
             <Stack align="start" gap={1}>
-              <Text as="p" type="supporting" role="status">
-                {checkingForReply
-                  ? "Message sent. No Bot reply yet."
-                  : "No Bot reply received. Automatic refresh has stopped."}
+              <Text
+                as="p"
+                type="supporting"
+                role={group.isError ? "alert" : "status"}
+              >
+                {group.isError
+                  ? "Couldn't check for replies. Try again when you're ready."
+                  : checkingForReply
+                    ? "Message sent. No Bot reply yet."
+                    : "No Bot reply received. Automatic refresh has stopped."}
               </Text>
-              {!checkingForReply && !group.isError && (
-                <Button
+              {(!checkingForReply || group.isError) && (
+                <RecoveryButton
                   className="conversation-recovery-action"
                   label="Refresh messages"
                   variant="ghost"
                   size="lg"
                   isLoading={group.isFetching}
-                  clickAction={async (event) => {
-                    const button = event.currentTarget;
-                    const restoreFocus = document.activeElement === button;
-                    await group.refetch();
-                    if (!restoreFocus) return;
-                    requestAnimationFrame(() => {
-                      if (
-                        !button.isConnected &&
-                        document.activeElement === document.body
-                      )
-                        viewportRef.current?.focus({ preventScroll: true });
-                    });
-                  }}
+                  clickAction={(event) => refreshReplies(event.currentTarget)}
                 />
               )}
             </Stack>
@@ -414,7 +537,7 @@ export function GroupChat({
  * thread of its own, so it is found by the conversation, not by a thread.
  */
 export function groupQuestion(
-  inbox: ApprovalInboxData | undefined,
+  inbox: ApprovalInboxData | null | undefined,
   channelId: string,
 ): WaitingQuestion | undefined {
   return inbox?.questions.find((question) => question.channelId === channelId);
@@ -426,6 +549,7 @@ function GroupLine({
   name,
   answeredBy,
   mine,
+  rowRef,
   available,
   rememberActivityLink,
 }: {
@@ -433,12 +557,13 @@ function GroupLine({
   name: string;
   answeredBy?: string;
   mine: boolean;
+  rowRef?: Ref<HTMLDivElement>;
   available: boolean;
   rememberActivityLink: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   if (message.agentId === null)
     return (
-      <MessageRow align={mine ? "end" : "start"}>
+      <MessageRow align={mine ? "end" : "start"} ref={rowRef}>
         <MessageContent>
           {mine ? null : (
             <MessageHeader className="text-xs font-medium text-muted-foreground">
@@ -454,7 +579,13 @@ function GroupLine({
       </MessageRow>
     );
   return (
-    <MessageRow align="start" data-speaker={message.agentId}>
+    <MessageRow
+      align="start"
+      data-group-message={message.id}
+      data-speaker={message.agentId}
+      ref={rowRef}
+      tabIndex={-1}
+    >
       <div className="shrink-0 pt-0.5">
         <ChannelAvatar participantIds={[message.agentId]} size={24} />
       </div>
@@ -496,6 +627,12 @@ function GroupLine({
               {message.consent.serverId} account.
             </p>
           )
+        ) : message.status === "paused" ? (
+          <section aria-label="Paused Bot run" role="status">
+            <Text as="p" type="supporting">
+              {message.reason ?? message.text}
+            </Text>
+          </section>
         ) : message.status === "failed" ? (
           <Stack gap={1}>
             <Text
@@ -518,7 +655,7 @@ function GroupLine({
                   ? "If the request involved taking an action, check whether it went through before asking again."
                   : "If an action was requested, ask the teammate who sent the message to check the outcome before trying again."}
             </Text>
-            {mine && available && (
+            {mine && available && message.agentId && (
               <Link
                 className="recovery-link"
                 data-reply-activity={message.id}

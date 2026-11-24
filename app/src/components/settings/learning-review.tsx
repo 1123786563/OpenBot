@@ -1,15 +1,20 @@
+import { HStack, VStack } from "@astryxdesign/core/Stack";
+import type { OpenBotPersonalReview } from "@openbot/shared/direct-chat-learning";
 import type {
   LearningProposal,
   LearningRunSummary,
+  PersonalReview,
 } from "@openbot/shared/learning";
 import { IconChevronRight, IconSparkles } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useEffect, useRef, useState } from "react";
+import { DirectChatLearning } from "@/components/channels/direct-chat-learning";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { ProposalDialog } from "@/components/learning/proposal-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,6 +99,111 @@ function GroupError({ state }: { state: StartState | undefined }) {
  */
 export function LearningReview() {
   const review = useQuery(personalReviewQueryOptions());
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
+  if (review.isPending || review.error) {
+    return (
+      <PageSection headingRef={sectionHeading} title="New skills">
+        {review.error ? (
+          <ReadError
+            focusAfterRetry={() => sectionHeading.current}
+            message="Couldn't load what your Bots learned."
+            retry={review.refetch}
+            retryBelow
+            retryLabel="Retry skill review"
+            retrying={review.isFetching}
+          />
+        ) : (
+          <ReadStatus kind="loading" message="Loading new skills…" />
+        )}
+      </PageSection>
+    );
+  }
+  if (!review.data) return null;
+  return "mode" in review.data ? (
+    <ConversationLearning
+      review={review.data}
+      sectionHeading={sectionHeading}
+    />
+  ) : (
+    <LegacyLearningReview
+      reviewData={review.data}
+      refetchReview={review.refetch}
+      sectionHeading={sectionHeading}
+    />
+  );
+}
+
+function ConversationLearning({
+  review,
+  sectionHeading,
+}: {
+  review: OpenBotPersonalReview;
+  sectionHeading: React.RefObject<HTMLHeadingElement | null>;
+}) {
+  const saveAutoApprove = useMutation(
+    saveAutoApproveMutationOptions(queryClient),
+  );
+  return (
+    <PageSection
+      headingRef={sectionHeading}
+      title="Conversation Learning"
+      description="Review skills and start Learning for your conversations with Bots."
+    >
+      {review.autoApprove !== null && (
+        <HStack gap={2} wrap="wrap">
+          <Switch
+            aria-label="Approve new skills automatically"
+            checked={
+              saveAutoApprove.isPending
+                ? saveAutoApprove.variables
+                : review.autoApprove
+            }
+            disabled={saveAutoApprove.isPending}
+            onCheckedChange={(checked) => saveAutoApprove.mutate(checked)}
+          />
+          <p>Approve new skills automatically</p>
+        </HStack>
+      )}
+      {saveAutoApprove.error && (
+        <p role="alert">{saveAutoApprove.error.message}</p>
+      )}
+      {review.conversations.length === 0 ? (
+        <PageEmpty title="No conversations with Learning" />
+      ) : (
+        <PageRows>
+          {review.conversations.map((conversation) => (
+            <HStack
+              key={conversation.threadId}
+              gap={3}
+              justify="between"
+              wrap="wrap"
+            >
+              <VStack gap={1}>
+                <p>{conversation.title}</p>
+                <p>{conversation.botName}</p>
+              </VStack>
+              <DirectChatLearning
+                threadId={conversation.threadId}
+                agentId={conversation.botId}
+                conversationTitle={conversation.title}
+              />
+            </HStack>
+          ))}
+        </PageRows>
+      )}
+    </PageSection>
+  );
+}
+
+function LegacyLearningReview({
+  reviewData,
+  refetchReview,
+  sectionHeading,
+}: {
+  reviewData: PersonalReview;
+  refetchReview: () => Promise<unknown>;
+  sectionHeading: React.RefObject<HTMLHeadingElement | null>;
+}) {
   const decide = useMutation(
     reviewPersonalProposalMutationOptions(queryClient),
   );
@@ -119,7 +229,7 @@ export function LearningReview() {
     >
   >({});
   // When a refetch finds fewer proposals waiting, some were approved on their own: Your skills shows them now.
-  const waitingCount = review.data?.sources.reduce(
+  const waitingCount = reviewData.sources.reduce(
     (count, source) =>
       count +
       (source.proposals ?? []).filter(
@@ -129,7 +239,6 @@ export function LearningReview() {
   );
   const previousWaiting = useRef<number | undefined>(undefined);
   // Skills the sweep approved while the page opened are in Your skills too, including on the first load.
-  const reviewData = review.data;
   useEffect(() => {
     if ((reviewData?.approved ?? 0) > 0)
       queryClient.invalidateQueries({ queryKey: learningKeys.personal });
@@ -146,7 +255,7 @@ export function LearningReview() {
   // A run Learn now started may not be listed at once; read the review again until it is, so the button comes back.
   const awaitingRun = Object.entries(starting).some(([label, state]) => {
     if (state.started === null) return false;
-    const runs = (review.data?.sources ?? [])
+    const runs = reviewData.sources
       .filter((source) => source.label === label)
       .map((source) => source.latestRun)
       .filter((run) => run !== null);
@@ -157,32 +266,12 @@ export function LearningReview() {
     );
     return latest === null || latest.id === state.started.from;
   });
-  const refetchReview = review.refetch;
   useEffect(() => {
     if (!awaitingRun) return;
     const timer = setInterval(() => void refetchReview(), 10_000);
     return () => clearInterval(timer);
   }, [awaitingRun, refetchReview]);
-  if (review.isPending) return null;
-  if (review.error) {
-    return (
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't load what your Bots learned.
-        </p>
-        <Button
-          disabled={review.isFetching}
-          onClick={() => void review.refetch()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {review.isFetching ? "Retrying…" : "Retry"}
-        </Button>
-      </div>
-    );
-  }
-  const { canReview, sources, autoApprove } = review.data;
+  const { canReview, sources, autoApprove } = reviewData;
   // Shown at once while the save is on its way, as a switch is.
   const autoApproveOn =
     (saveAutoApprove.isPending ? saveAutoApprove.variables : undefined) ??
@@ -268,7 +357,11 @@ export function LearningReview() {
   };
 
   return (
-    <PageSection title={heading.title} description={heading.description}>
+    <PageSection
+      title={heading.title}
+      description={heading.description}
+      headingRef={sectionHeading}
+    >
       {autoApproveOn !== null && (
         <PageRows>
           <Item size="sm">

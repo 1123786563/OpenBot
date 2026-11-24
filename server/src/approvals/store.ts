@@ -1,19 +1,37 @@
-import { and, desc, eq, isNull, ne, notExists, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import {
   createAuditStore,
   recordAuditEvent,
   withAuditTransaction,
 } from "../audit";
+import { isBackgroundMessage } from "../channels/direct-chat-replay";
 import type { Database } from "../db/client";
 import {
   approvalConversationGrants,
   approvalPreferences,
   approvalRequests,
   approvalRules,
+  approvalTeamRuleSaves,
   approvalTeamRules,
   approvalTeamSettings,
 } from "../db/schema/approvals";
-import { channels, intelligenceChannelMappings } from "../db/schema/core";
+import {
+  channelMemberships,
+  channels,
+  intelligenceChannelMappings,
+} from "../db/schema/core";
+import { directChatRuns } from "../db/schema/direct-chat";
+import { groupBotThreads } from "../db/schema/group";
 import { botTasks } from "../db/schema/tasks";
 import { workItems } from "../db/schema/work";
 import { currentEdition } from "../edition";
@@ -29,9 +47,11 @@ import {
   type ApprovalPreferences,
   type ApprovalRecord,
   ApprovalRefusedError,
+  ApprovalRuleSaveConflictError,
   type ApprovalStore,
   type ApprovalTeamSettings,
   offersStandingRule,
+  ReviewerGuidanceConflictError,
   targetSubject,
 } from "./types";
 
@@ -70,11 +90,75 @@ const grantInForce = () =>
     ),
   );
 
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
 export function createApprovalStore(
   database: Database,
+  canUseBot?: (
+    tx: Transaction,
+    owner: string,
+    botId: string,
+  ) => Promise<boolean>,
   now = Date.now,
 ): ApprovalStore {
-  type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+  async function runAcceptsApproval(
+    tx: Transaction,
+    action: ApprovalAction,
+    lock: "share" | "update" = "share",
+  ) {
+    const [run] = await tx
+      .select({ status: directChatRuns.status })
+      .from(directChatRuns)
+      .where(
+        and(
+          eq(directChatRuns.threadId, action.threadId),
+          eq(directChatRuns.id, action.runId),
+        ),
+      )
+      .for(lock);
+    return !run || run.status === "running";
+  }
+
+  async function canControlConversation(
+    tx: Transaction,
+    action: ApprovalAction,
+    lock: "share" | "update" = "share",
+  ) {
+    const [group] = await tx
+      .select({ channelId: groupBotThreads.channelId })
+      .from(groupBotThreads)
+      .where(eq(groupBotThreads.threadId, action.threadId));
+    const [direct] = group
+      ? []
+      : await tx
+          .select({ channelId: intelligenceChannelMappings.channelId })
+          .from(intelligenceChannelMappings)
+          .where(eq(intelligenceChannelMappings.threadId, action.threadId));
+    const source = group ?? direct;
+    if (!source) return true;
+    // Leave and delete lock the same channel before changing access.
+    const [channel] = await tx
+      .select({ id: channels.id })
+      .from(channels)
+      .where(and(eq(channels.id, source.channelId), isNull(channels.deletedAt)))
+      .for("share");
+    if (!channel) return false;
+    const [member] = await tx
+      .select({ id: channelMemberships.userId })
+      .from(channelMemberships)
+      .where(
+        and(
+          eq(channelMemberships.channelId, channel.id),
+          eq(channelMemberships.userId, action.actorId),
+        ),
+      );
+    return (
+      Boolean(member) &&
+      (await runAcceptsApproval(tx, action, lock)) &&
+      (!canUseBot || (await canUseBot(tx, action.actorId, action.botId)))
+    );
+  }
+
   const reconcile = (owner: string) =>
     database.transaction((tx) => reconcileDecisionHistory(tx, owner, now));
   const verify = async (
@@ -177,6 +261,8 @@ export function createApprovalStore(
         );
         if (access?.kind === "denied")
           throw new ApprovalRefusedError(decisionInvalidated);
+        if (!(await runAcceptsApproval(tx, action)))
+          throw new ApprovalRefusedError("The Bot run has ended.");
         // A request the policy gate opened was opened because something asked for the person; a
         // saved "always" rule was already weighed there and must not approve it behind that.
         const [rule] = action.policy
@@ -242,6 +328,8 @@ export function createApprovalStore(
         });
         if (request.action.executionInvalidated)
           throw new ApprovalRefusedError(decisionInvalidated);
+        if (!(await canControlConversation(tx, request.action)))
+          throw new ApprovalNotFoundError();
         if (request.status !== "pending")
           throw new ApprovalRefusedError("This request was already decided.");
         const handOff = request.action.policy?.behaviour === "hand_off";
@@ -299,7 +387,10 @@ export function createApprovalStore(
           .returning();
         if (!updated) throw new ApprovalNotFoundError();
         const workItemKey =
-          request.action.dispatch === "explicit" ? undefined : id;
+          request.action.dispatch === "explicit" ||
+          request.action.dispatch === "budgeted"
+            ? undefined
+            : id;
         const continuation = request.action.continuation;
         const approvalRun = {
           runId: request.runId,
@@ -371,7 +462,11 @@ export function createApprovalStore(
         if (!request) throw new ApprovalNotFoundError();
         if (request.actionDigest !== digest)
           throw new ApprovalRefusedError("The approved action has changed.");
-        if (request.status !== "approved") return false;
+        if (
+          request.status !== "approved" ||
+          !(await canControlConversation(tx, request.action, "update"))
+        )
+          return false;
         await verify(tx, owner, {
           runId: request.runId,
           createdAt: request.createdAt,
@@ -399,6 +494,37 @@ export function createApprovalStore(
             )
             .limit(1);
           if (!grant) return false;
+        }
+        // Serialize the approved dispatch with stop. The action result remains unverified until
+        // the approval worker persists it, including if this worker loses its lease.
+        const predicate = and(
+          eq(directChatRuns.threadId, request.action.threadId),
+          eq(directChatRuns.id, request.action.runId),
+        );
+        const [run] = await tx
+          .select({
+            userMessageId: directChatRuns.userMessageId,
+            waitingApprovalId: directChatRuns.waitingApprovalId,
+          })
+          .from(directChatRuns)
+          .where(predicate)
+          .for("update");
+        if (
+          run &&
+          (run.waitingApprovalId || isBackgroundMessage(run.userMessageId))
+        ) {
+          const [dispatched] = await tx
+            .update(directChatRuns)
+            .set({ externalOutcome: "dispatching" })
+            .where(
+              and(
+                predicate,
+                eq(directChatRuns.status, "running"),
+                eq(directChatRuns.waitingApprovalId, id),
+              ),
+            )
+            .returning({ id: directChatRuns.id });
+          if (!dispatched) return false;
         }
         await beforeConsume?.(tx);
         const rows = await tx
@@ -645,8 +771,58 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
      * One save, one row on the trail: the rules a description was written into are added together or
      * not at all, and the row says who saved them, the team rules either side, and the sentence.
      */
-    async createTeamRules(by, inputs, authoring) {
+    async createTeamRules(by, inputs, authoring, request) {
       return withAuditTransaction(database, async (tx, deferTap) => {
+        const receipt =
+          request &&
+          and(
+            eq(approvalTeamRuleSaves.actorId, by),
+            eq(approvalTeamRuleSaves.requestId, request.requestId),
+          );
+        if (request) {
+          const fingerprint = createHash("sha256")
+            .update(
+              JSON.stringify([
+                inputs.map(({ botId, toolRef, effect, scope, behaviour }) => [
+                  botId,
+                  toolRef,
+                  effect,
+                  scope,
+                  behaviour,
+                ]),
+                authoring?.text ?? null,
+              ]),
+            )
+            .digest("hex");
+          // The claim, rule inserts and audit row commit together. A racing retry waits for the claim.
+          const [claimed] = await tx
+            .insert(approvalTeamRuleSaves)
+            .values({
+              actorId: by,
+              requestId: request.requestId,
+              fingerprint,
+              ruleIds: [],
+            })
+            .onConflictDoNothing()
+            .returning({ requestId: approvalTeamRuleSaves.requestId });
+          if (!claimed) {
+            const [saved] = await tx
+              .select()
+              .from(approvalTeamRuleSaves)
+              .where(receipt);
+            if (!saved || saved.fingerprint !== fingerprint)
+              throw new ApprovalRuleSaveConflictError(
+                "This save was already used for a different draft.",
+              );
+            const existing = await tx
+              .select()
+              .from(approvalTeamRules)
+              .where(inArray(approvalTeamRules.id, saved.ruleIds));
+            const byId = new Map(existing.map((rule) => [rule.id, rule]));
+            return saved.ruleIds.flatMap((id) => byId.get(id) ?? []);
+          }
+          request.validate();
+        }
         const executor = tx as unknown as Database;
         const before = await teamRuleRows(executor);
         const rows = inputs.length
@@ -661,6 +837,11 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
               )
               .returning()
           : [];
+        if (receipt)
+          await tx
+            .update(approvalTeamRuleSaves)
+            .set({ ruleIds: rows.map((rule) => rule.id) })
+            .where(receipt);
         await recordAuditEvent(createAuditStore(tx, deferTap), {
           eventType: "approval.rule_changed",
           targetType: "approval_rule",
@@ -703,12 +884,18 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
     async setReviewerGuidance(by, change) {
       const after = change.text?.trim() || null;
       return withAuditTransaction(database, async (tx, deferTap) => {
+        // Serialize even the first save, when there may be no settings row to lock.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext('approval-reviewer-guidance'))`,
+        );
         const [current] = await tx
           .select({ guidance: approvalTeamSettings.reviewerGuidance })
           .from(approvalTeamSettings)
           .where(eq(approvalTeamSettings.id, TEAM))
           .limit(1);
         const before = current?.guidance?.trim() || null;
+        if (change.basedOn !== undefined && change.basedOn !== before)
+          throw new ReviewerGuidanceConflictError();
         await tx
           .insert(approvalTeamSettings)
           .values({ id: TEAM, reviewerGuidance: after, updatedBy: by })
@@ -859,7 +1046,11 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
             )
             .returning({ id: approvalRequests.id });
           if (!rows.length) return false;
-          if (options.resume === false) return true;
+          if (
+            options.resume === false ||
+            request.action.dispatch === "budgeted"
+          )
+            return true;
           // The waiting conversation resumes with the reason as its result; nothing is executed.
           await tx
             .insert(workItems)

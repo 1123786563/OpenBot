@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Message, RunAgentInput } from "@ag-ui/client";
 import { z } from "zod";
 import type { AuditInitiator } from "./initiator";
+import { type RunContextVersion, runContextVersions } from "./run-context";
 
 export const marketSkillIdentitySchema = z.object({
   source: z.string(),
@@ -51,6 +52,8 @@ export type ApprovalContinuation = {
   context: RunAgentInput["context"];
   forwardedProps: unknown;
   initiator?: AuditInitiator;
+  sourceVersions?: RunContextVersion[];
+  budgeted?: true;
   marketSkill?: MarketSkillSnapshot;
 };
 
@@ -60,6 +63,12 @@ const actionContext = new AsyncLocalStorage<ApprovalContinuation>();
 export const withApprovalContext = <T>(
   context: ApprovalContinuation,
   run: () => Promise<T>,
-): Promise<T> => actionContext.run(context, run);
+): Promise<T> => {
+  const sourceVersions = context.sourceVersions ?? runContextVersions();
+  return actionContext.run(
+    sourceVersions ? { ...context, sourceVersions } : context,
+    run,
+  );
+};
 
 export const currentApprovalContext = () => actionContext.getStore();

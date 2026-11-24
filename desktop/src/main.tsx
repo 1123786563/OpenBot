@@ -1,11 +1,14 @@
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import { DesktopSetup } from "./CloudConnection";
 import { startHeartbeat } from "./heartbeat";
 import { CLOUD_FRAGMENT, PersonalCloud } from "./PersonalCloud";
 import { isShuttingDownPage, ShuttingDownWindow } from "./ShuttingDown";
 import { isStatusPage, StatusWindow } from "./StatusWindow";
 import "@fontsource-variable/inter";
+import "@astryxdesign/core/reset.css";
+import "@astryxdesign/core/astryx.css";
+import "@astryxdesign/theme-neutral/theme.css";
 import "./styles.css";
 import { UpdateOffer } from "./UpdateOffer";
 
@@ -37,7 +40,7 @@ createRoot(root).render(
       <>
         <SetupHeartbeat />
         <UpdateOffer />
-        <App />
+        <DesktopSetup />
       </>
     )}
   </StrictMode>,

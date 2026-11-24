@@ -6,6 +6,8 @@ import {
   marketSkillSnapshotSchema,
   withApprovalContext,
 } from "@openbot/toolkit/continuation";
+import { runContextVersion } from "@openbot/toolkit/run-context";
+import { z } from "zod";
 import type { AuditEventInput, AuditInitiator } from "../audit";
 import { cutAtCodeUnits } from "../channels/text";
 import type { Database } from "../db/client";
@@ -137,7 +139,11 @@ export type ApprovalCandidate = {
   ownConnectionRead?: true;
   /** The caller requires a fresh one-time answer even when a standing rule would allow the write. */
   requireOneTime?: true;
-  dispatch?: "explicit" | "corsair-slack-goal" | "corsair-shared-goal";
+  dispatch?:
+    | "budgeted"
+    | "explicit"
+    | "corsair-slack-goal"
+    | "corsair-shared-goal";
   /**
    * The app marks this tool as destroying something: MCP's `destructiveHint`, or a broker's
    * destructive flag, as recorded when the app was listed (`mcpTools.destructive`). It asks as
@@ -240,6 +246,14 @@ export type ApprovalRuleInput = {
   scope: string;
   behaviour: RuleBehaviour;
 };
+export type ApprovalRuleSave = { requestId: string; validate: () => void };
+
+export class ApprovalRuleSaveConflictError extends Error {}
+export class ReviewerGuidanceConflictError extends Error {
+  constructor() {
+    super("Saved guidance changed while you were editing.");
+  }
+}
 /**
  * Where saved rules came from, when they were not typed into the form: a sentence in plain English
  * that the deployment's model wrote them from, and the admin then saved. The boundary's own shape
@@ -264,6 +278,8 @@ export type ApprovalTeamSettings = {
  */
 export type ReviewerGuidanceChange = {
   text: string | null;
+  /** The saved text the editor started from. Null means no previous guidance. */
+  basedOn?: string | null;
   /** The admin's email, as the trail's other admin rows name them. */
   actor?: string;
   reading?: { summary: string | null; explanation: string };
@@ -310,6 +326,7 @@ export type ApprovalPolicyStore = {
     by: string,
     input: readonly ApprovalRuleInput[],
     authoring?: ApprovalRuleAuthoring,
+    request?: ApprovalRuleSave,
   ): Promise<ApprovalTeamRule[]>;
   /**
    * The newest requests across every person, for replaying candidate rules over what people were
@@ -557,7 +574,11 @@ export function parseApprovalContinuation(
       "The interrupted tool identity is unavailable.",
     );
   const parsed = RunAgentInputSchema.safeParse({ ...input, tools: [] });
-  if (!parsed.success)
+  const versions = z
+    .array(runContextVersion)
+    .optional()
+    .safeParse(input.sourceVersions);
+  if (!parsed.success || !versions.success)
     throw new ApprovalRefusedError("The interrupted conversation is invalid.");
   const marketSkill = marketSkillSnapshotSchema
     .optional()
@@ -575,6 +596,7 @@ export function parseApprovalContinuation(
     context: parsed.data.context,
     forwardedProps: parsed.data.forwardedProps,
     ...(input.initiator ? { initiator: input.initiator } : {}),
+    ...(versions.data ? { sourceVersions: versions.data } : {}),
     ...(marketSkill.data ? { marketSkill: marketSkill.data } : {}),
   };
 }

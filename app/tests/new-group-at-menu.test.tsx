@@ -111,6 +111,16 @@ beforeAll(() => {
       });
     if (url.pathname === "/api/agents/capabilities")
       return NativeResponse.json({ capabilities: { builtInAvailable: true } });
+    if (url.pathname === "/api/me")
+      return NativeResponse.json({
+        user: {
+          id: "person-1",
+          email: "person@example.test",
+          name: "Person",
+        },
+      });
+    if (url.pathname === "/api/route" && method === "POST")
+      return NativeResponse.json({ agentId: CLAUDE.id, reason: "chosen" });
     if (url.pathname === "/api/agents" && method === "POST")
       return NativeResponse.json({ agent: CREATED }, { status: 201 });
     if (url.pathname === "/api/agents")
@@ -316,7 +326,7 @@ test("@ in a new conversation with two Bots in To: offers both, and the first me
 
   // The group is made with both Bots, and its first message is addressed to the one picked.
   await waitFor(() => expect(sent).toHaveLength(2));
-  expect(sent[0]).toEqual({
+  expect(sent[0]).toMatchObject({
     method: "POST",
     path: "/api/groups",
     body: {

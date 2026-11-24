@@ -6,36 +6,85 @@ const denial = z.enum([
   "execution_limit",
   "not_authorized",
   "route_unavailable",
+  "pilot_closed",
+  "unavailable",
+  "trial_ended",
 ]);
 const denied = z.object({ state: z.literal("denied"), reason: denial });
 const reservation = z.discriminatedUnion("state", [
   z.object({ state: z.literal("reserved"), permit: z.string().min(1) }),
   denied,
-  z.object({ state: z.literal("existing") }),
+  z.object({
+    state: z.literal("existing"),
+    permit: z.string().min(1).optional(),
+  }),
 ]);
 const dispatch = z.discriminatedUnion("state", [
   z.object({ state: z.literal("completed"), text: z.string().trim().min(1) }),
   denied,
   z.object({ state: z.literal("reconciling") }),
+  z.object({ state: z.enum(["settled", "released"]) }),
+  z.object({ state: z.literal("existing") }),
 ]);
-const reconciliation = z.object({
-  state: z.enum(["pending", "settled", "released", "absent"]),
+const publication = z.object({
+  route: z.string().min(1),
+  priceVersion: z.uuid(),
 });
+const operationReceipt = z.object({
+  operationId: z.string(),
+  state: z.enum(["settled", "released"]),
+  outcome: z.string().nullable(),
+  dispatchedAt: z.iso.datetime().nullable(),
+  resultText: z.string().nullable(),
+});
+const settlement = z.enum(["pending", "settled", "released", "absent"]);
+const reconciliation = z.union([
+  z.object({
+    state: z.literal("settled"),
+    outcome: z.literal("executed"),
+    text: z.string().trim().min(1),
+  }),
+  z.object({
+    state: z.enum(["released", "absent"]),
+    outcome: z.literal("not_dispatched"),
+  }),
+  z.object({
+    state: settlement,
+    outcome: z.undefined().optional(),
+    operation: z.unknown().optional(),
+  }),
+]);
 
 type ModelScope = {
-  source: "direct-chat" | "learning" | "hindsight";
+  source:
+    | "direct-chat"
+    | "learning"
+    | "hindsight"
+    | "routing"
+    | "tool-selection"
+    | "approval"
+    | "admin";
   personId: string;
   runId: string;
   conversationId: string;
   botId: string;
 };
-type ModelOperation = { scope: ModelScope; step: string };
+export type ModelOperation = {
+  scope: ModelScope;
+  step: string;
+  budget?: { id: string; stepId?: string };
+};
 type ModelMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
+type BeforeDispatch = () => Promise<boolean | readonly ModelMessage[]>;
 
-function operationId({ scope, step }: ModelOperation) {
+export function managedModelOperationId({
+  scope,
+  step,
+  budget,
+}: ModelOperation) {
   return createHash("sha256")
     .update(
       JSON.stringify([
@@ -46,6 +95,10 @@ function operationId({ scope, step }: ModelOperation) {
         scope.botId,
         scope.runId,
         step,
+        ...(budget ||
+        !["direct-chat", "learning", "hindsight"].includes(scope.source)
+          ? [budget?.id ?? null, budget?.stepId ?? null]
+          : []),
       ]),
     )
     .digest("hex");
@@ -54,22 +107,23 @@ function operationId({ scope, step }: ModelOperation) {
 export type ManagedModelResult =
   | { state: "completed"; text: string }
   | {
-      state:
-        | z.infer<typeof denial>
-        | "reconciling"
-        | "unavailable"
-        | "settled"
-        | "released";
+      state: z.infer<typeof denial> | "reconciling" | "settled" | "released";
     };
 
-export function createManagedModel({
-  url,
-  token,
-}: {
-  url: URL;
-  token: string;
-}) {
+export function createManagedModel(
+  config: { url: URL } & (
+    | { credentials: ReadonlyMap<string, string> }
+    | { token: string }
+  ),
+) {
+  const { url } = config;
+  const credentialsByPerson =
+    "credentials" in config ? new Map(config.credentials) : undefined;
+  const credentialFor = (personId: string) =>
+    "token" in config ? config.token : credentialsByPerson?.get(personId);
+
   async function post(
+    token: string,
     path: string,
     body: object,
     timeout: number,
@@ -89,33 +143,107 @@ export function createManagedModel({
     return response.json();
   }
 
+  async function readPriceVersion(token: string) {
+    const response = await fetch(new URL("v1/quote", url), {
+      headers: { authorization: `Bearer ${token}` },
+      redirect: "error",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw new Error("Managed model quote unavailable.");
+    // The quote describes the default route. Its Price Version covers the
+    // publication, and reserve checks the configured route against it.
+    const schema =
+      "token" in config
+        ? publication.extend({ priceVersion: z.string().min(1) })
+        : publication;
+    return schema.parse(await response.json()).priceVersion;
+  }
+
+  async function reconcileOutcome(operation: ModelOperation) {
+    const token = credentialFor(operation.scope.personId);
+    if (!token) throw new Error("Managed model execution identity required.");
+    const id = managedModelOperationId(operation);
+    const result = reconciliation.parse(
+      await post(token, "reconcile", { operationId: id }, 5_000),
+    );
+    if (!("operation" in result)) return result;
+    const receipt = operationReceipt.safeParse(result.operation);
+    if (
+      receipt.success &&
+      receipt.data.operationId === id &&
+      receipt.data.state === result.state
+    ) {
+      const { state, outcome, dispatchedAt, resultText } = receipt.data;
+      const text = resultText?.trim();
+      if (
+        state === "settled" &&
+        outcome === "completed" &&
+        dispatchedAt &&
+        text
+      )
+        return { state, outcome: "executed" as const, text };
+      if (state === "released" && outcome === null && dispatchedAt === null)
+        return { state, outcome: "not_dispatched" as const };
+    }
+    return { state: result.state, outcome: undefined };
+  }
+
   async function reconcile(operation: ModelOperation) {
-    return reconciliation.parse(
-      await post("reconcile", { operationId: operationId(operation) }, 5_000),
-    ).state;
+    return (await reconcileOutcome(operation)).state;
+  }
+
+  async function recoverCompletion(
+    operation: ModelOperation,
+    beforeDispatch?: BeforeDispatch,
+  ): Promise<ManagedModelResult> {
+    const receipt = await reconcileOutcome(operation).catch(() => undefined);
+    if (receipt?.outcome === "executed") {
+      const authorized = await beforeDispatch?.().catch(() => false);
+      if (authorized === false) return { state: "not_authorized" };
+      return { state: "completed", text: receipt.text };
+    }
+    if (receipt?.state === "settled" || receipt?.state === "released")
+      return { state: receipt.state };
+    return { state: "reconciling" };
   }
 
   return {
     reconcile,
+    reconcileOutcome,
     async complete(
       input: ModelOperation & {
         route: string;
         messages: readonly ModelMessage[];
+        beforeDispatch?: BeforeDispatch;
+        beforeRecovery?: () => Promise<boolean>;
       },
     ): Promise<ManagedModelResult> {
-      const id = operationId(input);
+      const token = credentialFor(input.scope.personId);
+      if (!token) return { state: "not_authorized" };
+      const id = managedModelOperationId(input);
+      let priceVersion: string;
+      try {
+        priceVersion = await readPriceVersion(token);
+      } catch {
+        return { state: "unavailable" };
+      }
+
       let admission: z.infer<typeof reservation>;
       try {
         admission = reservation.parse(
           await post(
+            token,
             "reserve",
             {
               operationId: id,
-              application: "openbot",
+              applicationId: "openbot",
               creditType: "test",
-              scope: input.scope,
-              step: input.step,
               route: input.route,
+              priceVersion,
+              resumable: false,
+              ...(input.budget
+                ? { budgetId: input.budget.id, stepId: input.budget.stepId }
+                : {}),
             },
             5_000,
           ),
@@ -125,27 +253,37 @@ export function createManagedModel({
         return { state: "unavailable" };
       }
       if (admission.state === "denied") return { state: admission.reason };
-      if (admission.state === "existing") {
-        const state = await reconcile(input).catch(() => undefined);
-        return {
-          state:
-            state === "settled" || state === "released" ? state : "reconciling",
-        };
-      }
+      if (!admission.permit)
+        return recoverCompletion(
+          input,
+          input.beforeRecovery ?? input.beforeDispatch,
+        );
 
       try {
+        const prepared = await input.beforeDispatch?.();
+        if (prepared === false) return { state: "not_authorized" };
+        const messages =
+          prepared === undefined || prepared === true
+            ? input.messages
+            : prepared;
         const result = dispatch.parse(
           await post(
+            token,
             "dispatch",
             {
               operationId: id,
               permit: admission.permit,
-              messages: input.messages,
+              messages,
             },
             90_000,
           ),
         );
         if (result.state === "denied") return { state: result.reason };
+        if (result.state === "existing")
+          return await recoverCompletion(
+            input,
+            input.beforeRecovery ?? input.beforeDispatch,
+          );
         return result;
       } catch {
         return { state: "reconciling" };

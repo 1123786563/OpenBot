@@ -54,18 +54,25 @@ export function saveSandboxedDraftMutationOptions(queryClient: QueryClient) {
  */
 export function publishSandboxedMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: async (input: SandboxedDraftInput) => {
+    mutationFn: async ({
+      input,
+      onDraftSaved,
+    }: {
+      input: SandboxedDraftInput;
+      onDraftSaved: () => void;
+    }) => {
       await client("/api/sandboxed", {
         method: "POST",
         body: input,
         fallback: FALLBACK,
       });
+      onDraftSaved();
       await client(
         `/api/sandboxed/${encodeURIComponent(sandboxedName(input.slug))}/publish`,
         { method: "POST", fallback: FALLBACK },
       );
     },
-    onSuccess: () => invalidateSandboxed(queryClient),
+    onSettled: () => invalidateSandboxed(queryClient),
   });
 }
 

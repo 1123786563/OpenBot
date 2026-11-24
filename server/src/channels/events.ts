@@ -1,5 +1,6 @@
 import postgres from "postgres";
-import type { ChannelWorkWire } from "./working";
+import { z } from "zod";
+import { channelWorkSchema } from "./working";
 
 /**
  * Live channel activity, from whoever ran an agent to everybody else in the channel.
@@ -20,34 +21,34 @@ import type { ChannelWorkWire } from "./working";
 
 export const CHANNEL_ACTIVITY_TOPIC = "channel_activity";
 
-export type ChannelActivityEvent = {
-  channelId: string;
+const channelActivitySchema = z.object({
+  channelId: z.string(),
   /** Who may receive it. Resolved by the writer, which already had to check membership. */
-  memberIds: string[];
-  lastMessage: string | null;
-  lastMessageAt: string | null;
-  lastMessageAgentId: string | null;
+  memberIds: z.array(z.string()),
+  lastMessage: z.string().nullable(),
+  lastMessageAt: z.string().nullable(),
+  lastMessageAgentId: z.string().nullable(),
   /**
    * A Bot's reply, its first line as plain text: what a notification says when the reply lands while
    * OpenBot is out of sight. `lastMessage` runs every line into one. Only on a Bot's message.
    */
-  firstLine?: string;
+  firstLine: z.string().optional(),
   /**
    * What the conversation is called now, on its own event: the sweep's summary, written seconds after
    * the activity it follows, or a rename. Null when a cleared name leaves it with no summary yet.
    */
-  summary?: string | null;
+  summary: z.string().nullable().optional(),
   /** A person's first words, newly written, on its own event: the row's name until `summary`. */
-  opening?: string;
+  opening: z.string().optional(),
   /** The channel is hidden from every member's roster. Absent on an ordinary activity event. */
-  deleted?: true;
+  deleted: z.literal(true).optional(),
   /**
    * One member's pin, changed. Absent on an ordinary activity event.
    *
    * A pin lives on one membership row, so the writer names that member alone in `memberIds` and the
    * hub's delivery rule does the rest: nobody else in the channel hears a pin they did not make.
    */
-  pinned?: boolean;
+  pinned: z.boolean().optional(),
   /**
    * A turn started or ended in this channel. Absent on an ordinary activity event.
    *
@@ -55,7 +56,7 @@ export type ChannelActivityEvent = {
    * show a working indicator for a headless turn — a handoff hop, a relay — that no browser
    * streams. A missed one costs at most a stuck-looking dot until the next real event, never data.
    */
-  busy?: boolean;
+  busy: z.boolean().optional(),
   /**
    * Everything this channel is waiting on right now: a Bot it asked, a routine firing into it.
    * Absent on an ordinary activity event.
@@ -64,14 +65,15 @@ export type ChannelActivityEvent = {
    * corrected by the next. Read from the queue and the run history at the moment of sending, which
    * is also what the roster and the channel read return. See `working.ts`.
    */
-  work?: ChannelWorkWire[];
+  work: z.array(channelWorkSchema).optional(),
   /**
    * When `work` was read, by the database's clock: ISO-8601 in UTC to the microsecond, fixed width
    * so two compare as strings. Present whenever `work` is. Events
    * can arrive out of order across replicas, so a browser keeps the list with the latest stamp.
    */
-  workAt?: string;
-};
+  workAt: z.string().optional(),
+});
+export type ChannelActivityEvent = z.infer<typeof channelActivitySchema>;
 
 /** "The roster you hold may be wrong." Carries no delta, because what was lost is not recoverable. */
 export type ChannelResyncEvent = { resync: true };
@@ -153,6 +155,7 @@ export type ChannelActivityListener = { stop: () => Promise<void> };
 export async function startChannelActivityListener(
   databaseUrl: string,
   hub: ChannelEventHub,
+  currentMembers?: (event: ChannelActivityEvent) => Promise<string[]>,
 ): Promise<ChannelActivityListener> {
   const connection = postgres(databaseUrl, { max: 1 });
 
@@ -174,11 +177,21 @@ export async function startChannelActivityListener(
     hub.resyncAll();
   };
 
+  let delivery = Promise.resolve();
   await connection.listen(
     CHANNEL_ACTIVITY_TOPIC,
     (payload) => {
       try {
-        hub.deliver(JSON.parse(payload) as ChannelActivityEvent);
+        const event = channelActivitySchema.parse(JSON.parse(payload));
+        delivery = delivery
+          .then(async () => {
+            const memberIds =
+              currentMembers && !event.deleted
+                ? await currentMembers(event)
+                : event.memberIds;
+            hub.deliver({ ...event, memberIds });
+          })
+          .catch(() => hub.resyncAll());
       } catch {
         // A payload we cannot read is not a reason to tear down the subscription: the roster query
         // is still correct, and the next refetch shows whatever this event would have.

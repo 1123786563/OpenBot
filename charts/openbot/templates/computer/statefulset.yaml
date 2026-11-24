@@ -113,6 +113,15 @@ spec:
       {{- end }}
       containers:
         - name: computer
+          {{- if and .Values.computer .Values.computer.image .Values.computer.image.repository }}
+          # The computer's own image, as Compose builds it (`agent-computer/Dockerfile`): /app with
+          # `bun src/index.ts`. The main image ships only the computer's egress module, so it cannot
+          # serve this pod's command.
+          image: {{ printf "%s:%s" .Values.computer.image.repository (.Values.computer.image.tag | default "latest") }}
+          imagePullPolicy: {{ .Values.computer.image.pullPolicy | default .Values.image.pullPolicy }}
+          workingDir: /app
+          command: ["bun", "src/index.ts"]
+          {{- else }}
           image: {{ include "openbot.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- /*
@@ -122,6 +131,7 @@ spec:
             browser process directly, so a computer pod carries no API and no database.
           */}}
           command: ["/usr/local/bin/bun", "/app/agent-computer/src/index.ts"]
+          {{- end }}
           ports:
             - name: http
               containerPort: 4100

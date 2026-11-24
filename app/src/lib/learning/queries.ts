@@ -1,3 +1,7 @@
+import {
+  type OpenBotPersonalReview,
+  openBotPersonalReview,
+} from "@openbot/shared/direct-chat-learning";
 import type {
   LearnedSkillDetail,
   LearningAutoAssignState,
@@ -14,7 +18,7 @@ import type {
   SharingRequest,
 } from "@openbot/shared/learning";
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 export const learningKeys = {
   all: ["learning"] as const,
@@ -22,6 +26,9 @@ export const learningKeys = {
   automatic: ["learning", "automatic"] as const,
   personal: ["learning", "personal"] as const,
   review: ["learning", "review"] as const,
+  publishedSkills: ["learning", "published-skills"] as const,
+  adminHistory: ["learning", "admin-history"] as const,
+  directChat: ["learning", "direct-chat"] as const,
   peopleProposals: ["learning", "people-proposals"] as const,
   sharingRequests: ["learning", "sharing-requests"] as const,
   personProposal: (userId: string, proposalId: string) =>
@@ -64,9 +71,16 @@ export function personalLearningQueryOptions() {
 export function learningSettingsQueryOptions() {
   return queryOptions({
     queryKey: learningKeys.settings,
-    queryFn: (): Promise<LearningSettings> =>
-      client("/api/admin/learning/settings", "settings", {
+    queryFn: ({ client: cache, queryKey }): Promise<LearningSettings | null> =>
+      client<LearningSettings>("/api/admin/learning/settings", "settings", {
         fallback: "Learning settings could not be loaded.",
+      }).catch((error: unknown) => {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        )
+          cache.setQueryData(queryKey, null);
+        throw error;
       }),
   });
 }
@@ -237,19 +251,24 @@ export function personalReviewQueryOptions() {
     retry: false,
     // While a run is going the review is read again, so what it proposes (or approves) shows up without a reload.
     refetchInterval: (query) =>
-      query.state.data?.sources.some(
+      query.state.data &&
+      "sources" in query.state.data &&
+      query.state.data.sources.some(
         (source) =>
           source.latestRun &&
           !["succeeded", "failed"].includes(source.latestRun.status),
       )
         ? 10_000
         : false,
-    queryFn: async (): Promise<PersonalReview> =>
-      (
-        await client("/api/settings/learning/review", {
-          fallback: "Couldn't load your skills to review. Reload the page.",
-        })
-      ).json(),
+    queryFn: async (): Promise<PersonalReview | OpenBotPersonalReview> => {
+      const response = await client("/api/settings/learning/review", {
+        fallback: "Couldn't load your skills to review. Reload the page.",
+      });
+      const review = await response.json();
+      return review.mode === "openbot"
+        ? openBotPersonalReview.parse(review)
+        : review;
+    },
   });
 }
 

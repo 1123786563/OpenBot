@@ -1,11 +1,18 @@
 import type { WhatIfVocabulary } from "@openbot/shared/what-if";
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 export const whatIfKeys = {
   all: ["what-if"] as const,
   vocabulary: ["what-if", "vocabulary"] as const,
 };
+
+export function isWhatIfAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
 
 /**
  * What an action may name on this OpenBot: its Bots and their owners, its people and groups, and its
@@ -14,11 +21,22 @@ export const whatIfKeys = {
 export function whatIfVocabularyQueryOptions() {
   return queryOptions({
     queryKey: whatIfKeys.vocabulary,
-    queryFn: async (): Promise<WhatIfVocabulary> =>
-      (
-        await client("/api/admin/what-if/vocabulary", {
+    retry: (failures, error) => failures < 1 && !isWhatIfAccessDenied(error),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<WhatIfVocabulary | null> => {
+      try {
+        const response = await client("/api/admin/what-if/vocabulary", {
           fallback: "Couldn't load this OpenBot's Bots and apps",
-        })
-      ).json(),
+          signal,
+        });
+        return response.json();
+      } catch (error) {
+        if (isWhatIfAccessDenied(error)) cache.setQueryData(queryKey, null);
+        throw error;
+      }
+    },
   });
 }

@@ -52,7 +52,8 @@ jobs:
   # the thing that breaks when a dependency is not portable.
   app:
     name: app (${{ matrix.platform }})
-    runs-on: ${{ matrix.platform == 'macos' && 'macos-latest' || matrix.platform == 'windows' && (github.event_name == 'pull_request' && 'windows-latest' || 'openbot-windows-16core') || 'ubuntu-latest' }}
+    # PR smoke builds without the CLI can use Intel. Keep arm64 for release and CLI bundles.
+    runs-on: ${{ matrix.platform == 'macos' && (github.event_name == 'pull_request' && inputs.channel == 'internal' && !inputs.bundle_cli && inputs.manifest_artifact == '' && 'macos-15-intel' || 'macos-latest') || matrix.platform == 'windows' && (github.repository == 'CopilotKit/OpenBot' && github.event_name != 'pull_request' && 'openbot-windows-16core' || 'windows-latest') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -90,7 +91,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: desktop/src-tauri
-          key: ${{ matrix.platform }}
+          key: ${{ matrix.platform }}-${{ runner.arch }}
       - if: matrix.platform == 'linux'
         run: |
           sudo apt-get update -qq

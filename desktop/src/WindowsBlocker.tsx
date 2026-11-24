@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { asProblem, Failure, type Problem } from "./Problem";
 import { StatusLine } from "./SetupProgress";
 
@@ -118,6 +118,7 @@ export function commandsIn(instruction: string): string[] {
  */
 export function WindowsBlocker({
   blocker,
+  cloudEntry,
   instruction,
   onRestartNeeded,
   onCleared = () => window.location.reload(),
@@ -125,6 +126,7 @@ export function WindowsBlocker({
   askAgainMs = ASK_AGAIN_MS,
 }: {
   blocker: Blocker;
+  cloudEntry?: ReactNode;
   /** The native instruction; only the commands in it are shown. */
   instruction: string;
   /** The fix ran and Windows has to restart before it counts. */
@@ -171,7 +173,7 @@ export function WindowsBlocker({
   // Starts by itself, once the line saying what Windows will ask has had a moment on screen.
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per blocker.
   useEffect(() => {
-    if (!screen.fix) return;
+    if (!screen.fix || cloudEntry) return;
     timer.current = setTimeout(() => void fixLatest.current(), beforePromptMs);
     return () => {
       if (timer.current) clearTimeout(timer.current);
@@ -241,7 +243,7 @@ export function WindowsBlocker({
         {screen.fix ? (
           <>
             <p className="blocker-asks">{screen.fix.asks}</p>
-            {!declined && !failure && (
+            {!declined && !failure && (fixing || !cloudEntry) && (
               <StatusLine>
                 {fixing
                   ? "Setting up Windows. Approve the Windows prompt when it asks. This can take a few minutes."
@@ -255,10 +257,10 @@ export function WindowsBlocker({
             )}
             {failure && <Failure problem={failure} />}
             {/* Only after a prompt said no or a failure: never a gate before the prompt. */}
-            {(declined || failure) && (
+            {(declined || failure || (cloudEntry && !fixing)) && (
               <div className="row">
                 <button type="button" disabled={fixing} onClick={() => fix()}>
-                  Try again
+                  {declined || failure ? "Try again" : "Set up Windows"}
                 </button>
               </div>
             )}
@@ -277,6 +279,7 @@ export function WindowsBlocker({
             </p>
           </>
         )}
+        {!fixing && cloudEntry}
       </div>
     </main>
   );
@@ -289,9 +292,11 @@ export function WindowsBlocker({
  * not running yet never lets setup carry on into a Docker that cannot start.
  */
 export function WindowsRestart({
+  cloudEntry,
   lede = "Windows Subsystem for Linux is set up. Windows needs to restart before OpenBot can use it. OpenBot opens again after you sign back in.",
 }: {
   lede?: string;
+  cloudEntry?: ReactNode;
 }) {
   const [restarting, setRestarting] = useState(false);
   const [failure, setFailure] = useState<Problem | null>(null);
@@ -320,6 +325,7 @@ export function WindowsRestart({
           >
             Restart now
           </button>
+          {!restarting && cloudEntry}
         </div>
         <p className="footnote">
           Save your work in other apps first. To restart later, use the Start

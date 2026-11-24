@@ -4,7 +4,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { type AgentChannel, channelKeys } from "@/lib/channels/queries";
-import { client } from "@/lib/client";
+import { ClientError, canKeepCachedRead, client } from "@/lib/client";
 
 /** One line of a group conversation: a person's message (`agentId` null) or one Bot's reply. */
 export type GroupMessage = {
@@ -16,7 +16,7 @@ export type GroupMessage = {
   text: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;
-  /** Why the Bot turn is waiting or paused. */
+  /** Why a Bot is waiting or paused. */
   reason?: string;
   /** For an answer relayed from another Bot through `message_bot`: which Bot answered. */
   answeredBy?: string;
@@ -31,10 +31,27 @@ export type GroupPerson = {
   creator: boolean;
 };
 export type GroupBot = { id: string; name: string };
+export type GroupBackgroundRun = {
+  id: string;
+  agentId: string;
+  threadId: string;
+  status: "running" | "completed" | "failed";
+  waitingForApproval: boolean;
+  reason?: string;
+  partialReply: string | null;
+  externalOutcome:
+    | "dispatching"
+    | "unknown"
+    | "executed"
+    | "not_dispatched"
+    | null;
+};
+
 export type GroupConversation = {
   bots: GroupBot[];
   people: GroupPerson[];
   messages: GroupMessage[];
+  backgroundRuns?: GroupBackgroundRun[];
 };
 
 export const groupKeys = {
@@ -48,18 +65,35 @@ export const groupKeys = {
 export function groupQueryOptions(channelId: string) {
   return queryOptions({
     queryKey: groupKeys.detail(channelId),
-    queryFn: async (): Promise<GroupConversation> => {
-      const response = await client(
-        `/api/groups/${encodeURIComponent(channelId)}`,
-        { fallback: "This group conversation could not be loaded." },
-      );
-      return (await response.json()) as GroupConversation;
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<GroupConversation | null> => {
+      try {
+        const response = await client(
+          `/api/groups/${encodeURIComponent(channelId)}`,
+          { fallback: "This group conversation could not be loaded.", signal },
+        );
+        return (await response.json()) as GroupConversation;
+      } catch (error) {
+        if (error instanceof ClientError && !canKeepCachedRead(error)) {
+          // A later temporary failure must not expose the conversation after access is lost.
+          cache.setQueryData(queryKey, null);
+        }
+        throw error;
+      }
     },
+    retry: (failures, error) => failures < 1 && canKeepCachedRead(error),
     refetchInterval: (query) =>
       query.state.data?.messages.some(
         (message) =>
           message.status === "running" || message.status === "queued",
-      ) || awaitingFirstReply(query.state.data?.messages.at(-1))
+      ) ||
+      query.state.data?.backgroundRuns?.some(
+        ({ status }) => status === "running",
+      ) ||
+      awaitingFirstReply(query.state.data?.messages.at(-1))
         ? 1_500
         : false,
   });

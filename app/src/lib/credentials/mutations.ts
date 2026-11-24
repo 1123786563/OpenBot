@@ -1,6 +1,6 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
-import { credentialKeys } from "./queries";
+import { credentialKeys, type CredentialStatus } from "./queries";
 
 export type CredentialInput = {
   kind: "model" | "connector";
@@ -19,7 +19,7 @@ export function saveCredentialMutationOptions(queryClient: QueryClient) {
       const endpoint = previousCredentialId
         ? `/api/admin/credentials/${encodeURIComponent(previousCredentialId)}/rotate`
         : "/api/admin/credentials";
-      return client(endpoint, {
+      return client<CredentialStatus>(endpoint, "credential", {
         method: "POST",
         body: previousCredentialId ? input : { ...input, createOnly: true },
         fallback: "Credential operation failed",

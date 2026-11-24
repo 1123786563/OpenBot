@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import type { ComponentType } from "react";
 import {
   activitySummary,
   BotActivityGlance,
@@ -149,7 +150,7 @@ test("the newest three suggestions show, and the rest open in place", async () =
 
 function glance(
   data: BotActivity,
-  Component: typeof BotActivityGlance = BotActivityGlance,
+  Component: ComponentType<{ agentId: string }> = BotActivityGlance,
 ) {
   global.fetch = (async (input: RequestInfo | URL) =>
     String(input).endsWith("/activity")
@@ -243,6 +244,6 @@ test("a goal's activity row says Goal and opens the Bot's goals", async () => {
   const title = await view.findByText("Close the month 1");
   const row = title.closest("a");
   expect(row?.getAttribute("href")).toBe("/bots/scout/responsibilities");
-  expect(row?.textContent).toContain("Goal · running");
+  expect(row?.textContent).toContain("Goal · Running");
   expect(row?.textContent).not.toMatch(/responsibilit/i);
 });

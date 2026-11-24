@@ -13,7 +13,10 @@ import {
 import { saveConversationModel } from "@/lib/models/mutations";
 import type { ConversationModel } from "@/lib/models/queries";
 import { newId } from "@/lib/new-id";
-import { createChannelMutationOptions } from "./mutations";
+import {
+  createChannelMutationOptions,
+  deleteChannelMutationOptions,
+} from "./mutations";
 import {
   claimFirstSend,
   finishPendingStart,
@@ -118,6 +121,7 @@ export function resumeConversationStart(
   owner: string,
   id: string,
   update: ProgressUpdate,
+  confirmation?: Parameters<typeof routeMessage>[4],
 ): Promise<StartRecord> {
   const key = JSON.stringify([owner, id]);
   const existing = startsInProgress.get(key);
@@ -136,8 +140,15 @@ export function resumeConversationStart(
     if (draft.recipient.kind === "route") {
       let agentId: string | undefined;
       try {
-        agentId = (await routeMessage(draft.text, undefined, draft.commandIds))
-          .agentId;
+        agentId = (
+          await routeMessage(
+            draft.text,
+            undefined,
+            draft.commandIds,
+            id,
+            confirmation,
+          )
+        ).agentId;
       } catch (error) {
         if (
           draft.commandIds.length ||
@@ -167,7 +178,17 @@ export function resumeConversationStart(
       });
       const pick = draft.model;
       if (!group && pick && (pick.model !== null || pick.effort !== null)) {
-        await saveConversationModel(channel.id, pick);
+        try {
+          await saveConversationModel(channel.id, pick);
+        } catch (error) {
+          await new MutationObserver(
+            queryClient,
+            deleteChannelMutationOptions(queryClient, true),
+          )
+            .mutate(channel.id)
+            .catch(() => undefined);
+          throw error;
+        }
       }
       const latest = readPendingStart(owner, id);
       if (latest?.state === "finished") return latest;
@@ -186,7 +207,7 @@ export function resumeConversationStart(
         ...groupQueryOptions(channelId),
         staleTime: 0,
       });
-      if (current.messages.some((message) => message.id === id)) {
+      if (current?.messages.some((message) => message.id === id)) {
         finishPendingStart(owner, id, channelId, true);
         return { state: "finished", channelId, group: true };
       }
@@ -215,7 +236,7 @@ export function resumeConversationStart(
 }
 
 export type FirstMessageRecovery = {
-  action: "retry" | "check" | "resend";
+  action: "retry" | "check" | "resend" | "connect";
   message: string;
 };
 
@@ -296,10 +317,10 @@ export async function resumeDirectFirstMessage({
     return {
       action: canResend ? "resend" : "check",
       message: canResend
-        ? "Your message is saved here. It hasn’t appeared in the Thread. Resending keeps a single copy."
-        : historyChecked
-          ? "Your message is saved here. It hasn’t appeared in the Thread yet."
-          : "Your message is saved here. We couldn’t check the full Thread for delivery.",
+        ? "The message hasn’t appeared in this conversation. Resending uses the original message so it appears only once."
+        : !historyChecked
+          ? "The full conversation couldn’t load. Check for the message again to see whether it arrived."
+          : "Check this conversation again before sending another copy. Your browser has saved the message.",
     };
   };
 
@@ -356,11 +377,13 @@ export async function resumeDirectFirstMessage({
     return "finished";
   } catch {
     if (!isCurrent()) return "inactive";
-    if (readPendingStart(owner, id)?.state === "finished") return "finished";
-    if (submitted) return verify();
+    const latest = readPendingStart(owner, id);
+    if (latest?.state === "finished") return "finished";
+    if (submitted || latest?.progress.phase === "submitted") return verify();
     return {
       action: "retry",
-      message: "Your message is saved here. Try again to send it.",
+      message:
+        "Your browser has saved the message. You can try sending it now.",
     };
   }
 }

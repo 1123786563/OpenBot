@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 /** How loudly one Bot may reach the signed-in person. Badges on the web always show. */
 export type BotNotify = "all" | "needs_input" | "none";
@@ -150,10 +150,24 @@ export function botLifecycleQueryOptions(agentId: string) {
 export function botActivityQueryOptions(agentId: string) {
   return queryOptions({
     queryKey: botLifecycleKeys.activity(agentId),
-    queryFn: (): Promise<BotActivity> =>
-      client(`${botPath(agentId)}/activity`, "activity", {
-        fallback: "Could not load this Bot's activity",
-      }),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<BotActivity | null> => {
+      try {
+        return await client(`${botPath(agentId)}/activity`, "activity", {
+          fallback: "Could not load this Bot's activity",
+        });
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData(queryKey, null);
+        }
+        throw error;
+      }
+    },
     refetchInterval: 10_000,
   });
 }

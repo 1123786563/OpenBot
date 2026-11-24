@@ -1,3 +1,4 @@
+import { verifyRunContext } from "../run-context";
 import {
   type BuiltInAgentClassicConfig,
   type BuiltInAgentConfiguration,
@@ -49,6 +50,7 @@ export function oneMessagePerStep(
   const inner = model;
 
   const doStream = async (options: CallOptions): Promise<StreamResult> => {
+    await verifyRunContext();
     const result = await inner.doStream(options);
     return { ...result, stream: startedApart(result.stream, newId()) };
   };
@@ -58,7 +60,10 @@ export function oneMessagePerStep(
     provider: inner.provider,
     modelId: inner.modelId,
     supportedUrls: inner.supportedUrls,
-    doGenerate: (options) => inner.doGenerate(options),
+    doGenerate: async (options) => {
+      await verifyRunContext();
+      return inner.doGenerate(options);
+    },
     doStream,
   };
   return { ...configuration, model: wrapped };

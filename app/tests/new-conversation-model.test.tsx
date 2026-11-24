@@ -11,11 +11,12 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { IDBFactory } from "fake-indexeddb";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import * as pendingStarts from "@/lib/channels/pending-start";
 import { type AgentChannel, channelQueryOptions } from "@/lib/channels/queries";
 import type { ConversationModel, ModelCatalogue } from "@/lib/models/queries";
@@ -98,6 +99,7 @@ const catalogue: ModelCatalogue = {
 /** Every model-related request and run, in the order they left the browser. */
 let trail: string[] = [];
 let sentMessages: unknown[] = [];
+let currentUserId = "model-tester";
 let directMessageReplay = false;
 let storedMessages: unknown[] = [];
 let historyAvailable = true;
@@ -150,7 +152,7 @@ beforeAll(() => {
       if (url.pathname === "/api/me")
         return NativeResponse.json({
           user: {
-            id: "model-tester",
+            id: currentUserId,
             email: "model@example.test",
             role: "user",
             onboarding: null,
@@ -243,6 +245,7 @@ afterEach(() => {
   loseCreateResponse = false;
   pendingRun = undefined;
   sentMessages = [];
+  currentUserId = "model-tester";
   directMessageReplay = false;
   storedMessages = [];
   historyAvailable = true;
@@ -280,7 +283,6 @@ const testChannelNewRoute = ChannelNewRoute.update({
   path: "/channel/new",
   getParentRoute: () => appRoute,
 } as TestFileRouteWiring);
-
 /** The channel screen, as far as sending goes: the channel record and `ChannelChat` on it. */
 function ChannelScreen() {
   const { channelId } = channelRoute.useParams();
@@ -325,6 +327,73 @@ function renderAt(path: string) {
   );
 }
 
+test("a saved first message from before model selection still sends", async () => {
+  const id = crypto.randomUUID();
+  const content = "Finish sending my older draft.";
+  localStorage.setItem(
+    `openbot:conversation-start:model-tester:${id}`,
+    JSON.stringify({
+      state: "pending",
+      draft: {
+        text: content,
+        commandIds: [],
+        attachments: [],
+        recipient: { kind: "direct", agentId: BOT },
+      },
+      progress: { phase: "ready", channelId: channel.id },
+    }),
+  );
+
+  renderAt(`/channel/${channel.id}`);
+
+  await waitFor(() =>
+    expect(sentMessages).toEqual([{ id, role: "user", content }]),
+  );
+  expect(trail).toEqual(["run"]);
+});
+
+test("switching accounts replaces the saved first message in an open conversation", async () => {
+  const previousId = crypto.randomUUID();
+  const previousDraft = {
+    text: "First account's saved draft.",
+    commandIds: [],
+    attachments: [],
+    recipient: { kind: "direct", agentId: BOT },
+    model: null,
+  } satisfies pendingStarts.StartDraft;
+  pendingStarts.savePendingStart("model-tester", previousId, {
+    state: "pending",
+    draft: previousDraft,
+    progress: { phase: "submitted", channelId: channel.id },
+  });
+  const nextId = crypto.randomUUID();
+  const nextText = "Second account's saved draft.";
+  pendingStarts.savePendingStart("another-tester", nextId, {
+    state: "pending",
+    draft: { ...previousDraft, text: nextText },
+    progress: { phase: "ready", channelId: channel.id },
+  });
+  await queryClient.fetchQuery(currentUserQueryOptions());
+  const view = renderAt(`/channel/${channel.id}`);
+  await view.findByText(previousDraft.text);
+  await view.findByRole("button", { name: "Check again" });
+
+  currentUserId = "another-tester";
+  await act(async () => {
+    await queryClient.invalidateQueries(currentUserQueryOptions());
+  });
+
+  await waitFor(() => {
+    expect(view.queryByText(previousDraft.text)).toBeNull();
+    expect(sentMessages).toEqual([
+      { id: nextId, role: "user", content: nextText },
+    ]);
+  });
+  expect(
+    pendingStarts.readPendingStart("model-tester", previousId)?.state,
+  ).toBe("pending");
+});
+
 test("two open conversations sharing a saved first message dispatch it once", async () => {
   const message = {
     id: crypto.randomUUID(),
@@ -350,7 +419,7 @@ test("two open conversations sharing a saved first message dispatch it once", as
     // The first run is still open when the other view checks for delivery.
     await other.findByRole(
       "button",
-      { name: "Check again" },
+      { name: "Check for message" },
       { timeout: 8000 },
     );
     expect(sentMessages).toEqual([message]);
@@ -391,7 +460,7 @@ for (const scenario of [
     });
     const view = renderAt(`/channel/${channel.id}`);
     const button = await view.findByRole("button", {
-      name: scenario === "check only" ? "Check again" : "Resend message",
+      name: scenario === "check only" ? "Check for message" : "Resend message",
     });
     expect(sentMessages).toEqual([]);
     if (scenario === "already delivered") storedMessages = [message];
@@ -400,7 +469,7 @@ for (const scenario of [
 
     if (scenario === "check only" || scenario === "history offline") {
       const checkAgain = await view.findByRole("button", {
-        name: "Check again",
+        name: "Check for message",
       });
       expect(checkAgain).toBe(button);
       expect(document.activeElement).toBe(checkAgain);

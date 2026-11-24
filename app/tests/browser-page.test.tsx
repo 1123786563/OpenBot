@@ -7,6 +7,7 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import type { OpenBotPersonalReview } from "@openbot/shared/direct-chat-learning";
 import type {
   LearningRunSummary,
   PersonalReview,
@@ -76,7 +77,8 @@ type Write = { path: string; method: string; body: unknown };
 const writes: Write[] = [];
 let state: BrowserApiState;
 let openAnswer: BrowserOpenResponse;
-let stateFails = false;
+let stateFails: number | false = false;
+let openFails = false;
 /** Holds the browser's state until a case lets it through. */
 let stateHeld: Promise<void> | null = null;
 /** Requests the server refuses, by path, with the sentence it answers: as it passes on the Recorder's own (409). */
@@ -120,6 +122,7 @@ function freshReview(): PersonalReview {
   };
 }
 let review: PersonalReview = freshReview();
+let nativeReview: OpenBotPersonalReview | null = null;
 /** The skills Learning proposed from the recording the page asks about, and what it asked. */
 let recordingSkills: RecordingSkills["skills"] = [];
 const skillsAsked: string[] = [];
@@ -252,7 +255,8 @@ async function server(path: string, init?: RequestInit): Promise<Response> {
       },
     });
   }
-  if (path === "/api/settings/learning/review") return Response.json(review);
+  if (path === "/api/settings/learning/review")
+    return Response.json(nativeReview ?? review);
   if (path.startsWith("/api/settings/learning/recording-skills")) {
     skillsAsked.push(path);
     return Response.json({ skills: recordingSkills });
@@ -270,12 +274,14 @@ async function server(path: string, init?: RequestInit): Promise<Response> {
   if (path === browserApiPaths.state && method === "GET") {
     await stateHeld;
     if (stateFails)
-      return Response.json({ error: "Unavailable" }, { status: 500 });
+      return Response.json({ error: "Unavailable" }, { status: stateFails });
     return Response.json(state);
   }
   if (path === browserApiPaths.open && method === "POST") {
     if (body !== undefined) return refuse();
     await opening;
+    if (openFails)
+      return Response.json({ error: "Unavailable" }, { status: 503 });
     state = { ...state, open: true };
     return Response.json(openAnswer);
   }
@@ -443,6 +449,7 @@ beforeEach(() => {
   queryClient.clear();
   writes.length = 0;
   stateFails = false;
+  openFails = false;
   stateHeld = null;
   refusals = {};
   actionsAfterStart = 7;
@@ -454,6 +461,7 @@ beforeEach(() => {
   preferencesHeld = null;
   preferencesFail = false;
   review = freshReview();
+  nativeReview = null;
   recordingSkills = [];
   skillsAsked.length = 0;
   learnRefusal = null;
@@ -519,13 +527,13 @@ function draw(ui: ReactNode, entry = "/") {
 
 test("retries an initial Browser state failure from the page", async () => {
   state = screenState();
-  stateFails = true;
+  stateFails = 500;
   const view = draw(<BrowserPage />, "/?recordings=1");
   expect(
     (await view.findByRole("alert", {}, { timeout: 8000 })).textContent,
   ).toContain("Couldn't load your browser");
   stateFails = false;
-  const retry = view.getByRole("button", { name: "Retry" });
+  const retry = view.getByRole("button", { name: "Retry browser status" });
   retry.focus();
   await userEvent.setup({ document }).keyboard("{Enter}");
   await view.findByRole("button", { name: "Open browser" });
@@ -545,7 +553,7 @@ test("retrying browser status keeps the original browser open", async () => {
   openAnswer = answerFor("screen");
   const view = draw(<BrowserPage />);
   const screen = await view.findByLabelText(SCREEN);
-  stateFails = true;
+  stateFails = 500;
   await act(() =>
     queryClient.invalidateQueries({ queryKey: browserKeys.state }),
   );
@@ -556,10 +564,66 @@ test("retrying browser status keeps the original browser open", async () => {
   stateFails = false;
   await userEvent
     .setup({ document })
-    .click(view.getByRole("button", { name: "Retry" }));
+    .click(view.getByRole("button", { name: "Retry browser status" }));
   await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
   expect(view.getByLabelText(SCREEN)).toBe(screen);
   expect(opens()).toBe(1);
+});
+
+test("revoking browser access removes the previously active screen", async () => {
+  state = screenState();
+  openAnswer = answerFor("screen");
+  const view = draw(<BrowserPage />);
+  await view.findByLabelText(SCREEN);
+  stateFails = 403;
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: browserKeys.state }),
+  );
+  expect(
+    await view.findByText(
+      "Ask your administrator if you need access to this browser.",
+    ),
+  ).toBeTruthy();
+  expect(view.queryByLabelText(SCREEN)).toBeNull();
+  expect(opens()).toBe(1);
+  stateFails = 503;
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: browserKeys.state }),
+  );
+  await view.findByText("Check that you still have access, then try again.");
+  expect(view.queryByLabelText(SCREEN)).toBeNull();
+  expect(opens()).toBe(1);
+});
+
+test("reopening a closed browser shows a failed attempt and restores focus after retry", async () => {
+  state = screenState();
+  openAnswer = answerFor("screen");
+  const view = draw(<BrowserPage />);
+  await view.findByLabelText(SCREEN);
+  state = { ...state, open: false };
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: browserKeys.state }),
+  );
+  const reopen = await view.findByRole("button", { name: "Open it again" });
+  reopen.focus();
+  const user = userEvent.setup({ document });
+  openFails = true;
+  await user.keyboard("{Enter}");
+  expect(
+    await view.findByText(
+      "Couldn't reopen your browser. Try again to reconnect.",
+    ),
+  ).toBeTruthy();
+  expect(document.activeElement).toBe(reopen);
+  openFails = false;
+  await user.keyboard("{Enter}");
+  await view.findByLabelText(SCREEN);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      view.getByRole("region", { name: "Browser screen" }),
+    ),
+  );
+  expect(opens()).toBe(3);
 });
 
 /**
@@ -729,18 +793,34 @@ test("under a browser shown in the page, no empty strip draws while the list loa
   ).not.toBeNull();
 });
 
-test("arriving from the Recorder's link shows the recordings and opens no browser", async () => {
-  state = screenState();
+test("the Recorder's link keeps recordings available while the browser reconnects", async () => {
+  state = {
+    ...screenState(),
+    open: false,
+    problem: "Your browser is not responding.",
+  };
   openAnswer = answerFor("screen");
   recordingRows = [recording("Refund an order")];
+  refusals["/api/browser/open"] = "Fixture connection failed";
   const view = draw(<BrowserPage />, "/?recordings=1");
   expect(await view.findByText("Refund an order")).toBeTruthy();
+  expect(view.getByText("Your browser is not responding.")).toBeTruthy();
   expect(opens()).toBe(0);
-  // The browser is one press away, not gone.
-  await userEvent
-    .setup({ document })
-    .click(view.getByRole("button", { name: "Open browser" }));
-  await waitFor(() => expect(opens()).toBe(1));
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Open browser" }));
+  const retry = await view.findByRole("button", {
+    name: "Retry opening browser",
+  });
+  expect(opens()).toBe(1);
+  expect(view.getByText("Refund an order")).toBeTruthy();
+
+  delete refusals["/api/browser/open"];
+  state = screenState();
+  await user.click(retry);
+  expect(
+    await view.findByRole("region", { name: "Browser screen" }),
+  ).toBeTruthy();
+  expect(opens()).toBe(2);
 });
 
 test("a recording that stops refreshes the list under the page", async () => {
@@ -956,6 +1036,34 @@ function linkNamed(view: ReturnType<typeof draw>, name: string) {
 
 // A teammate on OpenBot Desktop 0.3.3, after Stop: "I'm not sure what to do next. It doesn't tell me to go back."
 // The page said only "Saved to your Learning space: 6 actions and 6 narrated phrases."
+test("after Recorder saves without Intelligence, Teach a Bot opens the Conversation picker", async () => {
+  state = savedMeeting();
+  nativeReview = {
+    mode: "openbot",
+    autoApprove: false,
+    conversations: [
+      {
+        channelId: "channel-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        title: "Meeting prep",
+        botName: "Calendar Bot",
+      },
+    ],
+  };
+  const view = draw(<BrowserPage />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", {
+      name: "Learn from recording Find my meeting",
+    }),
+  );
+  expect(
+    await view.findByRole("button", { name: "Calendar Bot · Meeting prep" }),
+  ).toBeTruthy();
+  expect(writes).toEqual([]);
+});
+
 test("on OpenBot Desktop a saved recording says what happens next, Learn now starts Learning on the person's recordings, and See your skills opens Settings, Learning", async () => {
   state = savedMeeting();
   const view = draw(<BrowserPage />);

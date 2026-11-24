@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, canKeepCachedRead, client } from "@/lib/client";
 
 /**
  * What each work app is for the person looking, on one Bot, and the requests they file when only an
@@ -163,10 +163,27 @@ export function giveableAppsQueryOptions() {
 export function botAppsQueryOptions(agentId: string) {
   return queryOptions({
     queryKey: appAccessKeys.bot(agentId),
-    queryFn: (): Promise<AppAccess[]> =>
-      client(`/api/plugins/for/${encodeURIComponent(agentId)}/apps`, "apps", {
-        fallback: "This Bot's apps could not be loaded.",
-      }),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<AppAccess[]> => {
+      try {
+        return await client(
+          `/api/plugins/for/${encodeURIComponent(agentId)}/apps`,
+          "apps",
+          {
+            fallback: "This Bot's apps could not be loaded.",
+            signal,
+          },
+        );
+      } catch (error) {
+        if (error instanceof ClientError && !canKeepCachedRead(error)) {
+          cache.setQueryData(queryKey, []);
+        }
+        throw error;
+      }
+    },
   });
 }
 

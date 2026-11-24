@@ -1515,12 +1515,15 @@ describe("the runner's read of one firing", () => {
     expect(await store.runContext(runId)).toEqual({
       routineId: routine.id,
       source: "schedule",
+      status: null,
       ownerUserId: owner.id,
       agentId,
       channelId: channel.id,
       // Read at dispatch so a routine paused after it was queued still does not run.
       enabled: true,
       instruction: "Post the standup summary.",
+      budgetId: null,
+      status: null,
     });
   });
 
@@ -1553,6 +1556,7 @@ describe("the sweep's by-id read of a routine before firing", () => {
     expect(await store.routineForFiring(routine.id)).toEqual({
       id: routine.id,
       enabled: true,
+      budgetId: null,
     });
   });
 
@@ -1563,6 +1567,7 @@ describe("the sweep's by-id read of a routine before firing", () => {
     expect(await store.routineForFiring(routine.id)).toEqual({
       id: routine.id,
       enabled: false,
+      budgetId: null,
     });
   });
 

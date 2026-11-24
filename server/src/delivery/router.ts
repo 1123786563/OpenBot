@@ -4,6 +4,7 @@ import {
   type UpdateRoute,
   type UpdateRouteInput,
 } from "../agents/lifecycle";
+import { BackgroundConversationBusy } from "../channels/direct-chat";
 import type { AttentionPing } from "../proactive/contracts";
 import { pingHeadline } from "../proactive/ping";
 import type { WorkItem, WorkQueue } from "../work/queue";
@@ -46,6 +47,15 @@ export type ConverseResult =
     };
 /** Twilio error 21610: the recipient has opted out, so Twilio refuses the send. */
 const TWILIO_UNSUBSCRIBED = "21610";
+/** The sentence a person sees when a turn fails. Only refusals whose copy the
+ * direct-chat path also shows verbatim reach the inbox; other errors are
+ * implementation noise that belongs in the log, not the chat. */
+const turnFailureMessage = (error: unknown) =>
+  error instanceof DeliveryRefusedError ||
+  error instanceof BackgroundConversationBusy ||
+  (error instanceof Error && error.name === "CapabilityRefusedError")
+    ? error.message
+    : "The agent turn failed. Inspect the conversation before retrying.";
 export type DeliveryWorkKind =
   | "delivery.inbound"
   | "delivery.outbound"
@@ -55,7 +65,7 @@ export const DELIVERY_WORK_KINDS: DeliveryWorkKind[] = [
   "delivery.outbound",
   "delivery.push-receipt",
 ];
-type RouterStore = Pick<
+export type RouterStore = Pick<
   DeliveryStore,
   | "findBinding"
   | "binding"
@@ -421,10 +431,7 @@ export function createDeliveryRouter(deps: {
           waiting,
         };
       }
-      const message =
-        error instanceof DeliveryRefusedError
-          ? error.message
-          : "The agent turn failed. Inspect the conversation before retrying.";
+      const message = turnFailureMessage(error);
       await deps.store.setInbox(row.id, "failed", message);
       await deps.audit?.({
         ...scope,
@@ -514,13 +521,7 @@ export function createDeliveryRouter(deps: {
         });
       } catch (error) {
         if (!(await owns())) return;
-        await deps.store.setInbox(
-          row.id,
-          "failed",
-          error instanceof DeliveryRefusedError
-            ? error.message
-            : "The agent turn failed. Inspect the conversation before retrying.",
-        );
+        await deps.store.setInbox(row.id, "failed", turnFailureMessage(error));
         throw error;
       }
       return;

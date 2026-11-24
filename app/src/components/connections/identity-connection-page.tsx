@@ -1,10 +1,11 @@
 import { IconBrandGithub, IconChevronRight } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConnectionPage } from "@/components/connections/connection-surface";
 import { CorsairAccounts } from "@/components/connections/corsair-accounts";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { GithubSources } from "@/components/settings/github-sources";
 import {
   type LinkableProvider,
@@ -88,7 +89,7 @@ export function IdentityConnectionPage({
         </p>
       ) : null}
       <CorsairAccounts key={provider} provider={provider} outcome={outcome} />
-      <LinkedAccountSection provider={provider} />
+      <LinkedAccountSection key={provider} provider={provider} />
       {provider === "github" ? (
         <>
           <GithubSources />
@@ -106,46 +107,75 @@ export function IdentityConnectionPage({
  */
 function GithubTools() {
   const plugins = useQuery(pluginsPageQueryOptions());
-  const connections = useQuery(connectionsQueryOptions());
+  const heading = useRef<HTMLHeadingElement>(null);
   const app = plugins.data?.composioConfigured
     ? plugins.data.servers.find(
         (server) => isBrokeredGithub(server) && server.accountMode !== "shared",
       )
     : undefined;
-  if (!app) return null;
-  const connected = personalConnections(
-    connections.data?.connections ?? [],
-  ).some((row) => row.serverId === app.id);
+  const connections = useQuery({
+    ...connectionsQueryOptions(),
+    enabled: plugins.isSuccess && Boolean(app),
+  });
+  if (plugins.isSuccess && !app) return null;
+  const connected =
+    app &&
+    personalConnections(connections.data?.connections ?? []).some(
+      (row) => row.serverId === app.id,
+    );
   return (
     <PageSection
       description="Lets your Bots read and change your repositories as you. You connect this separately from your account above."
+      headingRef={heading}
       title="Tools"
     >
-      <PageRows>
-        <Item
-          render={<Link params={{ key: app.id }} to="/connections/$key" />}
-          size="sm"
-        >
-          <ItemMedia variant="icon">
-            <IconBrandGithub />
-          </ItemMedia>
-          <ItemContent>
-            <ItemTitle>GitHub tools</ItemTitle>
-            <ItemDescription>
-              {/* Nothing is claimed while the read is out: an unanswered query falls back to an
+      {plugins.isError ? (
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't check whether GitHub tools are available."
+          retry={plugins.refetch}
+          retryBelow
+          retryLabel="Retry GitHub tools"
+          retrying={plugins.isFetching}
+        />
+      ) : !app ? (
+        <ReadStatus kind="loading" message="Checking for GitHub tools…" />
+      ) : connections.isError ? (
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't check the GitHub tools connection."
+          retry={connections.refetch}
+          retryBelow
+          retryLabel="Retry GitHub tools connection"
+          retrying={connections.isFetching}
+        />
+      ) : (
+        <PageRows>
+          <Item
+            render={<Link params={{ key: app.id }} to="/connections/$key" />}
+            size="sm"
+          >
+            <ItemMedia variant="icon">
+              <IconBrandGithub />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>GitHub tools</ItemTitle>
+              <ItemDescription>
+                {/* Nothing is claimed while the read is out: an unanswered query falls back to an
                   empty list, which read as "Not connected" to somebody with a connection. */}
-              {connections.isPending
-                ? "Checking…"
-                : connected
-                  ? "Connected"
-                  : "Not connected"}
-            </ItemDescription>
-          </ItemContent>
-          <ItemActions>
-            <IconChevronRight className="size-4 text-muted-foreground" />
-          </ItemActions>
-        </Item>
-      </PageRows>
+                {connections.isPending
+                  ? "Checking…"
+                  : connected
+                    ? "Connected"
+                    : "Not connected"}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <IconChevronRight className="size-4 text-muted-foreground" />
+            </ItemActions>
+          </Item>
+        </PageRows>
+      )}
     </PageSection>
   );
 }

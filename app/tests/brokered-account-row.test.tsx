@@ -817,6 +817,17 @@ function renderAdminScreen(client: QueryClient) {
  *  names the setting — the whole point of the row in that state. */
 const NAMES_THE_SETTING = /Set COMPOSIO_API_KEY on this deployment/;
 
+async function confirmDisconnect(
+  view: ReturnType<typeof render>,
+  button: HTMLElement,
+) {
+  await userEvent.click(button);
+  const dialog = await view.findByRole("alertdialog");
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Disconnect" }),
+  );
+}
+
 test("a disconnect that lands stops reading Connected and offers Connect again", async () => {
   const server = installDeployment({
     composioConfigured: true,
@@ -831,6 +842,12 @@ test("a disconnect that lands stops reading Connected and offers Connect again",
   expect(view.queryByText("Connected")).toBeTruthy();
 
   await userEvent.click(disconnect);
+  const dialog = await view.findByRole("alertdialog");
+  expect(server.deletes).toBe(0);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(server.deletes).toBe(0);
+  await confirmDisconnect(view, disconnect);
 
   await waitFor(() =>
     expect(view.queryByRole("button", { name: "Connect" })).toBeTruthy(),
@@ -895,7 +912,7 @@ test("the connector's admin page draws the same row, and its disconnect clears t
   const disconnect = await view.findByRole("button", { name: "Disconnect" });
   expect(view.queryByText("Connected")).toBeTruthy();
 
-  await userEvent.click(disconnect);
+  await confirmDisconnect(view, disconnect);
 
   await waitFor(() =>
     expect(view.queryByRole("button", { name: "Connect" })).toBeTruthy(),
@@ -1288,7 +1305,7 @@ function accountState(overrides: Partial<BrokeredAccount>): BrokeredAccount {
     connect: () => {},
     connected: false,
     connecting: false,
-    disconnect: () => {},
+    disconnect: async () => {},
     disconnected: false,
     disconnecting: false,
     fields: null,
@@ -1326,7 +1343,7 @@ function accountState(overrides: Partial<BrokeredAccount>): BrokeredAccount {
     connectAnother: () => {},
     connectingAnother: false,
     makeDefault: () => {},
-    disconnectAccount: () => {},
+    disconnectAccount: async () => {},
     changingAccount: null,
     ...overrides,
   };
@@ -1850,7 +1867,10 @@ test("a key re-checked and then disconnected stops claiming it was checked", asy
     ).toBeTruthy(),
   );
 
-  await userEvent.click(view.getByRole("button", { name: "Disconnect" }));
+  await confirmDisconnect(
+    view,
+    view.getByRole("button", { name: "Disconnect" }),
+  );
 
   await waitFor(() =>
     expect(
@@ -2105,7 +2125,7 @@ for (const [screen, renderScreen] of [
 
     expect(await view.findByRole("alert")).toBeTruthy();
     expect(view.getByRole("alert").textContent).toMatch(
-      /[Cc]ould(n't| not) (load|be loaded)/,
+      /Couldn't (load this connection|check the account connection)/,
     );
 
     // AND NO ROW, WHICH IS THE HALF THAT MATTERS. Connect is the press the route would refuse; the
@@ -2155,9 +2175,10 @@ test("the administrator's connector screen keeps the rest of the page when the c
 
   // The row is still withheld and still says why, which is the fix this one must not undo.
   expect(await view.findByRole("alert")).toBeTruthy();
-  expect(view.getByRole("alert").textContent).toMatch(
-    /[Cc]ould(n't| not) (load|be loaded)/,
+  expect(view.getByRole("alert").textContent).toBe(
+    "Couldn't check the account connection.",
   );
+  expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
 
   // AND THE PAGE IS STILL THERE. The switch is how a server is removed from this deployment, and
   // its absence was the whole cost of collapsing the page.
@@ -2826,7 +2847,9 @@ test("several accounts are listed by name, each with its own Disconnect, and ano
       kind: "consent",
       connectAnother: () => pressed.push("another"),
       makeDefault: (id) => pressed.push(`default:${id}`),
-      disconnectAccount: (id) => pressed.push(`disconnect:${id}`),
+      disconnectAccount: async (id) => {
+        pressed.push(`disconnect:${id}`);
+      },
     }),
   );
 
@@ -2846,7 +2869,8 @@ test("several accounts are listed by name, each with its own Disconnect, and ano
     view.getByRole("button", { name: /Connect another account/ }),
   );
   await userEvent.click(view.getByRole("button", { name: "Make default" }));
-  await userEvent.click(
+  await confirmDisconnect(
+    view,
     view.getAllByRole("button", { name: "Disconnect" })[1] as HTMLElement,
   );
   expect(pressed).toEqual(["another", "default:a2", "disconnect:a2"]);

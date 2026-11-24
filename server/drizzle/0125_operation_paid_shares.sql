@@ -1,0 +1,2 @@
+ALTER TABLE "test_credit_operations" ADD COLUMN "paid_hold_microcredits" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "test_credit_operations" ADD COLUMN "paid_charge_microcredits" bigint;

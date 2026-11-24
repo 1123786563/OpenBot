@@ -58,7 +58,12 @@ function draw(leave: () => Promise<unknown> = async () => {}) {
   });
   return render(
     <QueryClientProvider client={client}>
-      <ConversationActions channelId="c1" leave={leave} name="Expenses" />
+      <ConversationActions
+        archived={false}
+        channelId="c1"
+        leave={leave}
+        name="Expenses"
+      />
     </QueryClientProvider>,
   );
 }

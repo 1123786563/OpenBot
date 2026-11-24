@@ -8,7 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, render, within } from "@testing-library/react";
-
+import { searchAdminSettings } from "@/components/admin/admin-navigation";
 import { Route as AdminRoute } from "@/routes/_authed/admin/route";
 import { settleReactWork } from "./settle-react-work";
 
@@ -19,6 +19,56 @@ afterEach(cleanup);
 afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
+});
+
+test("setting names rank ahead of matching descriptions without dropping task or group searches", () => {
+  expect(
+    searchAdminSettings(" People ")?.items.map(({ title }) => title),
+  ).toContain("Skills");
+  expect(searchAdminSettings(" People ")?.items[0]?.title).toBe("People");
+  expect(
+    searchAdminSettings("réquire sso")?.items.map(({ title }) => title),
+  ).toEqual(["Identity providers"]);
+  expect(
+    searchAdminSettings("governance and audit")?.items.map(
+      ({ title }) => title,
+    ),
+  ).toEqual(["Audit", "Test a policy"]);
+  expect(searchAdminSettings("an unknown setting")?.items).toHaveLength(0);
+});
+
+test("admin task phrases find the setting where the work happens", () => {
+  expect(searchAdminSettings("single sign-on")?.items[0]?.title).toBe(
+    "Identity providers",
+  );
+  expect(searchAdminSettings("revoke API key")?.items[0]?.title).toBe(
+    "Credentials",
+  );
+  expect(searchAdminSettings("simulate a policy")?.items[0]?.title).toBe(
+    "Test a policy",
+  );
+  expect(searchAdminSettings("grant admin access")?.items[0]?.title).toBe(
+    "People",
+  );
+  expect(searchAdminSettings("revoke sign-on")?.items.length).toBe(0);
+});
+
+test("admin search recovers a single typo without replacing ordinary matches", () => {
+  for (const query of [
+    "identitiy providers",
+    "identty providers",
+    "identoty providers",
+    "identity proivders",
+  ]) {
+    const result = searchAdminSettings(query);
+    expect(result?.spelling).toBe(true);
+    expect(result?.items[0]?.title).toBe("Identity providers");
+  }
+  expect(searchAdminSettings("reovke an API key")?.items[0]?.title).toBe(
+    "Credentials",
+  );
+  expect(searchAdminSettings("people")?.spelling).toBe(false);
+  expect(searchAdminSettings("identoty proivders")?.items).toHaveLength(0);
 });
 
 test("Admin navigation identifies the current page and preserves the child outlet", async () => {

@@ -18,6 +18,7 @@ import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboardin
 import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppApprovalsRouteImport } from './routes/_authed/_app/approvals'
+import { Route as AuthedAppBillingRouteImport } from './routes/_authed/_app/billing'
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
 import { Route as AuthedAppBrowserRouteImport } from './routes/_authed/_app/browser'
 import { Route as AuthedAppCapabilitiesRouteImport } from './routes/_authed/_app/capabilities'
@@ -154,6 +155,11 @@ const AuthedAppIndexRoute = AuthedAppIndexRouteImport.update({
 const AuthedAppApprovalsRoute = AuthedAppApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppBillingRoute = AuthedAppBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppBotRoute = AuthedAppBotRouteImport.update({
@@ -681,6 +687,7 @@ export interface FileRoutesByFullPath {
   '/desktop-return': typeof AuthedDesktopReturnRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/approvals': typeof AuthedAppApprovalsRoute
+  '/billing': typeof AuthedAppBillingRoute
   '/bot': typeof AuthedAppBotRoute
   '/browser': typeof AuthedAppBrowserRoute
   '/capabilities': typeof AuthedAppCapabilitiesRouteWithChildren
@@ -781,6 +788,7 @@ export interface FileRoutesByTo {
   '/desktop-return': typeof AuthedDesktopReturnRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/approvals': typeof AuthedAppApprovalsRoute
+  '/billing': typeof AuthedAppBillingRoute
   '/bot': typeof AuthedAppBotRoute
   '/browser': typeof AuthedAppBrowserRoute
   '/ideas': typeof AuthedAppIdeasRoute
@@ -884,6 +892,7 @@ export interface FileRoutesById {
   '/_authed/desktop-return': typeof AuthedDesktopReturnRoute
   '/_authed/onboarding': typeof AuthedOnboardingRoute
   '/_authed/_app/approvals': typeof AuthedAppApprovalsRoute
+  '/_authed/_app/billing': typeof AuthedAppBillingRoute
   '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/browser': typeof AuthedAppBrowserRoute
   '/_authed/_app/capabilities': typeof AuthedAppCapabilitiesRouteWithChildren
@@ -990,6 +999,7 @@ export interface FileRouteTypes {
     | '/desktop-return'
     | '/onboarding'
     | '/approvals'
+    | '/billing'
     | '/bot'
     | '/browser'
     | '/capabilities'
@@ -1090,6 +1100,7 @@ export interface FileRouteTypes {
     | '/desktop-return'
     | '/onboarding'
     | '/approvals'
+    | '/billing'
     | '/bot'
     | '/browser'
     | '/ideas'
@@ -1192,6 +1203,7 @@ export interface FileRouteTypes {
     | '/_authed/desktop-return'
     | '/_authed/onboarding'
     | '/_authed/_app/approvals'
+    | '/_authed/_app/billing'
     | '/_authed/_app/bot'
     | '/_authed/_app/browser'
     | '/_authed/_app/capabilities'
@@ -1357,6 +1369,13 @@ declare module '@tanstack/react-router' {
       path: '/approvals'
       fullPath: '/approvals'
       preLoaderRoute: typeof AuthedAppApprovalsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/billing': {
+      id: '/_authed/_app/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof AuthedAppBillingRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/bot': {
@@ -2185,6 +2204,7 @@ const AuthedAppCapabilitiesRouteWithChildren =
 
 interface AuthedAppRouteChildren {
   AuthedAppApprovalsRoute: typeof AuthedAppApprovalsRoute
+  AuthedAppBillingRoute: typeof AuthedAppBillingRoute
   AuthedAppBotRoute: typeof AuthedAppBotRoute
   AuthedAppBrowserRoute: typeof AuthedAppBrowserRoute
   AuthedAppCapabilitiesRoute: typeof AuthedAppCapabilitiesRouteWithChildren
@@ -2226,6 +2246,7 @@ interface AuthedAppRouteChildren {
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppApprovalsRoute: AuthedAppApprovalsRoute,
+  AuthedAppBillingRoute: AuthedAppBillingRoute,
   AuthedAppBotRoute: AuthedAppBotRoute,
   AuthedAppBrowserRoute: AuthedAppBrowserRoute,
   AuthedAppCapabilitiesRoute: AuthedAppCapabilitiesRouteWithChildren,

@@ -4,9 +4,11 @@ import {
   type LearningSettings,
   type LearningTarget,
 } from "@openbot/shared/learning";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
+  directChatAnalyses,
+  directChatLearningSchedules,
   learningSettings,
   learningThreadBindings,
 } from "../db/schema/learning";
@@ -344,13 +346,68 @@ export function createLearningSettingsStore(
           next = { ...next, defaultTarget: before };
       }
       if (database) {
-        await database
-          .insert(learningSettings)
-          .values({ id: "current", settings: next })
-          .onConflictDoUpdate({
-            target: learningSettings.id,
-            set: { settings: next, updatedAt: new Date() },
-          });
+        await database.transaction(async (tx) => {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended('openbot:learning-settings', 0))`,
+          );
+          const [previous] = await tx
+            .select()
+            .from(learningSettings)
+            .where(eq(learningSettings.id, "current"));
+          await tx
+            .insert(learningSettings)
+            .values({ id: "current", settings: next })
+            .onConflictDoUpdate({
+              target: learningSettings.id,
+              set: { settings: next, updatedAt: new Date() },
+            });
+          const excluded = Object.keys(next.agents).filter(
+            (botId) => next.agents[botId] === null,
+          );
+          const before = previous?.settings;
+          const previouslyExcluded = Object.keys(before?.agents ?? {}).filter(
+            (botId) =>
+              before?.agents[botId] === null && next.agents[botId] !== null,
+          );
+          if (
+            !next.enabled ||
+            before?.enabled === false ||
+            excluded.length ||
+            previouslyExcluded.length
+          ) {
+            const schedules = directChatLearningSchedules;
+            const affected = [...new Set([...excluded, ...previouslyExcluded])];
+            await tx
+              .update(schedules)
+              .set({
+                evidenceAfter: sql`clock_timestamp()`,
+                pendingDispatch: false,
+                nextAt: sql`case when ${schedules.enabled} then clock_timestamp() + ${schedules.intervalHours} * interval '1 hour' end`,
+              })
+              .where(
+                !next.enabled || before?.enabled === false
+                  ? undefined
+                  : inArray(schedules.botId, affected),
+              );
+          }
+          if (!next.enabled || excluded.length > 0) {
+            await tx
+              .update(directChatAnalyses)
+              .set({
+                state: "cancelled",
+                reason: "learning_disabled",
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  inArray(directChatAnalyses.state, ["running", "reconciling"]),
+                  next.enabled
+                    ? inArray(directChatAnalyses.botId, excluded)
+                    : undefined,
+                ),
+              );
+          }
+        });
       } else {
         current = structuredClone(next);
         written = true;

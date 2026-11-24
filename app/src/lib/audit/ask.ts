@@ -29,9 +29,13 @@ export type AuditAnswer = {
  * Question in, filters out. A plain function rather than a mutation: nothing is saved and nothing is
  * cached. The server records the question on the trail with the filters it became.
  */
-export async function askAuditTrail(question: string): Promise<AuditAnswer> {
+export async function askAuditTrail(
+  question: string,
+  signal?: AbortSignal,
+): Promise<AuditAnswer> {
   const response = await client("/api/admin/audit-events/ask", {
     method: "POST",
+    signal,
     body: {
       question,
       // So "yesterday" is the admin's yesterday.

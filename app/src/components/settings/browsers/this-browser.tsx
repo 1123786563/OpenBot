@@ -1,10 +1,11 @@
 import { IconBrowser } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { noteStoreTabOpened } from "@/components/browser/browser-nav-item";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { ReadStatus } from "@/components/layout/read-status";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -19,6 +20,7 @@ import {
   type DetectedRecorder,
   detectRecorder,
   type RecorderStore,
+  recorderStoreHere,
   recorderStorePageHere,
   sendConnectCode,
 } from "@/lib/recorder/bridge";
@@ -59,6 +61,7 @@ export function ThisBrowser({
   const connectButton = useRef<HTMLButtonElement>(null);
   const connectionStatus = useRef<HTMLParagraphElement>(null);
   const returnFocus = useRef(false);
+  const sending = useRef(false);
   // The install id a trusted OpenBot's connect answer carried: a copy only reports its own once connected.
   const [connectedAs, setConnectedAs] = useState<string | undefined>();
   const awaiting = attempt.state === "awaiting";
@@ -162,7 +165,8 @@ export function ThisBrowser({
   }, [attempt.state, connected, connections.isError]);
 
   async function connect() {
-    if (!detected) return;
+    if (!detected || sending.current || awaiting) return;
+    sending.current = true;
     returnFocus.current = document.activeElement === connectButton.current;
     setAttempt({ state: "sending" });
     try {
@@ -192,6 +196,8 @@ export function ThisBrowser({
             ? error.message
             : "Couldn't connect this browser.",
       });
+    } finally {
+      sending.current = false;
     }
   }
 
@@ -222,14 +228,14 @@ export function ThisBrowser({
             </ItemContent>
             {detected && !connected ? (
               <ItemActions className="basis-full sm:basis-auto">
-                <Button
+                <DeviceAction
                   className="min-h-12"
                   ref={connectButton}
                   disabled={attempt.state === "sending" || awaiting}
                   onClick={() => void connect()}
                 >
                   Connect this browser
-                </Button>
+                </DeviceAction>
               </ItemActions>
             ) : detected === null ? (
               <AddRecorder />
@@ -271,13 +277,17 @@ function describe(
   connected: boolean,
   attempt: Attempt,
 ): string {
-  if (!detected) return "The OpenBot Recorder isn't installed in this browser.";
+  if (!detected) {
+    if (!recorderStoreHere())
+      return "To install OpenBot Recorder, open this page in Chrome or Edge on a computer.";
+    return "The OpenBot Recorder isn't installed in this browser.";
+  }
   if (connected) return "Connected";
   switch (attempt.state) {
     case "sending":
       return "Starting the connection…";
     case "awaiting":
-      return "Confirm in the OpenBot Recorder tab that opened.";
+      return "Switch to the new OpenBot Recorder tab in your browser’s tab bar and choose Connect. Return here to check the connection.";
     case "expired":
       return "The request expired. Try again.";
     case "cancelled":

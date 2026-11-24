@@ -418,8 +418,10 @@ test("new conversation model save failure keeps the saved starter message and re
     await view.findByRole("button", { name: STARTER_SUGGESTIONS[0].title }),
   );
   expect(runs).toHaveLength(0);
-  await view.findByText("Model save failed. Try again.");
-  const retry = await view.findByRole("button", { name: "Try again" });
+  await view.findByText("Try again to continue with your saved message.");
+  const retry = await view.findByRole("button", {
+    name: "Retry saved message",
+  });
   failModel = false;
   fireEvent.click(retry);
   await waitFor(() => expect(runs).toHaveLength(1), { timeout: 5000 });

@@ -705,6 +705,37 @@ describe("consuming a claimed firing", () => {
     expect(again?.attempts).toBe(2);
   });
 
+  test("a budgeted firing keeps its run ID after a Worker redelivery", async () => {
+    const { routine } = await makeRoutine();
+    await database
+      .update(routines)
+      .set({ budgetId: "fixture-budget" })
+      .where(eq(routines.id, routine.id));
+    const due = new Date("2001-01-01T09:25:00Z");
+    await offerFiring(routine.id, due, new Date("2001-01-01T09:26:00Z"));
+    await dispatchClaimedRoutines(
+      sweepOptions({
+        now: at("2001-01-01T09:26:00Z"),
+        dispatch: async (runId: string) => {
+          dispatched.push(runId);
+          throw new Error("The first worker lost its dispatch response.");
+        },
+      }),
+    );
+    const [work] = await firingsFor(routine.id);
+    if (!work) throw new Error("The firing was never queued");
+    await backdate(work.key, { runAt: due });
+    await dispatchClaimedRoutines(
+      sweepOptions({
+        now: at("2001-01-01T09:27:00Z"),
+        owner: "replacement-worker",
+      }),
+    );
+    expect(dispatched).toHaveLength(2);
+    expect(dispatched[1]).toBe(dispatched[0]);
+    expect(await runsFor(routine.id)).toHaveLength(1);
+  });
+
   test("a routine switched off between the offer and the firing is finished without dispatching", async () => {
     const { owner, routine } = await makeRoutine();
     await offerFiring(
@@ -1178,12 +1209,9 @@ describe("consuming a claimed firing", () => {
       );
       expect(report.fired).toEqual([routine.id]);
 
-      // The retry's run succeeded; the refused attempt's row is still open, waiting for the reaper.
       const runs = await runsFor(routine.id);
-      expect(runs.find((run) => run.id === refused?.id)?.status).toBeNull();
-      expect(runs.find((run) => run.id !== refused?.id)?.status).toBe(
-        "succeeded",
-      );
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ id: refused?.id, status: "succeeded" });
 
       // What a reload reads: nothing is running in this conversation any more.
       const work = await channelStore.workIn(owner, [channel]);
@@ -1198,7 +1226,7 @@ describe("consuming a claimed firing", () => {
       }
       expect(ended()?.work).toEqual([]);
       // While the retry ran, one firing was running, not two.
-      const retried = runs.find((run) => run.id !== refused?.id)?.id as string;
+      const retried = runs[0]?.id;
       expect(
         heard.find((event) => event.busy === true)?.work?.map((w) => w.key),
       ).toEqual([retried]);

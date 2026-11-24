@@ -31,33 +31,36 @@ export const RECORDER_DESTINATION =
 export const RECORDER_DESTINATION_PERSONAL =
   "What you record goes straight from your browser to your own Learning space in OpenBot's backend, with a pass from the part of OpenBot that runs your Bots. That part is told that you are recording, the task's name, when it started and how many steps it has, and when you record in a browser shown inside OpenBot, your narration passes through it to the Recorder without being stored.";
 
-/** The disclosure's lead, from where a recording goes and what it is used for. */
-function disclosure(destination: string, use: string): string {
-  return `When you press Record, the Recorder records what you do in every tab you use until you stop, and each tab it records shows that it is. ${destination} ${use}`;
-}
-
-/** The disclosure's lead: when it records, where it goes, and what for. */
-export const RECORDER_DISCLOSURE = disclosure(
+const RECORDING_SCOPE =
+  "When you press Record, the Recorder records what you do in every tab you use until you stop, and each tab it records shows that it is.";
+const TEAM_DISCLOSURE_PARAGRAPHS = [
+  RECORDING_SCOPE,
   RECORDER_DESTINATION,
   "Your recordings are used only for your organization's Skills, evaluations and insights.",
-);
-
-/** {@link RECORDER_DISCLOSURE} in the personal edition: the person's own Learning space, and their own Skills. */
-export const RECORDER_DISCLOSURE_PERSONAL = disclosure(
+] as const;
+const PERSONAL_DISCLOSURE_PARAGRAPHS = [
+  RECORDING_SCOPE,
   RECORDER_DESTINATION_PERSONAL,
   "Your recordings are used only for your own Skills, evaluations and insights.",
-);
+] as const;
+
+/** The disclosure's lead: when it records, where it goes, and what for. */
+export const RECORDER_DISCLOSURE = TEAM_DISCLOSURE_PARAGRAPHS.join(" ");
+
+/** {@link RECORDER_DISCLOSURE} in the personal edition: the person's own Learning space, and their own Skills. */
+export const RECORDER_DISCLOSURE_PERSONAL =
+  PERSONAL_DISCLOSURE_PARAGRAPHS.join(" ");
 
 /**
  * The lead for the edition OpenBot runs as, for a page of OpenBot's that knows it. The Recorder's own pages don't, and
  * say the team edition's.
  */
-export function recorderDisclosureFor(
+export function recorderDisclosureParagraphsFor(
   edition: "team" | "personal" | undefined,
-): string {
+) {
   return edition === "personal"
-    ? RECORDER_DISCLOSURE_PERSONAL
-    : RECORDER_DISCLOSURE;
+    ? PERSONAL_DISCLOSURE_PARAGRAPHS
+    : TEAM_DISCLOSURE_PARAGRAPHS;
 }
 
 export type RecorderCollectedKind =

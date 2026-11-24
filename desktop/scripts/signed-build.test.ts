@@ -412,6 +412,7 @@ test("Desktop macOS signing builds both Macs on the Apple silicon runner and che
   const workflow = Bun.YAML.parse(text) as {
     jobs: {
       sign: {
+        "runs-on": string;
         env: Record<string, string>;
         strategy: {
           matrix: {
@@ -449,6 +450,7 @@ test("Desktop macOS signing builds both Macs on the Apple silicon runner and che
       platform.arch === "x64" ? "x86_64" : "arm64",
     );
   }
+  expect(sign["runs-on"]).toBe(expression("matrix.platform.runner"));
   const rustTargetExpression = expression("matrix.platform.rust-target");
   expect(sign.env.BUNDLE).toBe(
     `desktop/src-tauri/target/${rustTargetExpression}/release/bundle`,

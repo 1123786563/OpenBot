@@ -7,7 +7,13 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SharingSections } from "@/components/bot-profile/sharing";
 import type { AgentProfile } from "@/lib/agents/queries";
@@ -167,10 +173,35 @@ test("a published Bot of yours can be updated, unpublished and its link copied",
   expect(await view.findByRole("button", { name: "Unpublish" })).toBeTruthy();
   expect(view.getByRole("button", { name: "Copy link" })).toBeTruthy();
   // Not an administrator: no group assignment.
-  expect(view.queryByRole("button", { name: /Assign to a group/ })).toBeNull();
+  expect(view.queryByRole("button", { name: "Add assignment" })).toBeNull();
   const user = userEvent.setup({ document });
   await user.click(view.getByRole("button", { name: /Audience/ }));
   expect(await view.findByRole("button", { name: "Update" })).toBeTruthy();
+});
+
+test("unpublishing requires confirmation and stops if the audience changed", async () => {
+  const data = { teamBots: [PUBLISHED], publishable: [] };
+  serving(data, "user");
+  const view = draw(BOT);
+  const user = userEvent.setup({ document });
+  const unpublish = await view.findByRole("button", { name: "Unpublish" });
+  await user.click(unpublish);
+  const dialog = within(await view.findByRole("alertdialog"));
+  expect(writes).toEqual([]);
+  await user.click(dialog.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(writes).toEqual([]);
+
+  await user.click(unpublish);
+  const reOpened = within(await view.findByRole("alertdialog"));
+  data.teamBots = [
+    { ...PUBLISHED, audience: "people", people: ["alex@example.test"] },
+  ];
+  await user.click(reOpened.getByRole("button", { name: "Unpublish Bot" }));
+  expect((await reOpened.findByRole("alert")).textContent).toContain(
+    "Publishing has changed.",
+  );
+  expect(writes).toEqual([]);
 });
 
 test("an administrator can assign a published Bot to groups but not publish someone else's", async () => {
@@ -184,10 +215,10 @@ test("an administrator can assign a published Bot to groups but not publish some
   expect(view.queryByRole("button", { name: "Update" })).toBeNull();
   expect(view.queryByRole("button", { name: "Unpublish" })).toBeNull();
   const user = userEvent.setup({ document });
-  await user.click(view.getByRole("button", { name: /Assign to a group/ }));
-  await user.type(await view.findByLabelText("Group, or *"), "finance");
+  await user.click(view.getByRole("button", { name: "Add assignment" }));
+  await user.type(await view.findByLabelText("Group name"), "finance");
   fireEvent.submit(
-    (view.getByRole("button", { name: "Assign" }) as HTMLButtonElement)
+    (view.getByRole("button", { name: "Assign to group" }) as HTMLButtonElement)
       .form as HTMLFormElement,
   );
   await waitFor(() =>

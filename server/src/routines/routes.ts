@@ -40,7 +40,11 @@ export type { RoutineStore } from "./store";
 export function createRoutineRoutes(
   routineStore: RoutineStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
-  options: { runner?: RoutineRunner; auditStore?: AuditStore } = {},
+  options: {
+    runner?: RoutineRunner;
+    auditStore?: AuditStore;
+    canStartBudget?: (personId: string, budgetId: string) => Promise<boolean>;
+  } = {},
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -52,6 +56,21 @@ export function createRoutineRoutes(
    */
   if (options.runner) {
     const runner = options.runner;
+    routes.post("/:id/runs/:runId/continue", requireUser, async (context) => {
+      const routineId = context.req.param("id");
+      const runId = context.req.param("runId");
+      const ownerUserId = context.var.actor.id;
+      const run = await routineStore.runContext(runId);
+      if (run?.routineId !== routineId || run.ownerUserId !== ownerUserId)
+        return context.json({ error: "Routine run unavailable." }, 404);
+      if (
+        !run.budgetId ||
+        (run.status !== "waiting" && run.status !== "skipped")
+      )
+        return context.json({ error: "This run cannot be continued." }, 409);
+      void runner.run(runId, { routineId, ownerUserId }).catch(() => {});
+      return context.json({ accepted: true, runId }, 202);
+    });
     routes.post("/:id/run", requireUser, async (context) => {
       const id = context.req.param("id");
       try {
@@ -82,17 +101,27 @@ export function createRoutineRoutes(
         context.req.param("id"),
       );
       return context.json({
-        runs: runs.map((run) => ({
-          id: run.id,
-          status:
-            run.status === "skipped" && isMarketVersionPause(run.error)
-              ? "paused"
-              : (run.status ?? "running"),
-          startedAt: run.startedAt.toISOString(),
-          finishedAt: run.finishedAt?.toISOString() ?? null,
-          error: run.error,
-          source: run.source,
-        })),
+        runs: runs.map((run) => {
+          const billing =
+            run.status === "waiting"
+              ? /^(.*) Operation ([0-9a-f]{64})$/.exec(run.error ?? "")
+              : null;
+          return {
+            id: run.id,
+            ...(run.conversationRunId && {
+              conversationRunId: run.conversationRunId,
+            }),
+            status:
+              run.status === "skipped" && isMarketVersionPause(run.error)
+                ? "paused"
+                : (run.status ?? "running"),
+            startedAt: run.startedAt.toISOString(),
+            finishedAt: run.finishedAt?.toISOString() ?? null,
+            error: billing?.[1] ?? run.error,
+            ...(billing ? { billingOperationId: billing[2] } : {}),
+            source: run.source,
+          };
+        }),
       });
     } catch (error) {
       return mapStoreError(context, error);
@@ -147,6 +176,18 @@ export function createRoutineRoutes(
         400,
       );
     }
+    const budgetId = text("budgetId");
+    if (
+      body &&
+      "budgetId" in body &&
+      (!budgetId ||
+        !options.canStartBudget ||
+        !(await options.canStartBudget(context.var.actor.id, budgetId)))
+    )
+      return context.json(
+        { error: "Confirm a current execution budget first." },
+        409,
+      );
     try {
       const routine = await routineStore.create({
         ownerUserId: context.var.actor.id,
@@ -156,6 +197,7 @@ export function createRoutineRoutes(
         cron,
         timezone: text("timezone"),
         channelId,
+        ...(budgetId ? { budgetId } : {}),
       });
       const summary = (await routineStore.listFor(context.var.actor.id)).find(
         (candidate) => candidate.id === routine.id,

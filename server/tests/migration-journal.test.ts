@@ -137,6 +137,7 @@ const columnIn = (snapshot: Snapshot, table: string, column: string) =>
  */
 const declared = (tail: string): { type: string; notNull: boolean } => ({
   type: tail
+    .replace(/\s+GENERATED ALWAYS AS .+ STORED$/is, "")
     .replace(/\bNOT NULL\b/gi, " ")
     .replace(
       /\bDEFAULT\s+(?:'(?:[^']|'')*'(?:\s*::\s*[\w.]+(?:\[\])?)*|[^\s;]+)/gi,
@@ -538,11 +539,83 @@ describe("the migration journal", () => {
      */
     const entries = await readJournal();
 
+    // Keep both parents' published tags. The snapshots use the merged chronological indices.
+    const historicalTags = new Map([
+      [100, "0090_skill_market_installations"],
+      [101, "0100_learning_evidence"],
+      [102, "0091_skill_market_version_disablements"],
+      [103, "0101_intelligence_deletion_cleanup"],
+      [104, "0092_skill_market_runs"],
+      [105, "0093_personal_saas_entry"],
+      [106, "0094_personal_saas_assistant_bot"],
+      [107, "0095_personal_saas_native_codes"],
+      [108, "0096_personal_saas_57_integration_grants"],
+      [109, "0097_personal_saas_account_cutoff"],
+      [110, "0098_personal_workspace_suspensions"],
+      [111, "0099_personal_saas_67_support_access"],
+      [112, "0100_personal_work_recovery"],
+      [113, "0101_personal_saas_automation_resume"],
+      [114, "0102_personal_workspace_closure"],
+      [115, "0103_personal_workspace_cleanup"],
+      [116, "0104_personal_intelligence_cleanup"],
+      [117, "0105_corsair_slack_personal"],
+      [118, "0106_corsair_slack_shared"],
+      [119, "0107_corsair_shared_storage"],
+      [120, "0108_corsair_revocation"],
+      [121, "0102_background_conversation_runs"],
+      [122, "0109_personal_workspace_reprovision"],
+      [123, "0110_test_credit"],
+      [124, "0111_test_credit_reconciliation"],
+      [125, "0112_test_credit_cutoff_index"],
+      [126, "0113_test_credit_one_time_grants"],
+      [127, "0114_personal_workspace_cleanup_jsonb"],
+      [128, "0115_weknora_external_spending"],
+      [129, "0116_test_credit_embedding_replay"],
+      [130, "0117_bifrost_market_reviews"],
+      [131, "0118_skill_market_equivalences"],
+      [132, "0119_approval_team_rule_saves"],
+      [133, "0120_test_credit_execution_budgets"],
+      [134, "0121_lago_usage_events"],
+      [135, "0122_pilot_provider_cost_limits"],
+      [136, "0123_paid_credit_ledger"],
+      [137, "0124_paid_credit_allocations"],
+      [138, "0125_operation_paid_shares"],
+      [139, "0126_allocation_consumed_amounts"],
+      [140, "0127_paid_refunds_and_suspension"],
+      [141, "0128_dispute_manual_review"],
+      [142, "0129_paid_corrections"],
+      [143, "0130_pilot_closure_and_budget_types"],
+      [144, "0131_resume_points_and_app"],
+      [145, "0132_app_paths_restore_and_channel_evidence"],
+      [146, "0133_direct_chat_test_credit"],
+      [147, "0134_bifrost_reconciliation"],
+      [148, "0135_background_model_budget_quote"],
+      [149, "0136_coordination_budget_ancestry"],
+      [150, "0137_shared_pilot_provider_cost"],
+      [151, "0138_credit_pack_checkout"],
+      [152, "0139_paid_order_disputes"],
+      [153, "0140_checkout_switch_and_suspension_history"],
+      [154, "0141_paid_correction_balance"],
+      [155, "0142_billing_pilot_signoffs"],
+      [156, "0143_background_tool_results"],
+      [157, "0119_personal_workspace_agent_sandbox"],
+      [158, "0120_agent_sandbox_flash"],
+      [159, "0121_workspace_agentic_spaces"],
+      [160, "0144_billing_paid_path_policy"],
+      [161, "0112_direct_chat_skill_shares"],
+      [162, "0113_direct_chat_dispatched_skill_versions"],
+      [163, "0160_direct_chat_credit_request"],
+    ]);
     const mislabelled = entries
-      .filter(
-        (entry) =>
-          entry.tag.split("_")[0] !== String(entry.idx).padStart(4, "0"),
-      )
+      .filter((entry, index) => {
+        const tag = historicalTags.get(index);
+        return (
+          entry.idx !== index ||
+          (tag
+            ? entry.tag !== tag
+            : entry.tag.split("_")[0] !== String(index).padStart(4, "0"))
+        );
+      })
       .map((entry) => `${entry.tag} is entry idx ${entry.idx}`);
 
     expect(mislabelled).toEqual([]);

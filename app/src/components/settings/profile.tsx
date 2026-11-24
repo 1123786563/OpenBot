@@ -1,15 +1,11 @@
+import { Text } from "@astryxdesign/core/Text";
 import { IconChevronRight, IconUserCircle } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -21,123 +17,168 @@ import {
 } from "@/components/ui/item";
 import { updateProfileNameMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { queryClient } from "@/query-client";
-
-/**
- * Saves the person's display name, refreshes who they are, then runs `onSaved`. Shared by this form
- * and onboarding's name step, which draws its own button.
- */
-export function useSaveProfileName(onSaved?: () => void | Promise<void>) {
-  const options = updateProfileNameMutationOptions(queryClient);
-  return useMutation({
-    ...options,
-    // Chained rather than left to the call site: the save stays pending until `onSaved` is done,
-    // which is what keeps onboarding's button on Saving… while completion is saved. Declaring an
-    // `onSuccess` over the spread replaces the factory's, so it is called first, by hand.
-    onSuccess: async (...args) => {
-      await options.onSuccess?.(...args);
-      await onSaved?.();
-    },
-  });
-}
-
-export function ProfileNameForm({
-  initialName = "",
-  onSaved,
-}: {
-  initialName?: string;
-  onSaved?: () => void | Promise<void>;
-}) {
-  const id = useId();
-  const [draft, setDraft] = useState<string | null>(null);
-  const name = draft ?? initialName;
-  const save = useSaveProfileName(onSaved);
-  return (
-    <form
-      className="flex w-full flex-col gap-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (name.trim() && !save.isPending) save.mutate(name.trim());
-      }}
-    >
-      <label htmlFor={id}>Name</label>
-      <Input
-        id={id}
-        autoComplete="name"
-        maxLength={100}
-        required
-        value={name}
-        disabled={save.isPending}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          save.reset();
-        }}
-      />
-      {save.error && (
-        <p role="alert" className="text-sm text-destructive">
-          {save.error.message}
-        </p>
-      )}
-      {save.isSuccess && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Your name has been saved.
-        </p>
-      )}
-      <Button
-        type="submit"
-        className="self-end"
-        disabled={!name.trim() || save.isPending}
-      >
-        {save.isPending ? "Saving…" : "Save name"}
-      </Button>
-    </form>
-  );
-}
 
 /**
  * The person's name as a row on General: the name itself, and a dialog to change it. A free-text value is a summary
  * and a dialog on these screens, so the page reads as a list of answers rather than a form.
  */
 export function NameRow() {
-  const { data: user } = useQuery(currentUserQueryOptions());
+  const profile = useQuery(currentUserQueryOptions());
+  const user = canKeepCachedRead(profile.error) ? profile.data : null;
+  const save = useMutation(updateProfileNameMutationOptions(queryClient));
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const formId = useId();
+  const field = useRef<HTMLInputElement>(null);
+  const opener = useRef<HTMLButtonElement>(null);
+  const submitting = useRef(false);
   const name = user && !user.needsName ? (user.name ?? "") : "";
+  const stale = profile.isError && !!user;
+  const text = draft ?? name;
+  const dirty = draft !== null && text.trim() !== name.trim();
+  const canSave =
+    dirty && !!text.trim() && profile.isSuccess && !save.isPending;
+
+  function close() {
+    setOpen(false);
+    setDraft(null);
+    save.reset();
+  }
   return (
     <>
       <Item
-        render={<button onClick={() => setOpen(true)} type="button" />}
+        render={
+          <button
+            onClick={() => {
+              setSaved(false);
+              setOpen(true);
+            }}
+            ref={opener}
+            type="button"
+          />
+        }
         size="sm"
       >
         <ItemMedia variant="icon">
           <IconUserCircle />
         </ItemMedia>
-        <ItemContent>
+        <ItemContent className="min-w-0">
           <ItemTitle>Name</ItemTitle>
-          <ItemDescription>{name || "Not set yet."}</ItemDescription>
+          <ItemDescription className="line-clamp-none wrap-anywhere">
+            {profile.isPending
+              ? "Loading your name…"
+              : profile.isError && !user
+                ? "Couldn’t load your name."
+                : name || "Not set yet."}
+          </ItemDescription>
+          {stale ? (
+            <Text as="p" color="secondary" display="block" size="base">
+              Last loaded · Refresh before saving.
+            </Text>
+          ) : null}
         </ItemContent>
         <ItemActions>
           <IconChevronRight className="size-4 text-muted-foreground" />
         </ItemActions>
       </Item>
-      <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Your name</DialogTitle>
-            <DialogDescription>
-              Choose the name OpenBot shows for you.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="mt-4">
-            {user ? (
-              <ProfileNameForm
-                initialName={name}
-                key={user.id}
-                onSaved={() => setOpen(false)}
+      {saved ? (
+        <p role="status" className="px-4 pb-3 text-sm text-muted-foreground">
+          Your name has been saved.
+        </p>
+      ) : null}
+      <SettingsDraftDialog
+        title="Your name"
+        description="Choose the name OpenBot shows for you."
+        open={open}
+        dirty={dirty}
+        guardNavigation={submitting}
+        saving={save.isPending}
+        opener={opener}
+        onClose={close}
+        action={
+          user ? (
+            <Button
+              aria-disabled={!canSave}
+              className="min-h-11"
+              form={formId}
+              type="submit"
+            >
+              {save.isPending ? "Saving…" : "Save name"}
+            </Button>
+          ) : undefined
+        }
+      >
+        {profile.isPending ? (
+          <ReadStatus kind="loading" message="Loading your name…" />
+        ) : profile.isError || !user ? (
+          <ReadError
+            focusAfterRetry={() => field.current}
+            message={
+              stale ? "Couldn’t refresh your name." : "Couldn’t load your name."
+            }
+            description={
+              stale
+                ? dirty
+                  ? "Your draft is still here. Refresh before saving."
+                  : "Showing your last loaded name. Refresh before saving."
+                : undefined
+            }
+            retry={profile.refetch}
+            retryBelow
+            retryLabel={stale ? "Refresh name" : undefined}
+            retrying={profile.isFetching}
+          />
+        ) : null}
+        {user ? (
+          <form
+            className="flex w-full flex-col gap-3"
+            id={formId}
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!canSave || submitting.current) return;
+              submitting.current = true;
+              try {
+                await save.mutateAsync(text.trim());
+                setSaved(true);
+                close();
+              } catch {
+                // The response is shown beside the draft.
+              } finally {
+                submitting.current = false;
+              }
+            }}
+          >
+            <Field>
+              <FieldLabel htmlFor={`${formId}-name`}>Name</FieldLabel>
+              <Input
+                id={`${formId}-name`}
+                autoComplete="name"
+                className="min-h-11"
+                maxLength={100}
+                required
+                value={text}
+                ref={field}
+                readOnly={save.isPending}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  save.reset();
+                }}
               />
+            </Field>
+            {save.error ? (
+              <p
+                role="alert"
+                className="text-sm text-destructive [overflow-wrap:anywhere]"
+              >
+                {save.error.message}
+              </p>
             ) : null}
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
+          </form>
+        ) : null}
+      </SettingsDraftDialog>
     </>
   );
 }

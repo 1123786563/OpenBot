@@ -119,7 +119,7 @@ test("the release is created right after the images, and the signing runs are st
   expect(condition("github-release")).toBe(
     "!cancelled() && needs.metadata.outputs.is_release == 'true' && " +
       "needs.verify.result == 'success' && needs.images.result == 'success' && " +
-      "needs.image-list.result == 'success'",
+      "(needs.metadata.outputs.cloud_only == 'true' || needs.image-list.result == 'success')",
   );
   expect(needs("image-list")).toEqual(["metadata", "verify", "images"]);
   const names = (release.steps ?? []).map((step) => step.name);
@@ -128,9 +128,9 @@ test("the release is created right after the images, and the signing runs are st
   expect(names.indexOf("Start signing the Mac build")).toBe(publishAt + 1);
   expect(names.indexOf("Start signing the Windows build")).toBe(publishAt + 2);
   const tag = release.steps?.[publishAt]?.run ?? "";
-  expect(tag).toContain(
-    'gh release create "$VERSION" container-images.json desktop-images.json release-assets/*',
-  );
+  expect(tag).toContain("assets=(container-images.json)");
+  expect(tag).toContain("assets+=(desktop-images.json)");
+  expect(tag).toContain(`gh release create "$VERSION" "\${assets[@]}"`);
   // Nothing in this job waits for, or attaches, a desktop build.
   expect(JSON.stringify(release)).not.toContain("openbot-desktop-");
 });
@@ -140,7 +140,8 @@ test("a stable release builds no installers in the publish run; a candidate or b
   expect(desktop.uses).toBe("$/.github/workflows/desktop-build.yml");
   expect(needs("desktop")).toEqual(["metadata", "verify", "images"]);
   expect(condition("desktop")).toBe(
-    "!cancelled() && needs.metadata.outputs.prerelease == 'true' && needs.images.result == 'success'",
+    "!cancelled() && needs.metadata.outputs.prerelease == 'true' && " +
+      "needs.metadata.outputs.cloud_only == 'false' && needs.images.result == 'success'",
   );
   // Pinned to the images the candidate was published with.
   expect(desktop.with?.manifest_artifact).toBe(
@@ -202,5 +203,49 @@ test("CI keeps a run for every commit on main, and the release's own checks out 
       `ci-${expression("github.workflow")}-` +
       expression("github.ref == 'refs/heads/main' && github.sha || github.ref"),
     "cancel-in-progress": expression("github.ref != 'refs/heads/main'"),
+  });
+});
+
+test("a cloud-only release publishes versioned cloud assets without starting Desktop work", () => {
+  expect(job("metadata").outputs?.cloud_only).toBe(
+    expression("steps.release.outputs.cloud_only"),
+  );
+  const cloudOnly = "needs.metadata.outputs.cloud_only";
+  expect(condition("github-release")).toContain(
+    `(${cloudOnly} == 'true' || needs.image-list.result == 'success')`,
+  );
+  for (const name of ["desktop", "image-list"]) {
+    expect(condition(name)).toContain(`${cloudOnly} == 'false'`);
+  }
+  expect(job("images").with?.latest).toBe(
+    expression(
+      `${cloudOnly} == 'false' && needs.verify.outputs.becomes_latest == 'true'`,
+    ),
+  );
+  const desktopSteps = (job("github-release").steps ?? []).filter(
+    (step) =>
+      step.name?.startsWith("Start signing") ||
+      step.name === "Download the Desktop image list",
+  );
+  expect(desktopSteps).toHaveLength(3);
+  for (const step of desktopSteps) {
+    expect(step.if).toBe(`${cloudOnly} == 'false'`);
+  }
+});
+
+test("a publish-only rerun downloads the Desktop image list from its producer", () => {
+  const upload = job("image-list").steps?.find((step) =>
+    step.uses?.startsWith("actions/upload-artifact@"),
+  );
+  expect(upload?.id).toBeDefined();
+  expect(upload?.with?.path).toBe("desktop-images.json");
+  expect(job("image-list").outputs?.artifact_id).toBe(
+    expression(`steps.${upload?.id}.outputs.artifact-id`),
+  );
+  const download = job("github-release").steps?.find(
+    (step) => step.name === "Download the Desktop image list",
+  );
+  expect(download?.with).toEqual({
+    "artifact-ids": expression("needs.image-list.outputs.artifact_id"),
   });
 });

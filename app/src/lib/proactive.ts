@@ -4,7 +4,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 import { taskKeys } from "@/lib/tasks/queries";
 
 /**
@@ -130,9 +130,27 @@ export const proactiveAllowedQueryOptions = () =>
 export const proactiveSuggestionsQueryOptions = () =>
   queryOptions({
     queryKey: proactiveKeys.suggestions,
-    queryFn: (): Promise<ProactiveSuggestion[]> =>
-      client("/api/proactive/suggestions", "suggestions", {
-        fallback: "Couldn't load what your Bots found",
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<ProactiveSuggestion[]> =>
+      client<ProactiveSuggestion[]>(
+        "/api/proactive/suggestions",
+        "suggestions",
+        {
+          fallback: "Couldn't load what your Bots found",
+        },
+      ).catch((error: unknown) => {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          // A later network failure must not bring back suggestions after lost access.
+          cache.setQueryData<ProactiveSuggestion[]>(queryKey, (previous) =>
+            previous?.length ? [] : previous,
+          );
+        }
+        throw error;
       }),
     refetchInterval: 30_000,
   });
@@ -177,9 +195,14 @@ export const removeProactiveSetting = (id: string) =>
  * Start with the task the first one opened, so a double tap starts one task. The task arrives on the
  * lists through the tasks query, so nothing here reads the answer.
  */
-export const resolveSuggestion = (id: string, action: "start" | "dismiss") =>
+export const resolveSuggestion = (
+  id: string,
+  action: "start" | "dismiss",
+  budgetId?: string,
+) =>
   client(`/api/proactive/suggestions/${encodeURIComponent(id)}/${action}`, {
     method: "POST",
+    ...(budgetId ? { body: { budgetId } } : {}),
     fallback:
       action === "start"
         ? "Couldn't start this. Try again."
@@ -200,8 +223,15 @@ const settleProactive = (queryClient: QueryClient) => () =>
  */
 export const resolveSuggestionMutationOptions = (queryClient: QueryClient) =>
   mutationOptions({
-    mutationFn: ({ id, action }: { id: string; action: "start" | "dismiss" }) =>
-      resolveSuggestion(id, action),
+    mutationFn: ({
+      id,
+      action,
+      budgetId,
+    }: {
+      id: string;
+      action: "start" | "dismiss";
+      budgetId?: string;
+    }) => resolveSuggestion(id, action, budgetId),
     onSuccess: () =>
       Promise.all([
         settleProactive(queryClient)(),

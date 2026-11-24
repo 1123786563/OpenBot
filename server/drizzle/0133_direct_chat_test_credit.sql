@@ -1,0 +1,2 @@
+ALTER TABLE "direct_chat_runs" ADD COLUMN "test_credit_operation_id" text;--> statement-breakpoint
+CREATE INDEX "direct_chat_runs_credit_recovery_idx" ON "direct_chat_runs" USING btree ("started_at") WHERE "direct_chat_runs"."test_credit_operation_id" IS NOT NULL AND "direct_chat_runs"."status" <> 'completed';

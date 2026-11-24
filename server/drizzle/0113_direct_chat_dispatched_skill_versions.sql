@@ -1,0 +1,1 @@
+ALTER TABLE "direct_chat_runs" ADD COLUMN "dispatched_skill_versions" jsonb;

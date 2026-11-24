@@ -122,7 +122,8 @@ export function weknoraEmbeddingRoutes({
             blocked =
               result.state === "existing"
                 ? "operation_conflict"
-                : result.reason === "not_authorized"
+                : result.state === "denied" &&
+                    result.reason === "not_authorized"
                   ? "not_authorized"
                   : "route_unavailable";
             return false;

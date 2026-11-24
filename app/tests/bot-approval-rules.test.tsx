@@ -75,7 +75,7 @@ function serving() {
 
 function draw() {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
   });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/"] }),
@@ -128,9 +128,37 @@ test("unavailable rules show a retry instead of an empty list", async () => {
 
   failRead = false;
   const user = userEvent.setup({ document });
-  await user.click(view.getByRole("button", { name: "Retry" }));
+  await user.click(view.getByRole("button", { name: "Retry approval rules" }));
   expect(await view.findByText("Share on Drive")).toBeTruthy();
   expect(view.queryByText("Couldn’t load approval rules")).toBeNull();
+});
+
+test("removing a saved rule writes only after confirmation", async () => {
+  serving();
+  const view = draw();
+  const user = userEvent.setup({ document });
+  const remove = await view.findByRole("button", {
+    name: /^Remove Any action on Gmail/,
+  });
+  await user.click(remove);
+  await view.findByRole("alertdialog", {
+    name: "Remove the rule for Any action on Gmail?",
+  });
+  expect(sent).toEqual([]);
+
+  await user.click(view.getByRole("button", { name: "Cancel" }));
+  expect(sent).toEqual([]);
+
+  await user.click(remove);
+  await user.click(await view.findByRole("button", { name: "Remove rule" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  const [request] = sent;
+  if (!request) throw new Error("Missing rule removal request.");
+  expect(request).toMatchObject({
+    path: "/api/approvals/rules/mine",
+    method: "DELETE",
+  });
+  expect(request.body).toBeUndefined();
 });
 
 test("a rule added here is for this Bot, with no Bot to type", async () => {

@@ -6,7 +6,7 @@ import type { LoadPersonalMemory } from "./tools";
 
 /**
  * What of memory runs while OpenBot runs: what a Bot's turn is told it remembers, and the sweep that
- * reads memory sources and mirrors memories to Intelligence.
+ * reads memory sources and reconciles search projections.
  *
  * NOTHING IN AN EDITION WITHOUT MEMORY (`editionHasMemory`). No loader, so no turn picks up memory
  * sources or carries memory in its context, and a sweep that reads nothing, so a source left from
@@ -15,7 +15,8 @@ import type { LoadPersonalMemory } from "./tools";
 export function createMemoryRuntime(options: {
   edition: Edition;
   defaults: Pick<MemoryDefaults, "botTurn">;
-  ingestion: Pick<MemoryIngestion, "contextFor" | "syncDue">;
+  ingestion: Pick<MemoryIngestion, "contextFor" | "syncDue"> &
+    Partial<Pick<MemoryIngestion, "syncHindsight">>;
   store: Pick<MemoryStore, "mirrorPending">;
   log?: (line: string) => void;
 }): {
@@ -47,7 +48,12 @@ export function createMemoryRuntime(options: {
       return options.ingestion.contextFor(ownerUserId, botId);
     },
     async sweep() {
-      await attempt("syncDue", () => options.ingestion.syncDue());
+      await Promise.all([
+        attempt("syncHindsight", async () =>
+          options.ingestion.syncHindsight?.(),
+        ),
+        attempt("syncDue", () => options.ingestion.syncDue()),
+      ]);
       // Mirror to Intelligence what is out of step: the backfill on the first passes after a
       // deployment becomes entitled, and afterwards whatever an outage left behind. A no-op without
       // Intelligence.

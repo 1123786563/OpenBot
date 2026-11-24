@@ -5,11 +5,19 @@ export type ShellIpc = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 };
 
-/** The OpenBot Desktop window this page is loaded in, or null in a plain browser. */
+/** The local OpenBot Desktop shell, or null when the page uses regular web behavior. */
 export function desktopShell(): ShellIpc | null {
   if (typeof window === "undefined") return null;
-  const internals = (window as { __TAURI_INTERNALS__?: Partial<ShellIpc> })
-    .__TAURI_INTERNALS__;
+  const internals = (
+    window as {
+      __TAURI_INTERNALS__?: Partial<ShellIpc> & {
+        metadata?: { currentWebview?: { label?: string } };
+      };
+    }
+  ).__TAURI_INTERNALS__;
+  // Tauri injects its JS API in cloud windows too. Only main has the local shell permissions.
+  const label = internals?.metadata?.currentWebview?.label;
+  if (label !== undefined && label !== "main") return null;
   return typeof internals?.invoke === "function" &&
     typeof internals.transformCallback === "function"
     ? (internals as ShellIpc)

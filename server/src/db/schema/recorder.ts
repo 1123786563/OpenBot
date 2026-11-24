@@ -1,12 +1,15 @@
 import type {
   RecorderActivity,
   RecorderConnectVia,
+  RecordingEvent,
 } from "@openbot/shared/recorder-api";
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   index,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -98,4 +101,57 @@ export const recorderTrajectoryBindings = pgTable(
       .defaultNow(),
   },
   (table) => [index("recorder_trajectory_bindings_user_idx").on(table.userId)],
+);
+
+export const recorderRecordings = pgTable(
+  "recorder_recordings",
+  {
+    id: uuid("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
+    title: text("title"),
+    outcome: text("outcome").$type<"succeeded" | "stopped">(),
+    reason: text("reason"),
+    outcomeSeq: bigint("outcome_seq", { mode: "number" }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    cleanupCompletedAt: timestamp("cleanup_completed_at", {
+      withTimezone: true,
+    }),
+  },
+  (table) => [
+    index("recorder_recordings_user_idx").on(
+      table.userId,
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);
+
+export const recorderCaptureTrajectories = pgTable(
+  "recorder_capture_trajectories",
+  {
+    id: uuid("id").primaryKey(),
+    recordingId: uuid("recording_id")
+      .notNull()
+      .references(() => recorderRecordings.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    index("recorder_capture_trajectories_recording_idx").on(table.recordingId),
+  ],
+);
+
+export const recorderRecordingEvents = pgTable(
+  "recorder_recording_events",
+  {
+    recordingId: uuid("recording_id")
+      .notNull()
+      .references(() => recorderRecordings.id, { onDelete: "cascade" }),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    event: jsonb("event").$type<RecordingEvent>().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.recordingId, table.seq] })],
 );

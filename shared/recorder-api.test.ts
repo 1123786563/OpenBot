@@ -49,7 +49,7 @@ describe("recorder constants and paths", () => {
     );
   });
 
-  test("only the capture pass leaves /api/recorder: OpenBot serves the Recorder nothing else", () => {
+  test("only the legacy capture pass leaves /api/recorder", () => {
     const samples: Record<string, string> = {
       connectCodes: recorderPaths.connectCodes,
       connections: recorderPaths.connections,
@@ -57,6 +57,9 @@ describe("recorder constants and paths", () => {
       currentConnection: recorderPaths.currentConnection,
       me: recorderPaths.me,
       recordings: recorderPaths.recordings,
+      recording: recorderPaths.recording("r"),
+      captureGrant: recorderPaths.captureGrant("t"),
+      captureEvents: recorderPaths.captureEvents("t"),
       learning: recorderPaths.learning,
       activity: recorderPaths.activity,
       trajectoryConnect: recorderPaths.trajectoryConnect("t"),

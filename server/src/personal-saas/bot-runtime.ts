@@ -160,7 +160,7 @@ export function createPersonalBotRuntime(
   const now = options.now ?? Date.now;
   const { intelligence, runner, buildAgent } =
     options.transport ?? deployedTransport(database);
-  const store = createApprovalStore(database, now);
+  const store = createApprovalStore(database, undefined, now);
   async function ownsBotThread(
     ownerUserId: string,
     agentId: string,

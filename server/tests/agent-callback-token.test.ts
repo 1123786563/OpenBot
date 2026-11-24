@@ -9,6 +9,7 @@ import {
   readRunAssertion,
   sameToken,
 } from "../src/agents/callback-token";
+import { handoffDeliveryRunAssertion } from "../src/agents/handoff-signing";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import { PluginRefusedError, type PluginStore } from "../src/plugins/store";
@@ -46,6 +47,31 @@ describe("an agent's callback token", () => {
 });
 
 describe("the run assertion", () => {
+  test("carries one shared execution budget through a delivered handoff", () => {
+    const work = {
+      fromBotId: "planner",
+      toBotId: "researcher",
+      actorId: "user_7",
+      threadId: "thread_1",
+      runId: "parent_run",
+      depth: 1,
+      budgetId: "task_budget",
+      task: "research",
+    };
+    const assertion = handoffDeliveryRunAssertion(work, "child_run");
+    expect(assertion).toMatchObject({
+      botId: "researcher",
+      actorId: "user_7",
+      runId: "child_run",
+      budgetId: "task_budget",
+      depth: 1,
+    });
+    const signed = mintRunAssertion(assertion, KEY);
+    expect(readRunAssertion(signed, KEY)).toMatchObject({
+      budgetId: "task_budget",
+    });
+  });
+
   test("survives a round trip", () => {
     const signed = mintRunAssertion(RUN, KEY);
     // A run that began with a person is depth zero, which is what an unstated depth means.

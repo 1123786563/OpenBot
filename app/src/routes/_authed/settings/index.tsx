@@ -29,6 +29,12 @@ export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
 });
 
+const generalSections = [
+  { id: "about-you", label: "About you" },
+  { id: "appearance", label: "Appearance" },
+  { id: "keyboard-shortcuts", label: "Keyboard shortcuts" },
+] as const;
+
 function RouteComponent() {
   const { dark, setDark } = useTheme();
 
@@ -45,11 +51,28 @@ function RouteComponent() {
       description="Set your name, how OpenBot looks, and the instructions every Bot follows."
       title="General"
     >
+      <nav
+        aria-label="General settings sections"
+        className="mt-3 flex flex-wrap items-center gap-x-4 text-sm"
+      >
+        {generalSections.map(({ id, label }) => (
+          <a
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+            href={`#${id}`}
+            key={id}
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
       {/*
        * What OpenBot and every Bot know of the person, first: their name and how they want things done. Both are free
        * text, so both are a summary that opens a dialog.
        */}
-      <PageSection title="About you">
+      <PageSection
+        headingId={generalSections[0].id}
+        title={generalSections[0].label}
+      >
         <PageRows>
           <NameRow />
           <Separator />
@@ -61,15 +84,18 @@ function RouteComponent() {
       {/* Only in OpenBot Desktop, which sends usage data and keeps this choice. */}
       <UsageDataSection />
       <AstryxSurface className="min-w-0 rounded-[var(--radius-container)]">
-        <PageSection title="Appearance">
+        <PageSection
+          headingId={generalSections[1].id}
+          title={generalSections[1].label}
+        >
           <PageRows>
             <Item size="sm">
               <ItemMedia variant="icon">
                 <IconMoon />
               </ItemMedia>
-              <ItemContent>
+              <ItemContent className="min-w-0">
                 <ItemTitle>Dark theme</ItemTitle>
-                <ItemDescription>
+                <ItemDescription className="line-clamp-none">
                   Use the dark appearance across OpenBot.
                 </ItemDescription>
               </ItemContent>
@@ -91,14 +117,19 @@ function RouteComponent() {
        * actually do rather than what somebody remembered they did. Read-only on purpose: these
        * are not rebindable, and a row with nothing to click says so by having nothing to click.
        */}
-      <PageSection title="Keyboard shortcuts">
+      <PageSection
+        headingId={generalSections[2].id}
+        title={generalSections[2].label}
+      >
         <PageRows>
           {HOTKEYS.map((hotkey, index) => (
             <React.Fragment key={hotkey.id}>
               <Item size="sm">
-                <ItemContent>
-                  <ItemTitle>{hotkey.label}</ItemTitle>
-                  <ItemDescription>{hotkey.description}</ItemDescription>
+                <ItemContent className="min-w-0">
+                  <ItemTitle className="w-auto">{hotkey.label}</ItemTitle>
+                  <ItemDescription className="line-clamp-none">
+                    {hotkey.description}
+                  </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <span className="flex gap-1">

@@ -117,7 +117,9 @@ export function useConnectInNewTab() {
    */
   const open = (serverId: string, first?: () => Promise<unknown>) => {
     if (first) {
-      openAfter(() => first().then(() => serverId));
+      void openAfter(() => first().then(() => serverId)).catch(() => {
+        // The caller of first reports its own error.
+      });
       return;
     }
     const tab = claimTab();
@@ -132,11 +134,12 @@ export function useConnectInNewTab() {
   const openAfter = (first: () => Promise<string>) => {
     const tab = claimTab();
     handle.current = tab;
-    first().then(
+    return first().then(
       (serverId) => void ask(serverId, tab),
-      () => {
+      (error: unknown) => {
         tab?.close();
         handle.current = null;
+        throw error;
       },
     );
   };

@@ -23,7 +23,7 @@ import type { ApprovalResumeDependencies, ApprovalService } from "./service";
 export type ApprovalContinuationDependencies = {
   approvalService: Pick<ApprovalService, "store">;
   database: Database;
-  responsibilityStore: ResponsibilityStore;
+  responsibilityStore: Pick<ResponsibilityStore, "resumeWaiting">;
   groupConversations: Pick<GroupConversations, "continueWaiting">;
   approvalContinuationRunner: TurnRunner;
   channelStore: Pick<ChannelStore, "recordActivity">;

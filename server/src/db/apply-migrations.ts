@@ -16,7 +16,13 @@ import { join } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Sql, TransactionSql } from "postgres";
+import { reconcileBillingPilotMigrations } from "./billing-pilot-migrations";
 import { reconcileCorsairPilotMigrations } from "./corsair-pilot-migrations";
+import {
+  canMergeMigrationHistories,
+  isIntelligenceMigration,
+  isSandboxMigration,
+} from "./merge-migration-histories";
 import {
   type AppliedMigration,
   type FolderMigration,
@@ -322,16 +328,28 @@ export async function applyMigrations(
   await client.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK}, 0))`;
 
-    let applied = await reconcileCorsairPilotMigrations(
+    const corsair = await reconcileCorsairPilotMigrations(
       tx,
       migrationsFolder,
       folder,
       await appliedMigrations(tx, journal),
       journal,
     );
+    const mainFolder = folder.filter(
+      (entry) => !isIntelligenceMigration(entry),
+    );
+    let applied = await reconcileBillingPilotMigrations(
+      tx,
+      migrationsFolder,
+      folder,
+      // Billing pilot offsets refer to the journal before the sandbox migrations were merged.
+      mainFolder.filter((entry) => !isSandboxMigration(entry)),
+      corsair,
+      journal,
+    );
     let outOfReach = migrationsOutOfReach(folder, applied);
     if (outOfReach.length > 0) {
-      const saasFolder = folder.filter(({ tag }) => !CORSAIR_TAGS.has(tag));
+      const saasFolder = mainFolder.filter(({ tag }) => !CORSAIR_TAGS.has(tag));
       if (
         (await reconcileTrialJournal(
           tx,
@@ -354,18 +372,24 @@ export async function applyMigrations(
         tx,
         journal,
         migrationsFolder,
-        folder,
+        mainFolder,
         saasFolder,
         applied,
       );
       applied = await appliedMigrations(tx, journal);
       outOfReach = migrationsOutOfReach(folder, applied);
     }
-    if (outOfReach.length > 0) {
+    if (
+      outOfReach.length > 0 &&
+      !canMergeMigrationHistories(folder, applied, outOfReach)
+    ) {
       throw new MigrationsOutOfReachError(
         outOfReachRefusal(outOfReach, folder, applied, journal),
       );
     }
+
+    for (const migration of outOfReach)
+      await applyJournalEntry(tx, journal, migrationsFolder, migration);
 
     await migrate(drizzle(withinTransaction(client, tx)), {
       migrationsFolder,

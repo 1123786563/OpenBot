@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReachingYou } from "@/components/delivery/reaching-you";
 import { settleReactWork } from "./settle-react-work";
@@ -45,6 +45,7 @@ const binding = (id: string, agentId: string, address: string) => ({
 const writes: { request: string; body: unknown }[] = [];
 function serving(sms = false) {
   writes.length = 0;
+  let connected = true;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -53,6 +54,10 @@ function serving(sms = false) {
         request: `${method} ${url}`,
         body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
       });
+      if (method === "DELETE" && url === "/api/delivery/bindings/b1") {
+        connected = false;
+        return Response.json({ ok: true });
+      }
       return Response.json({
         platform: "slack",
         code: "abc",
@@ -64,7 +69,7 @@ function serving(sms = false) {
     if (url.startsWith("/api/delivery")) {
       return Response.json({
         bindings: [
-          binding("b1", "expenses", "finance-bot-dm"),
+          ...(connected ? [binding("b1", "expenses", "finance-bot-dm")] : []),
           binding("b2", "knowledge", "docs-bot-dm"),
         ],
         devices: [],
@@ -76,6 +81,7 @@ function serving(sms = false) {
       return Response.json({
         channels: [
           channel("channel-expenses", "Finance desk", ["expenses"]),
+          channel("channel-invoices", "Invoices", ["expenses"]),
           channel("channel-knowledge", "Docs desk", ["knowledge"]),
         ],
         nextCursor: null,
@@ -105,13 +111,38 @@ test("only this Bot's destinations are listed", async () => {
   serving();
   const view = draw();
   expect(await view.findByText(/^Slack/)).toBeTruthy();
-  expect(view.getAllByRole("button", { name: "Disconnect" })).toHaveLength(1);
+  expect(view.getAllByRole("button", { name: /^Disconnect/ })).toHaveLength(1);
+});
+
+test("disconnecting requires confirmation for the selected destination", async () => {
+  serving();
+  const view = draw();
+  const user = userEvent.setup({ document });
+  const disconnect = await view.findByRole("button", {
+    name: "Disconnect Slack",
+  });
+  await user.click(disconnect);
+  const dialog = within(
+    await view.findByRole("alertdialog", { name: "Disconnect Slack?" }),
+  );
+  await user.click(dialog.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(writes).toEqual([]);
+
+  await user.click(disconnect);
+  const confirmation = within(await view.findByRole("alertdialog"));
+  await user.click(confirmation.getByRole("button", { name: "Disconnect" }));
+  expect(await view.findByText("Slack disconnected.")).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Disconnect Slack" })).toBeNull();
+  expect(writes).toEqual([
+    { request: "DELETE /api/delivery/bindings/b1", body: null },
+  ]);
 });
 
 /** The link flow is a dialog: open it from its row, then choose the conversation it continues. */
 async function openSlackLink(view: ReturnType<typeof draw>) {
   const user = userEvent.setup({ document });
-  await view.findByRole("button", { name: "Disconnect" });
+  await view.findByRole("button", { name: "Disconnect Slack" });
   await user.click(view.getByRole("button", { name: /^Link Slack/ }));
   return user;
 }
@@ -149,7 +180,22 @@ test("linking Slack needs only a conversation, and warns that it moves the accou
       },
     }),
   );
-  expect(await view.findByText("link abc")).toBeTruthy();
+  expect(await view.findByDisplayValue("link abc")).toBeTruthy();
+});
+
+test("the held code is visible only for the conversation it links", async () => {
+  serving();
+  const view = draw();
+  const user = await openSlackLink(view);
+  await chooseConversation(view, user, "Finance desk");
+  await user.click(view.getByRole("button", { name: "Link Slack" }));
+  expect(await view.findByDisplayValue("link abc")).toBeTruthy();
+
+  await chooseConversation(view, user, "Invoices");
+  expect(view.queryByDisplayValue("link abc")).toBeNull();
+  await chooseConversation(view, user, "Finance desk");
+  expect(await view.findByDisplayValue("link abc")).toBeTruthy();
+  expect(writes).toHaveLength(1);
 });
 
 test("closing the dialog keeps the link code, so reopening the row shows it again", async () => {
@@ -158,13 +204,13 @@ test("closing the dialog keeps the link code, so reopening the row shows it agai
   const user = await openSlackLink(view);
   await chooseConversation(view, user, "Finance desk");
   await user.click(view.getByRole("button", { name: "Link Slack" }));
-  expect(await view.findByText("link abc")).toBeTruthy();
+  expect(await view.findByDisplayValue("link abc")).toBeTruthy();
   await user.keyboard("{Escape}");
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
   // The row says a code is waiting, and opening it shows that code without asking for another.
   expect(view.getByText(/Your link code is ready to send/)).toBeTruthy();
   await user.click(view.getByRole("button", { name: /^Link Slack/ }));
-  expect(await view.findByText("link abc")).toBeTruthy();
+  expect(await view.findByDisplayValue("link abc")).toBeTruthy();
   // With the conversation it links, so "this conversation" still names one.
   expect(
     view.getByRole("combobox", { name: /^Conversation/ }).textContent,
@@ -194,7 +240,7 @@ test("nothing can be linked until a conversation is chosen", async () => {
 test("a transport the deployment cannot reach says why instead of opening", async () => {
   serving();
   const view = draw();
-  await view.findByRole("button", { name: "Disconnect" });
+  await view.findByRole("button", { name: "Disconnect Slack" });
   expect(
     view.queryByRole("button", { name: /^Link Microsoft Teams/ }),
   ).toBeNull();
@@ -210,7 +256,7 @@ test("a phone is verified for the chosen conversation, then asks for its code", 
   sessionStorage.clear();
   const view = draw();
   const user = userEvent.setup({ document });
-  await view.findByRole("button", { name: "Disconnect" });
+  await view.findByRole("button", { name: "Disconnect Slack" });
   await user.click(view.getByRole("button", { name: /^Connect a phone/ }));
   await chooseConversation(view, user, "Finance desk");
   await user.type(view.getByLabelText("Phone number"), "+15551234567");

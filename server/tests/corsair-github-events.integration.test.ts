@@ -945,6 +945,9 @@ async function waitingSlackGoal(ambiguous?: "found" | "unknown") {
       continueWaiting: async () => {
         throw new Error("Unexpected group continuation");
       },
+      pauseWaiting: async () => {
+        throw new Error("Unexpected Run context withdrawal");
+      },
     },
     approvalContinuationRunner: async () => {
       throw new Error("Unexpected generic continuation");

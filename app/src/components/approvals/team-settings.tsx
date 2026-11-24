@@ -17,7 +17,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   PageEmpty,
   PageRows,
@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { useBotNames } from "@/lib/agents/bot-names";
 import {
   type ActionKind,
   type ActionKindPolicy,
@@ -53,7 +54,14 @@ import {
 } from "@/lib/approvals";
 import { ClientError } from "@/lib/client";
 import { reviewerGuidanceQueryOptions } from "@/lib/reviewer-guidance/queries";
-import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
+import {
+  filterApprovalRules,
+  HOST_LABELS,
+  LabelSelect,
+  RuleForm,
+  RuleRow,
+  RuleSearch,
+} from "./rules";
 import { SharedUseRequests } from "./shared-use-requests";
 
 /** The kinds of action Bots ask about by name, in the order members meet them. */
@@ -118,8 +126,20 @@ export function TeamApprovalSettings() {
     error instanceof ClientError &&
     (error.status === 401 || error.status === 403);
   const inboxData = denied ? undefined : inbox.data;
+  const canEdit = inbox.isSuccess;
   const settings = inboxData?.team;
   const teamRules = inboxData?.teamRules ?? [];
+  const [ruleSearch, setRuleSearch] = useState("");
+  const ruleSearchInput = useRef<HTMLInputElement>(null);
+  const settingsHeading = useRef<HTMLHeadingElement>(null);
+  const rulesHeading = useRef<HTMLHeadingElement>(null);
+  const botName = useBotNames();
+  const matchingRules = filterApprovalRules(
+    teamRules,
+    ruleSearch,
+    botName,
+    true,
+  );
 
   function confirmSetting({
     id,
@@ -160,6 +180,13 @@ export function TeamApprovalSettings() {
     behaviour?: ApprovalRuleRow["behaviour"],
   ) {
     const { title } = ruleTitle(rule);
+    const index = matchingRules.findIndex(
+      (candidate) => candidate.id === rule.id,
+    );
+    const neighbours = [
+      ...matchingRules.slice(index + 1),
+      ...matchingRules.slice(0, index).reverse(),
+    ];
     const target = [
       rule.botId === "*" ? "all Bots" : `Bots matching ${rule.botId}`,
       rule.scope !== "*" && `scope ${rule.scope}`,
@@ -181,7 +208,16 @@ export function TeamApprovalSettings() {
         document.getElementById(
           `team-rule-${behaviour ? "behaviour" : "remove"}-${rule.id}`,
         ) ?? undefined,
-      fallbackFocus: () => document.getElementById("describe-team-rule"),
+      fallbackFocus: () => {
+        for (const candidate of neighbours) {
+          const remove = document.getElementById(
+            `team-rule-remove-${candidate.id}`,
+          );
+          if (remove && !remove.matches(":disabled, [aria-disabled=true]"))
+            return remove;
+        }
+        return ruleSearchInput.current ?? rulesHeading.current;
+      },
       variant: behaviour ? "default" : "destructive",
       refresh: () => inbox.refetch(),
       run: async () => {
@@ -212,18 +248,22 @@ export function TeamApprovalSettings() {
   return (
     <>
       {confirmation}
-      {inbox.isPending || error ? (
+      {inbox.isPending || (error && (!inboxData || settings)) ? (
         <section className="mt-6">
           {error ? (
             <ReadError
               description={
                 inboxData
-                  ? "The settings and rules already loaded are still shown."
+                  ? "Showing the last loaded settings and rules. Refresh to make changes."
                   : undefined
               }
               message="Couldn't load team approval settings."
+              focusAfterRetry={() =>
+                settingsHeading.current ?? rulesHeading.current
+              }
               retry={inbox.refetch}
               retryBelow
+              retryLabel="Retry team approval settings"
               retrying={inbox.isFetching}
             />
           ) : (
@@ -235,7 +275,7 @@ export function TeamApprovalSettings() {
         </section>
       ) : null}
       {settings ? (
-        <PageSection title="Team settings">
+        <PageSection headingRef={settingsHeading} title="Team settings">
           <PageRows>
             <Item size="sm">
               <ItemMedia variant="icon">
@@ -251,7 +291,7 @@ export function TeamApprovalSettings() {
                   aria-labelledby="enforce-auto-review-title"
                   id="enforce-auto-review"
                   checked={settings.enforceAutoReview}
-                  disabled={team.isPending}
+                  disabled={!canEdit || team.isPending}
                   onCheckedChange={(enforceAutoReview) =>
                     confirmSetting({
                       id: "enforce-auto-review",
@@ -304,7 +344,7 @@ export function TeamApprovalSettings() {
                   aria-labelledby="custom-rules-title"
                   id="custom-rules"
                   checked={settings.customRulesEnabled}
-                  disabled={team.isPending}
+                  disabled={!canEdit || team.isPending}
                   onCheckedChange={(customRulesEnabled) =>
                     confirmSetting({
                       id: "custom-rules",
@@ -337,7 +377,7 @@ export function TeamApprovalSettings() {
               <ItemActions>
                 <LabelSelect
                   id="host-commands-cap"
-                  disabled={team.isPending}
+                  disabled={!canEdit || team.isPending}
                   label="Commands on members' computers, at most"
                   labels={HOST_LABELS}
                   onChange={(hostCommandsCap) =>
@@ -376,7 +416,7 @@ export function TeamApprovalSettings() {
                   <ItemActions>
                     <LabelSelect
                       id={`approval-action-${kind}`}
-                      disabled={team.isPending}
+                      disabled={!canEdit || team.isPending}
                       label={title}
                       labels={ACTION_KIND_LABELS}
                       onChange={(policy) =>
@@ -402,24 +442,26 @@ export function TeamApprovalSettings() {
       {inboxData ? (
         <PageSection
           description="These apply to every member's Bots. Members can't change them."
+          headingRef={rulesHeading}
           title="Team rules"
         >
+          {error ? (
+            <ReadError
+              description="You can keep searching the last loaded rules."
+              focusAfterRetry={() =>
+                ruleSearchInput.current ?? rulesHeading.current
+              }
+              message="Refresh the team rules before editing."
+              retry={inbox.refetch}
+              retryBelow
+              retryLabel="Refresh team rules"
+              retrying={inbox.isFetching}
+            />
+          ) : null}
           {teamRules.length === 0 ? (
             <PageEmpty icon={IconChecklist} title="No team rules" />
           ) : null}
           <PageRows>
-            {teamRules.map((rule) => (
-              <Fragment key={rule.id}>
-                <RuleRow
-                  disabled={revokeTeam.isPending || changeTeamRule.isPending}
-                  onChange={(behaviour) => confirmRule(rule, behaviour)}
-                  onRevoke={() => confirmRule(rule)}
-                  rule={rule}
-                  team
-                />
-                <Separator />
-              </Fragment>
-            ))}
             <Item
               render={
                 <Link id="describe-team-rule" to="/admin/approvals/describe" />
@@ -440,8 +482,45 @@ export function TeamApprovalSettings() {
               </ItemActions>
             </Item>
             <Separator />
-            <RuleForm label="Add a team rule" save={addTeamRule} />
+            <RuleForm
+              canSave={canEdit}
+              label="Add a team rule"
+              refreshSettings={inbox.refetch}
+              save={addTeamRule}
+            />
           </PageRows>
+          <RuleSearch
+            emptyTitle="No matching team rules"
+            first={matchingRules[0]}
+            inputRef={ruleSearchInput}
+            label="Search team rules"
+            matches={matchingRules.length}
+            onChange={setRuleSearch}
+            team
+            total={teamRules.length}
+            value={ruleSearch}
+          />
+          {matchingRules.length ? (
+            <PageRows>
+              {matchingRules.map((rule, index) => (
+                <Fragment key={rule.id}>
+                  {index > 0 ? <Separator /> : null}
+                  <RuleRow
+                    disabled={
+                      !canEdit ||
+                      revokeTeam.isPending ||
+                      changeTeamRule.isPending
+                    }
+                    onChange={(behaviour) => confirmRule(rule, behaviour)}
+                    onRevoke={() => confirmRule(rule)}
+                    rule={rule}
+                    team
+                    touchTargets
+                  />
+                </Fragment>
+              ))}
+            </PageRows>
+          ) : null}
         </PageSection>
       ) : null}
       <SharedUseRequests />

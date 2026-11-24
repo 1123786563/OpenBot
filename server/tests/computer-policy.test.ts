@@ -252,6 +252,28 @@ describe("parseActionPolicy", () => {
     ).toBe(false);
   });
 
+  test("preserves boundary identifiers and rejects duplicate identifiers", () => {
+    const rules = [
+      'page.host == "alpha.example.test"',
+      'page.host == "beta.example.test"',
+    ];
+    const id = `r-${"a".repeat(64)}`;
+    const label = { name: "Alpha", description: "", id };
+    const input = {
+      mode: "enforce",
+      deny: rules,
+      labels: { [rules[0]]: label },
+    };
+    const stored = parseActionPolicy(input);
+    expect(stored.ok && stored.policy.labels).toEqual(input.labels);
+    expect(
+      parseActionPolicy({
+        ...input,
+        labels: { ...input.labels, [rules[1]]: { ...label, name: "Beta" } },
+      }).ok,
+    ).toBe(false);
+  });
+
   test("defaults the lists but never the mode", () => {
     const result = parseActionPolicy({ mode: "enforce" });
     expect(result.ok).toBe(true);

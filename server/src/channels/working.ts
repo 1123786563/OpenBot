@@ -34,39 +34,33 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { z } from "zod";
 import { HANDOFF_KIND } from "../agents/handoff";
 import type { Database } from "../db/client";
 import { agents, routineRuns, routines, workItems } from "../db/schema";
 import { DEFAULT_MAX_ATTEMPTS } from "../work/queue";
 
-/** Something a conversation is waiting on. */
-export type ChannelWork =
-  | {
-      /** A Bot this conversation's Bot asked, which has not answered here yet. */
-      kind: "handoff";
-      /** The hop's own key, so two asks of the same Bot are two entries. */
-      key: string;
-      /** The Bot that was asked. */
-      botId: string;
-      /** Its name when the hop was offered. Null on a hop written before names were carried. */
-      botName: string | null;
-      /** When it was asked. */
-      since: Date;
-    }
-  | {
-      /** A routine firing into this conversation. */
-      kind: "routine";
-      /** The run's id. */
-      key: string;
-      routineId: string;
-      /** The Bot the routine runs as. */
-      botId: string;
-      botName: string | null;
-      since: Date;
-    };
+const workFields = {
+  key: z.string(),
+  botId: z.string(),
+  botName: z.string().nullable(),
+  since: z.iso.datetime(),
+};
 
-/** The same, on the wire. */
-export type ChannelWorkWire = Omit<ChannelWork, "since"> & { since: string };
+export const channelWorkSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("handoff"), ...workFields }),
+  z.object({
+    kind: z.literal("routine"),
+    routineId: z.string(),
+    ...workFields,
+  }),
+]);
+
+export type ChannelWorkWire = z.infer<typeof channelWorkSchema>;
+type WithDate<T> = T extends { since: string }
+  ? Omit<T, "since"> & { since: Date }
+  : never;
+export type ChannelWork = WithDate<ChannelWorkWire>;
 
 export function channelWorkDto(work: ChannelWork): ChannelWorkWire {
   return { ...work, since: work.since.toISOString() };

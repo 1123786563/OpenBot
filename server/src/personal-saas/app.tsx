@@ -287,7 +287,7 @@ export function createPersonalSaasApp(
       return undefined;
     }
   }
-  const approvals = createApprovalStore(database, now);
+  const approvals = createApprovalStore(database, undefined, now);
   async function approvalHistory(owner: string) {
     return (await approvals.list(owner)).map((request) => ({
       id: request.id,

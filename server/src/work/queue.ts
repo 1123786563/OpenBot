@@ -254,6 +254,8 @@ export type WorkQueue = {
     kind: string;
     key: string;
     owner: string;
+    /** Result fields written under the same lease as the finished outcome. */
+    payload?: Record<string, unknown>;
   }) => Promise<boolean>;
   /** Not done, and worth another go after `delayMs`. False means it was no longer ours. */
   release: (input: {
@@ -697,7 +699,7 @@ export function createWorkQueue(
       return Boolean(renewed);
     },
 
-    async finish({ kind, key, owner }) {
+    async finish({ kind, key, owner, payload }) {
       const endedAt = now();
       const [finished] =
         (await underClaim({ kind, key, owner }, (tx) =>
@@ -710,6 +712,11 @@ export function createWorkQueue(
              */
             .set({
               finishedAt: sql`now()`,
+              ...(payload
+                ? {
+                    payload: sql`${workItems.payload} || ${JSON.stringify(payload)}::text::jsonb`,
+                  }
+                : {}),
               claimedBy: null,
               leaseUntil: null,
               updatedAt: sql`now()`,

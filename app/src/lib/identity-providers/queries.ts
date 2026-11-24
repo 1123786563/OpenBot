@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 
 /**
  * An identity provider a company registered, rather than one this deployment was configured with.
@@ -29,6 +29,13 @@ export const identityProviderKeys = {
   list: () => ["identity-providers", "list"] as const,
 };
 
+export function identityProvidersAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 /**
  * The registered providers.
  *
@@ -43,9 +50,23 @@ export const identityProviderKeys = {
 export function identityProviderListQueryOptions() {
   return queryOptions({
     queryKey: identityProviderKeys.list(),
-    queryFn: (): Promise<IdentityProvider[]> =>
-      client("/api/admin/identity-providers", "providers", {
+    retry: (failures, error) =>
+      failures < 1 && !identityProvidersAccessDenied(error),
+    queryFn: ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<IdentityProvider[]> =>
+      client<IdentityProvider[]>("/api/admin/identity-providers", "providers", {
         fallback: "Could not load identity providers",
+        signal,
+      }).catch((error: unknown) => {
+        if (identityProvidersAccessDenied(error)) {
+          cache.setQueryData<IdentityProvider[]>(queryKey, (current) =>
+            current?.length ? [] : current,
+          );
+        }
+        throw error;
       }),
   });
 }

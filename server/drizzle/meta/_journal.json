@@ -635,225 +635,519 @@
     {
       "idx": 90,
       "version": "7",
+      "when": 1795161859942,
+      "tag": "0090_direct_chat_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795172513486,
+      "tag": "0091_conversation_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795173315650,
+      "tag": "0092_openbot_recordings",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795174366772,
+      "tag": "0093_opik_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795178687140,
+      "tag": "0094_opik_evaluations",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795180537112,
+      "tag": "0095_direct_chat_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795181168585,
+      "tag": "0096_direct_chat_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1795181350092,
+      "tag": "0097_hindsight_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795181647838,
+      "tag": "0098_direct_chat_learning_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795183415159,
+      "tag": "0099_scheduled_direct_chat_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
       "when": 1795183869296,
       "tag": "0090_skill_market_installations",
       "breakpoints": true
     },
     {
-      "idx": 91,
+      "idx": 101,
+      "version": "7",
+      "when": 1795183878647,
+      "tag": "0100_learning_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
       "version": "7",
       "when": 1795185049024,
       "tag": "0091_skill_market_version_disablements",
       "breakpoints": true
     },
     {
-      "idx": 92,
+      "idx": 103,
+      "version": "7",
+      "when": 1795185919612,
+      "tag": "0101_intelligence_deletion_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
       "version": "7",
       "when": 1795189760196,
       "tag": "0092_skill_market_runs",
       "breakpoints": true
     },
     {
-      "idx": 93,
+      "idx": 105,
       "version": "7",
       "when": 1795189760197,
       "tag": "0093_personal_saas_entry",
       "breakpoints": true
     },
     {
-      "idx": 94,
+      "idx": 106,
       "version": "7",
       "when": 1795189760198,
       "tag": "0094_personal_saas_assistant_bot",
       "breakpoints": true
     },
     {
-      "idx": 95,
+      "idx": 107,
       "version": "7",
       "when": 1795189760199,
       "tag": "0095_personal_saas_native_codes",
       "breakpoints": true
     },
     {
-      "idx": 96,
+      "idx": 108,
       "version": "7",
       "when": 1795189760200,
       "tag": "0096_personal_saas_57_integration_grants",
       "breakpoints": true
     },
     {
-      "idx": 97,
+      "idx": 109,
       "version": "7",
       "when": 1795189760201,
       "tag": "0097_personal_saas_account_cutoff",
       "breakpoints": true
     },
     {
-      "idx": 98,
+      "idx": 110,
       "version": "7",
       "when": 1795189760202,
       "tag": "0098_personal_workspace_suspensions",
       "breakpoints": true
     },
     {
-      "idx": 99,
+      "idx": 111,
       "version": "7",
       "when": 1795189760203,
       "tag": "0099_personal_saas_67_support_access",
       "breakpoints": true
     },
     {
-      "idx": 100,
+      "idx": 112,
       "version": "7",
       "when": 1795189760204,
       "tag": "0100_personal_work_recovery",
       "breakpoints": true
     },
     {
-      "idx": 101,
+      "idx": 113,
       "version": "7",
       "when": 1795189760205,
       "tag": "0101_personal_saas_automation_resume",
       "breakpoints": true
     },
     {
-      "idx": 102,
+      "idx": 114,
       "version": "7",
       "when": 1795189760206,
       "tag": "0102_personal_workspace_closure",
       "breakpoints": true
     },
     {
-      "idx": 103,
+      "idx": 115,
       "version": "7",
       "when": 1795189760207,
       "tag": "0103_personal_workspace_cleanup",
       "breakpoints": true
     },
     {
-      "idx": 104,
+      "idx": 116,
       "version": "7",
       "when": 1795189760208,
       "tag": "0104_personal_intelligence_cleanup",
       "breakpoints": true
     },
     {
-      "idx": 105,
+      "idx": 117,
       "version": "7",
       "when": 1795189761196,
       "tag": "0105_corsair_slack_personal",
       "breakpoints": true
     },
     {
-      "idx": 106,
+      "idx": 118,
       "version": "7",
       "when": 1795189761197,
       "tag": "0106_corsair_slack_shared",
       "breakpoints": true
     },
     {
-      "idx": 107,
+      "idx": 119,
       "version": "7",
       "when": 1795189761198,
       "tag": "0107_corsair_shared_storage",
       "breakpoints": true
     },
     {
-      "idx": 108,
+      "idx": 120,
       "version": "7",
       "when": 1795189761199,
       "tag": "0108_corsair_revocation",
       "breakpoints": true
     },
     {
-      "idx": 109,
+      "idx": 121,
+      "version": "7",
+      "when": 1795228622495,
+      "tag": "0102_background_conversation_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
       "version": "7",
       "when": 1795231535117,
       "tag": "0109_personal_workspace_reprovision",
       "breakpoints": true
     },
     {
-      "idx": 110,
+      "idx": 123,
       "version": "7",
       "when": 1795231535118,
       "tag": "0110_test_credit",
       "breakpoints": true
     },
     {
-      "idx": 111,
+      "idx": 124,
       "version": "7",
       "when": 1795231535119,
       "tag": "0111_test_credit_reconciliation",
       "breakpoints": true
     },
     {
-      "idx": 112,
+      "idx": 125,
       "version": "7",
       "when": 1795231535120,
       "tag": "0112_test_credit_cutoff_index",
       "breakpoints": true
     },
     {
-      "idx": 113,
+      "idx": 126,
       "version": "7",
       "when": 1795231535121,
       "tag": "0113_test_credit_one_time_grants",
       "breakpoints": true
     },
     {
-      "idx": 114,
+      "idx": 127,
       "version": "7",
       "when": 1795271468046,
       "tag": "0114_personal_workspace_cleanup_jsonb",
       "breakpoints": true
     },
     {
-      "idx": 115,
+      "idx": 128,
       "version": "7",
       "when": 1795273407366,
       "tag": "0115_weknora_external_spending",
       "breakpoints": true
     },
     {
-      "idx": 116,
+      "idx": 129,
       "version": "7",
       "when": 1795275600000,
       "tag": "0116_test_credit_embedding_replay",
       "breakpoints": true
     },
     {
-      "idx": 117,
+      "idx": 130,
       "version": "7",
       "when": 1795410635032,
       "tag": "0117_bifrost_market_reviews",
       "breakpoints": true
     },
     {
-      "idx": 118,
+      "idx": 131,
       "version": "7",
       "when": 1795415414731,
       "tag": "0118_skill_market_equivalences",
       "breakpoints": true
     },
     {
-      "idx": 119,
+      "idx": 132,
+      "version": "7",
+      "when": 1795415414732,
+      "tag": "0119_approval_team_rule_saves",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1795415414735,
+      "tag": "0120_test_credit_execution_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1795415414736,
+      "tag": "0121_lago_usage_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1795415414737,
+      "tag": "0122_pilot_provider_cost_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1795415414738,
+      "tag": "0123_paid_credit_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1795415414739,
+      "tag": "0124_paid_credit_allocations",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1795415414740,
+      "tag": "0125_operation_paid_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1795415414741,
+      "tag": "0126_allocation_consumed_amounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1795415414742,
+      "tag": "0127_paid_refunds_and_suspension",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1795415414743,
+      "tag": "0128_dispute_manual_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1795415414744,
+      "tag": "0129_paid_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1795415414745,
+      "tag": "0130_pilot_closure_and_budget_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1795415414746,
+      "tag": "0131_resume_points_and_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1795415414747,
+      "tag": "0132_app_paths_restore_and_channel_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1795415414748,
+      "tag": "0133_direct_chat_test_credit",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1795415414749,
+      "tag": "0134_bifrost_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1795415414750,
+      "tag": "0135_background_model_budget_quote",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1795415414751,
+      "tag": "0136_coordination_budget_ancestry",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1795415414752,
+      "tag": "0137_shared_pilot_provider_cost",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1795418391864,
+      "tag": "0138_credit_pack_checkout",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1795422552671,
+      "tag": "0139_paid_order_disputes",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1795424497937,
+      "tag": "0140_checkout_switch_and_suspension_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1795424551038,
+      "tag": "0141_paid_correction_balance",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1795431037811,
+      "tag": "0142_billing_pilot_signoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1795435400991,
+      "tag": "0143_background_tool_results",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
       "version": "7",
       "when": 1795441880621,
       "tag": "0119_personal_workspace_agent_sandbox",
       "breakpoints": true
     },
     {
-      "idx": 120,
+      "idx": 158,
       "version": "7",
       "when": 1795441880622,
       "tag": "0120_agent_sandbox_flash",
       "breakpoints": true
     },
     {
-      "idx": 121,
+      "idx": 159,
       "version": "7",
       "when": 1795441880623,
       "tag": "0121_workspace_agentic_spaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1795443105536,
+      "tag": "0144_billing_paid_path_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1795444185213,
+      "tag": "0112_direct_chat_skill_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1795445478392,
+      "tag": "0113_direct_chat_dispatched_skill_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1795511248832,
+      "tag": "0160_direct_chat_credit_request",
       "breakpoints": true
     }
   ]

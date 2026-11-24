@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { CapabilitiesSection } from "@/components/admin/controls/capabilities-section";
+import { MemberAccess } from "@/components/admin/controls/member-access";
 import { GovernancePage } from "@/components/astryx-pilot/governance";
+import { buttonVariants } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authed/admin/permissions")({
   component: PermissionsPage,
@@ -10,9 +12,22 @@ export const Route = createFileRoute("/_authed/admin/permissions")({
 export function PermissionsPage() {
   return (
     <GovernancePage
-      description="Each switch applies to everybody. A role can override it, and a directory group can get a permission the organization has off. All changes appear in Audit."
+      action={
+        <Link
+          className={buttonVariants({
+            className: "min-h-12",
+            variant: "outline",
+          })}
+          search={{ permissions: true }}
+          to="/admin/audit"
+        >
+          Permission history
+        </Link>
+      }
+      description="Manage the workspace's Bot permissions and check what individual members can use."
       title="Permissions"
     >
+      <MemberAccess />
       <CapabilitiesSection />
     </GovernancePage>
   );
