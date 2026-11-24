@@ -1,6 +1,6 @@
 {
-  "id": "71840f72-b9f3-4381-aa77-e4542e39a968",
-  "prevId": "a308fceb-a138-4856-8a04-602e1b482011",
+  "id": "a308fceb-a138-4856-8a04-602e1b482011",
+  "prevId": "dcdc314d-52df-4aa9-9dda-b7014036d587",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -15976,189 +15976,63 @@
       },
       "isRLSEnabled": false
     },
-    "public.pilot_provider_cost_holds": {
-      "name": "pilot_provider_cost_holds",
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
       "schema": "",
       "columns": {
-        "path": {
-          "name": "path",
+        "actor_id": {
+          "name": "actor_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
+        "request_id": {
+          "name": "request_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "bound_microcredits": {
-          "name": "bound_microcredits",
-          "type": "bigint",
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "cost_microcredits": {
-          "name": "cost_microcredits",
-          "type": "bigint",
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
           "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'held'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "pilot_provider_cost_holds_account_id_test_credit_accounts_id_fk": {
-          "name": "pilot_provider_cost_holds_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "pilot_provider_cost_holds",
-          "tableTo": "test_credit_accounts",
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
           "columnsFrom": [
-            "account_id"
+            "actor_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "pilot_provider_cost_holds_path_account_id_operation_id_pk": {
-          "name": "pilot_provider_cost_holds_path_account_id_operation_id_pk",
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
           "columns": [
-            "path",
-            "account_id",
-            "operation_id"
+            "actor_id",
+            "request_id"
           ]
         }
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "pilot_provider_cost_holds_amounts": {
-          "name": "pilot_provider_cost_holds_amounts",
-          "value": "\"pilot_provider_cost_holds\".\"bound_microcredits\" >= 0 AND (\"pilot_provider_cost_holds\".\"cost_microcredits\" IS NULL OR \"pilot_provider_cost_holds\".\"cost_microcredits\" >= 0)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.pilot_provider_cost_limit_events": {
-      "name": "pilot_provider_cost_limit_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "path": {
-          "name": "path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "from_limit_microcredits": {
-          "name": "from_limit_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "to_limit_microcredits": {
-          "name": "to_limit_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "by": {
-          "name": "by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.pilot_provider_cost_limits": {
-      "name": "pilot_provider_cost_limits",
-      "schema": "",
-      "columns": {
-        "path": {
-          "name": "path",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "limit_microcredits": {
-          "name": "limit_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updatedBy": {
-          "name": "updatedBy",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pilot_provider_cost_limits_nonnegative": {
-          "name": "pilot_provider_cost_limits_nonnegative",
-          "value": "\"pilot_provider_cost_limits\".\"limit_microcredits\" >= 0"
-        }
-      },
       "isRLSEnabled": false
     }
   },

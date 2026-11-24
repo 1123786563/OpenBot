@@ -630,7 +630,8 @@ test("pressing Authorize renders consentCopy's sentence and redirects nowhere ye
   install({ provider: "arcade", connected: true, grants: GMAIL });
   const view = renderScreen();
   await waitFor(() => row(view, "Gmail.SendEmail"));
-  fireEvent.click(view.getByText("Authorize"));
+  const authorize = view.getByRole("button", { name: "Authorize" });
+  fireEvent.click(authorize);
   const expected = consentCopy("Gmail.SendEmail", [
     { name: "Gmail.ListEmails", scopes: ["gmail.readonly"] },
     { name: "Gmail.ListThreads", scopes: ["gmail.readonly"] },
@@ -643,8 +644,14 @@ test("pressing Authorize renders consentCopy's sentence and redirects nowhere ye
   expect(panel.textContent).toContain(
     "Approving Gmail.SendEmail asks the provider for the permission gmail.send.",
   );
-  // Nothing was minted by merely looking at the copy.
+  expect(panel.previousElementSibling).toBe(row(view, "Gmail.SendEmail"));
+  fireEvent.keyDown(panel, { key: "Escape" });
+  expect(
+    view.queryByRole("group", { name: /Before you authorize/ }),
+  ).toBeNull();
+  expect(document.activeElement).toBe(authorize);
   expect(authorizeCalls).toEqual([]);
+  fireEvent.click(authorize);
   fireEvent.click(view.getByText("Continue to consent"));
   await waitFor(() =>
     expect(authorizeCalls).toEqual([

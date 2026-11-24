@@ -1,6 +1,6 @@
 {
-  "id": "d4e87fc5-18f3-4b72-8fd0-fa6163e96118",
-  "prevId": "6902ac1f-e445-45cd-aeeb-5385407292dd",
+  "id": "6902ac1f-e445-45cd-aeeb-5385407292dd",
+  "prevId": "c1ea881c-4a10-45be-9783-0deda4897422",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13397,12 +13397,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "suspended_at": {
-          "name": "suspended_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -16669,122 +16663,63 @@
       },
       "isRLSEnabled": false
     },
-    "public.paid_refunds": {
-      "name": "paid_refunds",
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "order_id": {
-          "name": "order_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
+        "actor_id": {
+          "name": "actor_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "amount_cents": {
-          "name": "amount_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
+        "request_id": {
+          "name": "request_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "state": {
-          "name": "state",
+        "fingerprint": {
+          "name": "fingerprint",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'requested'"
+          "notNull": true
         },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
-      "indexes": {
-        "paid_refunds_order": {
-          "name": "paid_refunds_order",
-          "columns": [
-            {
-              "expression": "order_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "paid_refunds_order_id_paid_orders_id_fk": {
-          "name": "paid_refunds_order_id_paid_orders_id_fk",
-          "tableFrom": "paid_refunds",
-          "tableTo": "paid_orders",
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
           "columnsFrom": [
-            "order_id"
+            "actor_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "paid_refunds_account_id_test_credit_accounts_id_fk": {
-          "name": "paid_refunds_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "paid_refunds",
-          "tableTo": "test_credit_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
+          "columns": [
+            "actor_id",
+            "request_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "paid_refunds_amounts": {
-          "name": "paid_refunds_amounts",
-          "value": "\"paid_refunds\".\"amount_cents\" > 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

@@ -1,6 +1,6 @@
 {
-  "id": "d612d69b-dca5-44f3-9b97-c61327b27dcb",
-  "prevId": "49206e45-4b47-424d-8b08-8a0a49ab8510",
+  "id": "49206e45-4b47-424d-8b08-8a0a49ab8510",
+  "prevId": "41b98730-0bff-4279-9819-ba4bee5c4a6f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14045,24 +14045,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "parent_run_id": {
-          "name": "parent_run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "coordination_tool_names": {
-          "name": "coordination_tool_names",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "result_calls": {
-          "name": "result_calls",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -15946,24 +15928,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "parent_budget_id": {
-          "name": "parent_budget_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "child_kind": {
-          "name": "child_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "child_bot_id": {
-          "name": "child_bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -15980,21 +15944,6 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "test_credit_budgets_parent_fk": {
-          "name": "test_credit_budgets_parent_fk",
-          "tableFrom": "test_credit_budgets",
-          "tableTo": "test_credit_budgets",
-          "columnsFrom": [
-            "account_id",
-            "parent_budget_id"
-          ],
-          "columnsTo": [
-            "account_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -16006,18 +15955,7 @@
           ]
         }
       },
-      "uniqueConstraints": {
-        "test_credit_budgets_child_key": {
-          "name": "test_credit_budgets_child_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "account_id",
-            "parent_budget_id",
-            "child_kind",
-            "child_bot_id"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
         "test_credit_budget_credit_type": {
@@ -16031,10 +15969,6 @@
         "test_credit_budget_limit_positive": {
           "name": "test_credit_budget_limit_positive",
           "value": "\"limit_microcredits\" > 0"
-        },
-        "test_credit_budgets_child_binding": {
-          "name": "test_credit_budgets_child_binding",
-          "value": "(\"test_credit_budgets\".\"parent_budget_id\" IS NULL AND \"test_credit_budgets\".\"child_kind\" IS NULL AND \"test_credit_budgets\".\"child_bot_id\" IS NULL)\n        OR (\"test_credit_budgets\".\"parent_budget_id\" IS NOT NULL AND \"test_credit_budgets\".\"parent_budget_id\" <> \"test_credit_budgets\".\"id\"\n          AND \"test_credit_budgets\".\"child_kind\" IN ('delegation', 'subagent') AND \"test_credit_budgets\".\"child_kind\" IS NOT NULL\n          AND \"test_credit_budgets\".\"child_bot_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -17210,12 +17144,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "required_budget_id": {
-          "name": "required_budget_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -17500,6 +17428,65 @@
           "value": "(\"billing_spending_authorizations\".\"kind\" = 'background') = (\"billing_spending_authorizations\".\"task_id\" is not null)"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
+      "schema": "",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
+          "columns": [
+            "actor_id",
+            "request_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

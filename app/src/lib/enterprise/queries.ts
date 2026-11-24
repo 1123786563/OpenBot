@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import type { CapabilityAnswer } from "@/lib/capability-changes/queries";
 import { client } from "@/lib/client";
 
 export type CapabilityKey =
@@ -160,6 +161,7 @@ export type CheckInMetrics = {
 export const enterpriseKeys = {
   all: ["enterprise"] as const,
   overview: () => ["enterprise", "overview"] as const,
+  memberAccess: (id: string) => ["enterprise", "member-access", id] as const,
   modelUsage: (days: number) =>
     ["enterprise", "model-usage", { days }] as const,
   actions: () => ["enterprise", "actions"] as const,
@@ -173,6 +175,40 @@ export const enterpriseKeys = {
   networkReplay: (candidate: NetworkCandidate) =>
     ["enterprise", "network-replay", candidate] as const,
 };
+
+type MemberIdentity = {
+  name: string | null;
+  email: string;
+  role: "admin" | "user";
+};
+
+type MemberAccess =
+  | { status: "access-removed"; person: MemberIdentity }
+  | {
+      status: "active";
+      person: MemberIdentity;
+      capabilities: (CapabilityAnswer & {
+        capability: CapabilityKey;
+        title: string;
+      })[];
+    };
+
+export function memberAccessQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: enterpriseKeys.memberAccess(id),
+    queryFn: async (): Promise<MemberAccess> =>
+      (
+        await client(
+          `/api/admin/enterprise/capabilities/members/${encodeURIComponent(id)}/effective`,
+          {
+            fallback: "Couldn't load this person's permissions.",
+          },
+        )
+      ).json(),
+    gcTime: 0,
+    retry: false,
+  });
+}
 
 /** A network policy as the dialog holds it, not yet saved. */
 export type NetworkCandidate = {

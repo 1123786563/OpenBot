@@ -76,7 +76,8 @@ type Write = { path: string; method: string; body: unknown };
 const writes: Write[] = [];
 let state: BrowserApiState;
 let openAnswer: BrowserOpenResponse;
-let stateFails = false;
+let stateFails: number | false = false;
+let openFails = false;
 /** Holds the browser's state until a case lets it through. */
 let stateHeld: Promise<void> | null = null;
 /** Requests the server refuses, by path, with the sentence it answers: as it passes on the Recorder's own (409). */
@@ -270,12 +271,14 @@ async function server(path: string, init?: RequestInit): Promise<Response> {
   if (path === browserApiPaths.state && method === "GET") {
     await stateHeld;
     if (stateFails)
-      return Response.json({ error: "Unavailable" }, { status: 500 });
+      return Response.json({ error: "Unavailable" }, { status: stateFails });
     return Response.json(state);
   }
   if (path === browserApiPaths.open && method === "POST") {
     if (body !== undefined) return refuse();
     await opening;
+    if (openFails)
+      return Response.json({ error: "Unavailable" }, { status: 503 });
     state = { ...state, open: true };
     return Response.json(openAnswer);
   }
@@ -443,6 +446,7 @@ beforeEach(() => {
   queryClient.clear();
   writes.length = 0;
   stateFails = false;
+  openFails = false;
   stateHeld = null;
   refusals = {};
   actionsAfterStart = 7;
@@ -519,7 +523,7 @@ function draw(ui: ReactNode, entry = "/") {
 
 test("retries an initial Browser state failure from the page", async () => {
   state = screenState();
-  stateFails = true;
+  stateFails = 500;
   const view = draw(<BrowserPage />, "/?recordings=1");
   expect(
     (await view.findByRole("alert", {}, { timeout: 8000 })).textContent,
@@ -545,7 +549,7 @@ test("retrying browser status keeps the original browser open", async () => {
   openAnswer = answerFor("screen");
   const view = draw(<BrowserPage />);
   const screen = await view.findByLabelText(SCREEN);
-  stateFails = true;
+  stateFails = 500;
   await act(() =>
     queryClient.invalidateQueries({ queryKey: browserKeys.state }),
   );
@@ -560,6 +564,55 @@ test("retrying browser status keeps the original browser open", async () => {
   await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
   expect(view.getByLabelText(SCREEN)).toBe(screen);
   expect(opens()).toBe(1);
+});
+
+test("revoking browser access removes the previously active screen", async () => {
+  state = screenState();
+  openAnswer = answerFor("screen");
+  const view = draw(<BrowserPage />);
+  await view.findByLabelText(SCREEN);
+  stateFails = 403;
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: browserKeys.state }),
+  );
+  expect(
+    await view.findByText(
+      "Ask your administrator if you need access to this browser.",
+    ),
+  ).toBeTruthy();
+  expect(view.queryByLabelText(SCREEN)).toBeNull();
+  expect(opens()).toBe(1);
+});
+
+test("reopening a closed browser shows a failed attempt and restores focus after retry", async () => {
+  state = screenState();
+  openAnswer = answerFor("screen");
+  const view = draw(<BrowserPage />);
+  await view.findByLabelText(SCREEN);
+  state = { ...state, open: false };
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: browserKeys.state }),
+  );
+  const reopen = await view.findByRole("button", { name: "Open it again" });
+  reopen.focus();
+  const user = userEvent.setup({ document });
+  openFails = true;
+  await user.keyboard("{Enter}");
+  expect(
+    await view.findByText(
+      "Couldn't reopen your browser. Try again to reconnect.",
+    ),
+  ).toBeTruthy();
+  expect(document.activeElement).toBe(reopen);
+  openFails = false;
+  await user.keyboard("{Enter}");
+  await view.findByLabelText(SCREEN);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      view.getByRole("region", { name: "Browser screen" }),
+    ),
+  );
+  expect(opens()).toBe(3);
 });
 
 /**

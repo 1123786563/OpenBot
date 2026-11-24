@@ -1,6 +1,6 @@
 {
-  "id": "acf9aec0-da18-4a90-905d-11ba5a51cd13",
-  "prevId": "bcc8adbe-4cdb-4c42-bda1-f8a25c59806a",
+  "id": "bcc8adbe-4cdb-4c42-bda1-f8a25c59806a",
+  "prevId": "132118ed-e503-4191-83e6-5c0f02015afa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16957,12 +16957,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
-        },
-        "dispute": {
-          "name": "dispute",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -17524,6 +17518,65 @@
           "value": "(\"billing_spending_authorizations\".\"kind\" = 'background') = (\"billing_spending_authorizations\".\"task_id\" is not null)"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
+      "schema": "",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
+          "columns": [
+            "actor_id",
+            "request_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

@@ -18,6 +18,7 @@ import {
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TeamApprovalSettings } from "@/components/approvals/team-settings";
+import type { SharedUseRequest } from "@/lib/plugins/shared-use";
 import { settleReactWork } from "./settle-react-work";
 
 /** Admin → Approvals: the team-wide controls and team rules, in one place for administrators. */
@@ -31,6 +32,8 @@ afterAll(async () => {
 
 const originalFetch = global.fetch;
 const sent: { path: string; method: string; body: unknown }[] = [];
+let sharedRequests: SharedUseRequest[];
+let sharedReadFailed: boolean;
 
 const inbox = {
   enabled: false,
@@ -89,6 +92,8 @@ const inbox = {
 
 beforeEach(() => {
   sent.length = 0;
+  sharedRequests = [];
+  sharedReadFailed = false;
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(path);
@@ -98,11 +103,17 @@ beforeEach(() => {
           method: init.method,
           body: init.body ? JSON.parse(String(init.body)) : undefined,
         });
+        if (url === "/api/approvals/shared-use/approval-1/approve") {
+          sharedRequests = [];
+          sharedReadFailed = true;
+        }
         return Response.json({ ok: true });
       }
       if (url === "/api/approvals") return Response.json(inbox);
       if (url === "/api/approvals/shared-use")
-        return Response.json({ requests: [] });
+        return sharedReadFailed
+          ? Response.json({}, { status: 503 })
+          : Response.json({ requests: sharedRequests });
       if (url === "/api/me")
         return Response.json({
           user: { id: "me", email: "me@example.test", role: "admin" },
@@ -111,6 +122,56 @@ beforeEach(() => {
     },
     { preconnect: originalFetch.preconnect },
   );
+});
+
+test("shared requests recover in place and approval requires confirmation", async () => {
+  sharedReadFailed = true;
+  sharedRequests = [
+    {
+      id: "approval-1",
+      botId: "ops",
+      botName: "Operations",
+      ownerUserId: "me",
+      serverId: "calendar",
+      title: "Calendar",
+      proposed: { audience: "team", outsideInput: true, members: [] },
+      current: { audience: "owner", outsideInput: false, members: [] },
+      reason: "publish",
+      requestedBy: "me",
+      status: "pending",
+      createdAt: "2026-11-23T08:00:00.000Z",
+    },
+  ];
+  const user = userEvent.setup({ document });
+  const view = draw();
+  await view.findByText("Couldn't load shared account requests.");
+  expect(
+    view.queryByText("No shared account requests awaiting review."),
+  ).toBeNull();
+  sharedReadFailed = false;
+  await user.click(view.getByRole("button", { name: "Retry" }));
+  const approve = await view.findByRole("button", {
+    name: "Approve",
+  });
+  await user.click(approve);
+  await view.findByRole("alertdialog", {
+    name: "Approve shared access for Operations?",
+  });
+  await user.click(view.getByRole("button", { name: "Cancel" }));
+  expect(sent).toEqual([]);
+  await user.click(approve);
+  await user.click(
+    await view.findByRole("button", { name: "Approve request" }),
+  );
+  await view.findByText("Request approved for Operations.");
+  expect(view.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(sent).toEqual([
+    {
+      path: "/api/approvals/shared-use/approval-1/approve",
+      method: "POST",
+      body: undefined,
+    },
+  ]);
 });
 afterEach(() => {
   global.fetch = originalFetch;

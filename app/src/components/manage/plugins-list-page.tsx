@@ -9,15 +9,13 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
-import {
-  ConnectionAction,
-  ConnectionPage,
-} from "@/components/connections/connection-surface";
+import { ConnectionPage } from "@/components/connections/connection-surface";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { RowMark } from "@/components/layout/row-mark";
 import {
   AccessRequestsSection,
@@ -194,19 +192,12 @@ export function PluginsListPage({
           </PageRows>
         </div>
       ) : plugins.error ? (
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load plugins.
-          </p>
-          <ConnectionAction
-            disabled={plugins.isFetching}
-            onClick={() => void plugins.refetch()}
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching ? "Retrying…" : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          message="Couldn't load plugins."
+          retry={plugins.refetch}
+          retrying={plugins.isFetching}
+          retryBelow
+        />
       ) : (
         <>
           {/*

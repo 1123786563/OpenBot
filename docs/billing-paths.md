@@ -90,11 +90,11 @@ scoped authorization, metered dispatch, and paid receipt.
 
 ## Migration history
 
-Migration `0119_test_credit_execution_budgets` was originally authored before its Drizzle snapshot. Existing pilot ledgers identify it by its SQL hash. During integration, its original SQL was retained byte for byte and its snapshot was moved into the merged chain. The Drizzle snapshot check and fresh and upgrade database comparisons cover the combined schema. Generate future schema changes using Drizzle as described in the [migration workflow](development.md#migrations).
+Migration `0120_test_credit_execution_budgets` was originally authored before its Drizzle snapshot. Existing pilot ledgers identify it by its SQL hash. During integration, its original SQL was retained byte for byte and its snapshot was moved into the merged chain. The Drizzle snapshot check and fresh and upgrade database comparisons cover the combined schema. Generate future schema changes using Drizzle as described in the [migration workflow](development.md#migrations).
 
 ## Set the shared provider-cost ceiling
 
-Apply migration `0136_shared_pilot_provider_cost` before deploying the updated API and Worker. Run these commands from `server/` with the operator's database credentials.
+Apply migration `0137_shared_pilot_provider_cost` before deploying the updated API and Worker. Run these commands from `server/` with the operator's database credentials.
 
 ```sh
 bun scripts/billing-paths.ts provider-cost
@@ -111,7 +111,7 @@ Keep migration `0117` applied during a binary rollback. Its trigger still caps n
 
 ## Record paid pilot signoff
 
-Apply migrations through `0143_billing_paid_path_policy`. Run the operator CLI from the repository root with `DATABASE_URL` set to the target ledger.
+Apply migrations through `0144_billing_paid_path_policy`. Run the operator CLI from the repository root with `DATABASE_URL` set to the target ledger.
 
 ```sh
 bun server/scripts/billing-paths.ts signoff record --file application-signoff.json

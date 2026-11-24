@@ -10,6 +10,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   RECORDER_COLLECTS,
   RECORDER_DISCLOSURE,
+  recorderDisclosureParagraphsFor,
 } from "@openbot/shared/recorder-disclosure";
 import { RECORDER_STORE_IDS } from "@openbot/shared/recorder-extension";
 import { environmentManager, QueryClientProvider } from "@tanstack/react-query";
@@ -171,10 +172,13 @@ function draw(screen = <ThisBrowser />) {
   );
 }
 
+const CONFIRM_TAB_PROMPT =
+  "Switch to the new OpenBot Recorder tab in your browser’s tab bar and choose Connect. Return here to check the connection.";
+
 test("without the Recorder the row says so and offers no button or link", async () => {
   const view = draw();
   await view.findByText(
-    "The OpenBot Recorder isn't installed in this browser.",
+    "To install OpenBot Recorder, open this page in Chrome or Edge on a computer.",
   );
   expect(view.queryByRole("button")).toBeNull();
   expect(view.queryByRole("link")).toBeNull();
@@ -189,7 +193,7 @@ test("Connect sends the code to the detected Recorder and asks for confirmation 
   fireEvent.click(
     await view.findByRole("button", { name: "Connect this browser" }),
   );
-  await view.findByText("Confirm in the OpenBot Recorder tab that opened.");
+  await view.findByText(CONFIRM_TAB_PROMPT);
   expect(sent).toContainEqual({
     path: "/api/recorder/connect-codes",
     method: "POST",
@@ -211,7 +215,7 @@ test("once the person approves on the Connect page, the install id the Recorder 
   fireEvent.click(
     await view.findByRole("button", { name: "Connect this browser" }),
   );
-  await view.findByText("Confirm in the OpenBot Recorder tab that opened.");
+  await view.findByText(CONFIRM_TAB_PROMPT);
   // The person clicks Connect on the Recorder's page: the connection is OpenBot's, and the Recorder's ping says which
   // copy made it.
   connections = [connection()];
@@ -231,7 +235,7 @@ for (const [how, sentence] of [
   ],
 ] as const)
   test(`once the person ${how === "cancelled" ? "cancels on" : "closes"} the Connect page, the row says so within a second, with Connect back`, async () => {
-    // After a Cancel, Settings used to go on saying "Confirm in the OpenBot Recorder tab that opened." for up to five
+    // After a Cancel, Settings used to go on asking for confirmation for up to five
     // minutes: nothing told it the person had cancelled.
     recorder = {
       ping: { ok: true },
@@ -241,7 +245,7 @@ for (const [how, sentence] of [
     fireEvent.click(
       await view.findByRole("button", { name: "Connect this browser" }),
     );
-    await view.findByText("Confirm in the OpenBot Recorder tab that opened.");
+    await view.findByText(CONFIRM_TAB_PROMPT);
     recorder.wait = how;
     const at = Date.now();
     await view.findByText(sentence, {}, { timeout: 1500 });
@@ -251,11 +255,9 @@ for (const [how, sentence] of [
     // Connect again starts afresh: the wait before it is not read for this one.
     recorder.wait = "waiting";
     fireEvent.click(again);
-    await view.findByText("Confirm in the OpenBot Recorder tab that opened.");
+    await view.findByText(CONFIRM_TAB_PROMPT);
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    expect(
-      view.getByText("Confirm in the OpenBot Recorder tab that opened."),
-    ).toBeTruthy();
+    expect(view.getByText(CONFIRM_TAB_PROMPT)).toBeTruthy();
   });
 
 test("a trusted OpenBot's connect, answered connected with no Connect page, reads Connected at once and never asks the person to confirm", async () => {
@@ -282,11 +284,7 @@ test("a trusted OpenBot's connect, answered connected with no Connect page, read
   // Well inside the 2 s the row asks in while it waits on a Connect page: it was never waiting on one.
   await view.findByText("Connected", {}, { timeout: 1000 });
   watch.disconnect();
-  expect(
-    said.some((text) =>
-      text.includes("Confirm in the OpenBot Recorder tab that opened."),
-    ),
-  ).toBe(false);
+  expect(said.some((text) => text.includes(CONFIRM_TAB_PROMPT))).toBe(false);
   expect(view.queryByRole("button")).toBeNull();
 });
 
@@ -300,12 +298,10 @@ test("a connection from another copy (Chrome connected, this is Edge) neither sh
   fireEvent.click(
     await view.findByRole("button", { name: "Connect this browser" }),
   );
-  await view.findByText("Confirm in the OpenBot Recorder tab that opened.");
+  await view.findByText(CONFIRM_TAB_PROMPT);
   await new Promise((resolve) => setTimeout(resolve, 2500));
   expect(view.queryByText("Connected")).toBeNull();
-  expect(
-    view.getByText("Confirm in the OpenBot Recorder tab that opened."),
-  ).toBeTruthy();
+  expect(view.getByText(CONFIRM_TAB_PROMPT)).toBeTruthy();
 });
 
 test("a copy that answers the ping with its install id and a matching connection reads Connected", async () => {
@@ -628,18 +624,21 @@ test("Settings, Browsers says everything the Recorder collects before the first 
   const connect = await view.findByRole("button", {
     name: "Connect this browser",
   });
-  const lead = view.getByText(RECORDER_DISCLOSURE);
-  for (const { title, description } of RECORDER_COLLECTS) {
-    const said = view.getByText(description);
+  const lead = recorderDisclosureParagraphsFor("team");
+  expect(lead.join(" ")).toBe(RECORDER_DISCLOSURE);
+  for (const { title } of RECORDER_COLLECTS) {
     expect(view.getByText(title)).toBeTruthy();
+  }
+  for (const copy of [
+    ...lead,
+    ...RECORDER_COLLECTS.map(({ description }) => description),
+  ]) {
+    const said = view.getByText(copy);
     // Above Connect, in the order a person reads them.
     expect(
       said.compareDocumentPosition(connect) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   }
-  expect(
-    lead.compareDocumentPosition(connect) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
   // The saves and the AI assistant conversations, which the old list left out.
   expect(
     view.getByText(/the request it sent and the answer that came back/),
@@ -678,7 +677,9 @@ test("in the personal edition Settings, Browsers says a recording goes to your o
 
 test("in the team edition Settings, Browsers still says a recording goes to your organization's OpenBot", async () => {
   const view = await browsersPage("team");
-  expect(view.getByText(RECORDER_DISCLOSURE)).toBeTruthy();
+  for (const paragraph of recorderDisclosureParagraphsFor("team")) {
+    expect(view.getByText(paragraph)).toBeTruthy();
+  }
   expect(view.container.textContent).toContain(
     "the learning part of your organization's OpenBot backend",
   );
@@ -726,7 +727,7 @@ test("a connect request nobody confirms expires after five minutes and stops pol
     fireEvent.click(
       await view.findByRole("button", { name: "Connect this browser" }),
     );
-    await view.findByText("Confirm in the OpenBot Recorder tab that opened.");
+    await view.findByText(CONFIRM_TAB_PROMPT);
     expect(expiries.length).toBeGreaterThan(0);
     const polling = connectionsFetches;
     await new Promise((resolve) => realSetTimeout(resolve, 2500));

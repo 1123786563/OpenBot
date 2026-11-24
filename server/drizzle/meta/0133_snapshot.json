@@ -1,6 +1,6 @@
 {
-  "id": "41b98730-0bff-4279-9819-ba4bee5c4a6f",
-  "prevId": "f3349072-51b0-4160-ad8e-7ed3ec218c58",
+  "id": "f3349072-51b0-4160-ad8e-7ed3ec218c58",
+  "prevId": "75b4ac40-775a-40f2-84ce-14ef71a6c95a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14027,24 +14027,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "gateway_request_id": {
-          "name": "gateway_request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gateway_request_digest": {
-          "name": "gateway_request_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gateway_evidence_check_at": {
-          "name": "gateway_evidence_check_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -14140,22 +14122,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "test_credit_operations_gateway_evidence_idx": {
-          "name": "test_credit_operations_gateway_evidence_idx",
-          "columns": [
-            {
-              "expression": "gateway_evidence_check_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"test_credit_operations\".\"gateway_evidence_check_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -14242,15 +14208,7 @@
           ]
         }
       },
-      "uniqueConstraints": {
-        "test_credit_operations_gateway_request_id_unique": {
-          "name": "test_credit_operations_gateway_request_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "gateway_request_id"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
         "test_credit_operation_external_binding": {
@@ -17416,6 +17374,65 @@
           "value": "(\"billing_spending_authorizations\".\"kind\" = 'background') = (\"billing_spending_authorizations\".\"task_id\" is not null)"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
+      "schema": "",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
+          "columns": [
+            "actor_id",
+            "request_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

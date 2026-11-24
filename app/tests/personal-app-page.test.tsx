@@ -17,7 +17,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type * as React from "react";
 import { PluginBotPage } from "@/components/manage/plugin-bot-page";
@@ -519,6 +519,10 @@ describe("turning an app off from its own page", () => {
     const { view, router } = drawAtConnections([exaServer], "composio-exa");
     const user = userEvent.setup({ document });
     await user.click(await view.findByRole("button", { name: "Disconnect" }));
+    const dialog = await view.findByRole("alertdialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Disconnect" }),
+    );
     await waitFor(() =>
       expect(writes.filter((write) => write.startsWith("DELETE"))).toEqual([
         "DELETE /api/plugins/servers/composio-exa/connection",

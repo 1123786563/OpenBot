@@ -3,7 +3,7 @@ import {
   browserApiPaths,
 } from "@openbot/shared/openbot-browser";
 import { queryOptions } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { canKeepCachedRead, client } from "@/lib/client";
 
 export const browserKeys = {
   all: ["browser"] as const,
@@ -56,6 +56,7 @@ export function browserStateQueryOptions(options?: { poll?: boolean }) {
         })
       ).json(),
     refetchInterval: (query) => {
+      if (!canKeepCachedRead(query.state.error)) return false;
       if (!options?.poll) return sidebarInterval(query.state.data);
       if (query.state.status === "error" && !query.state.data) return false;
       return BROWSER_POLL_MS;

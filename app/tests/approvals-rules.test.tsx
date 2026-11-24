@@ -561,7 +561,8 @@ test.each(["team", "personal"] as const)(
       "They also ask before every edit or command in a folder on your own computer.",
       "Bots leave changing a password on a website for you to do yourself.",
       "Bots can create, edit, and delete files in their own workspace without asking, unless your settings or rules say so.",
-      "Require your approval for every change to your apps, websites, and files, including routine edits and updates.",
+      "Ask before changes that your rules haven’t already decided, including routine edits.",
+      "It can ask for approval or hand the action to you, even if Extra vigilant is off.",
     ])
       expect(said.replace(/\s+/g, " ")).toContain(sentence);
     expect(said).not.toContain(

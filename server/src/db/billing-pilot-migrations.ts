@@ -22,6 +22,8 @@ const sharedCreditTags = [
   "0111_test_credit_reconciliation",
   "0112_test_credit_cutoff_index",
 ];
+// Existing merged billing journals use stamps before main added Approval rule saves.
+const billingStampShift = 104585266;
 const priorSharedCreditStamps = [1795415414732, 1795415414733, 1795415414734];
 
 // The stamps before the billing branch first incorporated the market migrations.
@@ -65,14 +67,14 @@ export async function reconcileBillingPilotMigrations(
     ({ tag }) => tag === sharedCreditTags[0],
   );
   const newBilling = folder.findIndex(
-    ({ tag }) => tag === "0119_test_credit_execution_budgets",
+    ({ tag }) => tag === "0120_test_credit_execution_budgets",
   );
   const corsair = folder.filter(({ tag }) => corsairTags.has(tag));
   const market = folder.filter(({ tag }) => marketTags.has(tag));
   const sameCreditSql = folder.slice(firstCredit, firstCredit + 3);
   if (
     sharedEnd !== 93 ||
-    newBilling !== 119 ||
+    newBilling !== 120 ||
     corsair.length !== corsairTags.size ||
     market.length !== marketTags.size ||
     sameCreditSql.length !== sharedCreditTags.length ||
@@ -82,8 +84,11 @@ export async function reconcileBillingPilotMigrations(
   }
 
   const shared = [...folder.slice(0, sharedEnd), ...corsair];
-  // 0143 was the most recent already published billing-only migration before this merge.
-  const billing = [...sameCreditSql, ...folder.slice(newBilling, 144)];
+  const billingOnly = folder.slice(newBilling, 145);
+  const billingOnlyStamps = billingOnly.map(
+    ({ when }) => when - billingStampShift,
+  );
+  const billing = [...sameCreditSql, ...billingOnly];
   const appliedByStamp = new Map(
     applied.map(({ createdAt, hash }) => [createdAt, hash]),
   );
@@ -105,25 +110,34 @@ export async function reconcileBillingPilotMigrations(
 
   const prior = previousPrefix(
     [...shared, ...market],
-    priorSharedCreditStamps,
+    [...priorSharedCreditStamps, ...billingOnlyStamps],
     billing,
   );
   // The older pilot ended at background tool results, before the paid path policy.
   const original = previousPrefix(
     shared,
-    originalBillingStamps,
+    [
+      ...originalBillingStamps,
+      ...billingOnlyStamps.slice(
+        originalBillingStamps.length - sameCreditSql.length,
+      ),
+    ],
     billing.slice(0, -1),
   );
-  const previous = prefixMatches(
-    prior,
-    applied,
-    appliedByStamp,
-    priorSharedCreditStamps[0],
-  )
-    ? prior
-    : prefixMatches(original, applied, appliedByStamp, originalBillingStamps[0])
-      ? original
-      : undefined;
+  const previouslyMerged = previousPrefix(
+    folder.slice(0, newBilling - 1),
+    billingOnlyStamps,
+    billingOnly,
+  );
+  const previous = [
+    { entries: prior, firstStamp: priorSharedCreditStamps[0] },
+    { entries: original, firstStamp: originalBillingStamps[0] },
+    { entries: previouslyMerged, firstStamp: billingOnlyStamps[0] },
+  ].find(
+    ({ entries, firstStamp }) =>
+      firstStamp !== undefined &&
+      prefixMatches(entries, applied, appliedByStamp, firstStamp),
+  )?.entries;
   if (!previous) return applied;
 
   const alreadyApplied = new Set(

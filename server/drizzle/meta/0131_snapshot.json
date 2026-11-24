@@ -1,6 +1,6 @@
 {
-  "id": "75b4ac40-775a-40f2-84ce-14ef71a6c95a",
-  "prevId": "e468675a-b2ff-4697-af41-fc215c99be6c",
+  "id": "e468675a-b2ff-4697-af41-fc215c99be6c",
+  "prevId": "5a770160-166a-40ab-b2aa-170a60f17db6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13403,12 +13403,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "reconciled_at": {
-          "name": "reconciled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -13999,12 +13993,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "authorization_id": {
-          "name": "authorization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -14153,21 +14141,6 @@
           "columnsFrom": [
             "account_id",
             "budget_id"
-          ],
-          "columnsTo": [
-            "account_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "test_credit_authorization_fk": {
-          "name": "test_credit_authorization_fk",
-          "tableFrom": "test_credit_operations",
-          "tableTo": "billing_spending_authorizations",
-          "columnsFrom": [
-            "account_id",
-            "authorization_id"
           ],
           "columnsTo": [
             "account_id",
@@ -16432,18 +16405,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16491,10 +16452,6 @@
         "paid_orders_amounts": {
           "name": "paid_orders_amounts",
           "value": "\"paid_orders\".\"product_version\" > 0 AND \"paid_orders\".\"price_cents\" > 0"
-        },
-        "paid_orders_closed": {
-          "name": "paid_orders_closed",
-          "value": "(\"paid_orders\".\"closed_at\" is null) = (\"paid_orders\".\"closed_by\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -17120,208 +17077,43 @@
       },
       "isRLSEnabled": false
     },
-    "public.billing_applications": {
-      "name": "billing_applications",
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
+        "actor_id": {
+          "name": "actor_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "operator": {
-          "name": "operator",
+        "request_id": {
+          "name": "request_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "resource_prefix": {
-          "name": "resource_prefix",
+        "fingerprint": {
+          "name": "fingerprint",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "approved_by": {
-          "name": "approved_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "paused_at": {
-          "name": "paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "paused_by": {
-          "name": "paused_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "billing_application_approval": {
-          "name": "billing_application_approval",
-          "value": "(\"billing_applications\".\"approved_at\" is null) = (\"billing_applications\".\"approved_by\" is null)"
-        },
-        "billing_application_pause": {
-          "name": "billing_application_pause",
-          "value": "(\"billing_applications\".\"paused_at\" is null) = (\"billing_applications\".\"paused_by\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.billing_restore": {
-      "name": "billing_restore",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "restoring_since": {
-          "name": "restoring_since",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.billing_spending_authorizations": {
-      "name": "billing_spending_authorizations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "application_id": {
-          "name": "application_id",
-          "type": "text",
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
           "primaryKey": false,
           "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resource_prefix": {
-          "name": "resource_prefix",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "limit_microcredits": {
-          "name": "limit_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "billing_spending_authorizations_application_id_billing_applications_id_fk": {
-          "name": "billing_spending_authorizations_application_id_billing_applications_id_fk",
-          "tableFrom": "billing_spending_authorizations",
-          "tableTo": "billing_applications",
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
           "columnsFrom": [
-            "application_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "billing_spending_authorizations_account_id_test_credit_accounts_id_fk": {
-          "name": "billing_spending_authorizations_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "billing_spending_authorizations",
-          "tableTo": "test_credit_accounts",
-          "columnsFrom": [
-            "account_id"
+            "actor_id"
           ],
           "columnsTo": [
             "id"
@@ -17330,28 +17122,18 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "billing_spending_authorizations_account_id_id_unique": {
-          "name": "billing_spending_authorizations_account_id_id_unique",
-          "nullsNotDistinct": false,
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
           "columns": [
-            "account_id",
-            "id"
+            "actor_id",
+            "request_id"
           ]
         }
       },
+      "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "billing_authorization_amount": {
-          "name": "billing_authorization_amount",
-          "value": "\"billing_spending_authorizations\".\"limit_microcredits\" > 0"
-        },
-        "billing_authorization_task": {
-          "name": "billing_authorization_task",
-          "value": "(\"billing_spending_authorizations\".\"kind\" = 'background') = (\"billing_spending_authorizations\".\"task_id\" is not null)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

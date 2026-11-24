@@ -325,6 +325,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     },
   });
   const execute = createBifrostCreditExecutor({
+    limitField: "max_completion_tokens",
     endpoint: new URL("/v1/chat/completions", externalGateway ?? gateway.url),
     gatewayRevision: "a",
     meteringRevision: "a",

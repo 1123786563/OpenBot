@@ -1,5 +1,6 @@
 import { Button } from "@astryxdesign/core/Button";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   Dialog,
   DialogBody,
@@ -33,14 +34,21 @@ type ConfirmationState =
   | { phase: "ready" | "pending"; action: Confirmation }
   | { phase: "retry" | "unavailable"; action: Confirmation; message: string };
 
-export function useActionConfirmation() {
+export function useActionConfirmation(review?: {
+  content: ReactNode;
+  ready: boolean;
+  onClose: () => void;
+}) {
   const [state, setState] = useState<ConfirmationState | null>(null);
   const [notice, setNotice] = useState("");
   const remembered = useRef<Confirmation | null>(null);
   const submitting = useRef(false);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const status = useRef<HTMLParagraphElement>(null);
-  const close = () => setState(null);
+  const close = () => {
+    setState(null);
+    review?.onClose();
+  };
 
   function requestConfirmation(action: Confirmation) {
     if (submitting.current) return;
@@ -50,7 +58,7 @@ export function useActionConfirmation() {
   }
 
   async function submit(action: Confirmation) {
-    if (submitting.current) return;
+    if (submitting.current || review?.ready === false) return;
     submitting.current = true;
     setState({ phase: "pending", action });
     try {
@@ -111,6 +119,7 @@ export function useActionConfirmation() {
           }}
         >
           <DialogContent
+            {...astryxScope}
             className="break-words"
             finalFocus={() => {
               const opener = remembered.current?.trigger;
@@ -131,6 +140,7 @@ export function useActionConfirmation() {
             <DialogTitle>{action?.title}</DialogTitle>
             <DialogBody>
               <DialogDescription>{action?.description}</DialogDescription>
+              {state && !unavailable ? review?.content : null}
               {state && "message" in state && (
                 <p className="text-destructive" role="alert">
                   {state.message}
@@ -149,6 +159,7 @@ export function useActionConfirmation() {
               {action && !unavailable && (
                 <Button
                   className="confirmation-action"
+                  isDisabled={review?.ready === false}
                   isLoading={pending}
                   label={
                     pending

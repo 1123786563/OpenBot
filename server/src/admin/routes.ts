@@ -5,6 +5,7 @@
  * on the audit trail with who made it. `GET /me` is the one read any signed-in person may make: the
  * capabilities that apply to them, so the app can hide what they may not use.
  */
+import { and, eq } from "drizzle-orm";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { recordAuditEvent } from "../audit";
@@ -19,7 +20,7 @@ import {
   DEFAULT_EGRESS_DESTINATIONS,
   parseEgressRules,
 } from "../computer/policy-network";
-import { mcpServers } from "../db/schema";
+import { mcpServers, revokedAccess, userRoles, users } from "../db/schema";
 import { parsePageLimit } from "../paging";
 import { otelConfigured } from "../telemetry/otel";
 import {
@@ -27,6 +28,7 @@ import {
   CAPABILITY_LABELS,
   DEFAULT_CAPABILITIES,
   isCapability,
+  resolveCapability,
 } from "./capabilities";
 import { ACTION_RECORD_RETENTION_DAYS, enterpriseControls } from "./controls";
 import { parseMetricsDays, proactiveMetrics } from "./proactive-metrics";
@@ -152,7 +154,6 @@ export function createEnterpriseAdminRoutes(
   });
 
   routes.use("*", async (context, next) => {
-    if (new URL(context.req.url).pathname.endsWith("/me")) return next();
     const denied = requireAdmin(context);
     if (denied) return denied;
     return next();
@@ -209,6 +210,49 @@ export function createEnterpriseAdminRoutes(
       scim: scimStatus(controls.deps.env ?? process.env),
       otel: { configured: otelConfigured(controls.deps.env ?? process.env) },
       actionRecordRetentionDays: ACTION_RECORD_RETENTION_DAYS,
+    });
+  });
+
+  routes.get("/capabilities/members/:id/effective", async (context) => {
+    context.header("Cache-Control", "no-store");
+    const controls = enterpriseControls();
+    if (!controls) return unavailable(context);
+    const [member] = await controls.deps.database
+      .select({
+        name: users.name,
+        email: users.email,
+        groups: users.groups,
+        admin: userRoles.userId,
+        revoked: revokedAccess.email,
+      })
+      .from(users)
+      .leftJoin(
+        userRoles,
+        and(eq(userRoles.userId, users.id), eq(userRoles.role, "admin")),
+      )
+      .leftJoin(revokedAccess, eq(revokedAccess.email, users.email))
+      .where(eq(users.id, context.req.param("id")))
+      .limit(1);
+    if (!member)
+      return context.json(
+        { error: "This person is no longer in the directory." },
+        404,
+      );
+
+    const role = member.admin ? "admin" : "user";
+    const person = { name: member.name, email: member.email, role };
+    if (member.revoked)
+      return context.json({ status: "access-removed", person });
+
+    const rows = await controls.store.capabilityRows();
+    return context.json({
+      status: "active",
+      person,
+      capabilities: CAPABILITIES.map((capability) => ({
+        capability,
+        ...CAPABILITY_LABELS[capability],
+        ...resolveCapability(rows, { role, groups: member.groups }, capability),
+      })),
     });
   });
 

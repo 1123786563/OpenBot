@@ -18,6 +18,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { DescribeGrants } from "@/components/manage/describe-grants";
 import { appPageTitle } from "@/components/manage/plugin-page";
 import {
@@ -45,6 +46,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { useManagePaths } from "@/lib/manage-paths";
 import {
@@ -147,7 +149,10 @@ export function PluginBotPage({
     onError: (thrown: Error) => setError(thrown.message),
   });
 
-  const server = plugins.data?.servers.find((row) => row.id === key);
+  const pluginData = canKeepCachedRead(plugins.error)
+    ? plugins.data
+    : undefined;
+  const server = pluginData?.servers.find((row) => row.id === key);
   /*
    * Shared only once the server itself says so. `exposure` is fetched for exactly that case — it is
    * this Bot's whole shared-apps picture, and here it is read for one app's current approval, so a
@@ -172,7 +177,7 @@ export function PluginBotPage({
   });
   const [grantingShared, setGrantingShared] = useState(false);
   const appTitle =
-    plugins.data?.catalogue.find((item) => item.key === key)?.title ??
+    pluginData?.catalogue.find((item) => item.key === key)?.title ??
     server?.title ??
     appPageTitle(key);
   const bot =
@@ -241,7 +246,7 @@ export function PluginBotPage({
    * not be read". Only the first is a fact about this deployment, and a request that never came
    * back is no evidence for it.
    */
-  if (plugins.data && !server) {
+  if (pluginData && !server) {
     return (
       <ConnectionPage
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
@@ -268,25 +273,12 @@ export function PluginBotPage({
         backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
         title={appTitle}
       >
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load plugins.
-          </p>
-          <ConnectionAction
-            disabled={
-              plugins.isFetching || agents.isFetching || hiddenAgents.isFetching
-            }
-            onClick={() => {
-              void plugins.refetch();
-              void agents.refetch();
-              void hiddenAgents.refetch();
-            }}
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching ? "Retrying…" : "Retry"}
-          </ConnectionAction>
-        </div>
+        <ReadError
+          message="Couldn't load plugins."
+          retry={plugins.refetch}
+          retrying={plugins.isFetching}
+          retryBelow
+        />
       </ConnectionPage>
     );
   }

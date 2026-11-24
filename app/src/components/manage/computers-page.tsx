@@ -2,10 +2,9 @@ import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { IconBolt, IconDeviceDesktop } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef } from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   ClearBrowserDialog,
   useClearBrowserData,
@@ -18,13 +17,9 @@ import {
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import {
   Item,
   ItemActions,
@@ -36,6 +31,7 @@ import { Separator } from "@/components/ui/separator";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { clearBrowserMutationOptions } from "@/lib/browser/mutations";
+import { ClientError } from "@/lib/client";
 import {
   type HostAccessPendingOperation,
   type HostFolderGrant,
@@ -78,13 +74,8 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
   const paths = useManagePaths();
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
-  /** The row currently running a stop/reset request. */
-  const [busy, setBusy] = useState<string | null>(null);
-  /** Reset deletes the browser profiles, so it requires confirmation. */
-  const [confirming, setConfirming] = useState<ComputerProfile | null>(null);
-  /** Updating restarts a running computer mid-task, so it is confirmed too. */
-  const [confirmingUpdate, setConfirmingUpdate] =
-    useState<ComputerProfile | null>(null);
+  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const fleetHeading = useRef<HTMLHeadingElement>(null);
   const queryClient = useQueryClient();
   const nameFor = useBotNames();
   /*
@@ -108,29 +99,15 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
     stopHostAccessMutationOptions(queryClient),
   );
 
-  const computers = fleet.data?.computers ?? null;
-  const isolation = fleet.data?.isolation ?? null;
+  const denied =
+    fleet.error instanceof ClientError &&
+    (fleet.error.status === 401 || fleet.error.status === 403);
+  const computers = denied ? null : (fleet.data?.computers ?? null);
+  const isolation = denied ? null : (fleet.data?.isolation ?? null);
   const hostWriteError =
     requestGrant.error ?? revokeGrant.error ?? stopHostAccess.error;
   const hostReadFailed = hostAccess.isError || agents.isError;
   const hostLoading = hostAccess.isPending || agents.isPending;
-
-  const run = (
-    computer: ComputerProfile,
-    action: "stop" | "reset" | "update",
-  ) => {
-    setBusy(rowId(computer));
-    setConfirming(null);
-    setConfirmingUpdate(null);
-    setState.mutate(
-      {
-        action,
-        computer: computer.computer,
-        ...(computer.botId ? { botId: computer.botId } : {}),
-      },
-      { onSettled: () => setBusy(null) },
-    );
-  };
 
   /**
    * Whose computer a row is, in the words the rest of Admin uses.
@@ -157,6 +134,67 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
     }
     return computer.botId ? nameFor(computer.botId) : computer.computer;
   };
+
+  function confirmChange(
+    computer: ComputerProfile,
+    action: "reset" | "update",
+    trigger: HTMLElement,
+  ) {
+    const name = titleOf(computer);
+    const reset = action === "reset";
+    const resetImpact =
+      computer.kind === "person" && !computer.botId
+        ? "Every Bot’s browser profile on this computer is deleted. Each Bot is signed out and starts clean."
+        : isOwnBrowser(computer)
+          ? "The browser profile is deleted. The person is signed out of every site in it."
+          : "The Bot’s browser profile is deleted. The Bot is signed out and starts clean.";
+    requestConfirmation({
+      title: reset ? `Reset ${name}?` : `Update ${name}?`,
+      description: reset
+        ? `${resetImpact} You can’t undo this.`
+        : `It moves to the computer image ${paths.deploymentName} now runs. Files and sign-ins are kept. A running computer restarts and stops what it is doing.`,
+      confirmLabel: reset ? "Reset computer" : "Update computer",
+      pendingLabel: reset ? "Resetting…" : "Updating…",
+      failureMessage: `Couldn't complete the change for ${name}. Try again.`,
+      successMessage: reset
+        ? `Reset complete for ${name}.`
+        : `Update complete for ${name}.`,
+      variant: reset ? "destructive" : "default",
+      trigger,
+      fallbackFocus: () => fleetHeading.current,
+      refresh: () => fleet.refetch(),
+      run: async () => {
+        const { data } = await fleet.refetch({ throwOnError: true });
+        const latest = data?.computers.find(
+          (candidate) => rowId(candidate) === rowId(computer),
+        );
+        if (
+          !latest ||
+          latest.running !== computer.running ||
+          latest.startedAt !== computer.startedAt ||
+          (!reset && !latest.updateAvailable)
+        ) {
+          throw new ActionUnavailable(
+            "This device changed while you were reviewing it. Close this dialog and check its current status.",
+          );
+        }
+        try {
+          await setState.mutateAsync({
+            action,
+            computer: latest.computer,
+            botId: latest.botId,
+          });
+        } catch (error) {
+          if (!(error instanceof ClientError) || error.status >= 500) {
+            throw new ActionUnavailable(
+              `The service couldn't confirm the change. Check the device status and ${paths.auditLabel} before trying again.`,
+            );
+          }
+          throw error;
+        }
+      },
+    });
+  }
 
   /** Which profiles and files a computer holds. */
   const scopeOf = (computer: ComputerProfile): string => {
@@ -197,11 +235,13 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
       title={personal ? "Computer" : "Computers"}
     >
       <PageSection
+        headingRef={fleetHeading}
         title={
           personal ? "Your Bots' browsers" : "Computers in this deployment"
         }
       >
-        {setState.error ? (
+        {confirmation}
+        {setState.variables?.action === "stop" && setState.error ? (
           <p
             className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
             role="alert"
@@ -277,8 +317,12 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
                   <ItemActions className="max-w-full flex-wrap">
                     {computer.updateAvailable ? (
                       <DeviceAction
-                        disabled={busy === rowId(computer)}
-                        onClick={() => setConfirmingUpdate(computer)}
+                        aria-label={`Update computer: ${titleOf(computer)}`}
+                        className="confirmation-action"
+                        disabled={setState.isPending}
+                        onClick={(event) =>
+                          confirmChange(computer, "update", event.currentTarget)
+                        }
                         size="sm"
                         variant="outline"
                       >
@@ -286,17 +330,32 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
                       </DeviceAction>
                     ) : null}
                     <DeviceAction
-                      disabled={busy === rowId(computer) || !computer.running}
-                      onClick={() => void run(computer, "stop")}
+                      aria-label={`Stop browser: ${titleOf(computer)}`}
+                      className="confirmation-action"
+                      disabled={setState.isPending || !computer.running}
+                      onClick={() =>
+                        setState.mutate({
+                          action: "stop",
+                          computer: computer.computer,
+                          botId: computer.botId,
+                        })
+                      }
                       size="sm"
                       variant="outline"
                     >
-                      {busy === rowId(computer) ? "Working…" : "Stop browser"}
+                      {setState.isPending &&
+                      setState.variables.action === "stop" &&
+                      setState.variables.computer === computer.computer &&
+                      setState.variables.botId === computer.botId
+                        ? "Stopping…"
+                        : "Stop browser"}
                     </DeviceAction>
                     {personal && isOwnBrowser(computer) ? (
                       <DeviceAction
+                        aria-label={`Clear browser data: ${titleOf(computer)}`}
+                        className="confirmation-action"
                         disabled={
-                          busy === rowId(computer) || clearOwnBrowser.isPending
+                          setState.isPending || clearOwnBrowser.isPending
                         }
                         onClick={clearing.ask}
                         size="sm"
@@ -306,8 +365,12 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
                       </DeviceAction>
                     ) : (
                       <DeviceAction
-                        disabled={busy === rowId(computer)}
-                        onClick={() => setConfirming(computer)}
+                        aria-label={`Reset: ${titleOf(computer)}`}
+                        className="confirmation-action"
+                        disabled={setState.isPending}
+                        onClick={(event) =>
+                          confirmChange(computer, "reset", event.currentTarget)
+                        }
                         size="sm"
                         variant="outline"
                       >
@@ -389,107 +452,11 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
         stopping={stopHostAccess.isPending}
       />
 
-      {/*
-       * A DIALOG RATHER THAN AN INLINE CONFIRM. Resetting signs a Bot out of everything it has ever
-       * logged into and cannot be undone, and the row it was confirmed on was one of several
-       * identical-looking rows. The dialog names whose computer it is, so the sentence somebody
-       * agrees to says which computer it destroys.
-       */}
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) setConfirming(null);
-        }}
-        open={confirming !== null}
-      >
-        <DialogContent {...astryxScope}>
-          <DialogHeader>
-            <DialogTitle>
-              {personal
-                ? confirming?.botId
-                  ? `Reset ${nameFor(confirming.botId)}'s browser?`
-                  : "Reset the computer?"
-                : `Reset ${confirming ? titleOf(confirming) : ""}?`}
-            </DialogTitle>
-            <DialogDescription>
-              {confirming?.kind === "person" && !confirming.botId
-                ? "Every Bot's profile on this person's computer is deleted. Each is signed out of every service and starts clean."
-                : confirming && isOwnBrowser(confirming)
-                  ? "Its profile is deleted. The person is signed out of every site they signed in to in it."
-                  : "Its profile is deleted. The Bot is signed out of every service and starts clean."}{" "}
-              You can't undo this.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DeviceAction
-              onClick={() => setConfirming(null)}
-              size="sm"
-              variant="ghost"
-            >
-              Cancel
-            </DeviceAction>
-            <DeviceAction
-              disabled={confirming !== null && busy === rowId(confirming)}
-              onClick={() => {
-                if (confirming) void run(confirming, "reset");
-              }}
-              size="sm"
-              variant="destructive"
-            >
-              {confirming !== null && busy === rowId(confirming)
-                ? "Resetting…"
-                : "Reset it"}
-            </DeviceAction>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <ClearBrowserDialog
         clear={clearOwnBrowser}
         onOpenChange={clearing.setAsking}
         open={clearing.asking}
       />
-
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) setConfirmingUpdate(null);
-        }}
-        open={confirmingUpdate !== null}
-      >
-        <DialogContent {...astryxScope}>
-          <DialogHeader>
-            <DialogTitle>
-              Update {confirmingUpdate ? titleOf(confirmingUpdate) : ""}?
-            </DialogTitle>
-            <DialogDescription>
-              It moves to the computer image {paths.deploymentName} now runs.
-              Its files and sign-ins are kept. If it's running, it restarts and
-              stops what it's doing.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DeviceAction
-              onClick={() => setConfirmingUpdate(null)}
-              size="sm"
-              variant="ghost"
-            >
-              Cancel
-            </DeviceAction>
-            <DeviceAction
-              disabled={
-                confirmingUpdate !== null && busy === rowId(confirmingUpdate)
-              }
-              onClick={() => {
-                if (confirmingUpdate) void run(confirmingUpdate, "update");
-              }}
-              size="sm"
-            >
-              {confirmingUpdate !== null && busy === rowId(confirmingUpdate)
-                ? "Updating…"
-                : "Update it"}
-            </DeviceAction>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {personal ? (
         <p className="mt-4 text-muted-foreground text-sm">

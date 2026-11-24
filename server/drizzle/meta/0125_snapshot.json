@@ -1,6 +1,6 @@
 {
-  "id": "6902ac1f-e445-45cd-aeeb-5385407292dd",
-  "prevId": "c1ea881c-4a10-45be-9783-0deda4897422",
+  "id": "c1ea881c-4a10-45be-9783-0deda4897422",
+  "prevId": "632c8180-8d9b-4b9d-ade7-edf1962f699e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16566,12 +16566,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "consumed_microcredits": {
-          "name": "consumed_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16661,6 +16655,65 @@
           "value": "\"paid_credit_allocations\".\"amount_microcredits\" > 0"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
+      "schema": "",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
+          "columns": [
+            "actor_id",
+            "request_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

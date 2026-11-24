@@ -44,6 +44,7 @@ import {
   type ApprovalRule,
   type ApprovalRuleAuthoring,
   type ApprovalRuleInput,
+  type ApprovalRuleSave,
   type ApprovalStore,
   type ApprovalTeamSettings,
   approvalAction,
@@ -696,10 +697,11 @@ export function createApprovalService(
       by: string,
       input: readonly ApprovalRuleInput[],
       authoring?: ApprovalRuleAuthoring,
+      request?: ApprovalRuleSave,
     ) {
       if (!store.policy?.createTeamRules)
         throw new ApprovalRefusedError("Team rules are unavailable here.");
-      return store.policy.createTeamRules(by, input, authoring);
+      return store.policy.createTeamRules(by, input, authoring, request);
     },
     async resume(
       ownerUserId: string,

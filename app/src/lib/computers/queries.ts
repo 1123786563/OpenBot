@@ -50,7 +50,7 @@ export type ActionPolicy = {
   labels?: Record<string, RuleLabel>;
 };
 
-export type RuleLabel = { name: string; description: string };
+export type RuleLabel = { name: string; description: string; id?: string };
 
 /**
  * Where one Bot's computer is in its life, as the server's provider reports it.
@@ -116,13 +116,16 @@ export function computerFleetQueryOptions() {
   });
 }
 
+export function readActionPolicy(): Promise<ActionPolicy> {
+  return client("/api/computers/policy", "policy", {
+    fallback: "The boundary could not be read.",
+  });
+}
+
 export function actionPolicyQueryOptions() {
   return queryOptions({
     queryKey: computerKeys.policy(),
-    queryFn: (): Promise<ActionPolicy> =>
-      client("/api/computers/policy", "policy", {
-        fallback: "The boundary could not be read.",
-      }),
+    queryFn: readActionPolicy,
   });
 }
 

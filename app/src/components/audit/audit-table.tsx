@@ -297,11 +297,13 @@ export function AuditTable({
         </Table>,
         rows.length > 0,
       )}
-      {events.length > 0 && rows.length === 0 ? (
+      {rows.length === 0 && (events.length > 0 || footer) ? (
         <div className="px-4">
-          <PageEmpty icon={IconSearch} title="No matches">
-            Nothing loaded matches this search and these filters.
-          </PageEmpty>
+          {events.length > 0 ? (
+            <PageEmpty icon={IconSearch} title="No matches">
+              Nothing loaded matches this search and these filters.
+            </PageEmpty>
+          ) : null}
           {footer}
         </div>
       ) : null}

@@ -66,13 +66,16 @@ const ROWS = [
   }),
 ];
 
-async function renderAudit(sections?: ReactNode) {
+async function renderAudit(
+  sections?: ReactNode,
+  firstPage: Parameters<typeof seedAuditPage>[2] = { events: ROWS },
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
     },
   });
-  seedAuditPage(queryClient, "", { events: ROWS });
+  seedAuditPage(queryClient, "", firstPage);
   queryClient.setQueryData(agentKeys.list(false), []);
   const router = createRouter({
     routeTree: createRootRoute({
@@ -85,9 +88,23 @@ async function renderAudit(sections?: ReactNode) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  await view.findByText("Decision");
+  if (firstPage.events.length) await view.findByText("Decision");
   return view;
 }
+
+test("an empty audit page can still load older events if it has a cursor", async () => {
+  const view = await renderAudit(undefined, {
+    events: [],
+    nextCursor: "older",
+  });
+  await view.findByRole("button", { name: "Show older events" });
+  expect(
+    view.getByText(
+      "No events on the loaded pages. Older events are available.",
+    ),
+  ).toBeTruthy();
+  expect(view.queryByText("No events match this filter yet.")).toBeNull();
+});
 
 const whats = (container: HTMLElement) =>
   [...container.querySelectorAll("tbody tr")].map(

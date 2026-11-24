@@ -17,7 +17,13 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   type AuditEvent,
@@ -282,6 +288,29 @@ test("removing guidance requires confirmation and retries within the dialog", as
     expect(router.state.location.pathname).toBe("/admin/approvals"),
   );
   expect(saved).toBeNull();
+});
+
+test("restoring saved guidance clears the draft and its check without writing", async () => {
+  saved = DEALS;
+  const { view, user } = open();
+  const field = (await view.findByLabelText("Guidance")) as HTMLTextAreaElement;
+  await user.type(field, " Keep an audit note.");
+  await user.click(view.getByRole("button", { name: "Check guidance" }));
+  await view.findByText("What this changes");
+  await user.click(
+    view.getByRole("button", { name: "Restore saved guidance" }),
+  );
+  const dialog = await view.findByRole("alertdialog", {
+    name: "Discard your guidance draft?",
+  });
+  await user.click(
+    within(dialog).getByRole("button", { name: "Restore saved guidance" }),
+  );
+  expect(await view.findByText("Saved guidance restored.")).toBeTruthy();
+  expect(field.value).toBe(DEALS);
+  expect(view.queryByText("What this changes")).toBeNull();
+  expect(saveButton(view).disabled).toBe(true);
+  expect(sent.map(({ method }) => method)).toEqual(["POST"]);
 });
 
 test("guidance is checked, tested on recent decisions after saying how many model calls that makes, and saved by Save", async () => {

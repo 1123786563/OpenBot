@@ -87,7 +87,7 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 | `/channel/$channelId` 单 Bot 会话 | 3 3 3 3 3 3 3 3 3 2 | 29/40 | **37/40（92.5%）** · [首发重试复评](web-impeccable-batch-3-conversations.md#单-bot-会话首发重试复评) | OpenBot 直聊可用原消息 ID 重发纯文本首条消息。重新检查保留焦点。待确认气泡有状态标签，窄屏恢复按钮高 44 像素。已修正提示内边距和重复措辞。无法重发时的说明和各入口的一致性待完善。真实服务及读屏待验。 |
 | `/group/$channelId` 多 Bot 会话 | 3 3 2 2 2 3 2 3 2 2 | 24/40 | **38/40（95%）** · [多人会话复评](web-impeccable-batch-3-conversations.md#多人会话回复状态复评) | 刷新恢复文本与点名，发送失败重试沿用原消息 ID。自动刷新结束后可手动查收。回复失败保留已生成内容并按发起人权限提供指引。从 Activity 返回时焦点回到原链接，原回复消失时焦点移到消息区。真实成员权限及动作结果待验。 |
 | `/bot` 默认或指定 Bot 快速会话 | 2 3 2 2 3 3 2 3 2 2 | 24/40 | **33/40（82.5%）** · [快速会话复评](web-impeccable-batch-3-conversations.md#快速会话触控与首发指引复评) | 草稿按账号与 Bot 隔离，刷新和重新开始均会保留。发送、附件及页头主要操作区至少 44×44。首次使用帮助和真实网关待完善。 |
-| `/browser` 自己的浏览器 | 2 3 3 2 3 3 3 3 3 2 | 27/40 | **29/40** · [设备读取与重试复评](#设备读取与重试复评) | 重试保留浏览器，键盘焦点回到页标题。连续失败时缺少接续指引。 [浏览器](../app/src/components/browser/browser-page.tsx#L80) |
+| `/browser` 自己的浏览器 | 2 3 3 2 3 3 3 3 3 2 | 27/40 | **33/40（82.5%，暂定）** · [连接与录像恢复复评](#teach-a-bot-连接与录像恢复复评) | 重开失败有原位反馈，录像列表可独立重试。后台刷新 503 保留已打开的画面，403 移除旧画面和导航入口。 |
 
 ### Bot、能力与例行任务
 
@@ -115,13 +115,13 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 | 页面 | 基线十项分 | 基线总分 | 最新可用评分 | 基线扣分证据与复核任务 |
 |---|---|---:|---|---|
 | `/connections` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | 盲评 A3 满分：清单骨架、Team account 状态、身份读取失败不误报 Connect、磁贴两行摘要均活体验证。余下为记录项：与目录页搜索计数/空态措辞略异。 |
-| `/connections/$key` Team 应用及动作授权回执 | 4 4 4 4 3 4 4 4 4 4 | **39/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | A3 扣 H5：菜单项 Disconnect 宣告不可执行的动作（事后说明而非预防）。三段撤销流程为产品决策未建，下轮可改菜单项命名。 |
-| `/connections/$key` Personal 应用 | 2 4 2 4 3 4 4 4 2 4 | **33/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | A3 旧分；其后已修并活体验证：关闭开关先确认、成功通知移至首屏、Refresh tools 进行中态。待下轮复评确认提升。 |
+| `/connections/$key` Team 应用及动作授权回执 | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [断开确认复评](#账户断开确认与窄屏复评) | 窄屏账户和权限正文完整换行。断开前列出影响范围，取消后回到原按钮。 |
+| `/connections/$key` Personal 应用 | 3 4 4 4 4 4 4 4 4 4 | **39/40（暂定）** · [断开确认复评](#账户断开确认与窄屏复评) | 可确认断开一个或全部账户，失败可重试，成功后有回执。 |
 | `/connections/github` | 2 3 3 4 3 4 4 4 3 4 | **34/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | A3 旧分；其后已修并活体验证：新增仓库落库、两处 Disconnect 均确认、Lets 语法回正。剪贴板无权限时静默为环境限制（有权限显示 Copied）。 |
 | `/connections/slack` | 2 3 4 4 4 4 4 4 3 4 | **36/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | A3 旧分；其后已修并活体验证：Reconnect 全流程打开带代码对话框（fixture 补 challenges）。Lets 语法回正。 |
 | `/connections/routines` | 4 4 4 3 4 4 4 4 4 4 | **39/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | A3 扣 H4：Routines 列于应用区与条目语义不符——既定设计（代码注释记录），保留。读失败 alert+Retry 已验证。 |
-| `/connections/browse/arcade` | 3 4 4 4 3 4 3 3 4 4 | **36/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | A3 旧分；其后已修并活体验证：Add 先确认（未审应用按权限计数）、加后目录行显示 Added, not connected、手机 Add 触区 44px。 |
-| `/connections/browse/composio` | 3 4 4 4 3 4 3 3 4 4 | **36/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | 同 Arcade：确认、行状态、触区均已修并验证；权限句已改为通俗句式。 |
+| `/connections/browse/arcade` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
+| `/connections/browse/composio` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
 
 ### 外观专属 Web 页面
 
@@ -175,49 +175,49 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 
 | 页面 | 基线十项分 | 基线总分 | 最新可用评分 | 基线扣分证据与复核任务 |
 |---|---|---:|---|---|
-| `/admin/` | 3 · 3 · 3 · 3 · 3 · 4 · 2 · 3 · 2 · 2 | 28/40 · 70% | **29/40** · [第2批](web-impeccable-batch-2.md) | 任务问题分区及整行链接有方向感。第二组并列七项，侧栏与正文重复，常用入口没有检索；描述是基础导航帮助。 [源码](../app/src/routes/_authed/admin/index.tsx#L51) |
-| `/admin/approvals` | 2 · 3 · 3 · 3 · 2 · 2 · 2 · 3 · 2 · 2 | 24/40 · 60% | **29/40（72.5%，暂定）** · [团队审批读取复评](#团队审批读取复评) | 团队设置与规则在读失败后提供原位 Retry，成功空响应才显示 No team rules。共享账户决策与长清单仍待复验。 |
-| `/admin/approvals/describe` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **28→整改后待复评** · [治理整改验证](#治理草稿与-audit-整改验证) | 改写描述会阻止保存旧规则。移除规则可按原顺序撤销，重新生成后清除旧的撤销记录。离开有草稿的页面时确认。旧解读与候选规则仍占据编辑区。 |
-| `/admin/approvals/guidance` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **29/40** · [整改后复评](#治理七页整改后复评) | 指导和回测样本读取可重试，复查失败撤销保存资格。删除失败在确认框内恢复。安全说明偏长，缺少将草稿恢复到已保存版本的入口。 [源码](../app/src/routes/_authed/admin/approvals_.guidance.tsx#L96) |
-| `/admin/audit` | 3 · 3 · 3 · 3 · 3 · 4 · 3 · 3 · 2 · 2 | 29/40 · 72.5% | **29→整改后待复评** · [治理整改验证](#治理草稿与-audit-整改验证) | 窄屏可直接读 Decision 与 Why?。提问示例始终可见，录制记录失败可原位重试，无人值守状态已提高对比度。 |
-| `/admin/boundaries` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **28/40** · [第1批](web-impeccable-batch-1.md) | 写明试运行与默认行为，规则行可达。初读缺进度，部署级试运行开关直接保存，缺切换前的控制范围提示与失败重试。 [源码](../app/src/routes/_authed/admin/boundaries.tsx#L82) |
-| `/admin/boundaries/$index` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **28/40** · [第1批](web-impeccable-batch-1.md) | 最近拦截、修改和确认删除一起呈现。用于深链接的是规则位置而非稳定规则 ID，列表变动后应验证目标，最近拦截加载为空。 [源码](../app/src/routes/_authed/admin/boundaries_.$index.tsx#L112) |
-| `/admin/boundaries/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **30/40** · [整改后复评](#治理七页整改后复评) | 各起点保留草稿，生成中、描述变更或规则校验失败均拦截提交。策略冲突可原位刷新后重新确认。手机上表单排在起点列表之后，选好起点仍需滚动。 [源码](../app/src/routes/_authed/admin/boundaries_.new.tsx#L214) |
+| `/admin/` | 3 · 3 · 3 · 3 · 3 · 4 · 2 · 3 · 2 · 2 | 28/40 · 70% | **34/40（85%，暂定）** · [设置搜索复评](#管理首页设置搜索复评) | 16 个入口可按名称、分组或任务描述查找。Enter 聚焦首个结果，返回首页恢复搜索词。 |
+| `/admin/approvals` | 2 · 3 · 3 · 3 · 2 · 2 · 2 · 3 · 2 · 2 | 24/40 · 60% | **36/40（90%，暂定）** · [团队审批决策与搜索复评](#团队审批决策与搜索复评) | 共享账户请求可原位恢复，决策需确认并复查当前访问范围。团队规则可筛选并直接操作匹配项。 |
+| `/admin/approvals/describe` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [审批规则清单复评](#审批规则清单复评) | 长草稿可逐条展开。折叠摘要保留校验提示，保存响应丢失可用同一草稿重试。 |
+| `/admin/approvals/guidance` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **33/40（82.5%，暂定）** · [指导草稿复评](#审批指导草稿复评) | 离开前保护未保存草稿，恢复已保存内容时清除旧检查与回测结果。详细安全规则可展开查看。 |
+| `/admin/audit` | 3 · 3 · 3 · 3 · 3 · 4 · 3 · 3 · 2 · 2 | 29/40 · 72.5% | **32/40（80%，暂定）** · [审计分页复评](#审计分页复评) | 空页仍可继续查找更早记录，失败后原位键盘重试。提问示例可见，Why? 分开显示已记录判定与当前策略。 |
+| `/admin/boundaries` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **35/40（87.5%，暂定）** · [边界清单搜索复评](#边界清单搜索复评) | 可按名称、说明或规则搜索。筛选后仍打开对应规则，返回时保留查询。 |
+| `/admin/boundaries/$index` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **36/40（90%，暂定）** · [边界详情编辑复评](#边界详情编辑复评) | 稳定书签和并发保存已复验。离开前保护描述与表达式草稿，当前表达式通过校验后才可提交。 |
+| `/admin/boundaries/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **38/40（95%，暂定）** · [边界起点与草稿复评](#新建边界起点与草稿复评) | 选定起点后表单在前。切走的草稿也受离开确认保护，冲突可刷新后再提交。 |
 | `/admin/components/` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（暂定）** · C 36，E 复评满分。 [E 轮复评](#e-轮复评与整改) | 已修并验证：磁贴状态由仅色点改为标题内可见文字（· Published / · Draft，H1/H6 扣分点）。余下："无法绘制"在列表与详情有三种措辞变体（H4）；无图样磁贴的大渐变占位（fixture 数据，H8）。 [源码](../app/src/routes/_authed/admin/components/index.tsx#L37) |
 | `/admin/components/$name` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **38→E 后待复评** · [E 轮复评](#e-轮复评与整改) | 盲评 C 38，仅有的两条扣分（失败态 h1 降级为通用 "Components"、不可渲染组件的 Published 开关与"下方设置无效"通告矛盾）均已在盲评后修复并活体验证：标题显示组件名，开关随可渲染性禁用；"无法绘制"措辞已统一为 This build cannot draw 一族（详情通告与预览占位同词）。 [源码](../app/src/routes/_authed/admin/components/$name.tsx#L102) |
-| `/admin/computers` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **28/40** · [设备清单与 Recorder 复评](#设备清单与-recorder-复评) | 设备行分开显示运行状态、归属和网络路径，长文件夹名可换行。操作的可访问名称仍需标识目标。 [源码](../app/src/components/manage/computers-page.tsx#L205) |
-| `/admin/credentials` | 2 · 2 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 22/40 · 55% | **32/40** · [设备与凭据复评](#设备与凭据复评) | 列表区分载入、空、失败与有数据。读取重试成功后焦点落回页面正文。 [源码](../app/src/components/manage/credentials-page.tsx#L56) |
-| `/admin/credentials/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **36/40** · [设备与凭据复评](#设备与凭据复评) | 先读取有效键再允许保存。替换确认列出键、部署与影响。创建冲突后焦点仍落到正文。 [源码](../app/src/components/manage/new-credential-page.tsx#L72) |
+| `/admin/computers` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **31/40（77.5%，暂定）** · [设备操作复评](#设备操作确认与恢复复评) | 重置与更新前重新核对目标，取消后焦点回到对应行。提交结果不明时提示先核对设备和 Audit。 |
+| `/admin/credentials` | 2 · 2 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 22/40 · 55% | **37/40（暂定）** · [凭据与已保存登录项复评](#凭据与已保存登录项复评) | 403 移除缓存条目及撤销操作。键盘重试成功后回到 Saved credentials。 |
+| `/admin/credentials/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **38/40（暂定）** · [凭据与已保存登录项复评](#凭据与已保存登录项复评) | 创建冲突聚焦提示并保留输入。保存和替换完成后在清单页显示回执。 |
 | `/admin/identity-providers` | 2 · 2 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 22/40 · 55% | **32/40 · 80%（暂定）** · [登录策略复评](#identity-providers-登录策略复评) | 注册清单读取失败可原位重试。Require SSO 提交前说明退出会话的影响，已保存但清理未完成时可原位续做。 |
 | `/admin/learning` | 2 · 2 · 3 · 3 · 3 · 3 · 2 · 2 · 3 · 2 | 25/40 · 62.5% | **35→E 后待复评** · [E 轮复评](#e-轮复评与整改) | 盲评 C 31，其最重的三条（裸服务端错误文本 ×4+保存、区块失败只能刷新恢复、提议弹窗"Try again"无按钮且 404 死路）均已修复：六处读取失败改统一 SectionReadError（ curated 文案 + 原位 Retry），提议详情弹窗失败原位 Retry，fixture 补详情端点。失败运行原因句已验证（fixture 改用真实 failureCode 后行文显示映射句而非"The run failed."；代码本就在 FAILURES 映射内）。九节已重排：Review and publish 与 Proposed skills 提到 Participation 之前，审阅工作流首屏可达（实测 heading y 708 vs 962）；容器配置降为第三。余下："Weekly digest" 同现两节为 fixture 数据重叠（p2 与已发布技能同名）。 [源码](../app/src/routes/_authed/admin/learning.tsx#L600) |
 | `/admin/people` | 2 · 3 · 3 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 24/40 · 60% | **32/40 · 80%（暂定）** · [清单恢复复评](#管理清单读取与恢复复评) | 分页失败保留已读结果与重试焦点，窄屏行操作可换行。 |
-| `/admin/permissions` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **29/40** · [第1批](web-impeccable-batch-1.md) | 组织、角色、组作用域有说明，覆盖规则位于二级弹窗。开关即写入，计算后的有效权限与受影响范围需另查，失败对照原位有限。 [源码](../app/src/components/admin/controls/capabilities-section.tsx#L48) |
-| `/admin/permissions/describe` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **28→整改后待复评** · [治理整改验证](#治理草稿与-audit-整改验证) | 提交绑定当前描述及人员影响预览，预览失败可重试。移除单项可撤销，重新生成后清除旧的撤销记录。离开有草稿的页面时确认。 |
+| `/admin/permissions` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **40/40（100%，暂定）** · [权限结果与审计入口复评](#permissions-结果与审计入口复评) | 成员权限按阻止与允许分组，状态词与覆盖项一致。权限历史直接打开已筛选的 Audit。 |
+| `/admin/permissions/describe` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [权限描述审阅复评](#权限描述审阅复评) | 编辑期间可参考常驻示例。长草稿可直达人员影响，离开前可继续编辑或丢弃。 |
 | `/admin/playground` | 3 · 2 · 3 · 3 · 2 · 3 · 3 · 2 · 3 · 2 | 26/40 · 65% | **33→E 后待复评** · [E 轮复评](#e-轮复评与整改) | 盲评 C 36。已修并验证：Publish 先确认（对话框复用页面自己的"每个 Bot 可用"文案，Cancel 可退，确认后通知"Published."且清单行翻为 published）；空草稿时 Save/Publish 禁用并在按钮旁说明"Name and title are needed first."。余下：写失败横幅沿用服务端原文（写路径约定，fixture 的人为文本放大了观感）；离开编辑不提醒未保存草稿。 [源码](../app/src/routes/_authed/admin/playground.tsx#L182) |
-| `/admin/plugins/` | 2 4 2 3 3 4 4 4 2 4 | **32/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | B3 跨重建期探测，其三大系统性发现在现行构建逐一复核不成立（关闭先确认、PUT 落地、无假空态）。写入失败 alert 与开关回真已活体验证。Tab 焦点泄漏为全站库级已知项。 |
-| `/admin/plugins/$key` | 2 4 2 4 2 3 4 4 2 4 | **31/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | B3 旧分（跨重建窗口）；复核：关闭确认+成功通知+DELETE 落地均验证。标题不再降级。刷新工具进行中态。 |
-| `/admin/plugins/$key/bots/$agentId` | 3 3 4 3 4 4 4 4 3 4 | **36/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | 破坏性动作授权已加确认（活体验证）；授权写失败有 alert；工具搜索与空态此前已达标。 |
-| `/admin/plugins/$key/tools/$tool` | 2 4 4 3 4 4 4 4 2 4 | **35/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | B3 的"假空态"在现行构建不复现（alert+Retry 验证）。破坏性授权确认、返回标签稳定、Bot 搜索已修。 |
-| `/admin/plugins/arcade` | 2 4 3 3 3 2 3 4 2 4 | **30/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | B3 旧分；其后已修并验证：Add 确认+行状态 Added, not connected（fixture url 契约 provider://slug）、写入落地。H6 的"目录不点 broker 名"为测试断言的既定产品决策。 |
-| `/admin/plugins/composio` | 2 4 3 3 3 2 3 4 2 4 | **30/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | 同 Arcade 修复与验证。 |
+| `/admin/plugins/` | 2 4 3 4 3 4 4 4 3 4 | **35/40（暂定）** · [插件读取复评](#目录布局与插件读取复评) | 插件清单读取失败可键盘重试，成功后回到 Plugins 标题。 |
+| `/admin/plugins/$key` | 3 4 4 4 4 3 4 4 4 4 | **38/40（暂定）** · [断开确认复评](#账户断开确认与窄屏复评) | 共享账户断开明确说明受影响的 Bots 与应用。账户读取仍可原位重试。 |
+| `/admin/plugins/$key/bots/$agentId` | 3 3 4 4 4 4 4 4 4 4 | **38/40（暂定）** · [插件读取复评](#目录布局与插件读取复评) | 重试恢复插件与 Bot 页面标题。 |
+| `/admin/plugins/$key/tools/$tool` | 2 4 4 4 4 4 4 4 3 4 | **37/40（暂定）** · [插件读取复评](#目录布局与插件读取复评) | 重试后焦点回到工具标题。 |
+| `/admin/plugins/arcade` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
+| `/admin/plugins/composio` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
 | `/admin/proactive` | 2 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 2 · 2 | 27/40 · 67.5% | **40/40（暂定）** · C 39，E 复评满分。 [E 轮复评](#e-轮复评与整改) | 盲评 C 39，唯一扣分为词汇：已修并验证——行标题 Pings sent → Check-ins sent，"2.0 items in each, on average" 改完整句"Each one carries an average of 2 items."（整数值不再显示 .0），Bot 弹窗统计 Sent in a ping → Check-ins sent，页面全境不再出现 ping。 [源码](../app/src/routes/_authed/admin/proactive.tsx#L131) |
-| `/admin/providers` | 2 3 2 3 4 4 4 4 2 4 | **32/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | B3 旧分（跨重建窗口）；其后已修并验证：设置读取失败单条 alert+单 Retry、允许模型对话框保存失败留框提示、关闭守卫先确认、自定义模型加后清搜索。 |
+| `/admin/providers` | 4 4 4 4 4 4 4 4 4 4 | **40/40（100%，暂定）** · [模型目录与窄屏复评](#providers-模型目录与窄屏复评) | 目录仅有默认模型时可检查更新。模型草稿保存失败可重试，成功后回到清单并显示回执。 |
 | `/admin/skills` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（暂定）** · C 满分，E 复评再确认。 [E 轮复评](#e-轮复评与整改) | 盲评 C 满分："1 of 2 Bots" 显式状态、应用语态的失败+Retry、New skill 正确跳转、深色窄屏干净。 [源码](../app/src/components/manage/skills-page.tsx#L74) |
 | `/admin/skills/$slug` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **36/40（暂定）** · [顺序3盲评](#顺序3盲评与整改) | 盲评 D 36.0。已修并验证：保存成功出"Skill saved" toast（fixture 补 `POST /api/plugins/skills` 后原 404 死路消除，浏览器实测 toast 出现）；Bots 开关写入随 fixture grants 落地；工具弹窗去掉内置 Close，Done 成为唯一具名退出（实测按钮仅 Select all/Done）。已修并验证：编辑中途点返回栏先问"Leave without saving?"（干净表单直接返回；PageShell linkProps 铺开顺序修正使页面可拦截自己的返回栏）。"GMAIL FETCH THREADS" 为 fixture 工具名缺装饰——真实 snake_case 名已由 toolTitle 美化。 [源码](../app/src/components/manage/skill-page.tsx#L76) |
 | `/admin/skills/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **36→E 后待复评** · [E 轮复评](#e-轮复评与整改) | 盲评 D 36.5。已修并验证：工具读取失败由"Reload the page."改为原位 Retry（保住草稿，H4/H9 扣分点）；脏表单 Cancel 先确认"Leave without saving?"，干净表单直接返回（H5 扣分点）。余下：同详情页的 fixture 工具名。 [源码](../app/src/components/manage/new-skill-page.tsx#L28) |
 | `/admin/what-if` | 3 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 | 29/40 · 72.5% | **33/40 · 82.5%（暂定）** · [判定语义复验](#what-if-判定语义整改) | 提问后聚焦解读，检查和重试后显示判定并聚焦标题。重置回到输入框。保留失败前的动作，说明上一题与当前动作的关系。 |
 | `/settings/` | 3 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 | 29/40 · 72.5% | **30/40** · [第2批](web-impeccable-batch-2.md) | 个人信息、外观及快捷键分组明确，姓名与指示有局部编辑。账户及外观状态分处多节，快去某设置的搜索弱，设置失败的恢复方式因组件而异。 [源码](../app/src/routes/_authed/settings/index.tsx#L44) |
 | `/settings/activity` | 3 · 3 · 3 · 3 · 3 · 4 · 3 · 3 · 2 · 2 | 29/40 · 72.5% | 沿用基线 | 个人措辞对齐 Bot Activity，搜索、过滤、导出有用。初读空白，读不到数据和导出失败需更直接的恢复。 [源码](../app/src/components/manage/audit-page.tsx#L274) |
-| `/settings/approvals` | 2 · 3 · 3 · 3 · 2 · 2 · 2 · 3 · 2 · 2 | 24/40 · 60% | **29/40** · [窄屏复评](#audit-与审批设置窄屏复评) | 共享 Bot 与命令说明完整换行，操作可移至下一行。重置确认和键盘焦点恢复已验证，触区和安全说明密度仍待改善。 [源码](../app/src/components/approvals/settings.tsx#L91) |
-| `/settings/browsers` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **29/40（72.5%）** · [设备清单与 Recorder 复评](#设备清单与-recorder-复评) | 连接和断开成功后聚焦回执，扩展取消或关闭后恢复 Connect。窄屏连接入口较深，确认标签页难定位，不支持的浏览器缺接续指引。 [源码](../app/src/components/settings/browsers/browser-sections.tsx#L21) |
+| `/settings/approvals` | 2 · 3 · 3 · 3 · 2 · 2 · 2 · 3 · 2 · 2 | 24/40 · 60% | **33/40（82.5%，暂定）** · [开关与窄屏复评](#个人审批设置复评) | 就近说明 Extra vigilant 与 Auto-review 的关系。默认安全规则可展开，权限拒绝后不显示缓存的审批设置控件。 |
+| `/settings/browsers` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **34/40（85%，暂定）** · [Recorder 设置复评](#recorder-设置复评) | 页首先进入分段的隐私说明，连接时明确提示在哪个标签页确认。刷新 503 保留上次列表，403 隐藏旧连接和操作。 [源码](../app/src/components/settings/browsers/browser-sections.tsx#L23) |
 | `/settings/components-gallery/` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | 整改后待复评 | Personal/Team 的空态语义正确，预览帮助识别。已修并活体验证：首读骨架磁贴占位（四格）、读取失败改 curated 文案 + 原位 Retry（不再"Reload the page."）。 [源码](../app/src/routes/_authed/settings/components-gallery/index.tsx#L63) |
 | `/settings/components-gallery/$name` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | 整改后待复评 | 有预览、详情、返回及缺失状态。已修并活体验证：首读骨架占位、读取失败改单数 curated 文案 + 原位 Retry（不再"Reload the page."）。 [源码](../app/src/routes/_authed/settings/components-gallery/$name.tsx#L72) |
-| `/settings/computer` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **29/40** · [设备清单与 Recorder 复评](#设备清单与-recorder-复评) | 设备及文件夹读取可原位重试，长文件夹名可换行。设备操作和确认控件的触区偏小。 [源码](../app/src/components/manage/computers-page.tsx#L205) |
-| `/settings/credentials` | 2 · 3 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 23/40 · 57.5% | **31/40** · [设备与凭据复评](#设备与凭据复评) | 列表可原位重试，成功后焦点落回页面正文。Keys 与 Add credential 用语未对齐，空态重复添加入口。 [源码](../app/src/components/manage/credentials-page.tsx#L56) |
-| `/settings/credentials/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **35/40** · [设备与凭据复评](#设备与凭据复评) | 替换绑定已确认的键，失败后保留输入。Keys 与 Add credential 命名未对齐，成功替换缺显式回执。 [源码](../app/src/components/manage/new-credential-page.tsx#L72) |
+| `/settings/computer` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **33/40（82.5%，暂定）** · [设备操作复评](#设备操作确认与恢复复评) | 每个操作按钮都标明对应浏览器。重置确认先说明登录影响，更新成功后有回执。 |
+| `/settings/credentials` | 2 · 3 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 23/40 · 57.5% | **37/40（暂定）** · [凭据与已保存登录项复评](#凭据与已保存登录项复评) | 清单、空态与添加入口统一使用 Keys。空态只保留一个添加入口。权限变更后隐藏旧条目。 |
+| `/settings/credentials/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **38/40（暂定）** · [凭据与已保存登录项复评](#凭据与已保存登录项复评) | Add key 和 Save key 与清单一致。创建冲突聚焦提示，保存与替换后显示回执。 |
 | `/settings/learning` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **35→E 后待复评** · [E 轮复评](#e-轮复评与整改) | 盲评 D 33.5，其最重的两条已修复并验证：两区块读取失败不再裸传"Fixture read failed"也不再吞掉节标题，改 curated 文案 + 原位 Retry；唯一待审提议的详情弹窗 404 死路（"Try again." 无按钮）由 fixture 端点 + 弹窗内 Retry 消除。写入（模式/逐技能开关、Learn now）当时即为满分样本。 [源码](../app/src/routes/_authed/settings/learning.tsx#L16) |
 | `/settings/notifications` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **33/40（暂定）** · [顺序3盲评](#顺序3盲评与整改) | 盲评 D 33.0。已修并验证：设备与投递读取失败不再伪装成"No devices yet"假空态（curated 文案 + 原位 Retry，三条 Retry 键盘可恢复）；开启中的渠道若最近一次投递失败，开关旁现内联琥珀提示"Recent deliveries are failing."（错误原因在 tooltip，实测 SMS 两处、含 Number unreachable）。窄屏触区一项经核为评估环境误判：Astryx Switch 在粗指针下自动扩到 44×44 命中区（组件文档行为），Playwright 截图不激活该分支。 [源码](../app/src/routes/_authed/settings/notifications.tsx#L15) |
-| `/settings/passwords` | 2 · 3 · 3 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 24/40 · 60% | **34/40** · [设备与凭据复评](#设备与凭据复评) | 失败可重试，真实空列表给出后续动作。成功重试后焦点落回页面正文，Saved logins 与 Save to Passwords 用语未对齐。 [源码](../app/src/components/passwords/passwords-page.tsx#L39) |
+| `/settings/passwords` | 2 · 3 · 3 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 24/40 · 60% | **37/40（暂定）** · [凭据与已保存登录项复评](#凭据与已保存登录项复评) | 空态提示与签入表单共用 Save this login 说法。503 保留已有清单，403 隐藏旧登录项及删除操作。 |
 | `/settings/setup` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **39（暂定）** · [E 轮复评](#e-轮复评与整改) | 盲评 D 35.0。已修并验证：重查失败文案改"Couldn't check again. The list below is from the last check."（消除无按钮的"Try again."悬空句，并标明列表为上次结果）；fixture 补 `POST /api/setup/check` 并给出全绿五行数据后，"全绿隐藏清单"不复现——组件本就渲染全部行（实测 5 行 ready），D 的零行观察是 fixture 空 rows 所致；随之暴露的 Ready/Amber 药丸对比度缺陷（emerald-600/10% 底 3.3:1）已升为 700 档并通过 detector 复扫，同一修法同步到 what-if 结果药丸。余下："Check again" 为无边框文字按钮样式（H4）。 [源码](../app/src/components/setup/setup-checklist.tsx#L105) |
 | `/settings/skills` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（暂定）** · 同组件复评确认。 [E 轮复评](#e-轮复评与整改) | 与 `/admin/skills` 同一组件（skills-page），盲评 C 满分；个人版措辞差异未单独评。 [源码](../app/src/components/manage/skills-page.tsx#L62) |
 | `/settings/skills/$slug` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **31→E 后待复评** · 同组件。 [E 轮复评](#e-轮复评与整改) | 与 `/admin/skills/$slug` 同一组件（skill-page），盲评 D 36.0 及本轮修复（保存成功 toast、grants 落地）同样生效；个人版措辞差异未单独评。 [源码](../app/src/components/manage/skill-page.tsx#L117) |
@@ -536,12 +536,252 @@ E 轮整改后定向 13 文件 133 测试通过、tsc/biome 净；audit/what-if 
 | `/capabilities/skills` | 3 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 4 · 3 | **31/40（77.5%）**，此前 28/40 | H1 编辑链接明确显示加载与失败。H7 主操作、行菜单和菜单项均达到 44 CSS 像素高，极长标题不挤出菜单。H9 从侧栏原位重试，恢复后聚焦 Edit skill。 |
 | `/capabilities/memory` | 3 · 3 · 3 · 3 · 3 · 4 · 3 · 2 · 4 · 2 | **30/40（75%）**，此前 26/40 | H1 首读失败、真实空列表及保留旧记录分别呈现。H6 开关有可见标签，逐行按钮以记忆内容命名。H7 行操作达到 44 CSS 像素高，长文本可换行。H9 清单可原位重试，编辑失败后可用原草稿再次保存。 |
 
-两页开发构建使用管理员模拟身份，在 1440 像素浅色及 390、320 像素深色通过复验。记忆删除取消或预检失败均无写入，删除成功回到 Remember a fact。技能菜单删除支持取消，成功移除后回到 New skill。36 项定向测试通过，Impeccable 源码扫描为 0 项。真实技能授权、记忆实际使用范围、长清单定位和读屏仍待验。
+两页生产构建 `index-tNdWv9f1.js` 使用管理员模拟身份，在 1440 像素浅色及 390、320 像素深色通过复验。记忆删除取消或预检失败均无写入，删除成功回到 Remember a fact。技能菜单删除支持取消，成功移除后回到 New skill。36 项定向测试通过，Impeccable 源码扫描为 0 项。真实技能授权、记忆实际使用范围、长清单定位和读屏仍待验。
 
-[三种宽度的浏览器日志](/tmp/openbot-order2-review/memory-skills-dev-final.log) · [320 像素记忆列表](/tmp/openbot-order2-review/memory-skills/memory-loaded-320.png) · [320 像素技能列表](/tmp/openbot-order2-review/memory-skills/skills-loaded-320.png) · [定向测试](/tmp/openbot-order2-review/memory-skills-tests.log)
+[三种宽度的生产版浏览器日志](/tmp/openbot-order2-review/memory-skills-final-production.log) · [320 像素记忆列表](/tmp/openbot-order2-review/memory-skills/memory-loaded-320.png) · [320 像素技能列表](/tmp/openbot-order2-review/memory-skills/skills-loaded-320.png) · [定向测试](/tmp/openbot-order2-review/memory-skills-tests.log)
 
 ## 团队审批读取复评
 
-`/admin/approvals` 暂定 **29/40（72.5%）**，此前 27/40。H1–H10 为 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 4 · 2。H1 从 2 到 3，加载期间显示进度，首读 503 时隐藏未取得的设置与规则，成功空响应才显示 No team rules。H9 从 3 到 4，统一错误文案并提供 Retry，键盘恢复后焦点回到 Approvals。1440 CSS 像素浅色及 320 CSS 像素深色开发构建使用管理员模拟 API 验证 503 后成功恢复，2 项团队设置测试通过。共享账户决策、真实审批服务与读屏仍待复验。
+共享账户决策基线在 1440 和 320 像素复现两项缺口。请求读取连续两次失败时整个区块消失，点击 Approve 会立即提交模拟写请求。待补区块内恢复与确认。 [共享账户基线](/tmp/openbot-order2-review/shared-account-baseline.log)
 
-[整改前](/tmp/openbot-order2-review/admin-approvals-read-before.log) · [窄屏复验](/tmp/openbot-order2-review/admin-approvals-read-after.log) · [桌面复验](/tmp/openbot-order2-review/admin-approvals-read-desktop.log) · [320 像素读取失败](/tmp/openbot-order2-review/admin-approvals-read-after.png)
+`/admin/approvals` 暂定 **29/40（72.5%）**，此前 27/40。H1–H10 为 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 4 · 2。H1 从 2 到 3，加载期间显示进度，首读 503 时隐藏未取得的设置与规则，成功空响应才显示 No team rules。H9 从 3 到 4，统一错误文案并提供 Retry，键盘恢复后焦点回到 Approvals。生产构建 `index-tNdWv9f1.js` 在 1440 CSS 像素浅色及 320 CSS 像素深色使用管理员模拟 API 验证 503 后成功恢复，2 项团队设置测试通过。共享账户决策、真实审批服务与读屏仍待复验。
+
+[整改前](/tmp/openbot-order2-review/admin-approvals-read-before.log) · [生产版复验](/tmp/openbot-order2-review/admin-approvals-read-production.log) · [320 像素读取失败](/tmp/openbot-order2-review/admin-approvals-read-after.png)
+
+## 边界详情历史回放复评
+
+`/admin/boundaries/$index` 暂定 **31/40（77.5%）**，此前 28/40。H1–H10 为 3 · 4 · 3 · 3 · 3 · 3 · 2 · 3 · 4 · 3。H1 提升，规则与历史回放都显示加载和错误状态。H2 提升，历史回放明确比较记录中的判定与移除规则后的判定，并说明 Trial mode 可以记录拒绝而让动作继续。H9 提升，两处失败均可原位重试，回放成功后焦点回到回放标题。
+
+生产构建 `index-COVDJp0n.js` 在 1440 像素浅色与 320 像素深色使用管理员模拟 API 验证双 503 恢复、回放结果、颜色及 44 CSS 像素的移除按钮。Impeccable 改动文件源码扫描为 0 项。按位置寻址的旧书签、真实审计记录、实际编辑与读屏仍待复验。 [两种视口生产版日志](/tmp/openbot-order2-review/boundary-replay-production.log) · [320 像素失败状态](/tmp/openbot-order2-review/boundary-replay-error-320.png)
+
+## 边界列表与试运行复评
+
+`/admin/boundaries` 暂定 **32/40（80%）**，此前 28/40。H1–H10 为 3 · 4 · 3 · 3 · 3 · 3 · 3 · 3 · 4 · 3。H1 提升，初次读取显示进度，失败时区分旧数据与当前策略。H2 提升，试运行说明区分记录中的拒绝和实际拦截。H7 提升，较长规则以有限行数预览，窄屏可继续浏览其余设置。H9 提升，读取可原位重试，成功后焦点回到 Boundaries。取消、提交前 503 及陈旧确认均无写入，重试成功后回到 Trial mode 开关。写入成功后的刷新若失败，开关保留服务端已确认的新模式并显示读取提示。
+
+生产构建 `index-B5YBQTEZ.js` 在 1440、390 和 320 CSS 像素以管理员模拟 API 复验。边界相关前后端定向测试 90 项通过。本机并发负载较高，复跑放宽了 Testing Library 等待上限。真实审计与执行、长清单定位和读屏仍待验。 [定向测试](/tmp/openbot-order2-review/boundary-final-tests-stable.log) · [生产版浏览器日志](/tmp/openbot-order2-review/boundary-list-current-production.log) · [320 像素试运行](/tmp/openbot-order2-review/boundary-list-trial-320.png)
+
+## 设备操作确认与恢复复评
+
+| 页面 | H1…H10 | 最新暂定分 |
+|---|---|---:|
+| `/admin/computers` | 4 · 2 · 3 · 3 · 4 · 4 · 3 · 2 · 4 · 2 | **31/40（77.5%）**，此前 28/40 |
+| `/settings/computer` | 4 · 3 · 3 · 3 · 4 · 4 · 3 · 3 · 4 · 2 | **33/40（82.5%）**，此前 29/40 |
+
+H1 提升，更新有明确回执。H5 提升，重置或更新提交前重新读取目标，发现变动时停止提交。H7 提升，同行按钮以设备命名，重置按钮实测至少 44×44 CSS 像素。Personal 的 H9 提升，确认前读取失败可原位重试，收到结果不明的写入回复后提示先核对状态和 Activity。Team 对应提示指向 Audit。
+
+生产构建 `index-zVVzWTgm.js` 用独立的 Team 与 Personal 模拟 API 复验，覆盖 Team 1440 像素浅色、Team 320 像素深色和 Personal 390 像素深色。三组均通过取消无写入、写入前读取失败重试、重置结果不明时停止重试、设备变化拦截更新及更新回执后的焦点恢复。34 项定向测试通过，Impeccable 源码扫描为 0 项。停止浏览器的失败仍提示在列表顶部，真实设备、实体触屏和读屏仍待验。
+
+[生产版浏览器日志](/tmp/openbot-order2-review/device-action-production.log) · [窄屏重置提示](/tmp/openbot-order2-review/device-reset-uncertain-team-320.png) · [定向测试](/tmp/openbot-order2-review/device-action-tests.log)
+
+## Teach a Bot 连接与录像恢复复评
+
+`/browser` 暂定 **33/40（82.5%）**，此前 29/40。H1–H10 为 4 · 3 · 4 · 3 · 3 · 3 · 3 · 3 · 4 · 3。H1 提升，已关闭的浏览器区分连接中和连接失败。H3 提升，键盘重试成功后焦点回到浏览器区域。H7 提升，重开按钮实测至少 44×44 CSS 像素，录像列表可独立重试。H9 提升，录像列表恢复后焦点回到 Your recordings，状态刷新 503 保留画面，403 移除旧画面及导航入口。
+
+生产构建 `index-Dxe1OqEJ.js` 使用模拟 API 在 1440 像素浅色、390 像素深色及 320 像素深色通过复验。87 项定向测试通过，Impeccable 源码扫描为 0 项。真实浏览器串流、录制回传、实体触屏和读屏仍待验。 [生产版浏览器日志](/tmp/openbot-order2-review/browser-reopen-production.log) · [窄屏重开失败提示](/tmp/openbot-order2-review/browser-reopen-failed-320.png) · [定向测试](/tmp/openbot-order2-review/browser-reopen-tests-verified.log)
+
+## 审批指导草稿复评
+
+`/admin/approvals/guidance` 暂定 **33/40（82.5%）**，此前 29/40。H1–H10 为 3 · 3 · 4 · 3 · 4 · 3 · 3 · 4 · 3 · 3。H3 提升，恢复已保存的指导前可取消，恢复后焦点回到编辑框。H5 提升，带未保存草稿离开时提示确认，恢复会清除仅适用于旧草稿的检查和回测结果。H7 提升，Check guidance 实测至少 44 CSS 像素高。H8 提升，表单保留安全摘要，细则可用键盘展开。
+
+生产构建 `index-Dfap6-5y.js` 在 1440、390 和 320 CSS 像素使用管理员模拟 API 复验，三种视口均通过离开确认、恢复取消、恢复后焦点、恢复无写入、安全规则展开和正式保存。25 项定向测试通过，Impeccable 源码扫描为 0 项。真实模型回测、多人同时编辑、实体触屏和读屏仍待验。 [生产版浏览器日志](/tmp/openbot-order2-review/guidance-draft-production.log) · [窄屏恢复状态](/tmp/openbot-order2-review/guidance-restored-320.png) · [定向测试](/tmp/openbot-order2-review/guidance-draft-tests.log)
+
+## 个人审批设置复评
+
+`/settings/approvals` 暂定 **33/40（82.5%）**，此前 29/40。H1–H10 为 3 · 4 · 3 · 3 · 4 · 3 · 3 · 4 · 3 · 3。H2 提升，明确 Extra vigilant 适用于规则尚未决定的变更，关闭它时 Auto-review 仍可能要求审批或交还操作。H5 提升，权限拒绝后不显示缓存的审批设置控件。H7 提升，两个开关的命中区、命令选择器和共享 Bot 权限重置按钮实测至少 44 CSS 像素高。H8 提升，默认规则放入可用键盘展开的说明。
+
+生产构建 `index-BU4M_ID0.js` 在 Team 1440 像素浅色、Team 320 像素深色和 Personal 390 像素深色使用模拟 API 复验。组织强制 Auto-review、个人偏好写入、权限拒绝隐藏控件、Team 重置确认与 Personal 无团队控件均通过。62 项前后端定向测试通过，Impeccable 源码扫描为 0 项。真实审批结果、实体触屏和读屏仍待验。 [生产版浏览器日志](/tmp/openbot-order2-review/approval-settings-usability-production.log) · [Team 窄屏](/tmp/openbot-order2-review/approval-settings-team-320.png) · [定向测试](/tmp/openbot-order2-review/approval-settings-usability-final-tests.log)
+
+## 管理首页设置搜索复评
+
+`/admin/` 暂定 **34/40（85%）**，此前 29/40。H1–H10 为 4 · 3 · 4 · 4 · 3 · 4 · 3 · 3 · 3 · 3。H1 提升，搜索结果数量和无匹配状态可见。H3 提升，Enter 聚焦首条结果、返回恢复原查询、清空后焦点回到搜索框。H7 提升，16 个入口可按名称、分组及任务描述查找。H9 和 H10 提升，空结果提示可改用设置名称或任务查找，并保留清空入口。
+
+生产构建 `index-D8wQvtEq.js` 在 1440、390 和 320 CSS 像素使用模拟身份复验搜索、键盘交互、浏览器返回及 44 CSS 像素的搜索与清空触区。普通 Team 成员和 Personal 用户的管理页跳转也通过。2 项相关导航与搜索测试通过，Impeccable 源码扫描为 0 项。真实账号、读屏和更多实际用语仍待验。 [生产版浏览器日志](/tmp/openbot-order2-review/admin-search-production.log) · [320 像素命中结果](/tmp/openbot-order2-review/admin-search-match-320.png) · [相关测试](/tmp/openbot-order2-review/admin-search-tests.log)
+
+
+## Recorder 设置复评
+
+`/settings/browsers` 暂定 **34/40（85%）**，此前最新独立复评为 29/40。H1–H10 为 3 · 4 · 3 · 3 · 4 · 4 · 3 · 3 · 4 · 3。H2 提升，连接等待状态指明浏览器标签栏里的 OpenBot Recorder 标签页和 Connect 按钮。H6 与 H7 提升，页首的 Set up Recorder 可用键盘直接聚焦隐私说明标题，触区至少 44 CSS 像素。说明按采集范围、去向与用途分段，Team 和 Personal 各显示对应去向，六类采集内容仍在连接操作之前。不支持扩展的浏览器提示改用桌面 Chrome 或 Edge。H9 提升，503 保留已读列表，403 隐藏旧条目及操作，键盘重试成功后焦点回到 Connected browsers。
+
+生产构建 `index-Dsg-92Le.js` 在 Team 1440 像素浅色、Team 320 像素深色和 Personal 390 像素深色使用本地模拟 API 复验。另在独立 Chromium 配置中加载 Recorder 的发布版构建，使用本地模拟 API 验证实际确认标签页会显示请求地址，取消不交换连接码，确认只交换一次，并聚焦网页 Connected 回执。39 项 Web、扩展和共享披露测试通过，Impeccable 改动文件源码扫描为 0 项。正式商店安装、真实服务、实体触屏和读屏仍待验。 [生产版浏览器日志](/tmp/openbot-order2-review/recorder-setup-production.log) · [扩展交接日志](/tmp/openbot-order2-review/recorder-extension-browser.log) · [320 像素隐私说明](/tmp/openbot-order2-review/recorder-setup-disclosure-320.png) · [定向测试](/tmp/openbot-order2-review/recorder-setup-tests.log)
+
+
+## 凭据与已保存登录项复评
+
+| 页面 | H1…H10 | 前次 | 最新暂定分 |
+|---|---|---:|---:|
+| `/admin/credentials` | 4 · 4 · 3 · 4 · 4 · 4 · 3 · 4 · 4 · 3 | 32/40 | **37/40（92.5%）** |
+| `/settings/credentials` | 4 · 4 · 3 · 4 · 4 · 4 · 3 · 4 · 4 · 3 | 31/40 | **37/40（92.5%）** |
+| `/admin/credentials/new` | 4 · 4 · 4 · 4 · 4 · 4 · 3 · 4 · 4 · 3 | 36/40 | **38/40（95%）** |
+| `/settings/credentials/new` | 4 · 4 · 4 · 4 · 4 · 4 · 3 · 4 · 4 · 3 | 35/40 | **38/40（95%）** |
+| `/settings/passwords` | 4 · 4 · 3 · 4 · 4 · 3 · 3 · 4 · 4 · 4 | 34/40 | **37/40（92.5%）** |
+
+两种凭据清单都只留一个添加入口，Personal 版的入口、清单和表单统一用 Keys。创建冲突可保留输入，焦点停在说明。创建和替换成功后回到清单并显示回执。已保存登录项的空态与网站签入表单使用同一文案。凭据和登录清单在 503 时标记保留上次读到的条目，在 403 时移除旧条目和操作。通过键盘重试恢复后，焦点回到清单标题。添加、撤销和删除的触区实测至少 44×44 CSS 像素。
+
+生产构建 `index-CaH921jc.js` 使用本地模拟 API，覆盖 Team 1440 浅色、Team 390 深色、Personal 1440 浅色和 Personal 320 深色。四组均通过创建、创建冲突、取消替换、确认替换、清单 503 与 403 恢复、删除和签入表单文案校验，窄屏长站点地址无横向溢出。31 项定向测试通过，Impeccable 扫描 4 个前端文件无检测项。仍需验证真实服务权限、实体触屏和读屏。按已有凭据查找替换入口和排查使用方仍需额外步骤。 [生产版浏览器日志](/tmp/openbot-order2-review/credential-recovery-browser.log) · [320 像素恢复状态](/tmp/openbot-order2-review/credential-recovered-key-320.png) · [定向测试](/tmp/openbot-order2-review/credential-recovery-tests.log)
+
+
+## 应用目录加载、搜索与添加复评
+
+| 页面 | 前次 | 最新暂定分 |
+|---|---:|---:|
+| `/admin/plugins/arcade` | 30/40 | **39/40（97.5%）** |
+| `/admin/plugins/composio` | 30/40 | **39/40（97.5%）** |
+| `/connections/browse/arcade` | 36/40 | **39/40（97.5%）** |
+| `/connections/browse/composio` | 36/40 | **39/40（97.5%）** |
+
+H1–H10 为 4 · 4 · 4 · 4 · 4 · 4 · 4 · 3 · 4 · 4。四个入口共用同一目录页，确认当前服务后才发目录请求。搜索时不显示上一次结果，清空可用键盘完成并让焦点回到搜索框。连接状态读取失败时，仍可查找其他应用，已添加应用显示状态未知。确认添加后若请求失败，确认框留在原位，Personal 关闭未使用的登录标签页。只有添加成功才出回执。
+
+生产构建 `index-C04JoPGO.js` 用本地模拟 API 覆盖 Team Composio 1440、Team Arcade 320、Personal Composio 390 和 Personal Arcade 320 像素。四组均通过服务读取、连接状态和搜索的键盘重试，以及取消不写入、失败可重试和成功回执。42 项定向测试通过。Impeccable 源码扫描无检测项，渲染复扫去除了两组的占位字对比度和小字号提示，Team 桌面仍报一条容器嵌套提示。目录说明和搜索区层级仍可压缩，窄屏输入框的起始内边距偏紧。真实服务授权、实体触屏和读屏仍待验证。 [四入口浏览器日志](/tmp/openbot-order2-review/directory-recovery-browser.log) · [Personal 窄屏](/tmp/openbot-order2-review/directory-recovered-personal-arcade.png) · [Team 渲染扫描](/tmp/openbot-order2-review/directory-detect-team-1440.json) · [定向测试](/tmp/openbot-order2-review/directory-recovery-tests.log)
+
+
+## 目录布局与插件读取复评
+
+生产构建 `index-CkIR4ILT.js` 去掉四个应用目录的重复区块标题和行外卡片。搜索框保持至少 44 CSS 像素的高度，增加文字与控件边缘之间的留白。Team 1440、Personal 320 的 Impeccable 渲染复扫均无检测项，四个目录入口的加载、搜索、键盘清空、连接读取失败和添加路径继续通过测试。H8 从 3 提升到 4，四个入口在模拟环境暂定 **40/40**，此前 39/40。 [四入口日志](/tmp/openbot-order2-review/directory-flat-production.log) · [Personal 320 像素布局](/tmp/openbot-order2-review/directory-flat-recovered-personal-arcade.png) · [Team 渲染复扫](/tmp/openbot-order2-review/directory-flat-detect-team.json) · [Personal 渲染复扫](/tmp/openbot-order2-review/directory-flat-detect-personal.json)
+
+| 页面 | 前次 | 最新暂定分 |
+|---|---:|---:|
+| `/admin/plugins/` | 32/40 | **35/40（87.5%）** |
+| `/admin/plugins/$key` | 31/40 | **36/40（90%）** |
+| `/admin/plugins/$key/bots/$agentId` | 36/40 | **38/40（95%）** |
+| `/admin/plugins/$key/tools/$tool` | 35/40 | **37/40（92.5%）** |
+| `/connections/$key` Personal 应用 | 33/40 | **37/40（92.5%）** |
+
+
+插件清单、详情、工具与 Bot 授权页的主读取失败均可键盘重试，成功后焦点回到页面标题。管理员详情账户读取失败时保留工具和设置，重试后焦点回到 Connection。Personal 应用的账户重试和 Team 的通用连接页重试均回到应用标题。管理员详情从缓存刷新得到 403 时，隐藏旧工具与操作。Team 动作授权回执视图沿用 39/40，尚需处理不可执行的断开菜单项。
+
+11 组浏览器场景使用本地模拟 API，涵盖 Team 1440、Team 320 和 Personal 390。85 项定向测试、类型检查与生产构建通过。真实授权、实体触屏和读屏仍待验。 [插件页浏览器日志](/tmp/openbot-order2-review/plugin-keyboard-final-browser.log) · [320 像素权限拒绝](/tmp/openbot-order2-review/plugin-denied-320.png) · [定向测试](/tmp/openbot-order2-review/plugin-keyboard-tests.log)
+
+
+## 连接撤销指引与单项授权复评
+
+Team 的供应商 OAuth 连接以状态文字显示 Connected。在 Access 区说明如何从服务商的第三方访问设置移除 OpenBot。320 像素长权限名完整换行，未连接时保留 44 CSS 像素高的 Connect。OAuth 场景 H5 从 3 提升到 4，H8 为 3，渲染复扫发现两处 11.25 CSS 像素的账户和权限说明。
+
+单项授权的确认说明紧邻所选动作，可用 Escape 取消并把焦点归还原按钮。授权失败就地显示错误，重新读取动作的 Retry 恢复焦点至 Actions 标题。已授权的回执每次返回只显示一次。真实可断开的账户仍需补确认，窄屏账户说明会截断。Team OAuth 与单项授权合计评分暂定 **39/40（97.5%）**。
+
+生产构建 `index-CPHbtemf.js` 使用本地模拟 API 在 1440 浅色和 320 深色通过连接与授权流程。114 项定向测试、类型检查和生产构建通过。真实服务商撤销、实体触屏和读屏仍待验。 [浏览器复验](/tmp/openbot-order2-review/oauth-access-production.log) · [320 像素 OAuth 指引](/tmp/openbot-order2-review/oauth-guidance-320.png) · [320 像素授权失败](/tmp/openbot-order2-review/oauth-consent-failed-320.png) · [渲染复扫](/tmp/openbot-order2-review/oauth-access-rendered-320.json)
+
+
+## 账户断开确认与窄屏复评
+
+| 页面与场景 | 前次 | 最新暂定分 |
+|---|---:|---:|
+| `/connections/$key` Team OAuth 与单项授权 | 39/40 | **40/40** |
+| `/connections/$key` Personal 应用 | 37/40 | **39/40（97.5%）** |
+| `/admin/plugins/$key` Team 共享账户 | 36/40 | **38/40（95%）** |
+
+断开确认分别说明指定账户、个人全部账户和共享账户的影响。对全部账户和共享账户，确认会展示已知的其他受影响应用，以及有待核实的范围。取消不写入并恢复原按钮焦点。断开一个账户保留其余账户，写入失败可在确认框内重试，成功后有回执。OAuth 与账户说明不再截断，320 像素的 Notion 渲染复扫清除了此前两处小字号提示。
+
+生产构建 `index-DtKMypSR.js` 在 Team 1440、Team 320 和 Personal 390 模拟账户上通过确认流程，Team 两种视口还复验 OAuth、单项授权和共享账户。102 项定向测试、类型检查与生产构建通过。因本机并发负载，定向测试复跑将 Testing Library 的等待上限放宽到 10 秒，仅用于本地验证。真实服务商断开、实体触屏和读屏仍待正式验收。 [断开流程日志](/tmp/openbot-order2-review/disconnect-confirm-production.log) · [OAuth 与单项授权](/tmp/openbot-order2-review/disconnect-oauth-production.log) · [320 像素确认](/tmp/openbot-order2-review/disconnect-all-team-320.png) · [OAuth 渲染复扫](/tmp/openbot-order2-review/disconnect-oauth-rendered-320.json) · [定向测试](/tmp/openbot-order2-review/disconnect-confirm-tests-stable.log)
+
+
+## Providers 独立读取与模型编辑复评
+
+`/admin/providers` 暂定 **38/40（95%）**，此前 32/40。H1–H10 为 3 · 4 · 4 · 4 · 4 · 4 · 4 · 3 · 4 · 4。供应商和用量能在设置读取失败时独立加载与重试。模型目录失败仍可编辑已保存的选择或补录完整模型名。默认模型说明明确区分可在选项中看到的模型与策略允许的运行。
+
+保存过程中保留编辑框并禁止关闭。保存失败时保留草稿并聚焦提示，成功后清单显示回执，焦点回到编辑按钮。弹窗内的读取重试把焦点归还搜索框。用户在等待期间移到另一字段时，保留用户的位置。搜索、保存和重试触区实测至少 44 CSS 像素高。取消关闭模型守卫的确认会恢复开关焦点且不写入。
+
+生产构建 `index-D9P4RNAL.js` 以模拟 API 在 Team 1440 浅色、390 深色和 320 深色通过浏览器复验。119 项定向测试、类型检查、生产构建和 Biome 通过。320 像素渲染扫描仍有一处 11.25 CSS 像素的正文提示，编辑框中的自定义模型标识重复。真实服务商读取、写入、实体触屏和读屏仍待验。 [浏览器复验](/tmp/openbot-order2-review/providers-current-browser.log) · [320 像素保存失败](/tmp/openbot-order2-review/providers-save-failed-320.png) · [渲染复扫](/tmp/openbot-order2-review/providers-rendered-320.json) · [定向测试](/tmp/openbot-order2-review/providers-recovery-final-tests.log)
+
+## Providers 模型目录与窄屏复评
+
+`/admin/providers` 由暂定 38/40 升至 **40/40（100%，暂定）**。H1 增 1 分，供应商仅返回默认模型时，页面保留默认模型及已有允许项，标明目录待确认，提供重新检查。目录恢复前，搜索无结果时保留读取状态。H8 增 1 分，模型选择说明在 320 CSS 像素下为 15 CSS 像素，手填标识只出现一次，输入框示例可完整显示。
+
+以模拟 API 在 1440 浅色、390 和 320 深色复验。重新检查成功后搜索清单更新，键盘焦点回到搜索。保存失败保留草稿，重试成功后显示回执并恢复入口焦点。320 像素渲染扫描无告警。真实供应商读取、设置持久化、实体触屏及读屏待正式验收。 [浏览器复验](/tmp/openbot-order2-review/providers-polish-production.log) · [320 像素渲染复扫](/tmp/openbot-order2-review/providers-polish-production-detect.json)
+
+## Permissions 能力说明与覆盖项复评
+
+`/admin/permissions` 由 29/40 升至 **31/40（77.5%，暂定）**。H1–H10 为 3 · 4 · 3 · 3 · 3 · 4 · 2 · 3 · 3 · 3。H2 增 1 分，组织权限关闭后保留每条能力的说明，组的 `No grant` 与角色的 `Inherit` 分别指向各自的行为。H6 增 1 分，选择器直接显示当前覆盖状态，窄屏可读完长组名。管理员仍需另查指定成员的有效权限及实际受影响的人员。
+
+模拟 API 在生产构建 `index-Bfwaot7E.js` 的 1440、390、320 像素验证。取消组织变更时写入为零，组覆盖写入失败后以同一作用域与原值重试，成功显示回执。关闭覆盖项弹窗后，焦点返回打开按钮。两级选择器的可触区域至少 44 CSS 像素高，真实权限生效与辅助技术待正式验收。两页相关的 129 项定向测试、类型检查、Vite 构建和 Biome 通过。 [浏览器复验](/tmp/openbot-order2-review/permissions-overrides-production.log) · [320 像素覆盖项](/tmp/openbot-order2-review/permissions-overrides-320.png) · [定向测试](/tmp/openbot-order2-review/providers-permissions-final-tests.log)
+
+## Permissions 变更影响复评
+
+`/admin/permissions` 由 31/40 升至 **34/40（85%，暂定）**。H1–H10 为 4 · 4 · 3 · 3 · 4 · 4 · 2 · 3 · 4 · 3。单项确认复用服务端的权限判定，显示哪些成员会获得、失去或保留权限，以及变更前后的生效来源。加载中、预览失败或目标作用域失效时禁用提交。预览失败可原位重试。保存冲突时刷新权限，要求管理员关闭确认框后按当前值重新发起。
+
+生产构建 `index-RKeRILJL.js` 在 1440、390、320 像素通过浏览器复验，覆盖模拟的组织、角色与组权限预览、组名换行、重试和冲突。主按钮对比度至少 16.7:1，高至少 44 CSS 像素。Permissions 主页面在 320 像素的 Impeccable 扫描无告警。113 项定向测试、类型检查与生产构建通过。待补齐按成员查询当前有效权限，并在真实部署验证权限生效、实体触屏和读屏。 [浏览器复验](/tmp/openbot-order2-review/permissions-impact-production.log) · [320 像素影响预览](/tmp/openbot-order2-review/permissions-person-preview-320.png) · [渲染扫描](/tmp/openbot-order2-review/permissions-impact-detect-320.json) · [定向测试](/tmp/openbot-order2-review/permissions-preview-final-tests.log)
+
+## Permissions 成员有效权限复评
+
+`/admin/permissions` 由 34/40 升至 **37/40（92.5%，暂定）**。H1–H10 为 4 · 4 · 4 · 3 · 4 · 4 · 4 · 3 · 4 · 3。H3 增 1 分，返回时保留查询并恢复搜索焦点，读取错误可原位恢复。H7 增 2 分，管理员能在同一页搜索完整目录、按页查找，直接查看允许或阻止状态及生效来源。已移除工作区访问的成员显示对应状态。余下三项为覆盖项与个人结果的状态措辞统一、较长权限清单的扫读和 Audit 入口。
+
+生产构建 `index-DWBs77Ep.js` 在 1440、390、320 像素复验，覆盖分页失败保留现有行、重试后焦点移到新结果、四种策略来源、人员查无结果和身份失效。48 CSS 像素高的入口在窄屏可操作，Impeccable 渲染扫描无告警。43 项前端测试和 10 项独立 PostgreSQL 集成测试通过，后者验证成员读取边界、实际规则优先级和已移除访问状态。真实部署、实体触屏和读屏待验。 [浏览器复验](/tmp/openbot-order2-review/member-access-production.log) · [320 像素权限结果](/tmp/openbot-order2-review/member-access-320.png) · [数据库测试](/tmp/openbot-order2-review/member-access-server-tests.log) · [前端测试](/tmp/openbot-order2-review/member-access-app-tests.log)
+
+## Permissions 结果与审计入口复评
+
+`/admin/permissions` 从 37/40 升至 **40/40（100%，暂定）**。H4 增 1 分，覆盖选项、变更前后预览和成员结果统一使用 Allowed 与 Blocked，保留 Use default 和 No grant 两种作用域各自的行为。H8 增 1 分，先呈现阻止项及数量，再呈现允许项，行内保留策略来源并省去重复状态。H10 增 1 分，Permission history 直接打开以权限变更为筛选条件的 Audit，清除该筛选保留已有 Bot 范围。
+
+生产构建 `index-C-B6k4pu.js` 在 1440、390、320 像素复验成员搜索和权限分组、覆盖项和请求恢复、以及审计入口和筛选恢复。窄屏长组名可换行，审计入口至少 44 CSS 像素高，320 像素 Impeccable 渲染扫描无告警。43 项前端测试、类型检查和构建通过。浏览器使用模拟接口。真实部署、实体触屏及读屏仍待正式验收。 [成员结果复验](/tmp/openbot-order2-review/permissions-finish-member-production.log) · [权限覆盖复验](/tmp/openbot-order2-review/permissions-finish-preview-production.log) · [审计入口复验](/tmp/openbot-order2-review/permission-history-production.log) · [320 像素权限结果](/tmp/openbot-order2-review/permissions-finish-member-320.png)
+
+## 权限描述草稿复评
+
+`/admin/permissions/describe` 由 28/40 升至 **35/40（87.5%，暂定）**。H1–H10 为 4 · 4 · 4 · 3 · 4 · 3 · 2 · 4 · 4 · 3。描述一经改写即收起旧解读、候选项和影响预览。移除一项后仅显示新影响，焦点移到 Undo，撤销后回到恢复的行。提交等待中保留当前页面，预览失败时继续禁用保存。保存失败后可以使用同一份草稿重试。
+
+生产构建 `index-C2n2oOVO.js` 在 1440、390、320 像素用模拟接口通过改写、撤销、预览重试和保存失败复测，主要按钮触区至少 44 CSS 像素。46 项前端测试、类型检查与构建通过，320 像素渲染扫描无告警。剩余扣分涉及离开草稿的原生确认、返回入口的链接语义、长清单中的审阅效率，以及撰写时缺少常驻示例。真实模型结果、持久化和读屏待验。 [浏览器复验](/tmp/openbot-order2-review/permissions-describe-final-production.log) · [320 像素改写状态](/tmp/openbot-order2-review/permissions-description-edited-320.png) · [前端测试](/tmp/openbot-order2-review/permissions-describe-final-tests.log)
+
+## 权限描述审阅复评
+
+`/admin/permissions/describe` 从 35/40 升至 **40/40（100%，暂定）**。H4 增 1 分，站内离开草稿使用带键盘焦点的确认框，返回入口使用原生链接。H6 和 H10 各增 1 分，撰写时可见示例，指引覆盖全组织、角色和组。H7 增 2 分，在审阅入口按 Enter 可跳过长候选清单，焦点移入当前人员影响区域，删除与撤销仍能回到原行。
+
+生产构建 `index-DmlEtp70.js` 在 1440、390、320 像素通过模拟接口复验。验证了 12 项候选的影响跳转、保留或丢弃草稿、保存期间阻止站内离开，以及审批与边界页的返回链接。43 项前端测试、类型检查、构建通过，320 像素 Impeccable 扫描无告警。真实模型、持久化、实体触屏和读屏待验。 [浏览器复验](/tmp/openbot-order2-review/permissions-discard-production.log) · [320 像素离开确认](/tmp/openbot-order2-review/permissions-discard-320.png) · [前端测试](/tmp/openbot-order2-review/permissions-discard-final-tests.log)
+
+## 审批描述草稿复评
+
+`/admin/approvals/describe` 由 28/40 升至 **37/40（92.5%，暂定）**。H1–H10 为 4 · 4 · 4 · 4 · 3 · 4 · 3 · 3 · 4 · 4。改写描述时收起旧规则和回测。直接编辑规则时仅展示当前回测及警告，无效规则指向对应字段。新增常驻示例、回测跳转和站内草稿确认。键盘移除后到达 Undo，撤销后回到恢复的行。保存前必须通过当前规则的回测。余项为批量写入响应丢失后的重复提交、长表单的扫读和逐条定位效率。
+
+生产构建 `index-DsGZc0ds.js` 在 1440、390、320 像素验证草稿、无效字段、当前警告、预览与保存重试，以及共用离开确认的权限描述页。46 项前端测试、类型检查和生产构建通过。320 像素渲染扫描无告警。浏览器使用模拟接口。真实模型、写入持久化、实体触屏和读屏待验。 [审批描述复验](/tmp/openbot-order2-review/approvals-draft-production.log) · [权限描述回归](/tmp/openbot-order2-review/approvals-shared-permissions-regression.log) · [320 像素改写状态](/tmp/openbot-order2-review/approvals-draft-edited-320.png) · [定向测试](/tmp/openbot-order2-review/approvals-draft-final-tests.log)
+
+## 审批批量保存重试复评
+
+`/admin/approvals/describe` 由 37/40 升至 **38/40（95%，暂定）**。H1–H10 为 4 · 4 · 4 · 4 · 4 · 4 · 3 · 3 · 4 · 4。H5 增 1 分，网络中断后页面提示保存结果未确认，并允许使用同一草稿重试。服务端按管理员和保存标识绑定草稿，规则、审计与回执同一事务提交。同一标识携带不同草稿时返回冲突。
+
+前端生产构建 `index-D71Nempe.js` 在 1440、390、320 像素的模拟网络中断后均用同一标识重试。迁移 `0097` 在独立 PostgreSQL 应用成功，5 项集成测试覆盖首次响应丢失、并发保存、规则校验失败以及规则与审计计数。29 项前端测试及前后端类型检查通过。长规则清单仍待改善，迁移与真实服务仍待部署验收。 [浏览器复验](/tmp/openbot-order2-review/approval-save-production.log) · [PostgreSQL 集成测试](/tmp/openbot-order2-review/approval-save-final-server-tests.log) · [前端测试](/tmp/openbot-order2-review/approval-save-final-app-tests.log)
+
+## 审批规则清单复评
+
+`/admin/approvals/describe` 从 38/40 升至 **40/40（100%，暂定）**。H7 增 1 分，键盘可以直接展开目标规则，新增时焦点进入工具字段，撤销后回到恢复的摘要。H8 增 1 分，多规则草稿默认折叠，摘要列出行为、工具、Bot、动作和目标，折叠时保留校验提示。同一时刻展开一条规则。
+
+生产构建 `index-DhQP1eBX.js` 在 1440、390、320 像素的模拟接口下，验证了八条规则的扫描、展开、字段错误、删除、新增和保存重试。320 像素的长工具名可换行，摘要触区至少 44 CSS 像素。33 项前端测试、类型检查和生产构建通过。真实模型、迁移部署、实体触屏和读屏待验。 [浏览器复验](/tmp/openbot-order2-review/approval-rule-list-production.log) · [320 像素规则摘要](/tmp/openbot-order2-review/approval-rule-list-320.png) · [前端测试](/tmp/openbot-order2-review/approval-list-tests.log)
+
+## 新建边界起点与草稿复评
+
+`/admin/boundaries/new` 从 30/40 升至 **38/40（95%，暂定）**。H1–H10 为 4 · 3 · 4 · 4 · 4 · 4 · 4 · 3 · 4 · 4。选定起点后表单排在起点列表之前，键盘焦点移到表单标题。可原位回到起点列表并继续编辑各自的草稿。改写描述会收起之前生成的表达式。未改动的模板可直接离开，修改过的草稿需要确认。保存冲突后焦点移到恢复区，刷新当前边界后可带着草稿重新提交。模板代价和适用范围仍需在选用前更容易比较。CEL 示例仍需改善常驻性。
+
+生产构建 `index-CHB-EYY_.js` 在 1440、390、320 像素通过选中起点、保留切走的草稿、保存等待、冲突刷新和键盘焦点验证。28 项定向测试通过，补充的 7 项描述回归测试也通过。类型检查及生产构建通过。真实服务和读屏待验。 [生产构建复验](/tmp/openbot-order2-review/boundary-starter-production.log) · [320 像素编辑器](/tmp/openbot-order2-review/boundary-starter-editor-320.png) · [前端测试](/tmp/openbot-order2-review/boundary-starter-tests.log)
+
+## 边界清单搜索复评
+
+`/admin/boundaries` 从 32/40 升至 **35/40（87.5%，暂定）**。H1–H10 为 4 · 4 · 3 · 3 · 3 · 4 · 4 · 3 · 4 · 3。H1 增 1 分，搜索实时显示匹配数量，无结果与尚无规则各有提示。H6 增 1 分，名称、说明和原始 CEL 都可用于查找。H7 增 1 分，可用键盘打开筛选前位置对应的规则，返回详情或刷新后仍保留查询。清空搜索时焦点留在搜索框。
+
+24 条模拟规则在 1440、390、320 像素通过生产构建复验。320 像素下，搜索前最后一条距视口顶约 1891 CSS 像素，筛选后在约 376 CSS 像素处可见。键盘输入未产生额外策略请求。36 项定向测试和 Web 类型检查通过。 [长度基线](/tmp/openbot-order2-review/boundary-list-length-baseline.log) · [生产构建验证](/tmp/openbot-order2-review/boundary-search-production.log) · [定向测试](/tmp/openbot-order2-review/boundary-search-final-tests.log)
+
+## 边界详情书签复评
+
+`/admin/boundaries/$index` 从 31/40 升至 **32/40（80%，暂定）**。H1–H10 为 3 · 4 · 3 · 3 · 3 · 3 · 3 · 3 · 4 · 3。H7 增 1 分，从清单打开的新地址在规则重排或保存表达式后仍可复用。现有规则用表达式生成初始标识，首次编辑时保存该标识。新建规则直接保存独立标识。旧数字书签和已失效的链接解释原因，可保留筛选词回清单，并收起编辑和移除操作。
+
+生产构建 `index-BWuHU9jN.js` 以模拟策略接口在 1440、390、320 像素复验重排、编辑后刷新、已移除规则、旧书签以及键盘返回，均通过且无浏览器异常。相同构建也复验了清单搜索和稳定链接配合。7 项独立 PostgreSQL 持久化测试通过，覆盖重新装载策略后保留规则标识。Impeccable 对四个前端改动文件扫描无发现，开发构建中两个回退页面在 1440、320 像素经渲染检测无发现。 [重排基线](/tmp/openbot-order2-review/boundary-legacy-link-baseline.log) · [书签生产复验](/tmp/openbot-order2-review/boundary-rule-id-browser-production.log) · [搜索生产复验](/tmp/openbot-order2-review/boundary-search-stable-production.log) · [旧书签截图](/tmp/openbot-order2-review/boundary-bookmark-legacy-320.png) · [持久化测试](/tmp/openbot-order2-review/boundary-rule-id-durability.log) · [渲染检测](/tmp/openbot-order2-review/boundary-bookmark-cdp.log)
+
+### 详情编辑并发保存
+
+复验时模拟另一管理员先新增规则，证实旧页面保存会覆盖新增项。整改后，保存随请求带上所编辑的策略版本。冲突时保留草稿，暂停提交并引导原位重新加载。若当前规则仍在，可在新策略上继续编辑，焦点回到 Rule。若当前规则被改动或移除，保留草稿供复制，并继续禁用保存。
+
+生产构建 `index-9vFYnT8O.js` 在 1440、390、320 像素验证冲突拒绝、重读失败、键盘恢复、保留并发新增以及阻止覆盖同期编辑或恢复已移除项，同时复验了稳定书签和搜索。78 项定向测试、8 项 PostgreSQL 持久化测试和 Web、服务端类型检查通过。两个独立策略存储之间的测试复现相同冲突，确认重新读取后可保存并保持另一条规则和原标识。320 像素下另复现了直接离开时丢失草稿，以及校验已报错仍可尝试提交，H3 和 H5 均为 3 分。真实服务任务与读屏仍待验。 [并发基线](/tmp/openbot-order2-review/boundary-edit-conflict-baseline.log) · [并发生产复验](/tmp/openbot-order2-review/boundary-edit-conflict-final-production.log) · [320 像素冲突截图](/tmp/openbot-order2-review/boundary-edit-conflict-320.png) · [定向测试](/tmp/openbot-order2-review/boundary-conflict-final-tests.log) · [数据库复验](/tmp/openbot-order2-review/boundary-conflict-durability.log) · [编辑草稿与校验基线](/tmp/openbot-order2-review/boundary-detail-draft-baseline.log)
+
+两个模拟规则在重新排序后，同一旧详情地址显示了另一条规则。后续需处理旧书签，并在真实策略和辅助技术下复验。 [位置书签复现](/tmp/openbot-order2-review/boundary-legacy-link-baseline.log)
+
+## 边界详情编辑复评
+
+`/admin/boundaries/$index` 从 32/40 升至 **36/40（90%，暂定）**。H1–H10 为 4 · 4 · 4 · 3 · 4 · 3 · 3 · 3 · 4 · 4。H1 增 1 分，检查、校验失败、无法回放和保存成功各有状态反馈。H3 增 1 分，离开前可继续编辑或明确丢弃描述与表达式，提交期间保留当前页面。H5 增 1 分，只有当前表达式已通过服务端检查才可保存，修改生成规则的描述后需重新生成。未配置可读历史的部署仍可提交已通过语法检查的规则。H10 增 1 分，编辑时可展开与新建页共用的属性参考和表达式示例。
+
+生产构建 `index-B9SqbQmR.js` 在 1440、390、320 像素复验草稿确认、校验错误拦截、503 原位重试及焦点归还、保存回执、并发冲突与书签定位。79 项定向测试和 Web 类型检查通过。三个改动文件的 Impeccable 扫描无发现。仍需改进保存后的键盘焦点、表达式快速查找与长回放的阅读效率，并验证真实服务和辅助技术。 [编辑生产复验](/tmp/openbot-order2-review/boundary-detail-editor-final-production.log) · [并发生产复验](/tmp/openbot-order2-review/boundary-edit-conflict-final-final-production.log) · [草稿确认截图](/tmp/openbot-order2-review/boundary-draft-dialog-320.png) · [定向测试](/tmp/openbot-order2-review/boundary-editor-tests.log)
+
+## 团队审批决策与搜索复评
+
+`/admin/approvals` 从 29/40 升至 **36/40（90%，暂定）**。H1–H10 为 4 · 4 · 4 · 3 · 4 · 4 · 3 · 3 · 4 · 3。H1 增 1 分，请求读取、等待决策和决策完成分别显示状态。H2 增 1 分，确认区分当前与请求的访问，并说明外部事件可否触发 Bot 使用共享账号。H3 增 1 分，确认可取消并归还焦点。H5 增 1 分，确认后重新读取；请求消失或当前访问变化时停止提交，服务端 409 和写入结果未确认各有反馈。H6 与 H7 各增 1 分，按动作、应用、Bot、策略等筛选团队规则，仍可操作对应规则，移除后焦点回到筛选框。H10 增 1 分，批准和拒绝时都可在确认前查看后果。
+
+生产构建 `index-DfrdQjU2.js` 在 1440、390、320 像素复验请求读取恢复、取消、访问变化拦截、写入失败重试、409、写入结果未确认与成功后的读取失败。另以 24 条规则验证搜索计数、无额外读取、清空键盘焦点及精确移除。320 像素下最后一条从约 3763 CSS 像素移至 409。31 项定向测试、23 项 PostgreSQL 持久化测试与 Web 类型检查通过。Impeccable 的三个改动文件源码检测无发现。真实共享连接器端到端任务、辅助技术和跨团队管理场景仍待复验。 [共享账户基线](/tmp/openbot-order2-review/shared-account-baseline.log) · [共享请求生产复验](/tmp/openbot-order2-review/shared-account-regression.log) · [规则清单基线](/tmp/openbot-order2-review/team-rule-discovery-baseline.log) · [规则搜索生产复验](/tmp/openbot-order2-review/team-rule-discovery-production.log) · [持久化测试](/tmp/openbot-order2-review/shared-account-persistence.log)
+
+## 审计分页复评
+
+`/admin/audit` 从 29/40 升至 **32/40（80%，暂定）**。H1–H10 为 4 · 3 · 3 · 3 · 3 · 3 · 3 · 3 · 4 · 3。H1 增 1 分，区分当前加载页没有记录、仍有更早记录，以及筛选无结果。H9 增 1 分，较早记录读取失败时可原位重试，键盘焦点留在分页按钮；切换视图期间隐藏旧分页入口。H10 增 1 分，提问示例常驻，Why? 可查看已记录判定及当前策略。
+
+生产构建 `index-DXHe29P0.js` 在 1440、390、320 像素复验空页继续翻页、筛选切换、503 后键盘重试，以及恢复后看到更早的记录。提问及录制记录恢复在桌面与手机布局回归通过。23 项定向测试通过，改动文件 Impeccable 源码检测无发现。文字搜索仍只检查已加载记录，真实模型与辅助技术待验。 [分页基线](/tmp/openbot-order2-review/audit-cursor-baseline.log) · [分页生产复验](/tmp/openbot-order2-review/audit-cursor-production.log) · [提问回归](/tmp/openbot-order2-review/audit-cursor-question-regression.log) · [定向测试](/tmp/openbot-order2-review/audit-cursor-final-tests.log)

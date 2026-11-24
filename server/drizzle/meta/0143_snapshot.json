@@ -1,6 +1,6 @@
 {
-  "id": "0c91a5c2-d296-42ca-9aa6-8c698492c8d0",
-  "prevId": "430f5a5b-4f02-45f2-a5c9-5a6d38a08300",
+  "id": "430f5a5b-4f02-45f2-a5c9-5a6d38a08300",
+  "prevId": "cd45212a-b076-479b-b2f6-a02361523676",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14063,24 +14063,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "reconciliation_cutoff_at": {
-          "name": "reconciliation_cutoff_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pilot_resource": {
-          "name": "pilot_resource",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_credit_type": {
-          "name": "requested_credit_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -14189,34 +14171,6 @@
           ],
           "isUnique": false,
           "where": "\"test_credit_operations\".\"gateway_evidence_check_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "test_credit_operations_paid_cutoff_idx": {
-          "name": "test_credit_operations_paid_cutoff_idx",
-          "columns": [
-            {
-              "expression": "reconciliation_cutoff_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"cutoff_hold\" IS NULL AND \"test_credit_operations\".\"reconciliation_cutoff_at\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17583,12 +17537,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "credit_type": {
-          "name": "credit_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -17840,6 +17788,65 @@
             "account_id",
             "operation_id",
             "call_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
+      "schema": "",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
+          "columns": [
+            "actor_id",
+            "request_id"
           ]
         }
       },

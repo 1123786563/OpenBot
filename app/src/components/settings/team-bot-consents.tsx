@@ -52,6 +52,7 @@ export function TeamBotConsents() {
           </ItemContent>
           <ItemActions>
             <Button
+              className="min-h-11"
               disabled={clear.isPending}
               onClick={(event) => {
                 requestConfirmation({

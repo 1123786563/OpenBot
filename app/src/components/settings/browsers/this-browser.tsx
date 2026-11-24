@@ -19,6 +19,7 @@ import {
   type DetectedRecorder,
   detectRecorder,
   type RecorderStore,
+  recorderStoreHere,
   recorderStorePageHere,
   sendConnectCode,
 } from "@/lib/recorder/bridge";
@@ -271,13 +272,17 @@ function describe(
   connected: boolean,
   attempt: Attempt,
 ): string {
-  if (!detected) return "The OpenBot Recorder isn't installed in this browser.";
+  if (!detected) {
+    if (!recorderStoreHere())
+      return "To install OpenBot Recorder, open this page in Chrome or Edge on a computer.";
+    return "The OpenBot Recorder isn't installed in this browser.";
+  }
   if (connected) return "Connected";
   switch (attempt.state) {
     case "sending":
       return "Starting the connection…";
     case "awaiting":
-      return "Confirm in the OpenBot Recorder tab that opened.";
+      return "Switch to the new OpenBot Recorder tab in your browser’s tab bar and choose Connect. Return here to check the connection.";
     case "expired":
       return "The request expired. Try again.";
     case "cancelled":

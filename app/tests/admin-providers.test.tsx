@@ -19,6 +19,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ModelSource } from "@/lib/models/queries";
 import { queryClient } from "@/query-client";
+import { previewCapabilityChanges } from "../../server/src/admin/capability-changes";
 import { settleReactWork } from "./settle-react-work";
 import { vendoredMarkFor } from "./vendored-marks";
 
@@ -57,6 +58,7 @@ let settings: Record<string, unknown>;
 let source: ModelSource;
 /** One person (`all`) or a team whose admin allows models (`allowed`). */
 let exposure: "all" | "allowed";
+let previewUnavailable: boolean;
 const writes: { path: string; body: unknown }[] = [];
 
 function serving() {
@@ -98,6 +100,27 @@ function serving() {
         otel: { configured: false },
         actionRecordRetentionDays: 90,
       });
+    if (path === "/api/admin/enterprise/capabilities/preview") {
+      if (previewUnavailable) return Response.json({}, { status: 503 });
+      const { changes } = JSON.parse(String(init?.body));
+      return Response.json(
+        await previewCapabilityChanges({
+          changes,
+          rows: [],
+          members: [
+            {
+              id: "dev",
+              email: "dev@example.test",
+              name: "Dev Member",
+              role: "user",
+              groups: [],
+            },
+          ],
+          groups: [],
+          now: new Date(),
+        }),
+      );
+    }
     if (path === "/api/models/available")
       return Response.json({
         provider: "openai",
@@ -141,6 +164,7 @@ beforeEach(() => {
   };
   source = "openai";
   exposure = "allowed";
+  previewUnavailable = false;
   queryClient.clear();
   serving();
 });
@@ -311,6 +335,7 @@ test("unticking the default says it stays offered, and what Only allowed models 
 });
 
 test("Permissions previews the organization's changes before writing them", async () => {
+  previewUnavailable = true;
   const view = await draw(PermissionsPage);
   const trigger = await view.findByRole("switch", { name: "Use Bots" });
   fireEvent.click(trigger);
@@ -318,12 +343,22 @@ test("Permissions previews the organization's changes before writing them", asyn
     name: "Disable Use Bots?",
   });
   expect(confirmation.textContent).toContain("across the organization");
+  await view.findByRole("button", {
+    name: "Retry preview",
+  });
+  expect(
+    view.getByRole("button", { name: "Disable" }).getAttribute("aria-disabled"),
+  ).toBe("true");
   expect(writes).toEqual([]);
   fireEvent.click(view.getByRole("button", { name: /^Cancel$/ }));
   await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
   expect(writes).toEqual([]);
   fireEvent.click(trigger);
   await view.findByRole("alertdialog", { name: "Disable Use Bots?" });
+  previewUnavailable = false;
+  fireEvent.click(await view.findByRole("button", { name: "Retry preview" }));
+  expect(await view.findByText("Dev Member")).toBeTruthy();
+  expect(writes).toEqual([]);
   fireEvent.click(view.getByRole("button", { name: /^Disable$/ }));
   await waitFor(() =>
     expect(writes).toContainEqual({
@@ -347,6 +382,55 @@ test("the allowed-models row names the first few models", () => {
   expect(
     allowedSummary(["openai/a", "openai/b", "openai/c", "openai/d", "x/e"]),
   ).toBe("openai/a, openai/b, openai/c and 2 more");
+});
+
+test("provider and usage stay visible when the settings read fails", async () => {
+  const fetchFixture = global.fetch;
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === "/api/admin/enterprise"
+        ? Response.json({}, { status: 503 })
+        : fetchFixture(input, init),
+    { preconnect: fetchFixture.preconnect },
+  );
+
+  const view = await draw(ProvidersPage);
+  await view.findByText("Couldn't load these settings.", {}, { timeout: 5000 });
+  expect(
+    view.getByText("Default gpt-5.6-terra · 3 models listed"),
+  ).toBeTruthy();
+  expect(view.getByText("No recent runs")).toBeTruthy();
+  expect(
+    view.queryByRole("switch", { name: "Only allowed models" }),
+  ).toBeNull();
+});
+
+test("a partial provider catalogue keeps the default and can be checked again", async () => {
+  const fetchFixture = global.fetch;
+  let listed = false;
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fetchFixture(input, init);
+      if (String(input) !== "/api/models/available" || listed) return response;
+      const data = await response.json();
+      return Response.json({
+        ...data,
+        listed,
+        models: [{ id: "gpt-5.6-terra", label: "GPT-5.6 Terra" }],
+      });
+    },
+    { preconnect: fetchFixture.preconnect },
+  );
+
+  const view = await draw(ProvidersPage);
+  expect(await view.findByText("Default gpt-5.6-terra")).toBeTruthy();
+  expect(await view.findByText("Model choices unconfirmed")).toBeTruthy();
+  listed = true;
+  fireEvent.click(view.getByRole("button", { name: "Check again" }));
+  expect(
+    await view.findByText("Default gpt-5.6-terra · 3 models listed"),
+  ).toBeTruthy();
+  expect(view.queryByText("Model choices unconfirmed")).toBeNull();
 });
 
 test("an old link to Enterprise controls opens the Admin overview", () => {

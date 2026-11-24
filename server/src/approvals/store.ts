@@ -1,4 +1,14 @@
-import { and, desc, eq, isNull, ne, notExists, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import {
   createAuditStore,
   recordAuditEvent,
@@ -10,6 +20,7 @@ import {
   approvalPreferences,
   approvalRequests,
   approvalRules,
+  approvalTeamRuleSaves,
   approvalTeamRules,
   approvalTeamSettings,
 } from "../db/schema/approvals";
@@ -29,6 +40,7 @@ import {
   type ApprovalPreferences,
   type ApprovalRecord,
   ApprovalRefusedError,
+  ApprovalRuleSaveConflictError,
   type ApprovalStore,
   type ApprovalTeamSettings,
   offersStandingRule,
@@ -648,8 +660,58 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
      * One save, one row on the trail: the rules a description was written into are added together or
      * not at all, and the row says who saved them, the team rules either side, and the sentence.
      */
-    async createTeamRules(by, inputs, authoring) {
+    async createTeamRules(by, inputs, authoring, request) {
       return withAuditTransaction(database, async (tx, deferTap) => {
+        const receipt =
+          request &&
+          and(
+            eq(approvalTeamRuleSaves.actorId, by),
+            eq(approvalTeamRuleSaves.requestId, request.requestId),
+          );
+        if (request) {
+          const fingerprint = createHash("sha256")
+            .update(
+              JSON.stringify([
+                inputs.map(({ botId, toolRef, effect, scope, behaviour }) => [
+                  botId,
+                  toolRef,
+                  effect,
+                  scope,
+                  behaviour,
+                ]),
+                authoring?.text ?? null,
+              ]),
+            )
+            .digest("hex");
+          // The claim, rule inserts and audit row commit together. A racing retry waits for the claim.
+          const [claimed] = await tx
+            .insert(approvalTeamRuleSaves)
+            .values({
+              actorId: by,
+              requestId: request.requestId,
+              fingerprint,
+              ruleIds: [],
+            })
+            .onConflictDoNothing()
+            .returning({ requestId: approvalTeamRuleSaves.requestId });
+          if (!claimed) {
+            const [saved] = await tx
+              .select()
+              .from(approvalTeamRuleSaves)
+              .where(receipt);
+            if (!saved || saved.fingerprint !== fingerprint)
+              throw new ApprovalRuleSaveConflictError(
+                "This save was already used for a different draft.",
+              );
+            const existing = await tx
+              .select()
+              .from(approvalTeamRules)
+              .where(inArray(approvalTeamRules.id, saved.ruleIds));
+            const byId = new Map(existing.map((rule) => [rule.id, rule]));
+            return saved.ruleIds.flatMap((id) => byId.get(id) ?? []);
+          }
+          request.validate();
+        }
         const executor = tx as unknown as Database;
         const before = await teamRuleRows(executor);
         const rows = inputs.length
@@ -664,6 +726,11 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
               )
               .returning()
           : [];
+        if (receipt)
+          await tx
+            .update(approvalTeamRuleSaves)
+            .set({ ruleIds: rows.map((rule) => rule.id) })
+            .where(receipt);
         await recordAuditEvent(createAuditStore(tx, deferTap), {
           eventType: "approval.rule_changed",
           targetType: "approval_rule",

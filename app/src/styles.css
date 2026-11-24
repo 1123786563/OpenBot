@@ -480,6 +480,27 @@ button.quick-chat-touch-target {
   padding-inline: var(--spacing-3);
 }
 
+/* Keep the button surface and spacing in dialogs rendered outside the page theme. */
+.confirmation-action.confirmation-action {
+  border-radius: var(--radius-element);
+  padding-inline: var(--spacing-3);
+}
+
+.confirmation-action[data-variant="primary"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.confirmation-action[data-variant="destructive"] {
+  background: var(--color-error);
+  color: var(--color-on-error);
+}
+
+.confirmation-action:is([data-variant="secondary"], [aria-disabled="true"]) {
+  background: var(--color-neutral);
+  color: var(--color-text-primary);
+}
+
 .routine-enable input[role="switch"] {
   opacity: 0;
 }

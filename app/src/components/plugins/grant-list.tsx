@@ -1,6 +1,9 @@
+import { HStack } from "@astryxdesign/core/HStack";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -58,6 +61,7 @@ export function GrantList({
   const grants = useQuery(grantsQueryOptions(serverId, true));
   const [search, setSearch] = useState("");
   const [choosing, setChoosing] = useState<string | null>(null);
+  const choiceTrigger = useRef<HTMLButtonElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const authorize = useMutation({
     ...authorizeActionMutationOptions(returnTo),
@@ -74,21 +78,22 @@ export function GrantList({
     },
   });
 
-  if (grants.isPending) return null;
+  if (grants.isPending) {
+    return (
+      <PageSection title="Actions">
+        <ReadStatus kind="loading" message="Checking allowed actions…" />
+      </PageSection>
+    );
+  }
   if (grants.error) {
     return (
       <PageSection title="Actions">
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't read what this account allows right now.{" "}
-          <Button
-            onClick={() => grants.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Retry
-          </Button>
-        </p>
+        <ReadError
+          message="Couldn't read what this account allows right now."
+          retry={grants.refetch}
+          retrying={grants.isFetching}
+          retryBelow
+        />
       </PageSection>
     );
   }
@@ -138,26 +143,42 @@ export function GrantList({
     term.length > 0 ? 0 : Math.max(unauthorized.length - UNAUTHORIZED_SHOWN, 0);
   const groups: GrantGroup[] = groupGrants(shown);
   const consentActions = consentActionsFrom(all);
+  const selected = canAuthorize
+    ? shown.find(
+        (grant) => grant.action === choosing && grant.state === "needs-consent",
+      )
+    : undefined;
+  const cancelChoice = () => {
+    setChoosing(null);
+    setNotice(null);
+    choiceTrigger.current?.focus();
+  };
 
   return (
     <PageSection
       description="Grouped by the permission each action asks for. This matches what the consent screen shows."
       title="Actions"
     >
-      {notice ? (
+      {notice && !selected ? (
         <p className="text-destructive text-sm" role="alert">
           {notice}
         </p>
       ) : null}
       <Input
         aria-label="Search actions"
-        onChange={(event) => setSearch(event.target.value)}
+        className="min-h-11"
+        disabled={authorize.isPending}
+        onChange={(event) => {
+          setChoosing(null);
+          setNotice(null);
+          setSearch(event.target.value);
+        }}
         placeholder="Search actions"
         type="search"
         value={search}
       />
       {groups.map((group) => (
-        <div
+        <VStack
           data-grant-group={
             group.kind === "scoped" ? group.scopes.join(", ") : group.kind
           }
@@ -172,48 +193,68 @@ export function GrantList({
           </p>
           <PageRows>
             {group.grants.map((grant) => (
-              <Item
-                data-action={grant.action}
-                data-landed={grant.action === landedAction ? "" : undefined}
-                data-state={grant.state}
-                key={grant.action}
-                size="sm"
-              >
-                <ItemContent>
-                  <ItemTitle>{grant.action}</ItemTitle>
-                  <ItemDescription className="line-clamp-none">
-                    {describe(grant, canAuthorize)}
-                  </ItemDescription>
-                </ItemContent>
-                <ItemActions>
-                  {grant.state === "needs-consent" && canAuthorize ? (
-                    <Button
-                      onClick={() => {
-                        setNotice(null);
-                        setChoosing(grant.action);
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Authorize
-                    </Button>
-                  ) : null}
-                  {grant.state === "unknown" ? (
-                    <Button
-                      onClick={() => grants.refetch()}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Retry
-                    </Button>
-                  ) : null}
-                </ItemActions>
-              </Item>
+              <Fragment key={grant.action}>
+                <Item
+                  data-action={grant.action}
+                  data-landed={grant.action === landedAction ? "" : undefined}
+                  data-state={grant.state}
+                  size="sm"
+                >
+                  <ItemContent>
+                    <ItemTitle>{grant.action}</ItemTitle>
+                    <ItemDescription className="line-clamp-none">
+                      {describe(grant, canAuthorize)}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    {grant.state === "needs-consent" && canAuthorize ? (
+                      <Button
+                        className="min-h-11"
+                        disabled={authorize.isPending}
+                        onClick={(event) => {
+                          choiceTrigger.current = event.currentTarget;
+                          setNotice(null);
+                          setChoosing(grant.action);
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Authorize
+                      </Button>
+                    ) : null}
+                    {grant.state === "unknown" ? (
+                      <Button
+                        className="min-h-11"
+                        disabled={grants.isFetching}
+                        onClick={() => grants.refetch()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Retry
+                      </Button>
+                    ) : null}
+                  </ItemActions>
+                </Item>
+                {selected?.action === grant.action ? (
+                  <ConsentNotice
+                    action={grant.action}
+                    busy={authorize.isPending}
+                    error={notice}
+                    onCancel={cancelChoice}
+                    onContinue={() =>
+                      authorize.mutate({ serverId, action: grant.action })
+                    }
+                    sentence={
+                      consentCopy(grant.action, consentActions).sentence
+                    }
+                  />
+                ) : null}
+              </Fragment>
             ))}
           </PageRows>
-        </div>
+        </VStack>
       ))}
       {hidden > 0 ? (
         <p className="text-muted-foreground text-sm">
@@ -226,15 +267,6 @@ export function GrantList({
           No action matches that search.
         </p>
       ) : null}
-      {choosing !== null ? (
-        <ConsentNotice
-          action={choosing}
-          busy={authorize.isPending}
-          onCancel={() => setChoosing(null)}
-          onContinue={() => authorize.mutate({ serverId, action: choosing })}
-          sentence={consentCopy(choosing, consentActions).sentence}
-        />
-      ) : null}
     </PageSection>
   );
 }
@@ -246,28 +278,59 @@ export function GrantList({
 function ConsentNotice({
   action,
   busy,
+  error,
   sentence,
   onCancel,
   onContinue,
 }: {
   action: string;
   busy: boolean;
+  error: string | null;
   sentence: string;
   onCancel: () => void;
   onContinue: () => void;
 }) {
+  const summary = useId();
+  const panel = useRef<HTMLFieldSetElement>(null);
+  useEffect(() => {
+    panel.current?.focus();
+  }, []);
+
   return (
     <fieldset
+      aria-describedby={summary}
       aria-label={`Before you authorize ${action}`}
-      className="m-0 flex min-w-0 flex-col gap-2 rounded-lg border p-3"
+      className="mx-4 mb-4 flex min-w-0 flex-col gap-2 rounded-lg border p-3"
       data-consent-copy=""
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || busy) return;
+        event.stopPropagation();
+        onCancel();
+      }}
+      ref={panel}
+      tabIndex={-1}
     >
-      <p className="text-sm">{sentence}</p>
-      <div className="flex justify-end gap-2">
-        <Button onClick={onCancel} size="sm" type="button" variant="ghost">
+      <p className="wrap-anywhere text-sm" id={summary}>
+        {sentence}
+      </p>
+      {error ? (
+        <p className="wrap-anywhere text-destructive text-sm" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <HStack gap={2} hAlign="end" wrap="wrap">
+        <Button
+          className="min-h-11"
+          disabled={busy}
+          onClick={onCancel}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
           Cancel
         </Button>
         <Button
+          className="min-h-11"
           disabled={busy}
           onClick={onContinue}
           size="sm"
@@ -276,7 +339,7 @@ function ConsentNotice({
         >
           Continue to consent
         </Button>
-      </div>
+      </HStack>
     </fieldset>
   );
 }

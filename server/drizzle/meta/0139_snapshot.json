@@ -1,6 +1,6 @@
 {
-  "id": "4eb0af13-3980-41f4-9d30-d521a9ca5ef7",
-  "prevId": "acf9aec0-da18-4a90-905d-11ba5a51cd13",
+  "id": "acf9aec0-da18-4a90-905d-11ba5a51cd13",
+  "prevId": "bcc8adbe-4cdb-4c42-bda1-f8a25c59806a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16604,24 +16604,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "switched_from_order_id": {
-          "name": "switched_from_order_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "checkout_attempt_id": {
-          "name": "checkout_attempt_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "renews_order_id": {
-          "name": "renews_order_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16642,36 +16624,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "paid_orders_switch_once": {
-          "name": "paid_orders_switch_once",
-          "columns": [
-            {
-              "expression": "switched_from_order_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "paid_orders_checkout_attempt": {
-          "name": "paid_orders_checkout_attempt",
-          "columns": [
-            {
-              "expression": "checkout_attempt_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17574,37 +17526,43 @@
       },
       "isRLSEnabled": false
     },
-    "public.billing_suspension_history": {
-      "name": "billing_suspension_history",
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
       "schema": "",
       "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "ended_at": {
-          "name": "ended_at",
-          "type": "timestamp with time zone",
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
           "primaryKey": false,
           "notNull": true
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "billing_suspension_history_account_id_test_credit_accounts_id_fk": {
-          "name": "billing_suspension_history_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "billing_suspension_history",
-          "tableTo": "test_credit_accounts",
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
           "columnsFrom": [
-            "account_id"
+            "actor_id"
           ],
           "columnsTo": [
             "id"
@@ -17614,22 +17572,17 @@
         }
       },
       "compositePrimaryKeys": {
-        "billing_suspension_history_account_id_started_at_pk": {
-          "name": "billing_suspension_history_account_id_started_at_pk",
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
           "columns": [
-            "account_id",
-            "started_at"
+            "actor_id",
+            "request_id"
           ]
         }
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "billing_suspension_history_time": {
-          "name": "billing_suspension_history_time",
-          "value": "\"billing_suspension_history\".\"ended_at\" >= \"billing_suspension_history\".\"started_at\""
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

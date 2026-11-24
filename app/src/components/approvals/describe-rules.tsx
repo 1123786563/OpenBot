@@ -1,3 +1,6 @@
+import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconDeviceDesktop,
   IconFolder,
@@ -8,6 +11,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { AuditEvent } from "@/components/audit/audit-cells";
 import {
   type ReplayRow,
@@ -19,7 +23,6 @@ import {
   Field,
   FieldDescription,
   FieldLabel,
-  FieldLegend,
   FieldSeparator,
   FieldSet,
 } from "@/components/ui/field";
@@ -90,6 +93,16 @@ export function RuleRowsEditor({
   onRemove: (index: number, rule: ApprovalRuleInput) => void;
 }) {
   const bots = useQuery(agentListQueryOptions());
+  const [openRow, setOpenRow] = useState<number | null>(
+    rules.length === 1 ? 1 : null,
+  );
+  const focusNew = useRef(false);
+  useLayoutEffect(() => {
+    if (focusNew.current && openRow !== null) {
+      document.getElementById(`team-rule-${openRow}-toolRef`)?.focus();
+      focusNew.current = false;
+    }
+  }, [openRow]);
   const set = (index: number, change: Partial<ApprovalRuleInput>) =>
     onChange(
       rules.map((rule, at) => (at === index ? { ...rule, ...change } : rule)),
@@ -98,12 +111,14 @@ export function RuleRowsEditor({
     <Field>
       <FieldLabel>Rules</FieldLabel>
       <FieldDescription>
-        Use * to match anything. Change any rule before you save.
+        Expand a rule to edit it. Use * to match anything.
       </FieldDescription>
-      <div className="flex flex-col gap-4">
+      <VStack gap={2}>
         {rules.map((rule, index) => {
           const row = index + 1;
           const id = `team-rule-${row}`;
+          const labels = botLabels(bots.data, rule.botId);
+          const hasProblem = problems.some((problem) => problem.row === row);
           const problemFor = (field: keyof ApprovalRuleInput) =>
             problems.find(
               (problem) => problem.row === row && problem.field === field,
@@ -111,89 +126,147 @@ export function RuleRowsEditor({
           return (
             // Index-keyed: a rule has no identity apart from its place until it is saved.
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
-            <div className="flex flex-col gap-4" key={index}>
+            <Fragment key={index}>
               {index > 0 ? <FieldSeparator /> : null}
-              <FieldSet className="gap-3">
-                <div className="flex items-center justify-between gap-2">
-                  <FieldLegend className="mb-0" variant="label">
-                    Rule {row}
-                  </FieldLegend>
-                  <Button
-                    aria-label={`Remove rule ${row}`}
-                    onClick={() => onRemove(index, rule)}
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <IconTrash />
-                  </Button>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {FIELDS.map((field) => {
-                    const problem = problemFor(field.key);
-                    return (
-                      <Field
-                        className={
-                          field.key === "toolRef" ? "sm:col-span-2" : undefined
-                        }
-                        key={field.key}
+              <section data-approval-rule={row}>
+                <Collapsible
+                  className="[&_.astryx-collapsible-trigger]:min-h-12 [&_.astryx-collapsible-trigger]:rounded-lg [&_.astryx-collapsible-trigger]:py-2"
+                  isOpen={openRow === row}
+                  onOpenChange={(open) => setOpenRow(open ? row : null)}
+                  trigger={
+                    <VStack className="min-w-0 text-left" gap={1}>
+                      <Text className="wrap-anywhere font-medium" size="sm">
+                        Rule {row} · {BEHAVIOUR_LABELS[rule.behaviour]}
+                      </Text>
+                      <Text
+                        className="wrap-anywhere"
+                        color="secondary"
+                        size="sm"
                       >
-                        <FieldLabel htmlFor={`${id}-${field.key}`}>
-                          {field.label}
-                        </FieldLabel>
-                        <Input
-                          aria-invalid={problem ? true : undefined}
-                          autoCapitalize="off"
-                          autoCorrect="off"
-                          id={`${id}-${field.key}`}
-                          onChange={(event) =>
-                            set(index, { [field.key]: event.target.value })
-                          }
-                          placeholder={field.placeholder}
-                          spellCheck={false}
-                          value={rule[field.key]}
-                        />
-                        {problem ? (
-                          <p className="text-destructive text-sm">{problem}</p>
-                        ) : null}
-                      </Field>
-                    );
-                  })}
-                  <Field>
-                    <FieldLabel htmlFor={`${id}-botId`}>Bot</FieldLabel>
-                    <LabelSelect
-                      id={`${id}-botId`}
-                      labels={botLabels(bots.data, rule.botId)}
-                      onChange={(botId) => set(index, { botId })}
-                      value={rule.botId}
-                    />
-                    {problemFor("botId") ? (
-                      <p className="text-destructive text-sm">
-                        {problemFor("botId")}
-                      </p>
-                    ) : null}
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor={`${id}-behaviour`}>
-                      Behaviour
-                    </FieldLabel>
-                    <LabelSelect
-                      id={`${id}-behaviour`}
-                      labels={BEHAVIOUR_LABELS}
-                      onChange={(behaviour) => set(index, { behaviour })}
-                      value={rule.behaviour}
-                    />
-                  </Field>
-                </div>
-              </FieldSet>
-            </div>
+                        {rule.toolRef || "Choose a tool"} · {labels[rule.botId]}
+                        {rule.effect !== "*" && rule.effect
+                          ? ` · ${rule.effect} actions`
+                          : null}
+                        {rule.scope !== "*" && rule.scope
+                          ? ` · Target ${rule.scope}`
+                          : null}
+                      </Text>
+                      {hasProblem ? (
+                        <Text className="text-destructive" size="sm">
+                          Needs attention
+                        </Text>
+                      ) : null}
+                    </VStack>
+                  }
+                >
+                  {openRow === row ? (
+                    <FieldSet className="gap-3">
+                      <HStack hAlign="end">
+                        <Button
+                          aria-label={`Remove rule ${row}`}
+                          className="size-12"
+                          onClick={() => {
+                            setOpenRow(null);
+                            onRemove(index, rule);
+                          }}
+                          size="icon-sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <IconTrash />
+                        </Button>
+                      </HStack>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {FIELDS.map((field) => {
+                          const problem = problemFor(field.key);
+                          return (
+                            <Field
+                              className={
+                                field.key === "toolRef"
+                                  ? "sm:col-span-2"
+                                  : undefined
+                              }
+                              key={field.key}
+                            >
+                              <FieldLabel htmlFor={`${id}-${field.key}`}>
+                                {field.label}
+                              </FieldLabel>
+                              <Input
+                                aria-describedby={
+                                  problem
+                                    ? `${id}-${field.key}-problem`
+                                    : undefined
+                                }
+                                aria-invalid={problem ? true : undefined}
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                                className="min-h-12"
+                                id={`${id}-${field.key}`}
+                                onChange={(event) =>
+                                  set(index, {
+                                    [field.key]: event.target.value,
+                                  })
+                                }
+                                placeholder={field.placeholder}
+                                spellCheck={false}
+                                value={rule[field.key]}
+                              />
+                              {problem ? (
+                                <p
+                                  className="text-destructive text-sm"
+                                  id={`${id}-${field.key}-problem`}
+                                >
+                                  {problem}
+                                </p>
+                              ) : null}
+                            </Field>
+                          );
+                        })}
+                        <Field>
+                          <FieldLabel htmlFor={`${id}-botId`}>Bot</FieldLabel>
+                          <LabelSelect
+                            className="min-h-12"
+                            id={`${id}-botId`}
+                            labels={labels}
+                            onChange={(botId) => set(index, { botId })}
+                            value={rule.botId}
+                          />
+                          {problemFor("botId") ? (
+                            <p className="text-destructive text-sm">
+                              {problemFor("botId")}
+                            </p>
+                          ) : null}
+                        </Field>
+                        <Field>
+                          <FieldLabel htmlFor={`${id}-behaviour`}>
+                            Behaviour
+                          </FieldLabel>
+                          <LabelSelect
+                            className="min-h-12"
+                            id={`${id}-behaviour`}
+                            labels={BEHAVIOUR_LABELS}
+                            onChange={(behaviour) => set(index, { behaviour })}
+                            value={rule.behaviour}
+                          />
+                        </Field>
+                      </div>
+                    </FieldSet>
+                  ) : null}
+                </Collapsible>
+              </section>
+            </Fragment>
           );
         })}
-      </div>
+      </VStack>
       {rules.length < MAX_RULES ? (
         <div>
           <Button
-            onClick={() => onChange([...rules, BLANK_RULE])}
+            className="min-h-12"
+            onClick={() => {
+              focusNew.current = true;
+              setOpenRow(rules.length + 1);
+              onChange([...rules, BLANK_RULE]);
+            }}
             size="sm"
             type="button"
             variant="outline"
@@ -339,12 +412,21 @@ export function RulesBacktest({
   return (
     <Field aria-labelledby="rules-backtest" aria-live="polite">
       <FieldLabel id="rules-backtest">On recent activity</FieldLabel>
+      {!settling &&
+      preview.isSuccess &&
+      !preview.isFetching &&
+      preview.data.warning ? (
+        <p className="text-amber-700 text-sm dark:text-amber-400">
+          {preview.data.warning}
+        </p>
+      ) : null}
       {settling ? (
         <ReadStatus kind="loading" message="Checking the current rules…" />
       ) : preview.error ? (
         <ReadError
           message={preview.error.message}
           retry={() => preview.refetch()}
+          retryBelow
           retryLabel="Retry preview"
           retrying={preview.isFetching}
         />
@@ -355,6 +437,10 @@ export function RulesBacktest({
         />
       ) : preview.isFetching || !preview.data ? (
         <ReadStatus kind="loading" message="Checking the current rules…" />
+      ) : !preview.data.check.ok ? (
+        <FieldDescription>
+          Fix the rules above to check them against recent activity.
+        </FieldDescription>
       ) : preview.data.report.scanned === 0 ? (
         <FieldDescription>
           No checked actions to test against yet. You'll see what these rules

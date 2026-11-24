@@ -239,7 +239,7 @@ test("an edit after the rules were written is called out, checked as it stands, 
   const { view } = open();
   await describeRules(view, TEXT);
   await view.findByText(OPPORTUNITIES.explanation as string);
-  expect(view.queryByText(/You've changed the rules/)).toBeNull();
+  expect(view.queryByText(/Rule edited/)).toBeNull();
 
   const user = userEvent.setup({ document: view.container.ownerDocument });
   const tool = view.getByLabelText("Tool or app") as HTMLInputElement;
@@ -247,10 +247,9 @@ test("an edit after the rules were written is called out, checked as it stands, 
   await user.type(tool, "mcp/salesforce/*");
 
   expect(
-    view.getByText(
-      "You've changed the rules since they were written. The check and the reading above are for the written rules, not your edit.",
-    ),
+    view.getByText("Rule edited. Review the updated preview before saving."),
   ).toBeTruthy();
+  expect(view.queryByText(OPPORTUNITIES.explanation as string)).toBeNull();
   // The live check says what is wrong with the edit, under the field.
   expect(
     await view.findByText(
@@ -302,6 +301,8 @@ test("a failed preview preserves the draft and a changed description blocks subm
 
   await user.type(description, " for new requests");
   expect(view.getByText(/Your description changed/)).toBeTruthy();
+  expect(view.queryByLabelText("Tool or app")).toBeNull();
+  expect(view.queryByText("On recent activity")).toBeNull();
   expect(save.disabled).toBe(true);
   fireEvent.submit(save.form as HTMLFormElement);
   expect(sent.some((entry) => entry.path.endsWith("/batch"))).toBe(false);

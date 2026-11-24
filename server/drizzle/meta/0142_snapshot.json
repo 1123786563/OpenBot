@@ -1,6 +1,6 @@
 {
-  "id": "430f5a5b-4f02-45f2-a5c9-5a6d38a08300",
-  "prevId": "cd45212a-b076-479b-b2f6-a02361523676",
+  "id": "cd45212a-b076-479b-b2f6-a02361523676",
+  "prevId": "366cc114-ed12-48a3-8f7b-442d84234e07",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17728,53 +17728,45 @@
       },
       "isRLSEnabled": false
     },
-    "public.background_tool_results": {
-      "name": "background_tool_results",
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
       "schema": "",
       "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
+        "actor_id": {
+          "name": "actor_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "call_id": {
-          "name": "call_id",
+        "request_id": {
+          "name": "request_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "tool_ref": {
-          "name": "tool_ref",
+        "fingerprint": {
+          "name": "fingerprint",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "result": {
-          "name": "result",
-          "type": "text",
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "background_tool_results_account_id_operation_id_test_credit_operations_account_id_id_fk": {
-          "name": "background_tool_results_account_id_operation_id_test_credit_operations_account_id_id_fk",
-          "tableFrom": "background_tool_results",
-          "tableTo": "test_credit_operations",
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
           "columnsFrom": [
-            "account_id",
-            "operation_id"
+            "actor_id"
           ],
           "columnsTo": [
-            "account_id",
             "id"
           ],
           "onDelete": "cascade",
@@ -17782,12 +17774,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "background_tool_results_account_id_operation_id_call_id_pk": {
-          "name": "background_tool_results_account_id_operation_id_call_id_pk",
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
           "columns": [
-            "account_id",
-            "operation_id",
-            "call_id"
+            "actor_id",
+            "request_id"
           ]
         }
       },

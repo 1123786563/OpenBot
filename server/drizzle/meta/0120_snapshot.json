@@ -1,6 +1,6 @@
 {
-  "id": "a308fceb-a138-4856-8a04-602e1b482011",
-  "prevId": "dcdc314d-52df-4aa9-9dda-b7014036d587",
+  "id": "dcdc314d-52df-4aa9-9dda-b7014036d587",
+  "prevId": "f8f7ac0c-372a-4425-91f7-f8e64d2abc14",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -15845,135 +15845,63 @@
       },
       "isRLSEnabled": false
     },
-    "public.lago_usage_events": {
-      "name": "lago_usage_events",
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
       "schema": "",
       "columns": {
-        "event_id": {
-          "name": "event_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
+        "actor_id": {
+          "name": "actor_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "resource": {
-          "name": "resource",
+        "request_id": {
+          "name": "request_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_microcredits": {
-          "name": "amount_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
+        "fingerprint": {
+          "name": "fingerprint",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
+          "notNull": true
         },
-        "failure": {
-          "name": "failure",
-          "type": "text",
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
           "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": true
         }
       },
-      "indexes": {
-        "lago_usage_events_pending_idx": {
-          "name": "lago_usage_events_pending_idx",
-          "columns": [
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "lago_usage_events_account_id_test_credit_accounts_id_fk": {
-          "name": "lago_usage_events_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "lago_usage_events",
-          "tableTo": "test_credit_accounts",
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
           "columnsFrom": [
-            "account_id"
+            "actor_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "lago_usage_events_account_id_operation_id_unique": {
-          "name": "lago_usage_events_account_id_operation_id_unique",
-          "nullsNotDistinct": false,
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
           "columns": [
-            "account_id",
-            "operation_id"
+            "actor_id",
+            "request_id"
           ]
         }
       },
+      "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "lago_usage_events_amounts": {
-          "name": "lago_usage_events_amounts",
-          "value": "\"lago_usage_events\".\"input_tokens\" >= 0 AND \"lago_usage_events\".\"output_tokens\" >= 0 AND \"lago_usage_events\".\"amount_microcredits\" >= 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

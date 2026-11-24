@@ -12,6 +12,7 @@ import { PageEmpty } from "@/components/layout/page-shell";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { openBrowserMutationOptions } from "@/lib/browser/mutations";
 import { browserStateQueryOptions } from "@/lib/browser/queries";
+import { ClientError, canKeepCachedRead } from "@/lib/client";
 import { recorderKeys } from "@/lib/recorder/queries";
 import { queryClient } from "@/query-client";
 import { TEACH_A_BOT } from "./browser-nav-item";
@@ -94,16 +95,25 @@ function BrowserContent() {
   }
   // Branched on the data rather than the error: a poll that fails after the page has opened keeps the browser on
   // screen, where tearing it down would open it all over again.
-  if (state.data === undefined) {
+  if (state.data === undefined || !canKeepCachedRead(state.error)) {
+    const signedOut =
+      state.error instanceof ClientError && state.error.status === 401;
     return (
       <DevicePage title={TITLE} description={DESCRIPTION}>
         <ReadError
+          description={
+            signedOut
+              ? "Sign in again to continue."
+              : state.error instanceof ClientError && state.error.status === 403
+                ? "Ask your administrator if you need access to this browser."
+                : undefined
+          }
           message="Couldn't load your browser."
           retry={state.refetch}
           retryBelow
           retrying={state.isFetching}
         />
-        <YourRecordings action={<LearnedLink />} />
+        {signedOut ? null : <YourRecordings action={<LearnedLink />} />}
       </DevicePage>
     );
   }
@@ -235,6 +245,7 @@ function OpenedBrowser({
         heading={heading}
         state={state}
         reopen={() => reopen.mutate()}
+        reopenFailed={reopen.isError}
         reopening={reopen.isPending}
       >
         <YourRecordings

@@ -27,6 +27,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { canKeepCachedRead } from "@/lib/client";
 import { revokeRecorderConnectionMutationOptions } from "@/lib/recorder/mutations";
 import { recorderConnectionsQueryOptions } from "@/lib/recorder/queries";
 import { relativeTime } from "@/lib/relative-time";
@@ -58,7 +59,9 @@ export function ConnectedBrowsers({
   const revoke = useMutation(
     revokeRecorderConnectionMutationOptions(queryClient),
   );
-  const browsers = connections.data?.connections ?? [];
+  const browsers = canKeepCachedRead(connections.error)
+    ? (connections.data?.connections ?? [])
+    : [];
   return (
     <PageSection title="Connected browsers">
       <p

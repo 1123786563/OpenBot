@@ -113,6 +113,8 @@ const originalTrialStamps = [
 
 test.each([
   { startingPoint: "fresh", mainThrough: 0, trialLength: 0 },
+  { startingPoint: "current main", mainThrough: 120, trialLength: 0 },
+  { startingPoint: "merged billing PR", mainThrough: 119, trialLength: 0 },
   { startingPoint: "pre-Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Bifrost main", mainThrough: 93, trialLength: 0 },
@@ -147,6 +149,11 @@ test.each([
     const partialBilling =
       startingPoint === "partial billing pilot" || divergentBilling;
     const billingPilot = initialBilling || latestBilling || partialBilling;
+    const mergedBilling = startingPoint === "merged billing PR";
+    const olderBillingOnly = migrations.slice(120, 145).map((entry) => ({
+      ...entry,
+      when: entry.when - 104585266,
+    }));
     const billing = migrations.slice(110, 113).map((entry, index) => ({
       ...entry,
       when: (initialBilling ? 1795189761200 : 1795415414732) + index,
@@ -163,7 +170,7 @@ test.each([
         : []),
       ...(startingPoint === "current Personal SaaS" ? saas : []),
       ...(billingPilot ? billing.slice(0, partialBilling ? 1 : 3) : []),
-      ...(latestBilling ? migrations.slice(119, 144) : []),
+      ...(latestBilling || mergedBilling ? olderBillingOnly : []),
       ...saas.slice(0, trialLength).map((entry, index) => {
         const when = originalTrialStamps[index];
         if (when === undefined) throw new Error("Missing trial stamp");
@@ -193,7 +200,7 @@ test.each([
         await client`insert into personal_workspaces (owner_id)
           select id from personal_saas_accounts where subject = 'participant'`;
       }
-      if (billingPilot) {
+      if (billingPilot || mergedBilling) {
         await client`insert into test_credit_accounts (issuer, subject)
           values ('https://casdoor.example', 'billing-participant')`;
       }
@@ -237,6 +244,7 @@ test.each([
       expect(await exists(client, "skill_market_runs")).toBe(true);
       expect(await exists(client, "bifrost_market_reviews")).toBe(true);
       expect(await exists(client, "skill_market_equivalences")).toBe(true);
+      expect(await exists(client, "approval_team_rule_saves")).toBe(true);
       expect([
         ...(await client`select hash, created_at::text
         from drizzle.__drizzle_migrations order by created_at::bigint`),
@@ -246,7 +254,7 @@ test.each([
           created_at: String(when),
         })),
       );
-      if (billingPilot) {
+      if (billingPilot || mergedBilling) {
         expect(
           await client`select subject from test_credit_accounts
             where subject = 'billing-participant'`,

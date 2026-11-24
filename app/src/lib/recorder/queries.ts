@@ -140,7 +140,7 @@ export const recordingsQueryOptions = (options?: { waiting?: boolean }) =>
         ? `?cursor=${encodeURIComponent(pageParam)}`
         : "";
       const response = await client(`${recorderPaths.recordings}${suffix}`, {
-        fallback: "Couldn't load your recordings. Reload the page.",
+        fallback: "Couldn't load your recordings.",
       });
       return response.json();
     },

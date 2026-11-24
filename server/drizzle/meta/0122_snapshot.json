@@ -1,6 +1,6 @@
 {
-  "id": "8e98b3d7-b77c-406f-916a-26409283feb0",
-  "prevId": "71840f72-b9f3-4381-aa77-e4542e39a968",
+  "id": "71840f72-b9f3-4381-aa77-e4542e39a968",
+  "prevId": "a308fceb-a138-4856-8a04-602e1b482011",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16161,329 +16161,63 @@
       },
       "isRLSEnabled": false
     },
-    "public.paid_entitlements": {
-      "name": "paid_entitlements",
+    "public.approval_team_rule_saves": {
+      "name": "approval_team_rule_saves",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_id": {
-          "name": "order_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
+        "actor_id": {
+          "name": "actor_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "period_start": {
-          "name": "period_start",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "period_end": {
-          "name": "period_end",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "anchor_day": {
-          "name": "anchor_day",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credits_microcredits": {
-          "name": "credits_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'granted'"
-        },
-        "arrived_at": {
-          "name": "arrived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "paid_entitlements_one_future": {
-          "name": "paid_entitlements_one_future",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "kind = 'subscription' AND state = 'future'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "paid_entitlements_account": {
-          "name": "paid_entitlements_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "arrived_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "paid_entitlements_account_id_test_credit_accounts_id_fk": {
-          "name": "paid_entitlements_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "paid_entitlements",
-          "tableTo": "test_credit_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "paid_entitlements_order_id_paid_orders_id_fk": {
-          "name": "paid_entitlements_order_id_paid_orders_id_fk",
-          "tableFrom": "paid_entitlements",
-          "tableTo": "paid_orders",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "paid_entitlements_amounts": {
-          "name": "paid_entitlements_amounts",
-          "value": "\"paid_entitlements\".\"credits_microcredits\" > 0 AND (\"paid_entitlements\".\"kind\" <> 'subscription' OR (\"paid_entitlements\".\"period_start\" IS NOT NULL AND \"paid_entitlements\".\"period_end\" IS NOT NULL AND \"paid_entitlements\".\"period_end\" > \"paid_entitlements\".\"period_start\" AND \"paid_entitlements\".\"anchor_day\" BETWEEN 1 AND 31))"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.paid_orders": {
-      "name": "paid_orders",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "product_code": {
-          "name": "product_code",
+        "request_id": {
+          "name": "request_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "product_version": {
-          "name": "product_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "price_cents": {
-          "name": "price_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
+        "fingerprint": {
+          "name": "fingerprint",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "channel_order_ref": {
-          "name": "channel_order_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "paid_orders_channel_ref": {
-          "name": "paid_orders_channel_ref",
-          "columns": [
-            {
-              "expression": "channel",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "channel_order_ref",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "paid_orders_account_id_test_credit_accounts_id_fk": {
-          "name": "paid_orders_account_id_test_credit_accounts_id_fk",
-          "tableFrom": "paid_orders",
-          "tableTo": "test_credit_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "paid_orders_amounts": {
-          "name": "paid_orders_amounts",
-          "value": "\"paid_orders\".\"product_version\" > 0 AND \"paid_orders\".\"price_cents\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.paid_products": {
-      "name": "paid_products",
-      "schema": "",
-      "columns": {
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
+        "rule_ids": {
+          "name": "rule_ids",
+          "type": "text[]",
           "primaryKey": false,
           "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "priceCents": {
-          "name": "priceCents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credits_microcredits": {
-          "name": "credits_microcredits",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "paid_products_amounts": {
-          "name": "paid_products_amounts",
-          "value": "\"paid_products\".\"version\" > 0 AND \"paid_products\".\"priceCents\" > 0 AND \"paid_products\".\"credits_microcredits\" > 0"
+      "foreignKeys": {
+        "approval_team_rule_saves_actor_id_users_id_fk": {
+          "name": "approval_team_rule_saves_actor_id_users_id_fk",
+          "tableFrom": "approval_team_rule_saves",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {
+        "approval_team_rule_saves_actor_id_request_id_pk": {
+          "name": "approval_team_rule_saves_actor_id_request_id_pk",
+          "columns": [
+            "actor_id",
+            "request_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },
