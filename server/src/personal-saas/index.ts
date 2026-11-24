@@ -319,6 +319,7 @@ const app = createPersonalSaasApp(
 
 if (restoredClosures.length) {
   await app.sweepWorkspaceClosures();
+  await app.sweepWorkspaceCleanup();
   const records = await database
     .select({ cleanup: personalWorkspaceClosures.cleanup })
     .from(personalWorkspaceClosures)
@@ -402,6 +403,15 @@ repeatAfterEach(async () => {
     await app.sweepWorkspaceClosures();
   } catch {
     console.warn(JSON.stringify({ type: "workspace-closure-sweep-failure" }));
+  }
+}, 1_000);
+repeatAfterEach(async () => {
+  try {
+    await app.sweepWorkspaceCleanup();
+  } catch {
+    console.warn(
+      JSON.stringify({ type: "workspace-closure-cleanup-sweep-failure" }),
+    );
   }
 }, 1_000);
 repeatAfterEach(async () => {
