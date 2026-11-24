@@ -1,6 +1,12 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NameRow } from "@/components/settings/profile";
@@ -37,13 +43,17 @@ function client(needsName = true) {
 }
 
 async function draw(query: typeof queryClient) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routeTree: createRootRoute({ component: NameRow }),
+  });
   const view = render(
     <QueryClientProvider client={query}>
-      <NameRow />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
   const user = userEvent.setup({ document });
-  await user.click(view.getByRole("button", { name: /^Name/ }));
+  await user.click(await view.findByRole("button", { name: /^Name/ }));
   const input = await view.findByLabelText("Name");
   return { view, user, input };
 }

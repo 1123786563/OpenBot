@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { GroupChat } from "@/components/channels/group-chat";
@@ -88,13 +88,16 @@ test("a conversation's answers and its composer share one column", () => {
 });
 
 test("a group conversation's answers are as wide as a conversation's", async () => {
-  queryClient.setQueryData(groupKeys.detail("g-1"), {
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+  client.setQueryData(groupKeys.detail("g-1"), {
     bots: [],
     people: [],
     messages: [],
   });
   const view = render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={client}>
       <GroupChat channelId="g-1" />
     </QueryClientProvider>,
   );
