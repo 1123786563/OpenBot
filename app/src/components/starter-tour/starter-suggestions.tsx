@@ -1,7 +1,10 @@
-import { CopilotChatSuggestionView } from "@copilotkit/react-core/v2";
+import { Button } from "@astryxdesign/core/Button";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { isStarterTourAgent } from "@openbot/shared/starter-tour";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { userPreferencesQueryOptions } from "@/lib/settings/message-list";
@@ -86,26 +89,30 @@ function StarterSuggestionChoices({ onSelect, disabled = false }: Props) {
      * border lost in the pane's. `mb-3` is the app's gap between stacked controls; the 8px it had
      * read as the row sitting on the composer.
      */
-    <section
+    <Stack
+      {...astryxScope}
+      align="start"
+      as="section"
       aria-label="Starter tasks"
-      className="relative mb-3 w-full max-w-2xl px-3 [&>div]:gap-1 [&>div]:bg-transparent"
+      className="relative mb-3 w-full max-w-2xl px-3"
+      gap={1}
     >
-      <CopilotChatSuggestionView
-        suggestions={STARTER_SUGGESTIONS}
-        suggestion={{
-          disabled: disabled || sending,
-          className:
-            "px-2 py-1 text-xs leading-4 text-muted-foreground bg-transparent",
-        }}
-        onSelectSuggestion={(_suggestion, index) => {
-          void choose(index);
-        }}
-      />
+      {STARTER_SUGGESTIONS.map((suggestion, index) => (
+        <Button
+          isDisabled={disabled || sending}
+          key={suggestion.title}
+          label={suggestion.title}
+          onClick={() => void choose(index)}
+          size="sm"
+          type="button"
+          variant="ghost"
+        />
+      ))}
       {error ? (
-        <p role="alert" className="mt-2 text-sm text-destructive">
+        <Text as="p" className="mt-2 text-destructive text-sm" role="alert">
           {error}
-        </p>
+        </Text>
       ) : null}
-    </section>
+    </Stack>
   );
 }

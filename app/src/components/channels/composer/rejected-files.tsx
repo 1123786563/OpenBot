@@ -1,3 +1,6 @@
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { HStack, Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { IconX } from "@tabler/icons-react";
 
 import { Collapse } from "./collapse";
@@ -65,35 +68,42 @@ export function RejectedFiles({
      */
     <Collapse className="pb-2" open={rejected.length > 0}>
       {rejected.length > 0 ? (
-        <div
-          className="flex items-start gap-2 rounded-lg border border-destructive border-dashed p-2"
+        <HStack
+          align="start"
+          className="rounded-lg border border-destructive border-dashed p-2"
+          gap={2}
           role="alert"
         >
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Stack className="min-w-0 flex-1" gap={1}>
             {rejected.map((file) => (
-              <p className="text-destructive text-sm" key={file.id}>
-                <span className="font-medium">{file.name}</span>: {file.reason}
-              </p>
+              <Text as="p" className="text-destructive text-sm" key={file.id}>
+                <Text weight="medium">{file.name}</Text>: {file.reason}
+              </Text>
             ))}
-          </div>
+          </Stack>
           {/*
            * One button for the block, not one per line. These arrive together — a drop of eight
            * files refuses several at once — and are read together, so dismissing them one at a
            * time is work without a purpose.
            */}
-          <button
-            aria-label={
+          <IconButton
+            icon={<IconX className="size-4" />}
+            label={
               rejected.length === 1
                 ? "Dismiss this refusal"
                 : `Dismiss these ${rejected.length} refusals`
             }
-            className="-m-1 shrink-0 rounded p-1 text-destructive/70 transition-colors hover:text-destructive"
             onClick={onDismiss}
+            size="sm"
+            tooltip={
+              rejected.length === 1
+                ? "Dismiss this refusal"
+                : `Dismiss these ${rejected.length} refusals`
+            }
             type="button"
-          >
-            <IconX className="size-4" />
-          </button>
-        </div>
+            variant="ghost"
+          />
+        </HStack>
       ) : null}
     </Collapse>
   );

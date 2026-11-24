@@ -7,6 +7,7 @@ import {
   render,
 } from "@testing-library/react";
 import { Composer } from "@/components/channels/composer/composer";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -336,8 +337,6 @@ test("a disabled composer with no channel does not tell people to send first", a
   expect(alert.textContent).toContain("can no longer take messages");
   // The half that made the old sentence a lie, asserted rather than assumed: the control it sent
   // them to is shut.
-  expect((getByLabelText("Send message") as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(isDisabled(getByLabelText("Send message"))).toBe(true);
   expect(alert.textContent).not.toContain("Send this message first");
 });
