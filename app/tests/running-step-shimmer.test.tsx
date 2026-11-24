@@ -146,9 +146,9 @@ test("once every step has its answer and the model is still going, the transcrip
   const view = render(transcript(run(true), true));
 
   expect(await view.findByText("Used Gmail")).toBeTruthy();
-  const thinking = view.getByText("Thinking");
-  expect(thinking.getAttribute("role")).toBe("status");
-  expect(thinking.classList.contains(SHIMMER)).toBe(true);
+  // The line is a status region that says it is thinking, and its words shimmer.
+  const line = view.getByText("Thinking").closest('[role="status"]');
+  expect(line?.classList.contains(SHIMMER)).toBe(true);
 
   // The turn ends: nothing says it is still working.
   view.rerender(transcript(run(true), false));

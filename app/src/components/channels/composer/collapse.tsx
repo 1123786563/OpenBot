@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -49,7 +50,7 @@ export function Collapse({
   open: boolean;
 }) {
   const shouldReduceMotion = useReducedMotion();
-  const content = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLElement>(null);
   const [openHeight, setOpenHeight] = useState(0);
 
   /**
@@ -134,9 +135,9 @@ export function Collapse({
         ease: EASE_OUT,
       }}
     >
-      <div className={className} ref={content}>
+      <Stack className={className} ref={content}>
         {children}
-      </div>
+      </Stack>
     </motion.div>
   );
 }

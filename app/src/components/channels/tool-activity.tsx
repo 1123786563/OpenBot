@@ -1,3 +1,6 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { CopilotKitContext } from "@copilotkit/react-core/v2/context";
 import { outcomeForPerson } from "@openbot/shared/approval-outcomes";
 import {
@@ -26,6 +29,7 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import {
+  Fragment,
   useCallback,
   useContext,
   useMemo,
@@ -678,19 +682,22 @@ export function StepIcon({
  */
 function IconStack({ kinds }: { kinds: StepKind[] }) {
   return (
-    <span aria-hidden className="flex items-center">
+    <Stack as="span" direction="horizontal" align="center" aria-hidden>
       {kinds.map((kind, index) => (
-        <span
+        <Stack
+          as="span"
+          align="center"
+          justify="center"
           key={kind}
           style={{ zIndex: kinds.length - index }}
-          className={`relative flex size-6 items-center justify-center rounded-full bg-muted text-muted-foreground ring-2 ring-background ${
+          className={`relative size-6 rounded-full bg-muted text-muted-foreground ring-2 ring-background ${
             index > 0 ? "-ml-1.5" : ""
           }`}
         >
           <StepIcon kind={kind} size="size-4" />
-        </span>
+        </Stack>
       ))}
-    </span>
+    </Stack>
   );
 }
 
@@ -703,17 +710,25 @@ export function StepStatus({
 }) {
   if (step.pending)
     return (
-      <span className="shrink-0 text-muted-foreground">
+      <Text as="span" className="shrink-0" color="secondary">
         {active ? "In progress" : "Not completed"}
-      </span>
+      </Text>
     );
   if (step.refused)
-    return <span className="shrink-0 text-destructive">Blocked</span>;
+    return (
+      <Stack as="span" className="shrink-0 text-(--color-text-error)">
+        <Text as="span" color="inherit" type="inherit">
+          Blocked
+        </Text>
+      </Stack>
+    );
   if (step.failed)
     return (
-      <span className="shrink-0 text-amber-600 dark:text-amber-500">
-        Didn't work
-      </span>
+      <Stack as="span" className="shrink-0 text-(--color-text-warning)">
+        <Text as="span" color="inherit" type="inherit">
+          Didn't work
+        </Text>
+      </Stack>
     );
   return null;
 }
@@ -735,11 +750,21 @@ export function StepRow({
    */
   const running = active && step.pending;
   const line = (
-    <span className="flex min-w-0 items-center gap-2">
+    <Stack
+      as="span"
+      direction="horizontal"
+      align="center"
+      gap={2}
+      className="min-w-0"
+    >
       <StepIcon kind={step.kind} />
-      <span className={running ? "shrink-0 tool-line-running" : "shrink-0"}>
+      <Text
+        as="span"
+        className={running ? "shrink-0 tool-line-running" : "shrink-0"}
+        color="inherit"
+      >
         {step.label}
-      </span>
+      </Text>
       {step.href ? (
         <a
           href={step.href}
@@ -750,16 +775,20 @@ export function StepRow({
           {step.detail ?? step.href}
         </a>
       ) : step.detail ? (
-        <span className="truncate text-muted-foreground">{step.detail}</span>
+        <Text as="span" className="truncate" color="secondary">
+          {step.detail}
+        </Text>
       ) : null}
       <StepStatus step={step} active={active} />
-    </span>
+    </Stack>
   );
   const reason =
     step.failed && step.kind === "browser" ? (
-      <p className="mt-0.5 pl-6 text-destructive">
-        {step.reason ?? "Couldn't finish this step."}
-      </p>
+      <Stack as="p" className="mt-0.5 pl-6 text-(--color-text-error)">
+        <Text as="span" color="inherit" type="inherit">
+          {step.reason ?? "Couldn't finish this step."}
+        </Text>
+      </Stack>
     ) : null;
   // A browser step says everything it has in its line. Anything else opens to what it was given
   // and what came back, which no other place in the transcript shows.
@@ -774,15 +803,18 @@ export function StepRow({
     <li className="min-w-0">
       <details className="tool-line min-w-0">
         <summary className="flex cursor-pointer list-none items-center gap-1.5">
-          <span
+          <Text
+            as="span"
             aria-hidden
-            className="tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"
+            className="tool-line-chevron shrink-0 transition-transform"
+            color="secondary"
+            size="sm"
           >
             ▸
-          </span>
+          </Text>
           {line}
         </summary>
-        <div className="mt-1.5 space-y-2 pl-5">
+        <Stack className="mt-1.5 pl-5" gap={2}>
           {step.sources ? (
             <ResearchResults
               label={
@@ -796,19 +828,19 @@ export function StepRow({
           {step.inputs.length && !step.sources ? (
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
               {step.inputs.map(([key, value]) => (
-                <div className="contents" key={key}>
+                <Fragment key={key}>
                   <dt>{key}</dt>
                   <dd className="min-w-0 break-words text-foreground/80">
                     {value}
                   </dd>
-                </div>
+                </Fragment>
               ))}
             </dl>
           ) : null}
           {step.output && !step.sources ? (
             <StepOutput output={step.output} verbatim={step.verbatim} />
           ) : null}
-        </div>
+        </Stack>
       </details>
     </li>
   );
@@ -828,12 +860,16 @@ export function StepOutput({
 }) {
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
-  const measure = useCallback((element: HTMLDivElement | null) => {
+  const measure = useCallback((element: HTMLElement | null) => {
     if (element) setLong(element.scrollHeight > element.clientHeight + 1);
   }, []);
   return (
-    <div className="rounded-md bg-muted/50 px-3 py-2">
-      <div
+    <Stack
+      className="rounded-md bg-muted/50"
+      paddingBlock={2}
+      paddingInline={3}
+    >
+      <Stack
         className={`relative ${open ? "" : "max-h-40 overflow-hidden"}`}
         ref={measure}
       >
@@ -842,29 +878,32 @@ export function StepOutput({
             {output}
           </pre>
         ) : (
-          <div className="[&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
+          <Stack className="[&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
             <Streamdown
               components={markdownComponents}
               plugins={markdownPlugins}
             >
               {forDisplay(output)}
             </Streamdown>
-          </div>
+          </Stack>
         )}
         {long && !open ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-muted to-transparent" />
+          <Stack
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-muted to-transparent"
+          />
         ) : null}
-      </div>
+      </Stack>
       {long ? (
-        <button
-          className="mt-1 text-muted-foreground hover:text-foreground"
+        <Button
+          className="mt-1"
+          label={open ? "Show less" : "Show all"}
           onClick={() => setOpen(!open)}
-          type="button"
-        >
-          {open ? "Show less" : "Show all"}
-        </button>
+          size="sm"
+          variant="ghost"
+        />
       ) : null}
-    </div>
+    </Stack>
   );
 }
 

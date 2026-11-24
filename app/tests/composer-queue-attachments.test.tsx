@@ -24,6 +24,7 @@ import {
   attachmentUrl,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@/lib/channels/attachments";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -205,7 +206,7 @@ async function uploaded({ queryByLabelText }: RenderResult, name: string) {
     expect(queryByLabelText(`Remove ${name}`)).not.toBeNull();
     const button = (queryByLabelText("Send message") ??
       queryByLabelText("Queue message")) as HTMLButtonElement | null;
-    expect(button?.disabled).toBe(false);
+    expect(isDisabled(button)).toBe(false);
   });
 }
 
@@ -317,7 +318,7 @@ async function dropAndWait(view: RenderResult, files: File[]) {
   await waitFor(() => {
     const button = (view.queryByLabelText("Send message") ??
       view.queryByLabelText("Queue message")) as HTMLButtonElement | null;
-    expect(button?.disabled).toBe(false);
+    expect(isDisabled(button)).toBe(false);
   });
 }
 

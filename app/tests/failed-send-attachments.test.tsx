@@ -31,6 +31,7 @@ import {
   channelKeys,
 } from "@/lib/channels/queries";
 import { queryClient } from "@/query-client";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -291,7 +292,7 @@ async function uploaded(view: RenderResult, names: readonly string[]) {
     }
     const button = (view.queryByLabelText("Send message") ??
       view.queryByLabelText("Queue message")) as HTMLButtonElement | null;
-    expect(button?.disabled).toBe(false);
+    expect(isDisabled(button)).toBe(false);
   });
 }
 
@@ -439,7 +440,7 @@ test("a failed send restored beside a second batch cannot be retried over the pe
   // THE FINDING. Sixteen attachments is not a message this deployment accepts, and the button that
   // sends it must say so rather than letting the retry discover it as a rejected request.
   const send = view.getByLabelText("Send message") as HTMLButtonElement;
-  expect(send.disabled).toBe(true);
+  expect(isDisabled(send)).toBe(true);
   expect(
     view.getByText(new RegExp(`at most ${MAX_ATTACHMENTS_PER_MESSAGE}`, "i")),
   ).toBeTruthy();
@@ -456,9 +457,7 @@ test("a failed send restored beside a second batch cannot be retried over the pe
   }
   await waitFor(() => {
     expect(chips(view)).toHaveLength(MAX_ATTACHMENTS_PER_MESSAGE);
-    expect(
-      (view.getByLabelText("Send message") as HTMLButtonElement).disabled,
-    ).toBe(false);
+    expect(isDisabled(view.getByLabelText("Send message"))).toBe(false);
   });
   await waitFor(() =>
     expect(deletes).toEqual(

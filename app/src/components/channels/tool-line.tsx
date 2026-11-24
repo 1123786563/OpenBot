@@ -1,3 +1,5 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import type { ReactNode } from "react";
 
 /**
@@ -63,18 +65,27 @@ export function ToolLine({
   bare?: boolean;
 }) {
   const tone = refused
-    ? "text-destructive"
+    ? "text-(--color-text-error)"
     : failed
-      ? "text-amber-600 dark:text-amber-500"
+      ? "text-(--color-text-warning)"
       : "text-muted-foreground";
 
   const text = (
-    <span
-      className={`inline-flex min-w-0 max-w-full items-baseline gap-1.5 text-sm ${tone} ${
+    <Stack
+      as="span"
+      direction="horizontal"
+      gap={1.5}
+      align="start"
+      maxWidth="100%"
+      className={`min-w-0 items-baseline text-sm ${tone} ${
         running ? "tool-line-running" : ""
       }`}
     >
-      {icon ? <span className="shrink-0 self-center">{icon}</span> : null}
+      {icon ? (
+        <Text color="inherit" type="inherit" className="shrink-0 self-center">
+          {icon}
+        </Text>
+      ) : null}
       {/*
        * Free to shrink, so a long label (a folded run's "Read 1 file, searched for 2 patterns and
        * listed 1 directory") wraps in a phone-width column instead of running past it. The detail
@@ -82,7 +93,10 @@ export function ToolLine({
        * the label, enough to break "Asked you" over two lines beside a long question. So a label of a
        * few words never shrinks at all, and only a long one is left free to wrap.
        */}
-      <span
+      <Text
+        as="span"
+        color="inherit"
+        type="inherit"
         className={
           label.length <= SHORT_LABEL ? "shrink-0 whitespace-nowrap" : "min-w-0"
         }
@@ -96,16 +110,21 @@ export function ToolLine({
               : byYou
                 ? `${label}, done by you`
                 : label}
-      </span>
+      </Text>
       {detail ? (
-        <span className="min-w-0 shrink-[100] truncate opacity-70">
+        <Text
+          as="span"
+          color="inherit"
+          type="inherit"
+          className="min-w-0 shrink-[100] truncate opacity-70"
+        >
           {detail}
-        </span>
+        </Text>
       ) : null}
-    </span>
+    </Stack>
   );
 
-  if (!children) return <div className="my-1.5">{text}</div>;
+  if (!children) return <Stack className="my-1.5">{text}</Stack>;
 
   return (
     <details className="tool-line my-1.5 min-w-0">
@@ -114,23 +133,27 @@ export function ToolLine({
        * of this component's React state.
        */}
       <summary className="flex cursor-pointer list-none items-baseline gap-1.5">
-        <span
+        <Text
+          as="span"
           aria-hidden
-          className="tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"
+          color="secondary"
+          size="sm"
+          className="tool-line-chevron shrink-0 text-xs transition-transform"
         >
           ▸
-        </span>
+        </Text>
         {text}
       </summary>
       {/*
        * Headings are cut down to the size of the surrounding text. A tool result is markdown a
        * server wrote for a model, so its `#` is a section marker rather than a page title.
        */}
-      <div
-        className={`mt-2 border-l pl-3 text-xs ${bare ? "" : "max-h-80 overflow-auto"} [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium`}
+      <Stack
+        className={`mt-2 border-l text-xs ${bare ? "" : "max-h-80 overflow-auto"} [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium`}
+        paddingInlineStart={3}
       >
         {children}
-      </div>
+      </Stack>
     </details>
   );
 }

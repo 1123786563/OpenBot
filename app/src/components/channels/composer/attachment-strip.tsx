@@ -1,9 +1,15 @@
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { IconFile, IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 
-import { Skeleton } from "@/components/ui/skeleton";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { Collapse } from "./collapse";
+
+/** A Stack that motion can animate, so a tile keeps its list-item element. */
+const MotionStack = motion.create(Stack);
 
 /**
  * WHAT IS ON THE COMPOSER, DRAWN AS ITS OWN ROW ACROSS THE TOP.
@@ -82,10 +88,15 @@ export function AttachmentStrip({
      * reach when the attribute is on.
      */
     <Collapse open={occupied}>
-      <ul
+      <Stack
+        align="start"
         aria-hidden={!occupied}
         aria-label="Attachments"
-        className="flex flex-wrap items-start gap-2 pb-3"
+        as="ul"
+        className="pb-3"
+        direction="horizontal"
+        gap={2}
+        wrap="wrap"
       >
         {images.map((image) => (
           <Staged key={image.id}>
@@ -100,9 +111,11 @@ export function AttachmentStrip({
                * region, and a paste of eight images would interrupt eight times to say so.
                */
               <Skeleton
+                aria-hidden={undefined}
                 aria-label={`${image.alt ?? "Attachment"}, uploading`}
-                className="size-20 rounded-xl"
+                height="var(--spacing-20)"
                 role="img"
+                width="var(--spacing-20)"
               />
             ) : (
               <img
@@ -123,7 +136,8 @@ export function AttachmentStrip({
            * attachments rather than as two things that happened to land next to each other.
            */
           <Staged
-            className="flex h-20 w-40 flex-col justify-between rounded-xl border border-border bg-muted/40 p-2"
+            className="h-20 w-40 rounded-xl border border-border bg-muted/40 p-2"
+            justify="between"
             key={file.id}
           >
             {/*
@@ -133,12 +147,16 @@ export function AttachmentStrip({
              * tiles that carry the warning, which is the wrong moment to look broken.
              */}
             <IconFile className="size-5 shrink-0 text-muted-foreground" />
-            <div className="min-w-0">
-              <p className="truncate font-medium text-xs" title={file.name}>
-                {file.name}
-              </p>
+            <Stack className="min-w-0">
+              <span title={file.name}>
+                <Text className="truncate font-medium text-xs" display="block">
+                  {file.name}
+                </Text>
+              </span>
               {file.loading ? (
-                <p className="text-muted-foreground text-xs">Uploading…</p>
+                <Text as="p" className="text-muted-foreground text-xs">
+                  Uploading…
+                </Text>
               ) : file.size === undefined ? null : (
                 /*
                  * ON THE SIZE LINE, NOT UNDER IT, AND THAT IS A LAYOUT CONSTRAINT RATHER THAN A
@@ -153,23 +171,27 @@ export function AttachmentStrip({
                  * phrasing is what keeps it from ellipsizing at any realistic size; `title`
                  * carries the sentence that actually explains it.
                  */
-                <p
-                  className="truncate text-muted-foreground text-xs"
+                <span
                   title={
                     file.mayTruncate === true
                       ? "The Bot reads only the first 120,000 characters of this file."
                       : undefined
                   }
                 >
-                  {formatBytes(file.size)}
-                  {file.mayTruncate === true ? " · may be cut" : null}
-                </p>
+                  <Text
+                    className="truncate text-muted-foreground text-xs"
+                    display="block"
+                  >
+                    {formatBytes(file.size)}
+                    {file.mayTruncate === true ? " · may be cut" : null}
+                  </Text>
+                </span>
               )}
-            </div>
+            </Stack>
             <RemoveButton name={file.name} onRemove={() => onRemove(file.id)} />
           </Staged>
         ))}
-      </ul>
+      </Stack>
     </Collapse>
   );
 }
@@ -190,22 +212,26 @@ export function AttachmentStrip({
 function Staged({
   children,
   className,
+  justify,
 }: {
   children: React.ReactNode;
   className?: string;
+  justify?: "between";
 }) {
   const shouldReduceMotion = useReducedMotion();
 
   return (
-    <motion.li
+    <MotionStack
       animate={{ opacity: 1, scale: 1 }}
+      as="li"
       className={className ? `relative ${className}` : "relative"}
       initial={{ opacity: 0, scale: shouldReduceMotion ? 1 : 0.85 }}
+      justify={justify}
       layout
       transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
     >
       {children}
-    </motion.li>
+    </MotionStack>
   );
 }
 
@@ -224,14 +250,16 @@ function RemoveButton({
   onRemove: () => void;
 }) {
   return (
-    <button
-      aria-label={`Remove ${name}`}
-      className="absolute top-1 right-1 grid size-5 place-items-center rounded-full border border-border bg-background/90 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+    <IconButton
+      className="absolute top-1 right-1"
+      icon={<IconX className="size-3" />}
+      label={`Remove ${name}`}
       onClick={onRemove}
+      size="sm"
+      tooltip={`Remove ${name}`}
       type="button"
-    >
-      <IconX className="size-3" />
-    </button>
+      variant="secondary"
+    />
   );
 }
 

@@ -1,11 +1,15 @@
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { IconCheck } from "@tabler/icons-react";
 import { type RegisterableHotkey, useHotkeys } from "@tanstack/react-hotkeys";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { Badge, type Tone } from "@/components/gallery/frame";
-import { Button } from "@/components/ui/button";
 import { EASE_OUT } from "@/lib/motion";
-import { cn } from "@/lib/utils";
 import { useNewestDecision } from "./newest-decision";
 
 /** One answer a person can give. */
@@ -44,7 +48,7 @@ const COLLAPSE_SECONDS = 0.22;
  * THE KEYBOARD. 1 to 9 pick a row and Enter sends it, as in T3 Code, but only on the newest card
  * that is waiting (`useNewestDecision`), so two cards never both take a key, and never while the
  * person is typing somewhere (TanStack's single-key hotkeys skip inputs and contenteditable, so
- * the message box keeps every digit). The rows are native radios, so Up and Down move between them.
+ * the message box keeps every digit). The rows are Astryx radios, so Up and Down move between them.
  *
  * ANSWERING FOLDS THE CARD. The rows and the button close up and the answer takes their place as one
  * line, so a conversation that asked ten things does not stay ten cards tall. Shown already folded
@@ -133,18 +137,30 @@ export function DecisionCard({
   };
 
   return (
-    <figure
+    <Stack
+      as="figure"
       ref={card}
       className="my-2 w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-card dark:border-transparent"
       data-slot="decision-card"
     >
-      <figcaption className="flex items-start gap-4 px-4 pt-3 pb-2">
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-sm">{title}</p>
+      <Stack
+        as="figcaption"
+        direction="horizontal"
+        gap={4}
+        paddingInline={4}
+        paddingBlockStart={3}
+        paddingBlockEnd={2}
+      >
+        <Stack minHeight={0} className="flex-1" gap={0.5}>
+          <Text as="p" weight="medium" size="base">
+            {title}
+          </Text>
           {caption ? (
-            <p className="mt-0.5 text-muted-foreground text-xs">{caption}</p>
+            <Text as="p" color="secondary" size="sm">
+              {caption}
+            </Text>
           ) : null}
-        </div>
+        </Stack>
         {/* Swapped in place, so the badge's change of word is the only thing that moves. */}
         <AnimatePresence initial={false} mode="popLayout">
           <motion.span
@@ -163,7 +179,7 @@ export function DecisionCard({
             )}
           </motion.span>
         </AnimatePresence>
-      </figcaption>
+      </Stack>
 
       <AnimatePresence initial={false}>
         {waiting ? (
@@ -175,110 +191,91 @@ export function DecisionCard({
             style={{ overflow: "hidden" }}
             transition={fold}
           >
-            {children ? <div className="px-4 pb-3">{children}</div> : null}
+            {children ? (
+              <Stack paddingInline={4} paddingBlockEnd={3}>
+                {children}
+              </Stack>
+            ) : null}
             {/*
-             * Native radios, one group per card, styled as rows: the browser gives them the radio
-             * group's keys (Tab to the picked row, Up and Down to move) and screen readers name
-             * them as choices.
+             * Astryx radios, one group per card: the browser gives them the radio group's keys
+             * (Tab to the picked row, Up and Down to move) and screen readers name them as choices.
              */}
-            {/* A fieldset is as wide as its longest word unless told otherwise, which clipped a long link. */}
-            <fieldset
-              aria-label={title}
-              className="min-w-0 border-border border-t"
+            <Stack
+              gap={2}
+              paddingInline={4}
+              paddingBlock={2}
+              className="border-border border-t"
             >
-              {options.map((option, index) => (
-                <label
-                  className={cn(
-                    "flex w-full cursor-pointer items-start gap-3 border-border border-b px-4 py-2.5 transition-colors duration-150 has-[:focus-visible]:bg-foreground/5",
-                    picked === option.value
-                      ? "bg-primary/[0.06]"
-                      : "hover:bg-foreground/[0.03]",
-                  )}
-                  key={option.value}
-                >
-                  <input
-                    // Named for the answer, with what it does read after it.
-                    aria-describedby={
-                      option.description ? `${id}-${index}` : undefined
+              <RadioList
+                htmlName={id}
+                isDisabled={submitting}
+                isLabelHidden
+                label={title}
+                onChange={pick}
+                value={picked}
+              >
+                {options.map((option, index) => (
+                  <RadioListItem
+                    description={
+                      option.description ? (
+                        <Text
+                          as="span"
+                          className="min-w-0 break-words"
+                          type="inherit"
+                        >
+                          {option.description}
+                        </Text>
+                      ) : undefined
                     }
-                    aria-label={option.label}
-                    checked={picked === option.value}
-                    className="peer sr-only"
-                    disabled={submitting}
-                    name={id}
-                    onChange={() => pick(option.value)}
-                    type="radio"
+                    endContent={<Key index={index} />}
+                    key={option.value}
+                    label={option.label}
                     value={option.value}
                   />
-                  <Dot on={picked === option.value} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium text-sm">
-                      {option.label}
-                    </span>
-                    {option.description ? (
-                      <span
-                        className="mt-0.5 block break-words text-muted-foreground text-xs"
-                        id={`${id}-${index}`}
-                      >
-                        {option.description}
-                      </span>
-                    ) : null}
-                  </span>
-                  <Key index={index} />
-                </label>
-              ))}
-              {other ? (
-                <div
-                  className={cn(
-                    "flex w-full items-center gap-3 border-border border-b px-4 py-2.5 transition-colors duration-150",
-                    picked === OTHER && "bg-primary/[0.06]",
-                  )}
-                >
-                  <input
-                    aria-label={other.placeholder}
-                    checked={picked === OTHER}
-                    className="peer sr-only"
-                    disabled={submitting}
-                    name={id}
-                    onChange={() => pick(OTHER)}
-                    type="radio"
+                ))}
+                {other ? (
+                  <RadioListItem
+                    endContent={<Key index={values.length - 1} />}
+                    label={other.placeholder}
                     value={OTHER}
                   />
-                  <Dot on={picked === OTHER} />
-                  <input
-                    aria-label="Your answer"
-                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    disabled={submitting}
-                    onChange={(event) => setText(event.target.value)}
-                    onFocus={() => setPicked(OTHER)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        send();
-                      }
-                    }}
-                    placeholder={other.placeholder}
-                    ref={field}
-                    value={text}
-                  />
-                  <Key index={values.length - 1} />
-                </div>
+                ) : null}
+              </RadioList>
+              {other ? (
+                <TextInput
+                  isDisabled={submitting}
+                  isLabelHidden
+                  label="Your answer"
+                  onChange={setText}
+                  onFocus={() => setPicked(OTHER)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      send();
+                    }
+                  }}
+                  placeholder={other.placeholder}
+                  ref={field}
+                  value={text}
+                />
               ) : null}
-            </fieldset>
-            {error ? (
-              <p className="px-4 pt-2 text-destructive text-sm" role="alert">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex justify-end px-4 py-2.5">
-              <Button disabled={!canSend} onClick={send}>
-                {submitting
-                  ? "Sending…"
-                  : picked === OTHER
-                    ? "Send"
-                    : (pickedOption?.label ?? "Send")}
-              </Button>
-            </div>
+              {error ? (
+                <Banner role="alert" status="error" title={error} />
+              ) : null}
+              <Stack direction="horizontal" justify="end">
+                <Button
+                  isDisabled={!canSend}
+                  label={
+                    submitting
+                      ? "Sending…"
+                      : picked === OTHER
+                        ? "Send"
+                        : (pickedOption?.label ?? "Send")
+                  }
+                  onClick={send}
+                />
+              </Stack>
+            </Stack>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -292,37 +289,29 @@ export function DecisionCard({
             style={{ overflow: "hidden" }}
             transition={{ ...fold, delay: reduceMotion ? 0 : 0.06 }}
           >
-            <p className="flex min-w-0 items-center gap-2 border-border border-t px-4 py-2.5 text-sm">
+            <Stack
+              direction="horizontal"
+              align="center"
+              gap={2}
+              paddingInline={4}
+              paddingBlock={3}
+              className="min-w-0 border-border border-t"
+            >
               <IconCheck
                 aria-hidden
-                className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                className="size-4 shrink-0 text-(--color-text-success)"
               />
-              <span className="font-medium">
-                {answer.choice ?? answer.label}
-              </span>
+              <Text weight="medium">{answer.choice ?? answer.label}</Text>
               {answer.note ? (
-                <span className="min-w-0 truncate text-muted-foreground">
+                <Text className="min-w-0 truncate" color="secondary">
                   “{answer.note}”
-                </span>
+                </Text>
               ) : null}
-            </p>
+            </Stack>
           </motion.div>
         ) : null}
       </AnimatePresence>
-    </figure>
-  );
-}
-
-/** The radio's dot: a ring, filled in on the picked row. */
-function Dot({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "mt-0.5 size-3.5 shrink-0 rounded-full border transition-[border-width,border-color] duration-150",
-        on ? "border-[4.5px] border-primary" : "border-foreground/25",
-      )}
-    />
+    </Stack>
   );
 }
 
@@ -332,7 +321,7 @@ function Key({ index }: { index: number }) {
   return (
     <kbd
       aria-hidden
-      className="ml-auto shrink-0 px-1 font-mono text-muted-foreground text-xs leading-5"
+      className="ml-auto shrink-0 px-1 font-mono text-(--color-text-secondary) text-xs leading-5"
     >
       {index + 1}
     </kbd>
