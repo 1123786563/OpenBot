@@ -121,7 +121,7 @@ async function reconcileTrialJournal(
   applied: readonly AppliedMigration[],
 ): Promise<boolean> {
   const mark = migratorHighWaterMark(applied);
-  const trialLength = TRIAL_STAMPS.findIndex((when) => when === mark) + 1;
+  const trialLength = TRIAL_STAMPS.indexOf(mark) + 1;
   if (trialLength === 0) return false;
 
   const directChatIndex = folder.findIndex(
@@ -198,8 +198,7 @@ async function reconcileBillingJournal(
     "0111_test_credit_reconciliation",
     "0112_test_credit_cutoff_index",
   ];
-  const billingLength =
-    stamps.findIndex((stamp) => stamp === migratorHighWaterMark(applied)) + 1;
+  const billingLength = stamps.indexOf(migratorHighWaterMark(applied)) + 1;
   if (!billingLength) return false;
 
   const firstBilling = folder.findIndex(({ tag }) => tag === tags[0]);
