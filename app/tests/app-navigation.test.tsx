@@ -339,6 +339,7 @@ test("sidebar and the open account menu switch language without remounting", asy
     { label: "目标", to: "/responsibilities?view=goals" },
     { label: "能力", to: "/capabilities" },
     { label: "连接", to: "/connections" },
+    { label: "积分", to: "/billing" },
   ]);
   expect(
     within(workspace).getByRole("img", { name: "1 件事需要你处理" }),
@@ -390,12 +391,14 @@ const TEAM_PRIMARY = [
   ["目标", "/responsibilities?view=goals"],
   ["能力", "/capabilities"],
   ["连接", "/connections"],
+  ["积分", "/billing"],
 ] as const;
 const PERSONAL_PRIMARY = [
   ["Bot", "/bots"],
   ["例行任务", "/routines"],
   ["目标", "/responsibilities?view=goals"],
   ["连接", "/connections"],
+  ["积分", "/billing"],
 ] as const;
 const BUSINESS_THEN_SETTINGS = [
   // Not a page: a button that opens the list of team features.

@@ -146,7 +146,7 @@
   "settings.lastLoaded": "上次加载 · 保存前请刷新。",
   "settings.messageList.botName": "Bot 名称",
   "settings.messageList.conversationTitle": "对话标题",
-  "settings.messageList.description": "在侧边栏中优先显示对话标题或 Bot 名称。",
+  "settings.messageList.description": "在侧栏中优先显示对话标题或 Bot 名称。",
   "settings.messageList.loadFailed": "无法加载你的偏好设置",
   "settings.messageList.loading": "正在加载…",
   "settings.messageList.preview": "消息列表预览",

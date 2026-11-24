@@ -246,7 +246,7 @@ describe("the General page speaks the interface language", () => {
       ["键盘快捷键", "#keyboard-shortcuts"],
     ]);
     expect(
-      view.getByText("在侧边栏中优先显示对话标题或 Bot 名称。"),
+      view.getByText("在侧栏中优先显示对话标题或 Bot 名称。"),
     ).toBeTruthy();
     expect(rowTitle(view, "消息列表突出显示")).toBeTruthy();
     expect(view.getByRole("heading", { name: "键盘快捷键" })).toBeTruthy();

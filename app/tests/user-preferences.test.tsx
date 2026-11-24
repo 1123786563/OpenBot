@@ -161,9 +161,7 @@ test("in Chinese the preference row, trigger and preview speak the interface lan
   expect(view.getByText("计划下周安排").className).toContain("text-[12px]");
   expect(view.getByText("2 小时")).toBeTruthy();
   expect(view.getByText("消息列表突出显示")).toBeTruthy();
-  expect(
-    view.getByText("在侧边栏中优先显示对话标题或 Bot 名称。"),
-  ).toBeTruthy();
+  expect(view.getByText("在侧栏中优先显示对话标题或 Bot 名称。")).toBeTruthy();
   const combo = view.getByRole("combobox");
   expect(combo.getAttribute("aria-label")).toBe("消息列表突出显示");
   expect(combo).toHaveProperty("disabled", false);
