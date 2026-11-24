@@ -259,18 +259,21 @@ export function workspaceCleanup({
       .select()
       .from(personalWorkspaceClosures)
       .where(
-        or(
-          isNull(personalWorkspaceClosures.backupSchedule),
-          sql`(${personalWorkspaceClosures.cleanup}->'connections'->>'status') IS DISTINCT FROM 'confirmed'`,
+        and(
+          // Cleanup holds the closure row across external calls. Let the cutoff
+          // worker record both deadline outcomes before taking that lock.
+          isNotNull(personalWorkspaceClosures.workCutoff),
+          isNotNull(personalWorkspaceClosures.computerCutoff),
+          or(
+            isNull(personalWorkspaceClosures.backupSchedule),
+            sql`(${personalWorkspaceClosures.cleanup}->'connections'->>'status') IS DISTINCT FROM 'confirmed'`,
+          ),
         ),
       );
     for (const record of records) {
       await withClosure(record.id, (tx, closure) =>
         step(tx, closure, "connections"),
       );
-      // #71 preserves the deadline outcome. Once Bot work has drained,
-      // each store can be reconciled independently of Computer availability.
-      if (!record.workCutoff) continue;
       const [claimed] = await database
         .select({ key: workItems.key })
         .from(workItems)
@@ -290,13 +293,11 @@ export function workspaceCleanup({
         "internalServices",
         "postgres",
       ] satisfies CleanupStep[]) {
-        if (key === "computerVolume") {
-          if (
-            !record.computerCutoff ||
-            record.cleanup.computerVolume?.status === "confirmed"
-          )
-            continue;
-        }
+        if (
+          key === "computerVolume" &&
+          record.cleanup.computerVolume?.status === "confirmed"
+        )
+          continue;
         await withClosure(record.id, async (tx, closure) => {
           if (
             key === "internalServices" &&

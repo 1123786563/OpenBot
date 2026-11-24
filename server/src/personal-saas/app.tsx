@@ -2315,10 +2315,8 @@ export function createPersonalSaasApp(
   return Object.assign(app, {
     accessWorkspaceComputerForTask: computer?.accessForTask,
     renewWorkspaceComputers: computer?.renew,
-    async sweepWorkspaceClosures() {
-      await closure.sweep();
-      await sweepCleanup();
-    },
+    sweepWorkspaceClosures: closure.sweep,
+    sweepWorkspaceCleanup: sweepCleanup,
     sweepBotWork: () => botWork.sweep(runPersonalBot, executeManaged),
     sweepBotDecisions: () => config.botRuntime?.sweepDecisions(quotas),
     offerAutomationSchedules: automation.offerSchedules,

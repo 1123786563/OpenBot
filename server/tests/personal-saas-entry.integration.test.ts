@@ -5846,16 +5846,16 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     expect(closed.status).toBe(200);
     const { operationId } = await closed.json();
     expect((await computer(owner.session, "/start")).status).toBe(401);
-    await service.sweepWorkspaceClosures();
+    await sweepClosureAndCleanup(service);
     expect(cleanupCalls).toEqual([]);
     await Bun.sleep(workspaceComputerLeaseMs + 100);
     await service.renewWorkspaceComputers?.();
-    await service.sweepWorkspaceClosures();
+    await sweepClosureAndCleanup(service);
     expect(instances.has("fixture-3")).toBe(true);
     expect(cleanupCalls).toEqual([]);
     failOwnerExit = false;
     await service.renewWorkspaceComputers?.();
-    await service.sweepWorkspaceClosures();
+    await sweepClosureAndCleanup(service);
     expect(cleanupCalls).toEqual(["DeleteAccessPoint", "DeleteAgenticSpace"]);
     const status = cookie(
       await authenticate(owner.account),
@@ -5879,8 +5879,8 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     failDelete = false;
     service = replica();
     app = service;
-    await service.sweepWorkspaceClosures();
-    await service.sweepWorkspaceClosures();
+    await sweepClosureAndCleanup(service);
+    await sweepClosureAndCleanup(service);
     expect(cleanupCalls).toEqual([
       "DeleteAccessPoint",
       "DeleteAgenticSpace",
@@ -7234,6 +7234,11 @@ function confirmClosure(session: string) {
   });
 }
 
+async function sweepClosureAndCleanup(worker: ReturnType<typeof newApp>) {
+  await worker.sweepWorkspaceClosures();
+  await worker.sweepWorkspaceCleanup();
+}
+
 function closureStatus(session: string) {
   return send("/workspace/closure/progress", {
     headers: { cookie: session, accept: "application/json" },
@@ -7376,11 +7381,11 @@ test("mounted closure retries Intelligence cleanup after the source work is gone
         return { status: "confirmed" };
       },
     );
-  await worker().sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker());
   expect(await (await closureStatus(status)).json()).toMatchObject({
     onlineCleanup: { internalServices: { status: "retrying" } },
   });
-  await worker().sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker());
   expect(await (await closureStatus(status)).json()).toMatchObject({
     onlineCleanup: {
       internalServices: { status: "confirmed" },
@@ -7477,7 +7482,7 @@ test("closure records partial cleanup and retries only unconfirmed steps", async
       return { status: "confirmed" };
     },
   );
-  await worker.sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker);
   expect(await (await closureStatus(status)).json()).toMatchObject({
     onlineCleanup: {
       postgres: { status: "confirmed" },
@@ -7490,7 +7495,7 @@ test("closure records partial cleanup and retries only unconfirmed steps", async
   expect(
     await database.select().from(agents).where(eq(agents.id, owner.botId)),
   ).toHaveLength(0);
-  await worker.sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker);
   expect(await (await closureStatus(status)).json()).toMatchObject({
     backups: { status: "scheduled", stores },
     onlineCleanup: { computerVolume: { status: "confirmed" } },
@@ -7568,11 +7573,17 @@ test("a paused owner can confirm after fresh same-identity verification; inactiv
     await authenticate(owner.account),
     "__Host-openbot-closure-status=",
   );
-  const result = await confirmClosure(await proveClosure(fresh, owner.account));
+  const freshProof = await proveClosure(fresh, owner.account);
+  const result = await confirmClosure(freshProof);
   expect(result.status).toBe(200);
-  expect(await result.json()).toMatchObject({
+  const progress = await result.json();
+  expect(progress).toMatchObject({
     operationId: expect.any(String),
   });
+  const repeated = await confirmClosure(freshProof);
+  expect(repeated.status).toBe(200);
+  expect(await repeated.json()).toEqual(progress);
+  expect(await (await closureStatus(fresh)).json()).toEqual(progress);
   expect(
     (
       await send(`/api/workspaces/${owner.workspaceId}/exports`, {
@@ -7581,6 +7592,67 @@ test("a paused owner can confirm after fresh same-identity verification; inactiv
       })
     ).status,
   ).toBe(401);
+});
+
+test("a slow cleanup service cannot delay Workspace Closure cutoff accounting", async () => {
+  const owner = await isolationOwner();
+  const nextOwner = await isolationOwner();
+  const response = await confirmClosure(
+    await proveClosure(owner.session, owner.account),
+  );
+  expect(response.status).toBe(200);
+  const { operationId } = await response.json();
+  const status = cookie(response, "__Host-openbot-closure-status=");
+  const cleanupStarted = Promise.withResolvers<void>();
+  const releaseCleanup = Promise.withResolvers<void>();
+  const worker = newApp(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    async (step, target) => {
+      if (step === "connections" && target.id === operationId) {
+        cleanupStarted.resolve();
+        await releaseCleanup.promise;
+      }
+      return { status: "unconfirmed" };
+    },
+  );
+
+  const cutoffs = worker.sweepWorkspaceClosures();
+  let cleanup: Promise<void> | undefined;
+  try {
+    expect(
+      await Promise.race([
+        cutoffs.then(() => "cutoffs recorded"),
+        cleanupStarted.promise.then(() => "waiting for cleanup"),
+      ]),
+    ).toBe("cutoffs recorded");
+    expect(await (await closureStatus(status)).json()).toMatchObject({
+      executionCutoff: { work: "confirmed", computer: "confirmed" },
+    });
+    cleanup = worker.sweepWorkspaceCleanup();
+    await Promise.race([
+      cleanupStarted.promise,
+      cleanup.then(() => {
+        throw new Error("Cleanup did not reach the fixture reconciler");
+      }),
+    ]);
+    const nextResponse = await confirmClosure(
+      await proveClosure(nextOwner.session, nextOwner.account),
+    );
+    expect(nextResponse.status).toBe(200);
+    await worker.sweepWorkspaceClosures();
+    const nextStatus = cookie(nextResponse, "__Host-openbot-closure-status=");
+    expect(await (await closureStatus(nextStatus)).json()).toMatchObject({
+      executionCutoff: { work: "confirmed", computer: "confirmed" },
+    });
+  } finally {
+    releaseCleanup.resolve();
+    await cutoffs;
+    await cleanup;
+  }
 });
 
 test("closure survives an unavailable supervisor and confirms only observed process exit before the deadline", async () => {
@@ -7946,10 +8018,10 @@ test("a returning owner explicitly opens one empty workspace after recorded clea
           : "unconfirmed",
     }),
   );
-  await worker.sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker);
   expect((await open(status)).status).toBe(409);
   remoteConfirmed = true;
-  await worker.sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker);
 
   const returning = await authenticate(owner.account);
   expect(returning.headers.get("location")).toBe("/workspace/closure/progress");
@@ -8011,7 +8083,7 @@ test("a returning owner explicitly opens one empty workspace after recorded clea
     (await send("/api/workspace", { headers: { cookie: owner.session } }))
       .status,
   ).toBe(401);
-  await worker.sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker);
   expect(await workspace(newSession)).toMatchObject({ id: replacement.id });
 });
 
@@ -8293,7 +8365,7 @@ test("a pre-closure restore fences sessions, exports and dispatch before worker 
       return { status: "confirmed" };
     },
   );
-  await worker.sweepWorkspaceClosures();
+  await sweepClosureAndCleanup(worker);
   expect(await (await closureStatus(status)).json()).toMatchObject({
     operationId,
     onlineCleanup: { postgres: { status: "confirmed" } },
