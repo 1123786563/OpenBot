@@ -1,19 +1,19 @@
 import type { CopilotKitProviderProps } from "@copilotkit/react-core/v2";
-import { createElement } from "react";
 import {
   createGenerativeUI,
   type GenerativeUITheme,
   standardUI,
 } from "@copilotkit/react-core/v2/generative-ui";
+import { createElement } from "react";
 import { SERIES_COLOURS } from "@/components/gallery/palette";
 import {
   A2UIBreakdown,
   BREAKDOWN_DESCRIPTION,
   breakdownProps,
 } from "./a2ui-breakdown";
-import { A2UICode, A2UIMarkdown } from "./a2ui-markdown";
 import { astryxA2UIOverrides } from "./a2ui-controls";
 import { A2UINodeError } from "./a2ui-form";
+import { A2UICode, A2UIMarkdown } from "./a2ui-markdown";
 
 /**
  * The standard components a Bot is not given.

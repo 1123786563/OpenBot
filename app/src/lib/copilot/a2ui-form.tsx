@@ -6,8 +6,8 @@ import {
   useGenerativeUIAccessibility,
 } from "@copilotkit/react-core/v2/generative-ui";
 import {
-  createContext,
   type CSSProperties,
+  createContext,
   useContext,
   useEffect,
   useRef,
