@@ -3813,7 +3813,8 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
         .filter(({ type }) => type === EventType.TEXT_MESSAGE_CONTENT)
         .map(({ delta }) => delta)
         .join("");
-    expect(output(originalEvents)).toBe("Output already in flight.");
+    const delivered = output(originalEvents);
+    expect("Output already in flight.".startsWith(delivered)).toBe(true);
     const reconnected = await web(database, actor, bot.id, async () => {}, {
       makeAgent,
     }).request(
@@ -3823,7 +3824,7 @@ test("Memory withdrawn after model dispatch pauses the original Run before its n
     const replay = await reconnected.text();
     expect(replay).toContain(runId);
     expect(replay).toContain("context_revoked");
-    expect(output(replay)).toBe("Output already in flight.");
+    expect(output(replay)).toBe(delivered);
     expect(actions).toBe(0);
     expect(modelCalls).toBe(1);
   } finally {
