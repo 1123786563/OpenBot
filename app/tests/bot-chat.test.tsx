@@ -71,10 +71,12 @@ test("what has arrived can be read while the Bot is still replying", async () =>
     },
   ];
   const view = open();
-  await send(view, "What time is it?");
+  const user = await send(view, "What time is it?");
 
   await said(view, "It is 9:05");
   expect(view.getByRole("button", { name: "Stop the Bot" })).toBeTruthy();
+
+  expect(view.queryByRole("button", { name: "Copy reply" })).toBeNull();
 
   releaseRun([
     {
@@ -87,6 +89,10 @@ test("what has arrived can be read while the Bot is still replying", async () =>
   ]);
   await said(view, "It is 9:05 in the morning.");
   await settled(view);
+  await user.click(view.getByRole("button", { name: "Copy reply" }));
+  expect(
+    await view.container.ownerDocument.defaultView?.navigator.clipboard.readText(),
+  ).toBe("It is 9:05 in the morning.");
   expect(view.queryByTestId("transcript-stopped")).toBeNull();
 });
 

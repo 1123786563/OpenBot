@@ -74,6 +74,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { toast } from "@/components/ui/toast";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import { readResponsibilityTurn } from "@/lib/channels/responsibility-turn";
@@ -1076,6 +1077,23 @@ const TranscriptMessage = memo(function TranscriptMessage({
               )}
             </BubbleContent>
           </Bubble>
+          {!isUser && settled && !streaming && text.trim() ? (
+            <MessageFooter>
+              <Button
+                label="Copy reply"
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(text);
+                    toast.add({ title: "Reply copied", type: "success" });
+                  } catch {
+                    toast.add({ title: "Could not copy reply", type: "error" });
+                  }
+                }}
+              />
+            </MessageFooter>
+          ) : null}
         </Arriving>
       </MessageContent>
     </MessageRow>
