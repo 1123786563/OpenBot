@@ -1,3 +1,4 @@
+import { Text } from "@astryxdesign/core/Text";
 import { IconLayoutSidebar } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChannelItemContent } from "@/components/app-sidebar/channel-item-content";
@@ -7,7 +8,6 @@ import {
   Item,
   ItemActions,
   ItemContent,
-  ItemDescription,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -45,12 +45,13 @@ export function MessageListPreference() {
           <ItemTitle>
             {t("settings.messageList.title", "Message list emphasis")}
           </ItemTitle>
-          <ItemDescription>
+          {/* Text never truncates; the slot is what aligns the row's icon with its title. */}
+          <Text as="p" data-slot="item-description" type="supporting">
             {t(
               "settings.messageList.description",
               "Choose which line stands out in the sidebar.",
             )}
-          </ItemDescription>
+          </Text>
         </ItemContent>
         <ItemActions>
           <Select
