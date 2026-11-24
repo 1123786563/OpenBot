@@ -1,17 +1,25 @@
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import type { Message } from "@ag-ui/core";
 import {
+  CopilotChatConfigurationProvider,
   CopilotKitProvider,
   type CopilotKitProviderProps,
 } from "@copilotkit/react-core/v2";
 import {
+  createGenerativeUI,
   GenerativeUISurface,
   useGenerativeUIRuntime,
 } from "@copilotkit/react-core/v2/generative-ui";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
+import { z } from "zod";
+import { ChatTranscript } from "@/components/channels/chat-transcript";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { generativeUiProviderOptions, OPENBOT_UI } from "@/lib/copilot/a2ui";
+import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
@@ -111,6 +119,21 @@ function Booking() {
   return null;
 }
 
+/** A catalog with one component that cannot be drawn, for a form that fails to render. */
+const FAILING_UI = createGenerativeUI({
+  id: "test/failing@1",
+  extends: [OPENBOT_UI],
+  components: {
+    Broken: {
+      description: "A part that cannot be drawn",
+      props: z.object({}),
+      component() {
+        throw new Error("fixture: this part cannot be drawn");
+      },
+    },
+  },
+});
+
 type Agent = NonNullable<
   CopilotKitProviderProps["agents__unsafe_dev_only"]
 >[string];
@@ -127,6 +150,176 @@ const agent = {
     sent.push(String(message.content)),
   runAgent: () => Promise.resolve({ newMessages: [] }),
 } as unknown as Agent;
+
+type Ui = NonNullable<CopilotKitProviderProps["generativeUI"]>["ui"];
+
+/** The provider as the app sets it, around a page that commits surfaces once it is up. */
+function Page({
+  ui,
+  surfaces,
+  children,
+}: {
+  ui: Ui;
+  surfaces: (commit: (surface: Surface) => void) => void;
+  children: ReactNode;
+}) {
+  const options = generativeUiProviderOptions(true);
+  function Commit() {
+    const runtime = useGenerativeUIRuntime();
+    useEffect(() => {
+      if (!runtime) return;
+      runtime.manager.setActiveThread(THREAD);
+      surfaces((surface) =>
+        runtime.manager.ingest(THREAD, undefined, {
+          surfaceId: surface.surfaceId,
+          target: surface.surfaceId,
+          catalogId: ui.id,
+          status: "ready",
+          rejected: [],
+          operations: [
+            {
+              version: "1.0",
+              createSurface: {
+                surfaceId: surface.surfaceId,
+                catalogId: ui.id,
+                dataModel: surface.dataModel,
+              },
+            },
+            {
+              version: "1.0",
+              updateComponents: {
+                surfaceId: surface.surfaceId,
+                components: surface.components,
+              },
+            },
+          ],
+        } as Parameters<typeof runtime.manager.ingest>[2]),
+      );
+    }, [runtime]);
+    return null;
+  }
+  return (
+    <CopilotKitProvider
+      agents__unsafe_dev_only={{ default: agent }}
+      {...options}
+      generativeUI={{ ...options.generativeUI, ui }}
+    >
+      <Commit />
+      {children}
+    </CopilotKitProvider>
+  );
+}
+
+type Surface = {
+  surfaceId: string;
+  dataModel: Record<string, unknown>;
+  components: Record<string, unknown>[];
+};
+
+const field = (id: string, label: string) => ({
+  id,
+  component: "TextField",
+  label,
+  value: { "@path": `/${id}` },
+});
+
+const form = (
+  id: string,
+  event: string,
+  fields: string[],
+): Record<string, unknown> => ({
+  id,
+  component: "Form",
+  children: [...fields, `${id}-send`],
+  onSubmit: {
+    event: {
+      name: event,
+      context: Object.fromEntries(
+        fields.map((name) => [name, { "@path": `/${name}` }]),
+      ),
+    },
+  },
+});
+
+test("a form that fails to render shows an Astryx error and is not sent; the rest still works", async () => {
+  sent.length = 0;
+  const view = render(
+    <Page
+      ui={FAILING_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "mixed",
+          dataModel: { who: "", what: "" },
+          components: [
+            {
+              id: "root",
+              component: "Column",
+              children: ["intro", "broken", "aside", "good"],
+            },
+            { id: "intro", component: "Text", text: "Two forms follow." },
+            {
+              ...form("broken", "sendBroken", ["who"]),
+              children: ["who", "boom", "broken-send"],
+            },
+            {
+              id: "who",
+              component: "TextField",
+              label: "Who",
+              value: { "@path": "/who" },
+            },
+            { id: "boom", component: "Broken" },
+            {
+              id: "broken-send",
+              component: "Button",
+              label: "Send broken",
+              submit: true,
+            },
+            {
+              id: "aside",
+              component: "Text",
+              text: "This line is still readable.",
+            },
+            form("good", "sendGood", ["what"]),
+            field("what", "What"),
+            {
+              id: "good-send",
+              component: "Button",
+              label: "Send good",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="mixed" />
+    </Page>,
+  );
+  // Only the broken part is replaced, by an Astryx error state.
+  const alert = await view.findByRole("alert");
+  expect(alert.closest(".astryx-banner")).toBeTruthy();
+  expect(alert.textContent).toContain("Couldn't show this part of the reply.");
+  expect(view.getByText("Two forms follow.")).toBeTruthy();
+  expect(view.getByText("This line is still readable.")).toBeTruthy();
+
+  // The form with the broken part takes no more input and sends nothing.
+  const who = view.getByLabelText("Who") as HTMLInputElement;
+  await userEvent.setup({ document }).type(who, "Ada");
+  expect(who.value).toBe("Ada");
+  expect(
+    view
+      .getByRole("button", { name: "Send broken" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  fireEvent.submit(who.form as HTMLFormElement);
+  await waitFor(() => expect(sent).toEqual([]));
+
+  // The form next to it still submits what was typed.
+  await userEvent.setup({ document }).type(view.getByLabelText("What"), "Tea");
+  fireEvent.submit(
+    (view.getByLabelText("What") as HTMLInputElement).form as HTMLFormElement,
+  );
+  await waitFor(() => expect(sent).toEqual(["What\n\nwhat: Tea"]));
+});
 
 function BookingPage() {
   return (
@@ -151,12 +344,242 @@ test("a generated form is drawn by Astryx controls and submits the values that w
   await user.type(field, "Grace");
   await user.type(view.getByLabelText("Note"), "Quiet car");
   await user.click(view.getByLabelText("Window seat"));
+  const select = view.getByRole("combobox", { name: "Class" });
+  expect(select.closest(".astryx-selector")).toBeTruthy();
+  // happy-dom does not complete a pointer pick in the list; the browser fixture covers the click.
+  // The first ArrowDown opens the list and the next moves to the option after the chosen one.
+  select.focus();
+  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+  expect(select.textContent).toBe("business");
 
   // happy-dom does not perform a submit button's implicit form submission; the browser fixture
   // covers the real click. This is the submit event either way.
   fireEvent.submit(view.container.querySelector("form") as HTMLFormElement);
   expect(sent).toEqual([
     // The event as the agent receives it: the label CopilotKit resolves for the form, then each bound field.
-    "Name\n\nname: Grace\nnote: Quiet car\nclass: economy\nwindow: true\nguests: 2",
+    "Name\n\nname: Grace\nnote: Quiet car\nclass: business\nwindow: true\nguests: 2",
   ]);
+});
+
+test("a stored form from before the A2UI version upgrade still draws and submits", async () => {
+  sent.length = 0;
+  // The operations a Bot wrote on CopilotKit 1.83: the same A2UI version spelled "v1.0".
+  const stored: Message = {
+    id: "activity-legacy",
+    role: "activity",
+    activityType: "generative-ui-surface",
+    content: {
+      surfaceId: "legacy",
+      target: "chat",
+      catalogId: OPENBOT_UI.id,
+      status: "ready",
+      rejected: [],
+      operations: [
+        {
+          version: "v1.0",
+          createSurface: {
+            surfaceId: "legacy",
+            catalogId: OPENBOT_UI.id,
+            dataModel: { destination: "Paris" },
+          },
+        },
+        {
+          version: "v1.0",
+          updateComponents: {
+            surfaceId: "legacy",
+            components: [
+              {
+                id: "root",
+                component: "Form",
+                children: ["destination", "save"],
+                onSubmit: {
+                  event: {
+                    name: "saveDestination",
+                    context: { destination: { "@path": "/destination" } },
+                  },
+                },
+              },
+              {
+                id: "destination",
+                component: "TextField",
+                label: "Destination",
+                value: { "@path": "/destination" },
+              },
+              { id: "save", component: "Button", label: "Save", submit: true },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  const messages = withCurrentA2uiVersions([stored]);
+  expect(
+    (
+      messages[0]!.content as { operations: { version: string }[] }
+    ).operations.map((operation) => operation.version),
+  ).toEqual(["1.0", "1.0"]);
+
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <CopilotKitProvider
+        agents__unsafe_dev_only={{ default: agent }}
+        {...generativeUiProviderOptions(true)}
+      >
+        <CopilotChatConfigurationProvider agentId="default" threadId={THREAD}>
+          <TooltipProvider>
+            <ChatTranscript messages={messages} restoring={false} />
+          </TooltipProvider>
+        </CopilotChatConfigurationProvider>
+      </CopilotKitProvider>
+    </QueryClientProvider>,
+  );
+  const destination = (await view.findByLabelText(
+    "Destination",
+  )) as HTMLInputElement;
+  expect(destination.closest(".astryx-text-input")).toBeTruthy();
+  expect(destination.value).toBe("Paris");
+
+  const user = userEvent.setup({ document });
+  await user.clear(destination);
+  await user.type(destination, "Rome");
+  fireEvent.submit(destination.form as HTMLFormElement);
+  expect(sent).toEqual(["Destination\n\ndestination: Rome"]);
+});
+
+test("a failed check shows its message only once the control has been used, and blocks its button", async () => {
+  sent.length = 0;
+  const check = { condition: false, message: "Enter a name." };
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "checks",
+          dataModel: { name: "" },
+          components: [
+            // A surface is drawn from its `root` node, whatever component it is.
+            {
+              ...form("root", "sendCheck", ["name"]),
+              children: ["name", "root-send"],
+            },
+            {
+              id: "name",
+              component: "TextField",
+              label: "Name",
+              value: { "@path": "/name" },
+              checks: [check],
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+              checks: [check],
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="checks" />
+    </Page>,
+  );
+  // A fresh form does not open full of errors; a button whose check fails is disabled, and says why.
+  await view.findByLabelText("Name");
+  const send = view.getByRole("button", { name: "Send" });
+  expect(send.getAttribute("aria-disabled")).toBe("true");
+  expect(send.closest(".astryx-button")).toBeTruthy();
+  expect(send.getAttribute("aria-describedby") ?? send.title).toBeTruthy();
+
+  // Once the field has been left, it says why too.
+  const name = view.getByLabelText("Name");
+  await userEvent.setup({ document }).type(name, "A");
+  await userEvent.setup({ document }).tab();
+  await waitFor(() =>
+    expect(view.getAllByText("Enter a name.").length).toBeGreaterThan(1),
+  );
+  expect(sent).toEqual([]);
+});
+
+test("each choice and date control draws with Astryx and writes what was picked", async () => {
+  sent.length = 0;
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "picks",
+          dataModel: {
+            class: "economy",
+            extras: ["bag"],
+            seat: [],
+            day: "2026-10-23",
+          },
+          components: [
+            form("root", "sendPicks", ["class", "extras", "seat", "day"]),
+            {
+              id: "class",
+              component: "RadioGroup",
+              label: "Class",
+              direction: "col",
+              options: ["economy", "business"],
+              value: { "@path": "/class" },
+            },
+            {
+              id: "extras",
+              component: "ChoicePicker",
+              label: "Extras",
+              variant: "multipleSelection",
+              options: ["bag", "meal"],
+              value: { "@path": "/extras" },
+            },
+            {
+              id: "seat",
+              component: "ChoicePicker",
+              label: "Seat",
+              displayStyle: "chips",
+              options: ["aisle", "window"],
+              value: { "@path": "/seat" },
+            },
+            {
+              id: "day",
+              component: "DateTimeInput",
+              label: "Day",
+              value: { "@path": "/day" },
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="picks" />
+    </Page>,
+  );
+  const user = userEvent.setup({ document });
+  // Each control is the Astryx component for it.
+  await view.findByLabelText("Class", {}, { timeout: 5000 });
+  for (const name of [
+    "astryx-radio-list",
+    "astryx-checkbox-input",
+    "astryx-button",
+    "astryx-date-input",
+  ])
+    expect(view.container.querySelector(`.${name}`), name).toBeTruthy();
+
+  await user.click(view.getByRole("radio", { name: "business" }));
+  await user.click(view.getByRole("checkbox", { name: "meal" }));
+  await user.click(view.getByRole("button", { name: "window" }));
+  expect(view.getByLabelText("Day").closest(".astryx-date-input")).toBeTruthy();
+
+  fireEvent.submit(view.container.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(sent).toEqual([
+      // CopilotKit writes a list value as JSON.
+      'Class\n\nclass: business\nextras: ["bag","meal"]\nseat: ["window"]\nday: 2026-10-23',
+    ]),
+  );
 });

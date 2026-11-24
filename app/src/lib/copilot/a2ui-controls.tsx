@@ -59,8 +59,11 @@ function failedCheck(checks: Checks): Status | undefined {
   for (const { condition, message } of checks ?? []) {
     if (condition == null || condition === true) continue;
     const failed: Status = {
+      // A `false` condition and a validator's "error" are errors; its "warning" and "info" are not.
       type:
-        typeof condition === "boolean" || condition.severity !== "info"
+        typeof condition === "boolean" ||
+        condition.severity === undefined ||
+        condition.severity === "error"
           ? "error"
           : "warning",
       message:
@@ -158,7 +161,12 @@ function A2UITextField(props: Control<"TextField">) {
     size: size(props.size),
     status,
     width: "100%" as const,
-    containerStyle: { flexGrow: props.weight },
+    // The typed text is the theme's ink. A text box has no colour of its own, so without this it
+    // would inherit the interface's text colour, which is the app's and not Astryx's.
+    containerStyle: {
+      flexGrow: props.weight,
+      color: "var(--color-text-primary)",
+    },
     value: number
       ? (draft ?? (empty && props.value === 0 ? "" : text(props.value)))
       : text(props.value),
@@ -225,7 +233,10 @@ function A2UITextArea(props: Control<"TextArea">) {
       rows={props.rows}
       status={status}
       width="100%"
-      containerStyle={{ flexGrow: props.weight }}
+      containerStyle={{
+        flexGrow: props.weight,
+        color: "var(--color-text-primary)",
+      }}
       value={text(props.value)}
       onChange={props.setValue}
       onBlur={onBlur}
@@ -278,7 +289,9 @@ function A2UIButton(props: Control<"Button">) {
       width={props.block ? "100%" : undefined}
       style={{ flexGrow: props.weight }}
       type={props.submit ? "submit" : "button"}
-      isDisabled={Boolean(props.disabled || props.loading || failed)}
+      isDisabled={Boolean(
+        props.disabled || props.loading || failed || check?.type === "error",
+      )}
       isLoading={props.loading}
       tooltip={check?.message}
       onClick={(event) => {
