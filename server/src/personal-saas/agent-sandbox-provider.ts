@@ -431,6 +431,8 @@ export function createAgentSandboxProvider(
     async destroy(binding) {
       let row = await state(binding);
       if (row.phase !== "stopping") return;
+      if (!row.flashWorkRequested && !row.flashWorkerExit)
+        await recordExit(row);
       if (row.flashCreateRequested && !row.flashSandboxId) {
         const ids = await api.discover(binding);
         const [id] = ids;
@@ -440,53 +442,52 @@ export function createAgentSandboxProvider(
           .set({ flashSandboxId: id })
           .where(and(generation(binding), isNull(sandboxes.flashSandboxId)));
         row = await state(binding);
+        if (row.phase !== "stopping") return;
       }
 
-      // Capture process evidence before sending DELETE. The two operations
-      // can finish on different replicas or on opposite sides of a restart.
-      if (!row.flashWorkerExit) await recordExit(row);
-      if (row.flashSandboxId && row.flashDestroyedAt === null)
-        await api.delete(row.flashSandboxId);
+      // Persist exit evidence before DELETE so cutoff can be observed while
+      // the provider is still releasing the instance.
+      if (row.flashWorkRequested && !row.flashWorkerExit) await recordExit(row);
+      const { flashSandboxId, flashDestroyedAt } = row;
+      if (!flashSandboxId || flashDestroyedAt !== null) return;
+      await api.delete(flashSandboxId).finally(async () => {
+        if (!(await api.isDestroyed(binding, flashSandboxId))) return;
+        const [confirmed] = await database
+          .update(sandboxes)
+          .set({ flashDestroyedAt: now(), flashConnection: null })
+          .where(
+            and(
+              generation(binding),
+              eq(sandboxes.phase, "stopping"),
+              isNull(sandboxes.flashDestroyedAt),
+            ),
+          )
+          .returning({
+            id: sandboxes.flashSandboxId,
+            at: sandboxes.flashDestroyedAt,
+          });
+        if (confirmed) {
+          console.info(
+            JSON.stringify({
+              type: "agent-sandbox-instance-destroyed",
+              ...binding,
+              sandboxId: confirmed.id,
+              confirmedAt: confirmed.at,
+            }),
+          );
+        }
+      });
     },
     async inspect(binding): Promise<AgentSandboxObservation> {
       const row = await state(binding);
       if (row.phase === "stopping") {
-        let destroyedAt = row.flashDestroyedAt;
-        if (
-          destroyedAt === null &&
-          row.flashSandboxId &&
-          (await api.isDestroyed(binding, row.flashSandboxId))
-        ) {
-          destroyedAt = now();
-          const [confirmed] = await database
-            .update(sandboxes)
-            .set({ flashDestroyedAt: destroyedAt, flashConnection: null })
-            .where(
-              and(
-                generation(binding),
-                eq(sandboxes.phase, "stopping"),
-                isNull(sandboxes.flashDestroyedAt),
-              ),
-            )
-            .returning({ id: sandboxes.flashSandboxId });
-          if (confirmed) {
-            console.info(
-              JSON.stringify({
-                type: "agent-sandbox-instance-destroyed",
-                ...binding,
-                sandboxId: confirmed.id,
-                confirmedAt: destroyedAt,
-              }),
-            );
-          }
-        }
-        if (row.flashCreateRequested && destroyedAt === null)
-          return { kind: "unconfirmed" };
         const terminal = workerExit.safeParse(row.flashWorkerExit);
         if (!terminal.success) return { kind: "unconfirmed" };
+        const released =
+          !row.flashCreateRequested || row.flashDestroyedAt !== null;
         return terminal.data.kind === "never_started"
-          ? terminal.data
-          : { ...terminal.data, clockUncertaintyMs };
+          ? { ...terminal.data, released }
+          : { ...terminal.data, released, clockUncertaintyMs };
       }
 
       if (

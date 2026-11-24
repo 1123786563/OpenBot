@@ -382,17 +382,19 @@ this migration whose exact IDs no longer exist in PostgreSQL, the Intelligence
 operator must inventory the closed account in the owning project. Include older
 continuations, follow-ups, check-ins, goals and handoffs in that verification.
 
-Preserve committed closure tombstones and their run inventory independently of data snapshots, using
-an authoritative recovery copy with zero loss of acknowledged closure
-transactions. A periodic journal export alone leaves a gap after the last
+Preserve committed closure tombstones, run locators, and AgenticFS storage
+locators in an authoritative recovery copy separate from data snapshots. The
+recovery copy must retain every acknowledged closure transaction. A periodic journal export alone leaves a gap after the last
 export. Keep recovery traffic, workers and downstream services offline until
 reconciliation is complete.
 
 1. From a trusted copy with all acknowledged closure transactions, export the
    minimal journal with `bun server/scripts/export-workspace-closure-journal.ts`.
-   Set `DATABASE_URL` to that copy. Protect the version 2 output as an
-   operator-only file. Re-export version 1 journals from the migrated authority
-   to include run locators.
+   Set `DATABASE_URL` to that copy. Protect the version 3 output as an
+   operator-only file. Re-export older journals from the migrated authority to
+   include run locators, AgenticFS locators, and instance release evidence.
+   Version 2 journals can be read. Storage cleanup stays pending wherever the
+   recovery record lacks the required evidence.
 2. Restore and migrate the target database. Preserve the account identity
    bindings and billing state from their respective recovery sources.
 3. Mount the journal read-only and set `OPENBOT_CLOSURE_RESTORE_JOURNAL` to
@@ -401,11 +403,11 @@ reconciliation is complete.
    and workspace integration grants, then verifies cleanup and remote
    reconciliation before opening the listener. A missing identity or
    conflicting journal record blocks startup.
-   If the backup already contains a replacement Workspace, startup also
-   rechecks the retired Workspace's external copies. Scope the reconciler to
-   the retired Workspace ID and its journaled run locators. Keep the retired
-   Workspace's provider inventory available for as long as its backups can
-   be restored.
+   Startup replays closures in acceptance order. It applies account-wide
+   cleanup only to the closed Workspace present in the backup. For Workspace
+   generations absent from the backup, it checks external copies using each
+   operation's Workspace ID and recorded locators. Keep the retired Workspace
+   provider inventory available for as long as its backups can be restored.
 4. After verification, remove the recovery-only setting before normal
    restarts. Keep the authoritative tombstones for as long as older backups
    can be restored. Exercise this procedure in a disposable deployment before

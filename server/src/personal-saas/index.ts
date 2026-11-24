@@ -7,13 +7,13 @@ import { createDatabase } from "../db/client";
 import { personalWorkspaceClosures } from "../db/schema";
 import { repeatAfterEach } from "../work/loop";
 import { createAgentSandboxProvider } from "./agent-sandbox-provider";
-import { createNasClient } from "./nas";
 import { createPersonalSaasApp } from "./app";
 import {
   cleanupSteps,
   closureCleanupClient,
   closureRestoreJournal,
 } from "./closure-cleanup-contract";
+import { createNasClient } from "./nas";
 import { workspaceQuotaConfig } from "./quotas";
 import { loadPersonalTestCreditExecutor } from "./test-credit-config";
 import { reapplyWorkspaceClosures } from "./workspace-cleanup";
@@ -318,6 +318,7 @@ const app = createPersonalSaasApp(
 );
 
 if (restoredClosures.length) {
+  await app.reconcileStoppingWorkspaceComputers?.();
   await app.sweepWorkspaceClosures();
   await app.sweepWorkspaceCleanup();
   const records = await database
@@ -385,18 +386,27 @@ void refreshAccounts();
 
 const renewComputers = app.renewWorkspaceComputers;
 if (renewComputers) {
-  async function maintainComputerLeases() {
+  repeatAfterEach(async () => {
     try {
-      await renewComputers?.();
+      await renewComputers();
     } catch {
       console.warn(
         JSON.stringify({ type: "workspace-computer-lease-renewal-failure" }),
       );
-    } finally {
-      setTimeout(maintainComputerLeases, 1_000);
     }
-  }
-  void maintainComputerLeases();
+  }, 1_000);
+}
+const reconcileStoppingComputers = app.reconcileStoppingWorkspaceComputers;
+if (reconcileStoppingComputers) {
+  repeatAfterEach(async () => {
+    try {
+      await reconcileStoppingComputers();
+    } catch {
+      console.warn(
+        JSON.stringify({ type: "workspace-computer-teardown-failure" }),
+      );
+    }
+  }, 1_000);
 }
 repeatAfterEach(async () => {
   try {

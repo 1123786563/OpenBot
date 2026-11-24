@@ -19,6 +19,7 @@ import type {
   backupSchedule,
   CleanupResult,
   CleanupStep,
+  ClosureStorageRecovery,
   intelligenceLocator,
 } from "../../personal-saas/closure-cleanup-contract";
 import {
@@ -259,6 +260,7 @@ export const personalWorkspaceClosures = pgTable(
       .default({}),
     backupSchedule:
       jsonb("backup_schedule").$type<z.output<typeof backupSchedule>>(),
+    storageRecovery: jsonb("storage_recovery").$type<ClosureStorageRecovery>(),
     retiredIntelligence: jsonb("retired_intelligence").$type<
       z.output<typeof intelligenceLocator>[]
     >(),

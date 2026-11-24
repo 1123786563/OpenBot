@@ -54,3 +54,18 @@ Local tests use an HTTP Flash fixture, an offline NAS fixture, real PostgreSQL, 
 [#146](https://github.com/1123786563/OpenBot/issues/146) uses the server's NAS identity for closure. Grant it `DescribeAccessPoint`, `DeleteAccessPoint` and `DeleteAgenticSpace` in addition to `GetAgenticSpace`. Keep the Workspace binding available until the closure completes. Enroll a reopened Workspace against its new Workspace ID and provision a fresh AgenticSpace and Access Point for that ID.
 
 In the target cloud, write a distinct synthetic file through each Workspace's Bot. Close the first Workspace and record the old Flash instance and process exit evidence, the NAS access point and AgenticSpace readback, and the operation's cleanup status. Read and write through the second Bot after cleanup. Reopen the first account's Workspace, enroll its new storage and verify the new Bot cannot list or read the old file.
+
+
+During closure, OpenBot records watchdog process exit as soon as it verifies
+the evidence. The Workspace Computer stays in `stopping` until Alibaba
+confirms instance deletion. Restart and AgenticFS erasure require that
+confirmation. Teardown retries run on a separate loop from active lease renewals.
+
+Reopening preserves the retired Workspace's file system, AgenticSpace, and
+access point IDs in the closure record before deleting the Workspace row. The
+version 3 closure journal exports those IDs and the instance release evidence.
+Recovery uses the recorded IDs to verify erasure. If the journal predates
+instance release, export it again from the authority after release. If a legacy
+tombstone has lost its storage locator, recover the exact binding from
+authoritative provisioning records before marking cleanup complete. Follow the closure
+restore procedure in the [Personal SaaS trial runbook](personal-saas-trial.md).

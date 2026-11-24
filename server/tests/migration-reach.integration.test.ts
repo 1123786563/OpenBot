@@ -137,6 +137,11 @@ test.each([
     mainThrough: 161,
     trialLength: 0,
   },
+  {
+    startingPoint: "previous sandbox integration",
+    mainThrough: 163,
+    trialLength: 0,
+  },
   { startingPoint: "published main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "published Intelligence", mainThrough: 93, trialLength: 0 },
   { startingPoint: "initial billing pilot", mainThrough: 93, trialLength: 0 },
@@ -217,6 +222,14 @@ test.each([
       }),
     ];
     const sandboxPilot = startingPoint.startsWith("sandbox pilot");
+    const previousSandboxIntegration =
+      startingPoint === "previous sandbox integration";
+    const candidate = migrations.slice(
+      0,
+      migrations.findIndex(
+        ({ tag }) => tag === "0160_direct_chat_credit_request",
+      ) + 1,
+    );
     const historical =
       startingPoint === "published main"
         ? main.slice(0, 145)
@@ -231,8 +244,10 @@ test.each([
           : sandboxPilot
             ? [...main.slice(0, 119), ...sandbox]
             : startingPoint === "main before sandbox merge"
-              ? migrations.filter((entry) => !sandbox.includes(entry))
-              : historicalSaasOrMain;
+              ? candidate.filter((entry) => !sandbox.includes(entry))
+              : previousSandboxIntegration
+                ? candidate
+                : historicalSaasOrMain;
     const legacyFolder = await folderOf(
       await Promise.all(
         historical.map(async ({ tag, when }) => ({
@@ -269,7 +284,20 @@ test.each([
         await client`insert into personal_workspaces (owner_id)
           select id from personal_saas_accounts where subject = 'participant'`;
       }
-      if (billingPilot || mergedBilling || futureBilling) {
+      if (previousSandboxIntegration) {
+        await client`insert into personal_saas_accounts (issuer, subject, email)
+          values ('https://casdoor.example', 'retired', 'retired@example.test')`;
+        await client`insert into personal_workspace_closures
+          (account_id, workspace_id, accepted_at, cutoff_deadline, retired_intelligence)
+          select id, gen_random_uuid(), now(), now(), '[]'::jsonb
+          from personal_saas_accounts where subject = 'retired'`;
+      }
+      if (
+        billingPilot ||
+        mergedBilling ||
+        futureBilling ||
+        previousSandboxIntegration
+      ) {
         await client`insert into test_credit_accounts (issuer, subject)
           values ('https://casdoor.example', 'billing-participant')`;
       }
@@ -304,6 +332,12 @@ test.each([
           await client`select id from corsair_integrations where id = 'merge-fixture'`,
         ).toHaveLength(1);
       }
+      if (previousSandboxIntegration) {
+        expect([
+          ...(await client`select retired_intelligence, storage_recovery
+            from personal_workspace_closures`),
+        ]).toEqual([{ retired_intelligence: [], storage_recovery: null }]);
+      }
       expect(await exists(client, directChat)).toBe(true);
       expect(await exists(client, "personal_intelligence_runs")).toBe(true);
       expect(await exists(client, "opik_runs")).toBe(true);
@@ -330,7 +364,12 @@ test.each([
           created_at: String(when),
         })),
       );
-      if (billingPilot || mergedBilling || futureBilling) {
+      if (
+        billingPilot ||
+        mergedBilling ||
+        futureBilling ||
+        previousSandboxIntegration
+      ) {
         expect(
           await client`select subject from test_credit_accounts
             where subject = 'billing-participant'`,

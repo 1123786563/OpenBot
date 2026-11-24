@@ -52,6 +52,7 @@ export type ComputerLease = {
 export type ComputerTask = { epoch: number; authorizedAt: number };
 export type ComputerStatus = z.infer<typeof status> & {
   trafficAccessToken?: string;
+  processExited?: boolean;
 };
 export type ComputerGeneration = {
   id: string;
@@ -131,6 +132,7 @@ function supervisorComputer(config: SupervisorConfig) {
       return running.parse(await response.json()).computers;
     },
     revoke: undefined,
+    reconcileStopping: undefined,
     renew({ id }: ComputerGeneration, lease: ComputerLease) {
       return change(`/${id}/renew`, lease);
     },
@@ -173,21 +175,29 @@ export function workspaceComputer(
     return workspace;
   }
 
+  function stopped(current: ComputerStatus) {
+    return (
+      current.stopped ??
+      (current.status === "not_started" ||
+        (current.status === "restart_required" &&
+          current.cutoff === "confirmed"))
+    );
+  }
+
   return {
     eraseStorage: backend.eraseStorage,
+    reconcileStopping: backend.reconcileStopping,
+    async processStopped(workspaceId: string) {
+      const current = await read(workspaceId);
+      return current.processExited || stopped(current);
+    },
     storageUsage: backend.storageUsage,
     async status(workspaceId: string) {
       const current = await read(workspaceId);
       return { status: current.status, cutoff: current.cutoff };
     },
     async stopped(workspaceId: string) {
-      const current = await read(workspaceId);
-      return (
-        current.stopped ??
-        (current.status === "not_started" ||
-          (current.status === "restart_required" &&
-            current.cutoff === "confirmed"))
-      );
+      return stopped(await read(workspaceId));
     },
     async start(
       workspaceId: string,

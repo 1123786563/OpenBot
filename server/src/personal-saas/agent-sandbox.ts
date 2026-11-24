@@ -1,4 +1,15 @@
-import { and, eq, gt, inArray, lt, lte, ne } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
 import {
@@ -8,6 +19,10 @@ import {
   personalWorkspaceAgentSandboxes as sandboxes,
   personalWorkspaceAgenticSpaces as spaces,
 } from "../db/schema/personal-saas";
+import type {
+  AgenticStorageLocator,
+  AgenticStorageRecovery,
+} from "./closure-cleanup-contract";
 import type {
   ComputerGeneration,
   ComputerLease,
@@ -19,7 +34,10 @@ const timestamp = z.int().nonnegative();
 export const agentSandboxObservation = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("starting") }),
   z.object({ kind: z.literal("unconfirmed") }),
-  z.object({ kind: z.literal("never_started") }),
+  z.object({
+    kind: z.literal("never_started"),
+    released: z.boolean().optional(),
+  }),
   z.object({
     kind: z.literal("running"),
     leaseExpiresAt: timestamp,
@@ -33,6 +51,7 @@ export const agentSandboxObservation = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("exited"),
+    released: z.boolean().optional(),
     exitedAt: timestamp,
     leaseExpiresAt: timestamp,
     clockUncertaintyMs: timestamp.optional(),
@@ -52,14 +71,14 @@ export type AgentSandboxBinding = {
  * during control-plane loss. Destroy seals this generation against delayed
  * starts and renewals. Terminal observations require evidence of that seal
  * and an actual exit (or proof that no process was ever admitted). For
- * Flash, terminal also requires independent instance deletion evidence.
+ * Flash can report process exit before it confirms instance deletion.
  */
 export type AgentSandboxProvider = {
   allocationScope?: string;
   // storageBytes is the account's Computer reservation. prepare refuses before
   // allocating unless the durable storage is confirmed to be exactly that size;
   // storageUsage reports its used bytes, or null when they cannot be confirmed.
-  eraseStorage?(storage: typeof spaces.$inferSelect): Promise<void>;
+  eraseStorage?(storage: AgenticStorageLocator): Promise<void>;
   storageUsage?(
     storage: typeof spaces.$inferSelect,
     storageBytes: number,
@@ -82,6 +101,10 @@ export function agentSandboxComputer(
   database: Database,
   now: () => number,
 ) {
+  const providerScope = provider.allocationScope
+    ? eq(sandboxes.flashScope, provider.allocationScope)
+    : isNull(sandboxes.flashScope);
+
   async function get(workspaceId: string) {
     const [row] = await database
       .select()
@@ -162,12 +185,25 @@ export function agentSandboxComputer(
           observation.leaseExpiresAt
           ? "confirmed"
           : "failed";
+      const released = observation.released !== false;
       const [confirmed] = await database
         .update(sandboxes)
-        .set({ phase: "stopped", cutoff })
-        .where(and(sameGeneration(row), ne(sandboxes.phase, "stopped")))
+        .set({ phase: released ? "stopped" : "stopping", cutoff })
+        .where(
+          and(
+            sameGeneration(row),
+            ne(sandboxes.phase, "stopped"),
+            released
+              ? undefined
+              : sql`${sandboxes.cutoff} IS DISTINCT FROM ${cutoff}`,
+          ),
+        )
         .returning({ generation: sandboxes.generation });
-      if (confirmed && observation.kind === "exited") {
+      if (
+        confirmed &&
+        current.cutoff === null &&
+        observation.kind === "exited"
+      ) {
         console.info(
           JSON.stringify({
             type: "agent-sandbox-exit-confirmed",
@@ -180,10 +216,17 @@ export function agentSandboxComputer(
           }),
         );
       }
-      return { status: "restart_required", cutoff, stopped: true };
+      return released
+        ? { status: "restart_required", cutoff, stopped: true }
+        : { status: "stopping", cutoff, processExited: true };
     }
 
-    if (current.phase === "stopping") return { status: "stopping" };
+    if (current.phase === "stopping")
+      return {
+        status: "stopping",
+        cutoff: current.cutoff ?? undefined,
+        processExited: current.cutoff !== null,
+      };
     if (
       now() >= current.expiresAt ||
       observation.kind === "exited" ||
@@ -216,14 +259,23 @@ export function agentSandboxComputer(
       if (!storage) return 0;
       return provider.storageUsage?.(storage, storageBytes) ?? null;
     },
-    async eraseStorage(workspaceId: string) {
-      const result = await read(workspaceId);
-      if (result.status !== "not_started" && !result.stopped)
-        throw new Error("Workspace Computer cleanup unconfirmed");
-      const [storage] = await database
-        .select()
-        .from(spaces)
-        .where(eq(spaces.workspaceId, workspaceId));
+    async eraseStorage(workspaceId: string, recovery?: AgenticStorageRecovery) {
+      // Recovery can carry authoritative release evidence newer than this database.
+      if (recovery && !recovery.released)
+        throw new Error("Workspace Computer release unconfirmed");
+      if (!recovery) {
+        const result = await read(workspaceId);
+        if (result.status !== "not_started" && !result.stopped)
+          throw new Error("Workspace Computer cleanup unconfirmed");
+      }
+      const storage =
+        recovery ??
+        (
+          await database
+            .select()
+            .from(spaces)
+            .where(eq(spaces.workspaceId, workspaceId))
+        )[0];
       if (!storage) return;
       if (!provider.eraseStorage)
         throw new Error("Workspace Computer storage cleanup unconfirmed");
@@ -366,22 +418,43 @@ export function agentSandboxComputer(
           epoch: sandboxes.epoch,
         })
         .from(sandboxes)
-        .where(ne(sandboxes.phase, "stopped"));
+        .where(and(providerScope, eq(sandboxes.phase, "active")));
     },
     async revoke({ id, generation }: ComputerGeneration) {
       const row = await get(id);
       if (!row || row.generation !== generation || row.phase === "stopped")
         return;
-      await destroy(row);
-      await read(id);
+      await seal(row);
+    },
+    async reconcileStopping() {
+      const rows = await database
+        .select()
+        .from(sandboxes)
+        .where(
+          and(
+            providerScope,
+            or(
+              eq(sandboxes.phase, "stopping"),
+              and(
+                inArray(sandboxes.phase, ["starting", "active"]),
+                lte(sandboxes.expiresAt, now()),
+              ),
+            ),
+          ),
+        );
+      await Promise.all(
+        rows.map(async (row) => {
+          await destroy(row);
+          await read(row.workspaceId);
+        }),
+      );
     },
     async renew({ id, generation }: ComputerGeneration, lease: ComputerLease) {
       const row = await get(id);
       if (!row || row.generation !== generation || row.phase === "stopped")
         return false;
-      if (row.phase === "stopping" || now() >= row.expiresAt) {
-        await destroy(row);
-        await read(id);
+      if (now() >= row.expiresAt) {
+        await seal(row);
         return false;
       }
       if (
@@ -409,7 +482,7 @@ export function agentSandboxComputer(
         await provider.renew(binding(row), lease);
         return true;
       } catch {
-        await destroy(row);
+        await seal(row);
         throw new Error("Agent Sandbox lease renewal unconfirmed");
       }
     },

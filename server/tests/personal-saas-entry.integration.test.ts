@@ -5319,20 +5319,30 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
     });
 
     workerExitAvailable = true;
-    await second.renewWorkspaceComputers?.();
+    await second.reconcileStoppingWorkspaceComputers?.();
     expect(deletes).toBe(1);
+    expect(await (await request(second)).json()).toEqual({
+      status: "stopping",
+      cutoff: "confirmed",
+    });
     const callsWithEvidence = workerCalls;
     expect((await request(replica(), "/start")).status).toBe(429);
     missing = true;
     expect(await (await request(replica())).json()).toEqual({
       status: "stopping",
+      cutoff: "confirmed",
     });
     listed = false;
+    await replica({
+      ...options,
+      apiKey: "wrong-team",
+    }).reconcileStoppingWorkspaceComputers?.();
     expect(
       await (
         await request(replica({ ...options, apiKey: "wrong-team" }))
       ).json(),
-    ).toEqual({ status: "stopping" });
+    ).toEqual({ status: "stopping", cutoff: "confirmed" });
+    await replica().reconcileStoppingWorkspaceComputers?.();
     expect(await (await request(replica())).json()).toEqual({
       status: "restart_required",
       cutoff: "confirmed",
@@ -5348,21 +5358,24 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
     expect((await request(replica(), "/start")).status).toBe(429);
     expect(await (await request(replica())).json()).toEqual({
       status: "stopping",
+      cutoff: "confirmed",
     });
     expect((await request(replica(), "/start")).status).toBe(429);
     expect(creates).toBe(2);
-    expect(deletes).toBe(1);
+    expect(deletes).toBe(2);
 
     // A later inventory lookup finds the original allocation. No worker
     // was admitted on that path, but the instance still needs confirmation.
     listed = true;
-    await replica().renewWorkspaceComputers?.();
-    expect(deletes).toBe(2);
+    await replica().reconcileStoppingWorkspaceComputers?.();
+    expect(deletes).toBe(3);
     expect(await (await request(replica())).json()).toEqual({
       status: "stopping",
+      cutoff: "confirmed",
     });
     missing = true;
     listed = false;
+    await replica().reconcileStoppingWorkspaceComputers?.();
     expect(await (await request(replica())).json()).toEqual({
       status: "restart_required",
       cutoff: "confirmed",
@@ -5371,6 +5384,72 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
   } finally {
     clockTime = undefined;
     fixture.stop(true);
+  }
+});
+
+test("a pending Computer teardown leaves healthy lease renewals on schedule", async () => {
+  const stopping = await isolationOwner();
+  const healthy = await isolationOwner();
+  const entered = Promise.withResolvers<void>();
+  const teardown = Promise.withResolvers<void>();
+  const leases = new Map<string, number>();
+  const service = newApp(database, {
+    agentSandbox: {
+      async start({ workspaceId }, lease) {
+        leases.set(workspaceId, lease.expiresAt);
+      },
+      async renew({ workspaceId }, lease) {
+        leases.set(workspaceId, lease.expiresAt);
+      },
+      async destroy({ workspaceId }) {
+        if (workspaceId === stopping.workspaceId) {
+          entered.resolve();
+          await teardown.promise;
+        }
+        leases.delete(workspaceId);
+      },
+      async inspect({ workspaceId }) {
+        const leaseExpiresAt = leases.get(workspaceId);
+        return leaseExpiresAt === undefined
+          ? { kind: "never_started" }
+          : { kind: "running", leaseExpiresAt };
+      },
+    },
+  });
+  const computer = (session: string, action = "") =>
+    service.request(`/api/workspace/computer${action}`, {
+      method: action ? "POST" : "GET",
+      headers: { origin, cookie: session },
+    });
+  clockTime = now();
+  let reconciling: Promise<void> | undefined;
+  try {
+    expect((await computer(stopping.session, "/start")).status).toBe(202);
+    clockTime += 2_000;
+    expect((await computer(healthy.session, "/start")).status).toBe(202);
+    const healthyOriginal = clockTime + workspaceComputerLeaseMs;
+    clockTime += workspaceComputerLeaseMs - 1_000;
+    expect(await (await computer(stopping.session)).json()).toEqual({
+      status: "stopping",
+    });
+    reconciling = service.reconcileStoppingWorkspaceComputers?.();
+    await entered.promise;
+    await service.renewWorkspaceComputers?.();
+    expect(leases.get(healthy.workspaceId)).toBe(
+      clockTime + workspaceComputerLeaseMs,
+    );
+    clockTime = healthyOriginal + 1;
+    await service.renewWorkspaceComputers?.();
+    expect(await (await computer(healthy.session)).json()).toEqual({
+      status: "running",
+    });
+    expect(leases.has(stopping.workspaceId)).toBe(true);
+  } finally {
+    teardown.resolve();
+    await reconciling;
+    await computer(healthy.session, "/stop");
+    await computer(healthy.session);
+    clockTime = undefined;
   }
 });
 
@@ -5486,6 +5565,7 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
   const destroyed: string[] = [];
   let failSetup = false;
   let failOwnerExit = false;
+  let failOwnerRelease = false;
   let quotaCode = "ENOSPC";
   let refusal =
     "workspace_storage_quota_exceeded: The workspace file storage limit has been reached. Remove files before writing more.";
@@ -5548,7 +5628,7 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
       if (!instances.has(id))
         return Response.json({ code: 404 }, { status: 404 });
       if (request.method === "DELETE") {
-        if (id === "fixture-3" && failOwnerExit)
+        if (id === "fixture-3" && failOwnerRelease)
           return new Response(null, { status: 503 });
         destroyed.push(id);
         instances.delete(id);
@@ -5615,13 +5695,24 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
       if (!instance || instance.ownerId !== message.binding.workspaceId)
         throw new Error("Invalid fixture instance binding");
       if (message.action === "start") instance.lease = message;
+      if (
+        sandbox.sandboxId === "fixture-3" &&
+        message.action === "stop" &&
+        failOwnerExit
+      )
+        return {
+          binding: message.binding,
+          observation: { kind: "unconfirmed" },
+        };
       const lease = instance.lease;
       if (!lease) throw new Error("Fixture worker was never started");
       return {
         binding: message.binding,
         observation: {
           kind: message.action === "stop" ? "exited" : "running",
-          ...(message.action === "stop" && { exitedAt: now() }),
+          ...(message.action === "stop" && {
+            exitedAt: Math.min(now(), lease.expiresAt - 500),
+          }),
           issuedAt: lease.issuedAt,
           leaseExpiresAt: lease.expiresAt,
           pid: 123,
@@ -5881,11 +5972,23 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     expect(cleanupCalls).toEqual([]);
     await Bun.sleep(workspaceComputerLeaseMs + 100);
     await service.renewWorkspaceComputers?.();
+    await service.reconcileStoppingWorkspaceComputers?.();
     await sweepClosureAndCleanup(service);
     expect(instances.has("fixture-3")).toBe(true);
     expect(cleanupCalls).toEqual([]);
     failOwnerExit = false;
+    failOwnerRelease = true;
+    await service.reconcileStoppingWorkspaceComputers?.();
+    await sweepClosureAndCleanup(service);
+    expect(cleanupCalls).toEqual([]);
+    const [cutoff] = await database
+      .select({ result: personalWorkspaceClosures.computerCutoff })
+      .from(personalWorkspaceClosures)
+      .where(eq(personalWorkspaceClosures.id, operationId));
+    expect(cutoff?.result).toBe("confirmed");
+    failOwnerRelease = false;
     await service.renewWorkspaceComputers?.();
+    await service.reconcileStoppingWorkspaceComputers?.();
     await sweepClosureAndCleanup(service);
     expect(cleanupCalls).toEqual(["DeleteAccessPoint", "DeleteAgenticSpace"]);
     const status = cookie(
@@ -5944,6 +6047,7 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     expect(storage.accessPointId).not.toBe(ownerStorage.accessPointId);
     await database.insert(personalWorkspaceAgenticSpaces).values(storage);
     storages.push(storage);
+    accessPoints.set(storage.accessPointId, storage);
     nas.running(storage.fileSystemId, storage.agenticSpaceId);
     await mkdir(join(dir, storage.agenticSpaceId));
     roots.set(
@@ -5956,6 +6060,68 @@ test("Flash AgenticFS keeps Bot files across stop and failed setup, with a disti
     await run(other, "Read and write surviving fixture");
     expect((await computer(replacement.session, "/start")).status).toBe(202);
     await run(replacement, "Check isolation");
+
+    const journal = exportClosureJournal();
+    expect(journal).toContainEqual(
+      expect.objectContaining({
+        id: operationId,
+        storage: {
+          kind: "agenticfs",
+          fileSystemId: ownerStorage.fileSystemId,
+          accessPointId: ownerStorage.accessPointId,
+          agenticSpaceId: ownerStorage.agenticSpaceId,
+          released: true,
+        },
+      }),
+    );
+    expect(
+      await database.query.personalWorkspaceAgenticSpaces.findFirst({
+        where: eq(
+          personalWorkspaceAgenticSpaces.workspaceId,
+          owner.workspaceId,
+        ),
+      }),
+    ).toBeUndefined();
+    accessPoints.set(ownerStorage.accessPointId, ownerStorage);
+    nas.running(ownerStorage.fileSystemId, ownerStorage.agenticSpaceId);
+    const cleanupBeforeRestore = cleanupCalls.length;
+    // Model pre-upgrade retirement and a v2 operation with no storage locator.
+    await database
+      .update(personalWorkspaceClosures)
+      .set({ storageRecovery: null })
+      .where(eq(personalWorkspaceClosures.id, operationId));
+    const legacy = closureRestoreJournal.parse({
+      version: 2,
+      operations: journal
+        .filter(({ id }) => id === operationId)
+        .map(({ storage: _storage, acceptedAt, ...item }) => ({
+          ...item,
+          acceptedAt: acceptedAt.toISOString(),
+        })),
+    });
+    await reapplyWorkspaceClosures(database, [
+      ...journal.filter(({ id }) => id !== operationId),
+      ...legacy,
+    ]);
+    await sweepClosureAndCleanup(service);
+    expect(cleanupCalls).toHaveLength(cleanupBeforeRestore);
+    const [unverified] = await database
+      .select()
+      .from(personalWorkspaceClosures)
+      .where(eq(personalWorkspaceClosures.id, operationId));
+    expect(unverified?.cleanup.computerVolume?.status).toBe("unconfirmed");
+
+    await reapplyWorkspaceClosures(database, journal);
+    await sweepClosureAndCleanup(service);
+    expect(cleanupCalls.slice(cleanupBeforeRestore)).toEqual([
+      "DeleteAccessPoint",
+      "DeleteAgenticSpace",
+    ]);
+    expect(accessPoints.has(ownerStorage.accessPointId)).toBe(false);
+    expect(nas.spaces.has(ownerStorage.agenticSpaceId)).toBe(false);
+    expect(nas.spaces.has(storage.agenticSpaceId)).toBe(true);
+    expect(accessPoints.has(storage.accessPointId)).toBe(true);
+    await run(replacement, "Read and write surviving fixture");
   } finally {
     app = priorApp;
     clockTime = undefined;
@@ -6396,6 +6562,7 @@ for (const cutoff of [
       });
       expect((await request("computer/start", {})).status).toBe(429);
       delayEvidence = false;
+      await worker.reconcileStoppingWorkspaceComputers?.();
       expect(await (await request("computer")).json()).toEqual({
         status: "restart_required",
         cutoff: "confirmed",
@@ -8443,16 +8610,33 @@ test("a pre-closure restore fences sessions, exports and dispatch before worker 
   // The DB represents the backup taken before closure. The journal also
   // contains a run locator recorded by the authority after that backup.
   const operationId = crypto.randomUUID();
+  const laterOperationId = crypto.randomUUID();
+  const laterWorkspaceId = crypto.randomUUID();
   const journal = [
     ...exportClosureJournal(),
     ...closureRestoreJournal.parse({
-      version: 2,
+      version: 3,
       operations: [
+        {
+          id: laterOperationId,
+          accountId: account.id,
+          workspaceId: laterWorkspaceId,
+          acceptedAt: new Date(Date.now() + 1000).toISOString(),
+          storage: { kind: "none" },
+          intelligence: [
+            {
+              agentId: "later-agent",
+              threadId: "later-thread",
+              runId: "later-run",
+            },
+          ],
+        },
         {
           id: operationId,
           accountId: account.id,
           workspaceId: owner.workspaceId,
           acceptedAt: new Date().toISOString(),
+          storage: { kind: "none" },
           intelligence: [
             {
               agentId: owner.botId,
@@ -8481,7 +8665,7 @@ test("a pre-closure restore fences sessions, exports and dispatch before worker 
   const returning = await authenticate(owner.account);
   expect(returning.headers.get("location")).toBe("/workspace/closure/progress");
   const status = cookie(returning, "__Host-openbot-closure-status=");
-  const seen: unknown[] = [];
+  const seen = new Map<string, unknown>();
   const worker = newApp(
     database,
     undefined,
@@ -8489,9 +8673,10 @@ test("a pre-closure restore fences sessions, exports and dispatch before worker 
     undefined,
     undefined,
     async (step, target) => {
-      if (target.id !== operationId) return { status: "unconfirmed" };
+      if (target.id !== operationId && target.id !== laterOperationId)
+        return { status: "unconfirmed" };
       if (step === "internalServices")
-        seen.push(...(target.intelligence ?? []));
+        seen.set(target.workspaceId, target.intelligence);
       return { status: "confirmed" };
     },
   );
@@ -8501,7 +8686,14 @@ test("a pre-closure restore fences sessions, exports and dispatch before worker 
     onlineCleanup: { postgres: { status: "confirmed" } },
     remoteRevocation: { status: "confirmed" },
   });
-  expect(seen).toContainEqual({
+  expect(seen.get(laterWorkspaceId)).toEqual([
+    {
+      agentId: "later-agent",
+      threadId: "later-thread",
+      runId: "later-run",
+    },
+  ]);
+  expect(seen.get(owner.workspaceId)).toContainEqual({
     agentId: owner.botId,
     threadId: "after-backup",
     runId: "after-backup",
