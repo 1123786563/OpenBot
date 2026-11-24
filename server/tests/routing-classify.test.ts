@@ -100,6 +100,35 @@ describe("routing a message with no @mention", () => {
     expect(r.agentId).toBe("general-assistant");
     expect(r.fallback).toBe(true);
   });
+
+  test("forwards the auxiliary billing context to the routing model", async () => {
+    let options: unknown;
+    const router = createIntentRouter({
+      complete: async (_prompt, received) => {
+        options = received;
+        return '{"agentId":"knowledge","reason":"docs","confidence":0.9}';
+      },
+    });
+    await router.route("find the policy", ROSTER, "general-assistant", {
+      billing: {
+        source: "routing",
+        personId: "person-1",
+        conversationId: "routing:person-1",
+        botId: "general-assistant",
+        runId: "run-1",
+        step: "route-intent",
+        funding: { kind: "user" },
+      },
+    });
+    expect(options).toMatchObject({
+      billing: {
+        source: "routing",
+        personId: "person-1",
+        runId: "run-1",
+        step: "route-intent",
+      },
+    });
+  });
 });
 
 /**

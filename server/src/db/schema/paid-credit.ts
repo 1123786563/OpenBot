@@ -1,0 +1,373 @@
+import { sql } from "drizzle-orm";
+import {
+  bigint,
+  boolean,
+  check,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { jsonb } from "./json";
+import { testCreditAccounts } from "./test-credit";
+
+/**
+ * Paid credit ledger (#99–#103, #101): pilot products, orders that lock the
+ * purchased product version and price, and the entitlements a verified order
+ * grants — one Beijing-time billing period for the subscription plan, or a
+ * long-lived Credit Pack amount.
+ */
+
+// The pilot sells exactly one monthly Subscription Plan and one long-lived
+// Credit Pack; prices and amounts are configurable per version.
+export const paidProducts = pgTable(
+  "paid_products",
+  {
+    code: text().primaryKey(),
+    kind: text({ enum: ["subscription", "credit_pack"] }).notNull(),
+    // Orders lock the version they were created under.
+    version: integer().notNull(),
+    priceCents: integer().notNull(),
+    creditsMicrocredits: bigint("credits_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    active: boolean().notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "paid_products_amounts",
+      sql`${table.version} > 0 AND ${table.priceCents} > 0 AND ${table.creditsMicrocredits} > 0`,
+    ),
+  ],
+);
+
+export const paidOrderStates = [
+  "pending",
+  "verified",
+  "refund_pending",
+  "refunded",
+  "failed",
+] as const;
+
+export const paidOrders = pgTable(
+  "paid_orders",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    productCode: text("product_code").notNull(),
+    // Locked at creation: a later price change never rewrites a placed order.
+    productVersion: integer("product_version").notNull(),
+    priceCents: integer("price_cents").notNull(),
+    lockedKind: text("locked_kind", { enum: ["subscription", "credit_pack"] }),
+    lockedMicrocredits: bigint("locked_microcredits", { mode: "bigint" }),
+    testMerchant: text("test_merchant"),
+    channel: text({ enum: ["wechat", "alipay"] }).notNull(),
+    // The channel's own order reference, unique per channel once verified, so
+    // replayed callbacks can never grant twice.
+    channelOrderRef: text("channel_order_ref"),
+    switchedFromOrderId: uuid("switched_from_order_id"),
+    checkoutAttemptId: uuid("checkout_attempt_id"),
+    renewsOrderId: uuid("renews_order_id"),
+    state: text({ enum: paidOrderStates }).notNull().default("pending"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    // Set when the channel closed an order nobody had paid (#109 截点关闭可关订单).
+    // A trusted payment that turns up anyway still verifies.
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedBy: text("closed_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("paid_orders_switch_once").on(table.switchedFromOrderId),
+    index("paid_orders_checkout_attempt").on(table.checkoutAttemptId),
+    uniqueIndex("paid_orders_channel_ref").on(
+      table.channel,
+      table.channelOrderRef,
+    ),
+    check(
+      "paid_orders_amounts",
+      sql`${table.productVersion} > 0 AND ${table.priceCents} > 0`,
+    ),
+    check(
+      "paid_orders_closed",
+      sql`(${table.closedAt} is null) = (${table.closedBy} is null)`,
+    ),
+  ],
+);
+
+export const billingSuspensionHistory = pgTable(
+  "billing_suspension_history",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.startedAt] }),
+    check(
+      "billing_suspension_history_time",
+      sql`${table.endedAt} >= ${table.startedAt}`,
+    ),
+  ],
+);
+
+export const paidEntitlementKinds = ["subscription", "credit_pack"] as const;
+
+// Entitlement states that persist: a not-yet-started future period, a frozen
+// refund in flight, and a revoked grant. Active and expired derive from the
+// period timestamps at read time.
+export const paidEntitlementStates = [
+  "future",
+  "frozen",
+  "revoked",
+  "granted",
+] as const;
+
+export const paidEntitlements = pgTable(
+  "paid_entitlements",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    // Orders grant entitlements; Correction Credits (#105) arrive without
+    // one, so the link is nullable.
+    orderId: uuid("order_id").references(() => paidOrders.id),
+    kind: text({ enum: paidEntitlementKinds }).notNull(),
+    // Subscription: the Beijing billing period this order bought. Credit
+    // packs are long-lived, so their window is unbounded.
+    periodStart: timestamp("period_start", { withTimezone: true }),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    anchorDay: integer("anchor_day"),
+    creditsMicrocredits: bigint("credits_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    // Charged amounts consume the entitlement; holds are tracked by the
+    // allocation rows so released reservations never reduce this.
+    consumedMicrocredits: bigint("consumed_microcredits", {
+      mode: "bigint",
+    })
+      .notNull()
+      .default(sql`0`),
+    state: text({ enum: paidEntitlementStates }).notNull().default("granted"),
+    arrivedAt: timestamp("arrived_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // At most one paid future period per account: concurrent verified orders
+    // for the same future window cannot both claim it.
+    uniqueIndex("paid_entitlements_one_future")
+      .on(table.accountId)
+      .where(sql`kind = 'subscription' AND state = 'future'`),
+    check(
+      "paid_entitlements_amounts",
+      sql`${table.creditsMicrocredits} > 0 AND ${table.consumedMicrocredits} >= 0 AND ${table.consumedMicrocredits} <= ${table.creditsMicrocredits} AND (${table.kind} <> 'subscription' OR (${table.periodStart} IS NOT NULL AND ${table.periodEnd} IS NOT NULL AND ${table.periodEnd} > ${table.periodStart} AND ${table.anchorDay} BETWEEN 1 AND 31))`,
+    ),
+    index("paid_entitlements_account").on(table.accountId, table.arrivedAt),
+  ],
+);
+
+export const paidAllocationStates = ["held", "settled", "released"] as const;
+
+// A reservation's hold split across paid credit sources, in the order
+// consumption must follow: current-period subscription credits first, then
+// Credit Packs by arrival. Releases void the hold; settlement consumes the
+// sources in the same order.
+export const paidCreditAllocations = pgTable(
+  "paid_credit_allocations",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    operationId: text("operation_id").notNull(),
+    entitlementId: uuid("entitlement_id").references(() => paidEntitlements.id),
+    position: integer().notNull(),
+    amountMicrocredits: bigint("amount_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    // What a settlement actually drew from this source; null while the hold
+    // is intact and for released, never-consumed holds. The bill view reads
+    // this so partially drawn rows book their true amount per source.
+    consumedMicrocredits: bigint("consumed_microcredits", { mode: "bigint" }),
+    state: text({ enum: paidAllocationStates }).notNull().default("held"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("paid_credit_allocations_operation").on(
+      table.accountId,
+      table.operationId,
+      table.position,
+    ),
+    check(
+      "paid_credit_allocations_amount",
+      sql`${table.amountMicrocredits} > 0`,
+    ),
+    index("paid_credit_allocations_holds").on(table.entitlementId, table.state),
+  ],
+);
+
+export const paidRefundStates = [
+  "awaiting_settlement",
+  "requested",
+  "processing",
+  "manual_review",
+  "manual_owed",
+  "confirmed",
+  "failed",
+] as const;
+
+type DisputeEvidence = { by: string; reference: string; at: string };
+
+type PaymentDispute = {
+  opened: DisputeEvidence;
+  reversal?: DisputeEvidence;
+  reconciliation?: DisputeEvidence;
+};
+
+// One original-route refund per order (#102/#103): the money always goes
+// back through the channel that took it, in the order's own currency
+// amount, whatever the reason. The row is the refund-progress contract
+// shared by user requests, lost future-period claims and suspended-account
+// payments; replays converge on this single record.
+export const paidRefunds = pgTable(
+  "paid_refunds",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => paidOrders.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    // The channel that took the payment refunds it (原路退款).
+    channel: text({ enum: ["wechat", "alipay"] }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    reason: text().notNull(),
+    // Staff handling the case (#104 disputes); refund requests from the
+    // channel side record the notifying operator.
+    openedBy: text("opened_by").notNull().default("channel"),
+    dispute: jsonb().$type<PaymentDispute>(),
+    state: text({ enum: paidRefundStates }).notNull().default("requested"),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    // When a confirmed dispute revokes an order with consumption, the used
+    // part's RMB value cannot go back through the channel automatically —
+    // it enters manual reconciliation (人工对账) instead.
+    usedMicrocredits: bigint("used_microcredits", { mode: "bigint" }),
+    manualReviewCents: integer("manual_review_cents"),
+  },
+  (table) => [
+    uniqueIndex("paid_refunds_order").on(table.orderId),
+    check("paid_refunds_amounts", sql`${table.amountCents} > 0`),
+  ],
+);
+
+export const paidCorrectionKinds = [
+  "overcharge_refund",
+  "fault_compensation",
+] as const;
+
+// Individually verified corrections (#105): a proved overcharge returns
+// credits to the source that paid them (or becomes non-expiring Correction
+// Credits when that source is gone), and platform-fault compensation lands
+// as its own credit. Original records are never rewritten; the correction
+// row is the audit link between the original operation, the reason, the
+// evidence and the operator.
+export const paidCorrections = pgTable(
+  "paid_corrections",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    // The original operation, when the verified case concerns one.
+    operationId: text("operation_id"),
+    // The first restored source or the compensation entitlement.
+    entitlementId: uuid("entitlement_id").references(() => paidEntitlements.id),
+    kind: text({ enum: paidCorrectionKinds }).notNull(),
+    amountMicrocredits: bigint("amount_microcredits", {
+      mode: "bigint",
+    }).notNull(),
+    reason: text().notNull(),
+    evidence: text().notNull(),
+    by: text().notNull(),
+    availableBeforeMicrocredits: bigint("available_before_microcredits", {
+      mode: "bigint",
+    }),
+    availableAfterMicrocredits: bigint("available_after_microcredits", {
+      mode: "bigint",
+    }),
+    correctionCreditsMicrocredits: bigint("correction_credits_microcredits", {
+      mode: "bigint",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("paid_corrections_account").on(table.accountId, table.createdAt),
+    check("paid_corrections_amounts", sql`${table.amountMicrocredits} > 0`),
+  ],
+);
+
+// The pilot's wind-down switch (#109 shutdown): the pilot row or an account ID.
+// While sales are stopped no new orders; while reserves are stopped no new
+// reservations — dispatched work keeps settling, and payments confirmed at
+// or after the cutoff refund in full without granting.
+export const paidPilotClosure = pgTable("paid_pilot_closure", {
+  id: text().primaryKey(),
+  salesStoppedAt: timestamp("sales_stopped_at", { withTimezone: true }),
+  reservesStoppedAt: timestamp("reserves_stopped_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const billingPilotSignoffs = pgTable(
+  "billing_pilot_signoffs",
+  {
+    kind: text({ enum: ["application", "channel"] }).notNull(),
+    id: text().notNull(),
+    evidence: text({ enum: ["fixture", "deployment"] }).notNull(),
+    record: jsonb().notNull(),
+    signedAt: timestamp("signed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pausedBy: text("paused_by"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.kind, table.id, table.evidence] }),
+    check(
+      "billing_pilot_signoff_kind",
+      sql`${table.kind} in ('application', 'channel')`,
+    ),
+    check(
+      "billing_pilot_signoff_evidence",
+      sql`${table.evidence} in ('fixture', 'deployment')`,
+    ),
+    check(
+      "billing_pilot_signoff_pause",
+      sql`(${table.pausedAt} is null) = (${table.pausedBy} is null)`,
+    ),
+  ],
+);

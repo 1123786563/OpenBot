@@ -1,0 +1,10 @@
+{
+  "mode": "seed",
+  "accountId": "c11f1e47-44a0-409d-abe3-57b05a4e5b00",
+  "lagoCustomer": 200,
+  "events": [
+    { "eventId": "92a9593d-fa4d-41fb-ad72-c7d915dc35e7", "microcredits": 50 },
+    { "eventId": "2246293e-ae36-4014-9000-f420588c9f29", "microcredits": 57 },
+    { "eventId": "78305e24-e91e-4745-8a97-e734bc3c8c25", "microcredits": 64 }
+  ]
+}

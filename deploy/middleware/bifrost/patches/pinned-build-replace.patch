@@ -1,0 +1,10 @@
+--- a/Dockerfile.zhipu-proxy-go
++++ b/Dockerfile.zhipu-proxy-go
+@@ -34,6 +34,7 @@
+   
+   # Copy source code and dependencies
+   COPY transports/ ./
++  RUN go mod edit -replace github.com/maximhq/bifrost/core=/zhipu-core
+   
+   COPY --from=ui-builder /app/out ./bifrost-http/ui
+   

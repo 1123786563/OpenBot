@@ -1,0 +1,1 @@
+ALTER TABLE "paid_refunds" ADD COLUMN "dispute" jsonb;

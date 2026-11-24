@@ -1,7 +1,9 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { z } from "zod";
 import type { AppVariables } from "../auth/guards";
 import { plainFailure } from "../tasks/state";
+import { TaskRefusedError } from "../tasks/store";
 import type { ProactiveEngine } from "./engine";
 import {
   type ProactiveRunRow,
@@ -77,7 +79,10 @@ export function createProactiveRoutes(
   routes.onError((error, context) => {
     if (error instanceof ProactiveNotFoundError)
       return context.json({ error: error.message }, 404);
-    if (error instanceof ProactiveRefusedError)
+    if (
+      error instanceof ProactiveRefusedError ||
+      error instanceof TaskRefusedError
+    )
       return context.json({ error: error.message }, 400);
     console.error(
       JSON.stringify({
@@ -143,9 +148,23 @@ export function createProactiveRoutes(
     }),
   );
   routes.post("/suggestions/:id/start", async (context) => {
+    const raw = await context.req.text();
+    const parsed = z
+      .strictObject({
+        budgetId: z
+          .string()
+          .regex(/^[a-zA-Z0-9_-]{1,128}$/)
+          .optional(),
+      })
+      .safeParse(
+        raw ? await new Response(raw).json().catch(() => undefined) : {},
+      );
+    if (!parsed.success)
+      return context.json({ error: "Invalid task start." }, 400);
     const { suggestion, task } = await engine.start(
       context.var.actor.id,
       context.req.param("id"),
+      parsed.data.budgetId,
     );
     return context.json({ suggestion: payloadOf(suggestion), task });
   });

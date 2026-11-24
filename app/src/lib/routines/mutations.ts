@@ -28,6 +28,7 @@ export type RoutineInput = {
   timezone: string;
   /** A conversation the person and the Bot share, or `NEW_CONVERSATION` to start one for it. */
   channelId: string;
+  budgetId?: string;
 };
 
 /**

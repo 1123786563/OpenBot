@@ -996,8 +996,19 @@ test("puts the server beside the database and the Bots, and the worker beside th
   expect(Object.keys(services.worker.environment ?? {}).sort()).toEqual([
     "DATABASE_URL",
     "DEPLOYMENT_ID",
+    "LAGO_API_KEY",
+    "LAGO_URL",
+    "LAGO_USAGE_SUBSCRIPTION_ID",
+    "OPENBOT_TEST_CREDIT_CONVERSATIONS",
     "OTEL_SERVICE_NAME",
     "SERVER_INTERNAL_URL",
+    "TEST_CREDIT_BIFROST_LOG_ORIGIN",
+    "TEST_CREDIT_BIFROST_LOG_TOKEN",
+    "TEST_CREDIT_CASDOOR_ISSUER",
+    "TEST_CREDIT_CASDOOR_PROVIDER_ID",
+    "TEST_CREDIT_GATEWAY_IMAGE_DIGEST",
+    "TEST_CREDIT_GATEWAY_REVISION",
+    "TEST_CREDIT_METERING_REVISION",
     "WORKER_SHARED_SECRET",
   ]);
   expect(services.worker.environment?.SERVER_INTERNAL_URL).toBe(

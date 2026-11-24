@@ -45,6 +45,7 @@
   "nav.closeNavigation": "Close navigation",
   "nav.connections": "Connections",
   "nav.conversations": "Conversations",
+  "nav.credits": "Credits",
   "nav.deleteConversation": "Delete conversation…",
   "nav.empty.description": "Start a conversation with a Bot and it shows up here.",
   "nav.empty.loadOlder": "Load older conversations to search more of your history.",

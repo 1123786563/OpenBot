@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  index,
   pgTable,
   primaryKey,
   text,
@@ -20,6 +21,7 @@ export const directChatRuns = pgTable(
     id: text("id").notNull(),
     userMessageId: text("user_message_id").notNull(),
     prompt: text("prompt").notNull(),
+    testCreditOperationId: text("test_credit_operation_id"),
     assistantMessageId: text("assistant_message_id"),
     reply: text("reply"),
     status: text("status")
@@ -35,6 +37,11 @@ export const directChatRuns = pgTable(
       table.threadId,
       table.userMessageId,
     ),
+    index("direct_chat_runs_credit_recovery_idx")
+      .on(table.startedAt)
+      .where(
+        sql`${table.testCreditOperationId} IS NOT NULL AND ${table.status} <> 'completed'`,
+      ),
     check(
       "direct_chat_runs_status_check",
       sql`${table.status} in ('running', 'completed', 'failed')`,

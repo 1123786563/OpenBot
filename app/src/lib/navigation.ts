@@ -3,6 +3,7 @@ import {
   IconBolt,
   IconBox,
   IconClock,
+  IconCoins,
   IconPlug,
   IconSettings,
   IconShieldLock,
@@ -27,6 +28,7 @@ export type NavigationItem =
         | "routines"
         | "goals"
         | "capabilities"
+        | "credits"
         | "connections"
         | "admin"
         | "settings";
@@ -37,6 +39,7 @@ export type NavigationItem =
         | "/routines"
         | "/responsibilities"
         | "/capabilities"
+        | "/billing"
         | "/connections"
         | "/admin"
         | "/settings";
@@ -110,6 +113,13 @@ export const NAVIGATION: readonly NavigationItem[] = [
     ...navigationMessage("nav.connections", "Connections"),
     to: "/connections",
     icon: IconPlug,
+    section: "primary",
+  },
+  {
+    id: "credits",
+    ...navigationMessage("nav.credits", "Credits"),
+    to: "/billing",
+    icon: IconCoins,
     section: "primary",
   },
   {

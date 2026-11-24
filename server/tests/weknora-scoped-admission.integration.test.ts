@@ -11,6 +11,7 @@ import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createDatabase } from "../src/db/client";
 import {
   enterpriseSettings,
+  lagoUsageEvents,
   personalSaasAccounts,
   personalWorkspaceSuspensions,
   personalWorkspaces,
@@ -401,6 +402,9 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
           ),
         );
       if (billingAccount) {
+        await tx
+          .delete(lagoUsageEvents)
+          .where(eq(lagoUsageEvents.accountId, billingAccount.id));
         await tx
           .delete(testCreditEvidence)
           .where(eq(testCreditEvidence.accountId, billingAccount.id));

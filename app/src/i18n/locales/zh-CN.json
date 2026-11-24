@@ -45,6 +45,7 @@
   "nav.closeNavigation": "关闭导航",
   "nav.connections": "连接",
   "nav.conversations": "对话",
+  "nav.credits": "积分",
   "nav.deleteConversation": "删除对话…",
   "nav.empty.description": "与 Bot 开始对话后，对话会显示在这里。",
   "nav.empty.loadOlder": "加载更早的对话，搜索更多历史记录。",

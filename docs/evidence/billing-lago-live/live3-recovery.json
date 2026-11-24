@@ -1,0 +1,10 @@
+{
+  "mode": "flush",
+  "accountId": "c11f1e47-44a0-409d-abe3-57b05a4e5b00",
+  "flush": { "sent": 3, "paused": 0 },
+  "rows": [
+    { "eventId": "92a9593d-fa4d-41fb-ad72-c7d915dc35e7", "state": "accepted" },
+    { "eventId": "2246293e-ae36-4014-9000-f420588c9f29", "state": "accepted" },
+    { "eventId": "78305e24-e91e-4745-8a97-e734bc3c8c25", "state": "accepted" }
+  ]
+}

@@ -784,6 +784,7 @@ test("managed Bot runs spend the shared grant and the owner can still read histo
         expect(requestId).toBeTruthy();
         meteredRequests.set(requestId, body);
         return Response.json({
+          requestId,
           gatewayRevision: request.headers.get(
             "x-openbot-bifrost-gateway-revision",
           ),

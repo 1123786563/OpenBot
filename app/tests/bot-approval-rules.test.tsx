@@ -151,11 +151,14 @@ test("removing a saved rule writes only after confirmation", async () => {
 
   await user.click(remove);
   await user.click(await view.findByRole("button", { name: "Remove rule" }));
-  await waitFor(() =>
-    expect(sent).toEqual([
-      { path: "/api/approvals/rules/mine", method: "DELETE", body: undefined },
-    ]),
-  );
+  await waitFor(() => expect(sent).toHaveLength(1));
+  const [request] = sent;
+  if (!request) throw new Error("Missing rule removal request.");
+  expect(request).toMatchObject({
+    path: "/api/approvals/rules/mine",
+    method: "DELETE",
+  });
+  expect(request.body).toBeUndefined();
 });
 
 test("a rule added here is for this Bot, with no Bot to type", async () => {

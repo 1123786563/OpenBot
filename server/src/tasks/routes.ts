@@ -12,7 +12,8 @@ import { TaskNotFoundError, TaskRefusedError, type TaskStore } from "./store";
  */
 export function createTaskRoutes(
   store: TaskStore,
-  runner: Pick<TaskRunner, "again">,
+  runner: Pick<TaskRunner, "again"> &
+    Partial<Pick<TaskRunner, "continueBudgeted">>,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -56,6 +57,14 @@ export function createTaskRoutes(
    * Try again: the failed turn runs once more, in the task's own conversation. Answered with the task
    * as it stands now, which is Working.
    */
+  routes.post("/:id/continue", async (context) => {
+    const owner = context.var.actor.id;
+    const id = context.req.param("id");
+    if (!runner.continueBudgeted)
+      return context.json({ error: "Task continuation unavailable." }, 503);
+    await runner.continueBudgeted(owner, id);
+    return context.json<TaskResponse>({ task: await store.get(owner, id) });
+  });
   routes.post("/:id/again", async (context) => {
     const owner = context.var.actor.id;
     const id = context.req.param("id");

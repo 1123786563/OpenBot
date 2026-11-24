@@ -4,7 +4,9 @@ import {
   IconRadar,
   IconX,
 } from "@tabler/icons-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { ExecutionBudgetDialog } from "@/components/billing/execution-budget-dialog";
 import { BoardRow, MetaTag } from "@/components/needs-you/board-row";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useTranslation } from "@/i18n";
 import {
   changeProactiveSettingMutationOptions,
@@ -53,6 +56,8 @@ export function SuggestionRow({
   inGroup?: boolean;
   onDismiss?: (trigger: HTMLButtonElement) => void;
 }) {
+  const { data: capabilities } = useQuery(deploymentCapabilitiesQueryOptions());
+  const [budgetOpen, setBudgetOpen] = useState(false);
   // Subscribes this row to the interface language, so choosing another one redraws its time in place.
   useTranslation();
   const act = useMutation(resolveSuggestionMutationOptions(queryClient));
@@ -75,6 +80,30 @@ export function SuggestionRow({
             >
               {pressed === "start" ? "Starting…" : "Work on it"}
             </Button>
+            {capabilities?.testCreditConversations ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={act.isPending}
+                onClick={() => setBudgetOpen(true)}
+              >
+                Use Credits
+              </Button>
+            ) : null}
+            {budgetOpen ? (
+              <ExecutionBudgetDialog
+                title="Set a Task budget"
+                onClose={() => setBudgetOpen(false)}
+                submit={(budgetId) =>
+                  act.mutateAsync({
+                    id: suggestion.id,
+                    action: "start",
+                    budgetId,
+                  })
+                }
+              />
+            ) : null}
             <Button
               aria-label={`Dismiss ${suggestion.title}`}
               className="min-h-11 min-w-11"

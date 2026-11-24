@@ -55,7 +55,7 @@ test("the pilot executor makes one bounded provider request and returns metered 
         body: {
           model: "openai/fixture",
           messages: input.messages,
-          max_completion_tokens: 3,
+          max_tokens: 3,
           stream: false,
         },
       },

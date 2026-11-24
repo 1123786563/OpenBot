@@ -1,0 +1,10 @@
+{
+  "mode": "flush",
+  "accountId": "f315db0d-0fa1-4713-8454-3e008d59d10f",
+  "flush": { "sent": 0, "paused": 0 },
+  "rows": [
+    { "eventId": "16ffaf6d-79be-458a-a9ce-394c0ebc4223", "state": "pending" },
+    { "eventId": "e6c69373-dcf2-40a1-b91c-4f5e30e58164", "state": "pending" },
+    { "eventId": "0cc8e266-dc74-4240-a690-1879f69ff946", "state": "pending" }
+  ]
+}

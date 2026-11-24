@@ -118,6 +118,7 @@ export function resumeConversationStart(
   owner: string,
   id: string,
   update: ProgressUpdate,
+  confirmation?: Parameters<typeof routeMessage>[4],
 ): Promise<StartRecord> {
   const key = JSON.stringify([owner, id]);
   const existing = startsInProgress.get(key);
@@ -136,8 +137,15 @@ export function resumeConversationStart(
     if (draft.recipient.kind === "route") {
       let agentId: string | undefined;
       try {
-        agentId = (await routeMessage(draft.text, undefined, draft.commandIds))
-          .agentId;
+        agentId = (
+          await routeMessage(
+            draft.text,
+            undefined,
+            draft.commandIds,
+            id,
+            confirmation,
+          )
+        ).agentId;
       } catch (error) {
         if (
           draft.commandIds.length ||

@@ -35,8 +35,10 @@ import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
 import { currentApprovalContext } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
-import type { ProductSurface } from "../telemetry/product";
+import type { BackgroundModel } from "../billing/background-model";
+import { budgetedTurn } from "../billing/background-model-turn";
 import { REFUSAL_MARKER } from "../plugins/tools";
+import type { ProductSurface } from "../telemetry/product";
 
 const parameters = z.object({
   task: z
@@ -61,6 +63,9 @@ export const SUBAGENT_HANDED_BACK =
 /** The run asking, as this deployment knows it. */
 export type SubagentParent = {
   runId?: string;
+  budgetId?: string;
+  coordinationOperationId?: string;
+  billingTaskId?: string;
   /** The asking run's root task, as its analytics context states it; the subagent works for it. */
   rootTaskId?: string;
   auditRootTaskId?: string | null;
@@ -119,6 +124,11 @@ export function createSubagents(options: {
   turn: Omit<TurnOptions, "buildAgentFor" | "components">;
   /** The same Bot as the person's run gets, built for a subagent: no coordination, no nesting. */
   buildAgentFor: TurnOptions["buildAgentFor"];
+  backgroundModel?: BackgroundModel;
+  authorizeBudgetedTurn?: (
+    turn: Parameters<ReturnType<typeof createTurnRunner>>[0],
+    parent: SubagentParent,
+  ) => Promise<void>;
   /** Close every approval request the subagent's run opened, without carrying that run on. */
   withdrawApprovals: (ownerUserId: string, runId: string) => Promise<unknown>;
   /**
@@ -160,7 +170,10 @@ export function createSubagents(options: {
           if (started >= perAnswer)
             return `${REFUSAL_MARKER} No subagent was started: one answer can start up to ${perAnswer} subagents, and this one has. Do this part yourself.`;
           started += 1;
-          if (await options.asksEveryStep?.(parent.actorId, parent.threadId))
+          if (
+            !parent.budgetId &&
+            (await options.asksEveryStep?.(parent.actorId, parent.threadId))
+          )
             return `${REFUSAL_MARKER} No subagent was started: in a task from a check-in, every step is checked with the person in this conversation. Do this part yourself.`;
 
           const toolCallId =
@@ -170,7 +183,7 @@ export function createSubagents(options: {
           const threadId = await subagentThreadId(parent.threadId, toolCallId);
           const runId = crypto.randomUUID();
           let agent: AbstractAgent | undefined;
-          const runTurn = createTurnRunner({
+          const unmetered = createTurnRunner({
             ...options.turn,
             buildAgentFor: async (input) => {
               agent = await options.buildAgentFor(input);
@@ -180,6 +193,37 @@ export function createSubagents(options: {
           const messages = () => agent?.messages ?? [];
           const answer = (result: SubagentResult) => JSON.stringify(result);
           try {
+            const parentRunId = parent.runId;
+            if (parent.budgetId && !parentRunId)
+              throw new Error("The parent Run is unavailable.");
+            const runTurn =
+              parent.budgetId && parentRunId
+                ? budgetedTurn(
+                    options.backgroundModel,
+                    {
+                      kind: "subagent",
+                      executionId: JSON.stringify([
+                        parent.coordinationOperationId ?? parentRunId,
+                        toolCallId,
+                      ]),
+                      parentRunId,
+                    },
+                    (metered) =>
+                      createTurnRunner({
+                        ...options.turn,
+                        buildAgentFor: async () => {
+                          agent = metered;
+                          return metered;
+                        },
+                      }),
+                    async (turn) => {
+                      if (!options.authorizeBudgetedTurn)
+                        throw new Error("The parent Run is unavailable.");
+                      await options.authorizeBudgetedTurn(turn, parent);
+                    },
+                    unmetered,
+                  )
+                : unmetered;
             const { replyText } = await runTurn({
               ownerUserId: parent.actorId,
               telemetry: {
@@ -193,6 +237,7 @@ export function createSubagents(options: {
               agentId: parent.botId,
               threadId,
               runId,
+              ...(parent.budgetId ? { budget: { id: parent.budgetId } } : {}),
               instruction: parsed.data.task,
               userMessage: {
                 id: crypto.randomUUID(),

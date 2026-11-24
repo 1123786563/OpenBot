@@ -781,13 +781,14 @@ test("a recording started during the disconnect confirmation requires a new conf
   expect(sent).toEqual([]);
   fireEvent.click(stop);
   await view.findByText("No browsers connected yet.");
-  expect(sent).toEqual([
-    {
-      path: "/api/recorder/connections/conn-1",
-      method: "DELETE",
-      body: undefined,
-    },
-  ]);
+  expect(sent).toHaveLength(1);
+  const [request] = sent;
+  if (!request) throw new Error("Missing request.");
+  expect(request).toMatchObject({
+    path: "/api/recorder/connections/conn-1",
+    method: "DELETE",
+  });
+  expect(request.body).toBeUndefined();
 });
 
 test("a connect request nobody confirms expires after five minutes and stops polling", async () => {

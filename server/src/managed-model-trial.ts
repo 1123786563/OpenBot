@@ -6,6 +6,9 @@ const denial = z.enum([
   "execution_limit",
   "not_authorized",
   "route_unavailable",
+  // The wind-down switch: no new reservation of either Credit type.
+  "pilot_closed",
+  "trial_ended",
 ]);
 const denied = z.object({ state: z.literal("denied"), reason: denial });
 const reservation = z.discriminatedUnion("state", [
@@ -21,21 +24,41 @@ const dispatch = z.discriminatedUnion("state", [
 const reconciliation = z.object({
   state: z.enum(["pending", "settled", "released", "absent"]),
 });
+// What the ledger publishes, for the Price Version a reservation pins.
+const publication = z.object({
+  route: z.string().min(1),
+  priceVersion: z.string().min(1),
+});
 
 type ModelScope = {
-  source: "direct-chat" | "learning" | "hindsight";
+  source:
+    | "direct-chat"
+    | "learning"
+    | "hindsight"
+    | "routing"
+    | "tool-selection"
+    | "approval"
+    | "admin";
   personId: string;
   runId: string;
   conversationId: string;
   botId: string;
 };
-type ModelOperation = { scope: ModelScope; step: string };
+export type ModelOperation = {
+  scope: ModelScope;
+  step: string;
+  budget?: { id: string; stepId?: string };
+};
 type ModelMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
-function operationId({ scope, step }: ModelOperation) {
+export function managedModelOperationId({
+  scope,
+  step,
+  budget,
+}: ModelOperation) {
   return createHash("sha256")
     .update(
       JSON.stringify([
@@ -46,6 +69,8 @@ function operationId({ scope, step }: ModelOperation) {
         scope.botId,
         scope.runId,
         step,
+        budget?.id ?? null,
+        budget?.stepId ?? null,
       ]),
     )
     .digest("hex");
@@ -69,6 +94,8 @@ export function createManagedModel({
   url: URL;
   token: string;
 }) {
+  const headers = { authorization: `Bearer ${token}` };
+
   async function post(
     path: string,
     body: object,
@@ -77,10 +104,7 @@ export function createManagedModel({
     const response = await fetch(new URL(`v1/${path}`, url), {
       method: "POST",
       redirect: "error",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
+      headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
@@ -89,9 +113,26 @@ export function createManagedModel({
     return response.json();
   }
 
+  // The Price Version is read here, not configured, so a reservation made
+  // after a new publication pins that one and is never refused as stale.
+  async function priceVersion() {
+    const response = await fetch(new URL("v1/quote", url), {
+      redirect: "error",
+      headers,
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok)
+      throw new Error("Managed model control plane unavailable.");
+    return publication.parse(await response.json()).priceVersion;
+  }
+
   async function reconcile(operation: ModelOperation) {
     return reconciliation.parse(
-      await post("reconcile", { operationId: operationId(operation) }, 5_000),
+      await post(
+        "reconcile",
+        { operationId: managedModelOperationId(operation) },
+        5_000,
+      ),
     ).state;
   }
 
@@ -103,7 +144,15 @@ export function createManagedModel({
         messages: readonly ModelMessage[];
       },
     ): Promise<ManagedModelResult> {
-      const id = operationId(input);
+      const id = managedModelOperationId(input);
+      // Nothing has been asked of the ledger until the publication is read,
+      // so a control plane that cannot serve it leaves nothing to reconcile.
+      let price: string;
+      try {
+        price = await priceVersion();
+      } catch {
+        return { state: "unavailable" };
+      }
       let admission: z.infer<typeof reservation>;
       try {
         admission = reservation.parse(
@@ -111,11 +160,18 @@ export function createManagedModel({
             "reserve",
             {
               operationId: id,
-              application: "openbot",
-              creditType: "test",
-              scope: input.scope,
-              step: input.step,
               route: input.route,
+              priceVersion: price,
+              // The trial entry: Test Credit only (#107).
+              creditType: "test",
+              // The bill names the app this step ran for.
+              applicationId: "openbot",
+              // Nothing retries a chat turn or an auxiliary call by its
+              // operation ID, so a refusal must not wait as a resume point.
+              resumable: false,
+              ...(input.budget
+                ? { budgetId: input.budget.id, stepId: input.budget.stepId }
+                : {}),
             },
             5_000,
           ),

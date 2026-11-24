@@ -1,0 +1,88 @@
+{
+  "currentRevision": "853fff688c919d01e514052491ec15650d5452cd",
+  "legacyRevision": "cf466ae4948c803227a530c7e24452c941d98713",
+  "snapshotSha256": "ed6738e24136e8acf3d64e1431cfa27f375f3f0c4e676b77d36c21a919723b0f",
+  "snapshot": {
+    "paymentOrderId": "bd66ddc9-feae-455e-8bbb-8f64d6c2c797",
+    "refundId": "d24bbab4-7b58-4a5a-baa1-a3cda5bd31c0",
+    "dispatchedOperation": "pre-snapshot-dispatched"
+  },
+  "replay": {
+    "passes": 2,
+    "orderId": "3ffda3bb-7f4b-4b07-a3b3-07b675447618",
+    "channelReference": "fixture-alipay-after",
+    "entitlementId": "31e9e0fe-71b9-4532-a080-50c1c3412d95",
+    "refund": {
+      "orderId": "734689c9-239a-4714-987f-ca2f454fb0dc",
+      "id": "ce71c0ca-bfbb-4a25-a3f6-b8acebf94727",
+      "channelReference": "fixture-alipay-after-refund"
+    },
+    "operationId": "post-snapshot-dispatched",
+    "evidence": "trusted-usage-post-snapshot",
+    "outbox": "openbot-4af3256c0b0f657c95d4e829990d979df261a2852ad69eb70790193e1f3a8486",
+    "balance": {
+      "availableMicrocredits": "183",
+      "reservedMicrocredits": "10",
+      "chargedMicrocredits": "7"
+    },
+    "sharedSupplierExposure": {
+      "limitMicrocredits": "1000",
+      "updatedBy": "fixture",
+      "operations": "2",
+      "outstandingMicrocredits": "17",
+      "remainingMicrocredits": "983"
+    },
+    "routeSupplierExposure": {
+      "limitMicrocredits": "500",
+      "updatedBy": "fixture",
+      "holds": 2,
+      "outstandingMicrocredits": "17",
+      "remainingMicrocredits": "483"
+    },
+    "verifiedAccount": "9d190c41-c9e5-4a84-9302-915d3fb7a830",
+    "discrepantAccountStillPaused": "7b7d55f2-7511-4a54-b83a-f8897a0aecd0"
+  },
+  "rollback": {
+    "oldDuringDrain": {
+      "before": {
+        "operation": {
+          "creditType": "test",
+          "state": "pending"
+        },
+        "quote": {},
+        "quoteStatus": 503,
+        "operationStatus": 200,
+        "dispatchStatus": 405,
+        "balanceStatus": 200
+      },
+      "after": {
+        "operation": {
+          "creditType": "test",
+          "state": "settled"
+        },
+        "quote": {},
+        "quoteStatus": 503,
+        "operationStatus": 200,
+        "dispatchStatus": 405,
+        "balanceStatus": 200
+      }
+    },
+    "oldAfterDrain": {
+      "operation": {
+        "creditType": "test",
+        "state": "settled"
+      },
+      "quote": {
+        "route": "recovery-replacement"
+      },
+      "quoteStatus": 200,
+      "operationStatus": 200,
+      "dispatchStatus": 405,
+      "balanceStatus": 200
+    },
+    "operationId": "rollback-in-flight",
+    "priceVersion": "5655e4eb-95e6-4f00-a6c0-778a5127cee1",
+    "charge": "7",
+    "pendingCurrentOperations": 0
+  }
+}

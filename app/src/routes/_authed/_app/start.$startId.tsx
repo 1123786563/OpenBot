@@ -1,4 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,8 +17,12 @@ import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { buttonVariants } from "@/components/ui/button";
 import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import type { BillingQuote } from "@/lib/billing/queries";
 import { readPendingStart } from "@/lib/channels/pending-start";
-import { CoworkerRoutingRefusedError } from "@/lib/channels/route";
+import {
+  CoworkerRoutingQuoteRequired,
+  CoworkerRoutingRefusedError,
+} from "@/lib/channels/route";
 import { resumeConversationStart } from "@/lib/channels/start";
 import { ClientError } from "@/lib/client";
 
@@ -64,15 +69,25 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
   >(null);
   const heading = useRef<HTMLHeadingElement>(null);
 
+  const [quote, setQuote] = useState<BillingQuote>();
+  const [confirmation, setConfirmation] =
+    useState<Pick<BillingQuote, "route" | "priceVersion">>();
+
   const hasStart = start?.state === "pending";
   useEffect(() => {
     // This state is intentionally a retry trigger. The effect must restart when the user taps Retry.
     void attempt;
     if (!hasStart) return;
     let current = true;
-    void resumeConversationStart(queryClient, owner, startId, (next) => {
-      if (current) setStart(next);
-    }).then(
+    void resumeConversationStart(
+      queryClient,
+      owner,
+      startId,
+      (next) => {
+        if (current) setStart(next);
+      },
+      confirmation,
+    ).then(
       (next) => {
         if (current) setStart(next);
       },
@@ -80,6 +95,12 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
         if (!current) return;
         const saved = readPendingStart(owner, startId);
         setStart(saved);
+        if (cause instanceof CoworkerRoutingQuoteRequired) {
+          setFailure(null);
+          setQuote(cause.quote);
+          return;
+        }
+        setQuote(undefined);
         if (saved?.state === "pending" && saved.progress.phase === "creating") {
           if (cause instanceof CoworkerRoutingRefusedError) {
             setFailure({
@@ -114,7 +135,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
     return () => {
       current = false;
     };
-  }, [attempt, hasStart, owner, queryClient, startId]);
+  }, [attempt, confirmation, hasStart, owner, queryClient, startId]);
 
   const draft = hasStart ? start.draft : undefined;
   const agentId =
@@ -201,7 +222,26 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
             gap={2}
             style={{ padding: "var(--spacing-4, 1rem)" }}
           >
-            {failure?.kind === "choose-bot" ? (
+            {quote ? (
+              <Banner
+                status="info"
+                title="Use Test Credits to pick a Bot?"
+                description={`${quote.provider}/${quote.model} charges ${quote.price.inputPerMillion} input and ${quote.price.outputPerMillion} output microcredits per million tokens. Maximum ${quote.maxChargeMicrocredits} microcredits for routing. ${quote.usageDisclosure} Your conversation has a separate quote.`}
+                endContent={
+                  <Button
+                    label="Confirm routing"
+                    onClick={() => {
+                      setConfirmation({
+                        route: quote.route,
+                        priceVersion: quote.priceVersion,
+                      });
+                      setQuote(undefined);
+                      setAttempt((value) => value + 1);
+                    }}
+                  />
+                }
+              />
+            ) : failure?.kind === "choose-bot" ? (
               <Banner
                 collapsible={false}
                 status="warning"

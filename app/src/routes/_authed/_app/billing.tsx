@@ -1,0 +1,1324 @@
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@astryxdesign/core/SegmentedControl";
+import { Text } from "@astryxdesign/core/Text";
+import {
+  IconApps,
+  IconCoins,
+  IconGauge,
+  IconPlayerPause,
+  IconReceipt,
+  IconScale,
+  IconSearch,
+  IconWallet,
+} from "@tabler/icons-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { Fragment, useId, useRef, useState } from "react";
+import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
+import {
+  CreditPackCheckout,
+  SubscriptionCheckout,
+} from "@/components/billing/credit-pack-checkout";
+import { PaymentDisputeDetails } from "@/components/billing/payment-dispute";
+import {
+  PageEmpty,
+  PageRows,
+  PageSection,
+  PageShell,
+} from "@/components/layout/page-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import {
+  authorizeApplicationMutationOptions,
+  confirmResumePointMutationOptions,
+  createBudgetMutationOptions,
+  microcreditsFromCredits,
+  revokeAuthorizationMutationOptions,
+} from "@/lib/billing/mutations";
+import {
+  applicationsQueryOptions,
+  authorizationsQueryOptions,
+  type BillingApplication,
+  type BillLine,
+  beijingBillingTime,
+  billingBalanceQueryOptions,
+  billingOperationQueryOptions,
+  billingQuoteQueryOptions,
+  billLinesQueryOptions,
+  budgetsQueryOptions,
+  creditsText,
+  paidBalanceQueryOptions,
+  paidSourcesQueryOptions,
+  type ResumePoint,
+  resumePointsQueryOptions,
+  type SpendingAuthorization,
+  weknoraPreviewQueryOptions,
+} from "@/lib/billing/queries";
+import { ClientError } from "@/lib/client";
+import { queryClient } from "@/query-client";
+
+/**
+ * A person's credits (#107). The two Credit types stay in view side by side: the Test Credit
+ * balance, the paid balance and the sources behind it, the rate a request costs, the budget a task
+ * runs under and the type it fixed when it started, and every charge by the source and the app. A
+ * task that stopped for want of credits or budget room waits at the top until the person sets the
+ * budget it continues on. An app spends from the account only under the authorization the person
+ * grants it (#111).
+ */
+
+export const Route = createFileRoute("/_authed/_app/billing")({
+  component: CreditsPage,
+});
+
+const CREDIT_TYPES = { test: "Test credits", paid: "Paid credits" } as const;
+
+const SOURCES: Record<BillLine["source"], string> = {
+  test: "Test credits",
+  subscription: "Monthly plan",
+  credit_pack: "Credit pack",
+  correction_credit: "Correction Credits",
+  correction: "Correction",
+  dispute: "Payment dispute",
+};
+
+const APPLICATIONS: Record<string, string> = {
+  weknora: "WeKnora",
+  openbot: "OpenBot",
+};
+const NO_APP = "none";
+const USAGE_TYPES = { all: "All types", ...CREDIT_TYPES } as const;
+const AUTHORIZATION_STATES: Record<SpendingAuthorization["state"], string> = {
+  active: "Active",
+  expired: "Expired",
+  revoked: "Revoked",
+};
+const CALL_KINDS = { online: "Online", background: "Background task" } as const;
+const DURATIONS = {
+  "1": "In 1 day",
+  "7": "In 7 days",
+  "30": "In 30 days",
+} as const;
+/** An approved app whose path is open: the only kind a person can give a grant. */
+const isOpen = ({ approvedAt, pausedAt }: BillingApplication) =>
+  approvedAt !== null && pausedAt === null;
+
+/** The app a step ran for, in words. A step whose caller named none says so. */
+function appLabel(applicationId: string | null) {
+  if (!applicationId) return "No app named";
+  return APPLICATIONS[applicationId] ?? applicationId;
+}
+
+/** Test Credit is its own source; every other source, corrections included, is paid. */
+const creditTypeOf = (line: BillLine) =>
+  line.source === "test" ? "test" : "paid";
+
+function onDate(iso: string | null) {
+  return iso
+    ? new Date(iso).toLocaleDateString("en-US", { dateStyle: "medium" })
+    : "";
+}
+
+/** One read-only row: what it is on the left, the value on the right. */
+function ValueRow({
+  icon: Icon,
+  title,
+  description,
+  value,
+}: {
+  icon: React.ComponentType<{ "aria-hidden"?: true }>;
+  title: string;
+  description?: string;
+  value: string;
+}) {
+  return (
+    <Item size="sm">
+      <ItemMedia variant="icon">
+        <Icon />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>{title}</ItemTitle>
+        {description ? <ItemDescription>{description}</ItemDescription> : null}
+      </ItemContent>
+      <ItemActions>{value}</ItemActions>
+    </Item>
+  );
+}
+
+function TestCreditsSection() {
+  const balance = useQuery(billingBalanceQueryOptions());
+  return (
+    <PageSection title="Test credits">
+      {balance.isPending ? null : balance.error ? (
+        balance.error instanceof ClientError && balance.error.status === 404 ? (
+          <PageEmpty icon={IconWallet} title="No credits yet">
+            An admin adds Test Credits to your account.
+          </PageEmpty>
+        ) : (
+          <PageEmpty icon={IconWallet} title="Couldn’t load Test Credits">
+            <Button
+              onClick={() => void balance.refetch()}
+              disabled={balance.isFetching}
+            >
+              Retry
+            </Button>
+          </PageEmpty>
+        )
+      ) : (
+        <PageRows>
+          <ValueRow
+            description={
+              balance.data.trialEnded
+                ? "Trial ended. Remaining Test credits can no longer be used."
+                : "What your Bots can spend now."
+            }
+            icon={IconWallet}
+            title="Available"
+            value={creditsText(balance.data.availableMicrocredits)}
+          />
+          <Separator />
+          <ValueRow
+            description="Held while a request is running."
+            icon={IconWallet}
+            title="Reserved"
+            value={creditsText(balance.data.reservedMicrocredits)}
+          />
+          <Separator />
+          <ValueRow
+            description="Spent on finished requests."
+            icon={IconWallet}
+            title="Charged"
+            value={creditsText(balance.data.chargedMicrocredits)}
+          />
+        </PageRows>
+      )}
+    </PageSection>
+  );
+}
+
+function PaidCreditsSection() {
+  const balance = useQuery(paidBalanceQueryOptions());
+  const sources = useQuery(paidSourcesQueryOptions());
+  const empty =
+    balance.data?.availableMicrocredits === "0" &&
+    balance.data.reservedMicrocredits === "0" &&
+    balance.data.chargedMicrocredits === "0";
+  return (
+    <PageSection title="Paid credits">
+      {balance.isPending || sources.isPending ? null : balance.error ||
+        sources.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {(balance.error ?? sources.error)?.message}
+        </p>
+      ) : empty ? (
+        <PageEmpty icon={IconCoins} title="No paid credits yet">
+          Paid credits appear here after payment is confirmed.
+        </PageEmpty>
+      ) : (
+        <PageRows>
+          {/* The same three figures the Test Credit side shows, counted on this side alone. */}
+          <ValueRow
+            description="What your Bots can spend now."
+            icon={IconCoins}
+            title="Available"
+            value={creditsText(balance.data.availableMicrocredits)}
+          />
+          <Separator />
+          <ValueRow
+            description="Held while a request is running."
+            icon={IconCoins}
+            title="Reserved"
+            value={creditsText(balance.data.reservedMicrocredits)}
+          />
+          <Separator />
+          <ValueRow
+            description="Spent on finished requests."
+            icon={IconCoins}
+            title="Charged"
+            value={creditsText(balance.data.chargedMicrocredits)}
+          />
+          {sources.data.map((source) => (
+            <Fragment key={source.entitlementId}>
+              <Separator />
+              <Item id={`paid-source-${source.entitlementId}`} size="sm">
+                <ItemMedia variant="icon">
+                  <IconCoins />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>{SOURCES[source.kind]}</ItemTitle>
+                  <ItemDescription>
+                    Added {onDate(source.arrivedAt)}.
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  {creditsText(source.remainingMicrocredits)} available
+                </ItemActions>
+              </Item>
+            </Fragment>
+          ))}
+        </PageRows>
+      )}
+    </PageSection>
+  );
+}
+
+function RateSection() {
+  const quote = useQuery(billingQuoteQueryOptions());
+  return (
+    <PageSection title="Rate">
+      {quote.isPending ? null : quote.error ? (
+        <PageEmpty icon={IconScale} title="No model route yet">
+          An admin publishes one before Bots can run.
+        </PageEmpty>
+      ) : (
+        <PageRows>
+          <ValueRow
+            icon={IconScale}
+            title="Credit type"
+            value={CREDIT_TYPES[quote.data.creditType]}
+          />
+          <Separator />
+          <ValueRow
+            icon={IconScale}
+            title="Price"
+            value={`${creditsText(quote.data.price.inputPerMillion)} in, ${creditsText(quote.data.price.outputPerMillion)} out`}
+          />
+          <Separator />
+          <ValueRow
+            description="The most one request can charge."
+            icon={IconScale}
+            title="Limit per request"
+            value={`${creditsText(quote.data.maxChargeMicrocredits)} credits`}
+          />
+        </PageRows>
+      )}
+    </PageSection>
+  );
+}
+
+function BudgetsSection() {
+  const budgets = useQuery(budgetsQueryOptions());
+  return (
+    <PageSection
+      description="A task runs on the Credit type its budget names, and stops when it reaches the limit."
+      title="Budgets"
+    >
+      {budgets.isPending ? null : budgets.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {budgets.error.message}
+        </p>
+      ) : budgets.data.length === 0 ? (
+        <PageEmpty icon={IconGauge} title="No budgets yet">
+          Set a budget to cap what a task can spend.
+        </PageEmpty>
+      ) : (
+        <PageRows>
+          {budgets.data.map((budget, index) => (
+            <Fragment key={budget.budgetId}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconGauge />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>
+                    {budget.creditType === "paid"
+                      ? "Paid budget"
+                      : "Test budget"}
+                  </ItemTitle>
+                  <ItemDescription>
+                    Limit {creditsText(budget.limitMicrocredits)} credits. Used{" "}
+                    {creditsText(budget.usedMicrocredits)}.
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>{budget.state}</ItemActions>
+              </Item>
+            </Fragment>
+          ))}
+        </PageRows>
+      )}
+    </PageSection>
+  );
+}
+
+/**
+ * The apps allowed to spend from this account, each under a grant the person made (#111). A grant
+ * is withdrawn here. Raising one is the person's own decision too, so nothing here lowers it.
+ */
+function AppAccessSection({
+  applications,
+  onAuthorize,
+}: {
+  applications: BillingApplication[];
+  onAuthorize: (trigger: HTMLButtonElement) => void;
+}) {
+  const authorizations = useQuery(authorizationsQueryOptions());
+  const revoke = useMutation(revokeAuthorizationMutationOptions(queryClient));
+  const open = applications.filter(isOpen);
+  const nameOf = (id: string) =>
+    applications.find(({ id: appId }) => appId === id)?.name ?? appLabel(id);
+  return (
+    <PageSection
+      action={
+        open.length === 0 ? null : (
+          <Button
+            onClick={(event) => onAuthorize(event.currentTarget)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Authorize an app
+          </Button>
+        )
+      }
+      description="An app spends your credits only while you allow it to, and never past the limit you set."
+      title="App access"
+    >
+      {authorizations.isPending ? null : authorizations.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {authorizations.error.message}
+        </p>
+      ) : authorizations.data.length === 0 ? (
+        <PageEmpty icon={IconApps} title="No apps authorized">
+          Authorize an app to let it spend your credits.
+        </PageEmpty>
+      ) : (
+        <PageRows>
+          {authorizations.data.map((held, index) => (
+            <Fragment key={held.authorizationId}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconApps />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>{nameOf(held.applicationId)}</ItemTitle>
+                  <ItemDescription className="line-clamp-none">
+                    {held.applicationId === "weknora"
+                      ? `Authorization ID ${held.authorizationId}. `
+                      : ""}
+                    {held.kind === "background" &&
+                    held.applicationId !== "weknora"
+                      ? `For task ${held.taskId}. `
+                      : ""}
+                    Limit {creditsText(held.limitMicrocredits)}{" "}
+                    {held.creditType === "paid"
+                      ? "Paid credits"
+                      : held.creditType === "test" ||
+                          held.applicationId === "weknora"
+                        ? "Test credits"
+                        : "credits"}
+                    . Used {creditsText(held.spentMicrocredits)}. Until{" "}
+                    {onDate(held.expiresAt)}.
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  {held.state === "active" ? (
+                    <Button
+                      disabled={revoke.isPending}
+                      onClick={() => revoke.mutate(held.authorizationId)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {revoke.isPending ? "Revoking…" : "Revoke"}
+                    </Button>
+                  ) : (
+                    AUTHORIZATION_STATES[held.state]
+                  )}
+                </ItemActions>
+              </Item>
+            </Fragment>
+          ))}
+        </PageRows>
+      )}
+      {revoke.error ? (
+        <p className="mt-3 text-destructive text-sm" role="alert">
+          {revoke.error.message}
+        </p>
+      ) : null}
+    </PageSection>
+  );
+}
+
+function UsageSection() {
+  const lines = useQuery(billLinesQueryOptions());
+  const [app, setApp] = useState("all");
+  const [operationId, setOperationId] = useState<string>();
+  const receipt = useQuery({
+    ...billingOperationQueryOptions(operationId ?? ""),
+    enabled: operationId !== undefined,
+  });
+  const [type, setType] = useState<"all" | "test" | "paid">("all");
+  const data = lines.data ?? [];
+  // Each filter is offered once it has something to tell apart.
+  const apps = [...new Set(data.map((line) => line.applicationId ?? NO_APP))];
+  const types = [...new Set(data.map(creditTypeOf))];
+  const shown = data.filter(
+    (line) =>
+      (app === "all" || (line.applicationId ?? NO_APP) === app) &&
+      (type === "all" || creditTypeOf(line) === type),
+  );
+  return (
+    <PageSection
+      action={
+        <>
+          {apps.length < 2 ? null : (
+            <Select
+              onValueChange={(value) => setApp(String(value))}
+              value={app}
+            >
+              <SelectTrigger aria-label="App" size="sm">
+                <SelectValue>
+                  {app === "all"
+                    ? "All apps"
+                    : appLabel(app === NO_APP ? null : app)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent {...astryxScope} align="end">
+                <SelectGroup>
+                  <SelectItem value="all">All apps</SelectItem>
+                  {apps.map((id) => (
+                    <SelectItem key={id} value={id}>
+                      {appLabel(id === NO_APP ? null : id)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
+          {types.length < 2 ? null : (
+            <Select
+              onValueChange={(value) =>
+                setType(value === "test" || value === "paid" ? value : "all")
+              }
+              value={type}
+            >
+              <SelectTrigger aria-label="Credit type" size="sm">
+                <SelectValue>{USAGE_TYPES[type]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent {...astryxScope} align="end">
+                <SelectGroup>
+                  <SelectItem value="all">All types</SelectItem>
+                  <SelectItem value="test">Test credits</SelectItem>
+                  <SelectItem value="paid">Paid credits</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
+        </>
+      }
+      title="Usage"
+    >
+      {lines.isPending ? null : lines.error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {lines.error.message}
+        </p>
+      ) : lines.data.length === 0 ? (
+        <PageEmpty icon={IconReceipt} title="No charges yet">
+          Charges appear here after a request finishes.
+        </PageEmpty>
+      ) : shown.length === 0 ? (
+        <PageEmpty icon={IconSearch} title="No matches" />
+      ) : (
+        <PageRows>
+          {shown.map((line, index) => {
+            const originalOperation = line.operationId;
+            const correction = line.correction;
+            const added = correction?.correctionCreditsMicrocredits;
+            const returned =
+              added == null
+                ? null
+                : (BigInt(line.amountMicrocredits) - BigInt(added)).toString();
+            return (
+              <Fragment
+                key={
+                  correction?.id ??
+                  `${line.orderId ?? ""}|${line.operationId}|${line.source}|${line.entitlementId ?? ""}|${line.at ?? ""}|${line.amountMicrocredits}`
+                }
+              >
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemContent>
+                    <ItemTitle>
+                      {correction?.kind === "fault_compensation"
+                        ? "Platform fault compensation"
+                        : SOURCES[line.source]}
+                    </ItemTitle>
+                    {line.reason || originalOperation ? (
+                      <ItemDescription className="line-clamp-none">
+                        {line.reason ??
+                          `${line.applicationId ? `${appLabel(line.applicationId)}, ` : ""}${originalOperation} on ${onDate(line.at)}`}
+                      </ItemDescription>
+                    ) : null}
+                    {line.orderId && (
+                      <ItemDescription>Order {line.orderId}</ItemDescription>
+                    )}
+                    {line.dispute && (
+                      <PaymentDisputeDetails dispute={line.dispute} />
+                    )}
+                    {correction ? (
+                      <>
+                        {originalOperation ? (
+                          <ItemDescription className="line-clamp-none">
+                            Original operation {originalOperation}
+                          </ItemDescription>
+                        ) : null}
+                        <ItemDescription className="line-clamp-none">
+                          Evidence {correction.evidence}. Recorded by{" "}
+                          {correction.operator}.
+                        </ItemDescription>
+                        {returned && returned !== "0" ? (
+                          <ItemDescription>
+                            {creditsText(returned)} credits returned to the
+                            original source.
+                          </ItemDescription>
+                        ) : null}
+                        {added && added !== "0" ? (
+                          <ItemDescription>
+                            {creditsText(added)} non-expiring Correction Credits
+                            added.
+                          </ItemDescription>
+                        ) : null}
+                        {correction.availableBeforeMicrocredits !== null &&
+                        correction.availableAfterMicrocredits !== null ? (
+                          <ItemDescription>
+                            Available credits changed from{" "}
+                            {creditsText(
+                              correction.availableBeforeMicrocredits,
+                            )}{" "}
+                            to{" "}
+                            {creditsText(correction.availableAfterMicrocredits)}
+                            .
+                          </ItemDescription>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {line.periodStart && line.periodEnd ? (
+                      <ItemDescription>
+                        Original period {beijingBillingTime(line.periodStart)}{" "}
+                        to {beijingBillingTime(line.periodEnd)} (Beijing time)
+                      </ItemDescription>
+                    ) : null}
+                    {line.arrivedAt && line.at ? (
+                      <ItemDescription>
+                        Credits received {beijingBillingTime(line.arrivedAt)}.
+                        Charge posted {beijingBillingTime(line.at)} (Beijing
+                        time).
+                      </ItemDescription>
+                    ) : null}
+                  </ItemContent>
+                  <ItemActions>
+                    {line.source !== "dispute" &&
+                      creditsText(line.amountMicrocredits)}
+                    {originalOperation &&
+                    (line.source === "test" || line.source === "correction") ? (
+                      <Button
+                        aria-label={
+                          line.source === "correction"
+                            ? `View original operation ${originalOperation}`
+                            : undefined
+                        }
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        onClick={() => setOperationId(originalOperation)}
+                      >
+                        {line.source === "correction"
+                          ? "View original operation"
+                          : "View receipt"}
+                      </Button>
+                    ) : null}
+                  </ItemActions>
+                </Item>
+              </Fragment>
+            );
+          })}
+        </PageRows>
+      )}
+      <Dialog
+        open={operationId !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setOperationId(undefined);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Credit receipt</DialogTitle>
+          <DialogBody>
+            {receipt.isPending ? (
+              <p role="status">Loading receipt…</p>
+            ) : receipt.error ? (
+              <p role="alert">{receipt.error.message}</p>
+            ) : receipt.data ? (
+              <>
+                <DialogDescription>{`Charged ${creditsText(receipt.data.chargedMicrocredits ?? "0")} credits. Released ${creditsText(receipt.data.releasedMicrocredits ?? "0")} credits.`}</DialogDescription>
+                <p>
+                  {receipt.data.provider}/{receipt.data.model} · Bifrost route{" "}
+                  {receipt.data.route}
+                </p>
+                {receipt.data.parentRunId ? (
+                  <Text as="p" display="block" wordBreak="break-word">
+                    Parent Run {receipt.data.parentRunId}
+                  </Text>
+                ) : null}
+                <p>Price Version {receipt.data.priceVersion}</p>
+                <p>
+                  Input {receipt.data.price.inputPerMillion} and output{" "}
+                  {receipt.data.price.outputPerMillion} microcredits per million
+                  tokens.
+                </p>
+                <p>
+                  Original reservation{" "}
+                  {creditsText(receipt.data.reservedMicrocredits)} credits.
+                </p>
+              </>
+            ) : null}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    </PageSection>
+  );
+}
+
+/** The tasks stopped for want of credits or budget room, each waiting on a budget. */
+function WaitingSection({
+  onContinue,
+}: {
+  onContinue: (resume: ResumePoint, trigger: HTMLButtonElement) => void;
+}) {
+  const points = useQuery(resumePointsQueryOptions());
+  // A list that cannot load says nothing: the balance above already tells the
+  // person when their account is unavailable.
+  if (points.isPending || points.error || points.data.length === 0) return null;
+  return (
+    <PageSection
+      description="Each one continues on the budget you set for it, the next time it tries."
+      title="Paused tasks"
+    >
+      <PageRows>
+        {points.data.map((point, index) => (
+          <Fragment key={point.operationId}>
+            {index > 0 ? <Separator /> : null}
+            <Item size="sm">
+              <ItemMedia variant="icon">
+                <IconPlayerPause />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>
+                  {point.applicationId
+                    ? appLabel(point.applicationId)
+                    : "A task"}
+                </ItemTitle>
+                <ItemDescription className="line-clamp-none">
+                  {point.requiredBudgetId
+                    ? "This step can retry when its original execution budget has room."
+                    : point.budgetId && point.authorizationId
+                      ? "Limit confirmed. Retry the paused upload in WeKnora."
+                      : point.budgetId
+                        ? `Continues on a ${point.creditType === "paid" ? "Paid" : "Test"} budget.`
+                        : point.reason === "trial_ended"
+                          ? "The trial ended. Confirm a Paid Credit budget to continue."
+                          : point.reason === "insufficient_credits"
+                            ? point.authorizationId
+                              ? "Add Test credits, then retry the upload."
+                              : "Its Test credits ran out."
+                            : point.authorizationId
+                              ? "It reached the upload spending limit."
+                              : "It reached its budget."}
+                </ItemDescription>
+              </ItemContent>
+              {point.requiredBudgetId ||
+              point.budgetId ||
+              (point.authorizationId &&
+                point.reason === "insufficient_credits") ? null : (
+                <ItemActions>
+                  <Button
+                    onClick={(event) => onContinue(point, event.currentTarget)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {point.authorizationId
+                      ? "Raise upload limit"
+                      : "Set a budget to continue"}
+                  </Button>
+                </ItemActions>
+              )}
+            </Item>
+          </Fragment>
+        ))}
+      </PageRows>
+    </PageSection>
+  );
+}
+
+/**
+ * The one verb on the page: choose a Credit type and a limit for a task. For a paused task, the
+ * budget is also what the person confirms for its next charged step (#107).
+ */
+function SetBudgetDialog({
+  onClose,
+  resume,
+  returnFocus,
+}: {
+  onClose: () => void;
+  resume?: ResumePoint;
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const formId = useId();
+  const paidContinuation = resume?.reason === "trial_ended";
+  const needsQuote = resume?.applicationId === "openbot";
+  const quote = useQuery({
+    ...billingQuoteQueryOptions(),
+    enabled: needsQuote,
+  });
+  const modelQuote =
+    needsQuote && quote.data
+      ? { route: quote.data.route, priceVersion: quote.data.priceVersion }
+      : undefined;
+  const [creditType, setCreditType] = useState<"test" | "paid">(
+    paidContinuation || resume?.reason === "insufficient_credits"
+      ? "paid"
+      : "test",
+  );
+  const [limitCredits, setLimitCredits] = useState("");
+  const limit = microcreditsFromCredits(limitCredits);
+  const authorizationId = resume?.authorizationId;
+  const grants = useQuery({
+    ...authorizationsQueryOptions(),
+    enabled: Boolean(authorizationId),
+  });
+  const grant = grants.data?.find(
+    (item) => item.authorizationId === authorizationId,
+  );
+  const ready = Boolean(
+    limit &&
+      (!needsQuote || modelQuote) &&
+      (!authorizationId ||
+        (grant?.state === "active" &&
+          BigInt(limit) > BigInt(grant.limitMicrocredits))),
+  );
+
+  const create = useMutation(createBudgetMutationOptions(queryClient));
+  const confirm = useMutation(confirmResumePointMutationOptions(queryClient));
+  const saving = create.isPending || confirm.isPending;
+  const error = confirm.error ?? create.error;
+  return (
+    <Dialog onOpenChange={(next) => !next && onClose()} open>
+      <DialogContent {...astryxScope} finalFocus={returnFocus}>
+        <DialogHeader>
+          <DialogTitle>
+            {authorizationId ? "Raise upload limit" : "Set a budget"}
+          </DialogTitle>
+          <DialogDescription>
+            {authorizationId
+              ? "Confirm a higher Test Credit limit, then retry the paused upload in WeKnora."
+              : resume
+                ? "This task continues on the budget you set here. It stops when it has spent this many credits."
+                : "A task stops when it has spent this many credits. The Credit type is fixed when the task starts."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="mt-4 overflow-y-auto">
+          {/* The footer's button reaches this form by id, so DialogBody stays a direct child of
+              DialogContent and keeps scrolling. */}
+          <form
+            id={formId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!ready || !limit) return;
+              create.mutate(
+                { creditType, limitCredits, modelQuote },
+                {
+                  // The budget alone continues nothing: the person's confirmation
+                  // is what lets the paused step reserve on it.
+                  onSuccess: (budget) =>
+                    resume
+                      ? confirm.mutate(
+                          {
+                            operationId: resume.operationId,
+                            budgetId: budget.budgetId,
+                            authorizationId,
+                            limitMicrocredits: authorizationId
+                              ? limit
+                              : undefined,
+                          },
+                          { onSuccess: onClose },
+                        )
+                      : onClose(),
+                },
+              );
+            }}
+          >
+            <FieldGroup>
+              {paidContinuation ? (
+                <FieldDescription>
+                  The trial ended. This budget uses Paid Credits.
+                </FieldDescription>
+              ) : !authorizationId ? (
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-type`}>
+                    Credit type
+                  </FieldLabel>
+                  <Select
+                    items={CREDIT_TYPES}
+                    onValueChange={(value) =>
+                      setCreditType(value === "paid" ? "paid" : "test")
+                    }
+                    value={creditType}
+                  >
+                    <SelectTrigger className="w-full" id={`${formId}-type`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="test">Test credits</SelectItem>
+                      <SelectItem value="paid">Paid credits</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    Test credits are free to try. Paid credits come from a plan
+                    or a Credit Pack you bought.
+                  </FieldDescription>
+                </Field>
+              ) : null}
+              {needsQuote && quote.error ? (
+                <p role="alert">{quote.error.message}</p>
+              ) : null}
+              {needsQuote && quote.data ? (
+                <FieldDescription>
+                  {quote.data.model} costs {quote.data.price.inputPerMillion}{" "}
+                  microcredits per million input tokens and{" "}
+                  {quote.data.price.outputPerMillion} per million output tokens.
+                  Each request can reserve up to{" "}
+                  {quote.data.maxChargeMicrocredits} microcredits.
+                </FieldDescription>
+              ) : null}
+              <Field>
+                <FieldLabel htmlFor={`${formId}-limit`}>
+                  {authorizationId ? "New upload spending limit" : "Limit"}
+                </FieldLabel>
+                <Input
+                  id={`${formId}-limit`}
+                  inputMode="decimal"
+                  onChange={(event) => setLimitCredits(event.target.value)}
+                  placeholder="5"
+                  required
+                  value={limitCredits}
+                />
+                {grant ? (
+                  <FieldDescription>
+                    Current limit {creditsText(grant.limitMicrocredits)} Test
+                    credits.
+                  </FieldDescription>
+                ) : null}
+                {limitCredits && !limit ? (
+                  <FieldDescription>
+                    Enter a positive amount of credits, with up to six decimals.
+                  </FieldDescription>
+                ) : null}
+              </Field>
+            </FieldGroup>
+          </form>
+          {error ? (
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              {error.message}
+            </p>
+          ) : null}
+        </DialogBody>
+        <DialogFooter className="mt-4">
+          <Button onClick={onClose} type="button" variant="outline">
+            Cancel
+          </Button>
+          <Button disabled={!ready || saving} type="submit" form={formId}>
+            {saving
+              ? "Saving…"
+              : authorizationId
+                ? "Confirm new limit"
+                : paidContinuation
+                  ? "Confirm Paid Credit budget"
+                  : "Set budget"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The person's explicit grant to an app (#111): which app, on which resources, for what kind of
+ * call, up to how much, and until when.
+ */
+function AuthorizeAppDialog({
+  applications,
+  onClose,
+  returnFocus,
+}: {
+  applications: BillingApplication[];
+  onClose: () => void;
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const formId = useId();
+  const [applicationId, setApplicationId] = useState(applications[0]?.id ?? "");
+  const [resources, setResources] = useState(
+    applications[0]?.resourcePrefix ?? "",
+  );
+  const [kind, setKind] = useState<"online" | "background">("online");
+  const [taskId, setTaskId] = useState("");
+  const [creditType, setCreditType] = useState<"test" | "paid">("test");
+  const [limitCredits, setLimitCredits] = useState("");
+  const [days, setDays] = useState("7");
+  const limit = microcreditsFromCredits(limitCredits);
+  const authorize = useMutation(
+    authorizeApplicationMutationOptions(queryClient),
+  );
+  const weknora = applicationId === "weknora";
+  const work = weknora && /:(chat|rerank|maintenance)$/.test(resources);
+  const ingestion = weknora && !work;
+  const preview = useQuery({
+    ...weknoraPreviewQueryOptions(),
+    enabled: ingestion,
+  });
+  const grantId = weknora ? authorize.data?.authorizationId : undefined;
+  const ready = Boolean(
+    limit &&
+      (ingestion
+        ? preview.data &&
+          /^weknora:tenant:[0-9]+:kb:[a-zA-Z0-9_-]{1,128}$/.test(resources)
+        : resources && (kind === "online" || taskId)),
+  );
+
+  if (grantId)
+    return (
+      <Dialog onOpenChange={(next) => !next && onClose()} open>
+        <DialogContent {...astryxScope} finalFocus={returnFocus}>
+          <DialogHeader>
+            <DialogTitle>WeKnora is authorized</DialogTitle>
+            <DialogDescription>
+              {ingestion
+                ? "Send this ID in the openbot_authorization_id field when you upload to WeKnora."
+                : "Use this ID for the WeKnora task or online call you authorized."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-authorization`}>
+                Authorization ID
+              </FieldLabel>
+              <Input id={`${formId}-authorization`} value={grantId} readOnly />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={onClose} type="button">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+
+  return (
+    <Dialog onOpenChange={(next) => !next && onClose()} open>
+      <DialogContent {...astryxScope} finalFocus={returnFocus}>
+        <DialogHeader>
+          <DialogTitle>Authorize an app</DialogTitle>
+          <DialogDescription>
+            The app can spend your credits until this ends or it reaches the
+            limit. You can revoke it at any time.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="mt-4 overflow-y-auto">
+          {/* The footer's button reaches this form by id, so DialogBody stays a direct child of
+              DialogContent and keeps scrolling. */}
+          <form
+            id={formId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!ready) return;
+              authorize.mutate(
+                {
+                  applicationId,
+                  creditType,
+                  kind,
+                  ...(kind === "background" ? { taskId } : {}),
+                  resourcePrefix: resources,
+                  limitCredits,
+                  days: Number(days),
+                },
+                {
+                  onSuccess: () => {
+                    if (!weknora) onClose();
+                  },
+                },
+              );
+            }}
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-app`}>App</FieldLabel>
+                <Select
+                  items={applications.map(({ id, name }) => ({
+                    label: name,
+                    value: id,
+                  }))}
+                  onValueChange={(next) => {
+                    if (!next) return;
+                    setApplicationId(next);
+                    // Each app starts with the resources it registered.
+                    setResources(
+                      applications.find(({ id }) => id === next)
+                        ?.resourcePrefix ?? "",
+                    );
+                  }}
+                  value={applicationId}
+                >
+                  <SelectTrigger className="w-full" id={`${formId}-app`}>
+                    <SelectValue>
+                      {
+                        applications.find(({ id }) => id === applicationId)
+                          ?.name
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {applications.map(({ id, name }) => (
+                      <SelectItem key={id} value={id}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-resources`}>
+                  {ingestion ? "Knowledge base resource ID" : "Resources"}
+                </FieldLabel>
+                <Input
+                  id={`${formId}-resources`}
+                  onChange={(event) => setResources(event.target.value)}
+                  required
+                  value={resources}
+                />
+                <FieldDescription>
+                  {ingestion
+                    ? "Enter the knowledge base ID. For other WeKnora work, append :chat, :rerank, or :maintenance."
+                    : "The app can spend only on resources whose names start with this."}
+                </FieldDescription>
+              </Field>
+              {!ingestion ? (
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-kind`}>Kind</FieldLabel>
+                  <Select
+                    items={CALL_KINDS}
+                    onValueChange={(next) =>
+                      setKind(next === "background" ? "background" : "online")
+                    }
+                    value={kind}
+                  >
+                    <SelectTrigger className="w-full" id={`${formId}-kind`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="background">
+                        Background task
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    A background grant is for one task.
+                  </FieldDescription>
+                </Field>
+              ) : null}
+              {!ingestion && kind === "background" ? (
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-task`}>Task</FieldLabel>
+                  <Input
+                    id={`${formId}-task`}
+                    onChange={(event) => setTaskId(event.target.value)}
+                    required
+                    value={taskId}
+                  />
+                </Field>
+              ) : null}
+              <SegmentedControl
+                label="Credit type"
+                value={creditType}
+                onChange={(value) =>
+                  setCreditType(value === "paid" ? "paid" : "test")
+                }
+              >
+                <SegmentedControlItem value="test" label="Test Credits" />
+                <SegmentedControlItem value="paid" label="Paid Credits" />
+              </SegmentedControl>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-limit`}>
+                  {ingestion ? "Upload spending limit" : "Limit"}
+                </FieldLabel>
+                {ingestion ? (
+                  <FieldDescription>
+                    {preview.data
+                      ? `${creditsText(preview.data.price.inputPerMillion)} ${creditType === "paid" ? "Paid" : "Test"} credits per million input tokens. Each batch can reserve up to ${creditsText(preview.data.maxChargeMicrocredits)} ${creditType === "paid" ? "Paid" : "Test"} credits.`
+                      : preview.error
+                        ? "The WeKnora price is unavailable."
+                        : "Loading the WeKnora price…"}
+                  </FieldDescription>
+                ) : null}
+                <Input
+                  id={`${formId}-limit`}
+                  inputMode="decimal"
+                  onChange={(event) => setLimitCredits(event.target.value)}
+                  placeholder="5"
+                  required
+                  value={limitCredits}
+                />
+                {limitCredits && !limit ? (
+                  <FieldDescription>
+                    Enter a positive amount of credits, with up to six decimals.
+                  </FieldDescription>
+                ) : (
+                  <FieldDescription>
+                    {ingestion
+                      ? "The total this upload can spend."
+                      : "The most it can spend, in credits."}
+                  </FieldDescription>
+                )}
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${formId}-ends`}>Ends</FieldLabel>
+                <Select
+                  items={DURATIONS}
+                  onValueChange={(next) => next && setDays(next)}
+                  value={days}
+                >
+                  <SelectTrigger className="w-full" id={`${formId}-ends`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(DURATIONS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </FieldGroup>
+          </form>
+          {authorize.error ? (
+            <p className="mt-4 text-destructive text-sm" role="alert">
+              {authorize.error.message}
+            </p>
+          ) : null}
+        </DialogBody>
+        <DialogFooter className="mt-4">
+          <Button onClick={onClose} type="button" variant="outline">
+            Cancel
+          </Button>
+          <Button
+            disabled={!ready || authorize.isPending}
+            form={formId}
+            type="submit"
+          >
+            {authorize.isPending ? "Authorizing…" : "Authorize"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreditsPage() {
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const [dialog, setDialog] = useState<{
+    resume?: ResumePoint;
+    returnFocus: React.RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+  const [authorizing, setAuthorizing] = useState<{
+    returnFocus: React.RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+  const applications = useQuery(applicationsQueryOptions());
+  const open = (applications.data ?? []).filter(isOpen);
+  return (
+    <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <PageShell
+        action={
+          <Button
+            onClick={() => setDialog({ returnFocus: trigger })}
+            ref={trigger}
+            size="lg"
+            type="button"
+          >
+            Set a budget
+          </Button>
+        }
+        description="See what your Bots can spend, and set a budget before a task continues on paid credits."
+        title="Credits"
+      >
+        <WaitingSection
+          onContinue={(resume, button) =>
+            setDialog({ resume, returnFocus: { current: button } })
+          }
+        />
+        <TestCreditsSection />
+        <SubscriptionCheckout />
+        <CreditPackCheckout />
+        <PaidCreditsSection />
+        <RateSection />
+        <BudgetsSection />
+        <AppAccessSection
+          applications={applications.data ?? []}
+          onAuthorize={(button) =>
+            setAuthorizing({ returnFocus: { current: button } })
+          }
+        />
+        <UsageSection />
+        {dialog ? (
+          <SetBudgetDialog
+            onClose={() => setDialog(null)}
+            resume={dialog.resume}
+            returnFocus={dialog.returnFocus}
+          />
+        ) : null}
+        {authorizing ? (
+          <AuthorizeAppDialog
+            applications={open}
+            onClose={() => setAuthorizing(null)}
+            returnFocus={authorizing.returnFocus}
+          />
+        ) : null}
+      </PageShell>
+    </AstryxSurface>
+  );
+}

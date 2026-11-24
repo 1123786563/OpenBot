@@ -170,13 +170,14 @@ test("shared requests recover in place and approval requires confirmation", asyn
   );
   await view.findByText("Request approved for Operations.");
   expect(view.queryByRole("button", { name: "Approve" })).toBeNull();
-  expect(sent).toEqual([
-    {
-      path: "/api/approvals/shared-use/approval-1/approve",
-      method: "POST",
-      body: undefined,
-    },
-  ]);
+  expect(sent).toHaveLength(1);
+  const [request] = sent;
+  if (!request) throw new Error("Missing request.");
+  expect(request).toMatchObject({
+    path: "/api/approvals/shared-use/approval-1/approve",
+    method: "POST",
+  });
+  expect(request.body).toBeUndefined();
 });
 afterEach(() => {
   global.fetch = originalFetch;

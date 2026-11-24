@@ -1,0 +1,11 @@
+{"t":"2026-11-22T09:57:34.600Z","event":"ready","resourceId":"weknora:tenant:1:kb:kb-1","subject":"7cf17ad0-dc2e-44d1-bfa0-30f6678722b0","authorizationId":"efbe041b-8654-4436-9b76-0f6ff7e2241e"}
+{"t":"2026-11-22T09:58:06.443Z","event":"reserved","operationId":"d82c4abd-b3c6-587a-b136-5482333562b6","resourceId":"weknora:tenant:1:kb:kb-1","authorizationId":"efbe041b-8654-4436-9b76-0f6ff7e2241e","state":"reserved"}
+{"t":"2026-11-22T09:58:06.680Z","event":"metered","operationId":"d82c4abd-b3c6-587a-b136-5482333562b6","inputTokenUpperBound":14,"gatewayInputTokens":"14"}
+{"t":"2026-11-22T09:58:06.696Z","event":"settled","operationId":"d82c4abd-b3c6-587a-b136-5482333562b6"}
+{"t":"2026-11-22T09:58:23.051Z","event":"embedding-denied","operationId":"deny-wrong","code":"not_authorized"}
+{"t":"2026-11-22T09:58:23.057Z","event":"control","action":"expire"}
+{"t":"2026-11-22T09:58:23.063Z","event":"embedding-denied","operationId":"deny-expired","code":"authorization_expired"}
+{"t":"2026-11-22T09:58:23.070Z","event":"control","action":"revoke"}
+{"t":"2026-11-22T09:58:23.077Z","event":"embedding-denied","operationId":"deny-revoked","code":"authorization_revoked"}
+{"t":"2026-11-22T09:58:23.083Z","event":"embedding-refused","reason":"service_token"}
+{"t":"2026-11-22T09:58:31.318Z","event":"embedding-denied","operationId":"deny-stranger","code":"not_authorized"}
