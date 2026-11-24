@@ -24,13 +24,19 @@ import {
   testCreditEnrollments as enrollments,
   enterpriseSettings,
   testCreditEvidence as evidence,
+  testCreditExternalAuthorizations as externalAuthorizations,
+  testCreditIssuanceBudgets as issuanceBudgets,
+  testCreditIssuances as issuances,
   lagoUsageEvents,
   testCreditOperations as operations,
+  personalSaasAccounts,
   pilotProviderCostHolds,
   pilotProviderCostLimitEvents,
   pilotProviderCostLimits,
   testCreditResumePoints as resumePoints,
 } from "../db/schema";
+import type { AccountStatus } from "../db/schema/personal-saas";
+import { accountDecision } from "../personal-saas/account-access";
 import type { CoordinationModelCall } from "./coordination-model-call";
 import {
   allocatePaidSources,
@@ -51,6 +57,12 @@ import {
 } from "./pilot-signoffs";
 import { WEKNORA_APPLICATION_ID } from "./weknora-ingestion";
 import type { WeKnoraWork } from "./weknora-scope";
+
+export type ExternalSpendingScope = {
+  authorizationId: string;
+  application: typeof externalAuthorizations.$inferSelect.application;
+  resourceId: string;
+};
 
 export type VerifiedBillingIdentity = { issuer: string; subject: string };
 export type ChildBudgetBinding = {
@@ -177,8 +189,9 @@ function routeEligible(
 ) {
   return (
     active?.options.some(
-      ({ id, revision, verification }) =>
+      ({ id, purpose, revision, verification }) =>
         id === frozen.id &&
+        purpose === frozen.purpose &&
         revision === frozen.revision &&
         verification.report.artifactDigest ===
           frozen.verification.report.artifactDigest &&
@@ -225,6 +238,20 @@ function quoteFor(route: ReleasedBifrostRoute, priceVersion: string) {
 }
 
 export type TestCreditQuote = ReturnType<typeof quoteFor>;
+
+export type OneTimeTestCreditGrantConfig = {
+  budgetId: string;
+  batchId: string;
+  amount: bigint;
+  budget: bigint;
+};
+
+export type OneTimeTestCreditGrant = {
+  state: "pending" | "issued";
+  amountMicrocredits: string;
+  budgetId: string;
+  batchId: string;
+};
 
 async function totals(database: Database | Transaction, accountId: string) {
   // PostgreSQL sums bigint values as numeric. Parse its exact decimal output.
@@ -337,8 +364,28 @@ function eligibleCharge(
   return verified.cost > row.reserved ? row.reserved : verified.cost;
 }
 
+function externalReservationStillAuthorized(
+  status: AccountStatus | null,
+  reservedEpoch: number | null,
+) {
+  if (!status || reservedEpoch === null) return false;
+
+  // Each intervening epoch must be accounted for by an OpenBot workspace pause.
+  const workspacePauseEpochs = new Set(
+    status.executionCutoffs
+      ?.filter(
+        (event) =>
+          event.reason === "workspace_paused" &&
+          event.epoch > reservedEpoch &&
+          event.epoch <= status.epoch,
+      )
+      .map((event) => event.epoch),
+  );
+  return workspacePauseEpochs.size === status.epoch - reservedEpoch;
+}
+
 export function createTestCreditLedger(
-  database: Database,
+  database: Database | Transaction,
   clock?: () => Date,
   pilot?: PilotDeployment,
 ) {
@@ -481,6 +528,42 @@ export function createTestCreditLedger(
       .select()
       .from(operations)
       .where(operationFilter(accountId, id));
+    return row;
+  }
+
+  async function externalAccount(
+    tx: Transaction,
+    identity: VerifiedBillingIdentity,
+  ) {
+    const [row] = await tx
+      .select({ status: personalSaasAccounts.status })
+      .from(personalSaasAccounts)
+      .where(
+        and(
+          eq(personalSaasAccounts.issuer, identity.issuer),
+          eq(personalSaasAccounts.subject, identity.subject),
+        ),
+      )
+      .for("share");
+    return row?.status ?? null;
+  }
+
+  async function externalAuthorization(
+    tx: Transaction,
+    accountId: string,
+    scope: ExternalSpendingScope,
+  ) {
+    const [row] = await tx
+      .select()
+      .from(externalAuthorizations)
+      .where(
+        and(
+          eq(externalAuthorizations.accountId, accountId),
+          eq(externalAuthorizations.id, scope.authorizationId),
+          eq(externalAuthorizations.application, scope.application),
+          eq(externalAuthorizations.resourceId, scope.resourceId),
+        ),
+      );
     return row;
   }
 
@@ -950,6 +1033,153 @@ export function createTestCreditLedger(
       });
     },
 
+    /**
+     * Admit the stable account identity to one bounded grant. The budget row is
+     * locked before the issued amount is changed, so concurrent workspaces can
+     * never consume the same global budget twice.
+     */
+    async ensureOneTimeGrant(
+      identity: VerifiedBillingIdentity,
+      config: OneTimeTestCreditGrantConfig,
+    ): Promise<OneTimeTestCreditGrant> {
+      if (config.amount <= 0n || config.budget < 0n)
+        throw new RangeError("Invalid Test Credit grant configuration");
+      return database.transaction(async (tx) => {
+        await tx.insert(accounts).values(identity).onConflictDoNothing();
+        const accountId = await account(identity, tx);
+        if (!accountId) throw new Error("Billing Account could not be created");
+
+        const [existing] = await tx
+          .select()
+          .from(issuances)
+          .where(eq(issuances.accountId, accountId));
+        let grant = existing;
+        if (!grant) {
+          await tx
+            .insert(batches)
+            .values({ id: config.batchId, amount: config.amount })
+            .onConflictDoNothing();
+          const [batch] = await tx
+            .select({ amount: batches.amount })
+            .from(batches)
+            .where(eq(batches.id, config.batchId));
+          if (!batch || batch.amount !== config.amount)
+            throw new Error("Test Credit grant batch amount differs");
+          await tx
+            .insert(issuanceBudgets)
+            .values({ id: config.budgetId, total: config.budget })
+            .onConflictDoNothing();
+          const [pending] = await tx
+            .insert(issuances)
+            .values({
+              accountId,
+              budgetId: config.budgetId,
+              batchId: config.batchId,
+              amount: config.amount,
+              state: "pending",
+            })
+            .returning();
+          if (!pending) throw new Error("Test Credit grant was not saved");
+          grant = pending;
+        }
+        if (grant.state === "issued")
+          return {
+            state: "issued",
+            amountMicrocredits: grant.amount.toString(),
+            budgetId: grant.budgetId,
+            batchId: grant.batchId,
+          };
+        if (
+          (await restoreHolds(tx, accountId)) ||
+          (await pilotReservesStoppedAt(tx, accountId)) ||
+          (await suspended(tx, accountId)) ||
+          (await trialEnded(tx, accountId))
+        )
+          return {
+            state: "pending",
+            amountMicrocredits: grant.amount.toString(),
+            budgetId: grant.budgetId,
+            batchId: grant.batchId,
+          };
+        const [budget] = await tx
+          .select()
+          .from(issuanceBudgets)
+          .where(eq(issuanceBudgets.id, grant.budgetId))
+          .for("no key update");
+        if (!budget) throw new Error("Test Credit issuance budget unavailable");
+        if (budget.total - budget.issued < grant.amount)
+          return {
+            state: "pending",
+            amountMicrocredits: grant.amount.toString(),
+            budgetId: grant.budgetId,
+            batchId: grant.batchId,
+          };
+
+        const issuedAt = await currentTime(tx);
+        await tx
+          .update(issuanceBudgets)
+          .set({ issued: budget.issued + grant.amount })
+          .where(eq(issuanceBudgets.id, grant.budgetId));
+        await tx
+          .update(issuances)
+          .set({ state: "issued", issuedAt })
+          .where(eq(issuances.accountId, accountId));
+        await tx
+          .insert(enrollments)
+          .values({
+            accountId,
+            batchId: grant.batchId,
+            claimedAt: issuedAt,
+          })
+          .onConflictDoUpdate({
+            target: [enrollments.accountId, enrollments.batchId],
+            set: { claimedAt: issuedAt },
+            setWhere: isNull(enrollments.claimedAt),
+          });
+        return {
+          state: "issued",
+          amountMicrocredits: grant.amount.toString(),
+          budgetId: grant.budgetId,
+          batchId: grant.batchId,
+        };
+      });
+    },
+
+    async grantStatus(
+      identity: VerifiedBillingIdentity,
+      budgetId: string,
+    ): Promise<OneTimeTestCreditGrant | undefined> {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const [grant] = await tx
+          .select()
+          .from(issuances)
+          .where(
+            and(
+              eq(issuances.accountId, accountId),
+              eq(issuances.budgetId, budgetId),
+            ),
+          );
+        return grant
+          ? {
+              state: grant.state,
+              amountMicrocredits: grant.amount.toString(),
+              budgetId: grant.budgetId,
+              batchId: grant.batchId,
+            }
+          : undefined;
+      });
+    },
+
+    async restoreOneTimeGrantBudget(budgetId: string, total: bigint) {
+      if (total < 0n) throw new RangeError("Invalid Test Credit budget");
+      await database
+        .update(issuanceBudgets)
+        .set({ total })
+        .where(eq(issuanceBudgets.id, budgetId));
+    },
+
     async claim(identity: VerifiedBillingIdentity, batchId: string) {
       return database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -1180,6 +1410,65 @@ export function createTestCreditLedger(
       });
     },
 
+    async embeddingRoute(id: string) {
+      const active = await activeRoutes(database);
+      const route = active?.options.find(
+        (option) => option.id === id && option.purpose === "embedding",
+      );
+      if (route && active?.priceVersion)
+        return { route, priceVersion: active.priceVersion };
+    },
+
+    async embeddingReplay(
+      identity: VerifiedBillingIdentity,
+      input: {
+        operationId: string;
+        scope: ExternalSpendingScope;
+        inputDigest: string;
+      },
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return undefined;
+        const row = await operation(accountId, input.operationId, tx);
+        if (!row) return undefined;
+        const authorization = await externalAuthorization(
+          tx,
+          accountId,
+          input.scope,
+        );
+        const now = await currentTime(tx);
+        if (
+          !authorization ||
+          row.externalAuthorizationId !== authorization.id ||
+          row.embeddingInputDigest !== input.inputDigest
+        )
+          return { state: "conflict" } as const;
+        if (!row.dispatchedAt && row.state === "reserved") return undefined;
+        if (
+          row.embeddingResult &&
+          row.embeddingResultExpiresAt &&
+          row.embeddingResultExpiresAt > now
+        ) {
+          return {
+            state: "completed",
+            vectors: row.embeddingResult,
+            receipt: await settlePending(tx, accountId, input.operationId),
+          } as const;
+        }
+        return { state: "unavailable" } as const;
+      });
+    },
+
+    async sweepEmbeddingResults() {
+      await database
+        .update(operations)
+        .set({ embeddingResult: null, embeddingResultExpiresAt: null })
+        .where(
+          sql`${operations.embeddingResultExpiresAt} <= statement_timestamp()`,
+        );
+    },
+
     async modelOptions() {
       const active = await activeRoutes(database);
       return (
@@ -1322,6 +1611,78 @@ export function createTestCreditLedger(
       });
     },
 
+    // The caller must authenticate the account holder and obtain explicit consent.
+    async authorizeExternalSpending(
+      identity: VerifiedBillingIdentity,
+      {
+        authorizationId,
+        application,
+        resourceId,
+        ...terms
+      }: ExternalSpendingScope & {
+        expiresAt: Date;
+        maxMicrocredits: bigint;
+      },
+    ) {
+      return database.transaction(async (tx) => {
+        const status = await externalAccount(tx, identity);
+        const accountId = await account(identity, tx);
+        const now = await currentTime(tx);
+        if (
+          !accountId ||
+          accountDecision(status, now.getTime()).kind !== "active" ||
+          terms.expiresAt <= now ||
+          terms.maxMicrocredits <= 0n
+        )
+          return undefined;
+        const [created] = await tx
+          .insert(externalAuthorizations)
+          .values({
+            id: authorizationId,
+            accountId,
+            application,
+            resourceId,
+            ...terms,
+          })
+          .onConflictDoNothing()
+          .returning({ authorizationId: externalAuthorizations.id });
+        if (created) return { ...created, created: true, revoked: false };
+        const existing = await externalAuthorization(tx, accountId, {
+          authorizationId,
+          application,
+          resourceId,
+        });
+        if (
+          existing?.expiresAt.getTime() !== terms.expiresAt.getTime() ||
+          existing.maxMicrocredits !== terms.maxMicrocredits
+        )
+          return undefined;
+        return {
+          authorizationId: existing.id,
+          created: false,
+          revoked: existing.revokedAt !== null,
+        };
+      });
+    },
+
+    async revokeExternalSpending(
+      identity: VerifiedBillingIdentity,
+      scope: ExternalSpendingScope,
+    ) {
+      return database.transaction(async (tx) => {
+        const accountId = await account(identity, tx);
+        if (!accountId) return false;
+        const authorization = await externalAuthorization(tx, accountId, scope);
+        if (!authorization) return false;
+        if (authorization.revokedAt === null)
+          await tx
+            .update(externalAuthorizations)
+            .set({ revokedAt: await currentTime(tx) })
+            .where(eq(externalAuthorizations.id, authorization.id));
+        return true;
+      });
+    },
+
     async reserve(
       identity: VerifiedBillingIdentity,
       request: {
@@ -1350,6 +1711,8 @@ export function createTestCreditLedger(
         child?: Omit<ChildBudgetBinding, "budgetId">;
         coordinationToolNames?: string[];
         parentRunId?: string;
+        scope?: ExternalSpendingScope;
+        embeddingInputDigest?: string;
       },
       {
         embedding = false,
@@ -1362,21 +1725,48 @@ export function createTestCreditLedger(
       } = {},
     ) {
       const reservation = database.transaction(async (tx) => {
+        const status = request.scope
+          ? await externalAccount(tx, identity)
+          : null;
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
+        const external = request.scope
+          ? await externalAuthorization(tx, accountId, request.scope)
+          : undefined;
         if (
+          request.scope &&
+          (request.authorizationId ||
+            request.creditType === "paid" ||
+            weknoraWork ||
+            request.budgetId ||
+            (request.applicationId !== undefined &&
+              request.applicationId !== request.scope.application))
+        )
+          return denied("not_authorized");
+        if (
+          !external &&
           (embedding || weknoraWork) &&
           (request.applicationId !== WEKNORA_APPLICATION_ID ||
             !request.authorizationId)
         )
           return denied("not_authorized");
-        const purpose = embedding
-          ? "embedding"
-          : weknoraWork === "rerank"
-            ? "rerank"
-            : undefined;
+        const purpose =
+          embedding || external
+            ? "embedding"
+            : weknoraWork === "rerank"
+              ? "rerank"
+              : undefined;
         const pilotResource = weknoraWork ?? purpose ?? "chat";
         const now = await currentTime(tx);
+        const access = accountDecision(status, now.getTime());
+        if (
+          request.scope &&
+          (!external ||
+            external.revokedAt !== null ||
+            external.expiresAt <= now ||
+            access.kind !== "active")
+        )
+          return denied("not_authorized");
         await applyCutoff(tx, accountId, now);
         const expired = new Date(now.getTime() - reservationMilliseconds);
         const stale = await tx
@@ -1450,7 +1840,7 @@ export function createTestCreditLedger(
           reason: (typeof resumePoints.$inferInsert)["reason"],
         ) => {
           // A step nothing will retry cannot continue, so it waits nowhere.
-          if (request.resumable === false) return denied(reason);
+          if (external || request.resumable === false) return denied(reason);
           await tx
             .insert(resumePoints)
             .values({
@@ -1508,7 +1898,10 @@ export function createTestCreditLedger(
               existing.requestedCreditType !== input.creditType) ||
             (embedding && existing.stepId !== input.stepId) ||
             (input.applicationId !== undefined &&
-              existing.applicationId !== input.applicationId)
+              existing.applicationId !== input.applicationId) ||
+            existing.externalAuthorizationId !== (external?.id ?? null) ||
+            existing.embeddingInputDigest !==
+              (input.embeddingInputDigest ?? null)
           )
             return denied("not_authorized");
           const sameQuote =
@@ -1533,7 +1926,13 @@ export function createTestCreditLedger(
               await eligibleEvidence(tx, existing),
             ),
             permit:
-              existing.state === "reserved" && sameQuote
+              existing.state === "reserved" &&
+              sameQuote &&
+              (existing.externalAccountEpoch === null ||
+                externalReservationStillAuthorized(
+                  status,
+                  existing.externalAccountEpoch,
+                ))
                 ? existing.permit
                 : undefined,
           } as const;
@@ -1573,11 +1972,14 @@ export function createTestCreditLedger(
             : undefined);
         if (grantedType && input.creditType && input.creditType !== grantedType)
           return denied("not_authorized");
-        const funding = grantedType ?? input.creditType;
+        const funding = external ? "test" : (grantedType ?? input.creditType);
         if (grantedType === "paid" && !pilot)
           return denied("route_unavailable");
         const applicationId =
-          under?.held.applicationId ?? input.applicationId ?? "openbot";
+          under?.held.applicationId ??
+          external?.application ??
+          input.applicationId ??
+          "openbot";
         const pilotPath = pilot
           ? await application(applicationId, tx, true)
           : undefined;
@@ -1625,7 +2027,13 @@ export function createTestCreditLedger(
             .limit(1);
           if (priorPause) return denied("execution_limit");
         }
-        if (!embedding && paused && !continued && !requiredBudgetId)
+        if (
+          !external &&
+          !embedding &&
+          paused &&
+          !continued &&
+          !requiredBudgetId
+        )
           return denied(paused.reason);
         const executionBudget = input.budgetId
           ? await budget(accountId, input.budgetId, tx)
@@ -1653,6 +2061,23 @@ export function createTestCreditLedger(
         )
           return denied("route_unavailable");
         const reserved = BigInt(route.maxChargeMicrocredits);
+        if (external) {
+          const used = await chargedOrHeld(
+            tx,
+            and(
+              eq(operations.accountId, accountId),
+              eq(operations.externalAuthorizationId, external.id),
+            ),
+          );
+          if (used + reserved > external.maxMicrocredits)
+            return denied("insufficient_credits");
+          const atReservation = await currentTime(tx);
+          if (
+            external.expiresAt <= atReservation ||
+            accountDecision(status, atReservation.getTime()).kind !== "active"
+          )
+            return denied("not_authorized");
+        }
         for (const limit of limits) {
           const used =
             limit.id === executionBudget?.id &&
@@ -1782,13 +2207,20 @@ export function createTestCreditLedger(
             requestedCreditType: funding,
             createdAt: now,
             rerunOfOperationId: input.rerunOfOperationId,
+            externalAuthorizationId: external?.id,
+            embeddingInputDigest: input.embeddingInputDigest,
+            externalAccountEpoch:
+              external && access.kind === "active" ? access.epoch : undefined,
             state: "reserved",
             budgetId: input.budgetId,
             coordinationToolNames: input.coordinationToolNames,
             parentRunId: input.parentRunId,
             stepId: input.stepId,
             applicationId:
-              input.applicationId ?? under?.held.applicationId ?? null,
+              input.applicationId ??
+              under?.held.applicationId ??
+              external?.application ??
+              null,
             authorizationId: under?.held.id ?? null,
           })
           .returning();
@@ -2348,7 +2780,10 @@ export function createTestCreditLedger(
 
     async discardReservation(
       identity: VerifiedBillingIdentity,
-      input: { operationId: string; permit: string },
+      input: {
+        operationId: string;
+        permit: string;
+      },
     ) {
       await database.transaction(async (tx) => {
         const accountId = await account(identity, tx);
@@ -2361,10 +2796,17 @@ export function createTestCreditLedger(
 
     async beginDispatch(
       identity: VerifiedBillingIdentity,
-      input: { operationId: string; permit: string; authorizationId?: string },
+      input: {
+        operationId: string;
+        permit: string;
+        authorizationId?: string;
+        scope?: ExternalSpendingScope;
+        embeddingInputDigest?: string;
+      },
       { executorAvailable = true, embedding = false, rerank = false } = {},
     ) {
       return database.transaction(async (tx) => {
+        const status = input.scope ? await externalAccount(tx, identity) : null;
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
         await applyCutoff(tx, accountId, await currentTime(tx));
@@ -2373,10 +2815,20 @@ export function createTestCreditLedger(
           !row ||
           row.permit !== input.permit ||
           row.route.purpose !==
-            (embedding ? "embedding" : rerank ? "rerank" : undefined) ||
-          row.authorizationId !== (input.authorizationId ?? null)
+            (embedding || input.scope
+              ? "embedding"
+              : rerank
+                ? "rerank"
+                : undefined) ||
+          row.authorizationId !== (input.authorizationId ?? null) ||
+          row.embeddingInputDigest !== (input.embeddingInputDigest ?? null) ||
+          row.externalAuthorizationId !== (input.scope?.authorizationId ?? null)
         )
           return denied("not_authorized");
+        const externalGrant = input.scope
+          ? await externalAuthorization(tx, accountId, input.scope)
+          : undefined;
+        if (input.scope && !externalGrant) return denied("not_authorized");
         if (row.state !== "reserved")
           return {
             state: "existing",
@@ -2447,6 +2899,19 @@ export function createTestCreditLedger(
         if (deadline && dispatchedAt >= deadline) {
           await releaseReservation(tx, row);
           return denied("not_authorized");
+        }
+        if (externalGrant) {
+          const access = accountDecision(status, dispatchedAt.getTime());
+          if (
+            externalGrant.revokedAt !== null ||
+            externalGrant.expiresAt <= dispatchedAt ||
+            access.kind !== "active" ||
+            !externalReservationStillAuthorized(
+              status,
+              row.externalAccountEpoch,
+            )
+          )
+            return denied("not_authorized");
         }
         if (
           !eligible ||
@@ -2647,13 +3112,34 @@ export function createTestCreditLedger(
     async settleEmbedding(
       accountId: string,
       id: string,
-      verified: Evidence,
+      input:
+        | Evidence
+        | {
+            evidenceId: string;
+            inputTokens: bigint;
+            vectors?: number[][];
+          },
       vectors?: number[][],
     ) {
-      const recorded = await recordEvidence(accountId, id, {
-        ...verified,
-        resultText: vectors === undefined ? undefined : JSON.stringify(vectors),
-      });
+      if ("outcome" in input) {
+        const recorded = await recordEvidence(accountId, id, {
+          ...input,
+          resultText:
+            vectors === undefined ? undefined : JSON.stringify(vectors),
+        });
+        return recorded && settleRecorded(accountId, id);
+      }
+      const recorded = await recordEvidence(
+        accountId,
+        id,
+        {
+          evidenceId: input.evidenceId,
+          outcome: input.vectors ? "completed" : "partial",
+          inputTokens: input.inputTokens,
+          outputTokens: 0n,
+        },
+        { vectors: input.vectors },
+      );
       return recorded && settleRecorded(accountId, id);
     },
     async recordResult(accountId: string, id: string, text: string) {
@@ -2794,6 +3280,7 @@ export function createTestCreditLedger(
       resultText?: string;
       resultCalls?: CoordinationModelCall[];
     },
+    embedding?: { vectors?: number[][] },
   ) {
     return database.transaction(async (tx) => {
       if (!(await lockAccount(tx, accountId))) return undefined;
@@ -2801,6 +3288,11 @@ export function createTestCreditLedger(
       await applyCutoff(tx, accountId, now);
       const row = await operation(accountId, id, tx);
       if (!row?.dispatchedAt) return undefined;
+      if (
+        embedding &&
+        (row.route.purpose !== "embedding" || !row.embeddingInputDigest)
+      )
+        return undefined;
       const {
         evidenceId,
         outcome,
@@ -2870,6 +3362,17 @@ export function createTestCreditLedger(
           cost,
           recordedAt: now,
         });
+        if (embedding?.vectors) {
+          await tx
+            .update(operations)
+            .set({
+              embeddingResult: sql`${JSON.stringify(embedding.vectors)}::text::jsonb`,
+              embeddingResultExpiresAt: new Date(
+                now.getTime() + reconciliationMilliseconds,
+              ),
+            })
+            .where(operationFilter(accountId, id));
+        }
         if (
           row.state === "pending" &&
           row.eligibleEvidenceId === null &&

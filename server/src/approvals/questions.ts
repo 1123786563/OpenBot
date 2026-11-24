@@ -4,6 +4,11 @@ import { questionPartSchema } from "../agents/escalation";
 import { groupSourceForRun, submitGroupTurn } from "../channels/group";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
+import {
+  decisionInvalidated,
+  readDecisionAccess,
+  reconcileDecisionHistory,
+} from "../personal-saas/decision-access";
 import { ApprovalNotFoundError, ApprovalRefusedError } from "./types";
 
 const questionSchema = z.object({
@@ -92,6 +97,7 @@ export type ApprovalQuestions = ReturnType<typeof createApprovalQuestions>;
 export function createApprovalQuestions(
   database: Database,
   authorise: (question: PersonQuestion) => Promise<void>,
+  now = Date.now,
 ) {
   const owned = (owner: string, key?: string) =>
     and(
@@ -101,6 +107,9 @@ export function createApprovalQuestions(
     );
   return {
     async list(owner: string) {
+      await database.transaction((tx) =>
+        reconcileDecisionHistory(tx, owner, now),
+      );
       const rows = await database
         .select()
         .from(workItems)
@@ -147,6 +156,13 @@ export function createApprovalQuestions(
         botId: questionConversationBot(parsed.data),
       });
       return database.transaction(async (tx) => {
+        const access = await readDecisionAccess(tx, owner, now, {
+          runId: parsed.data.runId,
+          createdAt: current.createdAt,
+          epoch: current.accountEpoch ?? undefined,
+        });
+        if (access?.kind === "denied")
+          throw new ApprovalRefusedError(decisionInvalidated);
         const [row] = await tx
           .select()
           .from(workItems)
@@ -154,9 +170,11 @@ export function createApprovalQuestions(
           .for("update")
           .limit(1);
         if (!row) throw new ApprovalNotFoundError();
+        if (row.lastError === decisionInvalidated)
+          throw new ApprovalRefusedError(decisionInvalidated);
         if (row.finishedAt)
           throw new ApprovalRefusedError("You already answered this question.");
-        if (group) {
+        if (group && !access) {
           await tx
             .update(workItems)
             .set({ finishedAt: sql`now()`, updatedAt: sql`now()` })
@@ -171,7 +189,11 @@ export function createApprovalQuestions(
           });
           return { id, queued: true as const };
         }
-        if (inConversation && questionContinuesInConversation(parsed.data)) {
+        if (
+          !access &&
+          inConversation &&
+          questionContinuesInConversation(parsed.data)
+        ) {
           await tx
             .update(workItems)
             .set({ finishedAt: sql`now()`, updatedAt: sql`now()` })
@@ -183,6 +205,7 @@ export function createApprovalQuestions(
           .values({
             kind: "person.response",
             key: id,
+            ...(access ? { accountId: owner, accountEpoch: access.epoch } : {}),
             payload: {
               ownerUserId: owner,
               question: parsed.data,

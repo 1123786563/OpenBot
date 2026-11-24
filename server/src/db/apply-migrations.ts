@@ -6,9 +6,13 @@
  * is one journal out of step is to run it against such a database, which is what
  * `tests/migration-reach.integration.test.ts` does through this function.
  *
- * See `./migration-reach` for what is being checked and why the answer is a refusal rather than a
- * repair.
+ * See `./migration-reach` for the check that refuses unrecognized histories. This runner can
+ * reconcile known branch histories whose SQL is missing below Drizzle’s high-water mark.
  */
+
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Sql, TransactionSql } from "postgres";
@@ -16,8 +20,10 @@ import { reconcileBillingPilotMigrations } from "./billing-pilot-migrations";
 import { reconcileCorsairPilotMigrations } from "./corsair-pilot-migrations";
 import {
   type AppliedMigration,
+  type FolderMigration,
   type MigrationsJournal,
   migrationsOutOfReach,
+  migratorHighWaterMark,
   outOfReachRefusal,
   readMigrationFolder,
 } from "./migration-reach";
@@ -91,6 +97,200 @@ export class MigrationsOutOfReachError extends Error {
  */
 const MIGRATION_LOCK = "openbot:apply-migrations";
 
+const DIRECT_CHAT_TAG = "0089_direct_chat_runs";
+const FIRST_TRIAL_TAG = "0093_personal_saas_entry";
+
+// Original Personal SaaS journal stamps, in order through workspace reprovision.
+const TRIAL_STAMPS = [
+  1795158327499, 1795160662134, 1795162001225, 1795173234015, 1795174523931,
+  1795174795281, 1795176012983, 1795177502282, 1795178829465, 1795181383402,
+  1795184138210, 1795184939036, 1795231535117,
+];
+
+/** Move a verified trial prefix onto the merged journal and apply the independent main migrations. */
+async function reconcileTrialJournal(
+  tx: TransactionSql,
+  journal: MigrationsJournal,
+  migrationsFolder: string,
+  folder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+): Promise<boolean> {
+  const mark = migratorHighWaterMark(applied);
+  const trialLength = TRIAL_STAMPS.findIndex((when) => when === mark) + 1;
+  if (trialLength === 0) return false;
+
+  const directChatIndex = folder.findIndex(
+    ({ tag }) => tag === DIRECT_CHAT_TAG,
+  );
+  const trialIndex = folder.findIndex(({ tag }) => tag === FIRST_TRIAL_TAG);
+  if (directChatIndex < 0 || trialIndex !== directChatIndex + 4) return false;
+
+  const directChat = folder[directChatIndex];
+  if (!directChat) return false;
+  const appliedByStamp = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  const hasDirectChat = appliedByStamp.get(directChat.when) === directChat.hash;
+  const shared = folder.slice(0, directChatIndex + Number(hasDirectChat));
+  const trial = folder.slice(trialIndex, trialIndex + trialLength);
+  if (
+    trial.length !== trialLength ||
+    appliedByStamp.size !== applied.length ||
+    applied.length !== shared.length + trial.length ||
+    shared.some(({ when, hash }) => appliedByStamp.get(when) !== hash) ||
+    trial.some(({ hash }, index) => {
+      const stamp = TRIAL_STAMPS[index];
+      return stamp === undefined || appliedByStamp.get(stamp) !== hash;
+    })
+  ) {
+    return false;
+  }
+
+  const { migrationsSchema, migrationsTable } = journal;
+  const table = tx`${tx(migrationsSchema)}.${tx(migrationsTable)}`;
+  const missingMain = folder.slice(
+    directChatIndex + Number(hasDirectChat),
+    trialIndex,
+  );
+  for (const migration of missingMain)
+    await applyJournalEntry(tx, journal, migrationsFolder, migration);
+  for (const [index, { hash, when }] of trial.entries()) {
+    const original = TRIAL_STAMPS[index];
+    if (original !== undefined && original !== when) {
+      await tx`update ${table} set created_at = ${when}
+        where hash = ${hash} and created_at = ${original}`;
+    }
+  }
+  return true;
+}
+
+async function applyJournalEntry(
+  tx: TransactionSql,
+  { migrationsSchema, migrationsTable }: MigrationsJournal,
+  migrationsFolder: string,
+  { tag, hash, when }: FolderMigration,
+) {
+  const sql = await readFile(join(migrationsFolder, `${tag}.sql`), "utf8");
+  if (createHash("sha256").update(sql).digest("hex") !== hash)
+    throw new Error(`Migration ${tag} changed while reconciling the journal.`);
+  for (const statement of sql.split("--> statement-breakpoint"))
+    await tx.unsafe(statement);
+  await tx`insert into ${tx(migrationsSchema)}.${tx(migrationsTable)}
+    (hash, created_at) values (${hash}, ${when})`;
+}
+
+/** Apply the independent SaaS migrations to a verified billing trial prefix. */
+async function reconcileBillingJournal(
+  tx: TransactionSql,
+  journal: MigrationsJournal,
+  migrationsFolder: string,
+  folder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+): Promise<boolean> {
+  const stamps = [1795189760197, 1795189760198, 1795189760199];
+  const tags = [
+    "0110_test_credit",
+    "0111_test_credit_reconciliation",
+    "0112_test_credit_cutoff_index",
+  ];
+  const billingLength =
+    stamps.findIndex((stamp) => stamp === migratorHighWaterMark(applied)) + 1;
+  if (!billingLength) return false;
+
+  const firstBilling = folder.findIndex(({ tag }) => tag === tags[0]);
+  const firstSaas = folder.findIndex(({ tag }) => tag === FIRST_TRIAL_TAG);
+  if (firstSaas < 0 || firstBilling <= firstSaas) return false;
+
+  const shared = folder.slice(0, firstSaas);
+  const billing = folder.slice(firstBilling, firstBilling + billingLength);
+  const appliedByStamp = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  if (
+    billing.length !== billingLength ||
+    appliedByStamp.size !== applied.length ||
+    applied.length !== shared.length + billingLength ||
+    shared.some(({ hash, when }) => appliedByStamp.get(when) !== hash) ||
+    billing.some(
+      ({ hash, tag }, index) =>
+        tag !== tags[index] ||
+        appliedByStamp.get(stamps[index] ?? null) !== hash,
+    )
+  )
+    return false;
+
+  for (const migration of folder.slice(firstSaas, firstBilling))
+    await applyJournalEntry(tx, journal, migrationsFolder, migration);
+
+  const table = tx`${tx(journal.migrationsSchema)}.${tx(journal.migrationsTable)}`;
+  for (const [index, { hash, when }] of billing.entries())
+    await tx`update ${table} set created_at = ${when}
+      where hash = ${hash} and created_at = ${stamps[index] ?? null}`;
+  return true;
+}
+
+const CORSAIR_TAGS = new Set([
+  "0105_corsair_slack_personal",
+  "0106_corsair_slack_shared",
+  "0107_corsair_shared_storage",
+  "0108_corsair_revocation",
+]);
+
+const BIFROST_MARKET_TAGS = new Set([
+  "0117_bifrost_market_reviews",
+  "0118_skill_market_equivalences",
+]);
+
+/** Fill gaps only for an exact applied prefix of one of the two parent journals. */
+async function reconcileParentJournal(
+  tx: TransactionSql,
+  journal: MigrationsJournal,
+  migrationsFolder: string,
+  folder: readonly FolderMigration[],
+  saasFolder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+) {
+  const trialIndex = folder.findIndex(({ tag }) => tag === FIRST_TRIAL_TAG);
+  const corsair = folder.filter(({ tag }) => CORSAIR_TAGS.has(tag));
+  const lastSaasIndex = saasFolder.findIndex(
+    ({ tag }) => tag === "0116_test_credit_embedding_replay",
+  );
+  if (
+    trialIndex < 0 ||
+    corsair.length !== CORSAIR_TAGS.size ||
+    lastSaasIndex < 0
+  )
+    return;
+
+  const mainFolder = [
+    ...folder.slice(0, trialIndex),
+    ...corsair,
+    ...folder.filter(({ tag }) => BIFROST_MARKET_TAGS.has(tag)),
+  ];
+  const appliedByStamp = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  if (appliedByStamp.size !== applied.length) return;
+
+  const matchesPrefix = (parent: readonly FolderMigration[]) =>
+    applied.length <= parent.length &&
+    parent
+      .slice(0, applied.length)
+      .every(({ when, hash }) => appliedByStamp.get(when) === hash);
+  if (
+    !matchesPrefix(mainFolder) &&
+    !matchesPrefix(saasFolder.slice(0, lastSaasIndex + 1))
+  )
+    return;
+
+  const mark = migratorHighWaterMark(applied);
+  if (mark === undefined) return;
+  for (const migration of folder) {
+    if (migration.when <= mark && !appliedByStamp.has(migration.when))
+      await applyJournalEntry(tx, journal, migrationsFolder, migration);
+  }
+}
+
 /**
  * Check, then migrate, with nothing able to commit in between.
  *
@@ -130,14 +330,45 @@ export async function applyMigrations(
       await appliedMigrations(tx, journal),
       journal,
     );
-    const applied = await reconcileBillingPilotMigrations(
+    let applied = await reconcileBillingPilotMigrations(
       tx,
       migrationsFolder,
       folder,
       corsair,
       journal,
     );
-    const outOfReach = migrationsOutOfReach(folder, applied);
+    let outOfReach = migrationsOutOfReach(folder, applied);
+    if (outOfReach.length > 0) {
+      const saasFolder = folder.filter(({ tag }) => !CORSAIR_TAGS.has(tag));
+      if (
+        (await reconcileTrialJournal(
+          tx,
+          journal,
+          migrationsFolder,
+          saasFolder,
+          applied,
+        )) ||
+        (await reconcileBillingJournal(
+          tx,
+          journal,
+          migrationsFolder,
+          saasFolder,
+          applied,
+        ))
+      ) {
+        applied = await appliedMigrations(tx, journal);
+      }
+      await reconcileParentJournal(
+        tx,
+        journal,
+        migrationsFolder,
+        folder,
+        saasFolder,
+        applied,
+      );
+      applied = await appliedMigrations(tx, journal);
+      outOfReach = migrationsOutOfReach(folder, applied);
+    }
     if (outOfReach.length > 0) {
       throw new MigrationsOutOfReachError(
         outOfReachRefusal(outOfReach, folder, applied, journal),

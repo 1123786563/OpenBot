@@ -80,4 +80,4 @@ Use `corsair.github.event_delivery` audit rows to correlate the GitHub delivery 
 
 Live acceptance uses an isolated GitHub App and repository. Capture a real delivery, a failed delivery followed by redelivery, and a duplicate after recovery. Confirm one Run per eligible Trigger, a denial for an unenrolled source or insufficient read access, and a queued Run skipped after removing the bound authorization. Exercise a default Connection change with a second authorized account and verify that the Trigger still uses the original authorization.
 
-Migration `0095_corsair_shared_storage` moves the existing connections, enrollment, and event records into the shared Corsair tables. See [Corsair storage in PostgreSQL](corsair-storage.md).
+Migration `0107_corsair_shared_storage` creates the shared tables and views for connections, enrollments, and event records. See [Corsair storage in PostgreSQL](corsair-storage.md).

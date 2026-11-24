@@ -286,6 +286,7 @@ export type AttentionItem = {
 export type AttentionPing = {
   /** The `proactive_pings` row. Delivery builds its dedupe keys from it. */
   pingId: string;
+  authorizedSince?: number;
   ownerUserId: string;
   /** The folded message for Slack, Teams and SMS, naming each item's Bot. */
   text: string;

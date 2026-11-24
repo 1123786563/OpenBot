@@ -131,6 +131,47 @@ export const testCreditBatches = pgTable(
   (table) => [check("test_credit_batch_positive", sql`${table.amount} > 0`)],
 );
 
+export const testCreditIssuanceBudgets = pgTable(
+  "test_credit_issuance_budgets",
+  {
+    id: text().primaryKey(),
+    total: bigint({ mode: "bigint" }).notNull(),
+    issued: bigint({ mode: "bigint" }).notNull().default(sql`0`),
+  },
+  (table) => [
+    check("test_credit_issuance_budget_total", sql`${table.total} >= 0`),
+    check(
+      "test_credit_issuance_budget_issued",
+      sql`${table.issued} >= 0 AND ${table.issued} <= ${table.total}`,
+    ),
+  ],
+);
+
+export const testCreditIssuances = pgTable(
+  "test_credit_issuances",
+  {
+    accountId: uuid("account_id")
+      .primaryKey()
+      .references(() => testCreditAccounts.id),
+    budgetId: text("budget_id")
+      .notNull()
+      .references(() => testCreditIssuanceBudgets.id),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => testCreditBatches.id),
+    amount: bigint({ mode: "bigint" }).notNull(),
+    state: text({ enum: ["pending", "issued"] as const }).notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+  },
+  (table) => [
+    check("test_credit_issuance_amount_positive", sql`${table.amount} > 0`),
+    check(
+      "test_credit_issuance_state",
+      sql`(${table.state} = 'pending' AND ${table.issuedAt} IS NULL) OR (${table.state} = 'issued' AND ${table.issuedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const testCreditEnrollments = pgTable(
   "test_credit_enrollments",
   {
@@ -143,6 +184,28 @@ export const testCreditEnrollments = pgTable(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
   },
   (table) => [primaryKey({ columns: [table.accountId, table.batchId] })],
+);
+
+export const testCreditExternalAuthorizations = pgTable(
+  "test_credit_external_authorizations",
+  {
+    id: uuid().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => testCreditAccounts.id),
+    application: text({ enum: ["weknora"] }).notNull(),
+    resourceId: text("resource_id").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    maxMicrocredits: bigint("max_microcredits", { mode: "bigint" }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique().on(table.accountId, table.id),
+    check(
+      "test_credit_external_authorization_amount",
+      sql`${table.maxMicrocredits} > 0`,
+    ),
+  ],
 );
 
 export const testCreditOutcomes = [
@@ -228,6 +291,13 @@ export const testCreditOperations = pgTable(
       .references(() => testCreditAccounts.id),
     id: text().notNull(),
     permit: uuid().notNull().defaultRandom(),
+    externalAuthorizationId: uuid("external_authorization_id"),
+    externalAccountEpoch: bigint("external_account_epoch", { mode: "number" }),
+    embeddingInputDigest: text("embedding_input_digest"),
+    embeddingResult: jsonb("embedding_result").$type<number[][]>(),
+    embeddingResultExpiresAt: timestamp("embedding_result_expires_at", {
+      withTimezone: true,
+    }),
     priceVersion: uuid("price_version").notNull(),
     route: jsonb().$type<ReleasedBifrostRoute>().notNull(),
     reserved: bigint({ mode: "bigint" }).notNull(),
@@ -285,6 +355,24 @@ export const testCreditOperations = pgTable(
       table.budgetId,
       table.state,
     ),
+    foreignKey({
+      name: "test_credit_operation_external_authorization_fk",
+      columns: [table.accountId, table.externalAuthorizationId],
+      foreignColumns: [
+        testCreditExternalAuthorizations.accountId,
+        testCreditExternalAuthorizations.id,
+      ],
+    }),
+    check(
+      "test_credit_operation_external_binding",
+      sql`(${table.externalAuthorizationId} IS NULL) = (${table.externalAccountEpoch} IS NULL)`,
+    ),
+    index("test_credit_embedding_result_expiry_idx")
+      .on(table.embeddingResultExpiresAt)
+      .where(sql`${table.embeddingResultExpiresAt} IS NOT NULL`),
+    index("test_credit_operations_external_authorization_idx")
+      .on(table.accountId, table.externalAuthorizationId)
+      .where(sql`${table.externalAuthorizationId} IS NOT NULL`),
     index("test_credit_operations_due_cutoff_idx")
       .on(table.dispatchedAt, table.accountId, table.id)
       .where(sql`${table.state} = 'pending' AND ${table.cutoffHold} IS NULL`),

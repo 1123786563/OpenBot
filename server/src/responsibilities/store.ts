@@ -1,4 +1,3 @@
-import { createCorsairCutover, corsairApp } from "../plugins/corsair/cutover";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
@@ -11,7 +10,10 @@ import {
   responsibilityRuns,
   responsibilityTriggers,
 } from "../db/schema/responsibilities";
-import { workItems } from "../db/schema/work";
+import {
+  corsairApp,
+  corsairTriggerExclusions,
+} from "../plugins/corsair/cutover";
 import {
   GITHUB_EVENT_ACCESS_ENDED,
   GITHUB_EVENT_PREFIX,
@@ -19,6 +21,7 @@ import {
 } from "../plugins/corsair/event-run-access";
 import { SLACK_EVENT_PREFIX } from "../plugins/corsair/slack/event-run-access";
 import type { createSlackEventPilot } from "../plugins/corsair/slack/events";
+import { createWorkQueue } from "../work/queue";
 import { RESPONSIBILITY_RUN_KIND } from "./engine";
 import {
   type GoalRepeats,
@@ -42,7 +45,7 @@ export type ResponsibilityTargetResolver = (
 ) => Promise<{ threadId: string } | null>;
 
 export function createResponsibilityStore(
-  database: Database,
+  database: Connection,
   options: {
     resolveTarget: ResponsibilityTargetResolver;
     deploymentId?: string;
@@ -77,12 +80,18 @@ export function createResponsibilityStore(
   async function queueRun(
     transaction: Transaction,
     runId: string,
+    ownerUserId: string,
     key = runId,
   ) {
-    await transaction
-      .insert(workItems)
-      .values({ kind: RESPONSIBILITY_RUN_KIND, key, payload: { runId } })
-      .onConflictDoNothing();
+    if (
+      (await createWorkQueue(transaction).offer({
+        kind: RESPONSIBILITY_RUN_KIND,
+        key,
+        payload: { runId, ownerUserId },
+      })) === "refused"
+    ) {
+      throw new ResponsibilityRefusedError("Bot work authorization ended.");
+    }
   }
   /**
    * Why this goal runs again and again (`GoalRepeats`), read where it already lives: its own flag,
@@ -302,10 +311,10 @@ export function createResponsibilityStore(
           if (!trigger) throw new ResponsibilityNotFoundError();
           const app = corsairApp.safeParse(trigger.kind);
           if (options.deploymentId && app.success) {
-            const exclusions = await createCorsairCutover(database, {
+            const exclusions = await corsairTriggerExclusions(transaction, {
               workspaceId: options.deploymentId,
               app: app.data,
-            }).triggerExclusions(transaction);
+            });
             if (exclusions.has(`trigger:${trigger.id}`))
               return { eventId: "", duplicate: false, runIds: [] };
           }
@@ -385,7 +394,7 @@ export function createResponsibilityStore(
           await transaction
             .insert(responsibilityRuns)
             .values({ id: runId, responsibilityId: goal.id, eventId });
-          await queueRun(transaction, runId);
+          await queueRun(transaction, runId, goal.ownerUserId);
           runIds.push(runId);
         }
         return { eventId, duplicate: false, runIds };
@@ -669,7 +678,12 @@ export function createResponsibilityStore(
             error: null,
           })
           .where(eq(responsibilityRuns.id, runId));
-        await queueRun(transaction, runId, `${runId}:resume:${randomUUID()}`);
+        await queueRun(
+          transaction,
+          runId,
+          goal.ownerUserId,
+          `${runId}:resume:${randomUUID()}`,
+        );
         return true;
       });
     },

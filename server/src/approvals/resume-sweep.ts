@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { headlessTurnRefusal } from "../admin/controls";
+import {
+  decisionInvalidated,
+  runWithDecisionAccess,
+} from "../personal-saas/decision-access";
 import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import type { createSlackGoalAction } from "../plugins/corsair/slack/goal-action";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
@@ -16,7 +20,9 @@ export function createApprovalResumeTick(
     approvalQueue: WorkQueue;
     approvalOwner: string;
     approvalService: ApprovalService;
-    executeApprovedAction: ApprovalResumeDependencies["execute"];
+    executeApprovedAction: ReturnType<
+      typeof import("./execute").createApprovedActionExecutor
+    >;
     slackGoalAction?: ReturnType<typeof createSlackGoalAction>;
   },
 ): () => Promise<void> {
@@ -24,6 +30,7 @@ export function createApprovalResumeTick(
     approvalQueue,
     approvalOwner,
     approvalService,
+    database,
     executeApprovedAction,
     responsibilityStore,
   } = deps;
@@ -65,9 +72,25 @@ export function createApprovalResumeTick(
           request.action.dispatch === "corsair-slack-goal" &&
           deps.slackGoalAction
         ) {
-          const outcome = await deps.slackGoalAction.resume(
-            request,
-            responsibilityStore,
+          const slackGoalAction = deps.slackGoalAction;
+          if (request.action.executionInvalidated) {
+            await finish();
+            return;
+          }
+          const outcome = await runWithDecisionAccess(
+            database,
+            input.ownerUserId,
+            {
+              runId: request.action.runId,
+              createdAt: request.createdAt,
+              epoch: request.action.executionEpoch,
+            },
+            ({ beforeDispatch }) =>
+              slackGoalAction.resume(
+                request,
+                responsibilityStore,
+                beforeDispatch,
+              ),
           );
           if (outcome === "retry") throw new GithubEventAccessRetry();
           await finish();
@@ -91,7 +114,24 @@ export function createApprovalResumeTick(
               executeApprovedAction(action),
             );
           },
-          execute: executeApprovedAction,
+          execute: async (action) => {
+            const request = await approvalService.store.get(
+              input.ownerUserId,
+              input.approvalId,
+            );
+            if (request.action.executionInvalidated)
+              throw new Error(decisionInvalidated);
+            return runWithDecisionAccess(
+              database,
+              input.ownerUserId,
+              {
+                runId: action.runId,
+                createdAt: request.createdAt,
+                epoch: request.action.executionEpoch,
+              },
+              (execution) => executeApprovedAction(action, execution),
+            );
+          },
           continue: (outcome) =>
             continueApproval(deps, input.ownerUserId, outcome),
         };

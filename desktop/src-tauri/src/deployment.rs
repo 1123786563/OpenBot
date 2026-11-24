@@ -1262,8 +1262,8 @@ mod tests {
         );
         let get = |url: &str| -> Result<Vec<u8>, String> {
             match url {
-                url if url == source_url => Ok(tarball.clone()),
-                url if url == manifest_url => Ok(images.clone()),
+                source if source == source_url => Ok(tarball.clone()),
+                manifest if manifest == manifest_url => Ok(images.clone()),
                 other => Err(format!("unexpected download {other}")),
             }
         };
@@ -1316,8 +1316,8 @@ mod tests {
         );
         let get = |url: &str| -> Result<Vec<u8>, String> {
             match url {
-                url if url == source_url => Ok(tarball.clone()),
-                url if url == manifest_url => Ok(images.clone()),
+                source if source == source_url => Ok(tarball.clone()),
+                manifest if manifest == manifest_url => Ok(images.clone()),
                 other => Err(format!("unexpected download {other}")),
             }
         };

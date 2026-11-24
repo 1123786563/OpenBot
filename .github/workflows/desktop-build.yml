@@ -53,7 +53,7 @@ jobs:
   app:
     name: app (${{ matrix.platform }})
     # PR smoke builds without the CLI can use Intel. Keep arm64 for release and CLI bundles.
-    runs-on: ${{ matrix.platform == 'macos' && (github.event_name == 'pull_request' && inputs.channel == 'internal' && !inputs.bundle_cli && inputs.manifest_artifact == '' && 'macos-15-intel' || 'macos-latest') || matrix.platform == 'windows' && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'windows-latest' || 'openbot-windows-16core') || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.platform == 'macos' && (github.event_name == 'pull_request' && inputs.channel == 'internal' && !inputs.bundle_cli && inputs.manifest_artifact == '' && 'macos-15-intel' || 'macos-latest') || matrix.platform == 'windows' && (github.event_name == 'pull_request' && 'windows-latest' || 'openbot-windows-16core') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -176,6 +176,7 @@ jobs:
         working-directory: desktop
         env:
           APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos' && '-' || '' }}
+          OPENBOT_PERSONAL_SAAS_URL: ${{ vars.OPENBOT_PERSONAL_SAAS_URL }}
           OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_ID: ${{ vars.OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_ID }}
           OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_SECRET: ${{ secrets.OPENBOT_GOOGLE_MODEL_OAUTH_CLIENT_SECRET }}
           OPENBOT_GOOGLE_MODEL_OAUTH_QUOTA_PROJECT: ${{ vars.OPENBOT_GOOGLE_MODEL_OAUTH_QUOTA_PROJECT }}

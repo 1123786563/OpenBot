@@ -305,7 +305,9 @@ async function priorItemsOf(
   };
 }
 
-export function createProactiveStore(database: Database) {
+export function createProactiveStore(
+  database: Database | Parameters<Parameters<Database["transaction"]>[0]>[0],
+) {
   const owned = (owner: string, id: string) =>
     and(eq(proactiveSettings.ownerUserId, owner), eq(proactiveSettings.id, id));
   async function get(owner: string, id: string): Promise<ProactiveSetting> {
@@ -505,7 +507,6 @@ export function createProactiveStore(database: Database) {
           .update(proactiveSettings)
           .set({
             nextRunAt: sql`${fromServerClock(at)} + make_interval(mins => ${proactiveSettings.intervalMinutes})`,
-            updatedAt: at,
           })
           .where(
             and(
@@ -530,7 +531,6 @@ export function createProactiveStore(database: Database) {
           lastStatus: status,
           lastError: error?.slice(0, 500) ?? null,
           ...(status === "running" ? { lastRunAt: new Date() } : {}),
-          updatedAt: new Date(),
         })
         .where(eq(proactiveSettings.id, id));
     },
@@ -802,7 +802,10 @@ export function createProactiveStore(database: Database) {
       return row?.startedAt ?? null;
     },
     /** The setting's last check-in that reached the model and ended, for Run now's ten minutes. */
-    async lastCheckIn(settingId: string): Promise<LastCheckIn | null> {
+    async lastCheckIn(
+      settingId: string,
+      excludeRunId?: string,
+    ): Promise<LastCheckIn | null> {
       const [row] = await database
         .select({
           outcome: proactiveRuns.outcome,
@@ -813,6 +816,9 @@ export function createProactiveStore(database: Database) {
           and(
             eq(proactiveRuns.settingId, settingId),
             inArray(proactiveRuns.outcome, ["quiet", "raised", "failed"]),
+            excludeRunId === undefined
+              ? undefined
+              : ne(proactiveRuns.id, excludeRunId),
           ),
         )
         .orderBy(desc(proactiveRuns.startedAt))
@@ -850,6 +856,7 @@ export function createProactiveStore(database: Database) {
           and(
             eq(workItems.kind, PROACTIVE_RUN_KIND),
             isNull(workItems.finishedAt),
+            isNull(workItems.interruption),
             sql`${workItems.payload}->>'settingId' = ${settingId}`,
           ),
         )

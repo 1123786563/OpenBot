@@ -19,6 +19,8 @@ import {
   testCreditBudgets,
   testCreditEnrollments,
   testCreditEvidence,
+  testCreditIssuanceBudgets,
+  testCreditIssuances,
   testCreditOperations,
 } from "../src/db/schema";
 import { createManagedModel, type ModelOperation } from "../src/managed-model";
@@ -287,7 +289,7 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
   const secondToken = crypto.randomUUID();
   let sends = 0;
   let gatewayRequestId: string | null = null;
-  const sent: { model: string; max_tokens: number }[] = [];
+  const sent: { model: string; max_completion_tokens: number }[] = [];
   const externalGateway = process.env.OPENBOT_TEST_BIFROST_FIXTURE_URL;
   let lastOperationId: string | null = null;
   let lastDispatchAccountId: string | undefined;
@@ -1021,11 +1023,11 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     expect(sent).toHaveLength(4);
     expect(sent[0]).toMatchObject({
       model: externalGateway ? "model-a" : "fixture-a/model-a",
-      [externalGateway ? "max_completion_tokens" : "max_tokens"]: 16,
+      max_completion_tokens: 16,
     });
     expect(sent[3]).toMatchObject({
       model: externalGateway ? "model-b" : "fixture-b/model-b",
-      [externalGateway ? "max_completion_tokens" : "max_tokens"]: 16,
+      max_completion_tokens: 16,
     });
     const emergencyBatch = crypto.randomUUID();
     await ledger.enroll({
@@ -1108,5 +1110,90 @@ test("pilot routes isolate accounts and settle one of two concurrent admissions 
     } finally {
       await database.$client.close();
     }
+  }
+});
+
+test("one-time workspace grants serialize the global budget and retry pending identities", async () => {
+  const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const ledger = createTestCreditLedger(database);
+  const issuer = `https://casdoor.example.test/${crypto.randomUUID()}`;
+  const first = { issuer, subject: crypto.randomUUID() };
+  const second = { issuer, subject: crypto.randomUUID() };
+  const config = {
+    budgetId: `personal-${crypto.randomUUID()}`,
+    batchId: crypto.randomUUID(),
+    amount: 2n,
+    budget: 3n,
+  } as const;
+  try {
+    const outcomes = await Promise.all([
+      ledger.ensureOneTimeGrant(first, config),
+      ledger.ensureOneTimeGrant(second, config),
+    ]);
+    expect(outcomes.map((outcome) => outcome.state).sort()).toEqual([
+      "issued",
+      "pending",
+    ]);
+    const issuedIdentity = outcomes[0]?.state === "issued" ? first : second;
+    const pendingIdentity = issuedIdentity === first ? second : first;
+    expect(
+      await ledger.ensureOneTimeGrant(issuedIdentity, config),
+    ).toMatchObject({
+      state: "issued",
+    });
+    expect((await ledger.balance(issuedIdentity))?.grantedMicrocredits).toBe(
+      "2",
+    );
+    expect((await ledger.balance(pendingIdentity))?.grantedMicrocredits).toBe(
+      "0",
+    );
+
+    const replacement = {
+      budgetId: `${config.budgetId}-replacement`,
+      batchId: crypto.randomUUID(),
+      amount: 5n,
+      budget: 10n,
+    };
+    expect(
+      await ledger.ensureOneTimeGrant(pendingIdentity, replacement),
+    ).toMatchObject({ state: "pending", budgetId: config.budgetId });
+    await ledger.restoreOneTimeGrantBudget(config.budgetId, 4n);
+    const retries = await Promise.all([
+      ledger.ensureOneTimeGrant(pendingIdentity, config),
+      ledger.ensureOneTimeGrant(pendingIdentity, replacement),
+    ]);
+    for (const retry of retries)
+      expect(retry).toEqual({
+        state: "issued",
+        budgetId: config.budgetId,
+        batchId: config.batchId,
+        amountMicrocredits: "2",
+      });
+    expect((await ledger.balance(pendingIdentity))?.grantedMicrocredits).toBe(
+      "2",
+    );
+  } finally {
+    await database.transaction(async (tx) => {
+      const accountIds = tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, issuer));
+      await tx
+        .delete(testCreditIssuances)
+        .where(inArray(testCreditIssuances.accountId, accountIds));
+      await tx
+        .delete(testCreditEnrollments)
+        .where(inArray(testCreditEnrollments.accountId, accountIds));
+      await tx
+        .delete(testCreditAccounts)
+        .where(eq(testCreditAccounts.issuer, issuer));
+      await tx
+        .delete(testCreditIssuanceBudgets)
+        .where(eq(testCreditIssuanceBudgets.id, config.budgetId));
+      await tx
+        .delete(testCreditBatches)
+        .where(eq(testCreditBatches.id, config.batchId));
+    });
+    await database.$client.close();
   }
 });

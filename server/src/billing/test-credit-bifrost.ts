@@ -85,6 +85,7 @@ export function createBifrostCreditExecutor({
       requestId: string;
       operationId?: string;
     },
+    signal?: AbortSignal,
   ): Promise<number>;
   limitField?: "max_tokens" | "max_completion_tokens";
 }) {
@@ -111,6 +112,7 @@ export function createBifrostCreditExecutor({
     recheckRoute,
     bindGatewayRequest,
     routeProof,
+    signal,
   }: {
     route: Route;
     messages: Messages;
@@ -122,8 +124,10 @@ export function createBifrostCreditExecutor({
       digest: string;
     }) => Promise<boolean>;
     routeProof?: string;
+    signal?: AbortSignal;
   }) => {
     if (
+      signal?.aborted ||
       route.gatewayRevision !== gatewayRevision ||
       route.meteringRevision !== meteringRevision ||
       (coordinationTools?.length && !route.tools)
@@ -147,19 +151,22 @@ export function createBifrostCreditExecutor({
     const digest = createHash("sha256").update(body).digest("hex");
     const requestId = crypto.randomUUID();
     const counted = tokens.safeParse(
-      await countInputTokens(route, messages, {
-        body,
-        digest,
-        requestId,
-        operationId,
-      }).catch(() => undefined),
+      await countInputTokens(
+        route,
+        messages,
+        { body, digest, requestId, operationId },
+        signal,
+      ).catch(() => undefined),
     );
     if (!counted.success) throw new UnsentBifrostRequest("route_unavailable");
     if (counted.data > route.maxInputTokens) {
       throw new UnsentBifrostRequest("execution_limit");
     }
 
-    if (recheckRoute && !(await recheckRoute().catch(() => false))) {
+    if (
+      (recheckRoute && !(await recheckRoute().catch(() => false))) ||
+      signal?.aborted
+    ) {
       throw new UnsentBifrostRequest("route_unavailable");
     }
 
@@ -182,10 +189,12 @@ export function createBifrostCreditExecutor({
     )
       throw new Error("Test Credit gateway dispatch binding unavailable.");
 
+    if (signal?.aborted) throw new UnsentBifrostRequest("route_unavailable");
+    const timeout = AbortSignal.timeout(85_000);
     const response = await fetch(url, {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(85_000),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers,
       body,
     });

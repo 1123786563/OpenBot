@@ -17,6 +17,7 @@ import {
 } from "../audit";
 import { BackgroundModelWaiting } from "../billing/background-model";
 import { cutAtCodeUnits } from "../channels/text";
+import { runAuthorizedWork } from "../work/execution";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { isEndpointRefusal } from "./endpoint";
 import { HANDOFF_KIND } from "./handoff";
@@ -75,6 +76,9 @@ export type HandoffDelivery = {
    */
   deliver: (input: {
     work: HandoffWork;
+    signal?: AbortSignal;
+    beforeDispatch?: () => Promise<void>;
+    onText?: (text: string) => void;
     /** The message the addressed Bot sees, already attributed by the deployment. */
     message: string;
     /**
@@ -255,13 +259,19 @@ export function createHandoffRunner(options: {
    * paragraph, because a Bot that came back with a book would otherwise put a book in the person's
    * conversation, and in every prompt that reads it afterwards.
    */
-  const relay = (work: HandoffWork, key: string, answer: string) =>
+  const relay = (
+    work: HandoffWork,
+    key: string,
+    answer: string,
+    expectedEpoch?: number,
+  ) =>
     queue.offer({
       kind: HANDOFF_KIND,
       // Outside the run's fan-out prefix and keyed on the hop, for the same two reasons as the
       // notice below: a relay is not a Bot this run asked for, and one run may legally ask the
       // same Bot two different things.
       key: `relay:${key}`,
+      expectedEpoch,
       payload: {
         fromBotId: work.toBotId,
         toBotId: work.fromBotId,
@@ -465,27 +475,40 @@ export function createHandoffRunner(options: {
 
           try {
             const shown = summarise(work);
-            const { answer } = await delivery.deliver({
-              work,
-              ...(work.budgetId
-                ? {
-                    claim: {
-                      key: item.key,
-                      owner,
-                      isCurrent: () =>
-                        queue.renew({
-                          kind: HANDOFF_KIND,
+            const { answer } = await runAuthorizedWork(
+              queue,
+              item,
+              owner,
+              (guard) =>
+                delivery.deliver({
+                  ...guard,
+                  ...(work.budgetId
+                    ? {
+                        claim: {
                           key: item.key,
                           owner,
-                          leaseMs,
-                        }),
-                    },
-                  }
-                : {}),
-              message: attribute(work),
-              ...(shown ? { shown } : {}),
-              assertion: sign(work, { key: item.key, owner }),
-            });
+                          isCurrent: () =>
+                            queue.renew({
+                              kind: HANDOFF_KIND,
+                              key: item.key,
+                              owner,
+                              leaseMs,
+                            }),
+                        },
+                      }
+                    : {}),
+                  work,
+                  message: attribute(work),
+                  ...(shown ? { shown } : {}),
+                  assertion: sign(work, { key: item.key, owner }),
+                }),
+              {
+                safeFailure: (error) =>
+                  error instanceof ThreadBusyError ||
+                  (error instanceof BackgroundModelWaiting &&
+                    error.awaitingGatewayEvidence),
+              },
+            );
             const kept = await queue.finish({
               kind: HANDOFF_KIND,
               key: item.key,
@@ -530,7 +553,12 @@ export function createHandoffRunner(options: {
              * `answerIn` check exists to stop, and a wordless turn has nothing to say.
              */
             if (!work.answerIn && answer) {
-              await relay(work, item.key, answer).catch((failure) => {
+              await relay(
+                work,
+                item.key,
+                answer,
+                item.authorization?.epoch,
+              ).catch((failure) => {
                 // The turn happened and is on record; a relay that cannot be queued must not undo
                 // that by failing the hop into a retry and a second turn.
                 console.warn(
@@ -561,6 +589,19 @@ export function createHandoffRunner(options: {
           } catch (error) {
             const reason =
               error instanceof Error ? error.message : "could not be delivered";
+            if (
+              item.authorization &&
+              !(error instanceof ThreadBusyError) &&
+              !(
+                error instanceof BackgroundModelWaiting &&
+                error.awaitingGatewayEvidence
+              )
+            ) {
+              ours.delete(item.key);
+              report.skipped.push({ key: item.key, reason });
+              await settled(work);
+              return;
+            }
             /*
              * A CONVERSATION SOMEBODY ELSE IS RUNNING IN IS NOT A FAILURE, and does not spend an
              * attempt: nothing was started, and the attempts are for things that went wrong. A

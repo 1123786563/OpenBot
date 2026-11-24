@@ -42,7 +42,7 @@ function checkedEndpoint(endpoint: URL) {
 }
 
 function requestUuid(
-  scope: string,
+  scope: string | undefined,
   operationId: string,
   revision: string,
   digest: string,
@@ -52,7 +52,7 @@ function requestUuid(
     .update(
       JSON.stringify([
         "weknora-embedding",
-        scope,
+        ...(scope === undefined ? [] : [scope]),
         operationId,
         revision,
         digest,
@@ -107,7 +107,7 @@ export function createBifrostEmbeddingExecutor({
     route: ReleasedBifrostRoute;
     input: readonly string[];
     operationId: string;
-    authorizationId: string;
+    authorizationId?: string;
     beforeDispatch(proof: BifrostEmbeddingDispatchProof): Promise<boolean>;
     signal?: AbortSignal;
   }) => {

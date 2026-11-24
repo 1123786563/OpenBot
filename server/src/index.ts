@@ -268,11 +268,11 @@ import { createPeopleStore } from "./people/store";
 import { BROKERED_PROFILE } from "./plugins/access";
 import { createAccountModeSwitch } from "./plugins/account-mode";
 import { appAccessTools } from "./plugins/app-access-tool";
-import { useArcadeClient } from "./plugins/arcade";
+import { useArcadeClient as installArcadeClient } from "./plugins/arcade";
 import { createArcadeClient } from "./plugins/arcade-adapter";
 import { assertActivatable, providerDecision } from "./plugins/broker";
-import { useRoutineTools } from "./plugins/builtin-routines";
-import { useComposioClient } from "./plugins/composio";
+import { useRoutineTools as installRoutineTools } from "./plugins/builtin-routines";
+import { useComposioClient as installComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
 import { createCorsairCloudClient } from "./plugins/corsair/cloud";
 import { createGithubEventDispatch } from "./plugins/corsair/event-dispatch";
@@ -296,7 +296,7 @@ import {
   createSharedSlackProvider,
   sharedSlackRegistration,
 } from "./plugins/corsair/slack/shared-provider";
-import { useCorsairCloudClient } from "./plugins/corsair/transport";
+import { useCorsairCloudClient as installCorsairCloudClient } from "./plugins/corsair/transport";
 import { backfillBrokeredLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -347,7 +347,7 @@ import { createRecorderExtension } from "./recorder/wiring";
 import { createRequestActor } from "./request-actor";
 import { createResponsibilityBindingStore } from "./responsibilities/bindings";
 import {
-  useGoalTools,
+  useGoalTools as installGoalTools,
   withoutGoalCopiesInGoalRun,
 } from "./responsibilities/chat-tools";
 import {
@@ -358,14 +358,14 @@ import {
 } from "./responsibilities/email";
 import {
   createSlackTriggerIngest,
+  useSlackChannelMembership as installSlackChannelMembership,
+  useSlackTriggerIngest as installSlackTriggerIngest,
   slackAccessFrom,
-  useSlackChannelMembership,
-  useSlackTriggerIngest,
 } from "./responsibilities/slack";
 import { createResponsibilityStore } from "./responsibilities/store";
 import { responsibilityTools } from "./responsibilities/tools";
 import { createTriggerIngressRoutes } from "./responsibilities/trigger-routes";
-import { useTriggerTools } from "./responsibilities/trigger-tools";
+import { useTriggerTools as installTriggerTools } from "./responsibilities/trigger-tools";
 import { createTriggerStore } from "./responsibilities/triggers";
 import type { Responsibility } from "./responsibilities/types";
 import { createServerResponsibilityEngine } from "./responsibilities/wiring";
@@ -1182,8 +1182,8 @@ const providerWiring = selectProviderWiring(config, {
   composio: createComposioClient,
   arcade: createArcadeClient,
 });
-useComposioClient(providerWiring.install.composio);
-useArcadeClient(providerWiring.install.arcade);
+installComposioClient(providerWiring.install.composio);
+installArcadeClient(providerWiring.install.arcade);
 const wiredProvider = providerWiring.provider;
 const composio =
   wiredProvider && providerWiring.broker
@@ -1399,7 +1399,7 @@ if (composio) {
  * silent outage for this one.
  */
 const routineStore = createRoutineStore(database);
-useRoutineTools(routineStore);
+installRoutineTools(routineStore);
 // Routines is on from the start in every edition, for every Bot. See personal-defaults.ts.
 await ensureAlwaysOnApp(pluginStore, personalDefaultsDeps(database));
 /*
@@ -1462,7 +1462,7 @@ const corsairCloud = process.env.CORSAIR_CLOUD_KEY?.trim()
       instanceKey: process.env.CORSAIR_CLOUD_INSTANCE?.trim(),
     })
   : undefined;
-useCorsairCloudClient(corsairCloud ?? null);
+installCorsairCloudClient(corsairCloud ?? null);
 if (corsairCloud) {
   try {
     await pluginStore.addServer({
@@ -1591,7 +1591,7 @@ const deliveryStore = createDeliveryStore(database);
 /*
  * Slack access: the owner's own linked Slack identity comes from the delivery bindings (read at call
  * time; `deliveryStore` is built further down), and channel membership from the Slack pairing via
- * `useSlackChannelMembership`. Until the pairing installs that, Slack triggers are refused.
+ * `installSlackChannelMembership`. Until the pairing installs that, Slack triggers are refused.
  */
 const slackAccess = slackAccessFrom(async (ownerUserId, teamId) => {
   const bindings = await deliveryStore.listBindings(ownerUserId);
@@ -1634,18 +1634,18 @@ const responsibilityTriggers = {
     : null,
 };
 // The Slack pairing calls `ingestSlackEvent` from responsibilities/slack.ts; this installs it.
-useSlackTriggerIngest(
+installSlackTriggerIngest(
   createSlackTriggerIngest({ ...triggerIngressDeps, slackAccess }),
 );
 // Bots manage triggers from chat through the builtin Routines transport; keys never reach the model.
-useTriggerTools({
+installTriggerTools({
   triggers: responsibilityTriggerStore,
   responsibilities: responsibilityStore,
   publicUrl: config.publicUrl ?? null,
   emailDomain: inboundEmail?.domain ?? null,
 });
 // And goals, through the same transport: asked for a goal, a Bot makes one. See chat-tools.ts.
-useGoalTools({
+installGoalTools({
   store: responsibilityStore,
   // Read when a goal is run, long after the engine further down is made.
   engine: { ingest: (event) => responsibilityEngine.ingest(event) },
@@ -3098,7 +3098,7 @@ const deliveryProviders = configuredDeliveryProviders(
   config.publicUrl ?? config.auth?.baseUrl ?? `http://localhost:${config.port}`,
 );
 // Slack channel membership for triggers is answered by OpenTag, which holds the workspace token.
-useSlackChannelMembership((input) =>
+installSlackChannelMembership((input) =>
   deliveryProviders.slack
     ? deliveryProviders.slack.isMember(input)
     : Promise.resolve(false),
@@ -3357,6 +3357,7 @@ const groupSweep = repeatAfterEach(async () => {
 const personResponseSweep = repeatAfterEach(
   createPersonResponseTick({
     approvalQueue,
+    database,
     personResponseOwner,
     authoriseQuestion,
     approvalContinuationRunner,

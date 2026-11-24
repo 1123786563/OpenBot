@@ -238,6 +238,7 @@ export function createDeliveryRouter(deps: {
         channelId: binding.channelId,
         agentId: binding.agentId,
         threadId: binding.threadId,
+        authorizedSince: ping.authorizedSince,
         dedupeKey: `attention:${ping.pingId}:${transport}`,
         bindingId: binding.id,
         deviceId: null,
@@ -258,6 +259,7 @@ export function createDeliveryRouter(deps: {
     for (const device of devices)
       await deps.store.offerOutbox({
         ...scope,
+        authorizedSince: ping.authorizedSince,
         dedupeKey: `attention:${ping.pingId}:device:${device.id}`,
         bindingId: null,
         deviceId: device.id,
@@ -587,6 +589,7 @@ export function createDeliveryRouter(deps: {
           row.kind === "attention"
             ? headedText(row.text)
             : ["OpenBot", row.text];
+        if (!(await owns())) return;
         result = await deps.providers.push.send({
           token: device.token,
           title,
@@ -624,6 +627,7 @@ export function createDeliveryRouter(deps: {
           row.transport === "sms"
             ? undefined
             : ((await deps.store.botIdentity(row.agentId)) ?? undefined);
+        if (!(await owns())) return;
         result = await provider.send({
           id: row.id,
           address: binding.address,

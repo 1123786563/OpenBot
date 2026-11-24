@@ -88,6 +88,10 @@ export type TurnRunner = (input: {
   budget?: { id: string; stepId?: string };
   initiator?: AuditInitiator;
   signal?: AbortSignal;
+  /** Revalidates host execution authority after setup, immediately before dispatch. */
+  beforeDispatch?: () => Promise<void>;
+  /** Tools authorized by the host for this execution only. */
+  additionalTools?: readonly HeadlessTool[];
   continuation?: {
     snapshot: ApprovalContinuation;
     result: { content: string; error?: string };
@@ -917,6 +921,7 @@ export function createTurnRunner(options: {
     agent.setMessages(messages);
     if (continuation) agent.setState(continuation.snapshot.state);
     const headlessTools = [
+      ...(hostTurn.additionalTools ?? []),
       ...((await toolsForTurn?.({
         ownerUserId,
         agentId,
@@ -1078,6 +1083,9 @@ export function createTurnRunner(options: {
     });
 
     try {
+      signal?.throwIfAborted();
+      if (hostTurn.beforeDispatch) await hostTurn.beforeDispatch();
+      signal?.throwIfAborted();
       const cancelled = new Promise<never>((_resolve, reject) => {
         cancelTurn = () => {
           void options

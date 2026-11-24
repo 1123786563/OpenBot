@@ -288,13 +288,11 @@ test.each([
   [
     "reused gateway request UUID with different casing",
     (report) => {
-      const requestId =
-        "abcdef12-3456-4789-8abc-def123456789" as `${string}-${string}-${string}-${string}-${string}`;
+      const requestId = "abcdef12-3456-4789-8abc-def123456789";
       report.stream.gateway.requestId = requestId;
       report.stream.meter.requestId = requestId;
       report.stream.upstream.gatewayRequestId = requestId;
-      const duplicate =
-        requestId.toUpperCase() as `${string}-${string}-${string}-${string}-${string}`;
+      const duplicate = "ABCDEF12-3456-4789-8ABC-DEF123456789";
       report.outputLimit.gateway.requestId = duplicate;
       report.outputLimit.meter.requestId = duplicate;
       report.outputLimit.upstream.gatewayRequestId = duplicate;
@@ -375,4 +373,48 @@ test.each([
   const report = fixtureTraceReport(harnessImage, initial.routes.a!);
   alterReport(report);
   expect(() => verify(initial, "a", report, "admin")).toThrow("evidence");
+});
+
+test("a verified embedding route can be published without becoming the chat default", () => {
+  const embedding = {
+    ...other,
+    purpose: "embedding" as const,
+    maxOutputTokens: 0,
+    tools: false,
+    price: { inputPerMillion: 10_000, outputPerMillion: 0 },
+  };
+  const initial = configure(emptyCatalog, {
+    harnessImage,
+    routes: { embed: embedding },
+  });
+  const entry = initial.routes.embed!;
+  const chat = fixtureTraceReport(harnessImage, entry);
+  expect(() => verify(initial, "embed", chat, "admin")).toThrow("evidence");
+
+  const report = fixtureEmbeddingReport(harnessImage, entry);
+  expect(() =>
+    verify(
+      initial,
+      "embed",
+      {
+        ...report,
+        completed: {
+          ...report.completed,
+          gateway: { ...report.completed.gateway, inputTokens: 11 },
+        },
+      },
+      "admin",
+    ),
+  ).toThrow("evidence");
+  const verified = verify(initial, "embed", report, "admin");
+  expect(() => publish(verified, ["embed"], "embed", "admin")).toThrow(
+    "default",
+  );
+  const { catalog } = publish(verified, ["embed"], null, "admin");
+  expect(view(catalog)).toMatchObject({
+    defaultRoute: null,
+    options: [
+      { id: "embed", purpose: "embedding", maxChargeMicrocredits: "10" },
+    ],
+  });
 });

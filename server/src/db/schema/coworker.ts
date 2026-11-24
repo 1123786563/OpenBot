@@ -7,6 +7,7 @@
 import {
   boolean,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -153,6 +154,7 @@ export const routines = pgTable(
      * value it compared against recorded somewhere a human can inspect when a clock looks wrong.
      */
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    personalResumeEpoch: integer("personal_resume_epoch").notNull().default(0),
     /**
      * When this routine was last switched on, or created. The fatigue rule counts failures from
      * here, so a routine switched off after ten failures and switched back on gets ten more chances

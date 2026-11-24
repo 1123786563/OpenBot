@@ -715,6 +715,7 @@ export type TestCreditExecutor = (input: {
   messages: readonly (z.infer<typeof messages>[number] | CreditToolMessage)[];
   coordinationTools?: readonly CoordinationToolSpec[];
   recheckRoute(): Promise<boolean>;
+  signal?: AbortSignal;
   bindGatewayRequest(request: {
     requestId: string;
     digest: string;
@@ -728,6 +729,8 @@ export async function dispatchTestCredit({
   input,
   authorizeDispatch,
   coordinationTools,
+  maySend,
+  signal,
 }: {
   ledger: TestCreditLedger;
   execute?: TestCreditExecutor;
@@ -737,6 +740,8 @@ export async function dispatchTestCredit({
   };
   authorizeDispatch?: () => Promise<boolean>;
   coordinationTools?: readonly CoordinationToolSpec[];
+  maySend?: () => Promise<boolean>;
+  signal?: AbortSignal;
 }) {
   const admission = await ledger.beginDispatch(identity, input, {
     executorAvailable: execute !== undefined,
@@ -751,7 +756,13 @@ export async function dispatchTestCredit({
         accountId: admission.accountId,
         operationId: input.operationId,
         route: admission.route,
-        recheckRoute: () => ledger.routeStillEligible(admission.route),
+        async recheckRoute() {
+          return (
+            (await ledger.routeStillEligible(admission.route)) &&
+            (!maySend || (await maySend()))
+          );
+        },
+        signal,
         bindGatewayRequest: async (request) => {
           if (
             authorizeDispatch &&
