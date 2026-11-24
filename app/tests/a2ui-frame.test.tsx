@@ -33,10 +33,20 @@ const ORIGIN = "http://openbot.test";
 const buildInput = {
   entrypoints: [join(import.meta.dir, "a2ui-frame.fixture.tsx")],
   target: "browser",
+  minify: true,
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
   // The catalog's Map loads it on demand; OpenBot omits Map and does not ship it.
   external: ["maplibre-gl"],
   plugins: [
+    {
+      name: "omit-copilotkit-ui-styles",
+      setup(build) {
+        build.onLoad(
+          { filter: /\/@copilotkit\/react-core\/dist\/v2\/index\.css$/ },
+          () => ({ contents: "", loader: "css" }),
+        );
+      },
+    },
     {
       name: "no-marks",
       setup(build) {
@@ -126,6 +136,7 @@ beforeAll(async () => {
   if (!entry || !sheet) throw new Error("bundle has no script or stylesheet");
   script = await entry.text();
   styles = await sheet.text();
+  expect(styles).not.toContain(".copilotKitChat");
 });
 
 /** Chromium for one page, closed with the page. Each attempt has its own: Bun runs a retry while the attempt it retries is still running. */
@@ -240,12 +251,6 @@ async function openPage(
       content: readFileSync(packageStylesheet(sheet), "utf8"),
     });
   await page.addStyleTag({ content: styles });
-  await page.addStyleTag({
-    content: readFileSync(
-      packageStylesheet("@copilotkit/react-core/v2/styles.css"),
-      "utf8",
-    ),
-  });
   await page.addStyleTag({ content: await stylesheet(classes) });
   await page.evaluate(() => document.fonts.ready);
   return page;
