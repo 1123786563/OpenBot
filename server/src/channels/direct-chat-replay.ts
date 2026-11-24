@@ -16,7 +16,7 @@ export const directChatRunTimeoutMs = 5 * 60_000;
 
 const backgroundMessagePrefix = "openbot-background:";
 export const backgroundMessageId = (
-  source: "routine" | "delivery" | "handoff",
+  source: "routine" | "delivery" | "handoff" | "group",
   runId: string,
 ) => `${backgroundMessagePrefix}${source}:${runId}`;
 export const isBackgroundMessage = (id: string) =>

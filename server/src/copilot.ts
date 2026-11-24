@@ -3313,11 +3313,13 @@ export function mountCopilotRuntime(
     botId: string;
     initiator?: AuditInitiator;
     marketSkill?: MarketSkillSnapshot | null;
+    depth?: number;
   }): Promise<AbstractAgent | null> => {
     try {
       return await resolver.resolveAgentForActor(input.actor, input.botId, {
         initiator: input.initiator,
         marketSkill: input.marketSkill,
+        depth: input.depth,
       });
     } catch (error) {
       if (error instanceof CoworkerUnavailableError) return null;
@@ -3545,8 +3547,8 @@ export function mountCopilotRuntime(
       traceRuns: Boolean(config.opik),
       singleUser: config.singleUser,
       identifyActor,
-      agentFor: (actor, botId, initiator, marketSkill) =>
-        agentFor({ actor, botId, initiator, marketSkill }),
+      agentFor: (actor, botId, initiator, marketSkill, depth) =>
+        agentFor({ actor, botId, initiator, marketSkill, depth }),
     });
     learningConversations = directChat.learningConversations;
     runBackground = directChat.runBackground;

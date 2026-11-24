@@ -32,6 +32,7 @@ import { and, asc, desc, eq, isNull, min, or, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { HandoffCaps } from "../agents/handoff";
+import type { AgentActor } from "../agents/profile-types";
 import type { ApprovalContinuation } from "../approvals/types";
 import {
   type AuditInitiator,
@@ -56,6 +57,7 @@ import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";
 import { isMarketVersionPause } from "../skill-market/disablements";
 import type { WorkQueue } from "../work/queue";
+import { BackgroundConversationBusy, type BackgroundTurn } from "./direct-chat";
 import { stopDirectChatRun } from "./direct-chat-replay";
 import { CHANNEL_ACTIVITY_TOPIC } from "./events";
 
@@ -139,6 +141,7 @@ export type GroupStore = {
     turn: GroupTurn,
     agentId: string,
     threadId: string | null,
+    native?: boolean,
   ): Promise<"run" | "done" | "unknown" | "busy">;
   finish(
     id: string,
@@ -258,7 +261,7 @@ export function createGroupStore(
     async submit(turn) {
       await database.transaction((tx) => submitGroupTurn(tx, turn));
     },
-    async start(turn, agentId, threadId) {
+    async start(turn, agentId, threadId, native) {
       const id = `${turn.messageId}:${agentId}`;
       return database.transaction(async (tx) => {
         await lockGroupMembership(tx, {
@@ -266,10 +269,18 @@ export function createGroupStore(
           userId: turn.ownerUserId,
         });
         const [existing] = await tx
-          .select({ status: groupMessages.status })
+          .select({
+            status: groupMessages.status,
+            details: groupMessages.details,
+          })
           .from(groupMessages)
           .where(eq(groupMessages.id, id));
-        if (existing) return existing.status === "running" ? "unknown" : "done";
+        if (existing) {
+          if (existing.status !== "running") return "done";
+          return native && existing.details.nativeRun === true
+            ? "run"
+            : "unknown";
+        }
         if (threadId) {
           const [blocked] = await tx
             .select({ id: directChatRuns.id })
@@ -311,6 +322,7 @@ export function createGroupStore(
           threadId,
           text: "",
           status: "running",
+          ...(native && { details: { nativeRun: true } }),
         });
         return "run";
       });
@@ -752,6 +764,48 @@ function runIdFor(rowId: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+type GroupTurnRunner = (
+  input: Parameters<TurnRunner>[0] & { groupRowId: string },
+) => ReturnType<TurnRunner>;
+
+export function createNativeGroupTurn(
+  runBackground: (turn: BackgroundTurn) => Promise<{ replyText: string }>,
+  actorFor: (personId: string) => Promise<AgentActor>,
+): GroupTurnRunner {
+  return ({
+    groupRowId,
+    ownerUserId,
+    runId,
+    agentId,
+    threadId,
+    userMessage,
+    initiator,
+    skill,
+    depth,
+  }) => {
+    if (
+      !runId ||
+      userMessage?.role !== "user" ||
+      typeof userMessage.content !== "string"
+    )
+      throw new Error("A group turn requires a Run ID and its framed message.");
+    return runBackground({
+      source: "group",
+      groupRowId,
+      id: runId,
+      threadId,
+      conversationBotId: agentId,
+      personId: ownerUserId,
+      agentId,
+      prompt: userMessage.content,
+      authorize: () => actorFor(ownerUserId).catch(() => null),
+      initiator: initiator ?? PERSON_INITIATOR,
+      skill,
+      depth,
+    });
+  };
+}
+
 export function createGroupConversations(deps: {
   store: GroupStore;
   queue: WorkQueue;
@@ -761,7 +815,8 @@ export function createGroupConversations(deps: {
    * is not a group. Read per request and per Bot turn.
    */
   roster(ownerUserId: string, channelId: string): Promise<GroupBot[] | null>;
-  runTurn: TurnRunner;
+  runTurn: GroupTurnRunner;
+  native?: boolean;
   /** The handoff desk's caps and grant, reused for Bots answering each other. */
   caps: HandoffCaps;
   mayAddress(fromBotId: string, toBotId: string): Promise<boolean>;
@@ -817,7 +872,7 @@ export function createGroupConversations(deps: {
     if (!deps.privateShare || !input.text) return { status: "allowed" };
     const recipients = await deps.store.members(input.channelId);
     const continuation: ApprovalContinuation = input.continuation ?? {
-      runId: input.runId,
+      runId: deps.native ? runIdFor(`share:${input.rowId}`) : input.runId,
       threadId: input.threadId,
       toolCallId: `group-post:${input.rowId}`,
       toolName: "post_to_group",
@@ -982,7 +1037,12 @@ export function createGroupConversations(deps: {
     const threadId = bot
       ? await deps.store.thread(turn.ownerUserId, turn.channelId, agentId)
       : null;
-    const started = await deps.store.start(turn, agentId, threadId);
+    const started = await deps.store.start(
+      turn,
+      agentId,
+      threadId,
+      deps.native,
+    );
     if (started === "busy") return false;
     if (started === "done") return;
     if (started === "unknown") {
@@ -1060,6 +1120,7 @@ export function createGroupConversations(deps: {
     };
     try {
       const result = await deps.runTurn({
+        groupRowId: id,
         ...(turn.depth ? { depth: turn.depth } : {}),
         onText: (text) => {
           latest = text;
@@ -1168,6 +1229,8 @@ export function createGroupConversations(deps: {
         return;
       }
       await writing;
+      if (deps.native && error instanceof BackgroundConversationBusy)
+        return false;
       await postConsents(turn, agentId, threadId, id, consents);
       if (error instanceof HeadlessToolSuspension)
         await deps.store.finish(id, "", "waiting", {

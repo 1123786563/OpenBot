@@ -61,6 +61,7 @@ import {
   createGroupConversations,
   createGroupRoutes,
   createGroupStore,
+  createNativeGroupTurn,
 } from "../src/channels/group";
 import {
   createChannelRoutes,
@@ -360,13 +361,20 @@ function web(
     store: groupStore,
     queue: createWorkQueue(db),
     owner: "fixture-group",
+    createChannel: (id, agentIds, requestId) =>
+      channelStore.create({ id, role: "user" }, agentIds, undefined, requestId),
     roster: async (id, channelId) => {
       const channel = await channelStore.get({ id, role: "user" }, channelId);
       if (!channel || channel.agentIds.length < 2) return null;
       return channel.agentIds.map((id) => ({ id, name: id }));
     },
-    runTurn: async () => {
-      throw new Error("Unexpected legacy group turn.");
+    native: true,
+    runTurn: (input) => {
+      if (!copilot.runBackground) throw new Error("Missing OpenBot runtime.");
+      return createNativeGroupTurn(
+        copilot.runBackground,
+        async () => actor,
+      )(input);
     },
     caps: { maxDepth: 2, maxPerRun: 3 },
     mayAddress: async () => true,
@@ -455,6 +463,51 @@ function web(
     channelStore,
   });
 }
+
+test("a shared channel submits one native Run without Intelligence", async () => {
+  const actor = await person();
+  const makeBot = (name: string) =>
+    profiles.create(actor, {
+      name,
+      title: "Bot",
+      roleDescription: "Offline fixture",
+      visibility: "private",
+    });
+  const bot = await makeBot("Shared worker");
+  const peer = await makeBot("Shared peer");
+  let calls = 0;
+  const app = web(database, actor, bot.id, async () => {
+    calls++;
+  });
+  const created = await app.request(
+    "/api/groups",
+    post({ agentIds: [bot.id, peer.id] }),
+  );
+  expect(created.status).toBe(201);
+  const { channel } = await created.json();
+  const path = `/api/groups/${channel.id}`;
+  const turn = {
+    id: crypto.randomUUID(),
+    text: "Share the report.",
+    agentId: bot.id,
+  };
+  expect((await app.request(path, post(turn))).status).toBe(202);
+  expect((await app.request(path, post(turn))).status).toBe(202);
+  await app.groupConversations.sweep();
+  const transcript = await (await app.request(path)).json();
+  expect(transcript.messages).toEqual([
+    expect.objectContaining({ id: turn.id, text: turn.text }),
+    expect.objectContaining({
+      agentId: bot.id,
+      text: "Offline answer.",
+      status: "completed",
+    }),
+  ]);
+  expect(calls).toBe(1);
+  expect(transcript.backgroundRuns).toEqual([
+    expect.objectContaining({ agentId: bot.id, status: "completed" }),
+  ]);
+});
 
 test.each([
   "shared",

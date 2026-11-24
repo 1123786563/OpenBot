@@ -116,6 +116,7 @@ import {
 import {
   createGroupConversations,
   createGroupStore,
+  createNativeGroupTurn,
   groupSourceForRun,
 } from "./channels/group";
 import { createModelChoices } from "./channels/model-choice";
@@ -2837,7 +2838,9 @@ const approvalContinuationRunner = createTurnRunner({
  * own group thread, built exactly as a routine's is, so governance, learning and the computer tools
  * apply unchanged; Bots answering each other reuse the handoff desk's grant and caps.
  */
+const nativeGroupRun = copilotRuntime.runBackground;
 const groupConversations = createGroupConversations({
+  native: Boolean(nativeGroupRun),
   store: groupStore,
   queue: createWorkQueue(database),
   owner: workOwner("group"),
@@ -2852,33 +2855,36 @@ const groupConversations = createGroupConversations({
     }
     return bots;
   },
-  runTurn: createTurnRunner({
-    prepareRunInput: prepareProductRunInput,
-    onKnownStop: productTelemetry.stopKnown,
-    admission: serverTurnAdmission,
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
-    components: componentCatalog,
-    buildAgentFor,
-    toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-      if (!computerGateway) return [];
-      const actor = await actorFor(ownerUserId);
-      const profile = await agentProfileStore.get(actor, agentId);
-      if (!profile) throw new Error("That Bot is not available to this owner.");
-      // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-      if (!canUseComputer(profile, actor)) return [];
-      return createHeadlessComputerTools({
-        gateway: computerGateway,
-        seat: await computerGateway.seatFor(agentId, actor.id),
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      });
-    },
-    learningContainerForThread: (input) =>
-      copilotRuntime.learning?.containerForThread(input) ??
-      Promise.resolve(undefined),
-  }),
+  runTurn: nativeGroupRun
+    ? createNativeGroupTurn(nativeGroupRun, actorFor)
+    : createTurnRunner({
+        prepareRunInput: prepareProductRunInput,
+        onKnownStop: productTelemetry.stopKnown,
+        admission: serverTurnAdmission,
+        intelligence: routineIntelligence,
+        runner: routineAgentRunner,
+        components: componentCatalog,
+        buildAgentFor,
+        toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
+          if (!computerGateway) return [];
+          const actor = await actorFor(ownerUserId);
+          const profile = await agentProfileStore.get(actor, agentId);
+          if (!profile)
+            throw new Error("That Bot is not available to this owner.");
+          // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
+          if (!canUseComputer(profile, actor)) return [];
+          return createHeadlessComputerTools({
+            gateway: computerGateway,
+            seat: await computerGateway.seatFor(agentId, actor.id),
+            actor: { id: actor.id, userId: actor.id, initiator },
+            auditStore: bootAuditStore,
+            ...(signInService ? { signIn: signInService } : {}),
+          });
+        },
+        learningContainerForThread: (input) =>
+          copilotRuntime.learning?.containerForThread(input) ??
+          Promise.resolve(undefined),
+      }),
   caps: config.handoff,
   // The handoff desk's own grant check, read per hop and failing closed.
   mayAddress: async (fromBotId, toBotId) =>

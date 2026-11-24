@@ -158,6 +158,14 @@ export type BackgroundTurn = {
   initiator: AuditInitiator;
 } & (
   | { source: "routine"; literalAnswer?: never; handoffFromBotId?: never }
+  | {
+      source: "group";
+      groupRowId: string;
+      depth?: number;
+      skill?: string;
+      literalAnswer?: never;
+      handoffFromBotId?: never;
+    }
   // A forwarded message (delivery) is not remapped to a group thread and its reply is not
   // published to one, the two things `source === "routine"` switches on below.
   | { source: "delivery"; literalAnswer?: never; handoffFromBotId?: never }
@@ -295,6 +303,7 @@ export function createDirectChatRoutes(deps: {
     agentId: string,
     initiator?: AuditInitiator,
     marketSkill?: MarketSkillSnapshot | null,
+    depth?: number,
   ) => Promise<AbstractAgent | null>;
 }) {
   const { database, profiles, traceRuns } = deps;
@@ -1759,6 +1768,21 @@ export function createDirectChatRoutes(deps: {
           throw backgroundRefusal(
             "The previous Run has an unverified external outcome.",
           );
+        if (input.source === "group") {
+          const [row] = await tx
+            .select({ id: groupMessages.id })
+            .from(groupMessages)
+            .where(
+              and(
+                eq(groupMessages.id, input.groupRowId),
+                eq(groupMessages.threadId, key.threadId),
+                eq(groupMessages.ownerUserId, actor.id),
+                eq(groupMessages.agentId, input.agentId),
+                eq(groupMessages.status, "running"),
+              ),
+            );
+          if (scope !== "group" || !row) return null;
+        }
         if (scope === "group") {
           const [group] = await tx
             .select({ id: groupMessages.id })
@@ -1766,6 +1790,9 @@ export function createDirectChatRoutes(deps: {
             .where(
               and(
                 eq(groupMessages.threadId, key.threadId),
+                input.source === "group"
+                  ? ne(groupMessages.id, input.groupRowId)
+                  : undefined,
                 or(
                   eq(groupMessages.status, "running"),
                   and(
@@ -1936,12 +1963,15 @@ export function createDirectChatRoutes(deps: {
     // Reflection stays in the visible transcript. A later Bot call must not
     // receive a historical inference whose Memory sources may have been revoked.
     const messages =
-      background?.source === "handoff"
+      background?.source === "handoff" || background?.source === "group"
         ? [
             {
               id: `prompt-${key.runId}`,
               role: "user" as const,
-              content: background.prompt,
+              content:
+                background.source === "group"
+                  ? (currentRun?.prompt ?? background.prompt)
+                  : background.prompt,
             },
           ]
         : messagesFor(
@@ -1969,6 +1999,7 @@ export function createDirectChatRoutes(deps: {
               continuation
                 ? (continuation.snapshot.marketSkill ?? null)
                 : undefined,
+              background?.source === "group" ? background.depth : undefined,
             )
             .catch(() => null);
     let runnable = true;
@@ -2291,6 +2322,7 @@ export function createDirectChatRoutes(deps: {
         state: continuation?.snapshot.state ?? {},
         tools: [],
         continuation,
+        skill: background?.source === "group" ? background.skill : undefined,
       });
       let failure = false;
       let marketPause: string | undefined;
