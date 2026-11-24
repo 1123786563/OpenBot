@@ -285,37 +285,51 @@ export function SettingsSidebar({
               <SidebarMenu className="gap-px">
                 {items
                   .filter((option) => option.group === group)
-                  .map((option) => (
-                    <SidebarMenuItem key={option.title}>
-                      <SidebarMenuButton
-                        render={(props) => (
-                          <Link
-                            {...option.linkOptions}
-                            activeOptions={{ exact: option.exact ?? false }}
-                            activeProps={{ "data-active": true }}
-                            {...props}
-                          >
-                            <option.icon className="mr-2 h-4 w-4" />
-                            {t(option.messageId, option.label)}
-                            {option.setup && toFix > 0 ? (
-                              <span className="sr-only">
-                                {t(
-                                  "settings.sidebar.setupSuffix",
-                                  ", {count, plural, one {# needs setup} other {# need setup}}",
-                                  { count: toFix },
-                                )}
-                              </span>
-                            ) : null}
-                          </Link>
-                        )}
-                      />
-                      {option.setup && toFix > 0 ? (
-                        <SidebarMenuBadge aria-hidden="true">
-                          {toFix}
-                        </SidebarMenuBadge>
-                      ) : null}
-                    </SidebarMenuItem>
-                  ))}
+                  .map((option) => {
+                    const suffix =
+                      option.setup && toFix > 0
+                        ? t(
+                            "settings.sidebar.setupSuffix",
+                            ", {count, plural, one {# needs setup} other {# need setup}}",
+                            { count: toFix },
+                          )
+                        : null;
+                    return (
+                      <SidebarMenuItem key={option.title}>
+                        <SidebarMenuButton
+                          render={(props) => (
+                            <Link
+                              {...option.linkOptions}
+                              activeOptions={{ exact: option.exact ?? false }}
+                              activeProps={{ "data-active": true }}
+                              {...props}
+                              /*
+                               * Chromium puts a space between the link's text and the absolutely
+                               * positioned suffix when it computes the name, which in Chinese lands
+                               * before the fullwidth comma. The name carries both without one.
+                               */
+                              aria-label={
+                                suffix
+                                  ? `${t(option.messageId, option.label)}${suffix}`
+                                  : undefined
+                              }
+                            >
+                              <option.icon className="mr-2 h-4 w-4" />
+                              {t(option.messageId, option.label)}
+                              {suffix ? (
+                                <span className="sr-only">{suffix}</span>
+                              ) : null}
+                            </Link>
+                          )}
+                        />
+                        {option.setup && toFix > 0 ? (
+                          <SidebarMenuBadge aria-hidden="true">
+                            {toFix}
+                          </SidebarMenuBadge>
+                        ) : null}
+                      </SidebarMenuItem>
+                    );
+                  })}
               </SidebarMenu>
             </SidebarGroup>
           ))}
