@@ -401,6 +401,11 @@ reconciliation is complete.
    and workspace integration grants, then verifies cleanup and remote
    reconciliation before opening the listener. A missing identity or
    conflicting journal record blocks startup.
+   If the backup already contains a replacement Workspace, startup also
+   rechecks the retired Workspace's external copies. Scope the reconciler to
+   the retired Workspace ID and its journaled run locators. Keep the retired
+   Workspace's provider inventory available for as long as its backups can
+   be restored.
 4. After verification, remove the recovery-only setting before normal
    restarts. Keep the authoritative tombstones for as long as older backups
    can be restored. Exercise this procedure in a disposable deployment before

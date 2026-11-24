@@ -56,7 +56,10 @@ import { createAgentSandboxProvider } from "../src/personal-saas/agent-sandbox-p
 import { createPersonalSaasApp } from "../src/personal-saas/app";
 import { createPersonalBotRuntime } from "../src/personal-saas/bot-runtime";
 import { PERSONAL_BOT_WORK } from "../src/personal-saas/bot-work";
-import { closureRestoreJournal } from "../src/personal-saas/closure-cleanup-contract";
+import {
+  closureCleanupClient,
+  closureRestoreJournal,
+} from "../src/personal-saas/closure-cleanup-contract";
 import { workspaceIntegrationGrants } from "../src/personal-saas/integration-grants";
 import {
   createNasClient,
@@ -8085,6 +8088,105 @@ test("a returning owner explicitly opens one empty workspace after recorded clea
   ).toBe(401);
   await sweepClosureAndCleanup(worker);
   expect(await workspace(newSession)).toMatchObject({ id: replacement.id });
+
+  const replacementApp = newApp(database, async () => ({ replyText: "" }));
+  const queued = await replacementApp.request("/api/workspace/bot-runs", {
+    method: "POST",
+    headers: {
+      cookie: newSession,
+      origin,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      workspaceId: replacement.id,
+      botId: replacement.personalAssistant.id,
+      instruction: "Keep this replacement workspace run",
+    }),
+  });
+  expect(queued.status).toBe(202);
+  const { runId } = await queued.json();
+
+  // A backup taken after reopening still carries old confirmations. Remote
+  // replicas can come back from their own, older snapshots.
+  const retiredRun = {
+    agentId: owner.botId,
+    threadId: "restored-retired-thread",
+    runId: "restored-retired-run",
+  };
+  const journal = exportClosureJournal().map((operation) =>
+    operation.id === operationId
+      ? { ...operation, intelligence: [retiredRun] }
+      : operation,
+  );
+  const attemptsByStep = new Map<string, number>();
+  const restoredReplicas = new Set(["connections", "internalServices"]);
+  const reconciler = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const target = await request.json();
+      if (
+        request.headers.get("authorization") !== "Bearer recovery-fixture" ||
+        target.id !== operationId ||
+        target.workspaceId !== owner.workspaceId
+      )
+        return Response.json({ status: "unconfirmed" });
+      const step = target.step;
+      const attempts = (attemptsByStep.get(step) ?? 0) + 1;
+      attemptsByStep.set(step, attempts);
+      if (step === "connections" && attempts === 1)
+        return new Response(null, { status: 503 });
+      if (
+        step === "internalServices" &&
+        !Bun.deepEquals(target.intelligence, [retiredRun])
+      )
+        return Response.json({ status: "unconfirmed" });
+      restoredReplicas.delete(step);
+      return Response.json({
+        status: "confirmed",
+        ...(step === "backups" && {
+          schedule: [
+            {
+              store: "PostgreSQL",
+              retentionDays: 7,
+              remainingCopiesExpireBy: "2026-12-01T00:00:00Z",
+            },
+          ],
+        }),
+      });
+    },
+  });
+  try {
+    await reapplyWorkspaceClosures(database, journal);
+    const recovery = newApp(
+      database,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      closureCleanupClient(reconciler.url.href, "recovery-fixture"),
+    );
+    await sweepClosureAndCleanup(recovery);
+    expect(restoredReplicas).toEqual(new Set(["connections"]));
+    await sweepClosureAndCleanup(recovery);
+    expect(restoredReplicas).toEqual(new Set());
+    expect(attemptsByStep.get("connections")).toBe(2);
+    expect(attemptsByStep.get("internalServices")).toBe(1);
+    expect(await workspace(newSession)).toMatchObject({
+      id: replacement.id,
+      personalAssistant: { id: replacement.personalAssistant.id },
+    });
+    expect(
+      (
+        await replacementApp.request(`/api/workspace/bot-runs/${runId}`, {
+          headers: { cookie: newSession },
+        })
+      ).status,
+    ).toBe(200);
+    expect(await readCredits(newSession)).toEqual(credits);
+  } finally {
+    await reconciler.stop(true);
+  }
 });
 
 test("admissions pause leaves existing workspaces usable and lets first-time users retry", async () => {

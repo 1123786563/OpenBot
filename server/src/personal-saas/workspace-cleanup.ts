@@ -207,9 +207,9 @@ export function workspaceCleanup({
           await eraseComputer?.(workspaceId);
         }
         if (key === "internalServices") {
-          const inventory = await readIntelligenceInventory(savepoint, [
-            accountId,
-          ]);
+          const inventory =
+            closure.retiredIntelligence ??
+            (await readIntelligenceInventory(savepoint, [accountId]));
           if (eraseThread) {
             const threads = new Map(
               inventory.map(({ threadId, agentId }) => [
@@ -301,6 +301,7 @@ export function workspaceCleanup({
         await withClosure(record.id, async (tx, closure) => {
           if (
             key === "internalServices" &&
+            closure.retiredIntelligence === null &&
             closure.cleanup[key]?.status !== "confirmed"
           )
             await captureLegacyBotRuns(tx, closure.accountId);
@@ -373,7 +374,19 @@ export async function reapplyWorkspaceClosures(
               isNotNull(personalWorkspaceClosures.retiredIntelligence),
             ),
           );
-        if (retired) continue;
+        if (retired) {
+          // Reopening required PostgreSQL erasure. Purging by account again
+          // would delete data belonging to the replacement workspace.
+          await tx
+            .update(personalWorkspaceClosures)
+            .set({
+              cleanup: sql`jsonb_build_object('postgres', ${personalWorkspaceClosures.cleanup}->'postgres')`,
+              backupSchedule: null,
+              retiredIntelligence: sql`${JSON.stringify(intelligence)}::text::jsonb`,
+            })
+            .where(eq(personalWorkspaceClosures.id, retired.id));
+          continue;
+        }
         throw new Error(
           "Closure restore journal does not match the restored workspace",
         );
