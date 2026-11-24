@@ -30,13 +30,13 @@ test("editing a generated numeric field adds numbers instead of joining text", a
   const view = render(<Budget />);
   expect(view.getByRole("status").textContent).toBe("380");
   const user = userEvent.setup({ document: window.document });
-  await user.click(view.getByRole("spinbutton"));
+  await user.click(view.getByLabelText("Lodging"));
   await user.keyboard("{Control>}a{/Control}{Backspace}");
   expect(view.getByRole("status").textContent).toBe("180");
-  expect((view.getByRole("spinbutton") as HTMLInputElement).value).toBe("");
-  await user.type(view.getByRole("spinbutton"), "250");
+  expect((view.getByLabelText("Lodging") as HTMLInputElement).value).toBe("");
+  await user.type(view.getByLabelText("Lodging"), "250");
   expect(view.getByRole("status").textContent).toBe("430");
-  await user.type(view.getByRole("spinbutton"), ".5");
+  await user.type(view.getByLabelText("Lodging"), ".5");
   expect(view.getByRole("status").textContent).toBe("430.5");
 });
 
@@ -86,7 +86,7 @@ test("an external value change resets the cleared field's local blank display", 
   }
   const view = render(<Resettable />);
   const user = userEvent.setup({ document: window.document });
-  const field = view.getByRole("spinbutton") as HTMLInputElement;
+  const field = view.getByLabelText("Amount") as HTMLInputElement;
   await user.click(field);
   await user.keyboard("{Control>}a{/Control}{Backspace}");
   expect(field.value).toBe("");

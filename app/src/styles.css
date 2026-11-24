@@ -309,12 +309,16 @@ button.quick-chat-touch-target {
  * smaller than in a reply and the copy buttons lost their muted colour. `revert-layer` hands exactly
  * those properties back to the layered rules, which are the ones a reply is drawn with.
  *
- * The amount boxes of a Breakdown (lib/copilot/a2ui-breakdown.tsx) are the app's own inputs and
- * take back their type size the same way.
+ * The A2UI controls OpenBot draws with Astryx (lib/copilot/a2ui-controls.tsx and
+ * a2ui-breakdown.tsx) take their font and colour back the same way: Astryx's live in its layers, and
+ * the SDK's rule also reaches every `[data-a2ui-input]`, which is how CopilotKit's own controls keep
+ * the surface's text colour. An Astryx component is known by its `astryx-` class.
  */
 .a2ui-surface
-  :is(.openbot-markdown, .openbot-breakdown)
-  :is(h1, h2, h3, h4, h5, h6, button, input, select, textarea) {
+  :is(.openbot-markdown, [class*="astryx-"])
+  :is(h1, h2, h3, h4, h5, h6, button, input, select, textarea),
+.a2ui-surface
+  :is(button, input, select, textarea, [data-a2ui-input])[class*="astryx-"] {
   font: revert-layer;
   color: revert-layer;
 }

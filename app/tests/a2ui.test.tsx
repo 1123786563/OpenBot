@@ -94,6 +94,7 @@ test("disabled and unresolved deployments do not send the catalog", () => {
   expect(generativeUiProviderOptions(true).generativeUI).toEqual({
     ui: OPENBOT_UI,
     theme: OPENBOT_UI_THEME,
+    errorBoundary: { fallback: expect.any(Function) },
   });
 });
 
