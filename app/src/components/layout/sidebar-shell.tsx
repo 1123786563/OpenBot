@@ -18,6 +18,7 @@ import {
   SIDEBAR_STORAGE_KEY,
   SIDEBAR_WIDTH_STORAGE_PREFIX,
 } from "@/lib/sidebar";
+import { useTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -80,6 +81,7 @@ export function SidebarShell({
     });
   }, [open]);
 
+  const { t } = useTranslation();
   return (
     <SidebarProvider
       className={cn(SIDEBAR_GUTTER, className)}
@@ -105,7 +107,7 @@ export function SidebarShell({
         className="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:inset-s-4 focus:top-4 focus:rounded-md focus:bg-background focus:p-3 focus:text-foreground focus:outline focus:outline-ring"
         href="#main-content"
       >
-        Skip to content
+        {t("frame.skipToContent", "Skip to content")}
       </a>
       <SidebarResizeProvider value={resize}>{children}</SidebarResizeProvider>
     </SidebarProvider>

@@ -3,6 +3,8 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { SidebarShell } from "@/components/layout/sidebar-shell";
+import { Toaster } from "@/components/ui/toast";
 import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
@@ -30,6 +32,28 @@ test("a dialog's close control speaks the interface language", async () => {
 
   await pinLocale("zh-CN");
   expect(view.getByRole("button", { name: "关闭" })).toBeTruthy();
+});
+
+// Base UI names the toast region itself, in English; the shared toaster names it in its place.
+test("the toast region speaks the interface language", async () => {
+  const view = render(<Toaster />);
+  expect(view.getByRole("region", { name: "Notifications" })).toBeTruthy();
+
+  await pinLocale("zh-CN");
+  expect(view.getByRole("region", { name: "通知" })).toBeTruthy();
+});
+
+test("the frame's skip link speaks the interface language", async () => {
+  const view = render(
+    <SidebarShell name="settings" width="300px">
+      <main id="main-content">Content</main>
+    </SidebarShell>,
+  );
+  const link = view.getByRole("link", { name: "Skip to content" });
+  expect(link.getAttribute("href")).toBe("#main-content");
+
+  await pinLocale("zh-CN");
+  expect(view.getByRole("link", { name: "跳到主要内容" })).toBe(link);
 });
 
 test("a sheet's close control speaks the interface language", async () => {

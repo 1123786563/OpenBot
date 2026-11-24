@@ -75,9 +75,12 @@ function ToastPortal({ ...props }: ToastPrimitive.Portal.Props) {
  * raised while one was open (Clear browser data, in a Bot's screen) was drawn behind it, where nobody could read it.
  */
 function ToastViewport({ className, ...props }: ToastPrimitive.Viewport.Props) {
+  const { t } = useTranslation();
   return (
     <ToastPrimitive.Viewport
       data-slot="toast-viewport"
+      // Base UI's own default for this name is English.
+      aria-label={t("frame.notifications", "Notifications")}
       className={cn(
         "pointer-events-none fixed inset-x-4 bottom-4 z-60 mx-auto w-auto max-w-sm outline-none sm:right-4 sm:left-auto sm:mx-0 sm:w-full",
         className,
