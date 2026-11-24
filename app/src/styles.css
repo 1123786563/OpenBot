@@ -15,17 +15,6 @@
 /* Its code plugin, which Streamdown's docs say to scan the same way. */
 @source "../node_modules/@streamdown/code/dist/*.js";
 
-textarea.quick-chat-message::placeholder {
-  color: var(--muted-foreground);
-  opacity: 1;
-}
-
-.quick-chat-actions button,
-button.quick-chat-touch-target {
-  min-block-size: var(--spacing-11, 2.75rem);
-  min-inline-size: var(--spacing-11, 2.75rem);
-}
-
 .sign-in-screen .sign-in-email {
   border: var(--spacing-px, 0.0625rem) solid var(--muted-foreground);
   border-radius: var(--radius-md);
