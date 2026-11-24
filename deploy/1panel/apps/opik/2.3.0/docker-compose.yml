@@ -1,0 +1,400 @@
+networks:
+  default:
+    ipam: {}
+  1panel-network:
+    external: true
+  client:
+    external: true
+    name: openbot-opik
+services:
+  backend:
+    command:
+      - bash
+      - -c
+      - ./run_db_migrations.sh && ./provision_agent_insights_readonly_user.sh && ./entrypoint.sh
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+        required: true
+      minio:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    entrypoint: null
+    environment:
+      ANALYTICS_DB_ASYNC_INSERT_BUSY_TIMEOUT_MAX_MS: ""
+      ANALYTICS_DB_ASYNC_INSERT_BUSY_TIMEOUT_MIN_MS: ""
+      ANALYTICS_DB_ASYNC_INSERT_MAX_DATA_SIZE: ""
+      ANALYTICS_DB_CLUSTER_HEALTH_CHECK_ENABLED: "false"
+      ANALYTICS_DB_COLD_STORAGE_DISK_HEALTH_CHECK_ENABLED: "false"
+      ANALYTICS_DB_DATABASE_NAME: opik
+      ANALYTICS_DB_DATA_MODEL_DELETION_EVENTS_INSERT_BATCH_SIZE: "1000"
+      ANALYTICS_DB_DATA_MODEL_SPANS_DISTRIBUTED_WRAP_ENABLED: "false"
+      ANALYTICS_DB_DATA_MODEL_SPAN_COLUMNS_NON_NULLABLE: "false"
+      ANALYTICS_DB_DATA_MODEL_SPAN_DELETION_EVENTS_CAPTURE_ENABLED: "false"
+      ANALYTICS_DB_DATA_MODEL_SPAN_WEEKS_BACKFILL_ENABLED: "false"
+      ANALYTICS_DB_DATA_MODEL_SPAN_WEEKS_READ_ENABLED: "false"
+      ANALYTICS_DB_DATA_MODEL_TRACES_DISTRIBUTED_WRAP_ENABLED: "false"
+      ANALYTICS_DB_DATA_MODEL_TRACE_COLUMNS_NON_NULLABLE: "false"
+      ANALYTICS_DB_DATA_MODEL_TRACE_DELETION_EVENTS_CAPTURE_ENABLED: "false"
+      ANALYTICS_DB_HOST: clickhouse
+      ANALYTICS_DB_HTTP_HEADERS_PROGRESS_INTERVAL_MS: "3000"
+      ANALYTICS_DB_MIGRATIONS_PASS: opik
+      ANALYTICS_DB_MIGRATIONS_URL: jdbc:clickhouse://clickhouse:8123
+      ANALYTICS_DB_MIGRATIONS_USER: opik
+      ANALYTICS_DB_PASS: opik
+      ANALYTICS_DB_PORT: "8123"
+      ANALYTICS_DB_PROTOCOL: HTTP
+      ANALYTICS_DB_READ_ONLY_FREEFORM_EXTENDED_SQL_PASS: opik
+      ANALYTICS_DB_READ_ONLY_FREEFORM_EXTENDED_SQL_USER: comet_readonly_freeform_extended_sql_user
+      ANALYTICS_DB_READ_ONLY_FREEFORM_EXTENDED_SQL_USER_ENABLED: '"false"'
+      ANALYTICS_DB_READ_ONLY_FREEFORM_SQL_PASS: opik
+      ANALYTICS_DB_READ_ONLY_FREEFORM_SQL_USER: comet_readonly_freeform_sql_user
+      ANALYTICS_DB_USERNAME: opik
+      ATTACHMENTS_STRIP_MIN_SIZE: "256000"
+      AWS_ACCESS_KEY_ID: THAAIOSFODNN7EXAMPLE
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      CORS: "false"
+      DOCKER_BUILDKIT: "1"
+      IS_MINIO: "true"
+      JACKSON_MAX_STRING_LENGTH: "104857600"
+      JAVA_OPTS: -Dliquibase.propertySubstitutionEnabled=true -XX:+UseG1GC -XX:MaxRAMPercentage=80.0
+      LLM_MODEL_REGISTRY_DEFAULT_RESOURCE: llm-models-default.yaml
+      LLM_MODEL_REGISTRY_LOCAL_OVERRIDE_PATH: ""
+      LLM_MODEL_REGISTRY_REFRESH_INTERVAL_SECONDS: "300"
+      LLM_MODEL_REGISTRY_REMOTE_ENABLED: '"false"'
+      LLM_MODEL_REGISTRY_REMOTE_URL: ""
+      LLM_PROVIDER_DESTINATION_GUARD: '"relaxed"'
+      LLM_PROVIDER_DESTINATION_SCHEME: '"plaintext_or_tls"'
+      LLM_PROVIDER_TOKEN_AUTH_DESTINATION_GUARD: '"relaxed"'
+      LLM_PROVIDER_VIDEO_URL_DESTINATION_GUARD: '"relaxed"'
+      OPIK_ANONYMOUS_ID: ""
+      OPIK_OTEL_SDK_ENABLED: "false"
+      OPIK_USAGE_REPORT_ENABLED: "false"
+      OTEL_EXPERIMENTAL_EXPORTER_OTLP_RETRY_ENABLED: "true"
+      OTEL_EXPERIMENTAL_RESOURCE_DISABLED_KEYS: process.command_args
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION: BASE2_EXPONENTIAL_BUCKET_HISTOGRAM
+      OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: delta
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_INSTRUMENTATION_HTTP_SERVER_CAPTURE_REQUEST_HEADERS: Comet-Workspace,x-opik-debug-sdk-version
+      OTEL_INSTRUMENTATION_HTTP_SERVER_EMIT_EXPERIMENTAL_TELEMETRY: "true"
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
+      OTEL_VERSION: 2.16.0
+      PARTITION_METRICS_ENABLED: "false"
+      PARTITION_METRICS_INTERVAL: 5m
+      PARTITION_METRICS_LWD_TABLES: traces,spans
+      PYTHON_EVALUATOR_URL: http://python-backend:8000
+      REDIS_URL: redis://:opik@redis:6379/
+      S3_URL: http://minio:9000
+      STATE_DB_DATABASE_NAME: ${DB_NAME:?Enter the database name}
+      STATE_DB_PASS: ${DB_PASSWORD:?Enter the database password}
+      STATE_DB_PROTOCOL: jdbc:mysql://
+      STATE_DB_URL: ${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?rewriteBatchedStatements=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      STATE_DB_USER: ${DB_USER:?Enter the database user}
+      TOGGLE_ANNOTATION_QUEUE_AUTOMATION_ENABLED: '"true"'
+      TOGGLE_CUSTOM_CHARTS_ENABLED: '"false"'
+      TOGGLE_GUARDRAILS_ENABLED: '"false"'
+      TOGGLE_OLLIE_ENABLED: '"false"'
+      TOGGLE_OPIK_AI_ENABLED: '"false"'
+      TOGGLE_WELCOME_WIZARD_ENABLED: '"true"'
+      UUID_VALIDATION_AUDIT_ONLY: "false"
+      UUID_VALIDATION_ENABLED: "false"
+      UUID_VALIDATION_WINDOW: 24h
+    hostname: backend
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8080/health-check
+      timeout: 10m0s
+      interval: 1s
+      retries: 600
+      start_period: 1s
+    image: ghcr.io/comet-ml/opik/opik-backend:2.3.0
+    networks:
+      default: null
+      1panel-network: {}
+    tmpfs:
+      - /tmp
+    container_name: ${CONTAINER_NAME}-backend
+    labels:
+      createdBy: Apps
+  clickhouse:
+    command: null
+    depends_on:
+      clickhouse-init:
+        condition: service_completed_successfully
+        required: true
+      zookeeper:
+        condition: service_healthy
+        required: true
+    entrypoint: null
+    environment:
+      CLICKHOUSE_DB: opik
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_PASSWORD: opik
+      CLICKHOUSE_USER: opik
+    hostname: clickhouse
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --spider
+        - -q
+        - http://127.0.0.1:8123/ping
+      timeout: 1s
+      interval: 1s
+      retries: 300
+    image: clickhouse/clickhouse-server:26.3.62.3-alpine
+    networks:
+      default: null
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+      - clickhouse-server:/var/log/clickhouse-server
+      - clickhouse-config:/etc/clickhouse-server/config.d
+      - ./clickhouse_config/users.d/enable_time_type.xml:/etc/clickhouse-server/users.d/enable_time_type.xml
+      - ./clickhouse_config/users.d/distributed_insert_queue.xml:/etc/clickhouse-server/users.d/distributed_insert_queue.xml
+    container_name: ${CONTAINER_NAME}-clickhouse
+    labels:
+      createdBy: Apps
+  clickhouse-init:
+    command:
+      - sh
+      - -c
+      - |2
+        
+          cp -r /clickhouse_config_files/* /config/ &&
+          chown -R 1000:1000 /config
+    entrypoint: null
+    image: alpine:3.23
+    networks:
+      default: null
+    volumes:
+      - ./clickhouse_config:/clickhouse_config_files
+      - clickhouse-config:/config
+    container_name: ${CONTAINER_NAME}-clickhouse-init
+    labels:
+      createdBy: Apps
+  frontend:
+    command: null
+    depends_on:
+      backend:
+        condition: service_healthy
+        required: true
+    entrypoint: null
+    environment:
+      NGINX_CONF_SUFFIX: local
+      NGINX_PORT: "5173"
+      OPIK_VERSION: 2.3.0
+      OTEL_COLLECTOR_HOST: otel-collector
+      OTEL_COLLECTOR_PORT: "4317"
+      OTEL_TRACE: off
+    hostname: frontend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --fail-early http://localhost:5173/health
+      timeout: 30s
+      interval: 1s
+      retries: 10
+      start_period: 1s
+    image: ghcr.io/comet-ml/opik/opik-frontend:2.3.0
+    networks:
+      default: {}
+      client:
+        aliases:
+          - opik-frontend
+    volumes:
+      - ./nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-15173}:5173
+    container_name: ${CONTAINER_NAME}
+    labels:
+      createdBy: Apps
+  mc:
+    command: null
+    depends_on:
+      minio:
+        condition: service_healthy
+        required: true
+    entrypoint:
+      - /bin/sh
+      - -c
+      - " set -e; /usr/bin/mc alias set s3 http://minio:9000 $$MC_USER $$MC_PASSWORD --api S3v4 ; /usr/bin/mc mb --ignore-existing s3/public; /usr/bin/mc anonymous set download s3/public/; "
+    environment:
+      MC_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MC_USER: THAAIOSFODNN7EXAMPLE
+    image: docker.io/cloudpirates/image-minio:RELEASE.2025-10-15T17-29-55Z-hardened
+    networks:
+      default: null
+    container_name: ${CONTAINER_NAME}-mc
+    labels:
+      createdBy: Apps
+  minio:
+    command:
+      - mkdir -p /data && exec minio server --console-address ':9090' /data
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+      - /bin/sh
+      - -c
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: THAAIOSFODNN7EXAMPLE
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - MC_HOST_local=http://localhost:9000 mc ready local
+      timeout: 10s
+      interval: 1s
+      retries: 30
+      start_period: 5s
+    image: docker.io/cloudpirates/image-minio:RELEASE.2025-10-15T17-29-55Z-hardened
+    networks:
+      default: null
+    volumes:
+      - minio-data:/data
+    container_name: ${CONTAINER_NAME}-minio
+    labels:
+      createdBy: Apps
+  minio-init:
+    command:
+      - "chown -R --from=0 1001:1001 /data || echo 'minio-init: could not re-own /data to 1001:1001; see the self-host troubleshooting guide' >&2"
+    entrypoint:
+      - /bin/sh
+      - -c
+    image: docker.io/cloudpirates/image-minio:RELEASE.2025-10-15T17-29-55Z-hardened
+    networks:
+      default: null
+    restart: no
+    user: 0:0
+    volumes:
+      - minio-data:/data
+    container_name: ${CONTAINER_NAME}-minio-init
+    labels:
+      createdBy: Apps
+  python-backend:
+    command: null
+    entrypoint: null
+    environment:
+      OPIK_OTEL_SDK_ENABLED: "false"
+      OPIK_REVERSE_PROXY_URL: http://frontend:5173/api
+      OPIK_URL_OVERRIDE: http://backend:8080
+      OPIK_VERSION: 2.3.0
+      OPTSTUDIO_LLM_MAX_TOKENS: "8192"
+      OPTSTUDIO_LOG_LEVEL: INFO
+      OPTSTUDIO_MAX_CONCURRENT_JOBS: "5"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_VERSION: 2.16.0
+      PYTHON_BACKEND_PORT: "8000"
+      PYTHON_CODE_EXECUTOR_ALLOW_NETWORK: "false"
+      PYTHON_CODE_EXECUTOR_CONTAINERS_NUM: "5"
+      PYTHON_CODE_EXECUTOR_CPU_SHARES: "512"
+      PYTHON_CODE_EXECUTOR_DOCKER_HARDENING: "true"
+      PYTHON_CODE_EXECUTOR_DOCKER_PIDS_LIMIT: "64"
+      PYTHON_CODE_EXECUTOR_DOCKER_TMPFS_SIZE: 16m
+      PYTHON_CODE_EXECUTOR_EXEC_TIMEOUT_IN_SECS: "3"
+      PYTHON_CODE_EXECUTOR_IMAGE_TAG: 2.3.0
+      PYTHON_CODE_EXECUTOR_MAX_RESULT_SIZE_IN_BYTES: "67108864"
+      PYTHON_CODE_EXECUTOR_MEM_LIMIT: 256m
+      PYTHON_CODE_EXECUTOR_PROCESS_NETWORK_ISOLATION: "true"
+      PYTHON_CODE_EXECUTOR_READY_TIMEOUT_SECONDS: "10"
+      PYTHON_CODE_EXECUTOR_STRATEGY: process
+      REDIS_URL: redis://:opik@redis:6379/0
+      RQ_WORKER_ENABLED: "true"
+      RQ_WORKER_TTL_FAILURE: "86400"
+    hostname: python-backend
+    healthcheck:
+      test:
+        - CMD
+        - sh
+        - -c
+        - if [ -f /opt/opik-python-backend/src/opik_backend/healthcheck.py ]; then wget --spider --quiet http://127.0.0.1:8000/healthcheck; else exit 0; fi
+      timeout: 1m0s
+      interval: 2s
+      retries: 30
+      start_period: 2s
+    image: ghcr.io/comet-ml/opik/opik-python-backend:2.3.0
+    networks:
+      default: null
+    container_name: ${CONTAINER_NAME}-python-backend
+    labels:
+      createdBy: Apps
+  redis:
+    command:
+      - redis-server
+      - --requirepass
+      - opik
+    entrypoint: null
+    hostname: redis
+    healthcheck:
+      test:
+        - CMD
+        - nc
+        - -z
+        - localhost
+        - "6379"
+      timeout: 4s
+      interval: 2s
+      retries: 20
+      start_period: 30s
+    image: redis:7.2.4-alpine3.19
+    networks:
+      default: null
+    volumes:
+      - redis-data:/data
+    container_name: ${CONTAINER_NAME}-redis
+    labels:
+      createdBy: Apps
+  zookeeper:
+    command: null
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        # Create data directory if it doesn't exist (for fresh installations)
+        # We use /bitnami/zookeeper/data path for compatibility with upgrades from Bitnami images
+        # Fresh installs need this directory created, while upgrades already have it with existing data
+        mkdir -p /bitnami/zookeeper/data
+        chown -R zookeeper:zookeeper /bitnami/zookeeper
+        # Run the original entrypoint as zookeeper user
+        exec gosu zookeeper /docker-entrypoint.sh zkServer.sh start-foreground
+    environment:
+      JVMFLAGS: -Xmx512m
+      ZOO_4LW_COMMANDS_WHITELIST: srvr,ruok
+      ZOO_DATA_DIR: /bitnami/zookeeper/data
+      ZOO_DATA_LOG_DIR: /bitnami/zookeeper/data
+    hostname: zookeeper
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - echo ruok | nc localhost 2181 | grep -q imok
+      timeout: 1s
+      interval: 1s
+      retries: 300
+    image: zookeeper:3.9.7
+    networks:
+      default: null
+    user: root
+    volumes:
+      - zookeeper:/bitnami/zookeeper
+    container_name: ${CONTAINER_NAME}-zookeeper
+    labels:
+      createdBy: Apps
+volumes:
+  clickhouse: {}
+  clickhouse-config: {}
+  clickhouse-server: {}
+  minio-data: {}
+  redis-data: {}
+  zookeeper: {}

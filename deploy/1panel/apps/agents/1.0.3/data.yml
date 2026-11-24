@@ -1,0 +1,261 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 4200
+      required: true
+      rule: paramPort
+      label:
+        en: Bot AG-UI port
+        es-es: Bot AG-UI port
+        ja: Bot AG-UI port
+        ms: Bot AG-UI port
+        pt-br: Bot AG-UI port
+        ru: Bot AG-UI port
+        ko: Bot AG-UI port
+        zh-Hant: Bot AG-UI port
+        zh: Bot AG-UI port
+        tr: Bot AG-UI port
+    - envKey: PANEL_APP_PORT_LANGGRAPH
+      type: number
+      default: 4201
+      required: true
+      rule: paramPort
+      label:
+        en: LangGraph AG-UI port
+        es-es: LangGraph AG-UI port
+        ja: LangGraph AG-UI port
+        ms: LangGraph AG-UI port
+        pt-br: LangGraph AG-UI port
+        ru: LangGraph AG-UI port
+        ko: LangGraph AG-UI port
+        zh-Hant: LangGraph AG-UI port
+        zh: LangGraph AG-UI port
+        tr: LangGraph AG-UI port
+    - envKey: PANEL_APP_PORT_COMPUTER
+      type: number
+      default: 4100
+      required: true
+      rule: paramPort
+      label:
+        en: Computer port
+        es-es: Computer port
+        ja: Computer port
+        ms: Computer port
+        pt-br: Computer port
+        ru: Computer port
+        ko: Computer port
+        zh-Hant: Computer port
+        zh: Computer port
+        tr: Computer port
+    - envKey: PANEL_APP_PORT_SUPERVISOR
+      type: number
+      default: 4500
+      required: true
+      rule: paramPort
+      label:
+        en: Supervisor port
+        es-es: Supervisor port
+        ja: Supervisor port
+        ms: Supervisor port
+        pt-br: Supervisor port
+        ru: Supervisor port
+        ko: Supervisor port
+        zh-Hant: Supervisor port
+        zh: Supervisor port
+        tr: Supervisor port
+    - envKey: BOT_IMAGE
+      type: text
+      default: openbot-agent-bot:1panel
+      required: true
+      label:
+        en: Bot image
+        es-es: Bot image
+        ja: Bot image
+        ms: Bot image
+        pt-br: Bot image
+        ru: Bot image
+        ko: Bot image
+        zh-Hant: Bot image
+        zh: Bot image
+        tr: Bot image
+    - envKey: LANGGRAPH_IMAGE
+      type: text
+      default: openbot-agent-langgraph:1panel
+      required: true
+      label:
+        en: LangGraph image
+        es-es: LangGraph image
+        ja: LangGraph image
+        ms: LangGraph image
+        pt-br: LangGraph image
+        ru: LangGraph image
+        ko: LangGraph image
+        zh-Hant: LangGraph image
+        zh: LangGraph image
+        tr: LangGraph image
+    - envKey: COMPUTER_IMAGE
+      type: text
+      default: openbot-agent-computer:1panel
+      required: true
+      label:
+        en: Computer image
+        es-es: Computer image
+        ja: Computer image
+        ms: Computer image
+        pt-br: Computer image
+        ru: Computer image
+        ko: Computer image
+        zh-Hant: Computer image
+        zh: Computer image
+        tr: Computer image
+    - envKey: SUPERVISOR_IMAGE
+      type: text
+      default: openbot-supervisor:1panel
+      required: true
+      label:
+        en: Supervisor image
+        es-es: Supervisor image
+        ja: Supervisor image
+        ms: Supervisor image
+        pt-br: Supervisor image
+        ru: Supervisor image
+        ko: Supervisor image
+        zh-Hant: Supervisor image
+        zh: Supervisor image
+        tr: Supervisor image
+    - envKey: OPENAI_API_KEY
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Model API key
+        es-es: Model API key
+        ja: Model API key
+        ms: Model API key
+        pt-br: Model API key
+        ru: Model API key
+        ko: Model API key
+        zh-Hant: Model API key
+        zh: Model API key
+        tr: Model API key
+    - envKey: OPENAI_BASE_URL
+      type: text
+      default: ""
+      required: false
+      label:
+        en: Model API base URL
+        es-es: Model API base URL
+        ja: Model API base URL
+        ms: Model API base URL
+        pt-br: Model API base URL
+        ru: Model API base URL
+        ko: Model API base URL
+        zh-Hant: Model API base URL
+        zh: Model API base URL
+        tr: Model API base URL
+    - envKey: BOT_MODEL
+      type: text
+      default: gpt-5.5
+      required: true
+      label:
+        en: LangGraph model
+        es-es: LangGraph model
+        ja: LangGraph model
+        ms: LangGraph model
+        pt-br: LangGraph model
+        ru: LangGraph model
+        ko: LangGraph model
+        zh-Hant: LangGraph model
+        zh: LangGraph model
+        tr: LangGraph model
+    - envKey: AGENT_BOT_MODEL
+      type: text
+      default: gpt-5.5
+      required: true
+      label:
+        en: Bot model
+        es-es: Bot model
+        ja: Bot model
+        ms: Bot model
+        pt-br: Bot model
+        ru: Bot model
+        ko: Bot model
+        zh-Hant: Bot model
+        zh: Bot model
+        tr: Bot model
+    - envKey: MANAGED_AGENT_TOKEN
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Managed Agent token
+        es-es: Managed Agent token
+        ja: Managed Agent token
+        ms: Managed Agent token
+        pt-br: Managed Agent token
+        ru: Managed Agent token
+        ko: Managed Agent token
+        zh-Hant: Managed Agent token
+        zh: Managed Agent token
+        tr: Managed Agent token
+    - envKey: COMPUTER_TOKEN
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Computer token
+        es-es: Computer token
+        ja: Computer token
+        ms: Computer token
+        pt-br: Computer token
+        ru: Computer token
+        ko: Computer token
+        zh-Hant: Computer token
+        zh: Computer token
+        tr: Computer token
+    - envKey: SUPERVISOR_TOKEN
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Supervisor token
+        es-es: Supervisor token
+        ja: Supervisor token
+        ms: Supervisor token
+        pt-br: Supervisor token
+        ru: Supervisor token
+        ko: Supervisor token
+        zh-Hant: Supervisor token
+        zh: Supervisor token
+        tr: Supervisor token
+    - envKey: AGENT_TOOL_TOKEN
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Agent tool callback token
+        es-es: Agent tool callback token
+        ja: Agent tool callback token
+        ms: Agent tool callback token
+        pt-br: Agent tool callback token
+        ru: Agent tool callback token
+        ko: Agent tool callback token
+        zh-Hant: Agent tool callback token
+        zh: Agent tool callback token
+        tr: Agent tool callback token
+    - envKey: OPENBOT_TOOL_URL
+      type: text
+      default: http://openbot:3001/api/agent-tools/call
+      required: true
+      label:
+        en: OpenBot tool callback URL
+        es-es: OpenBot tool callback URL
+        ja: OpenBot tool callback URL
+        ms: OpenBot tool callback URL
+        pt-br: OpenBot tool callback URL
+        ru: OpenBot tool callback URL
+        ko: OpenBot tool callback URL
+        zh-Hant: OpenBot tool callback URL
+        zh: OpenBot tool callback URL
+        tr: OpenBot tool callback URL

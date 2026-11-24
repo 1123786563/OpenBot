@@ -1,0 +1,26 @@
+name: openbot-postgres
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${MIDDLEWARE_POSTGRES_PASSWORD:?Set MIDDLEWARE_POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${MIDDLEWARE_POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [postgres]
+
+networks:
+  postgres:
+    name: ${MIDDLEWARE_POSTGRES_NETWORK:-openbot-postgres}
+
+volumes:
+  data:

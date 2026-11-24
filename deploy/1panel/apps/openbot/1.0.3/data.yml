@@ -1,0 +1,283 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 18001
+      required: true
+      rule: paramPort
+      label:
+        en: HTTP port
+        es-es: HTTP port
+        ja: HTTP port
+        ms: HTTP port
+        pt-br: HTTP port
+        ru: HTTP port
+        ko: HTTP port
+        zh-Hant: HTTP 連接埠
+        zh: HTTP 端口
+        tr: HTTP port
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing PostgreSQL instance
+        es-es: Existing PostgreSQL instance
+        ja: Existing PostgreSQL instance
+        ms: Existing PostgreSQL instance
+        pt-br: Existing PostgreSQL instance
+        ru: Existing PostgreSQL instance
+        ko: Existing PostgreSQL instance
+        zh-Hant: 現有 PostgreSQL 執行個體
+        zh: 已有 PostgreSQL 实例
+        tr: Existing PostgreSQL instance
+      key: postgresql
+    - envKey: DB_NAME
+      type: text
+      default: openbot
+      required: true
+      label:
+        en: Existing database name
+        es-es: Existing database name
+        ja: Existing database name
+        ms: Existing database name
+        pt-br: Existing database name
+        ru: Existing database name
+        ko: Existing database name
+        zh-Hant: 現有資料庫名稱
+        zh: 已有数据库名
+        tr: Existing database name
+      rule: paramCommon
+    - envKey: DB_USER
+      type: text
+      default: openbot
+      required: true
+      label:
+        en: Database user
+        es-es: Database user
+        ja: Database user
+        ms: Database user
+        pt-br: Database user
+        ru: Database user
+        ko: Database user
+        zh-Hant: 資料庫使用者
+        zh: 数据库用户
+        tr: Database user
+      rule: paramCommon
+    - envKey: DB_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Database password (URL-encode special characters)
+        es-es: Database password (URL-encode special characters)
+        ja: Database password (URL-encode special characters)
+        ms: Database password (URL-encode special characters)
+        pt-br: Database password (URL-encode special characters)
+        ru: Database password (URL-encode special characters)
+        ko: Database password (URL-encode special characters)
+        zh-Hant: 資料庫密碼（特殊字元需 URL 編碼）
+        zh: 数据库密码（特殊字符需 URL 编码）
+        tr: Database password (URL-encode special characters)
+    - envKey: DB_SSL_MODE
+      type: select
+      default: disable
+      required: true
+      label:
+        en: PostgreSQL TLS mode
+        es-es: PostgreSQL TLS mode
+        ja: PostgreSQL TLS mode
+        ms: PostgreSQL TLS mode
+        pt-br: PostgreSQL TLS mode
+        ru: PostgreSQL TLS mode
+        ko: PostgreSQL TLS mode
+        zh-Hant: PostgreSQL TLS 模式
+        zh: PostgreSQL TLS 模式
+        tr: PostgreSQL TLS mode
+      values:
+        - label: disable
+          value: disable
+        - label: require
+          value: require
+        - label: verify-full
+          value: verify-full
+    - envKey: OPENBOT_PUBLIC_URL
+      type: text
+      default: ""
+      required: true
+      label:
+        en: Public HTTPS URL
+        es-es: Public HTTPS URL
+        ja: Public HTTPS URL
+        ms: Public HTTPS URL
+        pt-br: Public HTTPS URL
+        ru: Public HTTPS URL
+        ko: Public HTTPS URL
+        zh-Hant: 公開 HTTPS 位址
+        zh: 公开 HTTPS 地址
+        tr: Public HTTPS URL
+    - envKey: INITIAL_ADMIN_EMAILS
+      type: text
+      default: ""
+      required: true
+      label:
+        en: Initial admin email
+        es-es: Initial admin email
+        ja: Initial admin email
+        ms: Initial admin email
+        pt-br: Initial admin email
+        ru: Initial admin email
+        ko: Initial admin email
+        zh-Hant: 初始管理員信箱
+        zh: 初始管理员邮箱
+        tr: Initial admin email
+    - envKey: KEY_ENCRYPTION_KEY
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Encryption key
+        es-es: Encryption key
+        ja: Encryption key
+        ms: Encryption key
+        pt-br: Encryption key
+        ru: Encryption key
+        ko: Encryption key
+        zh-Hant: 加密金鑰
+        zh: 加密密钥
+        tr: Encryption key
+    - envKey: BETTER_AUTH_SECRET
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Session secret
+        es-es: Session secret
+        ja: Session secret
+        ms: Session secret
+        pt-br: Session secret
+        ru: Session secret
+        ko: Session secret
+        zh-Hant: 工作階段簽署金鑰
+        zh: 会话签名密钥
+        tr: Session secret
+    - envKey: GOOGLE_OAUTH_CLIENT_ID
+      type: text
+      default: ""
+      required: true
+      label:
+        en: Google OAuth client ID
+        es-es: Google OAuth client ID
+        ja: Google OAuth client ID
+        ms: Google OAuth client ID
+        pt-br: Google OAuth client ID
+        ru: Google OAuth client ID
+        ko: Google OAuth client ID
+        zh-Hant: Google OAuth 用戶端 ID
+        zh: Google OAuth 客户端 ID
+        tr: Google OAuth client ID
+    - envKey: GOOGLE_OAUTH_CLIENT_SECRET
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Google OAuth client secret
+        es-es: Google OAuth client secret
+        ja: Google OAuth client secret
+        ms: Google OAuth client secret
+        pt-br: Google OAuth client secret
+        ru: Google OAuth client secret
+        ko: Google OAuth client secret
+        zh-Hant: Google OAuth 用戶端密鑰
+        zh: Google OAuth 客户端密钥
+        tr: Google OAuth client secret
+    - envKey: OPENAI_API_KEY
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Model API key
+        es-es: Model API key
+        ja: Model API key
+        ms: Model API key
+        pt-br: Model API key
+        ru: Model API key
+        ko: Model API key
+        zh-Hant: 模型 API 金鑰
+        zh: 模型 API 密钥
+        tr: Model API key
+    - envKey: OPENAI_BASE_URL
+      type: text
+      default: ""
+      required: false
+      label:
+        en: Model API base URL
+        es-es: Model API base URL
+        ja: Model API base URL
+        ms: Model API base URL
+        pt-br: Model API base URL
+        ru: Model API base URL
+        ko: Model API base URL
+        zh-Hant: 模型 API 位址
+        zh: 模型 API 地址
+        tr: Model API base URL
+    - envKey: BOT_MODEL
+      type: text
+      default: ""
+      required: false
+      label:
+        en: Model name
+        es-es: Model name
+        ja: Model name
+        ms: Model name
+        pt-br: Model name
+        ru: Model name
+        ko: Model name
+        zh-Hant: 模型名稱
+        zh: 模型名称
+        tr: Model name
+    - envKey: INTELLIGENCE_API_URL
+      type: text
+      default: ""
+      required: true
+      label:
+        en: Intelligence API URL
+        es-es: Intelligence API URL
+        ja: Intelligence API URL
+        ms: Intelligence API URL
+        pt-br: Intelligence API URL
+        ru: Intelligence API URL
+        ko: Intelligence API URL
+        zh-Hant: Intelligence API 位址
+        zh: Intelligence API 地址
+        tr: Intelligence API URL
+    - envKey: INTELLIGENCE_GATEWAY_WS_URL
+      type: text
+      default: ""
+      required: true
+      label:
+        en: Intelligence WebSocket URL
+        es-es: Intelligence WebSocket URL
+        ja: Intelligence WebSocket URL
+        ms: Intelligence WebSocket URL
+        pt-br: Intelligence WebSocket URL
+        ru: Intelligence WebSocket URL
+        ko: Intelligence WebSocket URL
+        zh-Hant: Intelligence WebSocket 位址
+        zh: Intelligence WebSocket 地址
+        tr: Intelligence WebSocket URL
+    - envKey: CPK_INTELLIGENCE_API_KEY
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Intelligence API key
+        es-es: Intelligence API key
+        ja: Intelligence API key
+        ms: Intelligence API key
+        pt-br: Intelligence API key
+        ru: Intelligence API key
+        ko: Intelligence API key
+        zh-Hant: Intelligence API 金鑰
+        zh: Intelligence API 密钥
+        tr: Intelligence API key

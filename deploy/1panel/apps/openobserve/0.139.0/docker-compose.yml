@@ -1,0 +1,68 @@
+networks:
+  observability:
+    name: openbot-observability
+    ipam: {}
+    external: true
+  openobserve:
+    ipam: {}
+  1panel-network:
+    external: true
+services:
+  openobserve:
+    command: null
+    entrypoint: null
+    environment:
+      ZO_DATA_DIR: /data
+      ZO_LOCAL_MODE: "true"
+      ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL}
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD}
+      ZO_META_STORE: postgres
+      ZO_META_POSTGRES_DSN: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+    image: openobserve/openobserve@sha256:26618f379c86b253c0d91624c487dd14b71293699845ecbc8457c94dca14819f
+    networks:
+      openobserve: null
+      1panel-network:
+        aliases:
+          - openbot-openobserve
+    restart: unless-stopped
+    volumes:
+      - openobserve-data:/data
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-15080}:5080
+    container_name: ${CONTAINER_NAME}
+    labels:
+      createdBy: Apps
+  otel-collector:
+    command:
+      - --config=/etc/otelcol-contrib/config.yaml
+    depends_on:
+      openobserve:
+        condition: service_started
+        required: true
+    entrypoint: null
+    environment:
+      OPENBOT_DEPLOYMENT_ID: ${OPENBOT_DEPLOYMENT_ID:-openbot}
+      OPENBOT_DOCKER_LOG_GLOB: /docker-containers/*/*-json.log
+      OPENBOT_OTEL_EXPORT: ${OPENBOT_OTEL_EXPORT:-off}
+      OPENBOT_RUNTIME_COMPONENT: api
+      OPENBOT_RUNTIME_LOG_GLOB: /runtime-logs/*/*.log
+      OPENOBSERVE_AUDIT_AUTHORIZATION: ${OPENOBSERVE_AUDIT_AUTHORIZATION}
+      OPENOBSERVE_OTLP_LOGS_URL: http://openobserve:5080/api/default/v1/logs
+      OPENOBSERVE_RUNTIME_AUTHORIZATION: ${OPENOBSERVE_RUNTIME_AUTHORIZATION}
+    image: otel/opentelemetry-collector-contrib:0.139.0
+    networks:
+      observability: null
+      openobserve: null
+    restart: unless-stopped
+    user: 0:0
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./runtime-logs:/runtime-logs:ro
+      - /var/lib/docker/containers:/docker-containers:ro
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_OTLP:-14318}:4318
+    container_name: ${CONTAINER_NAME}-otel-collector
+    labels:
+      createdBy: Apps
+volumes:
+  openobserve-data: {}

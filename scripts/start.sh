@@ -237,6 +237,8 @@ wait_for() {
 
 stop_server_processes_for_restart() {
   stop_matching "bun --env-file=../.env src/production-entry.ts"
+  # The same server started with its settings loaded from Infisical; see where SERVER_LAUNCH is set.
+  stop_matching "bun --env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts src/production-entry.ts"
   stop_matching "bun --env-file=../.env src/index.ts"
 }
 
@@ -434,6 +436,14 @@ if identifies_as_openbot "$SERVER_PORT" server; then
     fi
   fi
 fi
+# With Infisical's machine identity present, the server loads its settings from Infisical as it starts
+# and .env is not read. The ports and tokens this script works out are passed through the shell and must
+# stay final, and a value that came from .env could not be told from one of those. Without the identity,
+# .env is the configuration, as before. Word-split on purpose: one flag per word.
+SERVER_LAUNCH="--env-file=../.env"
+if [ -f "$ROOT/deploy/infisical/.env.openbot-client" ]; then
+  SERVER_LAUNCH="--env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts"
+fi
 # Redirect the whole background group. Redirecting only Bun inside `(command &)` leaves its
 # waiting Bash wrapper holding the updater's captured stdout/stderr open after this script exits.
 if ! identifies_as_openbot "$SERVER_PORT" server; then
@@ -443,11 +453,11 @@ if ! identifies_as_openbot "$SERVER_PORT" server; then
       SUPERVISOR_TOKEN="$SUPERVISOR_TOKEN" \
       COMPUTER_TOKEN="$COMPUTER_TOKEN" \
       WORKER_SHARED_SECRET="$WORKER_SHARED_SECRET" \
-      bun --env-file=../.env src/production-entry.ts) >"$LOGS/server.log" 2>&1 &
+      bun $SERVER_LAUNCH src/production-entry.ts) >"$LOGS/server.log" 2>&1 &
   else
     (cd server && PORT="$SERVER_PORT" \
       WORKER_SHARED_SECRET="$WORKER_SHARED_SECRET" \
-      bun --env-file=../.env src/production-entry.ts) >"$LOGS/server.log" 2>&1 &
+      bun $SERVER_LAUNCH src/production-entry.ts) >"$LOGS/server.log" 2>&1 &
   fi
 fi
 wait_for_openbot "$SERVER_PORT" server

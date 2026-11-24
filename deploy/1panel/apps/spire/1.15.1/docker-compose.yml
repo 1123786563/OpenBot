@@ -1,0 +1,87 @@
+services:
+  spire-agent:
+    command:
+      - -config
+      - /opt/spire/conf/agent.conf
+      - -joinToken
+      - ${SPIRE_JOIN_TOKEN}
+    depends_on:
+      spire-init:
+        condition: service_completed_successfully
+        required: true
+      spire-server:
+        condition: service_healthy
+        required: true
+    entrypoint: null
+    image: ghcr.io/spiffe/spire-agent:1.15.1
+    networks:
+      identity: {}
+    pid: host
+    volumes:
+      - ./agent.conf:/opt/spire/conf/agent.conf:ro
+      - spire-agent-socket:/tmp/spire-agent/public
+      - spire-agent-data:/opt/spire/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    container_name: ${CONTAINER_NAME}-spire-agent
+    labels:
+      createdBy: Apps
+  spire-init:
+    command:
+      - sh
+      - -c
+      - chown -R 1000:1000 /server /agent
+    entrypoint: null
+    image: busybox:1.37
+    networks:
+      identity: {}
+    user: 0:0
+    volumes:
+      - spire-server-data:/server
+      - spire-agent-data:/agent
+    container_name: ${CONTAINER_NAME}-spire-init
+    labels:
+      createdBy: Apps
+  spire-server:
+    command:
+      - -expandEnv
+      - -config
+      - /opt/spire/conf/server.conf
+    depends_on:
+      spire-init:
+        condition: service_completed_successfully
+        required: true
+    entrypoint: null
+    healthcheck:
+      test:
+        - CMD
+        - /opt/spire/bin/spire-server
+        - healthcheck
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: ghcr.io/spiffe/spire-server:1.15.1
+    networks:
+      identity: {}
+      1panel-network: {}
+    volumes:
+      - ./server.conf:/opt/spire/conf/server.conf:ro
+      - spire-server-data:/opt/spire/data
+      - spire-server-socket:/tmp/spire-server/private
+    restart: unless-stopped
+    container_name: ${CONTAINER_NAME}
+    labels:
+      createdBy: Apps
+    environment:
+      SPIRE_POSTGRES_DSN: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+volumes:
+  spire-agent-data: {}
+  spire-agent-socket: {}
+  spire-server-data: {}
+  spire-server-socket: {}
+networks:
+  1panel-network:
+    external: true
+  identity:
+    external: true
+    name: openbot-spire

@@ -1,0 +1,96 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 15173
+      required: true
+      rule: paramPort
+      label:
+        en: HTTP port
+        es-es: HTTP port
+        ja: HTTP port
+        ms: HTTP port
+        pt-br: HTTP port
+        ru: HTTP port
+        ko: HTTP port
+        zh-Hant: HTTP port
+        zh: HTTP port
+        tr: HTTP port
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing MySQL instance
+        es-es: Existing MySQL instance
+        ja: Existing MySQL instance
+        ms: Existing MySQL instance
+        pt-br: Existing MySQL instance
+        ru: Existing MySQL instance
+        ko: Existing MySQL instance
+        zh-Hant: 現有 MySQL 執行個體
+        zh: 已有 MySQL 实例
+        tr: Existing MySQL instance
+      key: mysql
+    - envKey: DB_NAME
+      type: text
+      default: opik
+      required: true
+      label:
+        en: Existing database name
+        es-es: Existing database name
+        ja: Existing database name
+        ms: Existing database name
+        pt-br: Existing database name
+        ru: Existing database name
+        ko: Existing database name
+        zh-Hant: 現有資料庫名稱
+        zh: 已有数据库名
+        tr: Existing database name
+      rule: paramCommon
+    - envKey: DB_USER
+      type: text
+      default: opik
+      required: true
+      label:
+        en: Database user
+        es-es: Database user
+        ja: Database user
+        ms: Database user
+        pt-br: Database user
+        ru: Database user
+        ko: Database user
+        zh-Hant: 資料庫使用者
+        zh: 数据库用户
+        tr: Database user
+      rule: paramCommon
+    - envKey: DB_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Database password
+        es-es: Database password
+        ja: Database password
+        ms: Database password
+        pt-br: Database password
+        ru: Database password
+        ko: Database password
+        zh-Hant: 資料庫密碼
+        zh: 数据库密码
+        tr: Database password
+    - envKey: MINIO_ROOT_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: MinIO root password
+        es-es: MinIO root password
+        ja: MinIO root password
+        ms: MinIO root password
+        pt-br: MinIO root password
+        ru: MinIO root password
+        ko: MinIO root password
+        zh-Hant: MinIO root password
+        zh: MinIO root password
+        tr: MinIO root password

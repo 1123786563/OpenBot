@@ -151,12 +151,27 @@ const SEND_WITHOUT_RUNTIME_AFTER_MS = 1500;
 
 /** What a turn that never left the browser says, with the person's words back in the box. */
 const NOT_SENT = "Your message wasn't sent. Try again.";
-const FIRST_MESSAGE_ACTION_LABEL = {
-  check: "Check for message",
-  connect: "Check Bot connection",
-  resend: "Resend message",
-  retry: "Send message",
-} satisfies Record<FirstMessageRecovery["action"], string>;
+const FIRST_MESSAGE_RECOVERY_COPY = {
+  check: {
+    title: "Check whether your first message arrived.",
+    actionLabel: "Check for message",
+  },
+  connect: {
+    title: "Your first message is saved in this browser.",
+    actionLabel: "Check Bot connection",
+  },
+  resend: {
+    title: "Your first message hasn’t appeared in the conversation.",
+    actionLabel: "Resend message",
+  },
+  retry: {
+    title: "Your first message wasn’t sent.",
+    actionLabel: "Send message",
+  },
+} satisfies Record<
+  FirstMessageRecovery["action"],
+  { title: string; actionLabel: string }
+>;
 
 type ChannelActivitySignature = {
   agentId: string;
@@ -426,8 +441,7 @@ function uploadedAttachment(attachment: Attachment): {
   filename?: string;
 } {
   const metadata = attachment.metadata as
-    | { attachmentId?: unknown; filename?: unknown }
-    | undefined;
+    { attachmentId?: unknown; filename?: unknown } | undefined;
   const attachmentId = metadata?.attachmentId;
   if (typeof attachmentId !== "string") {
     throw new Error("Attachment is missing its uploaded id.");
@@ -1850,8 +1864,8 @@ export function ChannelChat({
           setFirstError({
             action: "connect",
             message: channel.active
-              ? "The Bot hasn’t connected. Your browser has saved the message."
-              : "Your browser has saved the message.",
+              ? "The Bot needs to connect before the message can be sent."
+              : "This conversation is closed. Start a new conversation to send the message.",
           });
         },
         channel.active ? SEND_WITHOUT_RUNTIME_AFTER_MS : 0,
@@ -1916,7 +1930,7 @@ export function ChannelChat({
           setFirstError({
             action: "check",
             message:
-              "Your browser has saved the message. Check this conversation again to see if it arrived.",
+              "Check for message reloads the conversation without sending a copy.",
           });
       })
       .finally(() => {
@@ -2067,12 +2081,13 @@ export function ChannelChat({
                   <Stack gap={2}>
                     <ConversationReadError
                       title={
-                        firstError.action === "retry"
-                          ? "The first message wasn’t sent."
-                          : "The first message is unconfirmed."
+                        FIRST_MESSAGE_RECOVERY_COPY[firstError.action].title
                       }
                       description={firstError.message}
-                      retryLabel={FIRST_MESSAGE_ACTION_LABEL[firstError.action]}
+                      retryLabel={
+                        FIRST_MESSAGE_RECOVERY_COPY[firstError.action]
+                          .actionLabel
+                      }
                       retry={
                         channel.active
                           ? () => {

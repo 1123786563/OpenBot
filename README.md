@@ -199,6 +199,8 @@ Ubuntu terminal open while you use OpenBot, and open the app from your Windows b
 
 ## Deploy it
 
+For separate PostgreSQL, Agent, and middleware services on one Docker host, see the [Compose deployment guide](deploy/README.md).
+
 One image carries the app, the API, the browser the Bots drive, and optionally PostgreSQL. Same
 `.env`, no Kubernetes.
 

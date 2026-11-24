@@ -1,0 +1,209 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 15080
+      required: true
+      rule: paramPort
+      label:
+        en: HTTP port
+        es-es: HTTP port
+        ja: HTTP port
+        ms: HTTP port
+        pt-br: HTTP port
+        ru: HTTP port
+        ko: HTTP port
+        zh-Hant: HTTP port
+        zh: HTTP port
+        tr: HTTP port
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing PostgreSQL instance
+        es-es: Existing PostgreSQL instance
+        ja: Existing PostgreSQL instance
+        ms: Existing PostgreSQL instance
+        pt-br: Existing PostgreSQL instance
+        ru: Existing PostgreSQL instance
+        ko: Existing PostgreSQL instance
+        zh-Hant: 現有 PostgreSQL 執行個體
+        zh: 已有 PostgreSQL 实例
+        tr: Existing PostgreSQL instance
+      key: postgresql
+    - envKey: DB_NAME
+      type: text
+      default: openobserve
+      required: true
+      label:
+        en: Existing database name
+        es-es: Existing database name
+        ja: Existing database name
+        ms: Existing database name
+        pt-br: Existing database name
+        ru: Existing database name
+        ko: Existing database name
+        zh-Hant: 現有資料庫名稱
+        zh: 已有数据库名
+        tr: Existing database name
+      rule: paramCommon
+    - envKey: DB_USER
+      type: text
+      default: openobserve
+      required: true
+      label:
+        en: Database user
+        es-es: Database user
+        ja: Database user
+        ms: Database user
+        pt-br: Database user
+        ru: Database user
+        ko: Database user
+        zh-Hant: 資料庫使用者
+        zh: 数据库用户
+        tr: Database user
+      rule: paramCommon
+    - envKey: DB_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Database password (URL-encode special characters)
+        es-es: Database password (URL-encode special characters)
+        ja: Database password (URL-encode special characters)
+        ms: Database password (URL-encode special characters)
+        pt-br: Database password (URL-encode special characters)
+        ru: Database password (URL-encode special characters)
+        ko: Database password (URL-encode special characters)
+        zh-Hant: 資料庫密碼（特殊字元需 URL 編碼）
+        zh: 数据库密码（特殊字符需 URL 编码）
+        tr: Database password (URL-encode special characters)
+    - envKey: DB_SSL_MODE
+      type: select
+      default: disable
+      required: true
+      label:
+        en: PostgreSQL TLS mode
+        es-es: PostgreSQL TLS mode
+        ja: PostgreSQL TLS mode
+        ms: PostgreSQL TLS mode
+        pt-br: PostgreSQL TLS mode
+        ru: PostgreSQL TLS mode
+        ko: PostgreSQL TLS mode
+        zh-Hant: PostgreSQL TLS 模式
+        zh: PostgreSQL TLS 模式
+        tr: PostgreSQL TLS mode
+      values:
+        - label: disable
+          value: disable
+        - label: require
+          value: require
+        - label: verify-full
+          value: verify-full
+    - envKey: PANEL_APP_PORT_OTLP
+      type: number
+      default: 14318
+      required: true
+      rule: paramPort
+      label:
+        en: OTLP port
+        es-es: OTLP port
+        ja: OTLP port
+        ms: OTLP port
+        pt-br: OTLP port
+        ru: OTLP port
+        ko: OTLP port
+        zh-Hant: OTLP port
+        zh: OTLP port
+        tr: OTLP port
+    - envKey: OPENOBSERVE_ROOT_EMAIL
+      type: text
+      default: ""
+      required: true
+      label:
+        en: OpenObserve admin email
+        es-es: OpenObserve admin email
+        ja: OpenObserve admin email
+        ms: OpenObserve admin email
+        pt-br: OpenObserve admin email
+        ru: OpenObserve admin email
+        ko: OpenObserve admin email
+        zh-Hant: OpenObserve admin email
+        zh: OpenObserve admin email
+        tr: OpenObserve admin email
+    - envKey: OPENOBSERVE_ROOT_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: OpenObserve admin password
+        es-es: OpenObserve admin password
+        ja: OpenObserve admin password
+        ms: OpenObserve admin password
+        pt-br: OpenObserve admin password
+        ru: OpenObserve admin password
+        ko: OpenObserve admin password
+        zh-Hant: OpenObserve admin password
+        zh: OpenObserve admin password
+        tr: OpenObserve admin password
+    - envKey: OPENBOT_DEPLOYMENT_ID
+      type: text
+      default: openbot
+      required: true
+      label:
+        en: OpenBot deployment ID
+        es-es: OpenBot deployment ID
+        ja: OpenBot deployment ID
+        ms: OpenBot deployment ID
+        pt-br: OpenBot deployment ID
+        ru: OpenBot deployment ID
+        ko: OpenBot deployment ID
+        zh-Hant: OpenBot deployment ID
+        zh: OpenBot deployment ID
+        tr: OpenBot deployment ID
+    - envKey: OPENBOT_OTEL_EXPORT
+      type: text
+      default: off
+      required: true
+      label:
+        en: Export logs on or off
+        es-es: Export logs on or off
+        ja: Export logs on or off
+        ms: Export logs on or off
+        pt-br: Export logs on or off
+        ru: Export logs on or off
+        ko: Export logs on or off
+        zh-Hant: Export logs on or off
+        zh: Export logs on or off
+        tr: Export logs on or off
+    - envKey: OPENOBSERVE_RUNTIME_AUTHORIZATION
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Runtime ingestion authorization
+        es-es: Runtime ingestion authorization
+        ja: Runtime ingestion authorization
+        ms: Runtime ingestion authorization
+        pt-br: Runtime ingestion authorization
+        ru: Runtime ingestion authorization
+        ko: Runtime ingestion authorization
+        zh-Hant: Runtime ingestion authorization
+        zh: Runtime ingestion authorization
+        tr: Runtime ingestion authorization
+    - envKey: OPENOBSERVE_AUDIT_AUTHORIZATION
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Audit ingestion authorization
+        es-es: Audit ingestion authorization
+        ja: Audit ingestion authorization
+        ms: Audit ingestion authorization
+        pt-br: Audit ingestion authorization
+        ru: Audit ingestion authorization
+        ko: Audit ingestion authorization
+        zh-Hant: Audit ingestion authorization
+        zh: Audit ingestion authorization
+        tr: Audit ingestion authorization

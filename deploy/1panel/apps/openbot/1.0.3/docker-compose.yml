@@ -1,0 +1,56 @@
+services:
+  openbot:
+    image: ghcr.io/copilotkit/openbot:v1.0.3@sha256:401e79e56c039df01701c2a21538d96a78ee288b060d18df397e97f6181497f7
+    container_name: ${CONTAINER_NAME}
+    restart: unless-stopped
+    shm_size: 1gb
+    labels:
+      createdBy: Apps
+    environment:
+      OPENBOT_SINGLE_USER: "false"
+      OPENBOT_PUBLIC_URL: ${OPENBOT_PUBLIC_URL:?Enter the HTTPS site URL}
+      BETTER_AUTH_URL: ${OPENBOT_PUBLIC_URL:?Enter the HTTPS site URL}
+      TRUSTED_ORIGINS: ${OPENBOT_PUBLIC_URL:?Enter the HTTPS site URL}
+      KEY_ENCRYPTION_KEY: ${KEY_ENCRYPTION_KEY:?Enter the encryption key}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Enter the session secret}
+      INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:?Enter the admin email}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:?Enter the Google OAuth client ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:?Enter the Google OAuth client secret}
+      INTELLIGENCE_API_URL: ${INTELLIGENCE_API_URL:?Enter the Intelligence API URL}
+      INTELLIGENCE_GATEWAY_WS_URL: ${INTELLIGENCE_GATEWAY_WS_URL:?Enter the Intelligence WebSocket URL}
+      CPK_INTELLIGENCE_API_KEY: ${CPK_INTELLIGENCE_API_KEY:?Enter the Intelligence API key}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Enter the model API key}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      BOT_MODEL: ${BOT_MODEL:-}
+      DATABASE_URL: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-18001}:3001
+    volumes:
+      - workspace:/workspace
+      - profiles:/profiles
+    networks:
+      - 1panel-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  migrate:
+    image: ghcr.io/copilotkit/openbot:v1.0.3@sha256:401e79e56c039df01701c2a21538d96a78ee288b060d18df397e97f6181497f7
+    container_name: ${CONTAINER_NAME}-migrate
+    working_dir: /app/server
+    user: 1002:1002
+    entrypoint:
+      - /usr/local/bin/bun
+      - scripts/migrate.ts
+    environment:
+      HOME: /home/apiuser
+      DATABASE_URL: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+    labels:
+      createdBy: Apps
+    networks:
+      - 1panel-network
+networks:
+  1panel-network:
+    external: true
+volumes:
+  workspace: null
+  profiles: null

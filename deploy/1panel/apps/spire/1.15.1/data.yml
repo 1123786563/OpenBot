@@ -1,0 +1,102 @@
+additionalProperties:
+  formFields:
+    - envKey: SPIRE_JOIN_TOKEN
+      type: password
+      default: ""
+      required: false
+      label:
+        en: One-time SPIRE join token
+        es-es: One-time SPIRE join token
+        ja: One-time SPIRE join token
+        ms: One-time SPIRE join token
+        pt-br: One-time SPIRE join token
+        ru: One-time SPIRE join token
+        ko: One-time SPIRE join token
+        zh-Hant: One-time SPIRE join token
+        zh: One-time SPIRE join token
+        tr: One-time SPIRE join token
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing PostgreSQL instance
+        es-es: Existing PostgreSQL instance
+        ja: Existing PostgreSQL instance
+        ms: Existing PostgreSQL instance
+        pt-br: Existing PostgreSQL instance
+        ru: Existing PostgreSQL instance
+        ko: Existing PostgreSQL instance
+        zh-Hant: 現有 PostgreSQL 執行個體
+        zh: 已有 PostgreSQL 实例
+        tr: Existing PostgreSQL instance
+      key: postgresql
+    - envKey: DB_NAME
+      type: text
+      default: spire
+      required: true
+      label:
+        en: Existing database name
+        es-es: Existing database name
+        ja: Existing database name
+        ms: Existing database name
+        pt-br: Existing database name
+        ru: Existing database name
+        ko: Existing database name
+        zh-Hant: 現有資料庫名稱
+        zh: 已有数据库名
+        tr: Existing database name
+      rule: paramCommon
+    - envKey: DB_USER
+      type: text
+      default: spire
+      required: true
+      label:
+        en: Database user
+        es-es: Database user
+        ja: Database user
+        ms: Database user
+        pt-br: Database user
+        ru: Database user
+        ko: Database user
+        zh-Hant: 資料庫使用者
+        zh: 数据库用户
+        tr: Database user
+      rule: paramCommon
+    - envKey: DB_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Database password (URL-encode special characters)
+        es-es: Database password (URL-encode special characters)
+        ja: Database password (URL-encode special characters)
+        ms: Database password (URL-encode special characters)
+        pt-br: Database password (URL-encode special characters)
+        ru: Database password (URL-encode special characters)
+        ko: Database password (URL-encode special characters)
+        zh-Hant: 資料庫密碼（特殊字元需 URL 編碼）
+        zh: 数据库密码（特殊字符需 URL 编码）
+        tr: Database password (URL-encode special characters)
+    - envKey: DB_SSL_MODE
+      type: select
+      default: disable
+      required: true
+      label:
+        en: PostgreSQL TLS mode
+        es-es: PostgreSQL TLS mode
+        ja: PostgreSQL TLS mode
+        ms: PostgreSQL TLS mode
+        pt-br: PostgreSQL TLS mode
+        ru: PostgreSQL TLS mode
+        ko: PostgreSQL TLS mode
+        zh-Hant: PostgreSQL TLS 模式
+        zh: PostgreSQL TLS 模式
+        tr: PostgreSQL TLS mode
+      values:
+        - label: disable
+          value: disable
+        - label: require
+          value: require
+        - label: verify-full
+          value: verify-full

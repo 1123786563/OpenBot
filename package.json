@@ -33,12 +33,14 @@
     "test:live-arcade": "bun -e \"if (!process.env.ARCADE_API_KEY?.trim()) { console.error('ARCADE_API_KEY is empty or unset, so every case in this suite would skip and this command would still exit 0. Run it as ARCADE_API_KEY=... bun run test:live-arcade.'); process.exit(1) }\" && OPENBOT_LIVE_ARCADE=1 bun test server/tests/arcade-live.test.ts",
     "diagram": "bun scripts/architecture-diagram.ts",
     "setup:composio": "bun scripts/setup-composio.ts",
+    "sync:env": "bun --env-file=deploy/infisical/.env.openbot-client scripts/infisical-env.ts",
     "composio:smoke": "bun scripts/composio-smoke.ts",
     "mock:knowledge": "bun scripts/mock-knowledge-mcp.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
     "@copilotkit/aimock": "1.43.0",
+    "@infisical/sdk": "5.3.1",
     "@types/bun": "^1.3.3",
     "roughjs": "^4.6.6",
     "typescript": "^5.9.3",

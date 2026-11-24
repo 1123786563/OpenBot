@@ -317,10 +317,10 @@ export async function resumeDirectFirstMessage({
     return {
       action: canResend ? "resend" : "check",
       message: canResend
-        ? "The message hasn’t appeared in this conversation. Resending uses the original message so it appears only once."
+        ? "Resend message uses the original message so it appears only once."
         : !historyChecked
-          ? "The full conversation couldn’t load. Check for the message again to see whether it arrived."
-          : "Check this conversation again before sending another copy. Your browser has saved the message.",
+          ? "The full conversation couldn’t load. Check for message loads it again without sending a copy."
+          : "Your browser has saved a copy. Check for message refreshes the conversation without sending it again.",
     };
   };
 

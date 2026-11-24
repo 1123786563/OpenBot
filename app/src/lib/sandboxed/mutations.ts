@@ -47,29 +47,39 @@ export function saveSandboxedDraftMutationOptions(queryClient: QueryClient) {
 /**
  * Publish what is on screen.
  *
- * Saves first, in the same mutation, because publishing acts on the stored draft rather than on the
- * editors. Two calls rather than one endpoint, so a save that fails stops the publish — which is the
- * behaviour worth keeping: publishing a draft the server never received would put something on
- * screen that nobody wrote.
+ * Publish only the saved version this confirmation covers. A retry can reuse the version returned
+ * by the successful save, so a failed publish never overwrites a newer draft.
  */
 export function publishSandboxedMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: async ({
       input,
+      draftVersion,
       onDraftSaved,
     }: {
       input: SandboxedDraftInput;
-      onDraftSaved: () => void;
+      draftVersion?: string;
+      onDraftSaved: (draftVersion: string | undefined) => void;
     }) => {
-      await client("/api/sandboxed", {
-        method: "POST",
-        body: input,
-        fallback: FALLBACK,
-      });
-      onDraftSaved();
+      let expectedDraftVersion = draftVersion;
+      if (!expectedDraftVersion) {
+        const saved = await client("/api/sandboxed", {
+          method: "POST",
+          body: input,
+          fallback: FALLBACK,
+        });
+        const result: { component?: { draftVersion?: string } } =
+          await saved.json();
+        expectedDraftVersion = result.component?.draftVersion;
+        onDraftSaved(expectedDraftVersion);
+      }
       await client(
         `/api/sandboxed/${encodeURIComponent(sandboxedName(input.slug))}/publish`,
-        { method: "POST", fallback: FALLBACK },
+        {
+          method: "POST",
+          body: expectedDraftVersion ? { expectedDraftVersion } : undefined,
+          fallback: FALLBACK,
+        },
       );
     },
     onSettled: () => invalidateSandboxed(queryClient),

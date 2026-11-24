@@ -1,0 +1,118 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 18080
+      required: true
+      rule: paramPort
+      label:
+        en: HTTP port
+        es-es: HTTP port
+        ja: HTTP port
+        ms: HTTP port
+        pt-br: HTTP port
+        ru: HTTP port
+        ko: HTTP port
+        zh-Hant: HTTP port
+        zh: HTTP port
+        tr: HTTP port
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing PostgreSQL instance
+        es-es: Existing PostgreSQL instance
+        ja: Existing PostgreSQL instance
+        ms: Existing PostgreSQL instance
+        pt-br: Existing PostgreSQL instance
+        ru: Existing PostgreSQL instance
+        ko: Existing PostgreSQL instance
+        zh-Hant: 現有 PostgreSQL 執行個體
+        zh: 已有 PostgreSQL 实例
+        tr: Existing PostgreSQL instance
+      key: postgresql
+    - envKey: DB_NAME
+      type: text
+      default: bifrost
+      required: true
+      label:
+        en: Existing database name
+        es-es: Existing database name
+        ja: Existing database name
+        ms: Existing database name
+        pt-br: Existing database name
+        ru: Existing database name
+        ko: Existing database name
+        zh-Hant: 現有資料庫名稱
+        zh: 已有数据库名
+        tr: Existing database name
+      rule: paramCommon
+    - envKey: DB_USER
+      type: text
+      default: bifrost
+      required: true
+      label:
+        en: Database user
+        es-es: Database user
+        ja: Database user
+        ms: Database user
+        pt-br: Database user
+        ru: Database user
+        ko: Database user
+        zh-Hant: 資料庫使用者
+        zh: 数据库用户
+        tr: Database user
+      rule: paramCommon
+    - envKey: DB_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Database password
+        es-es: Database password
+        ja: Database password
+        ms: Database password
+        pt-br: Database password
+        ru: Database password
+        ko: Database password
+        zh-Hant: 資料庫密碼
+        zh: 数据库密码
+        tr: Database password
+    - envKey: DB_SSL_MODE
+      type: select
+      default: disable
+      required: true
+      label:
+        en: PostgreSQL TLS mode
+        es-es: PostgreSQL TLS mode
+        ja: PostgreSQL TLS mode
+        ms: PostgreSQL TLS mode
+        pt-br: PostgreSQL TLS mode
+        ru: PostgreSQL TLS mode
+        ko: PostgreSQL TLS mode
+        zh-Hant: PostgreSQL TLS 模式
+        zh: PostgreSQL TLS 模式
+        tr: PostgreSQL TLS mode
+      values:
+        - label: disable
+          value: disable
+        - label: require
+          value: require
+        - label: verify-full
+          value: verify-full
+    - envKey: BIFROST_SETUP_TOKEN
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Setup token
+        es-es: Setup token
+        ja: Setup token
+        ms: Setup token
+        pt-br: Setup token
+        ru: Setup token
+        ko: Setup token
+        zh-Hant: Setup token
+        zh: Setup token
+        tr: Setup token

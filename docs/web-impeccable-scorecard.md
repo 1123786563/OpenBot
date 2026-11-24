@@ -20,7 +20,7 @@
 
 ## 合入主线后的路由与评分
 
-`e682af31` 合入 Astryx 迁移。生成路由树增至 100 条，新增 `/tasks` 与 `/ideas`，原 `/responsibilities` 跳转改为直接渲染。五个旧外观页面转为兼容跳转，`/s/activity` 继续提供统一的 Activity，Goals 作为 Responsibilities 的独立视图。按原统计口径，当前有 **88 项页面与任务视图，正式验收为 0/88**，其中首页、新建会话、首次使用和为 Bot 登录网站在模拟环境中暂定达到 99% 门槛。下表采用本轮生产构建和模拟接口的暂定分。表外页面沿用各自的历史证据，旧入口和已删除源码路径供回查基线提交。 当前口径取 83 条非旧外观基线记录，将全局 Routines 替换为本节的新评分，并新增 Tasks、Ideas、Responsibilities、独立 Goals 和统一 Activity 五条。
+`e682af31` 合入 Astryx 迁移。生成路由树增至 100 条，新增 `/tasks` 与 `/ideas`，原 `/responsibilities` 跳转改为直接渲染。五个旧外观页面转为兼容跳转，`/s/activity` 继续提供统一的 Activity，Goals 作为 Responsibilities 的独立视图。当前范围为 88 项页面与任务视图。按各页最新生产构建的本地复评，**88/88 暂定通过 99% 门槛**，其中 86 项得 40/40，两项短暂交接得 36/36。正式验收为 **0/88**，真实部署中的角色和服务、实体设备及读屏待验。全局 Routines 在两张表出现，按一个视图计。Team 与 Personal 应用详情分别计分。旧入口和已删除源码路径可在基线提交回查。
 
 | 当前页面 | 对应旧入口 | H1…H10 | 本次暂定分 | 扣分与复验 |
 |---|---|---|---:|---|
@@ -49,7 +49,7 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 
 通常满分为 40，两个交接页的满分各为 36。任何适用项扣 1 分都会低于 99%，所以验收要求每个适用项都达到 4 分。百分比只用于展示，门槛以原始分判断。
 
-当前范围的 88 项均有评分。83 项已有后续复评分或整改后待复评。五个旧外观视图的历史行已关闭，统一视图已分别计分。`/settings/activity` 在 Personal 部署仍可访问，保留在 88 项验收范围内并完成本地复评。首页、新建会话、首次使用、为 Bot 登录网站、连接清单和技能清单在模拟环境中得 40/40（暂定），真实任务验收待补。顺序2 的 15 项在 2026-11-22 完成三批整改与两轮盲评，其中 9 项在盲评后又落地修复并经活体验证，待下轮复评确认。顺序3 的 15 条评分行（12 个独立视图，其中技能三页为 admin/settings 共用组件）在 2026-11-23 完成盲评（C/D 两评）与整改，盲评后修复全部活体验证，证据链 18 条失败路径全部键盘原位恢复。
+当前范围的 88 项均采用整改后最新暂定分。五个旧外观视图的历史行已关闭，统一视图已分别计分。`/settings/activity` 在 Personal 部署仍可访问，保留在 88 项验收范围内并完成本地复评。各页的评分和证据链接见最新复评列。顺序2 的 15 项在 2026-11-22 完成三批整改与两轮盲评，其中 9 项在盲评后又落地修复并经活体验证，待下轮复评确认。顺序3 的 15 条评分行（12 个独立视图，其中技能三页为 admin/settings 共用组件）在 2026-11-23 完成盲评（C/D 两评）与整改，盲评后修复全部活体验证，证据链 18 条失败路径全部键盘原位恢复。
 
 ## 本轮评审与检测
 
@@ -84,7 +84,7 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 | `/` 首页 | 3 3 3 3 3 3 3 3 3 2 | 29/40 | **40/40** · [生产构建复评](web-impeccable-batch-3-conversations.md#共享页头与草稿交接复评) | 草稿可复制到新建会话，拒绝存储时可在当前标签页继续。真实服务、触屏和读屏待验。 |
 | `/channel/new` 新会话 | 2 3 3 3 3 3 3 3 2 2 | 27/40 | **40/40** · [生产构建复评](web-impeccable-batch-3-conversations.md#共享页头与草稿交接复评) | 支持连续选 Bot 和刷新恢复顺序。To 为空时说明发送限制并引导选人。320 像素下 To 可换行。真实服务、触屏和读屏待验。 |
 | `/start/$startId` 创建会话中 | 2 3 1 3 2 3 — 3 1 1 | 19/36 | **36/36（100%，暂定）** · [会话过渡页复制与发送确认复评](#会话过渡页复制与发送确认复评) | 剪贴板被拒时聚焦并选中完整原文。群聊首条消息已提交时说明重试会先核对旧消息。 |
-| `/channel/$channelId` 单 Bot 会话 | 3 3 3 3 3 3 3 3 3 2 | 29/40 | **39/40（97.5%，暂定）** · [原文恢复复评](#单-bot-会话原文恢复复评) | 首发无法确认时，剪贴板不可用仍可复制原文。恢复说明依据历史和附件情况给出下一步。 |
+| `/channel/$channelId` 单 Bot 会话 | 3 3 3 3 3 3 3 3 3 2 | 29/40 | **40/40（100%，暂定）** · [单 Bot 首条消息恢复说明复评](#单-bot-首条消息恢复说明复评) | 核对与重发各自说明效果。核对不发新消息，重发复用原消息 ID。 |
 | `/group/$channelId` 多 Bot 会话 | 3 3 2 2 2 3 2 3 2 2 | 24/40 | **40/40（100%，暂定）** · [群聊回复查收与权限恢复复评](#群聊回复查收与权限恢复复评) | 手动查收失败可原位重试，新回复到达后接续键盘焦点。权限被拒绝时隐藏旧消息和成员。 |
 | `/bot` 默认或指定 Bot 快速会话 | 2 3 2 2 3 3 2 3 2 2 | 24/40 | **40/40（100%，暂定）** · [快速会话简介与新开会话复评](#快速会话简介与新开会话复评) | 长简介可展开阅读，聊天输入框留在视口内。新开会话前明确作用范围和已保存草稿的去向。 |
 | `/browser` 自己的浏览器 | 2 3 3 2 3 3 3 3 3 2 | 27/40 | **40/40（100%，暂定）** · [录制列表与开窗说明复评](#录制列表与开窗说明复评) | 长录制标题可完整换行，窄屏独立显示结束状态。录制链接说明可先查看列表，两种入口共用开窗失败提示。 |
@@ -118,8 +118,8 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 | `/connections/$key` Team 应用及动作授权回执 | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [断开确认复评](#账户断开确认与窄屏复评) | 窄屏账户和权限正文完整换行。断开前列出影响范围，取消后回到原按钮。 |
 | `/connections/$key` Personal 应用 | 4 4 4 4 4 4 4 4 4 4 | **40/40（100%，暂定）** · [Personal 应用连接加载复评](#personal-应用连接加载复评) | 应用资料与账户状态分别反馈，加载期间可以返回，权限失败及时显示。 |
 | `/connections/github` | 2 3 3 4 3 4 4 4 3 4 | **40/40（100%，暂定）** · [GitHub 仓库重复请求复评](#github-仓库重复请求复评) | 仓库添加响应中断后，重试同一草稿只创建一个连接及一条凭据。 |
-| `/connections/slack` | 2 3 4 4 4 4 4 4 3 4 | **39/40（97.5%，暂定）** · [Slack 重连复评](#slack-连接与重连复评) | 请求时保留焦点并阻止重复提交。无有效连接码时可以直接重试。剪贴板失败时可用键盘选中命令。 |
-| `/connections/routines` | 4 4 4 3 4 4 4 4 4 4 | **39/40（暂定）** · [顺序2终评](../app/.impeccable/critique/2026-11-22T09-55-00Z__order2-connections-admin-plugins.md#round-2--blind-re-assessment-findings-and-fixes) | A3 扣 H4：Routines 列于应用区与条目语义不符——既定设计（代码注释记录），保留。读失败 alert+Retry 已验证。 |
+| `/connections/slack` | 2 3 4 4 4 4 4 4 3 4 | **40/40（100%，暂定）** · [Slack 命令指引复评](#slack-命令指引复评) | 明确命令发送对象与有效期。代码过期后停用复制，并指引重新申请。 |
+| `/connections/routines` | 4 4 4 4 4 4 4 4 4 4 | **40/40（100%，暂定）** · [Routines 内置入口复评](#routines-内置入口复评) | 从内置工具区进入原地址，失败可原位重试。 |
 | `/connections/browse/arcade` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
 | `/connections/browse/composio` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
 
@@ -180,21 +180,21 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 | `/admin/approvals/describe` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [审批规则清单复评](#审批规则清单复评) | 长草稿可逐条展开。折叠摘要保留校验提示，保存响应丢失可用同一草稿重试。 |
 | `/admin/approvals/guidance` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **40/40（100%，暂定）** · [审批指导保存条件复评](#审批指导保存条件复评) | 明确保存前需通过检查，历史回放可选。编辑后提示重新检查。 |
 | `/admin/audit` | 3 · 3 · 3 · 3 · 3 · 4 · 3 · 3 · 2 · 2 | 29/40 · 72.5% | **40/40（100%，暂定）** · [审计与活动范围复评](#审计与活动范围复评) | 窄屏用一个菜单选择视图，明确标为 Background actions。搜索前可看到范围，CSV 沿用所选视图。 |
-| `/admin/boundaries` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **39/40（97.5%，暂定）** · [边界清单定位与恢复复评](#边界清单定位与恢复复评) | 返回后定位原规则，目标已移除时聚焦搜索框。临时故障显示只读规则，权限拒绝清除缓存。 |
+| `/admin/boundaries` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **40/40（100%，暂定）** · [边界生效模式复评](#边界生效模式复评) | Trial mode 出现在规则之前。返回后定位原规则，目标已移除时聚焦搜索框。临时故障显示只读规则，权限拒绝清除缓存。 |
 | `/admin/boundaries/$index` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **40/40（100%，暂定）** · [边界起点比较与表达式指引复评](#边界起点比较与表达式指引复评) | 表达式示例常驻并关联输入，前后入口共用同一说明。 |
 | `/admin/boundaries/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [边界起点比较与表达式指引复评](#边界起点比较与表达式指引复评) | 选择前可读模板限制，编辑时收起起点列表，换回原起点仍保留草稿。 |
 | `/admin/components/` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（暂定）** · C 36，E 复评满分。 [E 轮复评](#e-轮复评与整改) | 已修并验证：磁贴状态由仅色点改为标题内可见文字（· Published / · Draft，H1/H6 扣分点）。余下："无法绘制"在列表与详情有三种措辞变体（H4）；无图样磁贴的大渐变占位（fixture 数据，H8）。 [源码](../app/src/routes/_authed/admin/components/index.tsx#L37) |
 | `/admin/components/$name` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **40/40（100%，暂定）** · [组件描述原位发布复评](#组件描述原位发布复评) | 内置组件可原位应用已保存描述。Playground 组件指向保存源文件的清单。 |
 | `/admin/computers` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [设备重置范围与窄屏复评](#设备重置范围与窄屏复评) | 窄屏合并操作；重置确认区分浏览器配置与整台电脑的数据。 |
-| `/admin/credentials` | 2 · 2 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 22/40 · 55% | **39/40（97.5%，暂定）** · [查找与替换复评](#凭据和登录项查找与替换复评) | 按供应商、类型和 ID 查找。可从单行替换活动凭据。 |
+| `/admin/credentials` | 2 · 2 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 22/40 · 55% | **40/40（100%，暂定）** · [凭据替换返回复评](#凭据替换返回复评) | 按供应商、类型和 ID 查找。可从单行替换活动凭据。 替换成功返回新生效条目并显示回执。 |
 | `/admin/credentials/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [新增凭据类型与同名冲突复评](#新增凭据类型与同名冲突复评) | 类型切换同步更新填写提示，发现同名凭据可直接返回并选中 Key ID。 |
 | `/admin/identity-providers` | 2 · 2 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 22/40 · 55% | **40/40（100%，暂定）** · [身份提供商清单复评](#身份提供商清单与登录指引复评) | 按域名、协议或签发者查找。注册后定位到新条目，移除后可继续搜索。 |
-| `/admin/learning` | 2 · 2 · 3 · 3 · 3 · 3 · 2 · 2 · 3 · 2 | 25/40 · 62.5% | **39/40（97.5%，暂定）** · [草稿与分享请求复评](#learning-草稿与分享请求复评) | 离开前确认丢弃 Participation 草稿，保存期间阻止导航和重复提交。 |
+| `/admin/learning` | 2 · 2 · 3 · 3 · 3 · 3 · 2 · 2 · 3 · 2 | 25/40 · 62.5% | **40/40（100%，暂定）** · [管理端学习审阅顺序复评](#管理端学习审阅顺序复评) | 先显示所选 Bot 的待审技能，再展示学习与投递状态。离开仍保护 Participation 草稿。 |
 | `/admin/people` | 2 · 3 · 3 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 24/40 · 60% | **40/40（100%，暂定）** · [人员操作与窄屏复评](#人员操作与窄屏复评) | 角色、访问状态和登录方式用明确文字。窄屏操作归入单个菜单，取消后恢复焦点。 |
 | `/admin/permissions` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 3 | 26/40 · 65% | **40/40（100%，暂定）** · [权限结果与审计入口复评](#permissions-结果与审计入口复评) | 成员权限按阻止与允许分组，状态词与覆盖项一致。权限历史直接打开已筛选的 Audit。 |
 | `/admin/permissions/describe` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [权限描述审阅复评](#权限描述审阅复评) | 编辑期间可参考常驻示例。长草稿可直达人员影响，离开前可继续编辑或丢弃。 |
-| `/admin/playground` | 3 · 2 · 3 · 3 · 2 · 3 · 3 · 2 · 3 · 2 | 26/40 · 65% | **39/40（97.5%，暂定）** · [编辑器与发布复评](#playground-编辑器与发布复评) | 离开时保护草稿，键盘可在编辑器和预览之间跳转。删除可在原确认框重试。 |
-| `/admin/plugins/` | 4 4 4 4 4 3 4 4 4 4 | **39/40（97.5%，暂定）** · [插件清单查找与账户状态复评](#插件清单查找与账户状态复评) | 按插件和工具查找，返回恢复筛选及焦点。账户失败可单独重试。 |
+| `/admin/playground` | 3 · 2 · 3 · 3 · 2 · 3 · 3 · 2 · 3 · 2 | 26/40 · 65% | **40/40（100%，暂定）** · [Playground 发布重试复评](#playground-发布重试复评) | 发布重试复用已保存版本。其他管理员更新或删除草稿后，旧确认失效。 |
+| `/admin/plugins/` | 4 4 4 4 4 4 4 4 4 4 | **40/40（100%，暂定）** · [插件搜索命中复评](#插件搜索命中复评) | 按工具名称或描述搜索时，结果行显示命中的工具。Enter 聚焦首个结果。 |
 | `/admin/plugins/$key` | 4 4 4 4 4 4 4 4 4 4 | **40/40（100%，暂定）** · [插件详情工具清单复评](#插件详情工具清单复评) | 工具刷新说明失败原因和旧清单来源，恢复后给出回执。长工具说明和访问状态在窄屏独立显示。 |
 | `/admin/plugins/$key/bots/$agentId` | 3 3 4 4 4 4 4 4 4 4 | **40/40（100%，暂定）** · [Bot 插件访问状态复评](#bot-插件访问状态复评) | 可单独恢复 Bot 名称。权限刷新失败时标明旧状态并暂停更改，恢复后保留搜索。 |
 | `/admin/plugins/$key/tools/$tool` | 2 4 4 4 4 4 4 4 3 4 | **40/40（100%，暂定）** · [工具授权清单复评](#工具授权清单与写入恢复复评) | 搜索无结果时仍可清空。清单可重试，授权反馈和等待状态按 Bot 分开。 |
@@ -210,15 +210,15 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 | `/settings/activity` | 3 · 3 · 3 · 3 · 3 · 4 · 3 · 3 · 2 · 2 | 29/40 · 72.5% | **40/40（100%，暂定）** · [审计与活动范围复评](#审计与活动范围复评) | 搜索前可看到范围和如何加载更早记录。Background actions 使用与审计相同的名称。 |
 | `/settings/approvals` | 2 · 3 · 3 · 3 · 2 · 2 · 2 · 3 · 2 · 2 | 24/40 · 60% | **40/40（100%，暂定）** · [审批规则清单查找复评](#审批规则清单查找复评) | 同时查找个人规则和只读团队规则，Enter 聚焦首条匹配项。 |
 | `/settings/browsers` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [已连接浏览器查找复评](#已连接浏览器查找复评) | 可按浏览器名称、连接日期或录制状态筛选，取消断开后保留筛选。 |
-| `/settings/components-gallery/` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **39/40（97.5%，暂定）** · [图库导航与预览复评](#组件图库导航与预览复评) | 返回后聚焦原卡片，已移除时回到搜索。无样例条目保持紧凑。 |
+| `/settings/components-gallery/` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（100%，暂定）** · [组件图库使用指引复评](#组件图库使用指引复评) | 说明在哪找到组件名称、如何请有权限的 Bot 展示。返回恢复原条目的焦点。 |
 | `/settings/components-gallery/$name` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（100%，暂定）** · [图库导航与预览复评](#组件图库导航与预览复评) | 预览使用正常字号并标注样例数据。无样例时说明会话内的可用范围。 |
 | `/settings/computer` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [设备重置范围与窄屏复评](#设备重置范围与窄屏复评) | 窄屏保留单个操作菜单，取消后回到对应设备，保留当前筛选。 |
-| `/settings/credentials` | 2 · 3 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 23/40 · 57.5% | **39/40（97.5%，暂定）** · [查找与替换复评](#凭据和登录项查找与替换复评) | 可查找并替换活动密钥。权限被拒后，后续临时故障不会恢复旧缓存。 |
+| `/settings/credentials` | 2 · 3 · 2 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 23/40 · 57.5% | **40/40（100%，暂定）** · [凭据替换返回复评](#凭据替换返回复评) | 可查找并替换活动密钥。权限被拒后，后续临时故障不会恢复旧缓存。 替换成功返回新生效条目并显示回执。 |
 | `/settings/credentials/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [新增凭据类型与同名冲突复评](#新增凭据类型与同名冲突复评) | 发现同名密钥时可在表单中改用另一 ID，保留已输入的密钥。 |
-| `/settings/learning` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **39/40（97.5%，暂定）** · [草稿与分享请求复评](#learning-草稿与分享请求复评) | 分享请求可按技能重试，技能清单局部返回失败时也可原位重读。 |
+| `/settings/learning` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **40/40（100%，暂定）** · [学习分享范围复评](#学习分享范围复评) | 选择前说明管理员批准条件。待批技能明确显示使用范围，分享请求仍可按技能重试。 |
 | `/settings/notifications` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（100%，暂定）** · [通知投递类型复评](#通知投递类型复评) | 失败仅标在匹配的更新类型和渠道旁，原因可用键盘展开。 |
 | `/settings/passwords` | 2 · 3 · 3 · 3 · 1 · 3 · 2 · 3 · 2 · 2 | 24/40 · 60% | **40/40（100%，暂定）** · [查找与键盘定位复评](#凭据和登录项查找与替换复评) | 按站点和用户名查找。删除后焦点回到列表内容或页面标题。 |
-| `/settings/setup` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **39（暂定）** · [E 轮复评](#e-轮复评与整改) | 盲评 D 35.0。已修并验证：重查失败文案改"Couldn't check again. The list below is from the last check."（消除无按钮的"Try again."悬空句，并标明列表为上次结果）；fixture 补 `POST /api/setup/check` 并给出全绿五行数据后，"全绿隐藏清单"不复现——组件本就渲染全部行（实测 5 行 ready），D 的零行观察是 fixture 空 rows 所致；随之暴露的 Ready/Amber 药丸对比度缺陷（emerald-600/10% 底 3.3:1）已升为 700 档并通过 detector 复扫，同一修法同步到 what-if 结果药丸。余下："Check again" 为无边框文字按钮样式（H4）。 [源码](../app/src/components/setup/setup-checklist.tsx#L105) |
+| `/settings/setup` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [Setup 重查操作复评](#setup-重查操作复评) | Check again 沿用描边次级按钮，触区 44 CSS 像素。失败保留上次结果，重试更新清单。 |
 | `/settings/skills` | 2 · 3 · 3 · 3 · 2 · 3 · 2 · 3 · 2 · 2 | 25/40 · 62.5% | **40/40（暂定）** · 同组件复评确认。 [E 轮复评](#e-轮复评与整改) | 与 `/admin/skills` 同一组件（skills-page），盲评 C 满分；个人版措辞差异未单独评。 [源码](../app/src/components/manage/skills-page.tsx#L62) |
 | `/settings/skills/$slug` | 2 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 27/40 · 67.5% | **40/40（100%，暂定）** · [技能管理保存范围复评](#技能管理保存范围复评) | Personal 独立验证后退保护、工具单独保存和读取恢复。 |
 | `/settings/skills/new` | 3 · 3 · 3 · 3 · 3 · 3 · 2 · 3 · 2 · 3 | 28/40 · 70% | **40/40（100%，暂定）** · [技能管理保存范围复评](#技能管理保存范围复评) | 说明保存即向所有个人 Bot 提供技能，工具清单按需展开。 |
@@ -1469,6 +1469,14 @@ Bot 档案的删除确认从 27 CSS 像素增至 44 CSS 像素。请求未结束
 
 生产构建 `index-BQ6LOLtd.js` 在 Team 和 Personal 的 Chromium 和 WebKit 验证 1440、390、320 像素，共 12 个场景。先前构建另通过设备结果不明与状态重读失败的 12 个回归场景。27 项设备定向测试、Web 类型检查与 Impeccable 源码检测通过。真实设备重置和读屏仍待验。 [基线](/tmp/openbot-order2-review/device-actions-layout-baseline.log) · [Chromium](/tmp/openbot-order2-review/device-actions-layout-chromium.log) · [WebKit](/tmp/openbot-order2-review/device-actions-layout-webkit.log) · [结果回归](/tmp/openbot-order2-review/device-actions-layout-outcome.log) · [重读失败](/tmp/openbot-order2-review/device-actions-layout-outcome-read-failure.log) · [320 像素设备清单](/tmp/openbot-order2-review/device-actions-layout-40175-320.png)
 
+### 设备管理真实环境验收进度
+
+macOS 使用本机安装的 Google Chrome 和独立的 OpenBot 设备数据目录。真实设备服务启动浏览器后返回 1280×800 的屏幕画面。停止后浏览器不再运行，设备配置仍在清单中，重新启动仍保留原配置。共享模式重置清除了指定浏览器配置，保留了另一浏览器配置及设备工作区文件，并更新了运行标识。再次启动得到干净的浏览器配置。 [真实 Chrome 验证](/tmp/openbot-real-device/chrome-real.log)
+
+本机 OpenBot API、隔离 PostgreSQL 和生产构建 `index-B-8IqEyn.js` 连到同一个真实设备服务。个人版 `/settings/computer` 在 320 CSS 像素验证了用 Escape 取消重置，筛选与设备菜单焦点保留，设备和审计均无写入。确认停止后页面显示回执，API 返回 200，Chrome 停止，浏览器配置和工作区文件仍在，数据库新增一条停止审计。 [个人版网页流程](/tmp/openbot-real-device/web-personal-flow.log)
+
+Team `/admin/computers` 使用本机管理员验证共享模式。320 CSS 像素下，键盘取消保留筛选并归还设备菜单焦点，无写入。确认重置后，API 返回 200，网页显示回执，目标浏览器配置已删除，设备工作区保留，该次确认仅新增一条重置审计。最后一个条目消失后显示空清单，键盘焦点归还设备清单标题。独立电脑整机重置、Team 多角色登录、实体触屏和读屏仍待验。本地真实操作的证据已补齐这两个页面的共享模式范围。 [Team 网页流程](/tmp/openbot-real-device/web-team-final.log)
+
 ## 通知投递类型复评
 
 `/settings/notifications` 从 38/40 升至 **40/40（100%，暂定）**。H2 加 1 分，使用 Approvals 标出需要用户批准的更新，并将失败归到实际更新类型和渠道。H8 加 1 分，同一次投递失败只出现一次。渠道按窄屏两列排列，原因为可用键盘展开的说明，开关保留已保存值。
@@ -1645,12 +1653,60 @@ GitHub 仓库表单重试原稿时复用同一请求标识。服务端按账户�
 
 Connections 清单单列内置调度工具，Routines 不进入外部应用数量，仍可由搜索找到并打开原地址。Routines 详情沿用 Connections 的页面框架和读取重试。24 项定向测试通过。生产构建及三种视口复验待完成，暂保留 39/40。 [320 像素基线](/tmp/openbot-device-review/routines-builtin-baseline.log) · [定向测试](/tmp/openbot-device-review/routines-builtin-tests-final.log) · [最新构建](/tmp/openbot-device-review/connections-final-build.log)
 
-## 凭据替换返回验证进度
+## 凭据替换返回复评
 
-管理员与个人设置的凭据清单共用返回逻辑。替换成功后，表单将新记录 ID 传给清单，清单把键盘焦点移到新生效的条目。目标缺失时聚焦页面标题。表单测试通过。已在旧生产构建复现替换成功后未定位新条目，两个入口暂保留 39/40，等待新版浏览器复验。 [320 像素基线](/tmp/openbot-device-review/credential-return-baseline.log) · [表单测试](/tmp/openbot-device-review/credential-return-tests.log)
+`/admin/credentials` 与 `/settings/credentials` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H3 加 1 分。替换成功后按服务端返回的新记录 ID 聚焦新生效的条目，滚动使整行可见，回执显示在对应行。目标缺失时聚焦页面标题并保留回执。
+
+生产构建 `index-8N-NkAXW.js` 在 Chromium 和 WebKit 的 1440、390、320 像素验证返回焦点、回执可见和单次提交，并通过缺失目标回退及 Astryx 构建诊断。真实凭据使用方、实体触屏与读屏待验。 [基线](/tmp/openbot-device-review/credential-return-baseline.log) · [生产 Chromium](/tmp/openbot-device-review/credential-return-production-chromium.log) · [生产 WebKit](/tmp/openbot-device-review/credential-return-production-webkit.log) · [目标不存在](/tmp/openbot-device-review/credential-return-production-fallback.log) · [320 像素画面](/tmp/openbot-device-review/credential-return-320.png)
+
+## 边界生效模式复评
+
+`/admin/boundaries` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H4 加 1 分。Enforcement 移到规则清单上方。320 像素下，已有 24 条规则时 Trial mode 开关的顶部位置从约 2122 降至 329 CSS 像素。生产构建 `index-8N-NkAXW.js` 在 Chromium 与 WebKit 的 1440、390、320 像素均验证了开关的可访问说明、取消零写入、确认携带原策略且仅写入一次，以及搜索条件保留。17 项定向测试通过。真实策略生效及读屏待验。 [基线](/tmp/openbot-device-review/boundary-mode-baseline.log) · [生产 Chromium](/tmp/openbot-device-review/boundary-mode-production-chromium.log) · [生产 WebKit](/tmp/openbot-device-review/boundary-mode-production-webkit.log) · [320 像素画面](/tmp/openbot-device-review/boundary-mode-320.png) · [定向测试](/tmp/openbot-device-review/boundary-mode-tests.log)
+
+## 插件搜索命中复评
+
+`/admin/plugins/` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H6 加 1 分。搜索结果行显示命中的前三个工具和其余命中数量。只有查询依赖工具名称或描述时才显示该说明。320 像素下说明使用整行宽度。Enter 聚焦首个结果，跨工具词组仍能查找。
+
+生产构建 `index-qN7wOXJz.js` 在 Chromium 和 WebKit 的 1440、390、320 像素通过六组模拟复验。41 项插件定向测试和 Astryx 构建诊断通过。真实工具目录、供应商授权及读屏待验。 [基线](/tmp/openbot-device-review/plugin-match-baseline.log) · [Chromium](/tmp/openbot-device-review/plugin-match-candidate-chromium.log) · [WebKit](/tmp/openbot-device-review/plugin-match-candidate-webkit.log) · [320 像素画面](/tmp/openbot-device-review/plugin-match-320.png) · [定向测试](/tmp/openbot-device-review/plugin-match-tests.log)
+
+## 管理端学习审阅顺序复评
+
+`/admin/learning` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H8 加 1 分。所选 Bot 的待审技能紧邻选择器，学习与投递状态在其后。320 像素 Chromium 中，首个待审技能由距顶部约 1174 移至 543 CSS 像素。生产构建 `index-qN7wOXJz.js` 在 Chromium 与 WebKit 三种宽度验证切换 Bot 和状态刷新。真实后端与读屏待验。 [基线](/tmp/openbot-device-review/learning-layout-baseline.log) · [Chromium](/tmp/openbot-device-review/learning-layout-candidate-chromium.log) · [WebKit](/tmp/openbot-device-review/learning-layout-candidate-webkit.log)
+
+## 学习分享范围复评
+
+`/settings/learning` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H2 加 1 分。选择分享范围前说明本人批准的技能仍需管理员批准才能共享。全量分享和逐项分享的说明均体现此限制，待批技能保留当前使用范围。生产构建 `index-qN7wOXJz.js` 在 Chromium 与 WebKit 三种宽度验证提示、待批准的范围及键盘切换。真实管理员批准与读屏待验。 [基线](/tmp/openbot-device-review/learning-scope-baseline.log) · [Chromium](/tmp/openbot-device-review/learning-scope-candidate-chromium.log) · [WebKit](/tmp/openbot-device-review/learning-scope-candidate-webkit.log)
+
+## Setup 重查操作复评
+
+`/settings/setup` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H4 加 1 分。Check again 采用描边次级按钮，触区由 28 增至 44 CSS 像素。生产构建 `index-qN7wOXJz.js` 在 Chromium 和 WebKit 的三种宽度验证键盘重查、失败保留上次结果和成功更新。21 项定向测试通过。真实部署重查和实体触屏、读屏待验。 [基线](/tmp/openbot-device-review/setup-check-baseline.log) · [Chromium](/tmp/openbot-device-review/setup-check-candidate-chromium.log) · [WebKit](/tmp/openbot-device-review/setup-check-candidate-webkit.log) · [定向测试](/tmp/openbot-device-review/setup-check-final-tests.log)
 
 ## GitHub 仓库重复请求复评
 
 `/connections/github` 从 39/40 升至 **40/40（100%，暂定）**，H1–H10 均为 4。H5 加 1 分。创建已保存但响应断开时，重试原表单复用请求标识。Chromium 和 WebKit 在 1440、390、320 像素验证重试后只显示一个 webhook。隔离 PostgreSQL 上实测两次并发请求只创建一条绑定及一条凭据，账户之间隔离请求标识，同一账户不能用旧标识创建不同仓库。
 
 界面使用生产构建 `index-Cfsc8lXi.js` 复验。10 项前端和签名定向测试、6 项 PostgreSQL 集成测试、Web 类型检查与 Astryx 构建诊断通过。真实 GitHub 投递和读屏待验。 [Chromium](/tmp/openbot-device-review/github-slack-prior-chromium.log) · [WebKit](/tmp/openbot-device-review/github-slack-prior-webkit.log) · [PostgreSQL](/tmp/openbot-device-review/github-db-memory-test.log)
+
+## Slack 命令指引复评
+
+`/connections/slack` 从 39/40 升至 **40/40（100%，暂定）**，H1–H10 均为 4。H2 加 1 分。连接弹窗说明在 Slack 给 OpenBot 应用发送私信，回到 Connections 检查是否连上。有效期来自服务端，过期停用复制按钮。复制失败聚焦并选中命令，弹窗只保留一个关闭控件。
+
+生产构建 `index-Dw8NKdGL.js` 在 Chromium 和 WebKit 的 1440、390、320 像素验证命令、复制失败、到期、关闭和重新申请。真实 Slack 回调和读屏待验。 [Chromium](/tmp/openbot-device-review/github-slack-final-chromium.log) · [WebKit](/tmp/openbot-device-review/github-slack-final-webkit.log) · [320 像素弹窗](/tmp/openbot-device-review/slack-link-320.png)
+
+## Routines 内置入口复评
+
+`/connections/routines` 从 39/40 升至 **40/40（100%，暂定）**，H4 加 1 分。Connections 单列 Built-in tools。Routines 不计入外部应用数量，搜索后仍可走原地址。详情说明每个 Bot 都有此内置工具。读取失败沿用 Connections 的重试样式，恢复后聚焦页面标题。
+
+同一生产构建在 Chromium、WebKit 的三种视口通过 Team 与 Personal 模拟复验，24 项定向测试、Web 类型检查、Impeccable 源码检测和 Astryx 构建诊断通过。真实调度和读屏待验。 [基线](/tmp/openbot-device-review/routines-builtin-baseline.log) · [Chromium](/tmp/openbot-device-review/routines-builtin-chromium.log) · [WebKit](/tmp/openbot-device-review/routines-builtin-webkit.log)
+
+## 组件图库使用指引复评
+
+`/settings/components-gallery/` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H10 加 1 分。搜索旁说明先打开组件查看名称，再请有权限的 Bot 在会话中展示它。生产构建 `index-B-8IqEyn.js` 在 Chromium 和 WebKit 的 1440、390、320 像素通过模拟复验。键盘可进入首个搜索结果，详情显示组件名称，返回后恢复筛选和条目焦点。5 项图库测试通过。真实 Bot 渲染和读屏待验。 [基线](/tmp/openbot-device-review/gallery-help-baseline.log) · [Chromium](/tmp/openbot-device-review/gallery-help-final-chromium.log) · [WebKit](/tmp/openbot-device-review/gallery-help-final-webkit.log) · [320 像素画面](/tmp/openbot-device-review/gallery-help-320.png)
+
+## 单 Bot 首条消息恢复说明复评
+
+`/channel/$channelId` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H2 加 1 分。提示区分尚未发送、等待 Bot 连接、核对是否到达和可以重发。核对按钮旁说明只读取会话，不发送新副本。可重发时说明沿用原消息。生产构建 `index-B-8IqEyn.js` 在 Chromium 和 WebKit 的 1440、390、320 像素通过模拟复验。验证历史读取失败仍能原位核对，安全重发复用原消息 ID。6 项直接会话测试通过。真实网关断线、系统剪贴板和读屏待验。 [基线](/tmp/openbot-device-review/first-message-recovery-baseline.log) · [Chromium](/tmp/openbot-device-review/first-message-recovery-final-chromium.log) · [WebKit](/tmp/openbot-device-review/first-message-recovery-final-webkit.log) · [320 像素画面](/tmp/openbot-device-review/first-message-recovery-320.png)
+
+## Playground 发布重试复评
+
+`/admin/playground` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H5 加 1 分。保存草稿成功后，发布重试复用相同的版本，服务端在发布事务中核对。其他管理员修改或删除草稿后，旧确认只能关闭并重新审阅。生产构建 `index-B-8IqEyn.js` 在 Chromium 和 WebKit 的 1440、390、320 像素通过模拟复验。隔离 PostgreSQL 上 44 项测试通过，覆盖同版本重试保持一个已发布修订、新草稿拒绝旧确认以及目标删除后的拒绝。真实部署中的多人操作和读屏待验。 [基线](/tmp/openbot-device-review/playground-publish-baseline.log) · [Chromium](/tmp/openbot-device-review/playground-publish-final-chromium.log) · [WebKit](/tmp/openbot-device-review/playground-publish-final-webkit.log) · [PostgreSQL](/tmp/openbot-device-review/playground-publication-db-tests.log) · [320 像素画面](/tmp/openbot-device-review/playground-publish-320.png)

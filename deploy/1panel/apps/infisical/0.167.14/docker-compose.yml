@@ -1,0 +1,47 @@
+networks:
+  infisical:
+    ipam: {}
+  1panel-network:
+    external: true
+services:
+  backend:
+    command: null
+    depends_on:
+      redis:
+        condition: service_started
+        required: true
+    entrypoint: null
+    environment:
+      NODE_ENV: production
+      SITE_URL: ${SITE_URL:-http://localhost:18082}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      AUTH_SECRET: ${AUTH_SECRET}
+      DB_CONNECTION_URI: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+      REDIS_URL: redis://redis:6379
+      TELEMETRY_ENABLED: "false"
+    image: infisical/infisical:v0.167.14
+    networks:
+      infisical: null
+      1panel-network:
+        aliases:
+          - openbot-infisical
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-18082}:8080
+    container_name: ${CONTAINER_NAME}
+    labels:
+      createdBy: Apps
+  redis:
+    command: null
+    entrypoint: null
+    image: redis:7-alpine
+    networks:
+      infisical: null
+    restart: always
+    volumes:
+      - redis_data:/data
+    container_name: ${CONTAINER_NAME}-redis
+    labels:
+      createdBy: Apps
+volumes:
+  redis_data: {}
