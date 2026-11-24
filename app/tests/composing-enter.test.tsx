@@ -238,7 +238,13 @@ test("a boundary rule is not added by the Enter that confirms a composed charact
         ...POLICY,
         expected: POLICY,
         deny: [rule],
-        labels: { [rule]: { name: "送信しない", description: "" } },
+        labels: {
+          [rule]: {
+            name: "送信しない",
+            description: "",
+            id: expect.stringMatching(/^r-/),
+          },
+        },
       },
     },
   ]);

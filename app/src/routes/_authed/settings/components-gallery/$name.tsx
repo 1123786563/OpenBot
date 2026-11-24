@@ -1,12 +1,12 @@
 import { IconCode, IconTag } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { z } from "zod";
 import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { ComponentPreview } from "@/components/component-preview";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
-import { SettingsItemBackground } from "@/components/settings/background";
-import { Button } from "@/components/ui/button";
+import { ReadError } from "@/components/layout/read-status";
 import {
   Empty,
   EmptyDescription,
@@ -42,6 +42,7 @@ export const Route = createFileRoute(
   "/_authed/settings/components-gallery/$name",
 )({
   component: RouteComponent,
+  validateSearch: z.object({ q: z.string().optional().catch(undefined) }),
 });
 
 /** A read-only fact: the label on the left, the value against the right. */
@@ -60,7 +61,7 @@ function FactRow({
       <ItemContent>
         <ItemTitle>{label}</ItemTitle>
       </ItemContent>
-      <ItemActions className="text-muted-foreground text-sm">
+      <ItemActions className="min-w-0 max-w-full text-muted-foreground text-sm max-sm:basis-full">
         {children}
       </ItemActions>
     </Item>
@@ -69,11 +70,34 @@ function FactRow({
 
 function RouteComponent() {
   const { name } = Route.useParams();
+  const q = useSearch({ strict: false, select: (search) => search.q });
+  const back = {
+    ...BACK,
+    linkProps: {
+      ...BACK.linkProps,
+      search: { q },
+      state: { returnGalleryComponent: name },
+    },
+  };
+  const heading = useRef<HTMLHeadingElement>(null);
   const components = useQuery(componentListQueryOptions());
+  const component = components.data?.find(
+    (entry) => entry.name === name && entry.published,
+  );
+  const ready = components.isSuccess;
+  useLayoutEffect(() => {
+    if (ready && document.activeElement === document.body) {
+      heading.current?.focus();
+    }
+  }, [ready]);
 
   if (components.isPending) {
     return (
-      <CapabilityPage backButton={BACK} title="Components gallery">
+      <CapabilityPage
+        backButton={back}
+        headingRef={heading}
+        title="Components gallery"
+      >
         <div
           aria-busy="true"
           aria-label="Loading this component"
@@ -88,21 +112,19 @@ function RouteComponent() {
 
   if (components.error) {
     return (
-      <CapabilityPage backButton={BACK} title="Components gallery">
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load this component.
-          </p>
-          <Button
-            disabled={components.isFetching}
-            onClick={() => void components.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {components.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+      <CapabilityPage
+        backButton={back}
+        headingRef={heading}
+        title="Components gallery"
+      >
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't load this component."
+          retry={components.refetch}
+          retryBelow
+          retryLabel="Retry component"
+          retrying={components.isFetching}
+        />
       </CapabilityPage>
     );
   }
@@ -111,64 +133,65 @@ function RouteComponent() {
    * Unpublished is treated as absent rather than as a component with a notice on it. Nothing can
    * draw one, so from here there is no difference between not published and not there.
    */
-  const component = components.data?.find(
-    (entry) => entry.name === name && entry.published,
-  );
 
   if (!component) {
     return (
       <CapabilityPage
-        backButton={BACK}
+        backButton={back}
         description="There's no component with that name."
+        headingRef={heading}
         title="No such component"
       >
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
           <EmptyHeader>
-            <EmptyTitle>{name}</EmptyTitle>
+            <EmptyTitle className="wrap-anywhere">{name}</EmptyTitle>
             <EmptyDescription className="text-pretty">
               It may have been removed or unpublished.
             </EmptyDescription>
           </EmptyHeader>
-          <Button
-            render={<Link to="/settings/components-gallery" />}
-            size="sm"
-            variant="outline"
-          >
-            Back to the gallery
-          </Button>
         </Empty>
       </CapabilityPage>
     );
   }
 
+  const spec = galleryComponent(component.name);
   return (
     <CapabilityPage
-      backButton={BACK}
+      backButton={back}
+      headingRef={heading}
       // What it shows, in the person's words; see the gallery's own page for why not the model's.
-      description={
-        galleryComponent(component.name)?.summary ??
-        component.publishedDescription ??
-        undefined
-      }
+      description={spec?.summary ?? component.publishedDescription ?? undefined}
       title={component.title}
     >
-      <div className="relative mt-8 aspect-[2/1] overflow-hidden rounded-lg border border-border bg-card">
-        <div className="absolute inset-0">
-          <SettingsItemBackground className="h-full w-full" />
-        </div>
-        <div className="absolute inset-0 z-10">
-          <ComponentPreview kind={component.kind} name={component.name} />
-        </div>
-      </div>
+      <PageSection
+        description={
+          spec?.preview
+            ? "This example uses sample data."
+            : spec || component.kind === "sandboxed"
+              ? "Bots with access can show this component in a conversation."
+              : "This version of OpenBot cannot display a sample for this component."
+        }
+        title={spec?.preview ? "Preview" : "Preview unavailable"}
+      >
+        {spec?.preview ? (
+          <ComponentPreview
+            fullSize
+            kind={component.kind}
+            name={component.name}
+          />
+        ) : null}
+      </PageSection>
 
       <PageSection title="Details">
         <PageRows>
           <FactRow icon={<IconTag />} label="Kind">
-            {component.kind}
+            {component.kind === "sandboxed"
+              ? "Custom component"
+              : component.kind}
           </FactRow>
           <Separator />
-          <FactRow icon={<IconCode />} label="Called as">
-            <code className="rounded bg-foreground/5 px-1.5 py-0.5 text-xs">
+          <FactRow icon={<IconCode />} label="Component name">
+            <code className="min-w-0 wrap-anywhere rounded bg-foreground/5 px-1.5 py-0.5 text-sm">
               {component.name}
             </code>
           </FactRow>

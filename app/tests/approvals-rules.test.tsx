@@ -31,6 +31,7 @@ import {
   ToolActivity,
 } from "@/components/channels/tool-activity";
 import { TeamBotConsents } from "@/components/settings/team-bot-consents";
+import { approvalsKey } from "@/lib/approvals";
 import { deploymentKeys } from "@/lib/deployment/queries";
 
 beforeAll(() => GlobalRegistrator.register());
@@ -100,14 +101,14 @@ const inbox = {
 let inboxOverride: Record<string, unknown> = {};
 /** A refusal the server gives the next time a rule is added, or none. */
 let refuseRule: string | null = null;
-let failInbox = false;
+let inboxStatus = 200;
 let failClear = false;
 
 beforeEach(() => {
   sent.length = 0;
   inboxOverride = {};
   refuseRule = null;
-  failInbox = false;
+  inboxStatus = 200;
   failClear = false;
   role = "user";
   global.fetch = Object.assign(
@@ -129,8 +130,8 @@ beforeEach(() => {
         return Response.json({ ok: true });
       }
       if (url === "/api/approvals")
-        return failInbox
-          ? Response.json({ error: "Unavailable" }, { status: 503 })
+        return inboxStatus !== 200
+          ? Response.json({ error: "Unavailable" }, { status: inboxStatus })
           : Response.json({ ...inbox, ...inboxOverride });
       if (url.startsWith("/api/agents"))
         return Response.json({ agents: [{ id: "shopper-bot", name: "Shop" }] });
@@ -153,18 +154,21 @@ function draw(
   edition: "team" | "personal" = "team",
 ) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
   });
   client.setQueryData(deploymentKeys.capabilities(), { edition });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/"] }),
     routeTree: createRootRoute({ component: () => screen }),
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <RouterProvider router={router as never} />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    ),
+    client,
+  };
 }
 
 test("team rules are locked for members, enforced auto-review is shown as required, and the host cap is named", async () => {
@@ -259,6 +263,14 @@ test("a rule that is not saved keeps the dialog open, with what was typed and wh
       }) as HTMLInputElement
     ).value,
   ).toBe("mcp/nowhere/*");
+  await user.keyboard("{Escape}");
+  const discard = await view.findByRole("alertdialog", {
+    name: "Discard unsaved changes?",
+  });
+  await user.click(
+    within(discard).getByRole("button", { name: "Keep editing" }),
+  );
+  expect(await view.findByDisplayValue("mcp/nowhere/*")).toBeTruthy();
   // Saved the second time, the dialog closes.
   await user.click(within(dialog).getByRole("button", { name: "Save rule" }));
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
@@ -491,17 +503,41 @@ test("personal approvals keep the person's controls without team-only explanatio
   expect(view.getByRole("switch", { name: "Auto-review" })).toBeTruthy();
 });
 test("the first failed approval settings read offers retry without presenting defaults", async () => {
-  failInbox = true;
+  inboxStatus = 503;
   const view = draw();
-  const retry = await view.findByRole("button", { name: "Retry" });
+  const retry = await view.findByRole("button", {
+    name: "Retry approval settings",
+  });
   expect(view.queryByRole("switch")).toBeNull();
   expect(view.queryByText("No rules yet")).toBeNull();
-  failInbox = false;
+  inboxStatus = 200;
   fireEvent.click(retry);
   expect(
     await view.findByRole("switch", { name: "Extra vigilant" }),
   ).toBeTruthy();
   expect(view.queryByText("Couldn't load your approval settings.")).toBeNull();
+  expect(sent).toHaveLength(0);
+});
+
+test("revoked approval settings stay hidden when a later read fails temporarily", async () => {
+  const view = draw();
+  await view.findByRole("switch", { name: "Extra vigilant" });
+  inboxStatus = 403;
+  await view.client.invalidateQueries({ queryKey: approvalsKey });
+  const retry = await view.findByRole("button", {
+    name: "Retry approval settings",
+  });
+  expect(view.queryByRole("switch")).toBeNull();
+
+  inboxStatus = 503;
+  fireEvent.click(retry);
+  await waitFor(() =>
+    expect(view.client.getQueryState(approvalsKey)?.error).toMatchObject({
+      status: 503,
+    }),
+  );
+  expect(view.queryByRole("switch")).toBeNull();
+  expect(view.getByText("Couldn't load your approval settings.")).toBeTruthy();
   expect(sent).toHaveLength(0);
 });
 

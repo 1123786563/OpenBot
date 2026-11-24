@@ -1,24 +1,22 @@
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import "@/components/astryx-pilot/capability-surface.css";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { astryxScope } from "@/components/astryx-pilot/theme";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
-import { useActionConfirmation } from "@/components/ui/action-confirmation";
-import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  ActionIncomplete,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
+import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ClientError } from "@/lib/client";
 import {
   deleteSandboxedMutationOptions,
   publishSandboxedMutationOptions,
@@ -120,17 +118,19 @@ export function validatePlaygroundDraft(draft: Draft): PlaygroundValidation {
 }
 
 function PlaygroundPage() {
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const {
-    confirmation: publishConfirmation,
-    requestConfirmation: confirmPublish,
-  } = useActionConfirmation();
+  const { confirmation, requestConfirmation } = useActionConfirmation();
   const queryClient = useQueryClient();
   const savedList = useQuery(sandboxedListQueryOptions());
   const components = savedList.data;
   const [draft, setDraft] = useState<Draft>(STARTER);
+  const [savedDraft, setSavedDraft] = useState<Draft>(STARTER);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const savedHeading = useRef<HTMLHeadingElement>(null);
+  const previewHeading = useRef<HTMLHeadingElement>(null);
+  const editorHeading = useRef<HTMLHeadingElement>(null);
+  const submitting = useRef(false);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
 
   const set = (field: keyof Draft) => (value: string) => {
     setError(null);
@@ -141,23 +141,19 @@ function PlaygroundPage() {
   const validation = validatePlaygroundDraft(draft);
   const sample = validation.ok ? validation.input.sampleArguments : null;
 
-  /* Every write here reports into the same banner, so they share one failure handler. The
-     draft on screen is untouched by a failed save, so the banner says that, not the raw string. */
-  const report = {
-    onError: () => setError("Couldn't save. Your edits are still on screen."),
-  };
   const saveDraft = useMutation({
     ...saveSandboxedDraftMutationOptions(queryClient),
-    ...report,
+    onError: () => setError("Couldn't save. Your edits are still on screen."),
+    onSettled: () => {
+      submitting.current = false;
+    },
   });
-  const publishDraft = useMutation({
-    ...publishSandboxedMutationOptions(queryClient),
-    ...report,
-  });
-  const removeComponent = useMutation({
-    ...deleteSandboxedMutationOptions(queryClient),
-    ...report,
-  });
+  const publishDraft = useMutation(
+    publishSandboxedMutationOptions(queryClient),
+  );
+  const removeComponent = useMutation(
+    deleteSandboxedMutationOptions(queryClient),
+  );
   const busy =
     saveDraft.isPending || publishDraft.isPending || removeComponent.isPending;
   const canWrite = Boolean(draft.slug && draft.title) && validation.ok && !busy;
@@ -179,17 +175,23 @@ function PlaygroundPage() {
     setError(null);
     setNotice(null);
     const payload = input();
-    if (!payload) return;
-    saveDraft.mutate(payload, { onSuccess: () => setNotice("Draft saved.") });
+    if (!payload || submitting.current) return;
+    submitting.current = true;
+    saveDraft.mutate(payload, {
+      onSuccess: () => {
+        setSavedDraft(draft);
+        setNotice("Draft saved.");
+      },
+    });
   };
 
   /* Publishing reaches every Bot at once, so it asks first, like Delete. */
-  const publish = () => {
+  const publish = (trigger: HTMLButtonElement) => {
     setError(null);
     setNotice(null);
     const payload = input();
     if (!payload) return;
-    confirmPublish({
+    requestConfirmation({
       title: `Publish ${draft.title}?`,
       description:
         "Publishing makes it available to every Bot. Turn it off for one Bot on the UI components page.",
@@ -197,14 +199,38 @@ function PlaygroundPage() {
       pendingLabel: "Publishing…",
       failureMessage: "Couldn't publish it. Try again.",
       successMessage: "Published.",
+      trigger,
       run: async () => {
-        await publishDraft.mutateAsync(payload);
+        let draftSaved = false;
+        submitting.current = true;
+        try {
+          await publishDraft.mutateAsync({
+            input: payload,
+            onDraftSaved: () => {
+              draftSaved = true;
+              setSavedDraft(draft);
+            },
+          });
+        } catch (error) {
+          if (
+            error instanceof ClientError &&
+            [401, 403, 404, 409].includes(error.status)
+          )
+            throw error;
+          throw new ActionIncomplete(
+            draftSaved
+              ? "Draft saved. Couldn’t confirm publication. Try again."
+              : "Couldn’t save the draft for publication. Your edits are still in the editor.",
+          );
+        } finally {
+          submitting.current = false;
+        }
       },
     });
   };
 
-  const load = (component: SandboxedRecord) =>
-    setDraft({
+  const open = (component: SandboxedRecord, trigger: HTMLElement) => {
+    const next: Draft = {
       slug: component.name.replace(/^custom_/, ""),
       title: component.title,
       description: component.draftDescription,
@@ -213,7 +239,55 @@ function PlaygroundPage() {
       jsFunctions: component.draftJsFunctions,
       argumentSchema: JSON.stringify(component.draftArgumentSchema, null, 2),
       sampleArguments: JSON.stringify(component.sampleArguments, null, 2),
+    };
+    const load = () => {
+      setDraft(next);
+      setSavedDraft(next);
+      setError(null);
+      setNotice(null);
+    };
+    if (!dirty) {
+      load();
+      return;
+    }
+    requestConfirmation({
+      title: "Discard unsaved edits?",
+      description: `Opening ${component.title} will replace the draft in the editor.`,
+      confirmLabel: "Discard and open",
+      pendingLabel: "Opening…",
+      failureMessage: "Couldn't open this component. Try again.",
+      trigger,
+      run: async () => load(),
     });
+  };
+
+  function remove(component: SandboxedRecord, trigger: HTMLButtonElement) {
+    requestConfirmation({
+      title: `Delete ${component.title}?`,
+      description:
+        "This removes the component from the deployment. Bots will no longer be able to show it.",
+      confirmLabel: "Delete component",
+      pendingLabel: "Deleting…",
+      failureMessage: `Couldn’t delete ${component.title}. Try again.`,
+      successMessage: `Deleted ${component.title}.`,
+      fallbackFocus: () => savedHeading.current,
+      trigger,
+      run: async () => {
+        submitting.current = true;
+        try {
+          await removeComponent.mutateAsync(component.name);
+          if (`custom_${draft.slug}` === component.name) {
+            setSavedDraft(STARTER);
+            if (!dirty) setDraft(STARTER);
+          }
+          setError(null);
+          setNotice(null);
+        } finally {
+          submitting.current = false;
+        }
+      },
+    });
+  }
 
   return (
     /*
@@ -235,16 +309,21 @@ function PlaygroundPage() {
         <div className="flex items-start gap-2">
           <SidebarToggle className="-ml-2 shrink-0" />
           <div>
-            <h1 className="font-semibold text-2xl tracking-tight">
+            <h1
+              className="font-semibold text-2xl tracking-tight"
+              id="playground-editor"
+              ref={editorHeading}
+              tabIndex={-1}
+            >
               Playground
             </h1>
             <p className="mt-1 max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed">
-              Write a component and publish it without redeploying. Your edits
-              are a draft. Conversations only show what is published.
+              Edit and preview a component here. Bots show the published version
+              in conversations.
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* The JSON fields explain their own invalid state inline; these two names are
               the only inputs whose absence disables the buttons without a visible reason. */}
           {!canWrite && !busy && (!draft.slug || !draft.title) ? (
@@ -253,6 +332,17 @@ function PlaygroundPage() {
             </p>
           ) : null}
           <Button
+            aria-label="Go to preview"
+            className="confirmation-action"
+            onClick={() => previewHeading.current?.focus()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Preview
+          </Button>
+          <Button
+            className="confirmation-action"
             disabled={!canWrite}
             onClick={save}
             size="sm"
@@ -264,7 +354,8 @@ function PlaygroundPage() {
           <Button
             /* `publish` saves first, since publishing acts on the stored draft, not the editors. */
             disabled={!canWrite}
-            onClick={publish}
+            className="confirmation-action"
+            onClick={(event) => publish(event.currentTarget)}
             size="sm"
             type="button"
           >
@@ -273,7 +364,16 @@ function PlaygroundPage() {
         </div>
       </header>
 
-      {publishConfirmation}
+      <section style={{ paddingInline: "var(--spacing-6)" }}>
+        {confirmation}
+      </section>
+      <DraftLeaveConfirmation
+        description="Edits in the Playground will be lost if you leave without saving."
+        hasDraft={dirty}
+        saving={busy}
+        submitting={submitting}
+        title="Leave without saving?"
+      />
 
       {error ? (
         <div
@@ -293,7 +393,11 @@ function PlaygroundPage() {
       ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto px-6 py-4 lg:grid-cols-2">
-        <div className="space-y-3">
+        <fieldset
+          className="min-w-0 space-y-3"
+          aria-label="Component editor"
+          disabled={busy}
+        >
           <div className="grid gap-2 md:grid-cols-2">
             <TextField
               label="Name"
@@ -337,16 +441,32 @@ function PlaygroundPage() {
             onChange={set("sampleArguments")}
             value={draft.sampleArguments}
           />
-        </div>
+        </fieldset>
 
         <div className="space-y-4">
           <section
             aria-labelledby="playground-preview"
             className="astryx-playground-preview min-w-0 rounded-lg border p-4"
           >
-            <h2 className="mb-2 text-sm font-medium" id="playground-preview">
-              Preview
-            </h2>
+            <header className="flex flex-wrap items-center justify-between gap-2">
+              <h2
+                className="text-sm font-medium"
+                id="playground-preview"
+                ref={previewHeading}
+                tabIndex={-1}
+              >
+                Preview
+              </h2>
+              <Button
+                className="confirmation-action"
+                onClick={() => editorHeading.current?.focus()}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Back to editor
+              </Button>
+            </header>
             {sample === null ? (
               <p className="text-sm text-destructive">
                 {validation.ok
@@ -375,26 +495,34 @@ function PlaygroundPage() {
           </section>
 
           <div className="rounded-lg border border-border bg-card">
-            <div className="border-border border-b px-4 py-2 font-medium text-sm">
+            <h2
+              className="border-border border-b px-4 py-2 font-medium text-sm"
+              id="playground-saved"
+              ref={savedHeading}
+              tabIndex={-1}
+            >
               Saved here
-            </div>
+            </h2>
             {/* A failed read is not "nothing saved": your drafts exist, the list just
                 couldn't be loaded. */}
             {savedList.error ? (
-              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <p className="text-destructive text-sm" role="alert">
-                  Couldn't load what's saved here.
-                </p>
-                <Button
-                  disabled={savedList.isFetching}
-                  onClick={() => void savedList.refetch()}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {savedList.isFetching ? "Retrying…" : "Retry"}
-                </Button>
-              </div>
+              <section className="px-4 py-3">
+                <ReadError
+                  focusAfterRetry={() => savedHeading.current}
+                  message="Couldn't load what's saved here."
+                  retry={() => savedList.refetch()}
+                  retryBelow
+                  retryLabel="Retry saved components"
+                  retrying={savedList.isFetching}
+                />
+              </section>
+            ) : savedList.isPending ? (
+              <section className="px-4 py-3">
+                <ReadStatus
+                  kind="loading"
+                  message="Loading saved components…"
+                />
+              </section>
             ) : (components ?? []).length === 0 ? (
               <p className="px-4 py-3 text-muted-foreground text-sm">
                 Nothing saved yet. Save a draft to see it here.
@@ -404,9 +532,11 @@ function PlaygroundPage() {
                 {(components ?? []).map((component) => (
                   <li
                     className="flex items-center justify-between px-4 py-2 text-sm"
+                    style={{ flexWrap: "wrap", gap: "var(--spacing-2)" }}
                     key={component.name}
                   >
-                    <div>
+                    <div style={{ minInlineSize: 0, overflowWrap: "anywhere" }}>
+                      <p>{component.title}</p>
                       <div className="font-mono text-xs">{component.name}</div>
                       <div className="text-xs text-muted-foreground">
                         {component.published
@@ -419,7 +549,12 @@ function PlaygroundPage() {
                     </div>
                     <div className="flex gap-2">
                       <Button
-                        onClick={() => load(component)}
+                        aria-label={`Open ${component.title}`}
+                        className="min-h-11"
+                        disabled={busy}
+                        onClick={(event) =>
+                          open(component, event.currentTarget)
+                        }
                         size="sm"
                         type="button"
                         variant="outline"
@@ -427,7 +562,12 @@ function PlaygroundPage() {
                         Open
                       </Button>
                       <Button
-                        onClick={() => setDeleting(component.name)}
+                        aria-label={`Delete ${component.title}`}
+                        className="min-h-11"
+                        disabled={busy}
+                        onClick={(event) =>
+                          remove(component, event.currentTarget)
+                        }
                         size="sm"
                         type="button"
                         variant="ghost"
@@ -446,46 +586,6 @@ function PlaygroundPage() {
           </div>
         </div>
       </div>
-
-      {/*
-       * Deleting was a bare button on a row of one-line entries, and it does not come back. The
-       * dialog names the component, so what is agreed to says which one it removes.
-       */}
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) setDeleting(null);
-        }}
-        open={deleting !== null}
-      >
-        <DialogContent {...astryxScope}>
-          <DialogHeader>
-            <DialogTitle>Delete {deleting}?</DialogTitle>
-            <DialogDescription>
-              It's removed from this deployment, and no Bot can draw it. You
-              can't undo this.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setDeleting(null)} size="sm" variant="ghost">
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                const name = deleting;
-                setDeleting(null);
-                if (name) {
-                  setError(null);
-                  removeComponent.mutate(name);
-                }
-              }}
-              size="sm"
-              variant="destructive"
-            >
-              Delete it
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

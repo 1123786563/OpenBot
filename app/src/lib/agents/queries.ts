@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { client, tryClient } from "@/lib/client";
+import { ClientError, client, tryClient } from "@/lib/client";
 
 export type AgentVisibility = "public" | "private";
 
@@ -160,10 +160,30 @@ export type HandoffGrants = {
 export function agentListQueryOptions(hidden = false) {
   return queryOptions({
     queryKey: agentKeys.list(hidden),
-    queryFn: (): Promise<AgentProfile[]> =>
-      client(`/api/agents${hidden ? "?hidden=true" : ""}`, "agents", {
-        fallback: "Couldn't load your Bots.",
-      }),
+    queryFn: async ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<AgentProfile[]> => {
+      try {
+        return await client(
+          `/api/agents${hidden ? "?hidden=true" : ""}`,
+          "agents",
+          {
+            fallback: "Couldn't load your Bots.",
+            signal,
+          },
+        );
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData<AgentProfile[]>(queryKey, []);
+        }
+        throw error;
+      }
+    },
   });
 }
 

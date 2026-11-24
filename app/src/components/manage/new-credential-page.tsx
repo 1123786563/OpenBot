@@ -3,8 +3,14 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { type ComponentProps, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  type ComponentProps,
+  type Ref,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { DeviceAction } from "@/components/astryx-pilot/device-action";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
 import { astryxScope } from "@/components/astryx-pilot/theme";
@@ -63,6 +69,7 @@ function CredentialInput({
 > & {
   label: string;
   description?: string;
+  ref?: Ref<HTMLInputElement>;
   type?: "password";
   value: string;
 }) {
@@ -92,6 +99,54 @@ function CredentialInput({
  * room, a back button and a URL that can be linked to, as Linear does for its API keys.
  */
 export function NewCredentialPage() {
+  const replacementId = useLocation({
+    select: (location) => location.state.replaceCredentialId,
+  });
+  return replacementId ? (
+    <ReplaceCredentialPage key={replacementId} id={replacementId} />
+  ) : (
+    <CredentialForm />
+  );
+}
+
+function ReplaceCredentialPage({ id }: { id: string }) {
+  const paths = useManagePaths();
+  const credentials = useQuery(credentialListQueryOptions());
+  const entry = paths.edition === "personal" ? "key" : "credential";
+  const target = credentials.data?.find(
+    (item) =>
+      item.id === id &&
+      !item.revokedAt &&
+      (item.kind === "model" || item.kind === "connector"),
+  );
+  if (target) return <CredentialForm replacement={target} />;
+  return (
+    <DevicePage
+      backButton={{
+        label: paths.credentialsLabel,
+        linkProps: paths.credentials(),
+      }}
+      title={`Replace ${entry}`}
+    >
+      {credentials.isPending ? (
+        <ReadStatus kind="loading" message={`Checking the ${entry}…`} />
+      ) : credentials.isError ? (
+        <ReadError
+          message={`Couldn’t check the ${entry}.`}
+          retry={credentials.refetch}
+          retryBelow
+          retrying={credentials.isFetching}
+        />
+      ) : (
+        <Text as="p">
+          This {entry} is unavailable. Return to the list to choose another one.
+        </Text>
+      )}
+    </DevicePage>
+  );
+}
+
+function CredentialForm({ replacement }: { replacement?: CredentialStatus }) {
   const paths = useManagePaths();
   const entry = paths.edition === "personal" ? "key" : "credential";
   const entryTitle = entry === "key" ? "Key" : "Credential";
@@ -107,6 +162,7 @@ export function NewCredentialPage() {
   );
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const submitButton = useRef<HTMLButtonElement>(null);
+  const keyIdInput = useRef<HTMLInputElement>(null);
   const saveErrorMessage = useRef<HTMLParagraphElement>(null);
   const [saveError, setSaveError] = useState("");
   useEffect(() => {
@@ -120,9 +176,9 @@ export function NewCredentialPage() {
   }, [saveError]);
   const canCheckReplacement = credentials.isSuccess && !credentials.isFetching;
   const defaultValues: CredentialFormValues = {
-    kind: "model",
-    provider: "",
-    keyId: "",
+    kind: replacement?.kind ?? "model",
+    provider: replacement?.provider ?? "",
+    keyId: replacement?.keyId ?? "",
     plaintext: "",
   };
   const form = useForm({
@@ -133,6 +189,12 @@ export function NewCredentialPage() {
       const input = credentialFormSchema.parse(value);
       const previous = liveCredentialFor(credentials.data, input);
       setSaveError("");
+      if (replacement && previous?.id !== replacement.id) {
+        setSaveError(
+          `The selected ${entry} is no longer active. Return to the list and choose the active one.`,
+        );
+        return;
+      }
 
       if (previous) {
         requestConfirmation({
@@ -144,10 +206,11 @@ export function NewCredentialPage() {
           trigger: submitButton.current ?? undefined,
           refresh: () => credentials.refetch(),
           run: async () => {
+            let saved: CredentialStatus;
             try {
-              await saveCredential.mutateAsync({
+              saved = await saveCredential.mutateAsync({
                 ...input,
-                metadata: {},
+                metadata: previous.metadata,
                 previousCredentialId: previous.id,
               });
             } catch (error) {
@@ -162,7 +225,10 @@ export function NewCredentialPage() {
               throw error;
             }
             toast.add({ title: `${entryTitle} replaced`, type: "success" });
-            await navigate(paths.credentials());
+            await navigate({
+              ...paths.credentials(),
+              state: { replacedCredentialId: saved.id },
+            });
           },
         });
         return;
@@ -197,8 +263,12 @@ export function NewCredentialPage() {
   return (
     <DevicePage
       backButton={back}
-      description={`Save a ${entry} for ${paths.deploymentName}. You won’t be able to view the secret after saving it.`}
-      title={`Add ${entry}`}
+      description={
+        replacement
+          ? "Enter the replacement secret. The current one stays active until you confirm."
+          : `Save a ${entry} for ${paths.deploymentName}. You won’t be able to view the secret after saving it.`
+      }
+      title={replacement ? `Replace ${entry}` : `Add ${entry}`}
     >
       <form
         data-credential-form=""
@@ -237,7 +307,8 @@ export function NewCredentialPage() {
                   >
                     {isSubmitting || saveCredential.isPending
                       ? "Saving…"
-                      : liveCredentialFor(credentials.data, values)
+                      : replacement ||
+                          liveCredentialFor(credentials.data, values)
                         ? "Review replacement"
                         : `Save ${entry}`}
                   </DeviceAction>
@@ -262,114 +333,180 @@ export function NewCredentialPage() {
               />
             ) : null}
             <FieldGroup>
-              <form.Field name="kind">
-                {(field) => {
-                  const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
-                  return (
-                    <Field data-invalid={isInvalid}>
-                      <FieldLabel htmlFor={field.name}>Type</FieldLabel>
-                      <FieldDescription>
-                        A model provider's key, or one a connector signs in
-                        with.
-                      </FieldDescription>
-                      <Select
-                        items={KIND_LABEL}
-                        onValueChange={(value) => {
-                          if (value === "model" || value === "connector")
-                            field.handleChange(value);
+              {replacement ? (
+                <Text as="p" style={{ overflowWrap: "anywhere" }}>
+                  {KIND_LABEL[replacement.kind]} · {replacement.provider} ·{" "}
+                  {replacement.keyId}
+                </Text>
+              ) : (
+                <>
+                  <form.Field name="kind">
+                    {(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name}>Type</FieldLabel>
+                          <FieldDescription id="credential-type-help">
+                            Choose Model for access to an AI provider or
+                            Connector for access to a connected service.
+                          </FieldDescription>
+                          <Select
+                            items={KIND_LABEL}
+                            onValueChange={(value) => {
+                              if (value === "model" || value === "connector") {
+                                setSaveError("");
+                                field.handleChange(value);
+                              }
+                            }}
+                            value={field.state.value}
+                          >
+                            <SelectTrigger
+                              aria-describedby={
+                                isInvalid
+                                  ? `credential-type-help ${field.name}-error`
+                                  : "credential-type-help"
+                              }
+                              aria-invalid={isInvalid}
+                              className="w-full"
+                              id={field.name}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent {...astryxScope}>
+                              <SelectGroup>
+                                <SelectItem value="model">Model</SelectItem>
+                                <SelectItem value="connector">
+                                  Connector
+                                </SelectItem>
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          {isInvalid ? (
+                            <FieldError
+                              id={`${field.name}-error`}
+                              errors={field.state.meta.errors}
+                            />
+                          ) : null}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
+                  <form.Subscribe selector={(state) => state.values.kind}>
+                    {(kind) => (
+                      <form.Field name="provider">
+                        {(field) => {
+                          const isInvalid =
+                            field.state.meta.isTouched &&
+                            !field.state.meta.isValid;
+                          return (
+                            <Field data-invalid={isInvalid}>
+                              <CredentialInput
+                                label="Provider"
+                                aria-describedby={
+                                  isInvalid ? `${field.name}-error` : undefined
+                                }
+                                aria-invalid={isInvalid}
+                                id={field.name}
+                                name={field.name}
+                                onBlur={field.handleBlur}
+                                onChange={(event) => {
+                                  setSaveError("");
+                                  field.handleChange(event.target.value);
+                                }}
+                                description={
+                                  kind === "model"
+                                    ? "Use the model provider’s ID, for example openai."
+                                    : "Use the connector’s provider ID."
+                                }
+                                value={field.state.value}
+                              />
+                              {isInvalid ? (
+                                <FieldError
+                                  id={`${field.name}-error`}
+                                  errors={field.state.meta.errors}
+                                />
+                              ) : null}
+                            </Field>
+                          );
                         }}
-                        value={field.state.value}
-                      >
-                        <SelectTrigger
-                          aria-describedby={
-                            isInvalid ? `${field.name}-error` : undefined
-                          }
-                          aria-invalid={isInvalid}
-                          className="w-full"
-                          id={field.name}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent {...astryxScope}>
-                          <SelectGroup>
-                            <SelectItem value="model">Model</SelectItem>
-                            <SelectItem value="connector">Connector</SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      {isInvalid ? (
-                        <FieldError
-                          id={`${field.name}-error`}
-                          errors={field.state.meta.errors}
-                        />
-                      ) : null}
-                    </Field>
-                  );
-                }}
-              </form.Field>
-              <form.Field name="provider">
-                {(field) => {
-                  const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
-                  return (
-                    <Field data-invalid={isInvalid}>
-                      <CredentialInput
-                        label="Provider"
-                        aria-describedby={
-                          isInvalid ? `${field.name}-error` : undefined
-                        }
-                        aria-invalid={isInvalid}
-                        id={field.name}
-                        name={field.name}
-                        onBlur={field.handleBlur}
-                        onChange={(event) =>
-                          field.handleChange(event.target.value)
-                        }
-                        description="For example, openai."
-                        value={field.state.value}
-                      />
-                      {isInvalid ? (
-                        <FieldError
-                          id={`${field.name}-error`}
-                          errors={field.state.meta.errors}
-                        />
-                      ) : null}
-                    </Field>
-                  );
-                }}
-              </form.Field>
-              <form.Field name="keyId">
-                {(field) => {
-                  const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
-                  return (
-                    <Field data-invalid={isInvalid}>
-                      <CredentialInput
-                        label="Key ID"
-                        description="Identifies the key for this provider. For example, production."
-                        aria-describedby={
-                          isInvalid ? `${field.name}-error` : undefined
-                        }
-                        aria-invalid={isInvalid}
-                        id={field.name}
-                        name={field.name}
-                        onBlur={field.handleBlur}
-                        onChange={(event) =>
-                          field.handleChange(event.target.value)
-                        }
-                        value={field.state.value}
-                      />
-                      {isInvalid ? (
-                        <FieldError
-                          id={`${field.name}-error`}
-                          errors={field.state.meta.errors}
-                        />
-                      ) : null}
-                    </Field>
-                  );
-                }}
-              </form.Field>
+                      </form.Field>
+                    )}
+                  </form.Subscribe>
+                  <form.Field name="keyId">
+                    {(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <form.Subscribe
+                            selector={(state) =>
+                              canCheckReplacement &&
+                              Boolean(
+                                liveCredentialFor(
+                                  credentials.data,
+                                  state.values,
+                                ),
+                              )
+                            }
+                          >
+                            {(matched) => (
+                              <>
+                                <CredentialInput
+                                  label="Key ID"
+                                  description="Use the ID that will reference this key, for example production."
+                                  aria-describedby={
+                                    isInvalid
+                                      ? `${field.name}-error`
+                                      : matched
+                                        ? "credential-id-conflict"
+                                        : undefined
+                                  }
+                                  aria-invalid={isInvalid}
+                                  id={field.name}
+                                  name={field.name}
+                                  onBlur={field.handleBlur}
+                                  onChange={(event) => {
+                                    setSaveError("");
+                                    field.handleChange(event.target.value);
+                                  }}
+                                  ref={keyIdInput}
+                                  value={field.state.value}
+                                />
+                                {matched ? (
+                                  <>
+                                    <FieldDescription id="credential-id-conflict">
+                                      An active {entry} already uses this ID for
+                                      the selected type and provider.
+                                    </FieldDescription>
+                                    <Button
+                                      className="min-h-11 self-start"
+                                      onClick={() => {
+                                        keyIdInput.current?.focus();
+                                        keyIdInput.current?.select();
+                                      }}
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      Use a different ID
+                                    </Button>
+                                  </>
+                                ) : null}
+                              </>
+                            )}
+                          </form.Subscribe>
+                          {isInvalid ? (
+                            <FieldError
+                              id={`${field.name}-error`}
+                              errors={field.state.meta.errors}
+                            />
+                          ) : null}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
+                </>
+              )}
               <form.Field name="plaintext">
                 {(field) => {
                   const isInvalid =

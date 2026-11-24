@@ -1,5 +1,5 @@
 import { type BillingQuote, billingQuoteSchema } from "@/lib/billing/queries";
-import { tryClient } from "@/lib/client";
+import { ClientError, tryClient } from "@/lib/client";
 
 /**
  * Which coworker a message should go to.
@@ -23,7 +23,14 @@ export type RoutingDecision = {
 };
 
 /** A routing decision that must be resolved before a conversation can start. */
-export class CoworkerRoutingRefusedError extends Error {}
+export class CoworkerRoutingRefusedError extends Error {
+  constructor(
+    message: string,
+    readonly names: readonly string[] = [],
+  ) {
+    super(message);
+  }
+}
 
 export class CoworkerRoutingQuoteRequired extends CoworkerRoutingRefusedError {
   constructor(readonly quote: BillingQuote) {
@@ -95,9 +102,10 @@ export async function routeMessage(
     ) {
       throw new CoworkerRoutingRefusedError(
         `${message} ${body.names.join(", ")}. Choose one with @.`,
+        body.names,
       );
     }
-    throw new Error(message);
+    throw new ClientError(message, response.status);
   }
   return (await response.json()) as RoutingDecision;
 }

@@ -86,6 +86,8 @@ function serving(options: { held?: string[]; givesOnListing?: boolean } = {}) {
   ];
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/api/plugins/giveable"))
+      return Response.json({ apps: [] });
     if (url.includes("/api/plugins/grants")) {
       grants.push(`${init?.method ?? "GET"} ${url} ${init?.body ?? ""}`);
       return Response.json({ ok: true });
@@ -137,7 +139,7 @@ function serving(options: { held?: string[]; givesOnListing?: boolean } = {}) {
 
 function draw(agent: AgentProfile) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
   });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/"] }),

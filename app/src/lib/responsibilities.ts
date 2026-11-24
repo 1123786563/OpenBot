@@ -3,7 +3,7 @@ import {
   type QueryClient,
   queryOptions,
 } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 import { sharedUseKeys } from "@/lib/plugins/shared-use";
 
 export type ResponsibilityRecord = {
@@ -63,12 +63,41 @@ export const responsibilityKeys = {
   bindings: ["responsibilities", "github-bindings"] as const,
   triggers: (id: string) => ["responsibilities", id, "triggers"] as const,
 };
+export function goalsAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ClientError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 export function responsibilitiesQueryOptions() {
   return queryOptions({
     queryKey: responsibilityKeys.all,
-    queryFn: (): Promise<ResponsibilityRecord[]> =>
-      client("/api/responsibilities", "responsibilities", {
-        fallback: "Could not load goals",
+    retry: (failures, error) => failures < 1 && !goalsAccessDenied(error),
+    queryFn: ({
+      client: cache,
+      queryKey,
+      signal,
+    }): Promise<ResponsibilityRecord[]> =>
+      client<ResponsibilityRecord[]>(
+        "/api/responsibilities",
+        "responsibilities",
+        {
+          fallback: "Could not load goals",
+          signal,
+        },
+      ).catch((error: unknown) => {
+        if (goalsAccessDenied(error)) {
+          cache.setQueryData<ResponsibilityRecord[]>(queryKey, (current) =>
+            current ? [] : undefined,
+          );
+          cache.removeQueries({
+            queryKey,
+            predicate: ({ queryKey: key }) =>
+              key[2] === "runs" || key[2] === "triggers",
+          });
+        }
+        throw error;
       }),
     refetchInterval: 10_000,
   });
@@ -129,13 +158,17 @@ export function responsibilityAction(
     fallback: "Could not change goal",
   });
 }
-export function createGithubBinding(repository: string, secret: string) {
+export function createGithubBinding(
+  repository: string,
+  secret: string,
+  requestId: string,
+) {
   return client<GithubBindingRecord>(
     "/api/responsibilities/sources/github",
     "binding",
     {
       method: "POST",
-      body: { repository, secret },
+      body: { repository, secret, requestId },
       fallback: "Could not connect GitHub events",
     },
   );
@@ -261,10 +294,12 @@ export function createGithubBindingMutationOptions(queryClient: QueryClient) {
     mutationFn: ({
       repository,
       secret,
+      requestId,
     }: {
       repository: string;
       secret: string;
-    }) => createGithubBinding(repository, secret),
+      requestId: string;
+    }) => createGithubBinding(repository, secret, requestId),
     onSettled: settleGithub(queryClient),
   });
 }

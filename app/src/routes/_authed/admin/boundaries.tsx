@@ -5,8 +5,13 @@ import {
   IconShieldX,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ComponentRef, useRef } from "react";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import {
+  type ComponentRef,
+  type MouseEvent,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import {
   PageEmpty,
   PageRows,
@@ -19,7 +24,7 @@ import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -32,7 +37,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { boundaryListSearch, ruleId, ruleLabel } from "@/lib/boundaries/rules";
-import { ClientError } from "@/lib/client";
+import { ClientError, canKeepCachedRead } from "@/lib/client";
 import { saveActionPolicyMutationOptions } from "@/lib/computers/mutations";
 import { actionPolicyQueryOptions } from "@/lib/computers/queries";
 
@@ -40,6 +45,14 @@ export const Route = createFileRoute("/_authed/admin/boundaries")({
   validateSearch: boundaryListSearch,
   component: BoundariesPage,
 });
+
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    returnBoundaryRule?: string;
+  }
+}
+
+let lastOpenedRule: { entry: string; ruleId: string } | undefined;
 
 const DESCRIPTION =
   "Define actions that Bots must never take. OpenBot checks these rules before a Bot acts on its computer or in a connected app.";
@@ -56,6 +69,13 @@ function BoundariesPage() {
   const { q } = Route.useSearch();
   const navigate = Route.useNavigate();
   const searchInput = useRef<HTMLInputElement>(null);
+  const listHeading = useRef<HTMLHeadingElement>(null);
+  const pageHeading = useRef<HTMLHeadingElement>(null);
+  const ruleLinks = useRef(new Map<string, HTMLAnchorElement>());
+  const restoredEntry = useRef<string | undefined>(undefined);
+  const { __TSR_key: entry, returnBoundaryRule } = useLocation({
+    select: (location) => location.state,
+  });
   const search = (value: string) =>
     void navigate({
       search: { q: value || undefined },
@@ -71,18 +91,58 @@ function BoundariesPage() {
   const denied =
     stored.error instanceof ClientError &&
     (stored.error.status === 401 || stored.error.status === 403);
-  const policy = denied ? undefined : stored.data;
-  const rules =
-    policy?.deny.map((rule) => ({
-      rule,
-      label: ruleLabel(policy, rule),
-    })) ?? [];
+  const policy = canKeepCachedRead(stored.error) ? stored.data : undefined;
+  const canWrite = stored.isSuccess;
+  const rules = policy
+    ? [...new Set(policy.deny)].map((rule) => ({
+        rule,
+        label: ruleLabel(policy, rule),
+        id: ruleId(policy, rule),
+      }))
+    : [];
   const matches = words.length
     ? rules.filter(({ label, rule }) => {
         const text = `${label.name} ${label.description} ${rule}`.toLowerCase();
         return words.every((word) => text.includes(word));
       })
     : rules;
+
+  useLayoutEffect(() => {
+    if (
+      !entry ||
+      stored.isPending ||
+      stored.isFetching ||
+      restoredEntry.current === entry
+    )
+      return;
+    const rule =
+      returnBoundaryRule ??
+      (lastOpenedRule?.entry === entry ? lastOpenedRule.ruleId : undefined);
+    if (!rule) return;
+    restoredEntry.current = entry;
+    if (lastOpenedRule?.entry === entry) lastOpenedRule = undefined;
+    if (document.activeElement === document.body) {
+      (
+        ruleLinks.current.get(rule) ??
+        searchInput.current ??
+        listHeading.current ??
+        pageHeading.current
+      )?.focus();
+    }
+  }, [entry, returnBoundaryRule, stored.isFetching, stored.isPending]);
+
+  function rememberRule(id: string, event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      entry &&
+      event.button === 0 &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey
+    ) {
+      lastOpenedRule = { entry, ruleId: id };
+    }
+  }
   const readStatus = stored.error ? (
     <section className="mt-6">
       <ReadError
@@ -90,8 +150,11 @@ function BoundariesPage() {
           denied ? stored.error.message : "The boundary could not be read."
         }
         description={
-          policy ? "The last loaded rules are still shown." : undefined
+          policy
+            ? "The last loaded rules are still shown. Retry to make changes."
+            : undefined
         }
+        focusAfterRetry={() => listHeading.current ?? pageHeading.current}
         retry={stored.refetch}
         retryBelow
         retrying={stored.isFetching}
@@ -100,15 +163,17 @@ function BoundariesPage() {
   ) : null;
 
   const addRule = (
-    <Button
-      className="min-h-11"
-      render={(props) => <Link {...props} to="/admin/boundaries/new" />}
-      size="sm"
-      variant="ghost"
+    <Link
+      className={buttonVariants({
+        className: "min-h-11",
+        size: "sm",
+        variant: "ghost",
+      })}
+      to="/admin/boundaries/new"
     >
       <IconPlus />
       Add rule
-    </Button>
+    </Link>
   );
 
   const trial = policy?.mode === "dry-run";
@@ -117,8 +182,9 @@ function BoundariesPage() {
 
   return (
     <PageShell
-      action={policy?.deny.length ? addRule : undefined}
+      action={canWrite && rules.length > 0 ? addRule : undefined}
       description={DESCRIPTION}
+      headingRef={pageHeading}
       title="Boundaries"
     >
       {confirmation}
@@ -130,7 +196,15 @@ function BoundariesPage() {
       ) : null}
       {policy ? (
         <>
-          <PageSection title="Boundary rules">
+          <PageSection
+            description={
+              trial
+                ? "Trial mode records matches in Audit. It allows the action to continue if otherwise permitted."
+                : "OpenBot stops actions that match an enforced boundary."
+            }
+            headingRef={listHeading}
+            title="Boundary rules"
+          >
             {rules.length > 0 ? (
               <Input
                 aria-label="Search boundary rules"
@@ -141,6 +215,13 @@ function BoundariesPage() {
                   if (event.key === "Escape" && q) {
                     event.preventDefault();
                     search("");
+                  }
+                  if (
+                    event.key === "Enter" &&
+                    !event.nativeEvent.isComposing &&
+                    matches[0]
+                  ) {
+                    ruleLinks.current.get(matches[0].id)?.focus();
                   }
                 }}
                 placeholder="Search by name, description, or rule"
@@ -154,26 +235,28 @@ function BoundariesPage() {
                 {matches.length} of {rules.length} rules match
               </p>
             ) : null}
-            {policy.deny.length === 0 ? (
-              <PageEmpty
-                action={
-                  <Button
-                    className="min-h-11"
-                    render={(props) => (
-                      <Link {...props} to="/admin/boundaries/new" />
-                    )}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <IconPlus />
-                    Add rule
-                  </Button>
-                }
-                icon={IconShieldX}
-                title="No rules yet"
-              >
-                Add a rule to define a deployment-wide boundary for Bots.
-              </PageEmpty>
+            {rules.length === 0 ? (
+              canWrite ? (
+                <PageEmpty
+                  action={
+                    <Link
+                      className={buttonVariants({
+                        className: "min-h-11",
+                        size: "sm",
+                        variant: "outline",
+                      })}
+                      to="/admin/boundaries/new"
+                    >
+                      <IconPlus />
+                      Add rule
+                    </Link>
+                  }
+                  icon={IconShieldX}
+                  title="No rules yet"
+                >
+                  Add a rule to define a deployment-wide boundary for Bots.
+                </PageEmpty>
+              ) : null
             ) : matches.length === 0 ? (
               <PageEmpty
                 action={
@@ -194,14 +277,22 @@ function BoundariesPage() {
               />
             ) : (
               <PageRows>
-                {matches.map(({ rule, label }, position) => {
+                {matches.map(({ rule, label, id }, position) => {
                   return (
                     <StaggerItem index={position} key={rule}>
                       <Item
                         render={(props) => (
                           <Link
                             {...props}
-                            params={{ index: ruleId(policy, rule) }}
+                            onClick={(event) => {
+                              props.onClick?.(event);
+                              rememberRule(id, event);
+                            }}
+                            params={{ index: id }}
+                            ref={(node) => {
+                              if (node) ruleLinks.current.set(id, node);
+                              else ruleLinks.current.delete(id);
+                            }}
                             search={{ q }}
                             to="/admin/boundaries/$index"
                           />
@@ -252,7 +343,7 @@ function BoundariesPage() {
                     aria-label="Trial mode"
                     checked={trial}
                     className="after:top-1/2 after:bottom-auto after:h-11 after:-translate-y-1/2"
-                    disabled={savePolicy.isPending}
+                    disabled={!canWrite || savePolicy.isPending}
                     ref={trialSwitch}
                     onCheckedChange={(checked) => {
                       const mode = checked ? "dry-run" : "enforce";

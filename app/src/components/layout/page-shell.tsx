@@ -28,6 +28,7 @@ export function PageShell({
   className,
   description,
   eyebrow,
+  headingRef,
   title,
   width = "prose",
   backButton,
@@ -38,6 +39,7 @@ export function PageShell({
   className?: string;
   description?: React.ReactNode;
   eyebrow?: React.ReactNode;
+  headingRef?: React.Ref<HTMLHeadingElement>;
   title: string;
   width?: ShellWidth;
   backButton?: {
@@ -75,6 +77,7 @@ export function PageShell({
   const header = (
     <PageHeader
       eyebrow={eyebrow}
+      headingRef={headingRef}
       title={title}
       action={action}
       description={description}

@@ -44,6 +44,7 @@ import {
   type ApprovalStore,
   type ApprovalTeamSettings,
   offersStandingRule,
+  ReviewerGuidanceConflictError,
   targetSubject,
 } from "./types";
 
@@ -773,12 +774,18 @@ function createPolicyStore(database: Database): ApprovalPolicyStore {
     async setReviewerGuidance(by, change) {
       const after = change.text?.trim() || null;
       return withAuditTransaction(database, async (tx, deferTap) => {
+        // Serialize even the first save, when there may be no settings row to lock.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext('approval-reviewer-guidance'))`,
+        );
         const [current] = await tx
           .select({ guidance: approvalTeamSettings.reviewerGuidance })
           .from(approvalTeamSettings)
           .where(eq(approvalTeamSettings.id, TEAM))
           .limit(1);
         const before = current?.guidance?.trim() || null;
+        if (change.basedOn !== undefined && change.basedOn !== before)
+          throw new ReviewerGuidanceConflictError();
         await tx
           .insert(approvalTeamSettings)
           .values({ id: TEAM, reviewerGuidance: after, updatedBy: by })

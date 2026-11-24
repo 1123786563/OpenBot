@@ -16,7 +16,11 @@ import {
 } from "@/components/boundaries/describe-rule";
 import { RulePreview } from "@/components/boundaries/rule-preview";
 import { RuleReading } from "@/components/boundaries/rule-reading";
-import { RuleReference } from "@/components/boundaries/rule-reference";
+import {
+  RULE_EXPRESSION_HELP_ID,
+  RuleExpressionHelp,
+  RuleReference,
+} from "@/components/boundaries/rule-reference";
 import {
   PageCard,
   PageRows,
@@ -104,6 +108,7 @@ function NewRulePage() {
   const stored = useQuery(actionPolicyQueryOptions());
   const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
   const [chosen, setChosen] = useState<Start | null>(null);
+  const [showStarters, setShowStarters] = useState(false);
   const [drafts, setDrafts] = useState<Partial<Record<string, Draft>>>({});
   const [problem, setProblem] = useState<Error | null>(null);
   const [writing, setWriting] = useState(false);
@@ -125,8 +130,9 @@ function NewRulePage() {
     );
   });
   useLayoutEffect(() => {
-    if (chosen) ruleHeading.current?.focus();
-  }, [chosen]);
+    if (showStarters) starterHeading.current?.focus();
+    else if (chosen) ruleHeading.current?.focus();
+  }, [chosen, showStarters]);
 
   const key = typeof chosen === "string" ? chosen : chosen?.rule;
   const draft = (key && drafts[key]) || startDraft(chosen);
@@ -207,7 +213,7 @@ function NewRulePage() {
   };
 
   const choose = (next: Start) => {
-    if (chosen === next) ruleHeading.current?.focus();
+    setShowStarters(false);
     setChosen(next);
     if (!needsPolicyRefresh) setProblem(null);
   };
@@ -280,7 +286,12 @@ function NewRulePage() {
   ];
 
   const starters = (
-    <PageSection headingRef={starterHeading} title="Start from">
+    <PageSection
+      className={chosen && !showStarters ? "hidden" : undefined}
+      headingRef={starterHeading}
+      id="boundary-starters"
+      title="Start from"
+    >
       <PageRows>
         {options.map((option, index) => {
           const custom = option.value === "custom";
@@ -330,6 +341,11 @@ function NewRulePage() {
                         ? "Say what no Bot may do, and your model writes the rule."
                         : "Describe the action yourself, in CEL."}
                   </ItemDescription>
+                  {template && !taken ? (
+                    <ItemDescription className="line-clamp-none text-sm">
+                      {template.cost}
+                    </ItemDescription>
+                  ) : null}
                 </ItemContent>
                 {selected ? (
                   <ItemActions>
@@ -386,8 +402,13 @@ function NewRulePage() {
           title="The rule"
           action={
             <Button
+              aria-controls="boundary-starters"
+              aria-expanded={showStarters}
               className="min-h-12"
-              onClick={() => starterHeading.current?.focus()}
+              onClick={() => {
+                if (showStarters) starterHeading.current?.focus();
+                else setShowStarters(true);
+              }}
               type="button"
               variant="outline"
             >
@@ -484,15 +505,12 @@ function NewRulePage() {
                     </Field>
                     <Field>
                       <FieldLabel htmlFor="rule-expression">Rule</FieldLabel>
-                      <FieldDescription>
-                        Written in CEL. OpenBot checks the rule before it's
-                        added, so a typo can't stop every action.
-                      </FieldDescription>
+                      <RuleExpressionHelp />
                       <Textarea
                         aria-describedby={
                           candidate && previewStatus === 400
-                            ? "rule-validation-error"
-                            : undefined
+                            ? `${RULE_EXPRESSION_HELP_ID} rule-validation-error`
+                            : RULE_EXPRESSION_HELP_ID
                         }
                         aria-invalid={
                           duplicate ||
@@ -509,7 +527,6 @@ function NewRulePage() {
                           const rule = event.target.value;
                           updateDraft(() => ({ rule }));
                         }}
-                        placeholder='tool.name == "computer_click" && contains(element.name, "delete")'
                         readOnly={writing || savePolicy.isPending}
                         spellCheck={false}
                         value={rule}

@@ -1,10 +1,9 @@
 import { Stack } from "@astryxdesign/core/Stack";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ProviderLogo } from "@/components/auth/provider-logo";
@@ -105,12 +104,18 @@ function SignScreen() {
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const {
     data: options,
+    isError: optionsError,
     isFetching: checkingOptions,
     refetch: reloadOptions,
   } = useQuery({ ...authProvidersQueryOptions(), retryOnMount: false });
   const providers = options?.providers ?? [];
+  const optionsUnavailable =
+    options !== undefined &&
+    !options.sso &&
+    (options.ssoRequired || providers.length === 0);
   const [email, setEmail] = useState("");
 
   /**
@@ -234,6 +239,8 @@ function SignScreen() {
         </motion.div>
         <motion.h1
           className="text-2xl font-medium tracking-tight text-center mt-8"
+          ref={heading}
+          tabIndex={-1}
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
@@ -244,12 +251,26 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          {!options && (
+          {(!options || optionsUnavailable) && (
             <ReadError
-              message="Couldn't load sign-in options."
-              description="Check your connection and try again."
+              description={
+                !options || optionsError
+                  ? "Check your connection and try again."
+                  : "Ask your IT help desk or the person who invited you to check sign-in for this workspace. Check again when it’s ready."
+              }
+              focusAfterRetry={() => heading.current}
+              message={
+                !options || optionsError
+                  ? "Couldn't load sign-in options."
+                  : options.ssoRequired
+                    ? "Company sign-in is required but unavailable."
+                    : "Sign-in isn’t set up yet."
+              }
               retry={reloadOptions}
               retryBelow
+              retryLabel={
+                optionsUnavailable ? "Check sign-in options" : "Retry"
+              }
               retrying={checkingOptions}
             />
           )}
@@ -259,15 +280,9 @@ function SignScreen() {
               account.
             </p>
           ) : null}
-          {providers.length > 0 && !options?.ssoRequired ? (
-            providerButtons
-          ) : options && !options.sso ? (
-            <Text as="p" justify="center" type="supporting">
-              {options.ssoRequired
-                ? "Company sign-in is required but unavailable. Contact your OpenBot administrator for access."
-                : "Sign-in isn’t set up yet. Contact your OpenBot administrator for access."}
-            </Text>
-          ) : null}
+          {providers.length > 0 && !options?.ssoRequired
+            ? providerButtons
+            : null}
           {/*
            * The way in for a company that runs its own identity provider.
            *
@@ -318,6 +333,10 @@ function SignScreen() {
               <summary className="sign-in-admin-summary cursor-pointer text-center text-muted-foreground">
                 Admin sign-in
               </summary>
+              <p className="mt-2 text-muted-foreground">
+                Use this if you administer this workspace and need to restore
+                company sign-in.
+              </p>
               <div className="mt-3">{providerButtons}</div>
             </details>
           ) : null}

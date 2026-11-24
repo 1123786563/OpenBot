@@ -1,4 +1,4 @@
-import { useBlocker } from "@tanstack/react-router";
+import { type ShouldBlockFn, useBlocker } from "@tanstack/react-router";
 import { type RefObject, useLayoutEffect, useRef } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
@@ -12,21 +12,33 @@ import {
 } from "@/components/ui/dialog";
 
 export function DraftLeaveConfirmation({
+  description = "Your description and draft changes will be lost.",
   hasDraft,
+  leavesDraft,
+  overlayClassName,
   saving,
   submitting,
   title,
 }: {
-  hasDraft: boolean;
+  description?: string;
+  hasDraft: boolean | RefObject<boolean>;
+  leavesDraft?: (location: Parameters<ShouldBlockFn>[0]) => boolean;
+  overlayClassName?: string;
   saving: boolean;
   submitting: RefObject<boolean>;
   title: string;
 }) {
   const keepEditing = useRef<HTMLButtonElement>(null);
+  const isWorking = () =>
+    submitting.current ||
+    (typeof hasDraft === "boolean" ? hasDraft : hasDraft.current);
   const blocker = useBlocker({
-    enableBeforeUnload: hasDraft,
-    shouldBlockFn: ({ current, next }) =>
-      current.pathname !== next.pathname && (submitting.current || hasDraft),
+    enableBeforeUnload: isWorking,
+    shouldBlockFn: (location) =>
+      isWorking() &&
+      (leavesDraft
+        ? leavesDraft(location)
+        : location.current.pathname !== location.next.pathname),
     withResolver: true,
   });
   useLayoutEffect(() => {
@@ -43,14 +55,13 @@ export function DraftLeaveConfirmation({
       <DialogContent
         {...astryxScope}
         initialFocus={keepEditing}
+        overlayClassName={overlayClassName}
         role="alertdialog"
         showCloseButton={false}
       >
         <DialogTitle>{title}</DialogTitle>
         <DialogBody>
-          <DialogDescription>
-            Your description and draft changes will be lost.
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogBody>
         <DialogFooter className="flex-wrap">
           <Button

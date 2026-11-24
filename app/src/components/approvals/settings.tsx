@@ -8,7 +8,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   PageEmpty,
   PageRows,
@@ -26,6 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
+  approvalAccessDenied,
   approvalInboxOptions,
   approvalPreferencesMutationOptions,
   createApprovalRuleMutationOptions,
@@ -37,7 +38,14 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { canKeepCachedRead } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { ALWAYS_ASKS, ASK_FIRST_TITLE, HANDED_TO_YOU } from "./ask-first-copy";
-import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
+import {
+  filterApprovalRules,
+  HOST_LABELS,
+  LabelSelect,
+  RuleForm,
+  RuleRow,
+  RuleSearch,
+} from "./rules";
 
 /**
  * The person's own approval settings: whether their Bots ask before changing things, and the rules
@@ -61,13 +69,24 @@ export function ApprovalSettings() {
     updateApprovalRuleMutationOptions(queryClient),
   );
   const revoke = useMutation(revokeApprovalRuleMutationOptions(queryClient));
+  const preferencesHeading = useRef<HTMLHeadingElement>(null);
+  const [ruleSearch, setRuleSearch] = useState("");
+  const ruleSearchInput = useRef<HTMLInputElement>(null);
+  const recoveredFocus = () => preferencesHeading.current;
   const data = canKeepCachedRead(inbox.error) ? inbox.data : undefined;
   if (!data) {
     return inbox.isError ? (
       <ReadError
+        description={
+          approvalAccessDenied(inbox.error)
+            ? "Check that you still have access, then try again."
+            : undefined
+        }
+        focusAfterRetry={recoveredFocus}
         message="Couldn't load your approval settings."
         retry={inbox.refetch}
         retryBelow
+        retryLabel="Retry approval settings"
         retrying={inbox.isFetching}
       />
     ) : (
@@ -97,15 +116,30 @@ export function ApprovalSettings() {
     !inbox.isSuccess || revoke.isPending || changeRule.isPending;
   const ruleError = changeRule.error ?? revoke.error;
   const saved = teamRules.length + everyBot.length;
+  const botName = (id: string) =>
+    reachable.find((bot) => bot.id === id)?.name ?? id;
+  const matchingTeamRules = filterApprovalRules(
+    teamRules,
+    ruleSearch,
+    botName,
+    true,
+  );
+  const matchingPersonalRules = filterApprovalRules(
+    everyBot,
+    ruleSearch,
+    botName,
+  );
 
   return (
     <>
       {inbox.isError ? (
         <ReadError
+          focusAfterRetry={recoveredFocus}
           message="Couldn't refresh your approval settings."
           description="These are your last loaded settings. Retry the check before changing them."
           retry={inbox.refetch}
           retryBelow
+          retryLabel="Retry approval settings"
           retrying={inbox.isFetching}
         />
       ) : null}
@@ -118,7 +152,7 @@ export function ApprovalSettings() {
           .
         </p>
       ) : null}
-      <PageSection title="Before a Bot acts">
+      <PageSection headingRef={preferencesHeading} title="Before a Bot acts">
         <details className="group text-muted-foreground text-sm">
           <summary className="flex min-h-11 cursor-pointer items-center gap-2 hover:text-foreground">
             When Bots ask by default
@@ -271,9 +305,31 @@ export function ApprovalSettings() {
         {saved === 0 ? (
           <PageEmpty icon={IconChecklist} title="No rules yet" />
         ) : null}
-        {saved > 0 || canAdd ? (
+        {canAdd ? (
           <PageRows>
-            {teamRules.map((rule, index) => (
+            <RuleForm
+              botField={false}
+              canSave={inbox.isSuccess}
+              label="Add a rule"
+              refreshSettings={inbox.refetch}
+              save={addRule}
+            />
+          </PageRows>
+        ) : null}
+        <RuleSearch
+          emptyTitle="No matching rules"
+          first={matchingTeamRules[0] ?? matchingPersonalRules[0]}
+          inputRef={ruleSearchInput}
+          label="Search rules for every Bot"
+          matches={matchingTeamRules.length + matchingPersonalRules.length}
+          onChange={setRuleSearch}
+          team={matchingTeamRules.length > 0}
+          total={saved}
+          value={ruleSearch}
+        />
+        {matchingTeamRules.length + matchingPersonalRules.length > 0 ? (
+          <PageRows>
+            {matchingTeamRules.map((rule, index) => (
               <Fragment key={rule.id}>
                 {index > 0 ? <Separator /> : null}
                 <RuleRow
@@ -286,9 +342,9 @@ export function ApprovalSettings() {
                 />
               </Fragment>
             ))}
-            {everyBot.map((rule, index) => (
+            {matchingPersonalRules.map((rule, index) => (
               <Fragment key={rule.id}>
-                {teamRules.length + index > 0 ? <Separator /> : null}
+                {matchingTeamRules.length + index > 0 ? <Separator /> : null}
                 <RuleRow
                   disabled={rulesDisabled}
                   locked={rulesOff}
@@ -297,21 +353,10 @@ export function ApprovalSettings() {
                   }
                   onRevoke={() => revoke.mutate(rule.id)}
                   rule={rule}
+                  touchTargets
                 />
               </Fragment>
             ))}
-            {canAdd ? (
-              <>
-                {saved > 0 ? <Separator /> : null}
-                <RuleForm
-                  botField={false}
-                  canSave={inbox.isSuccess}
-                  label="Add a rule"
-                  refreshSettings={inbox.refetch}
-                  save={addRule}
-                />
-              </>
-            ) : null}
           </PageRows>
         ) : null}
       </PageSection>

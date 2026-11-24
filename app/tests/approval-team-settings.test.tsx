@@ -34,6 +34,7 @@ const originalFetch = global.fetch;
 const sent: { path: string; method: string; body: unknown }[] = [];
 let sharedRequests: SharedUseRequest[];
 let sharedReadFailed: boolean;
+let approvalReadFailed: boolean;
 
 const inbox = {
   enabled: false,
@@ -94,6 +95,7 @@ beforeEach(() => {
   sent.length = 0;
   sharedRequests = [];
   sharedReadFailed = false;
+  approvalReadFailed = false;
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(path);
@@ -109,7 +111,10 @@ beforeEach(() => {
         }
         return Response.json({ ok: true });
       }
-      if (url === "/api/approvals") return Response.json(inbox);
+      if (url === "/api/approvals")
+        return approvalReadFailed
+          ? Response.json({}, { status: 503 })
+          : Response.json(inbox);
       if (url === "/api/approvals/shared-use")
         return sharedReadFailed
           ? Response.json({}, { status: 503 })
@@ -221,7 +226,27 @@ test("an administrator sets the team-wide controls", async () => {
     }),
   );
   // Team rules only: a member's own rules are theirs, in Settings.
-  expect(view.getAllByRole("button", { name: "Remove" }).length).toBe(1);
+  expect(view.getAllByRole("button", { name: /^Remove / }).length).toBe(1);
+});
+
+test("a failed team rules refresh pauses editing until recovery", async () => {
+  const view = draw();
+  const user = userEvent.setup({ document });
+  const remove = await view.findByRole("button", { name: /^Remove / });
+  await user.click(remove);
+  approvalReadFailed = true;
+  await user.click(view.getByRole("button", { name: "Remove rule" }));
+  await view.findByRole("button", { name: "Try again" }, { timeout: 4000 });
+  await user.click(view.getByRole("button", { name: "Cancel" }));
+  const add = view.getByRole("button", { name: /Add a team rule/ });
+  expect(remove.hasAttribute("disabled")).toBe(true);
+  expect(add.hasAttribute("disabled")).toBe(true);
+  expect(sent).toEqual([]);
+
+  approvalReadFailed = false;
+  await user.click(view.getByRole("button", { name: "Refresh team rules" }));
+  await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+  expect(remove.hasAttribute("disabled")).toBe(false);
 });
 
 test("an administrator adds a team rule for every Bot", async () => {

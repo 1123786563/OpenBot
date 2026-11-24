@@ -75,13 +75,11 @@ test("a Bot chosen with @ and the message appear in the Conversation handoff", a
     await view.findByRole("heading", { level: 1, name: "Knowledge" }),
   ).toBeTruthy();
   expect(
-    await transcript.findByRole("heading", { level: 2, name: "Knowledge" }),
-  ).toBeTruthy();
-  expect(
     await transcript.findByText("Summarize our onboarding policy", {
       exact: false,
     }),
   ).toBeTruthy();
+  expect(view.queryByRole("textbox", { name: "Message" })).toBeNull();
 });
 
 test("automatic routing keeps the start ID and waits for a confirmed quote", async () => {

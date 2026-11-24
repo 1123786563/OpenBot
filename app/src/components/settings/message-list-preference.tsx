@@ -1,5 +1,6 @@
 import { IconLayoutSidebar } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useId } from "react";
 import { ChannelItemContent } from "@/components/app-sidebar/channel-item-content";
 import { PageRows } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
 } from "@/lib/settings/message-list";
 
 export function MessageListPreference() {
+  const descriptionId = useId();
   const preferences = useUserPreferences();
   const queryClient = useQueryClient();
   const save = useMutation(
@@ -39,13 +41,13 @@ export function MessageListPreference() {
         <ItemMedia variant="icon">
           <IconLayoutSidebar />
         </ItemMedia>
-        <ItemContent>
-          <ItemTitle>Message list emphasis</ItemTitle>
-          <ItemDescription>
-            Choose which line stands out in the sidebar.
+        <ItemContent className="min-w-0">
+          <ItemTitle className="w-auto">Message list emphasis</ItemTitle>
+          <ItemDescription className="line-clamp-none" id={descriptionId}>
+            Show the conversation title or the Bot name first in the sidebar.
           </ItemDescription>
         </ItemContent>
-        <ItemActions>
+        <ItemActions className="max-sm:basis-full">
           <Select
             value={emphasis ?? null}
             disabled={!preferences.data || save.isPending}
@@ -55,7 +57,11 @@ export function MessageListPreference() {
               }
             }}
           >
-            <SelectTrigger aria-label="Message list emphasis">
+            <SelectTrigger
+              aria-describedby={descriptionId}
+              aria-label="Message list emphasis"
+              className="max-sm:w-full"
+            >
               <SelectValue>
                 {emphasis
                   ? emphasis === "agent"

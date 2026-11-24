@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useRef, useState } from "react";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { SkillFields } from "@/components/skills/skill-fields";
-import { useActionConfirmation } from "@/components/ui/action-confirmation";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
 import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
@@ -24,7 +25,8 @@ export function NewSkillPage() {
   const saveSkill = useMutation(saveSkillMutationOptions(queryClient));
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
-  const { requestConfirmation, confirmation } = useActionConfirmation();
+  const [dirty, setDirty] = useState(false);
+  const submitting = useRef(false);
 
   const leave = paths.skills();
 
@@ -33,50 +35,55 @@ export function NewSkillPage() {
       backButton={{ label: "Skills", linkProps: paths.skills() }}
       description={
         personal
-          ? "Write instructions a Bot follows when you pick the skill from the / menu. Your Bots offer it as soon as you save."
-          : "Write instructions a Bot follows when someone picks the skill from the / menu. After saving, choose which Bots offer it."
+          ? "Give your Bots reusable instructions for the / menu. Saving makes the skill available to all your Bots."
+          : "Write reusable instructions for the / menu. Save the skill, then choose which Bots can offer it."
       }
       title="New skill"
     >
       <SkillFields
         sections={{
           flush: true,
-          /* A draft with anything in it is worth one question before Cancel throws it away. */
-          cancel: ({ dirty }) => (
-            <Button
-              onClick={(event) => {
-                if (!dirty) return;
-                event.preventDefault();
-                requestConfirmation({
-                  title: "Leave without saving?",
-                  description:
-                    "What you have written in this skill is discarded.",
-                  confirmLabel: "Leave",
-                  pendingLabel: "Leaving…",
-                  failureMessage: "Couldn't leave this page. Try again.",
-                  trigger: event.currentTarget,
-                  run: async () => {
-                    await navigate(leave);
-                  },
-                });
-              }}
-              render={(props) => <Link {...props} {...leave} />}
-              variant="outline"
+          cancel: () => (
+            <Link
+              {...leave}
+              className={buttonVariants({
+                className: "min-h-11",
+                variant: "outline",
+              })}
             >
               Cancel
-            </Button>
+            </Link>
           ),
         }}
         defaultValues={emptySkillForm}
         error={saveSkill.error}
+        onDirtyChange={setDirty}
+        saveDisabled={saveSkill.isPending}
+        saving={saveSkill.isPending}
         onSubmit={async (values) => {
-          // Admin-authored skills are the deployment's; a person's own are made on Capabilities.
-          await saveSkill.mutateAsync({ ...values, global: true });
-          await navigate(paths.skill(values.slug.trim()));
+          if (submitting.current) return;
+          submitting.current = true;
+          try {
+            // Deployment skills are shared. Personal drafts are made on Capabilities.
+            await saveSkill.mutateAsync({ ...values, global: true });
+            await navigate({
+              ...paths.skill(values.slug.trim()),
+              ignoreBlocker: true,
+              replace: true,
+            });
+          } finally {
+            submitting.current = false;
+          }
         }}
         submitLabel="Save skill"
       />
-      {confirmation}
+      <DraftLeaveConfirmation
+        description="The instructions, name, and tools you entered will be lost."
+        hasDraft={dirty}
+        saving={saveSkill.isPending}
+        submitting={submitting}
+        title="Discard this skill draft?"
+      />
     </CapabilityPage>
   );
 }

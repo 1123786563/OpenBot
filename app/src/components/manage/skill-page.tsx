@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import {
   IconBolt,
   IconChevronRight,
@@ -6,19 +7,20 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { Fragment, useRef, useState } from "react";
+import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import {
   PageEmpty,
   PageRows,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SkillFields } from "@/components/skills/skill-fields";
 import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
-import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -39,7 +41,10 @@ import {
   saveSkillMutationOptions,
   setPluginGrantMutationOptions,
 } from "@/lib/plugins/mutations";
-import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import {
+  pluginsPageQueryOptions,
+  skillsAccessDenied,
+} from "@/lib/plugins/queries";
 
 /**
  * One of the deployment's skills: which Bots offer it, what it says, and removing it.
@@ -59,32 +64,14 @@ export function SkillPage({ slug }: { slug: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const plugins = useQuery(pluginsPageQueryOptions());
-  const { data: agents } = useQuery(agentListQueryOptions());
+  const agents = useQuery(agentListQueryOptions());
   /* The ones this person has hidden, so a grant one of them holds still has its switch here. */
-  const { data: hiddenAgents } = useQuery(agentListQueryOptions(true));
+  const hiddenAgents = useQuery(agentListQueryOptions(true));
+  const botsHeading = useRef<HTMLHeadingElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftDirty, setDraftDirty] = useState(false);
+  const submitting = useRef(false);
   const { requestConfirmation, confirmation } = useActionConfirmation();
-  /* The Back trail out of an edited skill asks first, as Cancel does on the New skill page. */
-  const leave = () => navigate(paths.skills());
-  const guardLeave = (event: {
-    preventDefault: () => void;
-    currentTarget: HTMLElement;
-  }) => {
-    if (!draftDirty) return;
-    event.preventDefault();
-    requestConfirmation({
-      title: "Leave without saving?",
-      description: "Your edits to this skill are discarded.",
-      confirmLabel: "Leave",
-      pendingLabel: "Leaving…",
-      failureMessage: "Couldn't leave this page. Try again.",
-      trigger: event.currentTarget,
-      run: async () => {
-        await leave();
-      },
-    });
-  };
 
   const setGrant = useMutation({
     ...setPluginGrantMutationOptions(queryClient),
@@ -104,23 +91,23 @@ export function SkillPage({ slug }: { slug: string }) {
 
   const back = {
     label: "Skills",
-    linkProps: {
-      ...paths.skills(),
-      onClick: guardLeave,
-    },
+    linkProps: paths.skills(),
   };
   const skill = plugins.data?.skills.find(
     (candidate) => candidate.slug === slug,
   );
+  const stale = plugins.isError;
+  const denied = skillsAccessDenied(plugins.error);
+  const retrySkill = () => plugins.refetch();
 
   /* Placeholder rows while the fetch is open, so no sentence asserts anything mid-read. */
   if (plugins.isPending) {
     return (
       <PageShell backButton={back} title={fallbackTitle(slug)}>
-        <div aria-busy="true" aria-label="Loading" role="status">
+        <Stack aria-busy="true" aria-label="Loading skill" role="status">
           <PageRows>
             {LOADING_ROWS.map((key, index) => (
-              <div key={key}>
+              <Fragment key={key}>
                 <Item size="sm">
                   <ItemContent className="gap-1.5">
                     <Skeleton className="h-3.5 w-40" />
@@ -128,32 +115,35 @@ export function SkillPage({ slug }: { slug: string }) {
                   </ItemContent>
                 </Item>
                 {index !== LOADING_ROWS.length - 1 && <Separator />}
-              </div>
+              </Fragment>
             ))}
           </PageRows>
-        </div>
+        </Stack>
       </PageShell>
     );
   }
 
   /* A list that could not be read is not a missing skill: `isPending` goes false on a failure too. */
-  if (!plugins.data) {
+  if (denied || (stale && !skill)) {
     return (
       <PageShell backButton={back} title={fallbackTitle(slug)}>
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load this skill.
-          </p>
-          <Button
-            disabled={plugins.isFetching}
-            onClick={() => void plugins.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {plugins.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+        <ReadError
+          description={
+            denied
+              ? "Check that you still have access, then try again."
+              : undefined
+          }
+          focusAfterRetry={() => botsHeading.current}
+          message={
+            denied
+              ? "Skill access is unavailable."
+              : "Couldn't load this skill."
+          }
+          retry={retrySkill}
+          retryBelow
+          retryLabel="Retry skill"
+          retrying={plugins.isFetching}
+        />
       </PageShell>
     );
   }
@@ -169,10 +159,17 @@ export function SkillPage({ slug }: { slug: string }) {
   }
 
   const bots = grantRoster({
-    roster: agents ?? [],
-    hidden: hiddenAgents ?? [],
+    roster: agents.isError ? [] : (agents.data ?? []),
+    hidden: hiddenAgents.isError ? [] : (hiddenAgents.data ?? []),
     holders: skill.grantedTo,
   });
+  const rosterFailed = agents.isError || hiddenAgents.isError;
+  const rosterLoading = agents.isPending || hiddenAgents.isPending;
+  const retryBots = () =>
+    Promise.all([
+      agents.isError && agents.refetch(),
+      hiddenAgents.isError && hiddenAgents.refetch(),
+    ]);
 
   return (
     <PageShell
@@ -180,6 +177,17 @@ export function SkillPage({ slug }: { slug: string }) {
       {...(skill.summary ? { description: skill.summary } : {})}
       title={skill.title}
     >
+      {stale ? (
+        <ReadError
+          description="Your draft is still here. Refresh before saving, changing which Bots offer this skill, or deleting it."
+          focusAfterRetry={() => botsHeading.current}
+          message="Couldn't refresh this skill."
+          retry={retrySkill}
+          retryBelow
+          retryLabel="Retry skill"
+          retrying={plugins.isFetching}
+        />
+      ) : null}
       {error ? (
         <p className="text-destructive text-sm" role="alert">
           {error}
@@ -187,24 +195,33 @@ export function SkillPage({ slug }: { slug: string }) {
       ) : null}
 
       <PageSection
-        description={
-          <>
-            Bots with their switch on offer {skill.title} when someone types{" "}
-            <code>/</code>. It takes effect at once.
-          </>
-        }
+        description="These switches update the / menu immediately. The form below saves the skill’s content separately."
+        headingRef={botsHeading}
         title="Bots"
       >
-        {bots.length === 0 ? (
+        {rosterFailed ? (
+          <ReadError
+            description="Refresh the Bot list before changing who offers this skill."
+            focusAfterRetry={() => botsHeading.current}
+            message="Couldn't load every Bot."
+            retry={retryBots}
+            retryBelow
+            retryLabel="Retry Bots"
+            retrying={agents.isFetching || hiddenAgents.isFetching}
+          />
+        ) : rosterLoading ? (
+          <ReadStatus kind="loading" message="Loading Bots…" />
+        ) : null}
+        {bots.length === 0 && !rosterFailed && !rosterLoading ? (
           <PageEmpty icon={IconBolt} title="No Bots yet">
             Create a Bot to offer this skill.
           </PageEmpty>
-        ) : (
+        ) : bots.length > 0 ? (
           <PageRows>
             {bots.map((bot, index) => {
               const held = skill.grantedTo.includes(bot.id);
               return (
-                <div key={bot.id}>
+                <Fragment key={bot.id}>
                   <Item size="sm">
                     <ItemContent>
                       <ItemTitle>{bot.name}</ItemTitle>
@@ -218,15 +235,17 @@ export function SkillPage({ slug }: { slug: string }) {
                     <ItemActions>
                       {/*
                        * Binary and immediate: it takes effect when switched and there is no save.
-                       * Disabled only while its own write is in flight, so switching one Bot does
-                       * not freeze the rest of the list.
+                       * A write in flight only disables its own switch.
                        */}
                       <Switch
                         aria-label={`${bot.name} offers ${skill.title}`}
                         checked={held}
                         disabled={
-                          setGrant.isPending &&
-                          setGrant.variables?.agentId === bot.id
+                          stale ||
+                          rosterFailed ||
+                          rosterLoading ||
+                          (setGrant.isPending &&
+                            setGrant.variables?.agentId === bot.id)
                         }
                         onCheckedChange={(next) => {
                           setError(null);
@@ -241,11 +260,11 @@ export function SkillPage({ slug }: { slug: string }) {
                     </ItemActions>
                   </Item>
                   {index !== bots.length - 1 && <Separator />}
-                </div>
+                </Fragment>
               );
             })}
           </PageRows>
-        )}
+        ) : null}
       </PageSection>
 
       <SkillFields
@@ -264,77 +283,96 @@ export function SkillPage({ slug }: { slug: string }) {
         // Remounted after a save, so the form starts again from what the server now holds.
         key={`${skill.title}\u0000${skill.summary}\u0000${skill.instructions}`}
         onSubmit={async (values) => {
-          await saveSkill.mutateAsync({ ...values, global: true });
-          /* The saved values are on their way back through the cache, but the guard at the
-             top must stop believing there are unsaved edits the moment they are saved. */
-          setDraftDirty(false);
-          toast.add({ title: "Skill saved", type: "success" });
+          if (submitting.current) return;
+          submitting.current = true;
+          try {
+            await saveSkill.mutateAsync({ ...values, global: true });
+            setDraftDirty(false);
+            toast.add({ title: "Skill saved", type: "success" });
+          } finally {
+            submitting.current = false;
+          }
         }}
+        saveDisabled={stale}
+        saving={saveSkill.isPending}
         slugLocked
         submitLabel="Save changes"
       />
 
       {/* A row that opens the confirmation, as deleting a Bot is on its own page. */}
-      <PageSection title="Manage">
-        <PageRows>
-          <Item
-            render={
-              <button
-                onClick={(event) =>
-                  requestConfirmation({
-                    title: `Delete ${skill.title}?`,
-                    description:
-                      "Everyone who could run this skill will lose access to it, and no Bot will offer it. Deletion is permanent.",
-                    confirmLabel: "Delete",
-                    pendingLabel: "Deleting…",
-                    failureMessage: "Couldn't delete this skill. Try again.",
-                    trigger: event.currentTarget,
-                    refresh: () => plugins.refetch(),
-                    run: async () => {
-                      const { data } = await plugins.refetch({
-                        throwOnError: true,
-                      });
-                      const current = data?.skills.find(
-                        (candidate) => candidate.slug === skill.slug,
-                      );
-                      if (
-                        current?.id !== skill.id ||
-                        current.title !== skill.title ||
-                        current.instructions !== skill.instructions ||
-                        current.ownerUserId !== skill.ownerUserId
-                      ) {
-                        throw new ActionUnavailable(
-                          "This skill changed or is no longer available. Return to Skills to review it.",
+      {!stale ? (
+        <PageSection title="Manage">
+          <PageRows>
+            <Item
+              render={
+                <button
+                  disabled={saveSkill.isPending}
+                  onClick={(event) =>
+                    requestConfirmation({
+                      title: `Delete ${skill.title}?`,
+                      description:
+                        "Everyone who could run this skill will lose access to it, and no Bot will offer it. Deletion is permanent.",
+                      confirmLabel: "Delete",
+                      pendingLabel: "Deleting…",
+                      failureMessage: "Couldn't delete this skill. Try again.",
+                      trigger: event.currentTarget,
+                      refresh: () => plugins.refetch(),
+                      run: async () => {
+                        const { data } = await plugins.refetch({
+                          throwOnError: true,
+                        });
+                        const current = data?.skills.find(
+                          (candidate) => candidate.slug === skill.slug,
                         );
-                      }
-                      await removeSkill.mutateAsync(skill.slug);
-                      await navigate(paths.skills());
-                    },
-                  })
-                }
-                type="button"
-              />
-            }
-            size="sm"
-          >
-            <ItemMedia variant="icon">
-              <IconTrash />
-            </ItemMedia>
-            <ItemContent>
-              <ItemTitle>Delete</ItemTitle>
-              <ItemDescription>
-                People can't run it any more, and no Bot offers it. You can't
-                undo this.
-              </ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <IconChevronRight className="size-4 text-muted-foreground" />
-            </ItemActions>
-          </Item>
-        </PageRows>
-      </PageSection>
+                        if (
+                          current?.id !== skill.id ||
+                          current.title !== skill.title ||
+                          current.instructions !== skill.instructions ||
+                          current.ownerUserId !== skill.ownerUserId
+                        ) {
+                          throw new ActionUnavailable(
+                            "This skill changed or is no longer available. Return to Skills to review it.",
+                          );
+                        }
+                        await removeSkill.mutateAsync(skill.slug);
+                        await navigate({
+                          ...paths.skills(),
+                          ignoreBlocker: true,
+                        });
+                      },
+                    })
+                  }
+                  type="button"
+                />
+              }
+              size="sm"
+            >
+              <ItemMedia variant="icon">
+                <IconTrash />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>Delete</ItemTitle>
+                <ItemDescription>
+                  People can't run it any more, and no Bot offers it. You can't
+                  undo this.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <IconChevronRight className="size-4 text-muted-foreground" />
+              </ItemActions>
+            </Item>
+          </PageRows>
+        </PageSection>
+      ) : null}
 
       {confirmation}
+      <DraftLeaveConfirmation
+        description="The changes to the skill’s name, instructions, and tools will be lost."
+        hasDraft={draftDirty}
+        saving={saveSkill.isPending}
+        submitting={submitting}
+        title="Discard this skill draft?"
+      />
     </PageShell>
   );
 }

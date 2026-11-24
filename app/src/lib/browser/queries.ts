@@ -3,7 +3,7 @@ import {
   browserApiPaths,
 } from "@openbot/shared/openbot-browser";
 import { queryOptions } from "@tanstack/react-query";
-import { canKeepCachedRead, client } from "@/lib/client";
+import { ClientError, canKeepCachedRead, client } from "@/lib/client";
 
 export const browserKeys = {
   all: ["browser"] as const,
@@ -28,7 +28,9 @@ export const BROWSER_CLOSED_POLL_MS = 30_000;
  * run a browser, where there is no button to update. Asking never starts a computer: the server answers a browser
  * whose computer is not running as closed.
  */
-function sidebarInterval(state: BrowserApiState | undefined): number | false {
+function sidebarInterval(
+  state: BrowserApiState | null | undefined,
+): number | false {
   if (!state?.available) return false;
   return state.open || state.activity || state.real?.connected
     ? BROWSER_POLL_MS
@@ -49,12 +51,25 @@ export function browserStateQueryOptions(options?: { poll?: boolean }) {
   return queryOptions({
     queryKey: browserKeys.state,
     // The whole body is the state, so no envelope key: without one, client() returns the Response.
-    queryFn: async (): Promise<BrowserApiState> =>
-      (
-        await client(browserApiPaths.state, {
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<BrowserApiState | null> => {
+      try {
+        const response = await client(browserApiPaths.state, {
           fallback: "Couldn't load your browser.",
-        })
-      ).json(),
+        });
+        return response.json();
+      } catch (error) {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          cache.setQueryData(queryKey, null);
+        }
+        throw error;
+      }
+    },
     refetchInterval: (query) => {
       if (!canKeepCachedRead(query.state.error)) return false;
       if (!options?.poll) return sidebarInterval(query.state.data);

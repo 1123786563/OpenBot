@@ -19,6 +19,7 @@ export function BoardRow({
   actions,
   more,
   open: openFromParent,
+  stackActions = false,
   wholeDetail = false,
   onSelect,
 }: {
@@ -34,6 +35,8 @@ export function BoardRow({
   more?: ReactNode;
   /** Opened by the parent (an Answer button), as well as by a click on the text. */
   open?: boolean;
+  /** Place actions below the text on narrow screens. */
+  stackActions?: boolean;
   /**
    * The detail is never cut: what an approval would act on is read whole before Allow, however
    * long, and broken anywhere rather than run off the row.
@@ -48,7 +51,12 @@ export function BoardRow({
   const shownMeta = meta.filter(Boolean);
   return (
     <div className="flex flex-col gap-2 px-3.5 py-3" data-slot="item">
-      <div className="flex items-start gap-3">
+      <div
+        className={cn(
+          "items-start gap-3",
+          stackActions ? "grid grid-cols-[auto_minmax(0,1fr)] sm:flex" : "flex",
+        )}
+      >
         <span
           className={cn(
             "flex size-7 shrink-0 items-center justify-center rounded-md border border-border text-[13px] [&_svg]:size-4",
@@ -94,7 +102,14 @@ export function BoardRow({
           ) : null}
         </div>
         {actions ? (
-          <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-1.5",
+              stackActions && "col-start-2 flex-wrap",
+            )}
+          >
+            {actions}
+          </div>
         ) : null}
       </div>
       {open && more ? <div className="pl-10">{more}</div> : null}

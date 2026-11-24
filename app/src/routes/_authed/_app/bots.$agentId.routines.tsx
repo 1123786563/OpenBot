@@ -18,7 +18,9 @@ function RoutinesPage() {
         description="Manage this Bot’s scheduled routines. Turn a routine off, run it now, or delete it."
         title="Routines"
       >
-        {(agent) => <RoutinesList agentId={agent.id} hasCreateAction />}
+        {(agent) => (
+          <RoutinesList agentId={agent.id} hasCreateAction searchable />
+        )}
       </BotSubpage>
     </AstryxSurface>
   );

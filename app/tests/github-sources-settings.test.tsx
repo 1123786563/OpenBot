@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 const writes: { request: string; body: unknown }[] = [];
-function serving() {
+function serving(firstWriteFails = false) {
   writes.length = 0;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -30,6 +30,12 @@ function serving() {
         request: `${method} ${String(input)}`,
         body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
       });
+      if (firstWriteFails && writes.length === 1) {
+        return Response.json(
+          { error: "Connection interrupted" },
+          { status: 503 },
+        );
+      }
       return Response.json({
         binding: {
           id: "g2",
@@ -81,11 +87,33 @@ test("connecting a repository sends it with its secret", async () => {
     "acme/web",
   );
   await user.type(view.getByLabelText("Webhook secret"), "s3cret");
-  fireEvent.click(view.getByRole("button", { name: "Connect events" }));
+  fireEvent.click(view.getByRole("button", { name: "Add repository" }));
   await waitFor(() =>
     expect(writes).toContainEqual({
       request: "POST /api/responsibilities/sources/github",
-      body: { repository: "acme/web", secret: "s3cret" },
+      body: {
+        repository: "acme/web",
+        secret: "s3cret",
+        requestId: expect.any(String),
+      },
     }),
   );
+});
+
+test("retrying an interrupted add keeps the same request identifier", async () => {
+  serving(true);
+  const view = draw();
+  const user = userEvent.setup({ document });
+  await view.findByText("acme/app");
+  await user.click(view.getByRole("button", { name: "Add a repository" }));
+  await user.type(
+    await view.findByRole("textbox", { name: "Repository" }),
+    "acme/web",
+  );
+  await user.type(view.getByLabelText("Webhook secret"), "s3cret");
+  await user.click(view.getByRole("button", { name: "Add repository" }));
+  await view.findByText("Connection interrupted");
+  await user.click(view.getByRole("button", { name: "Add repository" }));
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[1]).toEqual(writes[0]);
 });

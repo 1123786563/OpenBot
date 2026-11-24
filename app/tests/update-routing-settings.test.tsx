@@ -7,6 +7,7 @@ import {
   UpdateRoutingSection,
 } from "@/components/settings/update-routing";
 import { authKeys } from "@/lib/auth/queries";
+import type { Reachability } from "@/lib/delivery";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { settleReactWork } from "./settle-react-work";
 
@@ -38,9 +39,15 @@ const everyKind = {
 const everyChannel = { slack: true, teams: true, sms: true, push: true };
 let routing: Record<string, unknown> = everyKind;
 let available: Record<string, boolean> = everyChannel;
+let deliveries: Reachability["deliveries"] = [];
+let deliveryStatus = 200;
+let saveStatus = 200;
 afterEach(() => {
   routing = everyKind;
   available = everyChannel;
+  deliveries = [];
+  deliveryStatus = 200;
+  saveStatus = 200;
 });
 function serving() {
   writes.length = 0;
@@ -51,16 +58,14 @@ function serving() {
         request: `${method} ${String(input)}`,
         body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
       });
-      return Response.json({ ok: true });
+      return Response.json({ ok: saveStatus === 200 }, { status: saveStatus });
     }
     // Every channel set up unless a case says otherwise, so each switch reflects the person's preference.
     if (String(input).endsWith("/api/delivery")) {
-      return Response.json({
-        bindings: [],
-        devices: [],
-        deliveries: [],
-        available,
-      });
+      return Response.json(
+        { bindings: [], devices: [], deliveries, available },
+        { status: deliveryStatus },
+      );
     }
     return Response.json({ routing });
   }) as unknown as typeof fetch;
@@ -115,6 +120,38 @@ test("pings get their own row, Something needs you", async () => {
   });
 });
 
+test("delivery failure appears only for its update type and channel", async () => {
+  routing = { ...everyKind, progress: "all" };
+  deliveries = [
+    {
+      id: "approval",
+      transport: "sms",
+      kind: "approval",
+      state: "failed",
+      error: "Provider unavailable",
+      createdAt: "2026-11-24T00:00:00Z",
+    },
+    {
+      id: "reply",
+      transport: "sms",
+      kind: "reply",
+      state: "sent",
+      error: null,
+      createdAt: "2026-11-23T00:00:00Z",
+    },
+  ];
+  serving();
+  const view = draw();
+  const warning = await view.findByText("Latest SMS delivery failed");
+  expect(view.getAllByText("Latest SMS delivery failed")).toHaveLength(1);
+  expect(warning.closest('[data-slot="item"]')?.textContent).toContain(
+    "Approvals",
+  );
+  expect(warning.closest("details")?.textContent).toContain(
+    "Provider unavailable",
+  );
+});
+
 /** Who is looking: an admin, or someone running OpenBot themselves, can set channels up; anyone else can't. */
 function draw(who: { role: string; localEvaluation: boolean } = ADMIN) {
   const client = new QueryClient({
@@ -133,6 +170,42 @@ function draw(who: { role: string; localEvaluation: boolean } = ADMIN) {
     </QueryClientProvider>,
   );
 }
+
+test("delivery recovery confirms which switches to show and save recovery keeps newer preferences", async () => {
+  available = { ...everyChannel, slack: false, teams: false };
+  deliveryStatus = 503;
+  saveStatus = 503;
+  serving();
+  const view = draw();
+  const retryDelivery = await view.findByRole("button", {
+    name: "Retry delivery channels",
+  });
+  expect(view.queryAllByRole("switch")).toHaveLength(0);
+
+  deliveryStatus = 200;
+  fireEvent.click(retryDelivery);
+  const sms = await view.findByRole("switch", { name: "Progress by SMS" });
+  expect(view.queryByRole("switch", { name: "Progress by Slack" })).toBeNull();
+  fireEvent.click(sms);
+  const retrySave = await view.findByRole("button", {
+    name: "Retry saving Progress by SMS",
+  });
+  expect(view.getByText("Couldn't save Progress by SMS.")).toBeTruthy();
+  expect(writes.map(({ body }) => body)).toEqual([
+    { transports: ["push", "sms"] },
+  ]);
+
+  routing = { ...everyKind, progress: ["push", "slack"] };
+  saveStatus = 200;
+  fireEvent.click(retrySave);
+  await waitFor(() =>
+    expect(view.queryByText("Couldn't save Progress by SMS.")).toBeNull(),
+  );
+  expect(writes.map(({ body }) => body)).toEqual([
+    { transports: ["push", "sms"] },
+    { transports: ["push", "slack", "sms"] },
+  ]);
+});
 
 test("only channels that are set up get a switch, and a save keeps the others as they were", async () => {
   available = { slack: true, teams: false, sms: false, push: true };

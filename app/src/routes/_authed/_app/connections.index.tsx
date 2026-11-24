@@ -4,6 +4,7 @@ import {
   IconBrandNotion,
   IconCheck,
   IconChevronRight,
+  IconClock,
   IconKey,
   IconLock,
   IconPlug,
@@ -53,6 +54,7 @@ import {
   corsairIntegrationsQueryOptions,
 } from "@/lib/connections/corsair";
 import {
+  ALWAYS_ON_APP,
   type ConnectionRow,
   connectionRows,
   personalAppsNeedingSetup,
@@ -392,31 +394,34 @@ function RouteComponent() {
         connected,
       })
     : 0;
-  const rows = personal
-    ? personalConnectionRows({
-        everything: showSetup || query !== "",
-        catalogue: plugins.data?.catalogue ?? [],
-        added,
-        brokered: brokeredAccountsListedOn(listed),
-        connected,
-        links: links.data ?? [],
-        /*
-         * A failed links read must not offer GitHub and Slack as connectable: with no list, a
-         * connected account is indistinguishable from none, and a Connect tile over one invites a
-         * redundant link. Omitted, the section's own alert ("so they aren't listed") is then true.
-         */
-        providers: links.isError ? undefined : providers.data,
-        corsair,
-      })
-    : connectionRows({
-        catalogue: yours,
-        brokered: brokeredAccountsListedOn(listed),
-        shared: sharedAccountsListedOn(listed),
-        connected,
-        links: links.data ?? [],
-        providers: links.isError ? undefined : providers.data,
-        corsair,
-      });
+  const rows = (
+    personal
+      ? personalConnectionRows({
+          everything: showSetup || query !== "",
+          catalogue: plugins.data?.catalogue ?? [],
+          added,
+          brokered: brokeredAccountsListedOn(listed),
+          connected,
+          links: links.data ?? [],
+          /*
+           * A failed links read must not offer GitHub and Slack as connectable: with no list, a
+           * connected account is indistinguishable from none, and a Connect tile over one invites a
+           * redundant link. Omitted, the section's own alert ("so they aren't listed") is then true.
+           */
+          providers: links.isError ? undefined : providers.data,
+          corsair,
+        })
+      : connectionRows({
+          catalogue: yours,
+          brokered: brokeredAccountsListedOn(listed),
+          shared: sharedAccountsListedOn(listed),
+          connected,
+          links: links.data ?? [],
+          providers: links.isError ? undefined : providers.data,
+          corsair,
+        })
+  ).filter(({ key }) => key !== ALWAYS_ON_APP);
+  const builtInMatches = "routines schedule work for your bots".includes(query);
   const matching = rows.filter((row) =>
     `${row.title} ${row.summary}`.toLocaleLowerCase().includes(query),
   );
@@ -554,9 +559,11 @@ function RouteComponent() {
               </p>
             </div>
             {matching.length === 0 ? (
-              <p className="mt-4 text-sm text-muted-foreground" role="status">
-                Nothing matches “{search.trim()}”.
-              </p>
+              builtInMatches ? null : (
+                <p className="mt-4 text-sm text-muted-foreground" role="status">
+                  Nothing matches “{search.trim()}”.
+                </p>
+              )
             ) : (
               /*
                * A grid of separate cards, where every other list is one `PageRows` card of divided
@@ -637,6 +644,29 @@ function RouteComponent() {
           </div>
         ) : null}
       </PageSection>
+      {builtInMatches ? (
+        <PageSection title="Built-in tools">
+          <PageRows>
+            <Item
+              render={
+                <Link params={{ key: ALWAYS_ON_APP }} to="/connections/$key" />
+              }
+              size="sm"
+            >
+              <ItemMedia variant="icon">
+                <IconClock />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>Routines</ItemTitle>
+                <ItemDescription>Schedule work for your Bots.</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <IconChevronRight className="size-4 text-muted-foreground" />
+              </ItemActions>
+            </Item>
+          </PageRows>
+        </PageSection>
+      ) : null}
       {/*
        * The rest of what a Bot signs in with. Saved logins and keys live under Settings; these rows
        * are a way in from beside the apps that use them, in the personal edition.

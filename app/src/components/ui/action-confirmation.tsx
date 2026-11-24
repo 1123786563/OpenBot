@@ -11,7 +11,14 @@ import {
 } from "@/components/ui/dialog";
 import { ClientError } from "@/lib/client";
 
-export class ActionUnavailable extends Error {}
+export class ActionUnavailable extends Error {
+  constructor(
+    message: string,
+    readonly recovery?: ReactNode,
+  ) {
+    super(message);
+  }
+}
 
 export class ActionIncomplete extends Error {}
 
@@ -32,13 +39,22 @@ type Confirmation = {
 
 type ConfirmationState =
   | { phase: "ready" | "pending"; action: Confirmation }
-  | { phase: "retry" | "unavailable"; action: Confirmation; message: string };
+  | { phase: "retry"; action: Confirmation; message: string }
+  | {
+      phase: "unavailable";
+      action: Confirmation;
+      message: string;
+      recovery?: ReactNode;
+    };
 
-export function useActionConfirmation(review?: {
-  content: ReactNode;
-  ready: boolean;
-  onClose: () => void;
-}) {
+export function useActionConfirmation(
+  review?: {
+    content: ReactNode;
+    ready: boolean;
+    onClose: () => void;
+  },
+  options?: { overlayClassName: string },
+) {
   const [state, setState] = useState<ConfirmationState | null>(null);
   const [notice, setNotice] = useState("");
   const remembered = useRef<Confirmation | null>(null);
@@ -74,7 +90,13 @@ export function useActionConfirmation(review?: {
             : undefined;
       if (message !== undefined) {
         await action.refresh?.().catch(() => undefined);
-        setState({ phase: "unavailable", action, message });
+        setState({
+          phase: "unavailable",
+          action,
+          message,
+          recovery:
+            error instanceof ActionUnavailable ? error.recovery : undefined,
+        });
         cancelButton.current?.focus();
       } else {
         setState({
@@ -134,6 +156,7 @@ export function useActionConfirmation(review?: {
               );
             }}
             initialFocus={cancelButton}
+            overlayClassName={options?.overlayClassName}
             role="alertdialog"
             showCloseButton={false}
           >
@@ -146,6 +169,7 @@ export function useActionConfirmation(review?: {
                   {state.message}
                 </p>
               )}
+              {state?.phase === "unavailable" ? state.recovery : null}
             </DialogBody>
             <DialogFooter className="flex-wrap">
               <Button

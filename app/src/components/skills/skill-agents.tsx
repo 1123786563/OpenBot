@@ -36,19 +36,26 @@ export function SkillAgents({
 
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="text-sm font-medium">Bots</h2>
+      <h2 className="text-sm font-medium">
+        Make this skill available on your Bots
+      </h2>
       {mine.length === 0 ? (
         <p className="text-muted-foreground text-xs">
           You don't have a Bot of your own yet.
         </p>
       ) : (
         <>
+          <p className="text-muted-foreground text-sm">
+            Selected Bots offer <code>/{slug}</code> in the <code>/</code> menu.
+            Changes take effect immediately.
+          </p>
           <div className="flex flex-wrap gap-2">
             {mine.map((agent) => {
               const on = held.has(agent.id);
               return (
                 <Button
                   aria-pressed={on}
+                  className="min-h-11"
                   disabled={grant.isPending}
                   key={agent.id}
                   onClick={() => toggle(agent.id, on)}
@@ -66,10 +73,6 @@ export function SkillAgents({
               );
             })}
           </div>
-          <p className="text-muted-foreground text-xs">
-            Bots you pick here offer <code>/{slug}</code> when you type{" "}
-            <code>/</code>.
-          </p>
         </>
       )}
       {grant.error ? (

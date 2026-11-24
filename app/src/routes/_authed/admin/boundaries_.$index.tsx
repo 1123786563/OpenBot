@@ -2,7 +2,13 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import {
   DescribeRule,
@@ -11,7 +17,11 @@ import {
 import { DryRunChanges } from "@/components/boundaries/dry-run-changes";
 import { RulePreview } from "@/components/boundaries/rule-preview";
 import { RuleReading } from "@/components/boundaries/rule-reading";
-import { RuleReference } from "@/components/boundaries/rule-reference";
+import {
+  RULE_EXPRESSION_HELP_ID,
+  RuleExpressionHelp,
+  RuleReference,
+} from "@/components/boundaries/rule-reference";
 import {
   PageCard,
   PageSection,
@@ -44,6 +54,7 @@ import {
 
 /** How long the rule has to rest before it is replayed, as on Add rule. */
 const PREVIEW_DELAY_MS = 400;
+const INLINE_REPLAY_LIMIT = 5;
 
 export const Route = createFileRoute("/_authed/admin/boundaries_/$index")({
   validateSearch: boundaryListSearch,
@@ -61,7 +72,11 @@ function RulePage() {
   const { q } = Route.useSearch();
   const back = {
     label: "Boundaries",
-    linkProps: { to: "/admin/boundaries" as const, search: { q } },
+    linkProps: {
+      to: "/admin/boundaries" as const,
+      search: { q },
+      state: { returnBoundaryRule: legacy ? undefined : identifier },
+    },
   };
   const stored = useQuery({ ...actionPolicyQueryOptions(), enabled: !legacy });
   const { requestConfirmation, confirmation } = useActionConfirmation();
@@ -119,12 +134,12 @@ function RulePage() {
       </PageShell>
     );
   }
-  // Keyed by the rule, so a saved change starts the editor and its preview afresh from what is stored.
+  // A bookmark keeps the same detail view while the saved expression changes.
   return (
     <>
       {confirmation}
       <RuleDetail
-        key={rule}
+        key={identifier}
         policy={policy}
         rule={rule}
         back={back}
@@ -186,9 +201,26 @@ function RuleDetail({
   onRemove: (trigger: HTMLElement) => void;
 }) {
   const label = ruleLabel(policy, rule);
+  const ruleField = useRef<HTMLTextAreaElement>(null);
+  const focusAfterSave = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (focusAfterSave.current !== rule) return;
+    focusAfterSave.current = null;
+    if (document.activeElement === document.body) ruleField.current?.focus();
+  }, [rule]);
 
   // Replay the current policy without this rule against recorded decisions, including trial refusals.
   const reach = useQuery(policyDryRunQueryOptions(withoutRule(policy, rule)));
+  const changedDecisions =
+    reach.data?.changes.filter((change) => change.would === "allowed") ?? [];
+  const replayRows = (
+    <DryRunChanges
+      changes={changedDecisions}
+      total={reach.data?.wouldAllow ?? 0}
+      verdict="Would allow"
+      verdictClassName="text-foreground"
+    />
+  );
 
   return (
     <PageShell
@@ -204,10 +236,18 @@ function RuleDetail({
       ) : null}
 
       <PageSection
-        description="Written in CEL. It is checked before every action a Bot takes."
+        description="Changing this rule updates what matches this boundary. Review the preview before saving."
         title="Rule"
       >
-        <RuleEditor policy={policy} rule={rule} />
+        <RuleEditor
+          key={rule}
+          onSaved={(expression) => {
+            focusAfterSave.current = expression;
+          }}
+          policy={policy}
+          rule={rule}
+          ruleField={ruleField}
+        />
       </PageSection>
 
       <PageSection
@@ -234,14 +274,22 @@ function RuleDetail({
                 ? `None of the last ${reach.data.scanned} recorded decisions would change from refused to allowed.`
                 : `${reach.data.wouldAllow} of the last ${reach.data.scanned} recorded decisions would change from refused to allowed.`}
             </p>
-            <DryRunChanges
-              changes={reach.data.changes.filter(
-                (change) => change.would === "allowed",
-              )}
-              total={reach.data.wouldAllow}
-              verdict="Would allow"
-              verdictClassName="text-foreground"
-            />
+            {changedDecisions.length > INLINE_REPLAY_LIMIT ? (
+              <details>
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    minBlockSize: "var(--spacing-11)",
+                    paddingBlock: "var(--spacing-3)",
+                  }}
+                >
+                  {changedDecisions.length} changed decisions
+                </summary>
+                {replayRows}
+              </details>
+            ) : (
+              replayRows
+            )}
           </>
         )}
       </PageSection>
@@ -269,12 +317,23 @@ function RuleDetail({
  * version would have stopped sits right above what the rule in force has stopped. Saved, it takes
  * the old rule's place and name.
  */
-function RuleEditor({ policy, rule }: { policy: ActionPolicy; rule: string }) {
+function RuleEditor({
+  onSaved,
+  policy,
+  rule,
+  ruleField,
+}: {
+  onSaved: (expression: string) => void;
+  policy: ActionPolicy;
+  rule: string;
+  ruleField: RefObject<HTMLTextAreaElement | null>;
+}) {
   const queryClient = useQueryClient();
   const saveOptions = saveActionPolicyMutationOptions(queryClient);
   const savePolicy = useMutation({
     ...saveOptions,
     onSuccess: (...args) => {
+      if (args[0].deny.includes(trimmed)) onSaved(trimmed);
       toast.add({ title: "Rule saved", type: "success" });
       return saveOptions.onSuccess?.(...args);
     },
@@ -286,7 +345,6 @@ function RuleEditor({ policy, rule }: { policy: ActionPolicy; rule: string }) {
   const [problem, setProblem] = useState<Error | null>(null);
   const submitting = useRef(false);
   const recovery = useRef<HTMLElement>(null);
-  const ruleField = useRef<HTMLTextAreaElement>(null);
   const conflicted = problem instanceof ClientError && problem.status === 409;
   const {
     data: latest,
@@ -459,14 +517,17 @@ function RuleEditor({ policy, rule }: { policy: ActionPolicy; rule: string }) {
           />
           <Field>
             <FieldLabel htmlFor="rule-expression">Rule</FieldLabel>
+            <RuleExpressionHelp />
             <Textarea
               aria-describedby={
-                invalid || duplicate ? "rule-validation-error" : undefined
+                invalid || duplicate
+                  ? `${RULE_EXPRESSION_HELP_ID} rule-validation-error`
+                  : RULE_EXPRESSION_HELP_ID
               }
               aria-invalid={invalid || duplicate || undefined}
               autoCapitalize="off"
               autoCorrect="off"
-              className="min-h-20 font-mono text-xs"
+              className="min-h-20 font-mono text-sm"
               id="rule-expression"
               onChange={(event) => setDraft(event.target.value)}
               readOnly={writing || savePolicy.isPending}

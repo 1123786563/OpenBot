@@ -107,10 +107,12 @@ const writes: string[] = [];
 let servers: PluginServer[] = [];
 /** Your accounts, as `/api/plugins/connections` answers. A disconnect empties it. */
 let connections: unknown[] = [];
+let holdAccounts: Promise<void> | undefined;
 const originalFetch = global.fetch;
 beforeEach(() => {
   writes.length = 0;
   connections = [];
+  holdAccounts = undefined;
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const path = String(input).split("?")[0];
@@ -128,8 +130,10 @@ beforeEach(() => {
         return Response.json({ ok: true });
       }
       if (path === "/api/plugins") return Response.json(pageWith(servers));
-      if (path === "/api/plugins/connections")
+      if (path === "/api/plugins/connections") {
+        await holdAccounts;
         return Response.json({ connections });
+      }
       return new Response(null, { status: 404 });
     },
     { preconnect: originalFetch.preconnect },
@@ -157,7 +161,9 @@ function draw(
     edition,
   });
   client.setQueryData(pluginKeys.page(), pageWith(drawn));
-  client.setQueryData(pluginKeys.connections(), { connections: [] });
+  if (!holdAccounts) {
+    client.setQueryData(pluginKeys.connections(), { connections: [] });
+  }
   client.setQueryData(agentKeys.list(false), bots);
   client.setQueryData(agentKeys.list(true), bots);
   const router = createRouter({
@@ -174,6 +180,22 @@ function draw(
 }
 
 describe("an app's page in the personal edition", () => {
+  test("the app name and back link stay visible while its account loads", async () => {
+    const gate = Promise.withResolvers<void>();
+    holdAccounts = gate.promise;
+    const view = draw("personal", [exaServer], "composio-exa");
+    try {
+      expect(await view.findByRole("heading", { name: "Exa" })).toBeTruthy();
+      expect(view.getByRole("link", { name: "Connections" })).toBeTruthy();
+      expect(view.getByText("Checking the account connection…")).toBeTruthy();
+      expect(view.queryByRole("button", { name: /Connect/ })).toBeNull();
+    } finally {
+      gate.resolve();
+    }
+    await view.findByText("Your account");
+    expect(view.queryByText("Checking the account connection…")).toBeNull();
+  });
+
   test("offers Connect for an app that isn't added, instead of a switch for everybody", async () => {
     const view = draw("personal", []);
     expect(
@@ -231,7 +253,7 @@ describe("an app's page in the personal edition", () => {
 
   test("goes back to Connections", async () => {
     const view = draw("personal", [notionServer]);
-    const back = await view.findByRole("button", { name: /Connections/ });
+    const back = await view.findByRole("link", { name: /Connections/ });
     expect(back.getAttribute("href")).toBe("/connections");
   });
 });
@@ -304,7 +326,7 @@ describe("Gmail's page in the personal edition", () => {
     expect(row.textContent).toContain(
       "Adds and/or removes specified Gmail labels for a message.",
     );
-    expect(row.textContent).toContain("Changes things");
+    expect(row.textContent).toContain("Makes changes");
     expect(view.getByText("Send email")).toBeTruthy();
     expect(view.getByText("Get draft")).toBeTruthy();
     expect(view.getByText("Retrieves a single Gmail draft.")).toBeTruthy();
@@ -312,9 +334,9 @@ describe("Gmail's page in the personal edition", () => {
     const profile = view
       .getByText("Get profile")
       .closest("[data-slot=item]") as HTMLElement;
-    expect(profile.textContent).toBe("Get profileReads");
-    expect(view.getAllByText("Changes things")).toHaveLength(2);
-    expect(view.getAllByText("Reads")).toHaveLength(3);
+    expect(profile.textContent).toBe("Get profileRead only");
+    expect(view.getAllByText("Makes changes")).toHaveLength(2);
+    expect(view.getAllByText("Read only")).toHaveLength(3);
 
     const text = view.container.textContent ?? "";
     expect(text).not.toContain("GMAIL_");
@@ -413,7 +435,7 @@ test("Gmail's page says what each tool does as a person would, not as its descri
   );
   const text = view.container.textContent ?? "";
   expect(text).not.toMatch(/Tool to|DELETES|by (its )?ID/);
-  expect(view.getAllByText("Changes things")).toHaveLength(6);
+  expect(view.getAllByText("Makes changes")).toHaveLength(6);
 });
 
 test("team Admin keeps the descriptions as the app wrote them", async () => {

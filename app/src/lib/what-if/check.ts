@@ -34,10 +34,14 @@ export type WhatIfExplained = WhatIfChecked & { recorded: WhatIfRecorded };
  */
 
 /** Question in, action out. The model only names the action; nothing is decided yet. */
-export async function askWhatIf(question: string): Promise<WhatIfReading> {
+export async function askWhatIf(
+  question: string,
+  signal?: AbortSignal,
+): Promise<WhatIfReading> {
   const response = await client("/api/admin/what-if/ask", {
     method: "POST",
     body: { question },
+    signal,
     fallback:
       "Couldn't read that question. Try again, or set the action yourself.",
   });
@@ -48,10 +52,12 @@ export async function askWhatIf(question: string): Promise<WhatIfReading> {
 export async function checkWhatIf(
   action: WhatIfAction,
   question?: string,
+  signal?: AbortSignal,
 ): Promise<WhatIfChecked> {
   const response = await client("/api/admin/what-if/check", {
     method: "POST",
     body: { action, ...(question ? { question } : {}) },
+    signal,
     fallback: "Couldn't check that action. Try again.",
   });
   return (await response.json()) as WhatIfChecked;

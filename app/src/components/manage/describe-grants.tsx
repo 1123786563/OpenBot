@@ -198,12 +198,14 @@ export function DescribeGrants({
   appKey,
   appTitle,
   botName,
+  disabled = false,
   sharedNeeded,
 }: {
   agentId: string;
   appKey: string;
   appTitle: string;
   botName: string;
+  disabled?: boolean;
   /**
    * The audience to offer when the app is Shared and this Bot has no approval for it yet, or null
    * when none is needed. Turning an action on then asks who may use the shared account first, as the
@@ -231,7 +233,11 @@ export function DescribeGrants({
     changes.added.length === 0 &&
     changes.removed.length === 0;
   const ready =
-    checked && preview.data?.check.ok === true && changes && !nothingToSave;
+    !disabled &&
+    checked &&
+    preview.data?.check.ok === true &&
+    changes &&
+    !nothingToSave;
 
   const commit = (withApproval?: SharedUseApproval) => {
     if (!ready || !written || !changes) return;
@@ -400,7 +406,7 @@ export function DescribeGrants({
               Cancel
             </Button>
             <Button
-              disabled={save.isPending}
+              disabled={disabled || save.isPending}
               onClick={() => commit(approval)}
               size="sm"
             >

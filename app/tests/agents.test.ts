@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { QueryClient } from "@tanstack/react-query";
 import { agentFormSchema } from "@/lib/agents/form";
-import { agentKeys } from "@/lib/agents/queries";
+import { agentKeys, agentListQueryOptions } from "@/lib/agents/queries";
 import { channelKeys } from "@/lib/channels/queries";
 
 describe("coworker query keys", () => {
@@ -14,6 +15,30 @@ describe("coworker query keys", () => {
       "detail",
       "channel_1",
     ]);
+  });
+
+  test("a denied roster stays cleared through a later outage", async () => {
+    const originalFetch = global.fetch;
+    let status = 200;
+    global.fetch = Object.assign(
+      async () =>
+        status === 200
+          ? Response.json({ agents: [{ id: "previously-visible" }] })
+          : Response.json({ error: "Unavailable" }, { status }),
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      const cache = new QueryClient();
+      const options = { ...agentListQueryOptions(), retry: false };
+      await expect(cache.fetchQuery(options)).resolves.toHaveLength(1);
+      status = 403;
+      await expect(cache.fetchQuery(options)).rejects.toMatchObject({ status });
+      status = 503;
+      await expect(cache.fetchQuery(options)).rejects.toMatchObject({ status });
+      expect(cache.getQueryData(options.queryKey)).toHaveLength(0);
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
 

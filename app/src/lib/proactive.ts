@@ -4,7 +4,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { botLifecycleKeys } from "@/lib/bot-lifecycle/queries";
-import { client } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 import { taskKeys } from "@/lib/tasks/queries";
 
 /**
@@ -130,9 +130,27 @@ export const proactiveAllowedQueryOptions = () =>
 export const proactiveSuggestionsQueryOptions = () =>
   queryOptions({
     queryKey: proactiveKeys.suggestions,
-    queryFn: (): Promise<ProactiveSuggestion[]> =>
-      client("/api/proactive/suggestions", "suggestions", {
-        fallback: "Couldn't load what your Bots found",
+    queryFn: async ({
+      client: cache,
+      queryKey,
+    }): Promise<ProactiveSuggestion[]> =>
+      client<ProactiveSuggestion[]>(
+        "/api/proactive/suggestions",
+        "suggestions",
+        {
+          fallback: "Couldn't load what your Bots found",
+        },
+      ).catch((error: unknown) => {
+        if (
+          error instanceof ClientError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          // A later network failure must not bring back suggestions after lost access.
+          cache.setQueryData<ProactiveSuggestion[]>(queryKey, (previous) =>
+            previous?.length ? [] : previous,
+          );
+        }
+        throw error;
       }),
     refetchInterval: 30_000,
   });

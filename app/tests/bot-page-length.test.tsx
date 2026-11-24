@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import type { ComponentType } from "react";
 import {
   activitySummary,
   BotActivityGlance,
@@ -149,7 +150,7 @@ test("the newest three suggestions show, and the rest open in place", async () =
 
 function glance(
   data: BotActivity,
-  Component: typeof BotActivityGlance = BotActivityGlance,
+  Component: ComponentType<{ agentId: string }> = BotActivityGlance,
 ) {
   global.fetch = (async (input: RequestInfo | URL) =>
     String(input).endsWith("/activity")

@@ -529,7 +529,7 @@ test("retries an initial Browser state failure from the page", async () => {
     (await view.findByRole("alert", {}, { timeout: 8000 })).textContent,
   ).toContain("Couldn't load your browser");
   stateFails = false;
-  const retry = view.getByRole("button", { name: "Retry" });
+  const retry = view.getByRole("button", { name: "Retry browser status" });
   retry.focus();
   await userEvent.setup({ document }).keyboard("{Enter}");
   await view.findByRole("button", { name: "Open browser" });
@@ -560,7 +560,7 @@ test("retrying browser status keeps the original browser open", async () => {
   stateFails = false;
   await userEvent
     .setup({ document })
-    .click(view.getByRole("button", { name: "Retry" }));
+    .click(view.getByRole("button", { name: "Retry browser status" }));
   await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
   expect(view.getByLabelText(SCREEN)).toBe(screen);
   expect(opens()).toBe(1);
@@ -580,6 +580,13 @@ test("revoking browser access removes the previously active screen", async () =>
       "Ask your administrator if you need access to this browser.",
     ),
   ).toBeTruthy();
+  expect(view.queryByLabelText(SCREEN)).toBeNull();
+  expect(opens()).toBe(1);
+  stateFails = 503;
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: browserKeys.state }),
+  );
+  await view.findByText("Check that you still have access, then try again.");
   expect(view.queryByLabelText(SCREEN)).toBeNull();
   expect(opens()).toBe(1);
 });
@@ -782,18 +789,34 @@ test("under a browser shown in the page, no empty strip draws while the list loa
   ).not.toBeNull();
 });
 
-test("arriving from the Recorder's link shows the recordings and opens no browser", async () => {
-  state = screenState();
+test("the Recorder's link keeps recordings available while the browser reconnects", async () => {
+  state = {
+    ...screenState(),
+    open: false,
+    problem: "Your browser is not responding.",
+  };
   openAnswer = answerFor("screen");
   recordingRows = [recording("Refund an order")];
+  refusals["/api/browser/open"] = "Fixture connection failed";
   const view = draw(<BrowserPage />, "/?recordings=1");
   expect(await view.findByText("Refund an order")).toBeTruthy();
+  expect(view.getByText("Your browser is not responding.")).toBeTruthy();
   expect(opens()).toBe(0);
-  // The browser is one press away, not gone.
-  await userEvent
-    .setup({ document })
-    .click(view.getByRole("button", { name: "Open browser" }));
-  await waitFor(() => expect(opens()).toBe(1));
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Open browser" }));
+  const retry = await view.findByRole("button", {
+    name: "Retry opening browser",
+  });
+  expect(opens()).toBe(1);
+  expect(view.getByText("Refund an order")).toBeTruthy();
+
+  delete refusals["/api/browser/open"];
+  state = screenState();
+  await user.click(retry);
+  expect(
+    await view.findByRole("region", { name: "Browser screen" }),
+  ).toBeTruthy();
+  expect(opens()).toBe(2);
 });
 
 test("a recording that stops refreshes the list under the page", async () => {

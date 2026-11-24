@@ -1,11 +1,14 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconBrandGithub, IconBrandSlack, IconLink } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   PageEmpty,
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -172,11 +177,25 @@ export function LinkedAccountSection({
 }) {
   const links = useQuery(linkedAccountsQueryOptions());
   const providers = useQuery(identityProvidersQueryOptions());
+  const heading = useRef<HTMLHeadingElement>(null);
   const issueCode = useMutation(issueSlackCodeMutationOptions());
+  const slackCodeTrigger = useRef<HTMLButtonElement>(null);
+  const issuingCode = useRef(false);
+  const slackCommandId = useId();
   const connectGithub = useMutation(connectGithubMutationOptions());
   const [issued, setIssued] = useState<SlackLinkCode | null>(null);
+  const [expired, setExpired] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const slackCommand = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!issued) return;
+    const timer = window.setTimeout(
+      () => setExpired(true),
+      Math.max(0, Date.parse(issued.expiresAt) - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [issued]);
   // Back from GitHub can restore this page from the back/forward cache with the successful
   // connect still in memory, which would leave Connect disabled; a restored page starts over.
   const resetConnect = connectGithub.reset;
@@ -188,14 +207,14 @@ export function LinkedAccountSection({
     return () => window.removeEventListener("pageshow", restored);
   }, [resetConnect]);
   const closeDialog = () => {
+    issuingCode.current = false;
     setIssued(null);
+    setExpired(false);
     setCopied(false);
     setCopyFailed(false);
     // A link may have completed while the dialog was open.
     queryClient.invalidateQueries({ queryKey: identityKeys.links() });
   };
-  // Wait for the list so people with links never see the empty state while /providers answers first.
-  if (links.isPending) return null;
   const state = linkedAccountsSectionState({
     data: links.data,
     error: links.error,
@@ -203,9 +222,16 @@ export function LinkedAccountSection({
     providers: providers.data,
     providersError: providers.error,
   });
+  if (links.isPending || (!state && providers.isPending)) {
+    return (
+      <PageSection headingRef={heading} title="Your account">
+        <ReadStatus kind="loading" message="Checking your linked account…" />
+      </PageSection>
+    );
+  }
   if (!state) {
     return (
-      <PageSection title="Your account">
+      <PageSection headingRef={heading} title="Your account">
         <PageEmpty icon={IconLink} title="Not set up yet">
           You can't link a {linkableProviderTitle(provider)} account yet. An
           admin has to set it up first.
@@ -215,9 +241,18 @@ export function LinkedAccountSection({
   }
   const connect = {
     slack: {
-      pending: issueCode.isPending,
-      start: () =>
-        issueCode.mutate(undefined, { onSuccess: (code) => setIssued(code) }),
+      pending: issueCode.isPending || issued !== null,
+      start: (trigger: HTMLButtonElement) => {
+        if (issuingCode.current) return;
+        issuingCode.current = true;
+        slackCodeTrigger.current = trigger;
+        issueCode.mutate(undefined, {
+          onSuccess: setIssued,
+          onError: () => {
+            issuingCode.current = false;
+          },
+        });
+      },
     },
     github: {
       pending: connectGithubPending(connectGithub),
@@ -228,11 +263,11 @@ export function LinkedAccountSection({
     },
   };
   return (
-    <PageSection title="Your account">
+    <PageSection headingRef={heading} title="Your account">
       {state.entries.length > 0 ? (
         <PageRows>
           {state.entries.map((entry, index) => (
-            <div
+            <Fragment
               key={entry.kind === "linked" ? entry.account.id : entry.provider}
             >
               {index > 0 ? <Separator /> : null}
@@ -253,41 +288,32 @@ export function LinkedAccountSection({
                   onConnect={connect[entry.provider].start}
                 />
               )}
-            </div>
+            </Fragment>
           ))}
         </PageRows>
       ) : null}
       {state.error ? (
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load your account.
-          </p>
-          <Button
-            disabled={links.isFetching}
-            onClick={() => void links.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {links.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't load your account."
+          retry={links.refetch}
+          retryBelow
+          retryLabel="Retry linked account"
+          retrying={links.isFetching}
+        />
       ) : null}
       {state.providersError ? (
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't check whether you can link this account.
-          </p>
-          <Button
-            disabled={providers.isFetching}
-            onClick={() => void providers.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {providers.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+        <ReadError
+          focusAfterRetry={() => heading.current}
+          message="Couldn't check whether you can link this account."
+          retry={providers.refetch}
+          retryBelow
+          retryLabel="Retry account linking availability"
+          retrying={providers.isFetching}
+        />
+      ) : null}
+      {issueCode.isPending ? (
+        <ReadStatus kind="loading" message="Requesting a Slack code…" />
       ) : null}
       {issueCode.error ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
@@ -305,47 +331,91 @@ export function LinkedAccountSection({
           if (!open) closeDialog();
         }}
       >
-        <DialogContent>
+        <DialogContent
+          {...astryxScope}
+          finalFocus={() => {
+            const trigger = slackCodeTrigger.current;
+            return trigger?.isConnected ? trigger : (heading.current ?? true);
+          }}
+          showCloseButton={false}
+        >
           <DialogHeader>
             <DialogTitle>Link your Slack account</DialogTitle>
           </DialogHeader>
           <DialogBody className="mt-4">
             {issued ? (
-              <div className="grid gap-3 text-sm">
-                <p>{issued.instruction}</p>
-                <div className="flex items-center gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded bg-muted px-2 py-1">
-                    link {issued.code}
-                  </code>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      const ok = await copyText(
-                        `link ${issued.code}`,
-                        navigator.clipboard,
-                      );
-                      setCopied(ok);
-                      setCopyFailed(!ok);
-                    }}
-                  >
-                    {copied ? "Copied" : "Copy"}
-                  </Button>
-                </div>
+              <VStack gap={3} className="text-sm">
+                <p>
+                  In Slack, open a direct message with the OpenBot app. Paste
+                  and send the command below, then return here to check that
+                  your account is linked.
+                </p>
+                <Field>
+                  <FieldLabel htmlFor={slackCommandId}>
+                    Slack command
+                  </FieldLabel>
+                  <Input
+                    id={slackCommandId}
+                    onFocus={(event) => event.currentTarget.select()}
+                    readOnly
+                    ref={slackCommand}
+                    value={`link ${issued.code}`}
+                  />
+                </Field>
                 {copyFailed ? (
                   <p className="text-destructive" role="alert">
-                    Couldn't copy. Select the code and copy it yourself.
+                    Couldn't copy automatically. Select and copy the Slack
+                    command.
                   </p>
                 ) : null}
-                <p className="text-muted-foreground">
-                  The code works once and expires in 10 minutes.
-                </p>
-              </div>
+                {expired ? (
+                  <p className="text-muted-foreground" role="status">
+                    This code expired. Close this window and request a new code.
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Use this one-time code by{" "}
+                    <time dateTime={issued.expiresAt}>
+                      {new Date(issued.expiresAt).toLocaleTimeString(
+                        undefined,
+                        {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        },
+                      )}
+                    </time>
+                    .
+                  </p>
+                )}
+              </VStack>
             ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
-            <Button size="sm" onClick={closeDialog}>
-              Done
+            <Button
+              className="confirmation-action"
+              disabled={expired}
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                if (!issued || Date.parse(issued.expiresAt) <= Date.now())
+                  return;
+                const ok = await copyText(
+                  `link ${issued.code}`,
+                  navigator.clipboard,
+                );
+                setCopied(ok);
+                setCopyFailed(!ok);
+                if (!ok) slackCommand.current?.focus();
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </Button>
+            <Button
+              className="confirmation-action"
+              size="sm"
+              onClick={closeDialog}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -364,7 +434,7 @@ function AvailableAccountRow({
   provider: string;
   title: string;
   pending: boolean;
-  onConnect: () => void;
+  onConnect: (trigger: HTMLButtonElement) => void;
 }) {
   const Icon = providerIcon(provider);
   return (
@@ -381,8 +451,10 @@ function AvailableAccountRow({
           aria-label={`Connect ${title}`}
           size="sm"
           variant="outline"
-          disabled={pending}
-          onClick={onConnect}
+          aria-disabled={provider === "slack" && pending}
+          className={provider === "slack" ? "confirmation-action" : undefined}
+          disabled={provider !== "slack" && pending}
+          onClick={(event) => onConnect(event.currentTarget)}
         >
           Connect
         </Button>
@@ -401,7 +473,7 @@ function LinkedAccountRow({
   reconnect,
 }: {
   account: LinkedAccount;
-  reconnect?: { pending: boolean; start: () => void };
+  reconnect?: { pending: boolean; start: (trigger: HTMLButtonElement) => void };
 }) {
   const unlink = useMutation(unlinkMutationOptions(queryClient));
   /*
@@ -430,8 +502,12 @@ function LinkedAccountRow({
               aria-label={`Reconnect ${account.title}`}
               size="sm"
               type="button"
-              disabled={reconnect.pending}
-              onClick={reconnect.start}
+              aria-disabled={account.provider === "slack" && reconnect.pending}
+              className={
+                account.provider === "slack" ? "confirmation-action" : undefined
+              }
+              disabled={account.provider !== "slack" && reconnect.pending}
+              onClick={(event) => reconnect.start(event.currentTarget)}
             >
               Reconnect
             </Button>

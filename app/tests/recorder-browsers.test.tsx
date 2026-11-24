@@ -22,6 +22,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { storeTabSentence } from "@/components/browser/browser-nav-item";
 import { BrowserSections } from "@/components/settings/browsers/browser-sections";
 import { ConnectedBrowsers } from "@/components/settings/browsers/connected-browsers";
@@ -49,6 +50,7 @@ const THIS_COPY = "c".repeat(32);
 const OTHER_COPY = "d".repeat(32);
 const originalFetch = global.fetch;
 let connectionsFail = false;
+let connectionsDenied = false;
 let connectionsFetches = 0;
 const sent: { path: string; method: string; body: unknown }[] = [];
 let connections: Record<string, unknown>[] = [];
@@ -92,6 +94,7 @@ beforeEach(() => {
   messages.length = 0;
   connections = [];
   connectionsFail = false;
+  connectionsDenied = false;
   connectionsFetches = 0;
   recorder = undefined;
   held.clear();
@@ -150,6 +153,7 @@ beforeEach(() => {
       }
       if (url === "/api/recorder/connections") {
         connectionsFetches += 1;
+        if (connectionsDenied) return new Response(null, { status: 403 });
         if (connectionsFail) return new Response(null, { status: 500 });
       }
       if (url === "/api/recorder/connections")
@@ -391,6 +395,28 @@ test("the OpenBot browser's connection says it is the person's OpenBot browser",
   ).toBeTruthy();
 });
 
+test("search distinguishes browsers with the same name by recording status", async () => {
+  connections = [
+    connection({ id: "idle" }),
+    connection({ id: "active", installId: OTHER_COPY, recording: true }),
+  ];
+  const view = draw(<ConnectedBrowsers />);
+  const search = await view.findByRole("searchbox", {
+    name: "Search browsers",
+  });
+  await userEvent.setup({ document }).type(search, "chrome recording");
+  expect(await view.findByText("1 of 2 browsers")).toBeTruthy();
+  const action = view.getByRole("button", { name: "Disconnect Chrome on Mac" });
+  fireEvent.click(action);
+  const dialog = await view.findByRole("dialog");
+  expect(
+    within(dialog).getByText("This browser is recording now."),
+  ).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(search).toHaveProperty("value", "chrome recording");
+  expect(sent.filter(({ method }) => method === "DELETE")).toEqual([]);
+});
+
 test("a browser recording now says so instead of when it was last used, and the list keeps itself current while open", async () => {
   // End-to-end run: a browser recording right now read "last used 49 seconds ago". A recording streams to the gateway,
   // so its last use lags; its Recorder's own recent report is what says it is recording.
@@ -451,7 +477,7 @@ test("Disconnect sends the DELETE and the row disappears", async () => {
   });
   // Named as the row is: it is not known to be this browser, so the dialog does not say it is.
   expect(dialog.textContent).toContain(
-    "OpenBot signs the Recorder in Chrome on Mac out. It records nothing for you until you connect it again, and a recording running there stops.",
+    "Disconnecting stops any recording in Chrome on Mac. Connect the Recorder again to make new recordings.",
   );
   expect(dialog.textContent).not.toContain("this browser");
   expect(sent).toEqual([]);
@@ -516,13 +542,13 @@ test("the Disconnect dialog says this browser only on this browser's row, and na
     return text;
   };
   expect(await said("Disconnect Chrome on Mac · This browser")).toStartWith(
-    "OpenBot signs the Recorder in this browser out.",
+    "Disconnecting stops any recording in this browser.",
   );
   expect(await said("Disconnect Edge on Windows")).toStartWith(
-    "OpenBot signs the Recorder in Edge on Windows out.",
+    "Disconnecting stops any recording in Edge on Windows.",
   );
   expect(await said("Disconnect OpenBot browser")).toStartWith(
-    "OpenBot signs the Recorder in your OpenBot browser out.",
+    "Disconnecting stops any recording in your OpenBot browser.",
   );
   expect(sent).toEqual([]);
 });
@@ -690,7 +716,7 @@ test("a failed Recorder connections read has one retry and recovers in place", a
   const view = draw(<BrowserSections />);
   const retry = await view.findByRole(
     "button",
-    { name: "Retry" },
+    { name: "Retry connected browsers" },
     { timeout: 4000 },
   );
   expect(view.getByRole("alert").textContent).toContain(
@@ -701,6 +727,67 @@ test("a failed Recorder connections read has one retry and recovers in place", a
   fireEvent.click(retry);
   await view.findByText("No browsers connected yet.");
   expect(view.queryByRole("alert")).toBeNull();
+});
+
+test("disconnect waits for a fresh connection check and denied reads clear old rows", async () => {
+  connections = [connection()];
+  const view = draw(<ConnectedBrowsers />);
+  fireEvent.click(
+    await view.findByRole("button", { name: "Disconnect Chrome on Mac" }),
+  );
+  const dialog = await view.findByRole("dialog", {
+    name: "Disconnect Chrome on Mac?",
+  });
+  connectionsFail = true;
+  fireEvent.click(within(dialog).getByRole("button", { name: "Disconnect" }));
+  const check = await within(dialog).findByRole(
+    "button",
+    { name: "Retry checking this browser" },
+    { timeout: 4000 },
+  );
+  expect(sent).toHaveLength(0);
+
+  connectionsDenied = true;
+  fireEvent.click(check);
+  await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(view.queryByText("Chrome on Mac")).toBeNull());
+  connectionsDenied = false;
+  const retry = await view.findByRole("button", {
+    name: "Retry connected browsers",
+  });
+  fireEvent.click(retry);
+  await waitFor(
+    () => expect(retry.getAttribute("aria-busy")).not.toBe("true"),
+    { timeout: 4000 },
+  );
+  expect(view.queryByText("Chrome on Mac")).toBeNull();
+  expect(sent).toHaveLength(0);
+});
+
+test("a recording started during the disconnect confirmation requires a new confirmation", async () => {
+  connections = [connection()];
+  const view = draw(<ConnectedBrowsers />);
+  fireEvent.click(
+    await view.findByRole("button", { name: "Disconnect Chrome on Mac" }),
+  );
+  const dialog = await view.findByRole("dialog", {
+    name: "Disconnect Chrome on Mac?",
+  });
+  connections = [connection({ recording: true })];
+  fireEvent.click(within(dialog).getByRole("button", { name: "Disconnect" }));
+  const stop = await within(dialog).findByRole("button", {
+    name: "Stop recording and disconnect",
+  });
+  expect(sent).toEqual([]);
+  fireEvent.click(stop);
+  await view.findByText("No browsers connected yet.");
+  expect(sent).toEqual([
+    {
+      path: "/api/recorder/connections/conn-1",
+      method: "DELETE",
+      body: undefined,
+    },
+  ]);
 });
 
 test("a connect request nobody confirms expires after five minutes and stops polling", async () => {

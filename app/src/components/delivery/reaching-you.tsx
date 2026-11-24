@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import {
   IconBrandSlack,
   IconBrandTeams,
@@ -5,9 +6,14 @@ import {
   IconDeviceMobileMessage,
   IconSend,
 } from "@tabler/icons-react";
-import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   ConnectionAction,
   ConnectionDialogContent,
@@ -18,6 +24,10 @@ import {
   PageSection,
 } from "@/components/layout/page-shell";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
+import {
+  ActionUnavailable,
+  useActionConfirmation,
+} from "@/components/ui/action-confirmation";
 import {
   Dialog,
   DialogBody,
@@ -50,6 +60,7 @@ import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
   type ChatLink,
   confirmSmsMutationOptions,
+  deliveryKey,
   deliveryQueryOptions,
   type Reachability,
   removeDeliveryBindingMutationOptions,
@@ -84,10 +95,12 @@ function writePending(id: string) {
 
 type Transport = Reachability["bindings"][number]["transport"];
 type ChatPlatform = ChatLink["platform"];
+const touchControl = { minBlockSize: "var(--spacing-11)" };
 
 /** A one-time link message, the conversation and Bot it links, and when it stops working. */
 type HeldLink = ChatLink & {
   channelId: string;
+  conversationName: string;
   agentId: string;
   expiresAt: number;
 };
@@ -123,6 +136,8 @@ const TRANSPORT: Record<
  */
 export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
   const reach = useQuery(deliveryQueryOptions());
+  const deliveryCache = useQueryClient();
+  const disconnect = useActionConfirmation();
   // People read Bots by name; the id is what the list used to show.
   const botName = useBotNames();
   const [challengeId, setChallengeId] = useState(readPending);
@@ -139,9 +154,15 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
   const heldLink = (transport: Transport) => {
     if (transport === "sms") return undefined;
     const held = links[transport];
-    return held && held.expiresAt > Date.now() ? held : undefined;
+    return held &&
+      held.expiresAt > Date.now() &&
+      (fixedBot === undefined || held.agentId === fixedBot)
+      ? held
+      : undefined;
   };
-  const remove = useMutation(removeDeliveryBindingMutationOptions(queryClient));
+  const remove = useMutation(
+    removeDeliveryBindingMutationOptions(deliveryCache),
+  );
   const destinations = reach.data?.bindings.filter(
     (binding) =>
       binding.enabled &&
@@ -184,11 +205,7 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
         </p>
       ) : null}
       <PageSection title="Connected destinations">
-        {remove.error ? (
-          <p className="mt-4 text-destructive text-sm" role="alert">
-            {remove.error.message}
-          </p>
-        ) : null}
+        {disconnect.confirmation}
         {reach.error ? (
           <ReadError
             message="Couldn’t load connected destinations"
@@ -208,6 +225,17 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
           <PageRows>
             {destinations.map((binding, index) => {
               const Icon = TRANSPORT[binding.transport].icon;
+              const destination =
+                binding.transport === "slack"
+                  ? "Slack"
+                  : binding.transport === "teams"
+                    ? "Microsoft Teams"
+                    : binding.address;
+              const bot = botName(binding.agentId) || "This Bot";
+              const effect =
+                binding.transport === "sms"
+                  ? `${bot} will stop sending text messages to ${destination}.`
+                  : `${bot} will stop sending messages to this ${destination} connection.`;
               return (
                 <Fragment key={binding.id}>
                   {index > 0 ? <Separator /> : null}
@@ -216,13 +244,7 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
                       <Icon />
                     </ItemMedia>
                     <ItemContent>
-                      <ItemTitle>
-                        {binding.transport === "slack"
-                          ? "Slack"
-                          : binding.transport === "teams"
-                            ? "Microsoft Teams"
-                            : binding.address}
-                      </ItemTitle>
+                      <ItemTitle>{destination}</ItemTitle>
                       <ItemDescription>
                         {botName(binding.agentId)}
                         {binding.optedOutAt
@@ -232,8 +254,35 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
                     </ItemContent>
                     <ItemActions>
                       <ConnectionAction
-                        disabled={remove.isPending}
-                        onClick={() => remove.mutate(binding.id)}
+                        aria-label={`Disconnect ${destination}`}
+                        className="confirmation-action"
+                        onClick={({ currentTarget }) =>
+                          disconnect.requestConfirmation({
+                            title: `Disconnect ${destination}?`,
+                            description: `${effect} You can connect it again from this page.`,
+                            trigger: currentTarget,
+                            confirmLabel: "Disconnect",
+                            pendingLabel: "Disconnecting…",
+                            failureMessage: `Couldn’t disconnect ${destination}. Try again.`,
+                            successMessage: `${destination} disconnected.`,
+                            run: async () => {
+                              const current = deliveryCache
+                                .getQueryData<Reachability>(deliveryKey)
+                                ?.bindings.find(({ id }) => id === binding.id);
+                              if (
+                                !current?.enabled ||
+                                current.agentId !== binding.agentId ||
+                                current.channelId !== binding.channelId ||
+                                current.address !== binding.address
+                              ) {
+                                throw new ActionUnavailable(
+                                  "This connection changed. Close this dialog and review the destinations.",
+                                );
+                              }
+                              await remove.mutateAsync(binding.id);
+                            },
+                          })
+                        }
                         variant="outline"
                       >
                         Disconnect
@@ -342,11 +391,25 @@ function ConnectDialog({
   const agentId = fixedBot ?? pickedBot;
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
-  const [copied, setCopied] = useState(false);
   const link = useMutation(startChatLinkMutationOptions());
   const sms = useMutation(startSmsMutationOptions());
   const confirm = useMutation(confirmSmsMutationOptions(queryClient));
-  const startLink = (platform: ChatPlatform) =>
+  const conversations =
+    channels.data?.filter(
+      (channel) =>
+        channel.active &&
+        (fixedBot === undefined || channel.agentIds.includes(fixedBot)),
+    ) ?? [];
+  const selected = conversations.find((channel) => channel.id === channelId);
+  const chosen = channels.isSuccess && selected?.agentIds.includes(agentId);
+  const currentLink =
+    linked?.channelId === channelId && linked.agentId === agentId
+      ? linked
+      : null;
+  const error = channels.error ?? link.error ?? sms.error ?? confirm.error;
+
+  function startLink(platform: ChatPlatform) {
+    if (!selected || !chosen || !available[platform] || link.isPending) return;
     link.mutate(
       { channelId, agentId, platform },
       {
@@ -354,23 +417,14 @@ function ConnectDialog({
           onLinked({
             ...result,
             channelId,
+            conversationName: conversationLabel(selected),
             agentId,
             expiresAt: Date.now() + result.expiresInMinutes * 60_000,
           });
-          setCopied(false);
         },
       },
     );
-  const conversations =
-    channels.data?.filter(
-      (channel) =>
-        channel.active &&
-        (fixedBot === undefined || channel.agentIds.includes(fixedBot)),
-    ) ?? [];
-  const selected = channels.data?.find((channel) => channel.id === channelId);
-  const chosen = !!agentId && !!channelId;
-  const error = channels.error ?? link.error ?? sms.error ?? confirm.error;
-
+  }
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
       <ConnectionDialogContent>
@@ -399,7 +453,11 @@ function ConnectDialog({
               }}
               value={channelId || null}
             >
-              <SelectTrigger className="w-full" id={`${formId}-conversation`}>
+              <SelectTrigger
+                className="w-full"
+                id={`${formId}-conversation`}
+                style={touchControl}
+              >
                 <SelectValue placeholder="Choose a conversation" />
               </SelectTrigger>
               <SelectContent>
@@ -423,7 +481,11 @@ function ConnectDialog({
                 }
                 value={pickedBot || null}
               >
-                <SelectTrigger className="w-full" id={`${formId}-bot`}>
+                <SelectTrigger
+                  className="w-full"
+                  id={`${formId}-bot`}
+                  style={touchControl}
+                >
                   <SelectValue placeholder="Choose a Bot" />
                 </SelectTrigger>
                 <SelectContent>
@@ -450,6 +512,7 @@ function ConnectDialog({
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (!chosen || !available.sms || sms.isPending) return;
                   sms.mutate(
                     { channelId, agentId, phone },
                     { onSuccess: onChallenge },
@@ -460,24 +523,26 @@ function ConnectDialog({
                   <FieldLabel htmlFor={`${formId}-phone`}>
                     Phone number
                   </FieldLabel>
-                  <div className="flex items-center gap-2">
+                  <VStack align="stretch" gap={2}>
                     <Input
                       id={`${formId}-phone`}
                       onChange={(event) => setPhone(event.target.value)}
                       pattern="\+[1-9][0-9]{7,14}"
                       placeholder="+15551234567"
                       required
+                      style={touchControl}
                       type="tel"
                       value={phone}
                     />
                     <ConnectionAction
+                      className="self-start"
                       disabled={!chosen || !available.sms || sms.isPending}
                       type="submit"
                       variant={challengeId ? "outline" : "default"}
                     >
                       Send verification code
                     </ConnectionAction>
-                  </div>
+                  </VStack>
                 </Field>
               </form>
               {challengeId ? (
@@ -500,50 +565,29 @@ function ConnectDialog({
                     <FieldLabel htmlFor={`${formId}-code`}>
                       Verification code
                     </FieldLabel>
-                    <div className="flex items-center gap-2">
+                    <VStack align="stretch" gap={2}>
                       <Input
                         autoComplete="one-time-code"
                         id={`${formId}-code`}
                         onChange={(event) => setCode(event.target.value)}
                         required
+                        style={touchControl}
                         value={code}
                       />
                       <ConnectionAction
+                        className="self-start"
                         disabled={confirm.isPending}
                         type="submit"
                       >
                         Confirm phone
                       </ConnectionAction>
-                    </div>
+                    </VStack>
                   </Field>
                 </form>
               ) : null}
             </>
-          ) : linked ? (
-            <Item size="sm" variant="muted">
-              <ItemContent>
-                <ItemDescription className="line-clamp-none">
-                  Send this message to the OpenBot app in a direct message in{" "}
-                  {linked.platform === "teams" ? "Microsoft Teams" : "Slack"}{" "}
-                  within {Math.ceil((linked.expiresAt - Date.now()) / 60_000)}{" "}
-                  minutes. It links that account to this conversation and Bot.
-                </ItemDescription>
-                <ItemTitle className="break-all font-mono">
-                  {linked.command}
-                </ItemTitle>
-              </ItemContent>
-              <ItemActions>
-                <ConnectionAction
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(linked.command);
-                    setCopied(true);
-                  }}
-                  variant="outline"
-                >
-                  {copied ? "Copied" : "Copy"}
-                </ConnectionAction>
-              </ItemActions>
-            </Item>
+          ) : currentLink ? (
+            <LinkCommand key={currentLink.code} link={currentLink} />
           ) : null}
           {error ? (
             <p className="text-destructive text-sm" role="alert">
@@ -567,5 +611,51 @@ function ConnectDialog({
         </DialogFooter>
       </ConnectionDialogContent>
     </Dialog>
+  );
+}
+
+function LinkCommand({ link }: { link: HeldLink }) {
+  const id = useId();
+  const field = useRef<HTMLInputElement>(null);
+  const [feedback, setFeedback] = useState("");
+  return (
+    <Field>
+      <p style={{ overflowWrap: "anywhere" }}>
+        Send this command to the OpenBot app in a direct message in{" "}
+        {link.platform === "teams" ? "Microsoft Teams" : "Slack"} within{" "}
+        {Math.ceil((link.expiresAt - Date.now()) / 60_000)} minutes. It links
+        the account to “{link.conversationName}”.
+      </p>
+      <FieldLabel htmlFor={id}>Link command</FieldLabel>
+      <Input
+        id={id}
+        onFocus={(event) => event.currentTarget.select()}
+        readOnly
+        ref={field}
+        style={touchControl}
+        value={link.command}
+      />
+      <ConnectionAction
+        className="self-start"
+        onClick={async (event) => {
+          const trigger = event.currentTarget;
+          try {
+            if (navigator.clipboard) {
+              await navigator.clipboard.writeText(link.command);
+              setFeedback("Link command copied.");
+              return;
+            }
+          } catch {
+            // The field remains available when the browser declines clipboard access.
+          }
+          setFeedback("Select and copy the link command.");
+          if (document.activeElement === trigger) field.current?.focus();
+        }}
+        variant="outline"
+      >
+        Copy
+      </ConnectionAction>
+      {feedback ? <p role="status">{feedback}</p> : null}
+    </Field>
   );
 }

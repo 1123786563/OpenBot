@@ -1,12 +1,14 @@
+import { Button } from "@astryxdesign/core/Button";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
+import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Link } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useWaitingRows } from "@/components/approvals/waiting";
-import { AstryxSurface } from "@/components/astryx-pilot/theme";
+import { AstryxSurface, astryxScope } from "@/components/astryx-pilot/theme";
 import { InlineEmpty } from "@/components/layout/page-parts";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
-import { ReadStatus } from "@/components/layout/read-status";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   NeedsYouRows,
   useNeedsYouTasks,
@@ -14,11 +16,28 @@ import {
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
 import { RoutinesList } from "@/components/routines/routines-list";
 import { SuggestionsInbox } from "@/components/suggestions/proactive-panel";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useBotNames } from "@/lib/agents/bot-names";
 import { TASK_ORDER } from "@/lib/tasks/groups";
-import { TASK_STATUS_LABEL } from "@/lib/tasks/queries";
+import { TASK_STATUS_LABEL, type TaskStatus } from "@/lib/tasks/queries";
 
 /** Which list Tasks shows: what waits on you and what your Bots carry, or what to start next. */
 export type TasksView = "active" | "up_next";
+type StatusFilter = "all" | TaskStatus;
+
+const EMPTY_STATUS: Record<TaskStatus, string> = {
+  ready_for_review: "No tasks ready for review.",
+  needs_input: "Nothing needs your input.",
+  failed: "No failed tasks.",
+  working: "No tasks are running.",
+  resolved: "No tasks resolved in the last seven days.",
+};
 
 /** Which list was open last, kept in this browser between visits. */
 export const TASKS_VIEW_STORAGE_KEY = "openduet.tasks-view";
@@ -37,19 +56,20 @@ function rememberView(view: TasksView) {
   try {
     window.localStorage.setItem(TASKS_VIEW_STORAGE_KEY, view);
   } catch {
-    // Storage can be refused. The list still switches; it opens on Active next time.
+    // Storage can be refused. The list still switches; it opens on Work and history next time.
   }
 }
 
 export function TasksScreen() {
   const [view, setView] = useState<TasksView>(rememberedView);
+  const [status, setStatus] = useState<StatusFilter>("all");
   const id = useId();
   const activePanel = `${id}-active`;
   const upcomingPanel = `${id}-up-next`;
   return (
     <AstryxSurface className="bot-task-views flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <PageShell
-        description="Review work your Bots are doing and revisit completed tasks."
+        description="Review active work, approvals and completed tasks, or choose what to start next."
         title="Bot tasks"
       >
         <VStack gap={4}>
@@ -65,21 +85,27 @@ export function TasksScreen() {
             size="lg"
             value={view}
           >
-            <Tab label="Active" panelId={activePanel} value="active" />
-            <Tab label="Up next" panelId={upcomingPanel} value="up_next" />
+            <Tab
+              label="Work and history"
+              panelId={activePanel}
+              value="active"
+            />
+            <Tab label="Ideas" panelId={upcomingPanel} value="up_next" />
           </TabList>
           <section
-            aria-label="Active"
+            aria-label="Work and history"
             hidden={view !== "active"}
             id={activePanel}
             role="tabpanel"
             // biome-ignore lint/a11y/noNoninteractiveTabindex: The ARIA tabs pattern puts the focusable target on the panel.
             tabIndex={0}
           >
-            {view === "active" ? <ActiveView /> : null}
+            {view === "active" ? (
+              <ActiveView status={status} setStatus={setStatus} />
+            ) : null}
           </section>
           <section
-            aria-label="Up next"
+            aria-label="Ideas"
             hidden={view !== "up_next"}
             id={upcomingPanel}
             role="tabpanel"
@@ -94,54 +120,155 @@ export function TasksScreen() {
   );
 }
 
-function ActiveView() {
+function ActiveView({
+  status,
+  setStatus,
+}: {
+  status: StatusFilter;
+  setStatus: (status: StatusFilter) => void;
+}) {
+  const botName = useBotNames();
   const waiting = useWaitingRows(undefined);
   const taskList = useNeedsYouTasks();
   const { tasks, done } = taskList;
   const listed = [...tasks, ...done];
+  const showWaiting = status === "all" || status === "needs_input";
+  const waitingRows = waiting.error ? [] : waiting.rows;
+  const groups = (status === "all" ? TASK_ORDER : [status])
+    .map((group) => ({
+      status: group,
+      tasks: listed.filter((entry) => entry.status === group),
+      waiting: group === "needs_input" ? waitingRows : [],
+    }))
+    .filter((group) => group.tasks.length + group.waiting.length > 0);
+  const count = groups.reduce(
+    (total, group) => total + group.tasks.length + group.waiting.length,
+    0,
+  );
+  const waitingPending = showWaiting && waiting.isPending;
+  const waitingError = showWaiting ? waiting.error : null;
+  const ready =
+    !taskList.pending && !taskList.error && !waitingPending && !waitingError;
+  const firstTaskHeading = useRef<HTMLHeadingElement>(null);
+  const statusTrigger = useRef<HTMLButtonElement>(null);
+  const statusHelpId = useId();
+  const statusHelp =
+    status === "needs_input"
+      ? "Includes approval requests and questions for you."
+      : status === "resolved"
+        ? "Shows tasks resolved in the last seven days."
+        : undefined;
+  const selectedLabel =
+    status === "all" ? "All statuses" : TASK_STATUS_LABEL[status];
+  const showReset = ready && count === 0 && status !== "all";
 
   return (
     <VStack gap={6}>
-      {taskList.pending || waiting.isPending ? (
+      <VStack gap={2} align="start">
+        <Text as="p" size="sm">
+          Task status
+        </Text>
+        <Select
+          value={status}
+          onValueChange={(next) => {
+            if (next !== null) setStatus(next);
+          }}
+        >
+          <SelectTrigger
+            aria-describedby={statusHelp ? statusHelpId : undefined}
+            aria-label="Task status"
+            className="min-h-11"
+            ref={statusTrigger}
+          >
+            <SelectValue>{selectedLabel}</SelectValue>
+          </SelectTrigger>
+          <SelectContent {...astryxScope} align="start">
+            <SelectItem value="all">All statuses</SelectItem>
+            {TASK_ORDER.map((option) => (
+              <SelectItem key={option} value={option}>
+                {TASK_STATUS_LABEL[option]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {statusHelp ? (
+          <Text as="p" color="secondary" id={statusHelpId} size="sm">
+            {statusHelp}
+          </Text>
+        ) : null}
+        <Text as="p" color="secondary" size="sm" role="status">
+          {showReset
+            ? EMPTY_STATUS[status]
+            : ready && count > 0
+              ? `${count} ${count === 1 ? "item" : "items"}${status === "all" ? "" : ` in ${selectedLabel}`}.`
+              : ""}
+        </Text>
+        {showReset ? (
+          <Button
+            size="lg"
+            label="Show all statuses"
+            variant="secondary"
+            style={{ minHeight: "var(--spacing-11)" }}
+            onClick={() => {
+              setStatus("all");
+              statusTrigger.current?.focus();
+            }}
+          />
+        ) : null}
+      </VStack>
+      {taskList.pending || waitingPending ? (
         <ReadStatus kind="loading" message="Loading Bot tasks…" />
       ) : null}
       {taskList.error ? (
-        <ReadStatus
-          kind="error"
+        <ReadError
+          description={
+            listed.length ? "Showing the last loaded tasks." : undefined
+          }
+          focusAfterRetry={() =>
+            firstTaskHeading.current ?? statusTrigger.current
+          }
           message="Couldn’t load Bot tasks"
           retry={taskList.refetch}
+          retryBelow
+          retrying={taskList.fetching}
         />
-      ) : !taskList.pending &&
-        !waiting.isPending &&
-        !waiting.error &&
-        listed.length === 0 &&
-        waiting.rows.length === 0 ? (
+      ) : null}
+      {waitingError ? (
+        <ReadError
+          message="Couldn’t load approvals and questions"
+          retry={waiting.refetch}
+          retryBelow
+          focusAfterRetry={() =>
+            firstTaskHeading.current ?? statusTrigger.current
+          }
+        />
+      ) : null}
+      {ready && count === 0 && status === "all" ? (
         <InlineEmpty title="No Bot tasks yet">
           Work your Bots start and tasks you complete will appear here.
         </InlineEmpty>
       ) : null}
-      {TASK_ORDER.map((status) => {
-        const group = listed.filter((entry) => entry.status === status);
-        const lead = status === "needs_input" ? waiting.rows : [];
-        if (group.length + lead.length === 0) return null;
-        return (
-          <PageSection
-            className="mt-0"
-            key={status}
-            title={TASK_STATUS_LABEL[status]}
-          >
-            <NeedsYouRows items={[]} lead={lead} tasks={group} />
-          </PageSection>
-        );
-      })}
-      {waiting.error ? (
-        <ReadStatus
-          kind="error"
-          message="Couldn’t load approvals and questions"
-          retry={waiting.refetch}
-        />
-      ) : null}
-      <BotResponsibilities />
+      {groups.map((group, index) => (
+        <PageSection
+          className="mt-0"
+          headingRef={index === 0 ? firstTaskHeading : undefined}
+          key={group.status}
+          title={TASK_STATUS_LABEL[group.status]}
+          description={
+            group.status === "resolved" && status === "all"
+              ? "Tasks resolved in the last seven days."
+              : undefined
+          }
+        >
+          <NeedsYouRows
+            canChangeTasks={!taskList.error}
+            items={[]}
+            lead={group.waiting}
+            tasks={group.tasks}
+          />
+        </PageSection>
+      ))}
+      <BotResponsibilities botName={botName} />
       <PageSection title="Routines">
         <Link className="text-sm underline underline-offset-2" to="/routines">
           Manage Routines

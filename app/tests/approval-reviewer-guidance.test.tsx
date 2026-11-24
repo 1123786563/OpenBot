@@ -150,6 +150,7 @@ let failSavedRead = false;
 let failPreview = false;
 let failCheck = false;
 let failRemove = false;
+let checkGate: Promise<void> | undefined;
 
 beforeEach(() => {
   sent.length = 0;
@@ -158,6 +159,7 @@ beforeEach(() => {
   failPreview = false;
   failCheck = false;
   failRemove = false;
+  checkGate = undefined;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     const method = init?.method ?? "GET";
@@ -165,10 +167,12 @@ beforeEach(() => {
     const unavailable = () =>
       Response.json({ error: "Unavailable" }, { status: 503 });
     if (method !== "GET") sent.push({ path, method, body });
-    if (path.endsWith("/api/approvals/team/guidance/check"))
+    if (path.endsWith("/api/approvals/team/guidance/check")) {
+      await checkGate;
       return failCheck
         ? unavailable()
         : Response.json(body.text === WEAKENS ? REFUSED : READING);
+    }
     if (path.endsWith("/api/approvals/team/guidance/backtest")) {
       if (method === "GET")
         return failPreview
@@ -178,11 +182,21 @@ beforeEach(() => {
     }
     if (path.endsWith("/api/approvals/team/guidance")) {
       if (method === "PUT") {
+        if (body.basedOn !== saved)
+          return Response.json(
+            { error: "Saved guidance changed while you were editing." },
+            { status: 409 },
+          );
         saved = body.text;
         return Response.json({ guidance: saved, ...READING });
       }
       if (method === "DELETE") {
         if (failRemove) return unavailable();
+        if (body.basedOn !== saved)
+          return Response.json(
+            { error: "Saved guidance changed while you were editing." },
+            { status: 409 },
+          );
         saved = null;
         return Response.json({ ok: true });
       }
@@ -290,6 +304,31 @@ test("removing guidance requires confirmation and retries within the dialog", as
   expect(saved).toBeNull();
 });
 
+test("removing from an outdated confirmation keeps the latest saved guidance", async () => {
+  saved = DEALS;
+  const { view, user } = open();
+  await user.click(
+    await view.findByRole("button", { name: "Remove guidance" }),
+  );
+  const dialog = await view.findByRole("alertdialog", {
+    name: "Remove the guidance?",
+  });
+  const latest = "Ask before issuing a customer credit.";
+  saved = latest;
+  await user.click(
+    within(dialog).getByRole("button", { name: "Remove guidance" }),
+  );
+  expect(
+    await view.findByText(
+      "The saved guidance changed. Close this dialog and review it before removing it.",
+    ),
+  ).toBeTruthy();
+  expect(saved).toBe(latest);
+  expect(sent.find((call) => call.method === "DELETE")?.body).toEqual({
+    basedOn: DEALS,
+  });
+});
+
 test("restoring saved guidance clears the draft and its check without writing", async () => {
   saved = DEALS;
   const { view, user } = open();
@@ -329,7 +368,7 @@ test("guidance is checked, tested on recent decisions after saying how many mode
   // How many model calls a test makes, before it makes any.
   expect(
     view.getByText(
-      "Replays the reviewer with this guidance over the last 5 requests your people decided. That's 5 model calls, one for each.",
+      "Optional. Run the reviewer on the last 5 requests your team decided and compare the answers. This uses 5 model calls.",
     ),
   ).toBeTruthy();
   expect(sent.filter((call) => call.path.endsWith("/backtest"))).toHaveLength(
@@ -341,7 +380,7 @@ test("guidance is checked, tested on recent decisions after saying how many mode
   ).toBeTruthy();
   // The results sit outside the field: inside it, the rows' horizontal separators balanced the field's
   // descriptions into half-width lines.
-  const described = view.getByText(/^Replays the reviewer with this guidance/);
+  const described = view.getByText(/^Optional\. Run the reviewer/);
   expect(
     described
       .closest("[data-slot=field]")
@@ -376,6 +415,7 @@ test("guidance is checked, tested on recent decisions after saying how many mode
   );
   expect(sent.find((call) => call.method === "PUT")?.body).toEqual({
     text: DEALS,
+    basedOn: null,
   });
   await waitFor(() =>
     expect(router.state.location.pathname).toBe("/admin/approvals"),
@@ -395,7 +435,7 @@ test("words that try to switch safety off are refused, and an edit after a check
   expect(view.getByText(REFUSED.explanation)).toBeTruthy();
   expect(saveButton(view).disabled).toBe(true);
   // Not guidance, so there is nothing to test on recent decisions.
-  expect(view.queryByText("On recent decisions")).toBeNull();
+  expect(view.queryByText("Test on recent decisions")).toBeNull();
 
   await user.clear(field);
   await user.type(field, DEALS);
@@ -407,6 +447,50 @@ test("words that try to switch safety off are refused, and an edit after a check
   expect(saveButton(view).disabled).toBe(true);
   await user.click(view.getByRole("button", { name: "Check guidance" }));
   await waitFor(() => expect(saveButton(view).disabled).toBe(false));
+});
+
+test("a save conflict keeps the draft and requires a fresh check after reviewing the latest guidance", async () => {
+  const { view, user } = open();
+  const field = await view.findByLabelText("Guidance");
+  await user.type(field, DEALS);
+  await user.click(view.getByRole("button", { name: "Check guidance" }));
+  await view.findByText("What this changes");
+  const latest = "Ask before issuing a customer credit.";
+  saved = latest;
+  await user.click(saveButton(view));
+
+  await view.findByText("Saved guidance changed while you were editing.");
+  expect(saved).toBe(latest);
+  expect(field).toHaveProperty("value", DEALS);
+  expect(saveButton(view).disabled).toBe(true);
+  await user.click(view.getByRole("button", { name: "Keep my draft" }));
+  expect(document.activeElement).toBe(field);
+  expect(saveButton(view).disabled).toBe(true);
+  await user.click(view.getByRole("button", { name: "Check guidance" }));
+  await waitFor(() => expect(saveButton(view).disabled).toBe(false));
+  await user.click(saveButton(view));
+  await waitFor(() => expect(saved).toBe(DEALS));
+  expect(sent.filter((call) => call.method === "PUT").at(-1)?.body).toEqual({
+    text: DEALS,
+    basedOn: latest,
+  });
+});
+
+test("a pending check cannot validate a draft edited away and back while it was running", async () => {
+  const gate = Promise.withResolvers<void>();
+  checkGate = gate.promise;
+  const { view, user } = open();
+  const field = await view.findByLabelText("Guidance");
+  await user.type(field, DEALS);
+  await user.click(view.getByRole("button", { name: "Check guidance" }));
+  await view.findByRole("button", { name: "Checking…" });
+  await user.type(field, " Record the reason.");
+  await user.clear(field);
+  await user.type(field, DEALS);
+  gate.resolve();
+  await view.findByRole("button", { name: "Check guidance" });
+  expect(view.queryByText("What this changes")).toBeNull();
+  expect(saveButton(view).disabled).toBe(true);
 });
 
 test("a guidance save reads on Audit as what was saved and how it was read, and a removal as what went", () => {

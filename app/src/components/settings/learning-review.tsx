@@ -10,6 +10,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { ProposalDialog } from "@/components/learning/proposal-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,6 +95,7 @@ function GroupError({ state }: { state: StartState | undefined }) {
  */
 export function LearningReview() {
   const review = useQuery(personalReviewQueryOptions());
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
   const decide = useMutation(
     reviewPersonalProposalMutationOptions(queryClient),
   );
@@ -163,23 +165,22 @@ export function LearningReview() {
     const timer = setInterval(() => void refetchReview(), 10_000);
     return () => clearInterval(timer);
   }, [awaitingRun, refetchReview]);
-  if (review.isPending) return null;
-  if (review.error) {
+  if (review.isPending || review.error) {
     return (
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <p className="text-destructive text-sm" role="alert">
-          Couldn't load what your Bots learned.
-        </p>
-        <Button
-          disabled={review.isFetching}
-          onClick={() => void review.refetch()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {review.isFetching ? "Retrying…" : "Retry"}
-        </Button>
-      </div>
+      <PageSection headingRef={sectionHeading} title="New skills">
+        {review.error ? (
+          <ReadError
+            focusAfterRetry={() => sectionHeading.current}
+            message="Couldn't load what your Bots learned."
+            retry={review.refetch}
+            retryBelow
+            retryLabel="Retry skill review"
+            retrying={review.isFetching}
+          />
+        ) : (
+          <ReadStatus kind="loading" message="Loading new skills…" />
+        )}
+      </PageSection>
     );
   }
   const { canReview, sources, autoApprove } = review.data;
@@ -268,7 +269,11 @@ export function LearningReview() {
   };
 
   return (
-    <PageSection title={heading.title} description={heading.description}>
+    <PageSection
+      title={heading.title}
+      description={heading.description}
+      headingRef={sectionHeading}
+    >
       {autoApproveOn !== null && (
         <PageRows>
           <Item size="sm">
