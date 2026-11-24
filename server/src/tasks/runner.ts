@@ -99,6 +99,7 @@ export function createTaskRunner(deps: {
     agentId: string,
   ): Promise<TaskScope | null>;
   runTask: TaskTurn;
+  canStartBudget?: (personId: string, budgetId: string) => Promise<boolean>;
   /** How long a turn that threw waits for its retry. Tests pass 0. */
   retryMs?: number;
 }) {
@@ -111,6 +112,7 @@ export function createTaskRunner(deps: {
   async function open(
     ownerUserId: string,
     item: StartedItem,
+    budgetId?: string,
   ): Promise<{ id: string; channelId: string }> {
     const found = await deps.store.byItem(ownerUserId, item.id);
     if (found) return found;
@@ -130,6 +132,7 @@ export function createTaskRunner(deps: {
             title: item.title,
             why: whyOf(item.detail),
             origin: "check_in",
+            budgetId,
             suggestionId: item.id,
             sourceApp: item.sourceApp,
             sourceLink: item.sourceLink,
@@ -177,8 +180,11 @@ export function createTaskRunner(deps: {
   async function startFromItem({
     ownerUserId,
     item,
+    budgetId,
   }: Parameters<TaskService["startFromItem"]>[0]) {
-    const task = await open(ownerUserId, item);
+    if (budgetId && !(await deps.canStartBudget?.(ownerUserId, budgetId)))
+      throw new TaskRefusedError("Confirm a current execution budget first.");
+    const task = await open(ownerUserId, item, budgetId);
     /*
      * Keyed on the item, so the turn is queued once however often this is called for it. Called
      * again after a crash between the task's commit and this offer, it queues the turn that crash
@@ -242,7 +248,7 @@ export function createTaskRunner(deps: {
       throw new TaskRefusedError(
         "This Bot or its conversation is no longer available to you.",
       );
-    await deps.runTask(scope, {
+    return deps.runTask(scope, {
       runId: taskExecutionId({
         taskId: task.id,
         workKey,
@@ -250,12 +256,14 @@ export function createTaskRunner(deps: {
         again: work.again,
       }),
       // The turn's first run's id: a retry carries on the same ask rather than asking again.
-      askId: taskExecutionId({
-        taskId: task.id,
-        workKey,
-        attempt: 1,
-        again: work.again,
-      }),
+      askId: task.budgetId
+        ? `task-${task.id}`
+        : taskExecutionId({
+            taskId: task.id,
+            workKey,
+            attempt: 1,
+            again: work.again,
+          }),
       text:
         work.text ??
         itemAsk({
@@ -266,6 +274,7 @@ export function createTaskRunner(deps: {
       signal,
       final: attempt >= TASK_RUNS,
       attempt,
+      budgetId: task.budgetId,
     });
   }
 
@@ -298,8 +307,13 @@ export function createTaskRunner(deps: {
     }, TASK_LEASE_MS / 3);
     renew.unref?.();
     try {
-      await runTurn(item.payload, controller.signal, item.attempts, item.key);
-      await deps.queue.finish(held);
+      const outcome = await runTurn(
+        item.payload,
+        controller.signal,
+        item.attempts,
+        item.key,
+      );
+      await deps.queue.finish(outcome ? { ...held, payload: outcome } : held);
     } catch (error) {
       const released = await deps.queue.release({
         ...held,
@@ -355,7 +369,26 @@ export function createTaskRunner(deps: {
      * turn of its own beside the one that failed. Keyed on how many turns the task has had, so two
      * presses at once run it once and the second is refused.
      */
+    async continueBudgeted(ownerUserId: string, taskId: string) {
+      const { ask, turns } = await deps.store.billingContinuation(
+        ownerUserId,
+        taskId,
+      );
+      const queued = await queueTurn(
+        ownerUserId,
+        taskId,
+        `task:${taskId}:continue:${turns}`,
+        ask,
+        true,
+      );
+      if (queued !== "queued")
+        throw new TaskRefusedError("This task is already being continued.");
+    },
     async again(ownerUserId: string, taskId: string): Promise<void> {
+      if ((await deps.store.locate(ownerUserId, taskId))?.budgetId)
+        throw new TaskRefusedError(
+          "Use Continue to resume this budgeted task.",
+        );
       const { ask, turns } = await deps.store.failedTurn(ownerUserId, taskId);
       const queued = await queueTurn(
         ownerUserId,

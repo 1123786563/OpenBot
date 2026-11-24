@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { EXECUTION_BUDGET_PROP } from "@openbot/toolkit/run-turn";
 import { eq } from "drizzle-orm";
 import { PERSON_QUESTION_WAITING } from "../approvals/question-resume";
 import type { ApprovalService } from "../approvals/service";
@@ -263,6 +264,10 @@ export function wireCoordination(deps: {
             threadId: input.threadId,
             depth: assertion?.depth ?? baseDepth,
             initiator: assertion?.initiator ?? initiator,
+            ...(typeof input.forwardedProps?.[EXECUTION_BUDGET_PROP] ===
+            "string"
+              ? { budgetId: input.forwardedProps[EXECUTION_BUDGET_PROP] }
+              : {}),
           };
       const tools = await coordination.toolsForRun(run);
       return tools.map((tool) => ({

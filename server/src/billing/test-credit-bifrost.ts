@@ -1,6 +1,12 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ReleasedBifrostRoute } from "../admin/bifrost-catalog";
+
+import {
+  type CoordinationToolSpec,
+  type CreditToolMessage,
+  readProviderCoordinationCalls,
+} from "./coordination-model-call";
 
 type Route = Pick<
   ReleasedBifrostRoute,
@@ -10,11 +16,27 @@ type Route = Pick<
   | "model"
   | "maxInputTokens"
   | "maxOutputTokens"
->;
-type Messages = readonly {
-  role: "system" | "user" | "assistant";
-  content: string;
-}[];
+> &
+  Partial<Pick<ReleasedBifrostRoute, "tools">>;
+export function bifrostRouteProof(route: ReleasedBifrostRoute) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        route.revision,
+        route.provider,
+        route.model,
+        route.gatewayRevision,
+        route.meteringRevision,
+        route.verification.report.gatewayImageDigest,
+      ]),
+    )
+    .digest("hex");
+}
+
+type Messages = readonly (
+  | { role: "system" | "user" | "assistant"; content: string }
+  | CreditToolMessage
+)[];
 
 const tokens = z.number().int().nonnegative();
 const completion = z.object({
@@ -24,6 +46,15 @@ const completion = z.object({
 
 const completionText = z.tuple([
   z.object({ message: z.object({ content: z.string().trim().min(1) }) }),
+]);
+
+const toolResponse = z.tuple([
+  z.object({
+    finish_reason: z.literal("tool_calls"),
+    message: z.object({
+      tool_calls: readProviderCoordinationCalls,
+    }),
+  }),
 ]);
 
 export class UnsentBifrostRequest extends Error {
@@ -38,6 +69,7 @@ export function createBifrostCreditExecutor({
   meteringRevision,
   gatewayToken,
   countInputTokens,
+  limitField = "max_tokens",
 }: {
   endpoint: URL;
   gatewayRevision: string;
@@ -46,6 +78,7 @@ export function createBifrostCreditExecutor({
   // Use the verified model's chat template and include all provider-side framing.
   countInputTokens(
     route: Route,
+    messages: Messages,
     request: {
       body: string;
       digest: string;
@@ -54,6 +87,7 @@ export function createBifrostCreditExecutor({
     },
     signal?: AbortSignal,
   ): Promise<number>;
+  limitField?: "max_tokens" | "max_completion_tokens";
 }) {
   const url = new URL(endpoint);
   if (
@@ -73,34 +107,53 @@ export function createBifrostCreditExecutor({
   return async ({
     route,
     messages,
+    coordinationTools,
     operationId,
     recheckRoute,
+    bindGatewayRequest,
+    routeProof,
     signal,
   }: {
     route: Route;
     messages: Messages;
+    coordinationTools?: readonly CoordinationToolSpec[];
     operationId?: string;
     recheckRoute?: () => Promise<boolean>;
+    bindGatewayRequest?: (request: {
+      requestId: string;
+      digest: string;
+    }) => Promise<boolean>;
+    routeProof?: string;
     signal?: AbortSignal;
   }) => {
     if (
       signal?.aborted ||
       route.gatewayRevision !== gatewayRevision ||
-      route.meteringRevision !== meteringRevision
+      route.meteringRevision !== meteringRevision ||
+      (coordinationTools?.length && !route.tools)
     ) {
       throw new UnsentBifrostRequest("route_unavailable");
     }
     const body = JSON.stringify({
       model: `${route.provider}/${route.model}`,
       messages,
-      max_completion_tokens: route.maxOutputTokens,
+      [limitField]: route.maxOutputTokens,
       stream: false,
+      ...(coordinationTools?.length
+        ? {
+            tools: coordinationTools.map((spec) => ({
+              type: "function",
+              function: spec,
+            })),
+          }
+        : {}),
     });
     const digest = createHash("sha256").update(body).digest("hex");
-    const requestId = randomUUID();
+    const requestId = crypto.randomUUID();
     const counted = tokens.safeParse(
       await countInputTokens(
         route,
+        messages,
         { body, digest, requestId, operationId },
         signal,
       ).catch(() => undefined),
@@ -129,6 +182,14 @@ export function createBifrostCreditExecutor({
       headers.set("x-openbot-operation-id", operationId);
       headers.set("x-bf-lh-openbot-operation-id", operationId);
     }
+    if (routeProof) headers.set("x-bf-lh-openbot-route-proof", routeProof);
+    if (
+      bindGatewayRequest &&
+      !(await bindGatewayRequest({ requestId, digest }))
+    )
+      throw new Error("Test Credit gateway dispatch binding unavailable.");
+
+    if (signal?.aborted) throw new UnsentBifrostRequest("route_unavailable");
     const timeout = AbortSignal.timeout(85_000);
     const response = await fetch(url, {
       method: "POST",
@@ -144,6 +205,11 @@ export function createBifrostCreditExecutor({
       inputTokens: usage.prompt_tokens,
       outputTokens: usage.completion_tokens,
     };
+    if (coordinationTools?.length) {
+      const response = toolResponse.safeParse(choices);
+      if (response.success)
+        return { calls: response.data[0].message.tool_calls, usage: metered };
+    }
     const text = completionText.safeParse(choices);
     return text.success
       ? { text: text.data[0].message.content, usage: metered }

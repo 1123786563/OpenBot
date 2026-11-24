@@ -204,7 +204,7 @@ test("Reset still names what a Bot remembers for you in the team edition", async
   fireEvent.click(row);
   expect(await view.findByText("1 conversation")).toBeTruthy();
   expect(
-    view.getByText("Memories you told a Bot yourself are kept."),
+    view.getByText("Memories you told the Bot yourself will be kept."),
   ).toBeTruthy();
 });
 
@@ -237,9 +237,7 @@ test("the personal edition's Reset notice doesn't mention other people's data", 
   const view = draw(BOT, {}, "personal");
   fireEvent.click(view.getByRole("button", { name: /^Reset/ }));
   expect(
-    await view.findByText(
-      "This deletes what Expenses has with you. You can't undo this.",
-    ),
+    await view.findByText("This permanently deletes the data listed below."),
   ).toBeTruthy();
   expect(document.body.textContent).not.toMatch(/other people/i);
 });
@@ -267,7 +265,7 @@ test("a team deployment keeps saying whose list changes and who a delete reaches
   fireEvent.click(view.getByRole("button", { name: /^Reset/ }));
   expect(
     await view.findByText(
-      "This deletes what Expenses has with you. Other people's conversations and data stay. You can't undo this.",
+      "This permanently deletes your data listed below. Other people keep their conversations and data.",
     ),
   ).toBeTruthy();
 });

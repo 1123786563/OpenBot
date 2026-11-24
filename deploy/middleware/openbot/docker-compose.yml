@@ -44,6 +44,9 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       SERVER_INTERNAL_URL: http://server:3001
+      LAGO_URL:
+      LAGO_API_KEY:
+      LAGO_USAGE_SUBSCRIPTION_ID:
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:?Set WORKER_SHARED_SECRET}
     depends_on:
       server:

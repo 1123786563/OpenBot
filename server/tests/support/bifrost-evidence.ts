@@ -60,7 +60,7 @@ export function fixtureTraceReport(
   const rejected = completed();
   const toolRunId = crypto.randomUUID();
   return {
-    version: 2,
+    version: 3,
     revision: route.revision,
     harnessImage,
     ...target,
@@ -76,8 +76,14 @@ export function fixtureTraceReport(
       clientAbortedAt: "2026-01-01T01:00:00Z",
       upstream: {
         ...cancellation.upstream,
-        terminatedAt: "2026-01-01T01:00:01Z",
-        outcome: "cancelled",
+        terminal: {
+          source: "provider-record",
+          recordRef: "fixture-terminal-event",
+          recordDigest: `sha256:${"e".repeat(64)}`,
+          requestId: cancellation.upstream.requestId,
+          terminatedAt: "2026-01-01T01:00:01Z",
+          outcome: "cancelled",
+        },
       },
     },
     inputLimit: {
@@ -108,7 +114,6 @@ export function fixtureTraceReport(
     }),
   };
 }
-
 export function fixtureEmbeddingReport(
   harnessImage: string,
   route: Route & { revision: string },

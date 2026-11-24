@@ -522,9 +522,10 @@ export const intelligenceChannelMappings = pgTable(
      * See channels/model-choice.ts.
      */
     modelSelection: jsonb("model_selection").$type<{
-      provider: string;
+      provider?: string;
       model?: string | null;
       effort?: string | null;
+      testCreditModel?: { id: string; revision: string };
     }>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

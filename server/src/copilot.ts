@@ -59,6 +59,7 @@ import {
   type PlatformRun,
   stopRecorder,
 } from "@openbot/toolkit/run-stop";
+import { EXECUTION_BUDGET_PROP } from "@openbot/toolkit/run-turn";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
 import { Hono } from "hono";
 import {
@@ -115,6 +116,10 @@ import {
   watchDecisionWaits,
 } from "./approvals/decision-waits";
 import type { AuditInitiator } from "./audit";
+import {
+  createDirectChatTestCredit,
+  type DirectChatTestCreditDependencies,
+} from "./billing/direct-chat-test-credit";
 import {
   attachmentIdsIn,
   newInlineBudget,
@@ -1563,7 +1568,11 @@ async function buildAgent(
       choose: async (prompt, signal) => {
         await marketRun?.check();
         return withMarketDispatch(marketRun?.dispatch, () =>
-          narrowing.choose(prompt, signal),
+          narrowing.choose(prompt, signal, {
+            conversationId: input.threadId,
+            botId: agent.id,
+            runId: input.runId,
+          }),
         );
       },
       signal,
@@ -2005,7 +2014,11 @@ export type ToolSelection = {
     snapshot: MarketSkillSnapshot,
   ) => Promise<MarketRunControl>;
   /** Pass one. Ordinary failures skip narrowing; cancellation stops the run. */
-  choose: (prompt: string, signal?: AbortSignal) => Promise<string | null>;
+  choose: (
+    prompt: string,
+    signal?: AbortSignal,
+    scope?: { conversationId: string; botId: string; runId: string },
+  ) => Promise<string | null>;
   /** Writes the discovery row. Never allowed to fail a run. */
   record?: (botId: string, selection: Selection<GrantedTool>) => Promise<void>;
   /** Overrides the default catalogue size below which nothing is narrowed. */
@@ -3169,12 +3182,12 @@ export async function markAskedRun(
     return;
   }
   if (!isPlainObject(body)) return;
-  const { [ASKED_RUN]: claimed, ...forwardedProps } = isPlainObject(
-    body.forwardedProps,
-  )
-    ? body.forwardedProps
-    : {};
-  if (!run && claimed === undefined) return;
+  const {
+    [ASKED_RUN]: claimed,
+    [EXECUTION_BUDGET_PROP]: claimedBudget,
+    ...forwardedProps
+  } = isPlainObject(body.forwardedProps) ? body.forwardedProps : {};
+  if (!run && claimed === undefined && claimedBudget === undefined) return;
   return new Request(request, {
     body: JSON.stringify({
       ...body,
@@ -3236,7 +3249,11 @@ export function mountCopilotRuntime(
   identifyActor: IdentifyActor,
   options: {
     productTelemetry?: ProductTelemetry;
-    directChat?: { database: Database; profiles: AgentProfileStore };
+    directChat?: {
+      database: Database;
+      profiles: AgentProfileStore;
+      testCredit?: DirectChatTestCreditDependencies;
+    };
     /**
      * Where the cards a Bot asks with in the conversation are saved while they wait on the person,
      * so the Bot is under Needs you for them. See approvals/decision-waits.ts.
@@ -3506,11 +3523,19 @@ export function mountCopilotRuntime(
   if (!intelligence) {
     if (!options.directChat)
       throw new Error("OpenBot chat requires its database and Bot profiles.");
-    const trial = config.managedModelTrial;
+    const trial = options.directChat.testCredit
+      ? undefined
+      : config.managedModelTrial;
     handler.route(
       basePath,
       createDirectChatRoutes({
         ...options.directChat,
+        testCredit:
+          options.directChat.testCredit &&
+          createDirectChatTestCredit(
+            options.directChat.database,
+            options.directChat.testCredit,
+          ),
         trial: trial && {
           route: trial.route,
           model: createManagedModel(trial),

@@ -58,6 +58,22 @@ import {
 } from "./auth/guards";
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
+import type { CreditPackTestChannel } from "./billing/credit-pack-test-channel";
+import { createPaidCorrectionRoutes } from "./billing/paid-correction-routes";
+import type { PaidCreditLedger } from "./billing/paid-ledger";
+import type {
+  TestCreditLedger,
+  VerifiedBillingIdentity,
+} from "./billing/test-credit";
+import {
+  createTestCreditRoutes,
+  createTrialAdminRoutes,
+  type TestCreditExecutor,
+} from "./billing/test-credit-routes";
+import {
+  createWeKnoraRoutes,
+  type WeKnoraRuntime,
+} from "./billing/weknora-routes";
 import {
   type BotBrowserRouteDeps,
   createBotBrowser,
@@ -585,6 +601,7 @@ export function createApp(
      */
     auditQuestions?: {
       complete: ModelCompleter;
+      platformBudgetId?: string;
       vocabulary: () => Promise<AuditVocabulary>;
       /** The clock a question's "yesterday" is read against. A test fixes it; absent is now. */
       now?: () => Date;
@@ -612,6 +629,37 @@ export function createApp(
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
   profileStore?: ProfileStore,
+  /**
+   * The shared billing ledgers (#86): a person's Test Credit balance, the paid side of their bill
+   * (#107), and their execution budgets. Absent, `/api/billing` is not mounted.
+   */
+  billing?: {
+    testLedger: TestCreditLedger;
+    runtime?: {
+      authenticate(
+        request: Request,
+      ): Promise<VerifiedBillingIdentity | undefined>;
+      execute: TestCreditExecutor;
+    };
+    independentApplication?: {
+      authenticate(request: Request, applicationId: string): Promise<boolean>;
+      execute: TestCreditExecutor;
+    };
+    weknora?: WeKnoraRuntime;
+    testCreditConversations?: boolean;
+    canStartBackgroundBudget?: (
+      personId: string,
+      budgetId: string,
+    ) => Promise<boolean>;
+    paidLedger: PaidCreditLedger;
+    creditPackTestChannel?: CreditPackTestChannel;
+    alipayCreditPackTestChannel?: CreditPackTestChannel;
+    /** How a signed-in person maps to a Billing Account; absent uses the actor's id as subject. */
+    identityOf?: (actor: { id: string }) => VerifiedBillingIdentity;
+    casdoorIdentityOf?: (
+      personId: string,
+    ) => Promise<VerifiedBillingIdentity | undefined>;
+  },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   const skillMarket =
@@ -643,6 +691,10 @@ export function createApp(
       mode: config.runtime.mode,
       durableHistory: config.runtime.durableHistory,
       directMessageReplay: config.runtime.mode === "openbot",
+      ...((billing?.testCreditConversations ??
+      Boolean(billing?.casdoorIdentityOf))
+        ? { testCreditConversations: true }
+        : {}),
       /*
        * Whether a Bot may answer with an interface it wrote itself.
        *
@@ -927,6 +979,77 @@ export function createApp(
     }),
   );
   app.route("/api/me/profile", createProfileRoutes(requireUser, profileStore));
+  if (billing) {
+    app.route(
+      "/api/admin/billing",
+      createPaidCorrectionRoutes(billing.paidLedger, requireUser),
+    );
+    app.route(
+      "/api/admin/billing",
+      createTrialAdminRoutes(billing.testLedger, requireUser),
+    );
+    if (billing.weknora && billing.casdoorIdentityOf)
+      app.route(
+        "/api/weknora",
+        createWeKnoraRoutes({
+          ...billing.weknora,
+          ledger: billing.testLedger,
+        }),
+      );
+    app.route(
+      "/api/billing",
+      createTestCreditRoutes({
+        ledger: billing.testLedger,
+        execute: billing.runtime?.execute,
+        authenticateApplication: billing.independentApplication
+          ? async (request, appId) =>
+              Boolean(
+                await billing.independentApplication?.authenticate(
+                  request,
+                  appId,
+                ),
+              ) &&
+              (await billing.testLedger.approvedIndependentApplication(appId))
+          : undefined,
+        applicationExecute: billing.independentApplication?.execute,
+        weknoraRouteId: billing.weknora?.routeId,
+        paid: {
+          ledger: billing.paidLedger,
+          creditPackTestChannel: billing.creditPackTestChannel,
+          alipayCreditPackTestChannel: billing.alipayCreditPackTestChannel,
+        },
+        authenticate: async (request, intent) => {
+          if (intent === "execution")
+            return billing.runtime?.authenticate(request);
+          if (billing.casdoorIdentityOf) {
+            const session = await auth?.api.getSession({
+              headers: request.headers,
+              query: { disableCookieCache: true },
+            });
+            if (!session) return undefined;
+            const roles = session.user.role
+              ? [session.user.role]
+              : await roleRepository?.rolesForUser(session.user.id);
+            if (!roles?.some((role) => role === "user" || role === "admin"))
+              return undefined;
+            return billing.casdoorIdentityOf(session.user.id);
+          }
+          // One person and no provider: that person is the account.
+          if (config.singleUser)
+            return { issuer: "openbot", subject: "single-user" };
+          const session = await auth?.api.getSession({
+            headers: request.headers,
+          });
+          return session
+            ? (billing.identityOf?.(session.user) ?? {
+                issuer: "openbot",
+                subject: session.user.id,
+              })
+            : undefined;
+        },
+      }),
+    );
+  }
   app.post("/api/me/onboarding", requireUser, async (context) => {
     if (!onboardingStore) {
       return context.json({ error: "Onboarding is not available." }, 503);
@@ -1177,6 +1300,7 @@ export function createApp(
       createAuditAskRoutes({
         requireUser,
         complete: coworker.auditQuestions.complete,
+        platformBudgetId: coworker.auditQuestions.platformBudgetId,
         vocabulary: coworker.auditQuestions.vocabulary,
         ...(coworker.auditQuestions.now
           ? { now: coworker.auditQuestions.now }
@@ -2094,6 +2218,7 @@ export function createApp(
       createRoutineRoutes(routineStore, requireUser, {
         runner: routineRunner,
         auditStore,
+        canStartBudget: billing?.canStartBackgroundBudget,
       }),
     );
   }

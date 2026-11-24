@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { canAccessAgent } from "../agents/profile-policy";
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { AgentActor, AgentProfile } from "../agents/profile-types";
@@ -8,6 +9,7 @@ import type {
   RoutingCandidate,
   RoutingUndecided,
 } from "./classify";
+import type { RoutingCreditConfirmation } from "./credit-quote";
 
 const PICKED_HARNESS_AGENT_ID = "picked-harness";
 
@@ -57,6 +59,8 @@ export type CoworkerRoutingInput = {
   agentId?: string | null;
   /** Every selected skill must be offered by the recipient. */
   skillSlugs?: readonly string[];
+  requestId?: string;
+  confirmation?: RoutingCreditConfirmation;
 };
 
 export type CoworkerRouteDetail = {
@@ -74,7 +78,7 @@ export type HttpCoworkerRoutingService = CoworkerRoutingService & {
 };
 
 export type CreateCoworkerRoutingServiceOptions = {
-  store: AgentProfileStore;
+  store: Pick<AgentProfileStore, "list">;
   router: IntentRouter;
   auditStore?: AuditStore;
   reachableSystems?: (agentId: string) => Promise<readonly string[]>;
@@ -474,6 +478,22 @@ export function createCoworkerRoutingService(
       input.text,
       candidates,
       preferred.id,
+      {
+        billing: {
+          source: "routing",
+          personId: input.actor.id,
+          conversationId: `routing:${input.actor.id}`,
+          botId: "intent-router",
+          runId: input.requestId
+            ? createHash("sha256")
+                .update(JSON.stringify([input.requestId, input.text, required]))
+                .digest("hex")
+            : crypto.randomUUID(),
+          step: "route-intent",
+          routingConfirmation: input.confirmation,
+          funding: { kind: "user" },
+        },
+      },
     );
     const result: Extract<CoworkerRouteResult, { kind: "selected" }> = {
       kind: "selected",

@@ -286,8 +286,10 @@ describe("the Computer page", () => {
       await expect(read()).rejects.toThrow("Read denied");
       status = 503;
       await expect(read()).rejects.toThrow("Read denied");
-      expect(client.getQueryData(query.queryKey)?.computers.length).toBe(0);
-      expect(client.getQueryData(query.queryKey)?.isolation).toBeUndefined();
+      const closed = client.getQueryData(query.queryKey);
+      if (!closed) throw new Error("Missing cached computer settings.");
+      expect(closed.computers).toHaveLength(0);
+      expect(closed.isolation).toBeUndefined();
     } finally {
       globalThis.fetch = originalFetch;
       client.clear();

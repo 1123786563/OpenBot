@@ -1,0 +1,332 @@
+[
+  {
+    "id": "6c6d7c3f-88d3-4ff3-a44e-57c86062c110",
+    "provider": "zhipu",
+    "model": "glm-5.3-flash",
+    "stream": 0,
+    "token_usage": {
+      "prompt_tokens": 20,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens": 8,
+      "completion_tokens_details": {
+        "reasoning_tokens": 5
+      },
+      "total_tokens": 28
+    },
+    "stop_reason": "length",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 8
+    },
+    "created_at": "2026-11-22 08:22:48.342466676+00:00"
+  },
+  {
+    "id": "feeb9992-d1c1-4f17-9d08-f6817eb6e486",
+    "provider": "zhipu",
+    "model": "glm-5.3-flash",
+    "stream": 1,
+    "token_usage": {
+      "prompt_tokens": 20,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens": 8,
+      "completion_tokens_details": {
+        "reasoning_tokens": 5
+      },
+      "total_tokens": 28
+    },
+    "stop_reason": "length",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 8,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "created_at": "2026-11-22 08:22:51.186616296+00:00"
+  },
+  {
+    "id": "56b0af46-0378-4d6d-ae2f-cc7c4d3024df",
+    "provider": "zhipu",
+    "model": "glm-5.3-flash",
+    "stream": 1,
+    "token_usage": null,
+    "stop_reason": null,
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "error",
+    "params": {
+      "max_completion_tokens": 512,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "created_at": "2026-11-22 08:22:54.070455237+00:00"
+  },
+  {
+    "id": "c024d3cd-d1f3-4f47-b95a-d991ccb36cb8",
+    "provider": "zhipu",
+    "model": "glm-5.3",
+    "stream": 0,
+    "token_usage": {
+      "prompt_tokens": 20,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens": 8,
+      "completion_tokens_details": {
+        "reasoning_tokens": 6
+      },
+      "total_tokens": 28
+    },
+    "stop_reason": "length",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 8
+    },
+    "created_at": "2026-11-22 08:22:57.793782331+00:00"
+  },
+  {
+    "id": "96d8332b-7226-4dfd-887d-75e968cbc805",
+    "provider": "zhipu",
+    "model": "glm-5.3",
+    "stream": 1,
+    "token_usage": {
+      "prompt_tokens": 20,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens": 8,
+      "completion_tokens_details": {
+        "reasoning_tokens": 7
+      },
+      "total_tokens": 28
+    },
+    "stop_reason": "length",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 8,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "created_at": "2026-11-22 08:23:01.716238866+00:00"
+  },
+  {
+    "id": "c59b0928-317d-42b5-9e17-5ef9f891f9a3",
+    "provider": "zhipu",
+    "model": "glm-5.3",
+    "stream": 1,
+    "token_usage": null,
+    "stop_reason": null,
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "error",
+    "params": {
+      "max_completion_tokens": 512,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "created_at": "2026-11-22 08:23:04.687939549+00:00"
+  },
+  {
+    "id": "988bbc74-a382-4e7d-86cf-01094a276b2e",
+    "provider": "zhipu",
+    "model": "glm-5.3-flash",
+    "stream": 0,
+    "token_usage": {
+      "prompt_tokens": 177,
+      "prompt_tokens_details": {
+        "cached_read_tokens": 128,
+        "cached_tokens": 128
+      },
+      "completion_tokens": 54,
+      "completion_tokens_details": {
+        "reasoning_tokens": 35
+      },
+      "total_tokens": 231
+    },
+    "stop_reason": "tool_calls",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 64,
+      "tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "probe_echo"
+        }
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "probe_echo",
+            "description": "Echo the synthetic verification value.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": ["value"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "created_at": "2026-11-22 08:28:53.332319444+00:00"
+  },
+  {
+    "id": "a644c5e5-c433-414a-a5ba-4b17b6436a16",
+    "provider": "zhipu",
+    "model": "glm-5.3-flash",
+    "stream": 0,
+    "token_usage": {
+      "prompt_tokens": 213,
+      "prompt_tokens_details": {
+        "cached_read_tokens": 128,
+        "cached_tokens": 128
+      },
+      "completion_tokens": 39,
+      "completion_tokens_details": {},
+      "total_tokens": 252
+    },
+    "stop_reason": "stop",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 64,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "probe_echo",
+            "description": "Echo the synthetic verification value.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": ["value"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "created_at": "2026-11-22 08:28:57.727834773+00:00"
+  },
+  {
+    "id": "441e21fb-4c26-49f8-a252-514546bec5d4",
+    "provider": "zhipu",
+    "model": "glm-5.3",
+    "stream": 0,
+    "token_usage": {
+      "prompt_tokens": 177,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens": 49,
+      "completion_tokens_details": {
+        "reasoning_tokens": 30
+      },
+      "total_tokens": 226
+    },
+    "stop_reason": "tool_calls",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 64,
+      "tool_choice": {
+        "type": "function",
+        "function": {
+          "name": "probe_echo"
+        }
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "probe_echo",
+            "description": "Echo the synthetic verification value.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": ["value"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "created_at": "2026-11-22 08:29:02.010033822+00:00"
+  },
+  {
+    "id": "5131cc72-8782-4473-8f2c-2d3e8c032589",
+    "provider": "zhipu",
+    "model": "glm-5.3",
+    "stream": 0,
+    "token_usage": {
+      "prompt_tokens": 213,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens": 64,
+      "completion_tokens_details": {
+        "reasoning_tokens": 13
+      },
+      "total_tokens": 277
+    },
+    "stop_reason": "length",
+    "number_of_retries": 0,
+    "fallback_index": 0,
+    "status": "success",
+    "params": {
+      "max_completion_tokens": 64,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "probe_echo",
+            "description": "Echo the synthetic verification value.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": ["value"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "created_at": "2026-11-22 08:29:08.588257415+00:00"
+  }
+]

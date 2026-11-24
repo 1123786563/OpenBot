@@ -195,9 +195,14 @@ export const removeProactiveSetting = (id: string) =>
  * Start with the task the first one opened, so a double tap starts one task. The task arrives on the
  * lists through the tasks query, so nothing here reads the answer.
  */
-export const resolveSuggestion = (id: string, action: "start" | "dismiss") =>
+export const resolveSuggestion = (
+  id: string,
+  action: "start" | "dismiss",
+  budgetId?: string,
+) =>
   client(`/api/proactive/suggestions/${encodeURIComponent(id)}/${action}`, {
     method: "POST",
+    ...(budgetId ? { body: { budgetId } } : {}),
     fallback:
       action === "start"
         ? "Couldn't start this. Try again."
@@ -218,8 +223,15 @@ const settleProactive = (queryClient: QueryClient) => () =>
  */
 export const resolveSuggestionMutationOptions = (queryClient: QueryClient) =>
   mutationOptions({
-    mutationFn: ({ id, action }: { id: string; action: "start" | "dismiss" }) =>
-      resolveSuggestion(id, action),
+    mutationFn: ({
+      id,
+      action,
+      budgetId,
+    }: {
+      id: string;
+      action: "start" | "dismiss";
+      budgetId?: string;
+    }) => resolveSuggestion(id, action, budgetId),
     onSuccess: () =>
       Promise.all([
         settleProactive(queryClient)(),

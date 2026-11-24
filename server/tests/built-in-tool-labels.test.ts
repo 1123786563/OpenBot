@@ -26,6 +26,8 @@ const scan = builtInTools(repoRoot);
 const DECIDED_AT_RUN_TIME: Record<string, string> = {
   "server/src/plugins/tools.ts: tool.toolName":
     "An app's tool, offered as mcp__<app>__<tool>, which readToolName names from the app and the action.",
+  "server/src/billing/background-model-turn.ts: tool.name":
+    "Tools already registered for a billable background turn, passed to the model with their original names.",
   "server/src/copilot.ts: tool.name":
     "A Bot's own tools, and its learned skills, handed on to the model or a remote Bot. Each is registered, and checked, where it is made.",
   "server/src/index.ts: tool.name":

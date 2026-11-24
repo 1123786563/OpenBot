@@ -79,6 +79,7 @@ export type RoutineRunRecord = {
   startedAt: string;
   finishedAt: string | null;
   error: string | null;
+  billingOperationId?: string;
   /** What started it: the schedule, a person's Run now, or an event trigger. */
   source: "schedule" | "run_now" | "trigger";
 };

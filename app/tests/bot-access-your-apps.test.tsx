@@ -7,7 +7,13 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { AccessSections } from "@/components/bot-profile/access";
 import type { AgentProfile } from "@/lib/agents/queries";
 import type { AppAccess } from "@/lib/app-access/queries";
@@ -146,6 +152,11 @@ test("each app you could give has a switch, on where you gave it, and pressing i
     ),
   );
   fireEvent.click(notion);
+  const confirmation = await view.findByRole("alertdialog");
+  expect(writes).toHaveLength(1);
+  fireEvent.click(
+    within(confirmation).getByRole("button", { name: "Remove access" }),
+  );
   await waitFor(() =>
     expect(writes).toContain(
       "DELETE /api/plugins/for/expenses/apps/notion/give",

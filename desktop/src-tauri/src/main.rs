@@ -18889,6 +18889,16 @@ fn main() {
         let empty = temp_root("openbot-local-setup-no-engine");
         std::fs::create_dir_all(&empty).unwrap();
         std::env::set_var("PATH", &empty);
+        // An empty PATH hides the engine's programs, but on Windows one is still found through
+        // WSL and its registry, and a CI runner's real drive can be short of the CLI's 40 GiB —
+        // `checked_call` then blocks before the CLI is asked. Say the engine ourselves, a machine
+        // no drive is measured for, so the refusal under test is what setup answers. (The lib's
+        // own cfg(test) drive seam is invisible here: this test compiles the lib as a dependency.)
+        #[cfg(target_os = "windows")]
+        local_eval::use_engine(&engine::Address::new(
+            engine::Engine::Podman,
+            Some("openbot-fixture-no-machine".into()),
+        ));
         let cli = desktop_telemetry::fake_cli::FakeCli::pinned("openbot-local-setup-cli", false);
         cli.answer(SETUP_REFUSED_FOR_DISK, 1);
         let sink = desktop_telemetry::sink::Sink::start();

@@ -1,0 +1,2 @@
+period: 2026-11-22T09:36:46Z → 2026-11-30T23:59:59Z
+invoice amount cents: 0 USD

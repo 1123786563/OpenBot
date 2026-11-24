@@ -244,10 +244,11 @@ test("Stop cancels the production selector HTTP connection before a late reply c
   process.env.OPENAI_BASE_URL = endpoint.url;
   let records = 0;
   const agent = await f.agent(
-    createModelCompleter({
-      model,
-      resolveApiKey: async () => "synthetic-fixture-key",
-    }),
+    (prompt, signal) =>
+      createModelCompleter({
+        model,
+        resolveApiKey: async () => "synthetic-fixture-key",
+      })(prompt, signal),
     undefined,
     async () => {
       records++;

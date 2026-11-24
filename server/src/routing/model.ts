@@ -1,6 +1,7 @@
 import { PlanModel, type PlanModelConfig } from "../agents/plan-model";
 import type { RuntimeModel } from "../copilot";
 import { startMarketRequest } from "../skill-market/disablements";
+import type { RoutingCreditConfirmation } from "./credit-quote";
 
 /**
  * One model call on the deployment's own model, for the router, the approval reviewer and the tool
@@ -37,7 +38,22 @@ export type ModelAnswerSchema = {
   schema: Record<string, unknown>;
 };
 
+export type ModelBillingContext = {
+  source: "routing" | "tool-selection" | "approval" | "admin";
+  personId: string;
+  conversationId: string;
+  botId: string;
+  runId: string;
+  step: string;
+  routingConfirmation?: RoutingCreditConfirmation;
+  funding:
+    | { kind: "user"; budget?: { id: string; stepId?: string } }
+    | { kind: "platform"; budget: { id: string; stepId?: string } };
+};
+
 export type ModelCallOptions = {
+  /** Explicit billing context for a metered auxiliary model call. */
+  billing?: ModelBillingContext;
   /**
    * Asks the provider for structured output: `response_format` `json_schema` (strict) on Chat
    * Completions, `output_config.format` on Anthropic's Messages. Without it the call asks for a JSON
@@ -201,7 +217,7 @@ export function createModelCompleter(deps: {
 export function createSkillChooser(
   model: RuntimeModel,
   resolveApiKey: () => Promise<string | null>,
-): (prompt: string, signal?: AbortSignal) => Promise<string> {
+): ModelCompleter {
   const complete = createModelCompleter({ model, resolveApiKey });
   /*
    * Why it could not choose, in the log, once for each reason. The run carries on with every tool
@@ -209,9 +225,9 @@ export function createSkillChooser(
    * a reason that holds for every turn is worth one line rather than one per turn.
    */
   const said = new Set<string>();
-  return async (prompt, signal) => {
+  return async (prompt, signal, options) => {
     try {
-      return await complete(prompt, signal);
+      return await complete(prompt, signal, options);
     } catch (error) {
       if (!signal?.aborted) {
         const reason = (error instanceof Error ? error.message : String(error))

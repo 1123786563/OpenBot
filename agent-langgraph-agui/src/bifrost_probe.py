@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 from contextlib import aclosing, suppress
+from datetime import datetime, timezone
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Annotated
@@ -31,6 +32,17 @@ from .tool_runtime import (
 )
 
 _run_id: ContextVar[str] = ContextVar("bifrost_probe_run_id")
+# The operator's per-step trace record, printed as one JSON line on stdout so the
+# evidence bundle can join gateway rows, meter proofs and provider response ids.
+_step_trace: ContextVar[dict | None] = ContextVar(
+    "bifrost_probe_step_trace", default=None
+)
+
+
+def _trace_step(record: dict):
+    import sys
+
+    print(json.dumps({"probe": "model-step", **record}), file=sys.stdout, flush=True)
 
 # Same identifiers and bounds as the Bifrost admin catalog.
 Reference = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$")]
@@ -98,6 +110,21 @@ class ProbeChatOpenAI(ChatOpenAI):
                 or total_tokens != input_tokens + output_tokens
             ):
                 raise RunRefused(UNVERIFIED_USAGE)
+        # The operator's evidence joins the gateway row, the meter proof and the
+        # provider's own response id for this step. The first chunk carries that id.
+        trace = _step_trace.get()
+        if trace is not None:
+            trace["chunks"] = trace.get("chunks", 0) + 1
+            if upstream_id := chunk.get("id"):
+                trace.setdefault("upstreamRequestId", str(upstream_id))
+            if usage is not None and type(usage.get("prompt_tokens")) is int:
+                trace["upstreamUsage"] = {
+                    "inputTokens": usage["prompt_tokens"],
+                    "outputTokens": usage["completion_tokens"],
+                }
+            for choice in chunk.get("choices") or []:
+                if reason := choice.get("finish_reason"):
+                    trace["upstreamFinishReason"] = str(reason)
         return super()._convert_chunk_to_generation_chunk(
             chunk, default_chunk_class, base_generation_info
         )
@@ -218,6 +245,12 @@ def create_app() -> FastAPI:
         request_id = str(uuid4())
         refusal = None
         input_upper_bound: int | None = None
+        trace = {
+            "runId": run_id,
+            "requestId": request_id,
+            "model": model_id,
+            "startedAt": datetime.now(timezone.utc).isoformat(),
+        }
 
         async def meter_before_send(request: httpx.Request):
             nonlocal refusal, input_upper_bound
@@ -289,49 +322,70 @@ def create_app() -> FastAPI:
             request.headers["x-bf-lh-openbot-operation-id"] = run_id
             request.headers["x-bf-lh-openbot-request-sha256"] = digest
             input_upper_bound = proof.input_token_upper_bound
+            trace["requestSha256"] = digest
+            trace["inputTokenUpperBound"] = proof.input_token_upper_bound
 
-        async with httpx.AsyncClient(
-            trust_env=False,
-            follow_redirects=False,
-            timeout=85,
-            event_hooks={"request": [meter_before_send]},
-        ) as gateway:
-            try:
-                model = ProbeChatOpenAI(
-                    model=model_id,
-                    base_url=str(base_url),
-                    api_key=gateway_token,
-                    openai_proxy="",
-                    use_responses_api=False,
-                    streaming=True,
-                    stream_usage=True,
-                    max_completion_tokens=route.max_output_tokens,
-                    max_retries=0,
-                    timeout=85,
-                    http_async_client=gateway,
-                    default_headers={
-                        "x-openbot-operation-id": run_id,
-                        "x-request-id": request_id,
-                    },
-                )
-                reply = await bind_tools(model).ainvoke(messages)
-            except RunRefused:
-                raise
-            except Exception:  # noqa: BLE001 - SDK errors may include upstream response bodies.
-                # The SDK also wraps request-hook failures.
-                raise RunRefused(
-                    refusal or "Bifrost probe gateway request failed."
-                ) from None
+        trace_token = _step_trace.set(trace)
+        try:
+            async with httpx.AsyncClient(
+                trust_env=False,
+                follow_redirects=False,
+                timeout=85,
+                event_hooks={"request": [meter_before_send]},
+            ) as gateway:
+                try:
+                    model = ProbeChatOpenAI(
+                        model=model_id,
+                        base_url=str(base_url),
+                        api_key=gateway_token,
+                        openai_proxy="",
+                        use_responses_api=False,
+                        streaming=True,
+                        stream_usage=True,
+                        max_completion_tokens=route.max_output_tokens,
+                        max_retries=0,
+                        timeout=85,
+                        http_async_client=gateway,
+                        default_headers={
+                            "x-openbot-operation-id": run_id,
+                            "x-request-id": request_id,
+                        },
+                    )
+                    reply = await bind_tools(model).ainvoke(messages)
+                except RunRefused:
+                    trace["outcome"] = "refused"
+                    raise
+                except asyncio.CancelledError:
+                    trace["outcome"] = "cancelled"
+                    raise
+                except Exception:  # noqa: BLE001 - SDK errors may include upstream response bodies.
+                    # The SDK also wraps request-hook failures.
+                    trace["outcome"] = "gateway-failed"
+                    raise RunRefused(
+                        refusal or "Bifrost probe gateway request failed."
+                    ) from None
 
-        usage = reply.usage_metadata
-        if (
-            input_upper_bound is None
-            or usage is None
-            or not 0 <= usage["input_tokens"] <= input_upper_bound
-            or not 0 <= usage["output_tokens"] <= route.max_output_tokens
-        ):
-            raise RunRefused(UNVERIFIED_USAGE)
-        return {"messages": [reply]}
+            usage = reply.usage_metadata
+            if (
+                input_upper_bound is None
+                or usage is None
+                or not 0 <= usage["input_tokens"] <= input_upper_bound
+                or not 0 <= usage["output_tokens"] <= route.max_output_tokens
+            ):
+                trace["outcome"] = "unverified-usage"
+                raise RunRefused(UNVERIFIED_USAGE)
+            trace.update(
+                {
+                    "outcome": "completed",
+                    "inputTokens": usage["input_tokens"],
+                    "outputTokens": usage["output_tokens"],
+                    "finishedAt": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            return {"messages": [reply]}
+        finally:
+            _step_trace.reset(trace_token)
+            _trace_step(trace)
 
     app = FastAPI(
         dependencies=[Depends(require_operator)],

@@ -51,6 +51,7 @@ export type ApprovalContinuation = {
   context: RunAgentInput["context"];
   forwardedProps: unknown;
   initiator?: AuditInitiator;
+  budgeted?: true;
   marketSkill?: MarketSkillSnapshot;
 };
 
