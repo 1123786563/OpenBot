@@ -1,3 +1,4 @@
+import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import type { ReactNode } from "react";
@@ -127,23 +128,12 @@ export function ToolLine({
   if (!children) return <Stack className="my-1.5">{text}</Stack>;
 
   return (
-    <details className="tool-line my-1.5 min-w-0">
-      {/*
-       * Native <details> owns expansion because SDK tool renderers can be re-invoked independently
-       * of this component's React state.
-       */}
-      <summary className="flex cursor-pointer list-none items-baseline gap-1.5">
-        <Text
-          as="span"
-          aria-hidden
-          color="secondary"
-          size="sm"
-          className="tool-line-chevron shrink-0 text-xs transition-transform"
-        >
-          ▸
-        </Text>
-        {text}
-      </summary>
+    <Collapsible
+      chevronPosition="start"
+      className="my-1.5 min-w-0"
+      defaultIsOpen={false}
+      trigger={text}
+    >
       {/*
        * Headings are cut down to the size of the surrounding text. A tool result is markdown a
        * server wrote for a model, so its `#` is a section marker rather than a page title.
@@ -154,6 +144,6 @@ export function ToolLine({
       >
         {children}
       </Stack>
-    </details>
+    </Collapsible>
   );
 }

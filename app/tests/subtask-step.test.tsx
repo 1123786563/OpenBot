@@ -123,17 +123,13 @@ async function draw(
   );
 }
 
-/** Opens a disclosure by its line, as a person clicking it would. */
-function open(line: HTMLElement) {
-  const details = line.closest("details") as HTMLDetailsElement;
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
-}
-
 /** The subtask's own row, opened, from inside the turn's folded work line. */
 async function subtaskRow(view: Awaited<ReturnType<typeof draw>>) {
-  const row = (await view.findByText("Subtask")).closest("li") as HTMLElement;
-  open(row.querySelector("summary") as HTMLElement);
+  fireEvent.click(view.getByRole("button", { name: /a subtask/i }));
+  const trigger = view.getByRole("button", { name: /^Subtask/ });
+  const row = trigger.closest("li");
+  if (!row) throw new Error("Subtask row missing");
+  fireEvent.click(trigger);
   return within(row);
 }
 
@@ -143,7 +139,7 @@ test("a subtask is one step of the turn's work line, not a card of its own", asy
   expect(view.container.querySelector("figure")).toBeNull();
   // Its own line says what it was asked and how many steps it took.
   const line = within(
-    view.getByText("Subtask").closest("summary") as HTMLElement,
+    view.getByText("Subtask").closest("button") as HTMLElement,
   );
   expect(line.getByText(/For customer account Birch Labs/)).toBeTruthy();
   expect(line.getByText("2 steps")).toBeTruthy();

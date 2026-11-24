@@ -1,4 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
+import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { CopilotKitContext } from "@copilotkit/react-core/v2/context";
@@ -801,19 +802,12 @@ export function StepRow({
     );
   return (
     <li className="min-w-0">
-      <details className="tool-line min-w-0">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5">
-          <Text
-            as="span"
-            aria-hidden
-            className="tool-line-chevron shrink-0 transition-transform"
-            color="secondary"
-            size="sm"
-          >
-            ▸
-          </Text>
-          {line}
-        </summary>
+      <Collapsible
+        chevronPosition="start"
+        className="min-w-0"
+        defaultIsOpen={false}
+        trigger={line}
+      >
         <Stack className="mt-1.5 pl-5" gap={2}>
           {step.sources ? (
             <ResearchResults
@@ -841,7 +835,7 @@ export function StepRow({
             <StepOutput output={step.output} verbatim={step.verbatim} />
           ) : null}
         </Stack>
-      </details>
+      </Collapsible>
     </li>
   );
 }

@@ -1,5 +1,6 @@
 import type { ActivityMessage, Message } from "@ag-ui/core";
 import { Button } from "@astryxdesign/core/Button";
+import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
@@ -25,8 +26,8 @@ import {
 import { SEARCH_TOOLS, toolsFound } from "@openbot/shared/tool-search";
 import {
   IconAlertTriangle,
+  IconArrowDown,
   IconBox,
-  IconChevronDown,
   IconClock,
   IconFile,
   IconListDetails,
@@ -890,14 +891,7 @@ function ResponsibilityFiring({
         <Text as="p" className="whitespace-pre-wrap" type="inherit">
           {turn.instruction}
         </Text>
-        <details className="group mt-1">
-          <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            Details
-            <IconChevronDown
-              aria-hidden
-              className="size-3 transition-transform group-open:rotate-180 motion-reduce:transition-none"
-            />
-          </summary>
+        <Collapsible className="mt-1" defaultIsOpen={false} trigger="Details">
           <Text
             as="p"
             className="mt-1 whitespace-pre-wrap break-words"
@@ -906,7 +900,7 @@ function ResponsibilityFiring({
           >
             {raw}
           </Text>
-        </details>
+        </Collapsible>
       </Stack>
     </Stack>
   );
@@ -2901,7 +2895,11 @@ export function ChatTranscript({
                         renderRow(item, pages.from + offset),
                       )}
                   </ArrivalsLiveContext.Provider>
-                  <div className="contents [&>*]:order-1">
+                  <Stack
+                    className="[&>*]:order-1"
+                    data-transcript-tail
+                    style={{ display: "contents" }}
+                  >
                     {stopped ? (
                       <Stopped reason={stopped} />
                     ) : waitingOnTheModel ? (
@@ -2926,7 +2924,7 @@ export function ChatTranscript({
                         text={message.text}
                       />
                     ))}
-                  </div>
+                  </Stack>
                   {items
                     .slice(pages.split)
                     .map((item, offset) =>
@@ -2935,6 +2933,14 @@ export function ChatTranscript({
                 </MessageScrollerContent>
               </MessageScrollerViewport>
               <MessageScrollerButton
+                render={
+                  <Button
+                    icon={<IconArrowDown aria-hidden />}
+                    isIconOnly
+                    label="Scroll to end"
+                    size="sm"
+                  />
+                }
                 onClick={(event) => {
                   // Ours, not the scroller's: it would scroll before it had been told to follow again.
                   event.preventDefault();

@@ -128,7 +128,7 @@ describe.skipIf(!asked)("a running step under reduced motion", () => {
     const page = await open("reduce");
     try {
       // The whole row, caret and all, as the person sees it.
-      const row = page.locator("#tool-line summary");
+      const row = page.locator("#tool-line").getByRole("button");
       const shown = await row.screenshot();
       await row.locator(".tool-line-running").evaluate((line) => {
         (line as HTMLElement).style.visibility = "hidden";

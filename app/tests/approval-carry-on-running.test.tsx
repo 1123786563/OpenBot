@@ -229,6 +229,10 @@ function mounting() {
   later = [];
   stored = [ask, geocode, geocoded, search];
   decisions = [];
+  return renderConversation();
+}
+
+function renderConversation() {
   queryClient.setQueryData(channelKeys.list(), {
     pages: [
       {
@@ -259,6 +263,22 @@ function mounting() {
 
 const STOP = '[data-testid="composer-stop"]';
 const WORKING = ".tool-line-running";
+
+test("reopening a conversation restores its pending approval and submits the original request", async () => {
+  const first = mounting();
+  await first.findByRole("button", { name: "Allow once" });
+  first.unmount();
+  queryClient.clear();
+
+  const readsBeforeReopen = historyReads;
+  const reopened = renderConversation();
+  const allow = await reopened.findByRole("button", { name: "Allow once" });
+  expect(historyReads).toBeGreaterThan(readsBeforeReopen);
+
+  const user = userEvent.setup({ document: reopened.container.ownerDocument });
+  await user.click(allow);
+  await waitFor(() => expect(decisions).toEqual(["allow_once"]));
+});
 
 test("after Allow once, the conversation shows the Bot working until the server's turn ends", async () => {
   const view = mounting();
