@@ -45,6 +45,7 @@ import {
 import type { ComputerProvider } from "../computer/provider";
 import type { Database } from "../db/client";
 import { agentProfiles, agents, users } from "../db/schema";
+import type { PeopleStore } from "../people/store";
 import { isAlwaysOn } from "../plugins/personal-defaults";
 import type { ProactiveAdmin } from "../proactive/contracts";
 import { createOtelEventExporter, type EventExporter } from "../telemetry/otel";
@@ -121,12 +122,8 @@ export type EnterpriseDeps = {
     actorId: string,
     threadId: string,
   ) => Promise<string | undefined>;
-  /** Offboarding: ends sessions and deny-lists, and retires what a person granted. */
-  people?: {
-    revoke: (userId: string, by: string) => Promise<void>;
-    retireOwned: (userId: string, by: string) => Promise<void>;
-    restore: (userId: string) => Promise<void>;
-  };
+  /** Offboarding: retires what a person granted, after the removal itself has committed. */
+  people?: Pick<PeopleStore, "retireOwned">;
   initialAdminEmails?: readonly string[];
   /**
    * The people's browsers' Recorders (recorder/wiring.ts): who holds a live connection, and the sign-out that ends a

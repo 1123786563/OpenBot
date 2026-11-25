@@ -33,12 +33,12 @@ afterAll(async () => {
 
 function appFor(retire: () => Promise<{ retired: number }>) {
   const events: string[] = [];
-  const store = createPeopleStore(database, [], retire);
-  const auditStore = {
+  // The removal's row is the store's, written in the removal's own transaction.
+  const store = createPeopleStore(database, [], retire, () => ({
     insert: async (event: { eventType: string }) => {
       events.push(event.eventType);
     },
-  };
+  }));
 
   const app = createApp(
     loadConfig(testEnvironment()),
@@ -47,9 +47,8 @@ function appFor(retire: () => Promise<{ retired: number }>) {
       api: { getSession: async () => ({ user: ADMIN }) },
     } as never,
     { rolesForUser: async () => ["admin"] },
-    ...(Array.from({ length: 9 }) as never[]),
-    auditStore as never,
-    ...(Array.from({ length: 4 }) as never[]),
+    // Fourteen fillers: positions 4-16 are other stores, and `store` is 17, peopleStore.
+    ...(Array.from({ length: 14 }) as never[]),
     store as never,
   );
 

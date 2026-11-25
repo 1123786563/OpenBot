@@ -294,26 +294,6 @@ export type DeploymentToolCaller = (
   input: DeploymentToolCallInput,
 ) => Promise<{ text: string; isError: boolean } | null>;
 
-async function recordPersonEvent(
-  auditStore: AuditStore | undefined,
-  context: { var: AppVariables },
-  eventType:
-    | "person.role_changed"
-    | "person.access_revoked"
-    | "person.access_restored",
-  person: { id: string; email: string },
-  payload: Record<string, unknown>,
-) {
-  if (!auditStore) return;
-  await recordAuditEvent(auditStore, {
-    eventType,
-    targetType: "person",
-    targetId: person.id,
-    actorUserId: context.var.actor.id,
-    payload: { email: person.email, ...payload },
-  });
-}
-
 export function createApp(
   config: DeploymentConfig,
   auth?: AuthService,
@@ -1459,19 +1439,9 @@ export function createApp(
       );
     }
 
-    if (person.role !== role) {
-      await peopleStore.setRole(userId, role);
-      await recordPersonEvent(
-        auditStore,
-        context,
-        "person.role_changed",
-        person,
-        {
-          from: person.role,
-          to: role,
-        },
-      );
-    }
+    // The change and its row on the trail are one transaction, in the store.
+    if (person.role !== role)
+      await peopleStore.setRole(userId, role, context.var.actor.id);
 
     return context.json({ person: await peopleStore.find(userId) });
   });
@@ -1516,18 +1486,8 @@ export function createApp(
     }
 
     if (person.revoked !== revoked) {
-      if (revoked) {
-        await peopleStore.revoke(userId, context.var.actor.id);
-      } else {
-        await peopleStore.restore(userId);
-      }
-      await recordPersonEvent(
-        auditStore,
-        context,
-        revoked ? "person.access_revoked" : "person.access_restored",
-        person,
-        {},
-      );
+      if (revoked) await peopleStore.revoke(userId, context.var.actor.id);
+      else await peopleStore.restore(userId, context.var.actor.id);
     }
 
     /*
