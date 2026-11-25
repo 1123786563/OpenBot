@@ -14,6 +14,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   Bot never receives an answer that is missing a field. The rest of the message, and the forms
   beside it, still work. An interface that could not be drawn at all now shows its error in
   OpenBot's error colours in both light and dark.
+- **A Select in a generated form that the person clears now sends an empty value.** Before, the
+  field was left out of what the Bot received, so the Bot could read the answer as missing it.
+- **Generated forms and pressable areas take more of the layout a Bot gives them.** The spacing
+  between rows and columns, a background, a border colour, corner radius, minimum and maximum
+  sizes, a shadow, and an inline or scrollable box are now drawn as the Bot wrote them. Before,
+  only the gap, padding, width and height were. A Select now shows the icon and the empty option's
+  label a Bot gives it, and a date field takes its share of the width.
 - Settings live in one file per service, and there is no `.env` in the repository root any more:
   `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
   `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model

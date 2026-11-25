@@ -2,8 +2,10 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Stack } from "@astryxdesign/core/Stack";
 import {
   type GenerativeUIComponentProps,
+  type GenerativeUITheme,
   type standardUI,
   useGenerativeUIAccessibility,
+  useGenerativeUIRuntime,
 } from "@copilotkit/react-core/v2/generative-ui";
 import {
   type CSSProperties,
@@ -58,6 +60,7 @@ export function A2UINodeError() {
 
 export function A2UIForm(props: Control<"Form">) {
   const aria = useGenerativeUIAccessibility();
+  const { theme } = useGenerativeUIRuntime() ?? {};
   const element = useRef<HTMLFormElement>(null);
   const [failed, setFailed] = useState(0);
   const [undrawn, setUndrawn] = useState(0);
@@ -97,7 +100,7 @@ export function A2UIForm(props: Control<"Form">) {
         // Four steps between a form's fields is the catalog's default.
         gap={props.gap === undefined ? 4 : undefined}
         data-a2ui-input=""
-        style={{ minWidth: 0, ...layoutStyle(props) }}
+        style={layoutStyle(props, theme)}
         onSubmit={(event) => {
           event.preventDefault();
           if (!broken) props.onSubmit?.({});
@@ -135,35 +138,78 @@ const FLEX_JUSTIFY = {
 const length = (value: number | string | undefined) =>
   typeof value === "number" ? `calc(var(--spacing-1) * ${value})` : value;
 
-/** Where a container puts its children, and how wide and tall it is. */
-function layoutStyle(props: {
-  align?: keyof typeof FLEX_ALIGN;
-  justify?: keyof typeof FLEX_JUSTIFY;
-  wrap?: "nowrap" | "wrap" | "wrap-reverse";
-  gap?: number | string;
-  padding?: number | string;
-  border?: boolean;
-  width?: number | string;
-  height?: number | string;
-  flex?: number;
-}): CSSProperties {
+/** Where a container puts its children, and how wide and tall it is. The catalog's layout props. */
+function layoutStyle(
+  props: Control<"Form"> | Control<"Pressable">,
+  theme: GenerativeUITheme | undefined,
+): CSSProperties {
+  const themed = (name: string) =>
+    Object.hasOwn(theme ?? {}, name) || Object.hasOwn(theme?.dark ?? {}, name);
+  /**
+   * A surface or border colour the catalog names. A name the theme gives a `--a2ui-*` variable
+   * becomes that variable; anything else is CSS, as the catalog passes a raw colour through.
+   */
+  const paint = (
+    family: "color" | "color-border",
+    value: string | undefined,
+  ) => {
+    if (!value) return undefined;
+    const name = `--a2ui-${family}-${value}`;
+    return themed(name) ? `var(${name})` : value;
+  };
+  /** A radius token, a number of pixels, or one corner's raw CSS. */
+  const corner = (value: string | number | undefined) => {
+    if (value === undefined) return undefined;
+    if (typeof value === "number")
+      return `calc(var(--spacing-px, 0.0625rem) * ${value})`;
+    if (value === "full") return "var(--a2ui-radius-full, var(--radius-full))";
+    const name = `--a2ui-radius-${value}`;
+    return themed(name) ? `var(${name})` : value;
+  };
+  const radius = props.radius;
+  const corners =
+    typeof radius === "object" && radius !== null
+      ? {
+          borderTopLeftRadius: corner(radius.topLeft),
+          borderTopRightRadius: corner(radius.topRight),
+          borderBottomLeftRadius: corner(radius.bottomLeft),
+          borderBottomRightRadius: corner(radius.bottomRight),
+        }
+      : { borderRadius: corner(radius) };
   return {
+    display: props.inline ? "inline-flex" : undefined,
     alignItems: props.align ? FLEX_ALIGN[props.align] : undefined,
     justifyContent: props.justify ? FLEX_JUSTIFY[props.justify] : undefined,
     flexWrap: props.wrap,
-    gap: length(props.gap),
-    padding: length(props.padding),
+    gap: length(props.gap) ?? (props.disableAutoSpacing ? 0 : undefined),
+    rowGap: length(props.rowGap),
+    columnGap: length(props.columnGap),
+    padding: props.flush ? 0 : length(props.padding),
+    background: paint("color", props.background),
     border: props.border
-      ? "1px solid var(--a2ui-color-border-default)"
+      ? `1px solid ${paint("color-border", props.borderColor ?? "default")}`
       : undefined,
+    ...corners,
     width: length(props.width),
     height: length(props.height),
+    minWidth: length(props.minWidth ?? props.minSize) ?? 0,
+    maxWidth: length(props.maxWidth ?? props.maxSize) ?? "100%",
+    minHeight: length(props.minHeight ?? props.minSize),
+    maxHeight: length(props.maxHeight ?? props.maxSize),
     flex: props.flex,
+    flexGrow: props.weight,
+    aspectRatio: props.aspectRatio,
+    overflow: props.scrollable ? "auto" : props.clip ? "hidden" : undefined,
+    boxShadow: props.shadow
+      ? "var(--a2ui-shadow-sm, var(--shadow-low))"
+      : undefined,
+    boxSizing: "border-box",
   };
 }
 
 export function A2UIPressable(props: Control<"Pressable">) {
   const aria = useGenerativeUIAccessibility();
+  const { theme } = useGenerativeUIRuntime() ?? {};
   const container = useRef<HTMLElement>(null);
   const seen = useRef(false);
   const { onVisible } = props;
@@ -201,10 +247,10 @@ export function A2UIPressable(props: Control<"Pressable">) {
       style={{
         cursor: props.disabled ? "not-allowed" : "pointer",
         opacity: props.disabled ? 0.5 : undefined,
-        boxShadow: props.insetBorder
-          ? "inset 0 0 0 1px var(--a2ui-color-border-default)"
-          : undefined,
-        ...layoutStyle(props),
+        ...layoutStyle(props, theme),
+        ...(props.insetBorder
+          ? { boxShadow: "inset 0 0 0 1px var(--a2ui-color-border-default)" }
+          : {}),
       }}
       onClick={(event) => {
         event.stopPropagation();

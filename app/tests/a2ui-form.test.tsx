@@ -650,6 +650,188 @@ test("a form whose later update was refused shows an Astryx error and is not sen
   expect(sent).toEqual(["Note\n\nnote: Tea"]);
 });
 
+test("a cleared Select submits its empty value instead of losing the field", async () => {
+  sent.length = 0;
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "cleared",
+          dataModel: { class: "economy" },
+          components: [
+            // A surface is drawn from its `root` node, whatever component it is.
+            {
+              ...form("root", "sendClass", ["class"]),
+              children: ["class", "root-send"],
+            },
+            {
+              id: "class",
+              component: "Select",
+              label: "Class",
+              clearable: true,
+              clearLabel: "Any class",
+              options: ["economy", "business"],
+              value: { "@path": "/class" },
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="cleared" />
+    </Page>,
+  );
+  const select = await view.findByRole("combobox", { name: "Class" });
+  expect(select.textContent).toBe("economy");
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: /clear/i }));
+  // An emptied field writes an empty string, as the catalog's own Select does, so the Bot still
+  // receives the field.
+  fireEvent.submit(view.container.querySelector("form") as HTMLFormElement);
+  expect(sent).toEqual(["Class\n\nclass: "]);
+});
+
+test("a Form and a Pressable take the layout the catalog gives them", async () => {
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "layout",
+          dataModel: {},
+          components: [
+            { id: "root", component: "Column", children: ["panel", "chip"] },
+            {
+              ...form("panel", "sendPanel", []),
+              label: "Panel",
+              maxWidth: 72,
+              rowGap: 2,
+              columnGap: 4,
+              flush: true,
+              background: "surface-secondary",
+              radius: "lg",
+              shadow: true,
+              children: ["panel-send"],
+            },
+            {
+              id: "panel-send",
+              component: "Button",
+              label: "Send panel",
+              submit: true,
+            },
+            {
+              id: "chip",
+              component: "Pressable",
+              inline: true,
+              border: true,
+              borderColor: "danger",
+              padding: "0.5rem",
+              insetBorder: true,
+              children: ["chip-text"],
+              onClick: { event: { name: "pick" } },
+            },
+            { id: "chip-text", component: "Text", text: "Chip" },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="layout" />
+    </Page>,
+  );
+  const panel = (
+    view.getByRole("button", { name: "Send panel" }).form as HTMLFormElement
+  ).style;
+  const chip = view.getByRole("button", { name: "Chip" }) as HTMLElement;
+  for (const [name, style, property, expected] of [
+    ["panel", panel, "maxWidth", "calc(var(--spacing-1) * 72)"],
+    ["panel", panel, "rowGap", "calc(var(--spacing-1) * 2)"],
+    ["panel", panel, "columnGap", "calc(var(--spacing-1) * 4)"],
+    ["panel", panel, "padding", "0"],
+    ["panel", panel, "background", "var(--a2ui-color-surface-secondary)"],
+    ["panel", panel, "borderRadius", "var(--a2ui-radius-lg)"],
+    ["panel", panel, "boxShadow", "var(--a2ui-shadow-sm, var(--shadow-low))"],
+    ["chip", chip.style, "display", "inline-flex"],
+    [
+      "chip",
+      chip.style,
+      "--a2ui-color-border-danger",
+      "var(--a2ui-color-border-danger)",
+    ],
+    ["chip", chip.style, "padding", "0.5rem"],
+    [
+      "chip",
+      chip.style,
+      "boxShadow",
+      "inset 0 0 0 1px var(--a2ui-color-border-default)",
+    ],
+  ] as const)
+    expect(
+      property.startsWith("--")
+        ? style.cssText
+        : (style as unknown as Record<string, string>)[property],
+      `${name} ${property}`,
+    ).toContain(expected);
+});
+
+test("Select and DateTimeInput take the props Astryx has an equivalent for", async () => {
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "fields",
+          dataModel: { class: "economy", day: "2026-10-23" },
+          components: [
+            { id: "root", component: "Column", children: ["class", "day"] },
+            {
+              id: "class",
+              component: "Select",
+              label: "Class",
+              clearable: true,
+              clearLabel: "Any class",
+              icon: "plane",
+              options: ["economy", "business"],
+              value: { "@path": "/class" },
+            },
+            {
+              id: "day",
+              component: "DateTimeInput",
+              label: "Day",
+              weight: 2,
+              value: { "@path": "/day" },
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="fields" />
+    </Page>,
+  );
+  // The catalog's Select can show an icon before its value.
+  const select = await view.findByRole("combobox", { name: "Class" });
+  expect(
+    select.closest(".astryx-selector")?.querySelector("svg.lucide-plane"),
+  ).toBeTruthy();
+  // Clearing it shows the empty option's own label, not a generic placeholder.
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: /clear/i }));
+  expect(select.textContent).toBe("Any class");
+
+  // A date field takes its share of the free space of the container.
+  const day = view
+    .getByLabelText("Day")
+    .closest(".astryx-field") as HTMLElement;
+  expect(day.parentElement?.style.flexGrow).toBe("2");
+});
+
 function BookingPage() {
   return (
     <CopilotKitProvider

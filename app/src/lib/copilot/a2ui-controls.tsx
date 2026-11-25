@@ -356,10 +356,18 @@ function A2UISelect(props: Control<"Select">) {
         width={props.block === false ? undefined : "100%"}
         options={optionsOf(props.options)}
         value={text(props.value)}
-        placeholder={props.placeholder}
+        // Once cleared, the list shows the empty option's label, unless a placeholder is given.
+        placeholder={props.placeholder ?? props.clearLabel}
         hasClear={props.clearable}
         hasSearch={props.searchable}
-        onChange={props.setValue}
+        startIcon={
+          props.icon && CatalogIcon ? (
+            <CatalogIcon name={props.icon} />
+          ) : undefined
+        }
+        // An emptied Select writes the catalog's empty string, not null: the SDK omits a null
+        // context value from the message, which would drop the field the Bot expects.
+        onChange={(next) => props.setValue(next ?? "")}
       />
     </Stack>
   );
@@ -580,7 +588,11 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
     onChange: (next: string | undefined) => props.setValue(next ?? ""),
   };
   return (
-    <Stack onBlur={onBlur} data-a2ui-input="">
+    <Stack
+      onBlur={onBlur}
+      data-a2ui-input=""
+      style={{ flexGrow: props.weight }}
+    >
       {time && date ? (
         <DateTimeInput
           {...common}
