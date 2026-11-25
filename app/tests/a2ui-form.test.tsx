@@ -704,6 +704,41 @@ test("a cleared Select submits its empty value instead of losing the field", asy
   expect(sent).toEqual(["Class\n\nclass: "]);
 });
 
+test("a cleared Select shows its clear label before its placeholder, as the catalog's Select does", async () => {
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "clear-label",
+          dataModel: { class: "economy" },
+          components: [
+            { id: "root", component: "Column", children: ["class"] },
+            {
+              id: "class",
+              component: "Select",
+              label: "Class",
+              clearable: true,
+              clearLabel: "Any class",
+              placeholder: "Choose a class",
+              options: ["economy", "business"],
+              value: { "@path": "/class" },
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="clear-label" />
+    </Page>,
+  );
+  const select = await view.findByRole("combobox", { name: "Class" });
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: /clear/i }));
+  // Once cleared, the empty option is named by the clear label.
+  expect(select.textContent).toBe("Any class");
+});
+
 test("a Form and a Pressable take the layout the catalog gives them", async () => {
   const view = render(
     <Page

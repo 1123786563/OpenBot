@@ -356,8 +356,9 @@ function A2UISelect(props: Control<"Select">) {
         width={props.block === false ? undefined : "100%"}
         options={optionsOf(props.options)}
         value={text(props.value)}
-        // Once cleared, the list shows the empty option's label, unless a placeholder is given.
-        placeholder={props.placeholder ?? props.clearLabel}
+        // Once cleared, the list shows the empty option's label: the clear label, else the
+        // placeholder, as the catalog's own Select names it.
+        placeholder={props.clearLabel ?? props.placeholder}
         hasClear={props.clearable}
         hasSearch={props.searchable}
         startIcon={
