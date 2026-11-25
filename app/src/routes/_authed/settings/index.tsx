@@ -9,6 +9,7 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { AiModelSection } from "@/components/settings/ai-connection";
+import { LanguageRow } from "@/components/settings/language-row";
 import { MessageListPreference } from "@/components/settings/message-list-preference";
 import { NameRow } from "@/components/settings/profile";
 import { StandingInstructionsRow } from "@/components/settings/standing-instructions";
@@ -23,20 +24,54 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { formatHotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
+import { useTranslation } from "@/i18n";
+import { formatHotkey, type HotkeyId, HOTKEYS } from "@/lib/hotkeys/hotkeys";
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
 });
 
 const generalSections = [
-  { id: "about-you", label: "About you" },
-  { id: "appearance", label: "Appearance" },
-  { id: "keyboard-shortcuts", label: "Keyboard shortcuts" },
+  {
+    id: "about-you",
+    label: navigationMessage("settings.aboutYou", "About you"),
+  },
+  {
+    id: "appearance",
+    label: navigationMessage("settings.appearance", "Appearance"),
+  },
+  {
+    id: "keyboard-shortcuts",
+    label: navigationMessage("settings.shortcuts", "Keyboard shortcuts"),
+  },
 ] as const;
+
+/** Marks a message for extraction without translating it at module scope. */
+function navigationMessage(messageId: string, label: string) {
+  return { messageId, label };
+}
+
+/*
+ * The shortcut registry keeps its words as identity strings, because the keys they describe are the
+ * same in every language; the words a person reads are chosen here, at render, in the language in
+ * force. Every id in `HOTKEYS` must have an entry, or this stops compiling.
+ */
+const SHORTCUT_MESSAGES = {
+  "new-chat": {
+    label: navigationMessage("nav.newConversation", "New conversation"),
+    description: navigationMessage(
+      "settings.shortcuts.newConversation.description",
+      "Start a new conversation from anywhere in OpenBot.",
+    ),
+  },
+} as const satisfies Record<
+  HotkeyId,
+  Record<"label" | "description", ReturnType<typeof navigationMessage>>
+>;
 
 function RouteComponent() {
   const { dark, setDark } = useTheme();
+  const { t } = useTranslation();
 
   /*
    * The measurements that used to be written out here now live in `PageShell`, which Skills, Admin
@@ -48,11 +83,14 @@ function RouteComponent() {
    */
   return (
     <PageShell
-      description="Set your name, how OpenBot looks, and the instructions every Bot follows."
-      title="General"
+      description={t(
+        "settings.description",
+        "Set your name, how OpenBot looks, and the instructions every Bot follows.",
+      )}
+      title={t("settings.title", "General")}
     >
       <nav
-        aria-label="General settings sections"
+        aria-label={t("settings.sections", "General settings sections")}
         className="mt-3 flex flex-wrap items-center gap-x-4 text-sm"
       >
         {generalSections.map(({ id, label }) => (
@@ -61,7 +99,7 @@ function RouteComponent() {
             href={`#${id}`}
             key={id}
           >
-            {label}
+            {t(label.messageId, label.label)}
           </a>
         ))}
       </nav>
@@ -71,7 +109,10 @@ function RouteComponent() {
        */}
       <PageSection
         headingId={generalSections[0].id}
-        title={generalSections[0].label}
+        title={t(
+          generalSections[0].label.messageId,
+          generalSections[0].label.label,
+        )}
       >
         <PageRows>
           <NameRow />
@@ -86,7 +127,10 @@ function RouteComponent() {
       <AstryxSurface className="min-w-0 rounded-[var(--radius-container)]">
         <PageSection
           headingId={generalSections[1].id}
-          title={generalSections[1].label}
+          title={t(
+            generalSections[1].label.messageId,
+            generalSections[1].label.label,
+          )}
         >
           <PageRows>
             <Item size="sm">
@@ -94,20 +138,25 @@ function RouteComponent() {
                 <IconMoon />
               </ItemMedia>
               <ItemContent className="min-w-0">
-                <ItemTitle>Dark theme</ItemTitle>
+                <ItemTitle>{t("settings.darkTheme", "Dark theme")}</ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  Use the dark appearance across OpenBot.
+                  {t(
+                    "settings.darkThemeDescription",
+                    "Use the dark appearance across OpenBot.",
+                  )}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <AstryxSwitch
-                  label="Dark theme"
+                  label={t("settings.darkTheme", "Dark theme")}
                   isLabelHidden
                   value={dark}
                   onChange={setDark}
                 />
               </ItemActions>
             </Item>
+            <Separator />
+            <LanguageRow />
           </PageRows>
           <MessageListPreference />
         </PageSection>
@@ -119,34 +168,42 @@ function RouteComponent() {
        */}
       <PageSection
         headingId={generalSections[2].id}
-        title={generalSections[2].label}
+        title={t(
+          generalSections[2].label.messageId,
+          generalSections[2].label.label,
+        )}
       >
         <PageRows>
-          {HOTKEYS.map((hotkey, index) => (
-            <React.Fragment key={hotkey.id}>
-              <Item size="sm">
-                <ItemContent className="min-w-0">
-                  <ItemTitle className="w-auto">{hotkey.label}</ItemTitle>
-                  <ItemDescription className="line-clamp-none">
-                    {hotkey.description}
-                  </ItemDescription>
-                </ItemContent>
-                <ItemActions>
-                  <span className="flex gap-1">
-                    {formatHotkey(hotkey.combo).map((part) => (
-                      <kbd
-                        className="rounded-md border bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground"
-                        key={part}
-                      >
-                        {part}
-                      </kbd>
-                    ))}
-                  </span>
-                </ItemActions>
-              </Item>
-              {index !== HOTKEYS.length - 1 && <Separator />}
-            </React.Fragment>
-          ))}
+          {HOTKEYS.map((hotkey, index) => {
+            const copy = SHORTCUT_MESSAGES[hotkey.id];
+            return (
+              <React.Fragment key={hotkey.id}>
+                <Item size="sm">
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="w-auto">
+                      {t(copy.label.messageId, copy.label.label)}
+                    </ItemTitle>
+                    <ItemDescription className="line-clamp-none">
+                      {t(copy.description.messageId, copy.description.label)}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <span className="flex gap-1">
+                      {formatHotkey(hotkey.combo).map((part) => (
+                        <kbd
+                          className="rounded-md border bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground"
+                          key={part}
+                        >
+                          {part}
+                        </kbd>
+                      ))}
+                    </span>
+                  </ItemActions>
+                </Item>
+                {index !== HOTKEYS.length - 1 && <Separator />}
+              </React.Fragment>
+            );
+          })}
         </PageRows>
       </PageSection>
     </PageShell>

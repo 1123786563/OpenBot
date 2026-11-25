@@ -1,5 +1,6 @@
 import { IconPinFilled } from "@tabler/icons-react";
 import { ChannelAvatar } from "@/components/channels/avatar";
+import { useTranslation } from "@/i18n";
 import type { MessageListEmphasis } from "@/lib/settings/message-list";
 
 /** Shared by live conversations and the appearance preference previews. */
@@ -26,6 +27,7 @@ export function ChannelItemContent({
   pinned?: boolean;
   revealing?: boolean;
 }) {
+  const { t } = useTranslation();
   const primaryText = `text-sm leading-5 tracking-[-1%] ${unread ? "font-semibold" : "font-medium"}`;
   const secondaryText = "text-[12px] leading-4 text-muted-foreground";
 
@@ -52,7 +54,7 @@ export function ChannelItemContent({
            */}
           {busy ? (
             <span className="shrink-0 whitespace-nowrap font-medium text-[12px] text-indigo-600 leading-4 dark:text-indigo-300">
-              Working
+              {t("nav.working", "Working")}
             </span>
           ) : (
             <span className="shrink-0 whitespace-nowrap text-[12px] leading-4 text-muted-foreground/70">

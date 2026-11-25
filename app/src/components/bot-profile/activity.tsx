@@ -30,6 +30,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   cancelFollowUpMutationOptions,
@@ -180,6 +181,8 @@ function ActivityRow({
   /** Under way now: a pulsing dot on its icon, amber when it is waiting on the person. */
   live?: boolean;
 }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const Icon = ICONS[item.kind];
   const link = linkFor(item, agentId);
   const when = relativeTime(item.at);
