@@ -9,8 +9,8 @@ const {
   doneByPerson,
   HANDLED_BY_PERSON,
   OUTCOME_UNKNOWN,
+  nextStepForPerson,
   outcomeForPerson,
-  safeToAskAgain,
   WITHDRAWN_APPROVALS_OFF,
   WITHDRAWN_RULE_ALLOWS,
 } = outcomes;
@@ -41,7 +41,7 @@ test("a decision the Bot's stopped work invalidated reads as withdrawn, in plain
   );
 });
 
-test("only a step that never ran may be asked for again", () => {
+test("the next step follows what ran: ask again only where nothing ran, and check first where the step may have happened", () => {
   // Declined by the person, withdrawn, or invalidated by the Bot's stopped work: nothing ran.
   for (const sent of [
     DECLINED_BY_PERSON,
@@ -49,19 +49,26 @@ test("only a step that never ran may be asked for again", () => {
     WITHDRAWN_RULE_ALLOWS,
     decisionInvalidated,
   ])
-    expect(safeToAskAgain(sent)).toBe(true);
-  // It may have run: its own words say to check before asking again.
+    expect(nextStepForPerson(sent)).toBe("ask-again");
+  // Turned away by the check just before it ran, with a reason and without one: nothing ran either.
+  expect(
+    nextStepForPerson(outcomes.notDoneOnRecheck("The disk is full.")),
+  ).toBe("ask-again");
+  expect(nextStepForPerson(outcomes.NOT_DONE)).toBe("ask-again");
+  // It may have run: it started and its outcome is unknown, or it could not be carried out.
   for (const sent of [
     OUTCOME_UNKNOWN,
-    outcomes.NOT_DONE,
-    outcomes.notDoneOnRecheck("The disk is full."),
     outcomes.notCarriedOut("The disk is full."),
   ])
-    expect(safeToAskAgain(sent)).toBe(false);
-  // A boundary's or the computer's own sentence says nothing about whether the step ran.
-  expect(
-    safeToAskAgain("Commands that delete files are not allowed here."),
-  ).toBe(false);
+    expect(nextStepForPerson(sent)).toBe("check-first");
+  // A step the Bot takes up again itself, and a boundary's or the computer's own sentence, which
+  // says nothing about whether the step ran.
+  for (const sent of [
+    outcomes.NOT_RUN_WHILE_WAITING,
+    outcomes.NOT_RUN_AFTER_FAILURE,
+    "Commands that delete files are not allowed here.",
+  ])
+    expect(nextStepForPerson(sent)).toBeNull();
 });
 
 test("a step the person did themselves reads as theirs, and as done", () => {

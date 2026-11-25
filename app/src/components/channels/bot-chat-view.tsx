@@ -253,12 +253,16 @@ export function BotChatView({
       inTurn.current = false;
       setSending(false);
     }
-    if (failed.current) {
-      // The run ended without an answer: read what the server holds of it now, not at some later
-      // read. Access that ended while the tab was open shows its way back from here too.
-      void readHistory();
-      throw new Error(failed.current);
-    }
+    /*
+     * READ WHAT THE SERVER HOLDS OF THE THREAD AFTER EVERY TURN OF THIS TAB, answered or not, as a
+     * conversation does. A read that lands while the Bot is replying merges nothing (`applyRead`),
+     * and nothing else reads when a run ends: a stopped run's notice outlived the turn that
+     * answered after it, and earlier messages a failed opening read had left out never arrived.
+     * After a turn that failed, the same read is what puts an outcome to check, or the way back,
+     * on screen at once rather than at some later read.
+     */
+    void readHistory();
+    if (failed.current) throw new Error(failed.current);
   };
 
   /*
@@ -268,7 +272,13 @@ export function BotChatView({
    *
    * Only the server's own word is a stop, and it is the read after it that says "The run was
    * stopped.", from the stored run. A run that was already over is let go here without a word
-   * claiming a stop, and a stop the server refused lets this browser's end go and says so.
+   * claiming a stop.
+   *
+   * A REFUSAL STOPS NOTHING, and ends nothing here. It used to abort this browser's copy of the run
+   * too, so the Bot went on working on the server while its reply stopped arriving, and Stop went
+   * with the run: "Try again" pointed at a button that was no longer there. The run keeps streaming
+   * and Stop stays for another press, as in a conversation. And the rest of the run is nobody's
+   * stop: a failure in it is still a failure.
    *
    * Not offered while the server carries a turn on (`stoppable` is this tab's run alone): there is
    * no run here to reach, and a Stop that does nothing is worse than none.
@@ -279,8 +289,14 @@ export function BotChatView({
     setStopping(true);
     try {
       const outcome = await stopStoredRun(threadId, agentId);
-      if (outcome === "refused") setRunError(STOP_REFUSED);
-      if (outcome !== "stopped") copilotkit.stopAgent({ agent });
+      if (outcome === "refused") {
+        personStopped.current = false;
+        setRunError(STOP_REFUSED);
+      } else {
+        // A refusal from an earlier press of this run is old news once the server answers.
+        setRunError(null);
+        if (outcome === "ended") copilotkit.stopAgent({ agent });
+      }
       // What the run said before the Stop is stored; read it so it is on screen.
       await readHistory();
     } finally {

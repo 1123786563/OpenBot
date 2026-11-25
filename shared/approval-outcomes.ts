@@ -51,12 +51,15 @@ export const WITHDRAWN_RULE_ALLOWS = notRun(
  */
 export const HANDLED_BY_PERSON =
   "The person did this themselves. Do not repeat it; continue from what they have done.";
+/** How a sentence written for the Bot ends when the step may have run: the Bot is told to find out. */
+const CHECK_IT_HAPPENED =
+  " Check whether it happened before asking the person again.";
+
 /**
  * An approved step that started, on a process that stopped before saving what happened. Repeating it
  * could do it twice, so it is not repeated, and the Bot is told to find out.
  */
-export const OUTCOME_UNKNOWN =
-  "This action was started but its outcome is unknown. It was not repeated. Check whether it happened before asking the person again.";
+export const OUTCOME_UNKNOWN = `This action was started but its outcome is unknown. It was not repeated.${CHECK_IT_HAPPENED}`;
 /** An approved step that was turned away by the check just before it ran, with no reason of its own. */
 export const NOT_DONE = "Not done.";
 /**
@@ -76,17 +79,22 @@ export const NOT_RUN_WHILE_WAITING = notRun(
 export const NOT_RUN_AFTER_FAILURE =
   "Not run: an earlier browser action in this step failed. Look at the page again before trying it.";
 
+/** How a sentence written for the Bot ends when nothing ran: the Bot is told to ask again. */
+const ASK_THE_PERSON = " Ask the person again if it is still needed.";
+/** How the sentence for a step whose work ran out of tries begins. */
+const NOT_CARRIED_OUT = "Not done: this action could not be carried out (";
+
 /**
  * An approved step that the check just before it ran turned away. `why` is one sentence, with its
  * full stop, written for whoever reads it ("The rule that allowed this was removed before it ran.").
  */
 export function notDoneOnRecheck(why: string): string {
-  return `Not done: ${why} Ask the person again if it is still needed.`;
+  return `Not done: ${why}${ASK_THE_PERSON}`;
 }
 
 /** An approved step whose work ran out of tries, with what stopped it. */
 export function notCarriedOut(reason: string): string {
-  return `Not done: this action could not be carried out (${reason.slice(0, 300)}). Check whether it happened before asking the person again.`;
+  return `${NOT_CARRIED_OUT}${reason.slice(0, 300)}).${CHECK_IT_HAPPENED}`;
 }
 
 /**
@@ -97,22 +105,40 @@ export function notCarriedOut(reason: string): string {
 export const decisionInvalidated =
   "This decision was invalidated when workspace execution stopped.";
 
-/** The endings after which nothing ran: the person declined the step, or its request was withdrawn. */
-const SAFE_TO_ASK_AGAIN = new Set([
+/** The endings after which nothing ran. A step the check just before it turned away is told apart below. */
+const NEVER_RAN = new Set([
   DECLINED_BY_PERSON,
   WITHDRAWN_APPROVALS_OFF,
   WITHDRAWN_RULE_ALLOWS,
   decisionInvalidated,
+  NOT_DONE,
 ]);
 
 /**
- * Whether a person may simply ask the Bot again for a step that did not run. Only where the step
- * never started: they declined it, or its request was withdrawn or invalidated. A step whose outcome
- * is unknown, or that could not be carried out, may have happened, and its own words say to check
- * before asking again; a next step here would contradict them.
+ * What a person can do next about a step the Bot did not carry out, or null where no next step is
+ * clearly right.
+ *
+ * "ask-again" is where nothing ran: they declined the step, its request was withdrawn or
+ * invalidated, or the check just before it ran turned it away, with a reason or without one.
+ *
+ * "check-first" is where the step may have run: it started and its outcome is unknown, or it could
+ * not be carried out. The sentence the server sends is written for the Bot and tells it to check
+ * whether it happened before asking again. A person reads only what happened (`outcomeForPerson`),
+ * which says nothing about checking, so the next step has to be said beside it.
+ *
+ * A step that stopped with its turn, or because a step before it failed, is the Bot's to take up
+ * again. A boundary's or the computer's own sentence says nothing about whether the step ran.
  */
-export function safeToAskAgain(text: string): boolean {
-  return SAFE_TO_ASK_AGAIN.has(text.trim());
+export function nextStepForPerson(
+  text: string,
+): "ask-again" | "check-first" | null {
+  const said = text.trim();
+  if (NEVER_RAN.has(said)) return "ask-again";
+  if (said.startsWith("Not done:") && said.endsWith(ASK_THE_PERSON))
+    return "ask-again";
+  if (said === OUTCOME_UNKNOWN || said.startsWith(NOT_CARRIED_OUT))
+    return "check-first";
+  return null;
 }
 
 const FOR_PERSON = new Map<string, string>([
