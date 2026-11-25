@@ -1,3 +1,5 @@
+import type { StoredRun } from "@/lib/copilot/thread-messages";
+
 /**
  * The stages a Bot run can be in, named one way wherever a conversation is drawn.
  *
@@ -22,18 +24,11 @@ export const RUN_STAGE = {
 /** What is said where the answer would have been, when the person stopped the run. */
 export const RUN_WAS_STOPPED = "The run was stopped.";
 
-/** What the history store knows about how a run ended. */
-export type RunOutcome = {
-  status: "running" | "completed" | "failed";
-  waitingForApproval?: boolean;
-  externalOutcome?:
-    | "dispatching"
-    | "unknown"
-    | "executed"
-    | "not_dispatched"
-    | null;
-  stopReason?: "stopped" | "access_revoked" | "context_revoked" | null;
-};
+/** What the history store knows about how a run ended: the read's own fields, not a copy of them. */
+export type RunOutcome = Pick<
+  StoredRun,
+  "status" | "waitingForApproval" | "externalOutcome" | "stopReason"
+>;
 
 /**
  * What became of a run that is waiting on the person or ended short of its answer, in one sentence.
@@ -47,7 +42,7 @@ export type RunOutcome = {
 export function runOutcomeWords(run: RunOutcome): string | null {
   if (run.waitingForApproval) return `${RUN_STAGE.waitingForApproval}.`;
   if (run.externalOutcome === "unknown")
-    return "The previous run’s external outcome is unknown. Check the outcome before sending again.";
+    return "The previous run's external outcome is unknown. Check the outcome before sending again.";
   if (run.status !== "failed") return null;
   if (run.stopReason === "context_revoked")
     return "The run paused because Memory or Learned skill access changed.";

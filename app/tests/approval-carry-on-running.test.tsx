@@ -263,7 +263,7 @@ test("a run whose outcome nobody can vouch for is explained, and Check outcome a
   const view = renderConversation();
   expect(
     await view.findByText(
-      "The previous run’s external outcome is unknown. Check the outcome before sending again.",
+      "The previous run's external outcome is unknown. Check the outcome before sending again.",
       { selector: "[role=status]" },
     ),
   ).toBeTruthy();

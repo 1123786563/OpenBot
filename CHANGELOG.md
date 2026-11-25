@@ -107,8 +107,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   conversation, and a read that fails keeps what is on screen and your draft, saying "Couldn't load
   earlier messages." with Try again. After you decide an approval there, the chat shows the Bot
   still working on the server and draws the reply when that turn ends, instead of sitting idle
-  until you reopened it. Stop stops the run on the server and reads "The run was stopped." instead
-  of an error, and access that ends while the chat is open links back to Home.
+  until you reopened it. Stop reads the conversation first and stops the run that is going now, on
+  the server, and says "The run was stopped." only once the server confirms it. A stop the server
+  refuses says "The Bot couldn't be stopped. Try again." The chat says what became of a run the
+  server holds for it in the same words a conversation with one Bot uses, and offers Check outcome
+  when nobody can vouch for how a run ended. Access that ends while the chat is open hides what was
+  read and links back to Home as soon as a send fails, not on the next one.
 - **A conversation with several Bots can be stopped, and asks for an approval where it waits.**
   While a Bot is working there, "Stop the Bot" stops its run on the server, and a run the server is
   holding on its own has a Stop button that names the Bot. A Bot waiting for your approval asks in

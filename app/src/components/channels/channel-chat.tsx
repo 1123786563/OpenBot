@@ -1,7 +1,6 @@
 import type { Message } from "@ag-ui/core";
 import { Button as RecoveryButton } from "@astryxdesign/core/Button";
-import { HStack, Stack } from "@astryxdesign/core/Stack";
-import { Text } from "@astryxdesign/core/Text";
+import { Stack } from "@astryxdesign/core/Stack";
 import {
   type Attachment,
   CopilotChatConfigurationProvider,
@@ -34,7 +33,11 @@ import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { FirstMessageDraftCopy } from "@/components/channels/first-message-draft-copy";
 import { ProgressRow } from "@/components/channels/progress-row";
-import { runOutcomeWords } from "@/components/channels/run-stage";
+import {
+  STOP_REFUSED,
+  StoredRunNotice,
+  stopStoredRun,
+} from "@/components/channels/stored-run";
 import { TestCreditModelPicker } from "@/components/channels/test-credit-model-picker";
 import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
@@ -48,7 +51,7 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
   approvalInboxOptions,
-  carryingOnAfterApproval,
+  carryingOnQueryOptions,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { conversationCreditQuoteQueryOptions } from "@/lib/billing/queries";
@@ -94,7 +97,6 @@ import {
 import { releaseServerOwnedInterrupts } from "@/lib/copilot/server-owned-interrupts";
 import { followLastRun, stoppedReason } from "@/lib/copilot/stopped-turn";
 import {
-  controlThreadRun,
   readThreadMessages,
   type StoredRun,
   withCurrentA2uiVersions,
@@ -707,47 +709,18 @@ export function ChannelChat({
   const unresolvedRun = storedRuns?.find(
     (run) => run.externalOutcome === "unknown",
   );
-  const latestRun = storedRuns?.at(-1);
   /*
-   * The run the notice below explains: one whose outcome nobody can vouch for, wherever it sits in
-   * the thread; else the one waiting on the person; else the newest, when it ended short. The same
-   * choice a group conversation's transcript makes of its own runs.
+   * STOP READS THE THREAD FIRST, THEN STOPS THE RUN THE READ NAMES (`stopStoredRun`), so a run that
+   * ended after the last read is not "stopped" while the one going goes on. A run that was already
+   * over leaves this browser's end of the turn to let go, and a stop the server refused is said
+   * under the notice and can be pressed again. The notice and Check outcome are `StoredRunNotice`.
    */
-  const explainedRun =
-    unresolvedRun ??
-    (activeRun?.waitingForApproval ? activeRun : undefined) ??
-    latestRun;
-  const runWords = explainedRun ? runOutcomeWords(explainedRun) : null;
-  const runControl = useMutation({
-    mutationFn: async ({
-      runId,
-      action,
-    }: {
-      runId?: string;
-      action: "stop" | "reconcile";
-    }) => {
-      let id = runId;
-      if (!id) {
-        const thread = await readThreadMessages(
-          channel.threadId,
-          runtimeAgentId,
-        );
-        if (!thread.runs) throw new Error("Could not check the run status.");
-        id = thread.runs.find((run) => run.status === "running")?.id;
-      }
-      if (id) {
-        await controlThreadRun({
-          threadId: channel.threadId,
-          agentId: runtimeAgentId,
-          runId: id,
-          action,
-        });
-      }
-    },
-    onSuccess: (_, { action }) => {
-      if (action === "stop")
+  const stopRun = useMutation({
+    mutationFn: () => stopStoredRun(channel.threadId, runtimeAgentId),
+    onSuccess: (outcome) => {
+      if (outcome === "ended") copilotkit.stopAgent({ agent });
+      if (outcome === "stopped")
         void queries.invalidateQueries(approvalInboxOptions());
-      else setRunError(null);
     },
     onSettled: () => pullHistoryRef.current?.(),
   });
@@ -1190,14 +1163,7 @@ export function ChannelChat({
    * the conversation stops saying it is working soon after it is done.
    */
   const carryingOn =
-    useQuery({
-      ...approvalInboxOptions(),
-      select: (inbox) => carryingOnAfterApproval(inbox, channel.threadId),
-      refetchInterval: (query) =>
-        carryingOnAfterApproval(query.state.data, channel.threadId)
-          ? 2_000
-          : 10_000,
-    }).data === true;
+    useQuery(carryingOnQueryOptions(channel.threadId)).data === true;
   /*
    * When the server's turn ends, what it wrote is read, whether or not the roster says the Bot
    * replied. A turn the person stopped has no reply to announce, and what it said before the Stop
@@ -1845,12 +1811,9 @@ export function ChannelChat({
   const stopTask = () => {
     awaitingReply.current = false;
     stopEpoch.current++;
-    if (storedRuns !== undefined) {
-      if (!runControl.isPending)
-        runControl.mutate({ action: "stop", runId: activeRun?.id });
-    } else {
-      copilotkit.stopAgent({ agent });
-    }
+    // A thread with no stored runs has none for the server to stop: this browser's end is the turn.
+    if (storedRuns === undefined) copilotkit.stopAgent({ agent });
+    else if (!stopRun.isPending) stopRun.mutate();
   };
 
   /**
@@ -1968,8 +1931,7 @@ export function ChannelChat({
     user?.id,
   ]);
 
-  if (accessEnded)
-    return <ConversationAccessEnded title="Conversation access ended." />;
+  if (accessEnded) return <ConversationAccessEnded />;
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's
@@ -2265,40 +2227,20 @@ export function ChannelChat({
                     {historyNotice}
                   </p>
                 ) : null}
-                {runWords && (
-                  <HStack
-                    wrap="wrap"
-                    align="center"
-                    gap={2}
-                    paddingBlockEnd={2}
-                  >
-                    {/* The words of every surface, for a run the server ended short. */}
-                    <Text as="p" role="status" type="supporting">
-                      {runWords}
-                    </Text>
-                    {unresolvedRun && channel.active && (
-                      <RecoveryButton
-                        isDisabled={runControl.isPending}
-                        label={
-                          runControl.isPending ? "Checking…" : "Check outcome"
-                        }
-                        onClick={() =>
-                          runControl.mutate({
-                            action: "reconcile",
-                            runId: unresolvedRun.id,
-                          })
-                        }
-                        size="sm"
-                        variant="secondary"
-                      />
-                    )}
-                  </HStack>
-                )}
-                {runControl.error && (
-                  <p className="pb-2 text-sm text-destructive" role="alert">
-                    {runControl.error.message}
-                  </p>
-                )}
+                <StoredRunNotice
+                  agentId={runtimeAgentId}
+                  canCheck={channel.active}
+                  failure={
+                    stopRun.data === "refused" ? STOP_REFUSED : undefined
+                  }
+                  onChecked={(refused) => {
+                    // The outcome is settled, so the failure that pointed at it is old news.
+                    if (!refused) setRunError(null);
+                    pullHistoryRef.current?.();
+                  }}
+                  runs={storedRuns}
+                  threadId={channel.threadId}
+                />
                 {answer.error ? (
                   <p className="pb-2 text-sm text-destructive" role="alert">
                     {answer.error.message}
@@ -2344,7 +2286,7 @@ export function ChannelChat({
             queueWhileBusy={storedRuns === undefined}
             restoring={historyLoading}
             stoppable={
-              !runControl.isPending &&
+              !stopRun.isPending &&
               (Boolean(activeRun) || agent.isRunning || runsInFlight > 0)
             }
             /*
