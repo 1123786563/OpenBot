@@ -11,6 +11,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { CONVERSATIONS } from "./conversations.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../..");
@@ -54,6 +55,32 @@ async function fixtureSignedIn(signedIn) {
 
 /** One page's own audit: language, overflow, leaked ids, clipped text, unnamed controls. */
 const auditFn = () => {
+  /*
+   * The two chevron rows on General (standing instructions, AI connection) state their answer in ItemDescription's
+   * two-line clamp, and the dialog is where the whole text is read. A clamp cutting there is the design, not clipped
+   * text; it is recorded as a designed summary instead of failing the audit. Only those two rows qualify: a button row
+   * whose title names it (the catalog's own words in both languages; the provider name never translates), and whose
+   * description carries the long fixture text.
+   */
+  const summaryRowTitles = new Set([
+    "Standing instructions",
+    "常设指令",
+    "OpenAI-compatible",
+  ]);
+  const designedSummary = (el) => {
+    if (el.getAttribute("data-slot") !== "item-description") return false;
+    const row = el.closest('[data-slot="item"]');
+    if (row?.tagName !== "BUTTON") return false;
+    const title = row.querySelector('[data-slot="item-title"]');
+    return Boolean(
+      title &&
+        summaryRowTitles.has(title.textContent.trim()) &&
+        (el.textContent.includes(
+          "Always preserve the complete evidence and explain every decision.",
+        ) ||
+          el.textContent.includes("acceptance-model-")),
+    );
+  };
   const visible = (el) => {
     const box = el.getBoundingClientRect();
     const style = getComputedStyle(el);
@@ -109,6 +136,7 @@ const auditFn = () => {
     }
   const astryx = texts.filter((text) => /@astryx\./.test(text)).slice(0, 10);
   const clipped = [];
+  const designedSummaries = [];
   for (const el of document.querySelectorAll("body *")) {
     if (!visible(el)) continue;
     const style = getComputedStyle(el);
@@ -120,10 +148,14 @@ const auditFn = () => {
     if (!ownText(el) && style.textOverflow !== "ellipsis") continue;
     const clamped = style.webkitLineClamp && style.webkitLineClamp !== "none";
     if (clamped && el.scrollHeight > el.clientHeight + 1) {
-      clipped.push({
-        why: `line-clamp ${style.webkitLineClamp}`,
+      const entry = {
+        slot: el.getAttribute("data-slot"),
+        clamp: style.webkitLineClamp,
+        textLength: el.textContent.length,
         text: label(el).slice(0, 80),
-      });
+      };
+      if (designedSummary(el)) designedSummaries.push(entry);
+      else clipped.push({ why: `line-clamp ${entry.clamp}`, text: entry.text });
       continue;
     }
     const hidesX =
@@ -190,6 +222,7 @@ const auditFn = () => {
     leaks: leaks.slice(0, 10),
     astryx,
     clipped,
+    designedSummaries,
     unnamed,
     regions,
     dark: document.documentElement.classList.contains("dark"),
@@ -242,6 +275,8 @@ async function audit(cell, label, locale, extra = {}) {
     data.clipped.length === 0,
     data.clipped.map((c) => `${c.why} ${c.text}`).join(" | "),
   );
+  if (data.designedSummaries.length)
+    cell.notes.push({ [`${label} designedSummaries`]: data.designedSummaries });
   check(
     cell.name,
     `${label}: every control named`,
@@ -561,20 +596,26 @@ async function cellRun(browser, locale, width, scheme) {
     );
     const longInstruction =
       "Always preserve the complete evidence and explain every decision.";
+    // The house settings row: a two-line summary on the row, and the whole text in the dialog it opens.
+    const summaryShape = (el) => ({
+      clamp: getComputedStyle(el).webkitLineClamp,
+      sh: el.scrollHeight,
+      ch: el.clientHeight,
+      sw: el.scrollWidth,
+      cw: el.clientWidth,
+    });
+    const isTwoLineSummary = (box) =>
+      box.clamp === "2" && box.sh > box.ch + 1 && box.sw <= box.cw + 1;
     const preview = page
       .locator('[data-slot="item-description"]')
       .filter({ hasText: longInstruction })
       .first();
-    const previewBox = await preview.evaluate((el) => ({
-      clamp: getComputedStyle(el).webkitLineClamp,
-      sh: el.scrollHeight,
-      ch: el.clientHeight,
-    }));
+    const previewBox = await preview.evaluate(summaryShape);
     check(
       cell.name,
-      "settings: standing instructions shown in full",
-      previewBox.clamp === "none" && previewBox.sh <= previewBox.ch + 1,
-      JSON.stringify(previewBox),
+      "settings: standing instructions row is a two-line summary",
+      isTwoLineSummary(previewBox),
+      `${JSON.stringify(previewBox)}; the dialog's whole text: "dialog: instructions editor holds the full text"`,
     );
     const aiButton = page.getByRole("button", {
       name: new RegExp(
@@ -591,20 +632,16 @@ async function cellRun(browser, locale, width, scheme) {
       .locator('[data-slot="item-description"]')
       .filter({ hasText: "acceptance-model-" })
       .first();
-    const aiBox = await aiSummary.evaluate((el) => ({
-      clamp: getComputedStyle(el).webkitLineClamp,
-      sh: el.scrollHeight,
-      ch: el.clientHeight,
-      sw: el.scrollWidth,
-      cw: el.clientWidth,
-    }));
+    const aiBox = await aiSummary.evaluate(summaryShape);
+    // The model the row's summary carries, held whole in the element although only two lines show.
+    const rowModel = (await aiSummary.textContent()).match(
+      /acceptance-model-\S+/,
+    )?.[0];
     check(
       cell.name,
-      "settings: AI summary wraps instead of clipping",
-      (await aiSummary.isVisible()) &&
-        aiBox.sw <= aiBox.cw + 1 &&
-        aiBox.sh <= aiBox.ch + 1,
-      JSON.stringify(aiBox),
+      "settings: AI model row is a two-line summary",
+      (await aiSummary.isVisible()) && isTwoLineSummary(aiBox),
+      `${JSON.stringify(aiBox)}; the dialog's whole model and address: "dialog: AI model shows in full", "dialog: AI address wraps"`,
     );
     const privacy = page.getByRole("switch", {
       name: say(locale, "settings.privacy.share"),
@@ -837,6 +874,17 @@ async function cellRun(browser, locale, width, scheme) {
       (await address.isVisible()) && addressBox.sw <= addressBox.cw + 1,
       JSON.stringify(addressBox),
     );
+    const model = aiDialog.getByText(/^acceptance-model-/).first();
+    const modelBox = await model.evaluate(summaryShape);
+    check(
+      cell.name,
+      "dialog: AI model shows in full",
+      (await model.isVisible()) &&
+        modelBox.sw <= modelBox.cw + 1 &&
+        modelBox.sh <= modelBox.ch + 1 &&
+        (await model.textContent()) === rowModel,
+      JSON.stringify(modelBox),
+    );
     await page.keyboard.press("Escape");
     await aiDialog.waitFor({ state: "hidden" });
 
@@ -959,6 +1007,95 @@ async function cellRun(browser, locale, width, scheme) {
       destinations.some((entry) => entry.href === "/billing"),
       "",
     );
+
+    // The roster: the fixture's conversations, drawn at 1280 in the sidebar and at 360 in the navigation sheet this
+    // cell has open. A row says its time the way the sidebar says it: the short relative time, "Working" while a Bot
+    // works on it, nothing for a conversation nobody has used. The page audit below covers these rows like every other.
+    await page
+      .locator('a[href^="/channel/"]:not([href="/channel/new"])')
+      .first()
+      .waitFor();
+    // At 360 the rows are in the navigation sheet, which takes about 300ms to arrive; measure it settled.
+    if (width <= 400)
+      await page
+        .getByRole("dialog", { name: say(locale, "nav.navigation") })
+        .evaluate((sheet) =>
+          Promise.all(
+            sheet
+              .getAnimations()
+              .map((animation) => animation.finished.catch(() => {})),
+          ),
+        );
+    const roster = await page.evaluate(() => {
+      // The header's New conversation button is a /channel/ link too; a roster row is not that one.
+      const rows = document.querySelectorAll(
+        'a[href^="/channel/"]:not([href="/channel/new"]), a[href^="/group/"]',
+      );
+      return [...rows].map((row) => {
+        const time = row.querySelector("span.whitespace-nowrap");
+        const box = time?.getBoundingClientRect();
+        return {
+          id: row.getAttribute("href").split("/").pop(),
+          text: time?.textContent ?? null,
+          width: box?.width ?? 0,
+          sw: time?.scrollWidth ?? 0,
+          cw: time?.clientWidth ?? 0,
+          sh: time?.scrollHeight ?? 0,
+          ch: time?.clientHeight ?? 0,
+          // The time ends the row's first line: it must stay inside the row and the window.
+          right: box?.right ?? 0,
+          rowRight: row.getBoundingClientRect().right,
+          windowWidth: window.innerWidth,
+          clamp: time ? getComputedStyle(time).webkitLineClamp : null,
+        };
+      });
+    });
+    const rowFor = (seed) => roster.find((row) => row.id === seed.id);
+    const expectedTime = (seed) =>
+      seed.work
+        ? say(locale, "nav.working")
+        : seed.agoMs === null
+          ? ""
+          : seed.now
+            ? say(locale, "relativeTime.now")
+            : seed.time[locale];
+    const absent = CONVERSATIONS.filter((seed) => !rowFor(seed)).map(
+      (seed) => seed.id,
+    );
+    check(
+      cell.name,
+      "sidebar: the fixture's conversations are drawn",
+      absent.length === 0 && roster.length >= 3,
+      `${roster.length} rows${absent.length ? `, absent: ${absent.join(", ")}` : ""}`,
+    );
+    const read = CONVERSATIONS.map(
+      (seed) => `${seed.id}=${JSON.stringify(rowFor(seed)?.text)}`,
+    );
+    check(
+      cell.name,
+      "sidebar: each conversation says its time in the interface language",
+      CONVERSATIONS.every((seed) => rowFor(seed)?.text === expectedTime(seed)),
+      read.join(" | "),
+    );
+    // A row with a time must have been laid out and show all of it, inside its row and the window; a row with no
+    // time (a conversation nobody has used) has nothing to cut.
+    const cut = roster.filter(
+      (row) =>
+        row.text &&
+        (row.width <= 0 ||
+          row.sw > row.cw + 1 ||
+          row.sh > row.ch + 1 ||
+          row.right > Math.min(row.rowRight, row.windowWidth) + 1 ||
+          (row.clamp && row.clamp !== "none")),
+    );
+    check(
+      cell.name,
+      "sidebar: no conversation time is cut off",
+      cut.length === 0,
+      JSON.stringify(cut),
+    );
+    cell.shots.push(await shot(cell, "sidebar"));
+
     await audit(cell, "home", locale);
     cell.shots.push(await shot(cell, "home"));
 

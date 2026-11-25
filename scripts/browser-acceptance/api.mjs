@@ -1,4 +1,6 @@
 // Deliberately has no upstream: unknown requests fail locally.
+import { seededConversations } from "./conversations.mjs";
+
 const port = Number(process.env.FIXTURE_API_PORT || 41850);
 const appPort = Number(process.env.FIXTURE_APP_PORT || 41849);
 let signedIn = false;
@@ -91,8 +93,10 @@ Bun.serve({
         instructions = (await request.json()).instructions;
       return json({ instructions });
     }
+    // The roster, aged from this request so the sidebar's short relative times stay put.
+    if (path === "/api/channels")
+      return json({ channels: seededConversations(), nextCursor: null });
     const lists = {
-      "/api/channels": "channels",
       "/api/agents": "agents",
       "/api/bots": "bots",
       "/api/notifications": "notifications",
