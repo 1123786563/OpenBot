@@ -57,6 +57,11 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   ("ada@example.com · Member → Admin"). A stopped Recorder's row carries the email of the person it
   belonged to, and no row is written when a stop stopped nothing. Password, app source and identity
   provider rows have names.
+- **A conversation with several Bots names each stage the way every other conversation does.** A
+  Bot waiting its turn says "Queued" and one working says "Thinking", as `/bot` and a conversation
+  with one Bot do, and a run the person stopped says "The run was stopped." Before, the same run read
+  "Waiting to reply" or "Run ended" there. A run that is waiting on the person says "Waiting for your
+  approval." everywhere.
 
 ## 1.0.3
 

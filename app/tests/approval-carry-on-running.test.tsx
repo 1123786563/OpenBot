@@ -87,6 +87,10 @@ let decidedAt: string | null;
 let decisions: string[] = [];
 /** The thread's history as the platform's read returns it now. */
 let stored: Message[];
+/** The thread's runs as the same read returns them; undefined when it names none. */
+let runs: unknown[] | undefined;
+/** Each run the person asked the server to check the outcome of, by run id. */
+let reconciles: string[] = [];
 /** How many times the conversation has read it. */
 let historyReads = 0;
 const searched = {
@@ -202,7 +206,15 @@ beforeAll(() => {
         return NativeResponse.json({ sessions: [], nextCursor: null });
       if (/\/threads\/[^/]+\/messages$/.test(url.pathname)) {
         historyReads += 1;
-        return NativeResponse.json({ messages: stored });
+        return NativeResponse.json({
+          messages: stored,
+          ...(runs ? { runs } : {}),
+        });
+      }
+      const check = url.pathname.match(/\/runs\/([^/]+)\/reconcile$/);
+      if (check) {
+        reconciles.push(decodeURIComponent(check[1] ?? ""));
+        return NativeResponse.json({ ok: true });
       }
       throw new Error(`Unexpected fixture request: ${method} ${url.pathname}`);
     },
@@ -228,9 +240,68 @@ function mounting() {
   decidedAt = null;
   later = [];
   stored = [ask, geocode, geocoded, search];
+  runs = undefined;
   decisions = [];
+  reconciles = [];
   return renderConversation();
 }
+
+test("a run whose outcome nobody can vouch for is explained, and Check outcome asks the server about it", async () => {
+  status = "pending";
+  decidedAt = null;
+  later = [];
+  stored = [ask, geocode, geocoded, search];
+  runs = [
+    {
+      id: "run-search",
+      status: "failed",
+      externalOutcome: "unknown",
+      userMessageId: "ask",
+      assistantMessageId: null,
+    },
+  ];
+  const view = renderConversation();
+  expect(
+    await view.findByText(
+      "The previous run’s external outcome is unknown. Check the outcome before sending again.",
+      { selector: "[role=status]" },
+    ),
+  ).toBeTruthy();
+  expect(reconciles).toEqual([]);
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(view.getByRole("button", { name: "Check outcome" }));
+  await waitFor(() => expect(reconciles).toEqual(["run-search"]));
+});
+
+/*
+ * A run the server stopped to ask about its search, as the history read returns it. The same stored
+ * run feeds a group conversation's transcript, and both now take their words from one place.
+ */
+test("a run waiting on the person's approval is named as every conversation names it", async () => {
+  status = "pending";
+  decidedAt = null;
+  later = [];
+  stored = [ask, geocode, geocoded, search];
+  decisions = [];
+  runs = [
+    {
+      id: "run-search",
+      status: "running",
+      waitingForApproval: true,
+      userMessageId: "ask",
+      assistantMessageId: null,
+    },
+  ];
+  const view = renderConversation();
+  await await view.findByText("Waiting for your approval.", {
+    selector: "[role=status]",
+  });
+  expect(view.queryByText("The run is waiting for approval.")).toBeNull();
+  // The card that ends the wait is in the same conversation.
+  expect(
+    await view.findByRole("region", { name: "Waiting for your approval" }),
+  ).toBeTruthy();
+});
 
 function renderConversation() {
   queryClient.setQueryData(channelKeys.list(), {

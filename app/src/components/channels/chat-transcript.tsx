@@ -49,6 +49,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { InlineApproval } from "@/components/approvals/inline-approval";
+import { RUN_STAGE } from "@/components/channels/run-stage";
 import {
   ArgumentsArrivingContext,
   TurnInFlightContext,
@@ -308,7 +309,7 @@ function Thinking() {
       role="status"
     >
       <Text as="span" color="inherit" type="inherit">
-        Thinking
+        {RUN_STAGE.running}
       </Text>
     </Stack>
   );
@@ -574,7 +575,7 @@ function Queued({
             role="status"
           >
             <IconClock aria-hidden className="size-3" />
-            Queued
+            {RUN_STAGE.queued}
           </Stack>
           {onRemove ? (
             <Button

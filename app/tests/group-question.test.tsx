@@ -62,6 +62,8 @@ let open = true;
 let showQuestion = true;
 let failNextAnswer = false;
 let messages: GroupMessage[] = [];
+/** Runs of their own the Bots are making in the group; undefined when there are none. */
+let background: unknown[] | undefined;
 let answers: unknown[] = [];
 let groupSends: unknown[] = [];
 let originalFetch: typeof fetch;
@@ -107,6 +109,7 @@ beforeAll(() => {
           { userId: "me", email: "me@example.test", name: null, creator: true },
         ],
         messages,
+        ...(background ? { backgroundRuns: background } : {}),
       });
     }
     if (url.pathname === "/api/approvals")
@@ -176,6 +179,7 @@ beforeEach(() => {
   failNextAnswer = false;
   answers = [];
   groupSends = [];
+  background = undefined;
   messages = [
     line(
       "m-1",
@@ -270,4 +274,40 @@ test("a failed answer restored after reload still goes to the original question"
   );
   expect(groupSends).toEqual([]);
   await restored.findByText(REPLY);
+});
+
+/*
+ * One vocabulary for the stages a Bot run can be in. A group used to keep its own: "Waiting to
+ * reply", "Run ended". `/bot` and a conversation with one Bot say "Queued" and "The run was
+ * stopped." for the same stored facts, and so does a group now.
+ */
+test("a group names a queued Bot, a working Bot and a stopped run as every conversation does", async () => {
+  showQuestion = false;
+  messages = [
+    line("queued-1", BUDGET, "", "queued"),
+    line("running-1", ERRANDS, "", "running"),
+  ];
+  background = [
+    {
+      id: "run-stopped",
+      agentId: ERRANDS,
+      threadId: "errand-helper-group-thread",
+      status: "failed",
+      waitingForApproval: false,
+      partialReply: null,
+      externalOutcome: null,
+      stopReason: "stopped",
+    },
+  ];
+  const view = conversation();
+
+  expect(await view.findByText("Queued")).toBeTruthy();
+  expect(view.getByText("Thinking")).toBeTruthy();
+  expect(
+    await view.findByText("The run was stopped.", {
+      selector: "[role=status]",
+    }),
+  ).toBeTruthy();
+  expect(view.queryByText("Waiting to reply")).toBeNull();
+  expect(view.queryByText("Run ended")).toBeNull();
 });

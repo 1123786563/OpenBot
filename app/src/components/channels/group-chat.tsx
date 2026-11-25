@@ -57,6 +57,7 @@ import {
   ConversationLoading,
   ConversationReadError,
 } from "./conversation-status";
+import { RUN_STAGE, runOutcomeWords } from "./run-stage";
 import { TeamBotConsentCard } from "./team-bot-consent";
 
 const groupSubmission = z.discriminatedUnion("kind", [
@@ -380,20 +381,15 @@ export function GroupChat({
                 {run.partialReply && (
                   <p className="whitespace-pre-wrap">{run.partialReply}</p>
                 )}
-                <p>
+                <Text as="p" role="status" type="supporting">
                   {run.reason ??
-                    (run.waitingForApproval
-                      ? "Waiting for your approval."
+                    runOutcomeWords(run) ??
+                    (run.status === "failed"
+                      ? RUN_STAGE.ended
                       : run.status === "running"
-                        ? "Running"
-                        : run.status === "completed"
-                          ? "Run completed"
-                          : run.externalOutcome !== "unknown"
-                            ? "Run ended"
-                            : null)}
-                  {run.externalOutcome === "unknown" &&
-                    " The external outcome needs verification."}
-                </p>
+                        ? RUN_STAGE.running
+                        : RUN_STAGE.completed)}
+                </Text>
               </MessageContent>
               {run.waitingForApproval && (
                 <Button
@@ -600,7 +596,7 @@ function GroupLine({
             className="tool-line-running text-sm text-muted-foreground"
             role="status"
           >
-            {message.status === "queued" ? "Waiting to reply" : "Thinking"}
+            {message.status === "queued" ? RUN_STAGE.queued : RUN_STAGE.running}
           </p>
         ) : message.status === "waiting" ? (
           <p className="text-sm text-muted-foreground">
