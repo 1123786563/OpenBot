@@ -19,10 +19,7 @@ import { z } from "zod";
 import { ChatTranscript } from "@/components/channels/chat-transcript";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { generativeUiProviderOptions, OPENBOT_UI } from "@/lib/copilot/a2ui";
-import {
-  astryxA2UIOverrides,
-  SDK_DRAWN_CONTROLS,
-} from "@/lib/copilot/a2ui-controls";
+import { astryxA2UIOverrides } from "@/lib/copilot/a2ui-controls";
 import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
 
 beforeAll(() => GlobalRegistrator.register());
@@ -908,13 +905,10 @@ test("SegmentedControl stays as the SDK draws it, reads the theme and writes wha
       <GenerativeUISurface id="segment" />
     </Page>,
   );
-  // The one input control recorded as SDK-drawn is the one that is not overridden, and it is in
-  // the catalog a Bot draws from.
-  expect(SDK_DRAWN_CONTROLS).toEqual(["SegmentedControl"]);
-  for (const name of SDK_DRAWN_CONTROLS) {
-    expect(OPENBOT_UI.components.has(name)).toBe(true);
-    expect(astryxA2UIOverrides).not.toHaveProperty(name);
-  }
+  // SegmentedControl is in the catalog a Bot draws from and is not overridden, so it stays as the
+  // SDK draws it.
+  expect(OPENBOT_UI.components.has("SegmentedControl")).toBe(true);
+  expect(astryxA2UIOverrides).not.toHaveProperty("SegmentedControl");
   const economy = (await view.findByRole("radio", {
     name: "economy",
   })) as HTMLElement;

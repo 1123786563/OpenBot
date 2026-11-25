@@ -621,19 +621,17 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
 }
 
 /**
- * The catalog's input controls that stay as the SDK draws them. Astryx's own SegmentedControl
- * names its group for a screen reader and never shows a label, so drawing it with Astryx would
- * lose the label the catalog gives it. It reads the same `--a2ui-*` theme variables and takes the
- * keyboard like the catalog's other controls; a2ui-form.test.tsx holds it to that.
- */
-export const SDK_DRAWN_CONTROLS = ["SegmentedControl"] as const;
-
-/**
  * The interactive controls of `openbot/ui@1`, drawn by Astryx. Names, props and events are the
  * catalog's. A prop Astryx has nothing to draw it with is not drawn: a TextArea's `maxRows` and
  * `autoResize`, a CheckBox's `lineThrough` and `shape`, a RadioGroup's `variant`, a Slider's
  * `sliderStyle`, a Pressable's `hoverBackground`, and a Button's `pill`, which would round every
  * button the SDK draws by default.
+ *
+ * SegmentedControl is left out on purpose, so it stays as the SDK draws it. Astryx's own
+ * SegmentedControl names its group for a screen reader and never shows a label, so drawing the
+ * catalog's with Astryx would lose the label a Bot gives it. It reads the same `--a2ui-*` theme
+ * variables and takes the keyboard like the catalog's other controls; a2ui-form.test.tsx holds it
+ * to that.
  */
 export const astryxA2UIOverrides = {
   Button: { component: A2UIButton },

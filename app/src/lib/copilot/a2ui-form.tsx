@@ -216,8 +216,9 @@ function layoutStyle(
       : { borderRadius: corner(radius) };
   return {
     display: props.inline ? "inline-flex" : undefined,
-    // The catalog's props resolve as `any` (the SDK's types do not reach this project), so the
-    // two lookups name their keys: the SDK has already checked both against the catalog's enum.
+    // The catalog's props resolve as `any` (with the SDK's 1.85.0 types, `Control<"Form">` is `any`
+    // under the app's `tsc`), so the two lookups name their keys: the SDK has already checked both
+    // against the catalog's enum.
     alignItems: props.align
       ? FLEX_ALIGN[props.align as keyof typeof FLEX_ALIGN]
       : undefined,
