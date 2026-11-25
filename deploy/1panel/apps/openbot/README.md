@@ -1,6 +1,6 @@
 ## 产品介绍
 
-OpenBot 是可自托管的 AI 协作应用。此应用包含 Web、API 和 Worker。安装时选择已有 PostgreSQL，并填写 Agents 和其他中间件的连接参数。
+OpenBot 是可自托管的 AI 协作应用。此应用包含 Web、API 和 Worker。安装时选择已有 PostgreSQL，并填写 Agents 和其他中间件的连接参数。安装前先装 Agents 和 OpenObserve：前者提供 Agents 网络，后者创建日志网络 `openbot-observability`。
 
 ## 主要功能
 

@@ -34,7 +34,7 @@ tar -xzf openbot.tar.gz -C /opt/1panel/resource/apps/local/
 
 1. 准备 HTTPS 域名，反向代理上游默认是 `127.0.0.1:18001`。填写管理员邮箱及 Google OAuth 客户端 ID 和密钥，回调地址为 `https://你的域名/api/auth/callback/google`。OpenBot 管理员通过 Google 登录。
 2. 选择 1Panel PostgreSQL 实例。新装可使用面板预填的库名、用户名和密码。OpenBot 的加密密钥、会话密钥和 Worker 共享密钥留空时首次启动自动生成。保留 `installation-secrets` 数据卷，迁移既有部署时填原密钥。
-3. 先安装 Agents，填写它的 Docker 网络（通常为 `<Agents 容器名>-agents`）。日志采集使用 `openbot-observability`，安装前确保该 Docker 网络已创建。CopilotKit Intelligence 的三个字段一起填写，或全部留空使用内置对话运行时。
+3. 先安装 Agents，填写它的 Docker 网络（通常为 `<Agents 容器名>-agents`）。日志采集使用 `openbot-observability`，该网络由 OpenObserve 应用创建，须先安装 OpenObserve。CopilotKit Intelligence 的三个字段一起填写，或全部留空使用内置对话运行时。
 4. 按所用服务填写下表。所有服务间地址都以容器可访问的地址为准。首次迁移结束后，访问 `/health`，再用实际域名验证登录和对话。
 
 | 中间件 | OpenBot 安装表单 |
@@ -102,18 +102,12 @@ tar -xzf bifrost.tar.gz -C /opt/1panel/resource/apps/local/
 使用相应组件前，在服务器创建各自的专用 Docker 网络。数据库选择器使用 `1panel-network`。如果已有 1Panel 管理的数据库，可以直接选择对应实例。
 
 ```sh
-docker network inspect openbot-observability >/dev/null 2>&1 || docker network create openbot-observability
 docker network inspect openbot-hindsight >/dev/null 2>&1 || docker network create openbot-hindsight
 docker network inspect openbot-opik >/dev/null 2>&1 || docker network create --internal openbot-opik
 docker network inspect openbot-spire >/dev/null 2>&1 || docker network create --internal openbot-spire
 ```
 
-安装观测组之前创建外部网络。
-
-```sh
-docker network inspect openbot-observability >/dev/null 2>&1 \
-  || docker network create --internal openbot-observability
-```
+`openbot-observability` 不需手工创建：安装 OpenObserve 应用时由其 Compose 建立为内部网络，须先于 OpenBot 安装。
 
 配置日志流、保留期和采集授权见[观测运维步骤](../operations.md#openobserve-持续日志采集)。表单中授权头保留 `Basic ` 前缀。主应用通过 `openbot-observability` 向 `http://otel-collector:4318/v1/logs` 投递，主应用需加入该网络。
 
