@@ -20,24 +20,20 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 
 const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
 
+/** Whether the trail refuses a row written with its removal, as one that cannot be written does. */
+let trailRefuses = false;
 const store = createPluginStore({
   brokerProvider: "composio",
   database,
   auditStore: createAuditStore(database),
-  credentials: { readSecret: async () => null },
-  encryptionKey: "x".repeat(44),
-  policy: () => policy,
-});
-/** The same store against a trail that refuses a row written with its removal. */
-const refusing = createPluginStore({
-  brokerProvider: "composio",
-  database,
-  auditStore: createAuditStore(database),
-  auditFor: () => ({
-    insert: async () => {
-      throw new Error("the trail is unavailable");
-    },
-  }),
+  auditFor: (transaction, deferTap) =>
+    trailRefuses
+      ? {
+          insert: async () => {
+            throw new Error("the trail is unavailable");
+          },
+        }
+      : createAuditStore(transaction, deferTap),
   credentials: { readSecret: async () => null },
   encryptionKey: "x".repeat(44),
   policy: () => policy,
@@ -106,11 +102,13 @@ afterAll(async () => {
   await database.delete(users).where(inArray(users.id, [alice, bob]));
 });
 
-type Actor = { id: string; email: string; role: "admin" | "user" };
-
-function routesAs(actor: Actor, over: typeof store = store) {
+function routesAs(actor: {
+  id: string;
+  email: string;
+  role: "admin" | "user";
+}) {
   return createPluginRoutes(
-    over as never,
+    store as never,
     async (context, next) => {
       context.set("actor", actor as never);
       await next();
@@ -119,12 +117,8 @@ function routesAs(actor: Actor, over: typeof store = store) {
   );
 }
 
-const aliceActor: Actor = {
-  id: alice,
-  email: `${alice}@example.test`,
-  role: "user",
-};
-const asAlice = () => routesAs(aliceActor);
+const asAlice = () =>
+  routesAs({ id: alice, email: `${alice}@example.test`, role: "user" });
 const asBob = () =>
   routesAs({ id: bob, email: `${bob}@example.test`, role: "user" });
 const asAdmin = () =>
@@ -342,9 +336,12 @@ describe("a skill name written again after the skill was uninstalled", () => {
         .from(pluginGrants)
         .where(and(eq(pluginGrants.kind, "skill"), eq(pluginGrants.ref, slug)));
 
-    expect((await uninstall(routesAs(aliceActor, refusing), slug)).status).toBe(
-      500,
-    );
+    trailRefuses = true;
+    try {
+      expect((await uninstall(asAlice(), slug)).status).toBe(500);
+    } finally {
+      trailRefuses = false;
+    }
     expect(
       await database.select().from(skills).where(eq(skills.slug, slug)),
     ).toHaveLength(1);
