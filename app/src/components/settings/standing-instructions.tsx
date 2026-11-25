@@ -25,7 +25,7 @@ import {
 import { queryClient } from "@/query-client";
 
 /**
- * The standing instructions as a row on General: what they say, cut to two lines, and a dialog to write them. A free
+ * The standing instructions as a row on General: what they say in full, and a dialog to write them. A free
  * text is a summary and a dialog on these screens, so a long box does not take over the page.
  */
 export function StandingInstructionsRow() {
@@ -74,7 +74,7 @@ export function StandingInstructionsRow() {
               "Applies to every Bot in every conversation.",
             )}
           </ItemDescription>
-          <ItemDescription className="wrap-anywhere">
+          <ItemDescription className="line-clamp-none wrap-anywhere">
             {stored.isPending
               ? t("settings.instructions.loading", "Loading your instructions…")
               : stored.isError && !readable

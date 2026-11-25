@@ -572,6 +572,9 @@ describe("the language row", () => {
     });
     await settleReactWork();
     expect(document.documentElement.lang).toBe("zh-CN");
+    expect(document.activeElement).toBe(
+      view.getByRole("combobox", { name: "语言" }),
+    );
     expect(view.getByRole("combobox", { name: "语言" }).textContent).toBe(
       "简体中文",
     );
@@ -620,4 +623,12 @@ describe("the language row", () => {
     );
     expect(view.getByText("选择 OpenBot 界面文字使用的语言。")).toBeTruthy();
   });
+});
+
+test("standing instructions remain fully readable in the settings row", async () => {
+  instructions = "A long instruction ".repeat(40);
+  queryClient.setQueryData(settingsKeys.instructions(), instructions);
+  const view = draw();
+  const preview = await view.findByText(instructions.trim());
+  expect(preview.className).not.toMatch(/\bline-clamp-\d/);
 });

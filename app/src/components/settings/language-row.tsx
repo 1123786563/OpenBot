@@ -1,6 +1,7 @@
 import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
 import { IconLanguage } from "@tabler/icons-react";
+import { useRef } from "react";
 import {
   Item,
   ItemActions,
@@ -22,6 +23,7 @@ import {
  */
 export function LanguageRow() {
   const { t } = useTranslation();
+  const trigger = useRef<HTMLButtonElement>(null);
   const preference = useLocalePreference() ?? "browser";
   return (
     <Item size="sm">
@@ -40,11 +42,15 @@ export function LanguageRow() {
       </ItemContent>
       <ItemActions>
         <Selector
+          ref={trigger}
           isLabelHidden
           label={t("settings.language.title", "Language")}
           value={preference}
           onChange={(value) => {
-            if (isPreference(value)) void setLocalePreference(value);
+            if (isPreference(value)) {
+              void setLocalePreference(value);
+              requestAnimationFrame(() => trigger.current?.focus());
+            }
           }}
           options={[
             {

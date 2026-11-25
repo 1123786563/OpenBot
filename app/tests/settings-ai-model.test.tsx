@@ -219,3 +219,18 @@ test("in Chinese the AI row and dialog speak the interface language, providers u
     ).disabled,
   ).toBe(true);
 });
+
+test("the custom AI summary remains fully readable before opening its dialog", async () => {
+  connection = {
+    kind: "compatible-endpoint",
+    endpointHost: "a-very-long-private-endpoint.company.example.internal",
+    model: "a-very-long-model-identifier-for-this-installation",
+  };
+  const view = renderGeneral();
+  const row = await aiModelRow(view);
+  const summary = row.querySelector('[data-slot="item-description"]');
+  expect(summary?.textContent).toContain(
+    "a-very-long-model-identifier-for-this-installation",
+  );
+  expect(summary?.className).not.toMatch(/\bline-clamp-\d/);
+});

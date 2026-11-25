@@ -21,6 +21,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { useTranslation } from "@/i18n";
 import { describeAiConnection } from "@/lib/desktop/ai-connection";
 import { changeAiConnectionMutationOptions } from "@/lib/desktop/mutations";
 import {
@@ -28,7 +29,6 @@ import {
   desktopAiConnectionQueryOptions,
 } from "@/lib/desktop/queries";
 import { desktopShell } from "@/lib/desktop/shell";
-import { useTranslation } from "@/i18n";
 
 /**
  * Settings → General's AI model: which AI provider OpenBot Desktop uses and how it signs in, with
@@ -74,11 +74,11 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
           <IconSparkles />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle>
+          <ItemTitle className="line-clamp-none wrap-anywhere">
             {described?.provider ??
               t("settings.ai.notChosen", "Not chosen yet")}
           </ItemTitle>
-          <ItemDescription>
+          <ItemDescription className="line-clamp-none wrap-anywhere">
             {described?.summary ??
               t("settings.ai.notChosenSummary", "Choose the AI your Bots use.")}
           </ItemDescription>
