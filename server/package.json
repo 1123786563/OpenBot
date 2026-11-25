@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "db:generate": "bun --env-file=../.env drizzle-kit generate --config=drizzle.config.ts",
-    "db:migrate": "bun --env-file=../.env scripts/migrate.ts",
-    "dev": "bun --env-file=../.env --watch src/index.ts",
+    "db:generate": "bun --env-file=../deploy/openbot/.env drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate": "bun --env-file=../deploy/openbot/.env scripts/migrate.ts",
+    "dev": "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/infisical/.env.openbot-client --preload ./scripts/infisical-env.ts --watch src/index.ts",
     "start:personal-saas": "bun src/personal-saas/index.ts",
     "typecheck": "tsc --noEmit"
   },

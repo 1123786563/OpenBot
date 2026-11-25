@@ -1,0 +1,51 @@
+# Self-hosted Infisical, trimmed from the official docker-compose.prod.yml
+# (github.com/Infisical/infisical). Its own compose project, so none of it joins the OpenBot
+# networks where agent-computer has a shell. Start from this directory: docker compose up -d
+services:
+  backend:
+    restart: unless-stopped
+    # Pinned on purpose: an unpulled tag is the same run on every machine. To upgrade, bump the
+    # tag and run `docker compose pull && docker compose up -d`.
+    image: infisical/infisical:v0.167.14
+    env_file: .env
+    ports:
+      # Loopback only. This holds every OpenBot secret behind a password, not a network rule.
+      - "127.0.0.1:${INFISICAL_PORT:-18082}:8080"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - infisical
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - infisical
+    volumes:
+      - redis_data:/data
+
+  db:
+    image: postgres:14-alpine
+    restart: always
+    env_file: .env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - infisical
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infisical"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  pg_data:
+  redis_data:
+
+networks:
+  infisical:

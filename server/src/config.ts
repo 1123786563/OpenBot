@@ -604,11 +604,11 @@ function keyEncryptionKey(environment: Environment): string {
   if (value === PLACEHOLDER_KEY) {
     if (isProduction(environment)) {
       throw new Error(
-        "KEY_ENCRYPTION_KEY is still the example key from .env.example, which is public. Generate one with: openssl rand -base64 32",
+        "KEY_ENCRYPTION_KEY is still the example key from deploy/openbot/.env.server.example, which is public. Generate one with: openssl rand -base64 32",
       );
     }
     console.warn(
-      "KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32",
+      "KEY_ENCRYPTION_KEY is the example key from deploy/openbot/.env.server.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32",
     );
   }
 

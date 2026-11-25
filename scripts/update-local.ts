@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { COMPOSE_ENV_FILES, ENV_FILES } from "../shared/env-files";
 import {
   parseReleaseManifest,
   planUpgrade,
@@ -176,23 +177,25 @@ export function atomicJson(path: string, value: unknown) {
 }
 function environment(root: string): NodeJS.ProcessEnv {
   const values: NodeJS.ProcessEnv = {};
-  if (existsSync(join(root, ".env"))) {
-    for (const line of readFileSync(join(root, ".env"), "utf8").split(
-      /\r?\n/,
-    )) {
-      const match = line.match(
-        /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/,
-      );
-      if (!match?.[1]) continue;
-      let value = match[2] ?? "";
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      )
-        value = value.slice(1, -1);
-      else value = value.replace(/\s+#.*$/, "").trim();
-      values[match[1]] = value;
-    }
+  // One settings file per service (ENV_FILES); there is none in the repository root. Read in the
+  // order that leaves the deployment's file last, so a value there wins, as it does everywhere.
+  const lines = COMPOSE_ENV_FILES.flatMap((file) => {
+    const path = join(root, file);
+    return existsSync(path) ? readFileSync(path, "utf8").split(/\r?\n/) : [];
+  });
+  for (const line of lines) {
+    const match = line.match(
+      /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/,
+    );
+    if (!match?.[1]) continue;
+    let value = match[2] ?? "";
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    )
+      value = value.slice(1, -1);
+    else value = value.replace(/\s+#.*$/, "").trim();
+    values[match[1]] = value;
   }
   return { ...values, ...process.env };
 }
@@ -323,7 +326,7 @@ function protectedPaths(root: string, env: NodeJS.ProcessEnv, extra: string[]) {
     ? resolve(root, "server", env.TENANT_PACKAGE_DIR)
     : join(root, "examples", "fintech");
   const paths = [
-    ".env",
+    ...ENV_FILES.map(({ file }) => file),
     ".openbot",
     ".openbot-deployment",
     ACCEPTED,
@@ -353,6 +356,13 @@ function protectedPaths(root: string, env: NodeJS.ProcessEnv, extra: string[]) {
 function covers(path: string, protectedPath: string) {
   return path === protectedPath || path.startsWith(`${protectedPath}/`);
 }
+// The service settings files that exist, for Compose to read; the deployment's last so a value there wins.
+function envFileArgs(root: string): string[] {
+  return COMPOSE_ENV_FILES.flatMap((file) => {
+    const path = join(root, file);
+    return existsSync(path) ? ["--env-file", path] : [];
+  });
+}
 function compose(command: string[], root: string, project?: string) {
   return [
     "docker",
@@ -360,6 +370,7 @@ function compose(command: string[], root: string, project?: string) {
     "--project-directory",
     root,
     ...(project ? ["--project-name", project] : []),
+    ...envFileArgs(root),
     ...command,
   ];
 }
@@ -477,9 +488,7 @@ async function withCandidateCompose<T>(
       root,
       "--project-name",
       project,
-      ...(existsSync(join(root, ".env"))
-        ? ["--env-file", join(root, ".env")]
-        : []),
+      ...envFileArgs(root),
       ...files,
     ]);
   } finally {
@@ -1091,10 +1100,13 @@ export async function applyLocalUpdate(
     journal.databaseMayHaveChanged = true;
     phase("migrating");
     if (options.topology === "host")
-      await run(["bun", "--env-file=../.env", "scripts/migrate.ts"], {
-        cwd: join(root, "server"),
-        env: candidateEnv,
-      });
+      await run(
+        ["bun", "--env-file=../deploy/openbot/.env", "scripts/migrate.ts"],
+        {
+          cwd: join(root, "server"),
+          env: candidateEnv,
+        },
+      );
     else
       await run(
         compose(

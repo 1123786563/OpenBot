@@ -101,10 +101,32 @@ fn compose_command(engine: &Address, root: &Path, secrets: &Secrets) -> Command 
     let mut command = engine.command();
     command.current_dir(root).args(["compose"]).envs(secrets);
     command.env("COMPOSE_PROJECT_NAME", &project);
+    if let Some(files) = settings_files(root) {
+        command.env("COMPOSE_ENV_FILES", files);
+    }
     if let Some(namespace) = computer_namespace_for(&project) {
         command.env("COMPUTER_NAMESPACE", namespace);
     }
     command
+}
+
+/**
+The installation's settings files for Compose to interpolate from, joined as `COMPOSE_ENV_FILES`
+asks. None is the root's `.env` any more, which is the only one Compose would have found by itself.
+*/
+fn settings_files(root: &Path) -> Option<String> {
+    let files: Vec<std::path::PathBuf> = crate::env::SETTINGS_FILES
+        .iter()
+        .map(|file| root.join(file))
+        .filter(|path| path.is_file())
+        .collect();
+    (!files.is_empty()).then(|| {
+        files
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(if cfg!(windows) { ";" } else { ":" })
+    })
 }
 
 /// Check the actual selected deployment before minting an encryption key. Compose resolves
@@ -765,16 +787,14 @@ const MACOS_PODMAN_PORTS: &str = include_str!("macos-podman-ports.yml");
 const HARNESS_PORT_FILE: &str = ".openbot-harness-port.yml";
 
 fn harness_port_overlay(root: &Path, ipv4_only: bool) -> Result<Option<String>, Problem> {
-    let values = crate::env::read_already_set(
-        &root.join(".env"),
-        &["PICKED_HARNESS_HOST_PORT", "PICKED_HARNESS_PORT"],
-    )
-    .map_err(|error| {
-        Problem::with(
-            "OpenBot could not read the Bot's local port.",
-            error.to_string(),
-        )
-    })?;
+    let values =
+        crate::env::read_settings(root, &["PICKED_HARNESS_HOST_PORT", "PICKED_HARNESS_PORT"])
+            .map_err(|error| {
+                Problem::with(
+                    "OpenBot could not read the Bot's local port.",
+                    error.to_string(),
+                )
+            })?;
     let Some(host) = values.get("PICKED_HARNESS_HOST_PORT") else {
         return Ok(None);
     };
@@ -841,7 +861,7 @@ fn append_compose_overlay(
 
 /// The native personal edition alone may hand its installation identity to its server.
 fn uses_desktop_telemetry(root: &Path, secrets: &Secrets) -> bool {
-    let settings = crate::env::already_set(&root.join(".env"), &["OPENBOT_EDITION"]);
+    let settings = crate::env::settings(root, &["OPENBOT_EDITION"]);
     settings.get("OPENBOT_EDITION").map(String::as_str) == Some("personal")
         && (secrets.get("OPENBOT_DISTRIBUTION").map(String::as_str) == Some("desktop")
             || secrets
@@ -1031,6 +1051,9 @@ pub fn standalone_compose_command(compose: &Path, root: &Path, secrets: &Secrets
     let mut command = crate::quiet::command(compose);
     command.current_dir(root).envs(secrets);
     command.env("COMPOSE_PROJECT_NAME", DESKTOP_PROJECT);
+    if let Some(files) = settings_files(root) {
+        command.env("COMPOSE_ENV_FILES", files);
+    }
     command
 }
 
@@ -1044,12 +1067,9 @@ pub fn installation_images_by(
     let mut requested = selected_services(harness);
     requested.push("migrate");
     if release != root {
-        // Compose reads the release's file from where it runs, and `.env` from there too, so the
-        // installation's own settings are named explicitly.
+        // Compose reads the release's file from where it runs, so the installation's own settings
+        // are named explicitly (`settings_files`).
         command.current_dir(release);
-        if root.join(".env").is_file() {
-            command.arg("--env-file").arg(root.join(".env"));
-        }
     }
     if harness {
         command.args(["--profile", "harness"]);
@@ -8664,6 +8684,45 @@ fn main() {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    use crate::env::SETTINGS_FILES;
+
+    fn env_files(command: &Command) -> Option<String> {
+        command
+            .get_envs()
+            .find(|(name, _)| *name == "COMPOSE_ENV_FILES")
+            .and_then(|(_, value)| value)
+            .map(|value| value.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn compose_is_given_the_settings_files_that_exist() {
+        let address = Address::new(crate::engine::Engine::Docker, None);
+        let root = temp_root("compose-settings-files");
+        std::fs::create_dir_all(&root).unwrap();
+        let without = compose_command(&address, &root, &Secrets::new());
+        assert_eq!(env_files(&without), None);
+
+        for file in [SETTINGS_FILES[3], SETTINGS_FILES[0]] {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "SERVER_PORT=3001\n").unwrap();
+        }
+        // Not the root's `.env`: Compose would have read that one by itself.
+        std::fs::write(root.join(".env"), "SERVER_PORT=3002\n").unwrap();
+        let command = compose_command(&address, &root, &Secrets::new());
+        let separator = if cfg!(windows) { ";" } else { ":" };
+        let named: Vec<String> = [0, 3]
+            .iter()
+            .map(|index| {
+                root.join(SETTINGS_FILES[*index])
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(env_files(&command), Some(named.join(separator)));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn desktop_telemetry_is_selected_only_by_personal_native_startup() {
         if crate::test_support::isolated_process(
@@ -8675,7 +8734,8 @@ fn main() {
         let (root, _) = computer_stop_root(&path, "telemetry-start", "{}");
         std::fs::write(root.join("docker-compose.override.yml"), "services: {}\n").unwrap();
         let settings = "OPENBOT_EDITION=personal\n";
-        std::fs::write(root.join(".env"), settings).unwrap();
+        std::fs::create_dir_all(root.join(SETTINGS_FILES[0]).parent().unwrap()).unwrap();
+        std::fs::write(root.join(crate::env::SETTINGS_FILES[0]), settings).unwrap();
         for secrets in [
             Secrets::from([
                 ("OPENBOT_DISTRIBUTION".into(), "desktop".into()),
@@ -8716,7 +8776,7 @@ fn main() {
                     DESKTOP_TELEMETRY
                 );
                 assert_eq!(
-                    std::fs::read_to_string(root.join(".env")).unwrap(),
+                    std::fs::read_to_string(root.join(SETTINGS_FILES[0])).unwrap(),
                     settings
                 );
             }
@@ -8798,7 +8858,8 @@ fn main() {
         .is_ok());
         std::fs::remove_dir(root.join(DESKTOP_TELEMETRY_DISABLED_FILE)).unwrap();
         // A file left from a personal launch is never auto-selected for the team edition.
-        std::fs::write(root.join(".env"), "OPENBOT_EDITION=team\n").unwrap();
+        std::fs::create_dir_all(root.join(SETTINGS_FILES[0]).parent().unwrap()).unwrap();
+        std::fs::write(root.join(SETTINGS_FILES[0]), "OPENBOT_EDITION=team\n").unwrap();
         let command = compose_start_command(
             &Address::new(crate::engine::Engine::Docker, None),
             &root,

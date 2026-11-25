@@ -31,6 +31,7 @@ import {
   ItemActions,
   ItemContent,
   ItemDescription,
+  ItemFooter,
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
@@ -198,13 +199,25 @@ export function PluginsListPage({
     return words.every((word) => text.includes(word));
   };
   const servers = plugins.data?.servers ?? [];
-  const shownServers = searching
-    ? servers.filter((server) =>
-        matches(
-          `${server.title} ${server.id} ${server.summary ?? ""} ${server.tools.map(({ name, description }) => `${name} ${description}`).join(" ")}`,
-        ),
-      )
-    : servers;
+  const shownServers = servers.flatMap((server) => {
+    const metadata = searchText(
+      `${server.title} ${server.id} ${server.vendor} ${server.summary ?? ""}`,
+    );
+    const toolTerms = words.filter((word) => !metadata.includes(word));
+    if (!toolTerms.length) return [{ server, matchedTools: [] }];
+    const tools = server.tools.map(({ name, description }) => ({
+      name,
+      text: searchText(`${name} ${description}`),
+    }));
+    if (
+      !toolTerms.every((word) => tools.some(({ text }) => text.includes(word)))
+    )
+      return [];
+    const matchedTools = tools
+      .filter(({ text }) => toolTerms.some((word) => text.includes(word)))
+      .map(({ name }) => name);
+    return [{ server, matchedTools }];
+  });
   const shownExplore = searching
     ? explore.filter((app) =>
         matches(`${app.title} ${app.vendor} ${app.key} ${app.summary}`),
@@ -214,7 +227,7 @@ export function PluginsListPage({
   const showAccountError =
     connections.isError &&
     shownServers.some(
-      (server) =>
+      ({ server }) =>
         authByKey.get(server.id) === "user-oauth" &&
         server.accountMode !== "shared",
     );
@@ -318,7 +331,7 @@ export function PluginsListPage({
                         !event.nativeEvent.isComposing
                       ) {
                         const first =
-                          shownServers[0]?.id ?? shownExplore[0]?.key;
+                          shownServers[0]?.server.id ?? shownExplore[0]?.key;
                         if (first) rows.current.get(first)?.focus();
                       }
                     }}
@@ -372,7 +385,7 @@ export function PluginsListPage({
                 </PageEmpty>
               ) : (
                 <PageRows>
-                  {shownServers.map((server, index) => {
+                  {shownServers.map(({ server, matchedTools }, index) => {
                     return (
                       <React.Fragment key={server.id}>
                         {/*
@@ -431,6 +444,17 @@ export function PluginsListPage({
                             </span>
                             <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
                           </ItemActions>
+                          {matchedTools.length ? (
+                            <ItemFooter>
+                              <ItemDescription className="line-clamp-none wrap-anywhere">
+                                Matching tools:{" "}
+                                {matchedTools.slice(0, 3).join(", ")}
+                                {matchedTools.length > 3
+                                  ? ` · ${matchedTools.length - 3} more`
+                                  : null}
+                              </ItemDescription>
+                            </ItemFooter>
+                          ) : null}
                         </Item>
                         {index !== shownServers.length - 1 && <Separator />}
                       </React.Fragment>

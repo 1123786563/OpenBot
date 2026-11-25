@@ -9,6 +9,7 @@ import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import {
   type ComponentRef,
   type MouseEvent,
+  useId,
   useLayoutEffect,
   useRef,
 } from "react";
@@ -88,6 +89,7 @@ function BoundariesPage() {
   const savePolicy = useMutation(saveActionPolicyMutationOptions(queryClient));
   const { requestConfirmation, confirmation } = useActionConfirmation();
   const trialSwitch = useRef<ComponentRef<typeof Switch>>(null);
+  const trialDescriptionId = useId();
   const denied =
     stored.error instanceof ClientError &&
     (stored.error.status === 401 || stored.error.status === 403);
@@ -196,15 +198,86 @@ function BoundariesPage() {
       ) : null}
       {policy ? (
         <>
-          <PageSection
-            description={
-              trial
-                ? "Trial mode records matches in Audit. It allows the action to continue if otherwise permitted."
-                : "OpenBot stops actions that match an enforced boundary."
-            }
-            headingRef={listHeading}
-            title="Boundary rules"
-          >
+          <PageSection title="Enforcement">
+            <PageRows>
+              <Item size="sm">
+                <ItemContent>
+                  <ItemTitle>Trial mode</ItemTitle>
+                  <ItemDescription
+                    className="line-clamp-none text-sm"
+                    id={trialDescriptionId}
+                  >
+                    {trial
+                      ? "On. OpenBot records what a boundary would refuse in Audit. The action can continue if otherwise permitted."
+                      : "Off. A matching action is stopped, and the Bot is told which rule stopped it."}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <Switch
+                    aria-describedby={trialDescriptionId}
+                    aria-label="Trial mode"
+                    checked={trial}
+                    className="after:top-1/2 after:bottom-auto after:h-11 after:-translate-y-1/2"
+                    disabled={!canWrite || savePolicy.isPending}
+                    ref={trialSwitch}
+                    onCheckedChange={(checked) => {
+                      const mode = checked ? "dry-run" : "enforce";
+                      requestConfirmation({
+                        title: checked
+                          ? "Turn on Trial mode?"
+                          : "Turn off Trial mode?",
+                        description: checked
+                          ? "For every Bot in this deployment, matches will go ahead if otherwise permitted and be recorded in Audit. You can turn enforcement back on here."
+                          : "For every Bot in this deployment, actions that match a boundary will be stopped. You can return to Trial mode here.",
+                        confirmLabel: checked
+                          ? "Turn on Trial mode"
+                          : "Enforce boundaries",
+                        pendingLabel: "Saving…",
+                        failureMessage:
+                          "Couldn't update Trial mode. Try again.",
+                        successMessage: checked
+                          ? "Trial mode is on."
+                          : "Boundaries are enforced.",
+                        trigger: trialSwitch.current ?? undefined,
+                        variant: "default",
+                        refresh: () => stored.refetch(),
+                        run: async () => {
+                          const { data: latest } = await stored.refetch({
+                            throwOnError: true,
+                          });
+                          if (
+                            !latest ||
+                            JSON.stringify(latest) !== JSON.stringify(policy)
+                          ) {
+                            throw new ActionUnavailable(
+                              "The boundaries changed while you were reviewing them. Close this dialog and review the current policy.",
+                            );
+                          }
+                          try {
+                            await savePolicy.mutateAsync({
+                              ...latest,
+                              mode,
+                              expected: latest,
+                            });
+                          } catch (error) {
+                            const { data: verified } = await stored.refetch();
+                            if (verified?.mode === mode) {
+                              throw new ActionUnavailable(
+                                "The new mode is in effect, but saving wasn't confirmed. Check Audit before making another change.",
+                              );
+                            }
+                            throw error;
+                          }
+                        },
+                      });
+                    }}
+                  />
+                </ItemActions>
+              </Item>
+            </PageRows>
+          </PageSection>
+
+          <PageSection headingRef={listHeading} title="Boundary rules">
             {rules.length > 0 ? (
               <Input
                 aria-label="Search boundary rules"
@@ -329,77 +402,6 @@ function BoundariesPage() {
 
           <PageSection title="How rules apply">
             <PageRows>
-              <Item size="sm">
-                <ItemContent>
-                  <ItemTitle>Trial mode</ItemTitle>
-                  <ItemDescription className="line-clamp-none text-sm">
-                    {trial
-                      ? "On. OpenBot records what a boundary would refuse in Audit. The action can continue if otherwise permitted."
-                      : "Off. A matching action is stopped, and the Bot is told which rule stopped it."}
-                  </ItemDescription>
-                </ItemContent>
-                <ItemActions>
-                  <Switch
-                    aria-label="Trial mode"
-                    checked={trial}
-                    className="after:top-1/2 after:bottom-auto after:h-11 after:-translate-y-1/2"
-                    disabled={!canWrite || savePolicy.isPending}
-                    ref={trialSwitch}
-                    onCheckedChange={(checked) => {
-                      const mode = checked ? "dry-run" : "enforce";
-                      requestConfirmation({
-                        title: checked
-                          ? "Turn on Trial mode?"
-                          : "Turn off Trial mode?",
-                        description: checked
-                          ? "For every Bot in this deployment, matches will go ahead if otherwise permitted and be recorded in Audit. You can turn enforcement back on here."
-                          : "For every Bot in this deployment, actions that match a boundary will be stopped. You can return to Trial mode here.",
-                        confirmLabel: checked
-                          ? "Turn on Trial mode"
-                          : "Enforce boundaries",
-                        pendingLabel: "Saving…",
-                        failureMessage:
-                          "Couldn't update Trial mode. Try again.",
-                        successMessage: checked
-                          ? "Trial mode is on."
-                          : "Boundaries are enforced.",
-                        trigger: trialSwitch.current ?? undefined,
-                        variant: "default",
-                        refresh: () => stored.refetch(),
-                        run: async () => {
-                          const { data: latest } = await stored.refetch({
-                            throwOnError: true,
-                          });
-                          if (
-                            !latest ||
-                            JSON.stringify(latest) !== JSON.stringify(policy)
-                          ) {
-                            throw new ActionUnavailable(
-                              "The boundaries changed while you were reviewing them. Close this dialog and review the current policy.",
-                            );
-                          }
-                          try {
-                            await savePolicy.mutateAsync({
-                              ...latest,
-                              mode,
-                              expected: latest,
-                            });
-                          } catch (error) {
-                            const { data: verified } = await stored.refetch();
-                            if (verified?.mode === mode) {
-                              throw new ActionUnavailable(
-                                "The new mode is in effect, but saving wasn't confirmed. Check Audit before making another change.",
-                              );
-                            }
-                            throw error;
-                          }
-                        },
-                      });
-                    }}
-                  />
-                </ItemActions>
-              </Item>
-              <Separator />
               <Item
                 render={(props) => <Link {...props} to="/admin/audit" />}
                 size="sm"

@@ -10,9 +10,19 @@ is one computer, and the deployment starts with a single Bot, the Personal Assis
 bash scripts/use-personal-edition.sh
 ```
 
-That writes the settings in `.env.personal.example` into `.env` (starting from `.env.example` when
-there is no `.env`), replacing any line for the same key. Then fill in `OPENAI_API_KEY` (or the key
-for your `BOT_PROVIDER`) and the Intelligence settings, and start it:
+Settings live in one file per service under `deploy/`, none in the repository root. Copy each
+example beside its file first. The script then writes the settings in
+`deploy/openbot/.env.server.personal.example` into `deploy/openbot/.env.server` (starting from its
+example when there is none), replacing any line for the same key. Then fill in `OPENAI_API_KEY` (or
+the key for your `BOT_PROVIDER`) in `deploy/agents/.env` and the Intelligence settings in
+`deploy/openbot/.env.server`, and start it:
+
+```sh
+cp deploy/openbot/.env.example deploy/openbot/.env
+cp deploy/openbot/.env.server.example deploy/openbot/.env.server
+cp deploy/openbot/.env.worker.example deploy/openbot/.env.worker
+cp deploy/agents/.env.example deploy/agents/.env
+```
 
 ```sh
 bash scripts/start.sh

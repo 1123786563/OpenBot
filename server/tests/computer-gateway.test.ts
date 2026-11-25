@@ -1234,7 +1234,7 @@ describe("the computer gateway", () => {
       // Pinned as written, so a copy that drifts back to `key == "Enter"` fails here rather than
       // quietly letting Shift+Enter submit the form on a deployment that followed the advice.
       const example = readFileSync(
-        new URL("../../.env.example", import.meta.url),
+        new URL("../../deploy/openbot/.env.server.example", import.meta.url),
         "utf8",
       );
       const line = example

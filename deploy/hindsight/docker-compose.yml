@@ -1,0 +1,28 @@
+name: openbot-hindsight
+
+services:
+  hindsight:
+    image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight-api:1.2.3}
+    restart: unless-stopped
+    shm_size: 1gb
+    stop_grace_period: 75s
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: none
+      HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: "false"
+      HINDSIGHT_API_ENABLE_BANK_CONFIG_API: "false"
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: local
+      HINDSIGHT_API_RERANKER_PROVIDER: local
+      HF_HOME: /home/hindsight/.cache/huggingface
+    volumes:
+      - data:/home/hindsight/.pg0
+      - model-cache:/home/hindsight/.cache
+    ports:
+      - "127.0.0.1:${HINDSIGHT_PORT:-18888}:8888"
+
+networks:
+  default:
+    name: openbot-hindsight
+
+volumes:
+  data:
+  model-cache:

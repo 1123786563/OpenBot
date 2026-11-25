@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -28,7 +29,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { reservePort } from "./support/reserved-port";
 import {
   applyLocalUpdate,
   type CommandRunner,
@@ -38,6 +38,7 @@ import {
 import targetFixture from "../shared/fixtures/releases/candidate.json";
 import currentFixture from "../shared/fixtures/releases/installed.json";
 import { parseReleaseManifest } from "../shared/release-manifest";
+import { reservePort } from "./support/reserved-port";
 
 setDefaultTimeout(180_000);
 const id = randomUUID().slice(0, 8);
@@ -96,7 +97,8 @@ function installation(dotenv: string) {
   const candidate = parseReleaseManifest(structuredClone(targetFixture));
   candidate.source.commit = target;
   writeFileSync(join(root, ".openbot-release.json"), JSON.stringify(current));
-  writeFileSync(join(root, ".env"), dotenv);
+  mkdirSync(join(root, "deploy/openbot"), { recursive: true });
+  writeFileSync(join(root, "deploy/openbot/.env.server"), dotenv);
   const identity = {
     version: candidate.version,
     commit: candidate.source.commit,

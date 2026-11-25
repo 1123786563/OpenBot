@@ -29,6 +29,7 @@ The operator supplies the meter for the approved model and gateway configuration
 
 ```json
 {
+  "requestId": "<UUID from X-Request-Id>",
   "inputTokenUpperBound": 120,
   "gatewayRevision": "approved-gateway-revision",
   "meteringRevision": "approved-meter-revision",

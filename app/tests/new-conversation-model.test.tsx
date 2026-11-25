@@ -462,6 +462,13 @@ for (const scenario of [
     const button = await view.findByRole("button", {
       name: scenario === "check only" ? "Check for message" : "Resend message",
     });
+    expect(
+      view.getByText(
+        scenario === "check only"
+          ? "Check whether your first message arrived."
+          : "Your first message hasn’t appeared in the conversation.",
+      ),
+    ).toBeTruthy();
     expect(sentMessages).toEqual([]);
     if (scenario === "already delivered") storedMessages = [message];
     if (scenario === "history offline") historyAvailable = false;
@@ -473,6 +480,7 @@ for (const scenario of [
       });
       expect(checkAgain).toBe(button);
       expect(document.activeElement).toBe(checkAgain);
+      expect(view.getByText(/without sending (a copy|it again)/)).toBeTruthy();
       expect(
         pendingStarts.readPendingStart("model-tester", message.id)?.state,
       ).toBe("pending");
