@@ -33,7 +33,7 @@ function app() {
   const store = createIdentityProviderStore(database);
   // createApp takes positional stores: auditStore is 13th and identityProviders 19th. Built by
   // index so a store appended later cannot shift them.
-  const args: never[] = Array.from({ length: 19 }) as never[];
+  const args = Array.from({ length: 19 }) as Parameters<typeof createApp>;
   args[0] = loadConfig(testEnvironment()) as never;
   args[1] = {
     handler: () => new Response(null, { status: 204 }),

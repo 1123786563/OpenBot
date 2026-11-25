@@ -636,8 +636,18 @@ export function createApp(
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
   profileStore?: ProfileStore,
   /**
+   * What points at a vault row: the apps, people and Bots that hold a credential.
+   *
+   * Absent leaves the usage route answering 503 rather than "nothing uses it": a deployment that
+   * cannot read the pointers must not tell an administrator a credential is unused.
+   */
+  credentialUsage?: CredentialUsageReader,
+  /**
    * The shared billing ledgers (#86): a person's Test Credit balance, the paid side of their bill
    * (#107), and their execution budgets. Absent, `/api/billing` is not mounted.
+   *
+   * These parameters are positional, and this one stays last: tests place it at
+   * `createApp.length - 1`. A parameter added after it silently shifts every such call.
    */
   billing?: {
     testLedger: TestCreditLedger;
@@ -666,16 +676,6 @@ export function createApp(
       personId: string,
     ) => Promise<VerifiedBillingIdentity | undefined>;
   },
-  /**
-   * What points at a vault row: the apps, people and Bots that hold a credential.
-   *
-   * Appended last, like `billing` above it: these are positional, so inserting one anywhere else
-   * silently shifts every existing call site's arguments by one.
-   *
-   * Absent leaves the usage route answering 503 rather than "nothing uses it": a deployment that
-   * cannot read the pointers must not tell an administrator a credential is unused.
-   */
-  credentialUsage?: CredentialUsageReader,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   const skillMarket =

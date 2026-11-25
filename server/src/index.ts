@@ -4196,7 +4196,13 @@ const app = createApp(
   identityStore,
   identityGithubCallback,
   profileStore,
-  // A person's bill: Test Credit balance, the paid side, and budgets (#107).
+  // What holds a vault row, for the confirmation before an administrator revokes it. The model key
+  // is the one pointer no table holds, so it is passed in.
+  createCredentialUsageReader(database, {
+    provider: runtimeModel.provider,
+    keyId: tenantPackage.model.credentialSecretRef,
+  }),
+  // A person's bill: Test Credit balance, the paid side, and budgets (#107). Last: it stays there.
   {
     testLedger: testCreditLedger,
     runtime:
@@ -4215,12 +4221,6 @@ const app = createApp(
     testCreditConversations: directChatTestCredit !== undefined,
     canStartBackgroundBudget: backgroundModel?.canStart,
   },
-  // What holds a vault row, for the confirmation before an administrator revokes it. The model key
-  // is the one pointer no table holds, so it is passed in.
-  createCredentialUsageReader(database, {
-    provider: runtimeModel.provider,
-    keyId: tenantPackage.model.credentialSecretRef,
-  }),
 );
 if (reflectGateway) {
   app.post(REFLECT_MODEL_CALLBACK_PATH, (context) =>
