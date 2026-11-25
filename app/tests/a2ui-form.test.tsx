@@ -19,6 +19,10 @@ import { z } from "zod";
 import { ChatTranscript } from "@/components/channels/chat-transcript";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { generativeUiProviderOptions, OPENBOT_UI } from "@/lib/copilot/a2ui";
+import {
+  astryxA2UIOverrides,
+  SDK_DRAWN_CONTROLS,
+} from "@/lib/copilot/a2ui-controls";
 import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
 
 beforeAll(() => GlobalRegistrator.register());
@@ -830,6 +834,64 @@ test("Select and DateTimeInput take the props Astryx has an equivalent for", asy
     .getByLabelText("Day")
     .closest(".astryx-field") as HTMLElement;
   expect(day.parentElement?.style.flexGrow).toBe("2");
+});
+
+test("SegmentedControl stays as the SDK draws it, reads the theme and writes what was picked", async () => {
+  sent.length = 0;
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "segment",
+          dataModel: { trip: "economy" },
+          components: [
+            {
+              ...form("root", "sendTrip", ["trip"]),
+              children: ["trip", "root-send"],
+            },
+            {
+              id: "trip",
+              component: "SegmentedControl",
+              label: "Class",
+              options: ["economy", "business"],
+              value: { "@path": "/trip" },
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="segment" />
+    </Page>,
+  );
+  // The one input control recorded as SDK-drawn is the one that is not overridden, and it is in
+  // the catalog a Bot draws from.
+  expect(SDK_DRAWN_CONTROLS).toEqual(["SegmentedControl"]);
+  for (const name of SDK_DRAWN_CONTROLS) {
+    expect(OPENBOT_UI.components.has(name)).toBe(true);
+    expect(astryxA2UIOverrides).not.toHaveProperty(name);
+  }
+  const economy = (await view.findByRole("radio", {
+    name: "economy",
+  })) as HTMLElement;
+  expect(economy.getAttribute("aria-checked")).toBe("true");
+  // It reads the same theme variables as the Astryx controls beside it.
+  expect(economy.style.cssText).toContain("var(--a2ui-");
+
+  // The arrows move the choice, and the form sends what was picked.
+  economy.focus();
+  await userEvent.setup({ document }).keyboard("{ArrowRight}");
+  expect(
+    view.getByRole("radio", { name: "business" }).getAttribute("aria-checked"),
+  ).toBe("true");
+  fireEvent.submit(view.container.querySelector("form") as HTMLFormElement);
+  expect(sent).toEqual(["Class\n\ntrip: business"]);
 });
 
 function BookingPage() {
