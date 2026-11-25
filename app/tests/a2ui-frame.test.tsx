@@ -766,7 +766,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
             // around its label. Tailwind's preflight is in a later cascade layer, and left them all
             // bare text with no inset: the picked chip without a fill, the destructive button not
             // red, and two chips touching.
-            const painted = await surface.evaluate((card) => {
+            const painted = await surface.evaluate((root) => {
               const probe = document.createElement("span");
               /** A theme colour, resolved where the button is. */
               const colour = (at: Element, name: string) => {
@@ -774,7 +774,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
                 at.append(probe);
                 return getComputedStyle(probe).color;
               };
-              return [...card.querySelectorAll("button[data-variant]")].map(
+              return [...root.querySelectorAll("button[data-variant]")].map(
                 (button) => {
                   const style = getComputedStyle(button);
                   const read = (name: string) => colour(button, name);
@@ -804,15 +804,25 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
             expect(new Set(painted.map((button) => button.variant))).toEqual(
               new Set(["secondary", "primary", "destructive", "ghost"]),
             );
+            /** A variant's fill and ink, by the names the theme gives them. The neutral theme
+             * draws a destructive button as a tint, not as a red block. */
+            const paintOf = (
+              button: (typeof painted)[number],
+            ): [string, string] => {
+              switch (button.variant) {
+                case "primary":
+                  return [button.accent, button.onAccent];
+                case "destructive":
+                  return [button.errorMuted, button.onErrorMuted];
+                case "ghost":
+                  return ["rgba(0, 0, 0, 0)", button.inkOfTheme];
+                // `secondary`, the one variant left: the set above is checked.
+                default:
+                  return [button.neutral, button.inkOfTheme];
+              }
+            };
             for (const button of painted) {
-              // Each variant's fill and ink, by the names the theme gives them. The neutral
-              // theme draws a destructive button as a tint, not as a red block.
-              const [fill, ink] = {
-                primary: [button.accent, button.onAccent],
-                secondary: [button.neutral, button.inkOfTheme],
-                destructive: [button.errorMuted, button.onErrorMuted],
-                ghost: ["rgba(0, 0, 0, 0)", button.inkOfTheme],
-              }[button.variant ?? ""];
+              const [fill, ink] = paintOf(button);
               expect(
                 [button.fill, button.ink],
                 `${at}: ${button.variant} "${button.label}"`,
@@ -824,7 +834,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
                 ).toBeGreaterThan(0);
             }
             // A field's box has room around its text, as Astryx draws it.
-            const inset = (at: ReturnType<typeof card.locator>) =>
+            const inset = (at: ReturnType<typeof card>) =>
               at.evaluate((box) => {
                 const style = getComputedStyle(box);
                 return [
