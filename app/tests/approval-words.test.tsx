@@ -4,6 +4,7 @@ import {
   WITHDRAWN_APPROVALS_OFF,
   decisionInvalidated,
   notCarriedOut,
+  notDoneOnRecheck,
 } from "@openbot/shared/approval-outcomes";
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
@@ -302,9 +303,10 @@ test("a request the person declined is explained there, with the Bot to ask agai
 });
 
 /*
- * WHAT TO DO NEXT IS SAID ONLY WHERE IT IS SAFE. A step whose outcome nobody can vouch for, or that
- * could not be carried out, may have happened, and its own words say to check before asking again.
- * "Ask the Bot again if you still need it." under them contradicted that.
+ * WHAT TO DO NEXT FOLLOWS WHAT RAN. A step whose outcome nobody can vouch for, or that could not be
+ * carried out, may have happened, so "Ask the Bot again if you still need it." under it was wrong.
+ * The sentence the server sends is written for the Bot and tells it to check whether it happened
+ * first; the person reads only what happened, so the check is said beside it in the person's words.
  */
 test.each([
   [
@@ -316,7 +318,7 @@ test.each([
     "Not done: this action could not be carried out (the computer said: disk full. try later).",
   ],
 ])(
-  "a step that may have run (%#) is explained without telling the person to ask again",
+  "a step that may have run (%#) is explained, with the check its Bot's sentence asks for",
   async (reason, read) => {
     decided("completed", reason);
     const view = draw(
@@ -324,10 +326,32 @@ test.each([
     );
     expect(await view.findByText(read)).toBeTruthy();
     expect(
+      view.getByText("Check whether it happened before you ask the Bot again."),
+    ).toBeTruthy();
+    expect(
       view.queryByText("Ask the Bot again if you still need it."),
     ).toBeNull();
   },
 );
+
+test("a step turned away by the check just before it ran is explained there, with the Bot to ask again", async () => {
+  // Nothing ran: the check before the step refused it, and says why.
+  decided(
+    "completed",
+    notDoneOnRecheck("The rule that allowed this was removed before it ran."),
+  );
+  const view = draw(
+    <InlineApproval fallback={null} resulted={false} toolCallId="call-mcp" />,
+  );
+  expect(
+    await view.findByText(
+      "Not done: The rule that allowed this was removed before it ran.",
+    ),
+  ).toBeTruthy();
+  expect(
+    view.getByText("Ask the Bot again if you still need it."),
+  ).toBeTruthy();
+});
 
 test("once the step has its own answer, the line is the tool's again", async () => {
   decided("denied", WITHDRAWN_APPROVALS_OFF);

@@ -3,8 +3,8 @@ import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import {
+  nextStepForPerson,
   outcomeForPerson,
-  safeToAskAgain,
 } from "@openbot/shared/approval-outcomes";
 import { offersStandingRule } from "@openbot/shared/standing-rule";
 import { approvalPhrase } from "@openbot/shared/tool-name";
@@ -21,8 +21,14 @@ import {
 import { noteWatched } from "@/lib/computers/activity";
 import { EASE_OUT } from "@/lib/motion";
 
-/** What to do about a request that ended before the Bot's answer for its step arrived. */
-const ASK_AGAIN = "Ask the Bot again if you still need it.";
+/**
+ * What to do about a request that ended before the Bot's answer for its step arrived. Which one
+ * follows what ran (`nextStepForPerson`).
+ */
+const NEXT_STEP = {
+  "ask-again": "Ask the Bot again if you still need it.",
+  "check-first": "Check whether it happened before you ask the Bot again.",
+} as const;
 
 /**
  * A pending approval, drawn in the conversation where the action it holds would have been.
@@ -144,6 +150,7 @@ export function InlineApproval({
     !answered
       ? request.result.error
       : null;
+  const nextStep = explain ? nextStepForPerson(explain) : null;
   return (
     <>
       {/* The card leaves by folding away; what is left behind is the tool's own line. */}
@@ -204,8 +211,10 @@ export function InlineApproval({
       ) : explain ? (
         <Banner
           collapsible={false}
-          // Only where nothing ran. A step that may have run is to be checked first, as it says.
-          description={safeToAskAgain(explain) ? ASK_AGAIN : undefined}
+          // The next step follows what ran: ask again only where nothing ran, and check first
+          // where the step may have happened. What the person reads says only what happened; it is
+          // the sentence written for the Bot that says which of the two to do.
+          description={nextStep ? NEXT_STEP[nextStep] : undefined}
           status="warning"
           title={outcomeForPerson(explain)}
         />
