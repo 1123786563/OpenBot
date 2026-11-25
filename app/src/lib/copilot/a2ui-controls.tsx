@@ -631,7 +631,13 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
  */
 export const SDK_DRAWN_CONTROLS = ["SegmentedControl"] as const;
 
-/** The interactive controls of `openbot/ui@1`, drawn by Astryx. Names, props and events are the catalog's. */
+/**
+ * The interactive controls of `openbot/ui@1`, drawn by Astryx. Names, props and events are the
+ * catalog's. A prop Astryx has nothing to draw it with is not drawn: a TextArea's `maxRows` and
+ * `autoResize`, a CheckBox's `lineThrough` and `shape`, a RadioGroup's `variant`, a Slider's
+ * `sliderStyle`, a Pressable's `hoverBackground`, and a Button's `pill`, which would round every
+ * button the SDK draws by default.
+ */
 export const astryxA2UIOverrides = {
   Button: { component: A2UIButton },
   CheckBox: { component: A2UICheckBox },
