@@ -1,14 +1,22 @@
 import { setTimeout as delay } from "node:timers/promises";
 
-const inputs = ["INITIAL_ADMIN_EMAIL", "INITIAL_ADMIN_PASSWORD", "INITIAL_ADMIN_FIRST_NAME", "INITIAL_ORG_NAME"];
+const inputs = [
+  "INITIAL_ADMIN_EMAIL",
+  "INITIAL_ADMIN_PASSWORD",
+  "INITIAL_ADMIN_FIRST_NAME",
+  "INITIAL_ORG_NAME",
+];
 if (inputs.every((name) => !process.env[name])) process.exit(0);
-if (inputs.some((name) => !process.env[name])) throw new Error("Fill all four Infisical administrator fields");
+if (inputs.some((name) => !process.env[name]))
+  throw new Error("Fill all four Infisical administrator fields");
 
 const origin = "http://backend:8080/api/v1/admin";
 let config;
 for (let attempt = 0; attempt < 60; attempt++) {
   try {
-    const response = await fetch(origin + "/config", { signal: AbortSignal.timeout(4000) });
+    const response = await fetch(origin + "/config", {
+      signal: AbortSignal.timeout(4000),
+    });
     if (response.ok) {
       ({ config } = await response.json());
       break;
@@ -31,5 +39,8 @@ if (!config.initialized) {
     }),
     signal: AbortSignal.timeout(15000),
   });
-  if (!response.ok) throw new Error(`Infisical admin setup failed (HTTP ${response.status}). Check the administrator fields and retry.`);
+  if (!response.ok)
+    throw new Error(
+      `Infisical admin setup failed (HTTP ${response.status}). Check the administrator fields and retry.`,
+    );
 }
