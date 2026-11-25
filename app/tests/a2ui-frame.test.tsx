@@ -229,8 +229,9 @@ async function openPage(
   // The root's colour scheme as index.html sets it before paint: Astryx's palette resolves its
   // light and dark values from it, the app's tokens from the `dark` class.
   await page.goto(`${ORIGIN}/${query}`);
+  // The first interface's surface, drawn: a page of Astryx controls alone has no catalog markup.
   await page
-    .locator("[data-generative-ui-chat-surface] .a2ui-surface [data-a2ui-std]")
+    .locator("[data-generative-ui-chat-surface] .a2ui-surface")
     .first()
     .waitFor({ timeout: 8000 });
   const classes = await page.evaluate(() => [
@@ -336,8 +337,9 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
 
   /**
    * How the controls read in a page: the ink of a field and of its label against the Astryx palette
-   * (`--color-*` resolved at the theme scope), and the contrast of every word inside the forms
-   * against what is behind it. A word inside a disabled control is left out.
+   * (`--color-*` resolved at the theme scope), the contrast of every visible word inside an interface
+   * against what is behind it, and the ink of each error node the SDK drew itself. A word inside a
+   * disabled control, and anything hidden, is left out.
    */
   async function read(page: Page) {
     return page.evaluate(() => {
@@ -408,28 +410,33 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
         return (high + 0.05) / (low + 0.05);
       };
 
-      const forms = document.querySelectorAll<HTMLElement>(
-        "[data-generative-ui-chat-surface] form",
-      );
       const words: { text: string; contrast: number }[] = [];
-      for (const form of forms) {
-        for (const element of form.querySelectorAll<HTMLElement>("*")) {
-          if (element.closest('[aria-disabled="true"]')) continue;
-          const text = [...element.childNodes]
-            .filter((node) => node.nodeType === Node.TEXT_NODE)
-            .map((node) => node.textContent?.trim())
-            .join("");
-          if (!text) continue;
-          const style = getComputedStyle(element);
-          words.push({
-            text,
-            contrast: contrast(
-              over(rgba(style.color), behind(element)),
-              behind(element),
-            ),
-          });
-        }
+      for (const element of document.querySelectorAll<HTMLElement>(
+        "[data-generative-ui-chat-surface] *",
+      )) {
+        if (!element.checkVisibility()) continue;
+        if (element.closest('[aria-disabled="true"]')) continue;
+        const text = [...element.childNodes]
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent?.trim())
+          .join("");
+        if (!text) continue;
+        const style = getComputedStyle(element);
+        words.push({
+          text,
+          contrast: contrast(
+            over(rgba(style.color), behind(element)),
+            behind(element),
+          ),
+        });
       }
+      const errorInks = [
+        ...document.querySelectorAll<HTMLElement>(
+          "[data-generative-ui-chat-surface] [data-generative-ui-error]",
+        ),
+      ]
+        .filter((node) => node.checkVisibility())
+        .map((node) => getComputedStyle(node).color);
       const input = document.querySelector<HTMLElement>(
         "[data-generative-ui-chat-surface] .astryx-text-input input",
       );
@@ -445,9 +452,17 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
         },
         palette: [...palette],
         words,
+        errorInks,
       };
     });
   }
+
+  /** The card CopilotKit draws around one interface, by the id of its surface. */
+  const card = (page: Page, surface: string) =>
+    page.locator(`[data-generative-ui-chat-surface="${surface}"]`);
+  /** The line the card draws for an update that could not be shown. */
+  const line = (surface: ReturnType<typeof card>) =>
+    surface.locator(':scope > [role="alert"]');
 
   browserTest(
     "a form with a part that cannot be drawn shows an Astryx error and sends nothing; the form beside it works",
@@ -532,42 +547,128 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
   );
 
   browserTest(
+    "a part the SDK could not draw is an Astryx error and sends nothing, in a form or beside one",
+    90_000,
+    async (deadline) => {
+      const page = await open("?only=refused", deadline);
+      const sent = () => page.evaluate(() => window.__sent);
+      try {
+        // In a form: the SDK's own node is hidden, an Astryx error stands in the form, and the form
+        // sends nothing, by its button or by Enter in a field.
+        const bound = card(page, "bound");
+        await bound.locator(".astryx-banner").waitFor({ timeout: 8000 });
+        expect(
+          await bound.locator('.astryx-banner [role="alert"]').innerText(),
+        ).toContain("Couldn't show this part of the reply.");
+        expect(
+          await bound.locator('[data-generative-ui-error="named"]').isVisible(),
+        ).toBe(false);
+        await bound.getByText("This line is still readable.").waitFor();
+        await page
+          .getByText("Build an interactive weekend trip budget")
+          .waitFor();
+        const who = page.getByLabel("Who");
+        await who.fill("Ada");
+        const sendBad = page.getByRole("button", { name: "Send bad" });
+        expect(await sendBad.getAttribute("aria-disabled")).toBe("true");
+        await sendBad.click({ force: true });
+        await who.press("Enter");
+        await page.waitForTimeout(500);
+        expect(await sent()).toEqual([]);
+        // The form beside it, in the same interface, sends.
+        await page.getByLabel("What").fill("Tea");
+        await page.getByLabel("What").press("Enter");
+        await page.waitForFunction(() => window.__sent.length === 1);
+        expect(await sent()).toEqual(["What\n\nwhat: Tea"]);
+
+        // Outside a form the SDK's node stays, and says what happened.
+        expect(
+          await bound.locator('[data-generative-ui-error="stray"]').innerText(),
+        ).toContain("Couldn’t display this part: invalid props");
+
+        // An update the runtime refused: the card says so, and the form that is missing a field
+        // shows the same error and sends nothing.
+        const refused = card(page, "refused");
+        expect(await line(refused).innerText()).toBe(
+          "Part of this UI couldn't be shown.",
+        );
+        expect(
+          await refused.locator('.astryx-banner [role="alert"]').innerText(),
+        ).toContain("Couldn't show this part of the reply.");
+        const sendRefused = page.getByRole("button", { name: "Send refused" });
+        expect(await sendRefused.getAttribute("aria-disabled")).toBe("true");
+        const name = page.getByLabel("Name");
+        await name.fill("Ada");
+        await name.press("Enter");
+        await page.waitForTimeout(500);
+        expect(await sent()).toHaveLength(1);
+
+        // A surface that could not be built is an empty frame that says so: nothing there to send.
+        const unbuilt = card(page, "unbuilt");
+        expect(await line(unbuilt).innerText()).toBe(
+          "Part of this UI couldn't be shown.",
+        );
+        expect(await unbuilt.locator("form").count()).toBe(0);
+
+        // A surface that threw is the SDK's error node alone, still an alert.
+        const thrown = card(page, "thrown");
+        const node = thrown.locator('[data-generative-ui-error="surface"]');
+        expect(await node.getAttribute("role")).toBe("alert");
+        expect(await node.isVisible()).toBe(true);
+        expect(await thrown.locator("form").count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  browserTest(
     "the controls read Astryx theme colours and stay legible, in light and in dark",
     180_000,
     async (deadline) => {
       // One page at a time, as each has its own Chromium.
-      const readIn = async (theme: "light" | "dark") => {
-        const page = await open("?only=forms", deadline, theme);
+      const readIn = async (only: string, theme: "light" | "dark") => {
+        const page = await open(`?only=${only}`, deadline, theme);
         try {
           return await read(page);
         } finally {
           await page.close();
         }
       };
-      const light = await readIn("light");
-      const dark = await readIn("dark");
-      // The ink of a field and of its label is a colour of the Astryx theme, and it changes with it.
-      for (const [mode, of] of [
-        ["light", light],
-        ["dark", dark],
-      ] as const) {
-        expect(of.palette.includes(of.ink.field), `${mode} field ink`).toBe(
-          true,
-        );
-        expect(of.palette.includes(of.ink.label), `${mode} label ink`).toBe(
-          true,
-        );
+      for (const only of ["forms", "refused"]) {
+        const light = await readIn(only, "light");
+        const dark = await readIn(only, "dark");
+        // The ink of a field, of its label and of an error node is a colour of the Astryx theme,
+        // and it changes with it.
+        for (const [mode, of] of [
+          ["light", light],
+          ["dark", dark],
+        ] as const) {
+          expect(
+            of.palette.includes(of.ink.field),
+            `${only} ${mode} field ink`,
+          ).toBe(true);
+          expect(
+            of.palette.includes(of.ink.label),
+            `${only} ${mode} label ink`,
+          ).toBe(true);
+          for (const ink of of.errorInks)
+            expect(of.palette.includes(ink), `${only} ${mode} error ink`).toBe(
+              true,
+            );
+        }
+        expect(dark.ink).not.toEqual(light.ink);
+        // Every visible word in an interface is readable against what is behind it (WCAG AA for
+        // text).
+        for (const [mode, of] of [
+          ["light", light],
+          ["dark", dark],
+        ] as const)
+          expect(
+            of.words.filter((word) => word.contrast < 4.5),
+            `${only} ${mode}`,
+          ).toEqual([]);
       }
-      expect(dark.ink).not.toEqual(light.ink);
-      // Every word in the forms is readable against what is behind it (WCAG AA for text).
-      for (const [mode, of] of [
-        ["light", light],
-        ["dark", dark],
-      ] as const)
-        expect(
-          of.words.filter((word) => word.contrast < 4.5),
-          mode,
-        ).toEqual([]);
     },
   );
 

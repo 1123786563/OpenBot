@@ -321,6 +321,335 @@ test("a form that fails to render shows an Astryx error and is not sent; the res
   await waitFor(() => expect(sent).toEqual(["What\n\nwhat: Tea"]));
 });
 
+test("a part the SDK itself cannot draw shows an Astryx error in its form, which is not sent; the form beside it works", async () => {
+  sent.length = 0;
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "invalid",
+          dataModel: { who: "", what: "", guests: 2 },
+          components: [
+            {
+              id: "root",
+              component: "Column",
+              children: ["intro", "bad", "aside", "good"],
+            },
+            { id: "intro", component: "Text", text: "Two forms follow." },
+            {
+              ...form("bad", "sendBad", ["who", "guests"]),
+              children: ["who", "range", "bad-send"],
+            },
+            field("who", "Who"),
+            {
+              // A check box bound to the text field's value. The server checks prop names only, and
+              // the client skips a bound prop, so it fails only when the box is drawn, where no
+              // error boundary is involved.
+              id: "range",
+              component: "CheckBox",
+              label: "Is named",
+              value: { "@path": "/who" },
+            },
+            {
+              id: "bad-send",
+              component: "Button",
+              label: "Send bad",
+              submit: true,
+            },
+            {
+              id: "aside",
+              component: "Text",
+              text: "This line is still readable.",
+            },
+            form("good", "sendGood", ["what"]),
+            field("what", "What"),
+            {
+              id: "good-send",
+              component: "Button",
+              label: "Send good",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="invalid" />
+    </Page>,
+  );
+  const who = (await view.findByLabelText("Who")) as HTMLInputElement;
+  const bad = who.form as HTMLFormElement;
+  // The SDK's own node for the part it refused is in the form, and the form shows an Astryx error.
+  expect(bad.querySelector('[data-generative-ui-error="range"]')).toBeTruthy();
+  const banner = bad.querySelector(".astryx-banner");
+  expect(banner?.getAttribute("data-status")).toBe("error");
+  expect(banner?.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn't show this part of the reply.",
+  );
+  expect(view.getByText("Two forms follow.")).toBeTruthy();
+  expect(view.getByText("This line is still readable.")).toBeTruthy();
+
+  // The form that is missing a part sends nothing.
+  expect(
+    view
+      .getByRole("button", { name: "Send bad" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  fireEvent.submit(bad);
+  expect(sent).toEqual([]);
+
+  // The form next to it still submits what was typed.
+  await userEvent.setup({ document }).type(view.getByLabelText("What"), "Tea");
+  fireEvent.submit(
+    (view.getByLabelText("What") as HTMLInputElement).form as HTMLFormElement,
+  );
+  expect(sent).toEqual(["What\n\nwhat: Tea"]);
+});
+
+test("a form the SDK could not draw in part submits again once a later update repairs it", async () => {
+  sent.length = 0;
+  const content = (operations: Record<string, unknown>[]) => ({
+    surfaceId: "repair",
+    target: "repair",
+    catalogId: OPENBOT_UI.id,
+    status: "ready",
+    rejected: [],
+    operations,
+  });
+  const first = [
+    {
+      version: "1.0",
+      createSurface: {
+        surfaceId: "repair",
+        catalogId: OPENBOT_UI.id,
+        dataModel: { who: "", named: false },
+      },
+    },
+    {
+      version: "1.0",
+      updateComponents: {
+        surfaceId: "repair",
+        components: [
+          {
+            ...form("root", "sendRepair", ["who", "named"]),
+            children: ["who", "named", "root-send"],
+          },
+          field("who", "Who"),
+          {
+            // Bound to the text field's value, which is not a boolean.
+            id: "named",
+            component: "CheckBox",
+            label: "Is named",
+            value: { "@path": "/who" },
+          },
+          {
+            id: "root-send",
+            component: "Button",
+            label: "Send repair",
+            submit: true,
+          },
+        ],
+      },
+    },
+  ];
+  // The same box, bound to the boolean the data model holds for it.
+  const repair = {
+    version: "1.0",
+    updateComponents: {
+      surfaceId: "repair",
+      components: [
+        {
+          id: "named",
+          component: "CheckBox",
+          label: "Is named",
+          value: { "@path": "/named" },
+        },
+      ],
+    },
+  };
+  let repairNow = () => {};
+  function Repairing() {
+    const runtime = useGenerativeUIRuntime();
+    useEffect(() => {
+      if (!runtime) return;
+      runtime.manager.setActiveThread(THREAD);
+      runtime.manager.ingest(THREAD, undefined, content(first) as never);
+      repairNow = () =>
+        runtime.manager.ingest(
+          THREAD,
+          undefined,
+          content([...first, repair]) as never,
+        );
+    }, [runtime]);
+    return null;
+  }
+  const view = render(
+    <CopilotKitProvider
+      agents__unsafe_dev_only={{ default: agent }}
+      {...generativeUiProviderOptions(true)}
+    >
+      <Repairing />
+      <GenerativeUISurface id="repair" />
+    </CopilotKitProvider>,
+  );
+  const who = (await view.findByLabelText("Who")) as HTMLInputElement;
+  const badForm = who.form as HTMLFormElement;
+  expect(badForm.querySelector(".astryx-banner")).toBeTruthy();
+  expect(
+    view
+      .getByRole("button", { name: "Send repair" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+
+  // Repaired: the error goes, the button works again, and the form sends.
+  repairNow();
+  await waitFor(() =>
+    expect(badForm.querySelector(".astryx-banner")).toBeNull(),
+  );
+  await waitFor(() =>
+    expect(
+      view
+        .getByRole("button", { name: "Send repair" })
+        .getAttribute("aria-disabled"),
+    ).toBeNull(),
+  );
+  await userEvent.setup({ document }).type(who, "Ada");
+  await userEvent.setup({ document }).click(view.getByLabelText("Is named"));
+  fireEvent.submit(badForm);
+  expect(sent).toEqual(["Who\n\nwho: Ada\nnamed: true"]);
+});
+
+/** A stored interface as the transcript receives it: one surface, its updates, then `later` ones. */
+function stored(
+  surfaceId: string,
+  components: Record<string, unknown>[],
+  later: Record<string, unknown>[] = [],
+): Message {
+  return {
+    id: `activity-${surfaceId}`,
+    role: "activity",
+    activityType: "generative-ui-surface",
+    content: {
+      surfaceId,
+      target: "chat",
+      catalogId: OPENBOT_UI.id,
+      status: "ready",
+      rejected: [],
+      operations: [
+        {
+          version: "1.0",
+          createSurface: {
+            surfaceId,
+            catalogId: OPENBOT_UI.id,
+            dataModel: { name: "", note: "" },
+          },
+        },
+        { version: "1.0", updateComponents: { surfaceId, components } },
+        ...later,
+      ],
+    },
+  };
+}
+
+function StoredTranscript({ messages }: { messages: Message[] }) {
+  return (
+    <QueryClientProvider client={new QueryClient()}>
+      <CopilotKitProvider
+        agents__unsafe_dev_only={{ default: agent }}
+        {...generativeUiProviderOptions(true)}
+      >
+        <CopilotChatConfigurationProvider agentId="default" threadId={THREAD}>
+          <TooltipProvider>
+            <ChatTranscript messages={messages} restoring={false} />
+          </TooltipProvider>
+        </CopilotChatConfigurationProvider>
+      </CopilotKitProvider>
+    </QueryClientProvider>
+  );
+}
+
+test("a form whose later update was refused shows an Astryx error and is not sent; the interface beside it still sends", async () => {
+  sent.length = 0;
+  const view = render(
+    <StoredTranscript
+      messages={[
+        // The form lists a field that only its third update creates, and that update is refused.
+        stored(
+          "refused",
+          [
+            {
+              ...form("root", "sendRefused", ["name", "note"]),
+              children: ["name", "note", "root-send"],
+            },
+            field("name", "Name"),
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send refused",
+              submit: true,
+            },
+          ],
+          [
+            {
+              version: "1.0",
+              // A label that is not a string: the whole update is refused and nothing in it draws.
+              updateComponents: {
+                surfaceId: "refused",
+                components: [
+                  {
+                    id: "note",
+                    component: "TextField",
+                    label: 5,
+                    value: { "@path": "/note" },
+                  },
+                ],
+              },
+            },
+          ],
+        ),
+        stored("whole", [
+          {
+            ...form("root", "sendWhole", ["note"]),
+            children: ["note", "root-send"],
+          },
+          field("note", "Note"),
+          {
+            id: "root-send",
+            component: "Button",
+            label: "Send whole",
+            submit: true,
+          },
+        ]),
+      ]}
+    />,
+  );
+  // The card CopilotKit draws says that part of the interface was not shown.
+  await view.findByText("Part of this UI couldn't be shown.");
+  const name = (await view.findByLabelText("Name")) as HTMLInputElement;
+  const refused = name.form as HTMLFormElement;
+  const banner = refused.querySelector(".astryx-banner");
+  expect(banner?.getAttribute("data-status")).toBe("error");
+  expect(banner?.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn't show this part of the reply.",
+  );
+
+  // The form is missing the field, so it sends nothing.
+  expect(
+    view
+      .getByRole("button", { name: "Send refused" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  fireEvent.submit(refused);
+  expect(sent).toEqual([]);
+
+  // The interface beside it, whose updates were all taken, still submits.
+  await userEvent.setup({ document }).type(view.getByLabelText("Note"), "Tea");
+  fireEvent.submit(
+    (view.getByLabelText("Note") as HTMLInputElement).form as HTMLFormElement,
+  );
+  expect(sent).toEqual(["Note\n\nnote: Tea"]);
+});
+
 function BookingPage() {
   return (
     <CopilotKitProvider

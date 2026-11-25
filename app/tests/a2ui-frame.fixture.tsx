@@ -12,6 +12,7 @@ import { astryxScope } from "@/components/astryx-pilot/theme";
 import { ChatTranscript } from "@/components/channels/chat-transcript";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { generativeUiProviderOptions, OPENBOT_UI } from "@/lib/copilot/a2ui";
+import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
 
 /**
  * A conversation with interfaces a Bot drew, as a page of its own for a2ui-frame.test.tsx to bundle
@@ -21,8 +22,9 @@ import { generativeUiProviderOptions, OPENBOT_UI } from "@/lib/copilot/a2ui";
  * `?only=<surface>` draws one of them, under the starter request that asks for a trip budget.
  *
  * `forms` is two forms side by side in one interface, one of them with a part that cannot be drawn.
- * It is the only one drawn from a catalog that has such a part. The turns its events start are
- * written to `window.__sent`.
+ * `refused` is the interfaces the SDK could not draw in part or in whole, and `legacy` a form stored
+ * by an earlier CopilotKit. The turns their events start are written to `window.__sent`. `forms` and
+ * `refused` are the only ones drawn from a catalog that has a part that cannot be drawn.
  */
 const THREAD = "thread-a2ui-frame";
 
@@ -46,12 +48,23 @@ const FAILING_UI = createGenerativeUI({
 function surface(
   surfaceId: string,
   components: Component[],
-  catalogId = OPENBOT_UI.id,
-  dataModel: Record<string, unknown> = {
-    transport: 100,
-    lodging: 250,
-    food: 80,
-  },
+  {
+    catalogId = OPENBOT_UI.id,
+    dataModel = {
+      transport: 100,
+      lodging: 250,
+      food: 80,
+    },
+    version = "1.0",
+    refused = [],
+  }: {
+    catalogId?: string;
+    dataModel?: Record<string, unknown>;
+    /** The A2UI version each operation says, as it is stored. */
+    version?: string;
+    /** Updates the runtime refused, as the stored message reports them. */
+    refused?: { index: number; reason: string }[];
+  } = {},
 ): Message {
   return {
     id: `activity-${surfaceId}`,
@@ -62,17 +75,17 @@ function surface(
       target: "chat",
       catalogId,
       status: "ready",
-      rejected: [],
+      rejected: refused,
       operations: [
         {
-          version: "1.0",
+          version,
           createSurface: {
             surfaceId,
             catalogId,
             dataModel,
           },
         },
-        { version: "1.0", updateComponents: { surfaceId, components } },
+        { version, updateComponents: { surfaceId, components } },
       ],
     },
   };
@@ -258,6 +271,134 @@ const FORMS: Component[] = [
   send("good"),
 ];
 
+/**
+ * Interfaces the SDK could not draw in part or in whole. Each is its own card in the conversation.
+ *
+ * - `bound`: a control bound to a text field's value. It passes the runtime and fails only when it
+ *   is drawn, where no error boundary is involved, so the SDK swaps in its own error node: once
+ *   inside a form and once outside any.
+ * - `refused`: a form that lists a field only its third update creates, and that update was refused.
+ * - `unbuilt`: a surface whose creation the browser refuses. Its frame stays, empty, with its line.
+ * - `thrown`: a part that throws, in a page whose error state throws too, so the whole surface is
+ *   replaced by the SDK's own node.
+ *
+ * `window.__sent` holds what their events start.
+ */
+const NAME: Component = {
+  id: "name",
+  component: "TextField",
+  label: "Name",
+  value: { "@path": "/name" },
+};
+const REFUSED: Message[] = [
+  surface(
+    "bound",
+    [
+      {
+        id: "root",
+        component: "Column",
+        children: ["intro", "bad", "stray", "aside", "good"],
+      },
+      { id: "intro", component: "Text", text: "Two forms follow." },
+      {
+        ...form("bad", "sendBad", [WHO]),
+        children: ["who", "named", "bad-send"],
+      },
+      WHO,
+      {
+        id: "named",
+        component: "CheckBox",
+        label: "Is named",
+        value: { "@path": "/who" },
+      },
+      send("bad"),
+      // The same mistake outside a form: the SDK's node stays, in the app's error colours.
+      {
+        id: "stray",
+        component: "Slider",
+        label: "Guests",
+        value: { "@path": "/who" },
+      },
+      { id: "aside", component: "Text", text: "This line is still readable." },
+      form("good", "sendGood", [WHAT]),
+      WHAT,
+      send("good"),
+    ],
+    { dataModel: { who: "", what: "" } },
+  ),
+  surface(
+    "refused",
+    [
+      {
+        ...form("root", "sendRefused", ["name"]),
+        children: ["name", "note", "root-send"],
+      },
+      NAME,
+      {
+        id: "root-send",
+        component: "Button",
+        label: "Send refused",
+        submit: true,
+      },
+    ],
+    {
+      dataModel: { name: "", note: "" },
+      refused: [{ index: 2, reason: 'component "note": unknown prop "labl"' }],
+    },
+  ),
+  {
+    id: "activity-unbuilt",
+    role: "activity",
+    activityType: "generative-ui-surface",
+    content: {
+      surfaceId: "unbuilt",
+      target: "chat",
+      catalogId: OPENBOT_UI.id,
+      status: "ready",
+      rejected: [],
+      operations: [
+        {
+          version: "1.0",
+          createSurface: {
+            surfaceId: "unbuilt",
+            catalogId: OPENBOT_UI.id,
+            components: [{ id: "root", component: "Nope" }],
+          },
+        },
+      ],
+    },
+  },
+  surface(
+    "thrown",
+    [
+      { id: "root", component: "Column", children: ["boom"] },
+      { id: "boom", component: "Broken" },
+    ],
+    { catalogId: FAILING_UI.id, dataModel: {} },
+  ),
+];
+
+/** A form a Bot drew on CopilotKit 1.83, read the way the app reads it on reopening. */
+const LEGACY: Message[] = withCurrentA2uiVersions([
+  surface(
+    "legacy",
+    [
+      {
+        ...form("root", "saveDestination", ["destination"]),
+        children: ["destination", "root-send"],
+      },
+      {
+        id: "destination",
+        component: "TextField",
+        label: "Destination",
+        value: { "@path": "/destination" },
+      },
+      { id: "root-send", component: "Button", label: "Save", submit: true },
+    ],
+    { dataModel: { destination: "Paris" }, version: "v1.0" },
+  ),
+]);
+
 /** `window.__sent`: the user turns the forms' events start, as the agent receives them. */
 declare global {
   interface Window {
@@ -287,6 +428,7 @@ const agent = {
 
 const only = new URLSearchParams(location.search).get("only");
 const forms = only === "forms";
+const refused = only === "refused";
 const messages: Message[] = [
   {
     id: "u1",
@@ -296,18 +438,25 @@ const messages: Message[] = [
   },
   ...(only === "forms"
     ? [
-        surface("forms", FORMS, FAILING_UI.id, {
-          who: "",
-          what: "",
-          window: false,
-          class: "economy",
-          guests: 2,
-          deck: "lower",
+        surface("forms", FORMS, {
+          catalogId: FAILING_UI.id,
+          dataModel: {
+            who: "",
+            what: "",
+            window: false,
+            class: "economy",
+            guests: 2,
+            deck: "lower",
+          },
         }),
       ]
-    : Object.entries(SURFACES)
-        .filter(([name]) => !only || name === only)
-        .map(([name, components]) => surface(name, components))),
+    : only === "refused"
+      ? REFUSED
+      : only === "legacy"
+        ? LEGACY
+        : Object.entries(SURFACES)
+            .filter(([name]) => !only || name === only)
+            .map(([name, components]) => surface(name, components))),
 ];
 
 const queryClient = new QueryClient({
@@ -324,7 +473,17 @@ if (root) {
         {...options}
         generativeUI={{
           ...options.generativeUI,
-          ui: forms ? FAILING_UI : OPENBOT_UI,
+          ui: forms || refused ? FAILING_UI : OPENBOT_UI,
+          // The surface that throws: its part throws, and so does the error state that replaces it.
+          ...(refused
+            ? {
+                errorBoundary: {
+                  fallback() {
+                    throw new Error("This error state cannot be drawn.");
+                  },
+                },
+              }
+            : {}),
         }}
       >
         <CopilotChatConfigurationProvider agentId="default" threadId={THREAD}>

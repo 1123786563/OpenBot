@@ -8,6 +8,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- **A generated form that could not be drawn whole is no longer sent.** If part of a form fails
+  to draw, because a control is bound to the wrong kind of value or because an update to it could
+  not be applied, the form says "Couldn't show this part of the reply." and cannot be sent, so the
+  Bot never receives an answer that is missing a field. The rest of the message, and the forms
+  beside it, still work. An interface that could not be drawn at all now shows its error in
+  OpenBot's error colours in both light and dark.
 - Settings live in one file per service, and there is no `.env` in the repository root any more:
   `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
   `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model

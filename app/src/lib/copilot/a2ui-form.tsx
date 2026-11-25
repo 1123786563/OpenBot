@@ -28,16 +28,10 @@ export const FormFailures = createContext({
 });
 
 /**
- * What CopilotKit draws in place of a generated component that threw (the `errorBoundary.fallback`
- * of the provider). Only that component is replaced: its neighbours in the interface, and the rest
- * of the message, stay as they were.
+ * The error state for a part of a reply that could not be drawn. It says what is missing and the
+ * one next step.
  */
-export function A2UINodeError() {
-  const { count } = useContext(FormFailures);
-  useEffect(() => {
-    count(1);
-    return () => count(-1);
-  }, [count]);
+function A2UIPartError() {
   return (
     <Banner
       role="alert"
@@ -48,16 +42,55 @@ export function A2UINodeError() {
   );
 }
 
+/**
+ * What CopilotKit draws in place of a generated component that threw (the `errorBoundary.fallback`
+ * of the provider). Only that component is replaced: its neighbours in the interface, and the rest
+ * of the message, stay as they were.
+ */
+export function A2UINodeError() {
+  const { count } = useContext(FormFailures);
+  useEffect(() => {
+    count(1);
+    return () => count(-1);
+  }, [count]);
+  return <A2UIPartError />;
+}
+
 export function A2UIForm(props: Control<"Form">) {
   const aria = useGenerativeUIAccessibility();
+  const element = useRef<HTMLFormElement>(null);
   const [failed, setFailed] = useState(0);
+  const [undrawn, setUndrawn] = useState(0);
   const count = useRef((_change: number) =>
     setFailed((total) => total + _change),
   ).current;
+  // A control bound to a value of the wrong type is swapped by the SDK for its own error node, and
+  // an update the SDK refused leaves a line in the card around the interface while the form keeps
+  // whatever drew before it. No boundary catches either, so nothing counts it in the context: the
+  // form reads both from the DOM. The stylesheet hides the SDK's node and this error stands in its
+  // place. Both can also go away again when a later update repairs the interface.
+  useEffect(() => {
+    const form = element.current;
+    if (!form) return;
+    const card = form.closest("[data-generative-ui-chat-surface]");
+    const countUndrawn = () =>
+      setUndrawn(
+        form.querySelectorAll("[data-generative-ui-error]").length +
+          (card?.querySelector(':scope > [role="alert"]') ? 1 : 0),
+      );
+    countUndrawn();
+    const observer = new MutationObserver(countUndrawn);
+    observer.observe(form, { childList: true, subtree: true });
+    // The line arrives after the form when the refusal comes from the browser.
+    if (card) observer.observe(card, { childList: true });
+    return () => observer.disconnect();
+  }, []);
+  const broken = failed > 0 || undrawn > 0;
   return (
-    <FormFailures.Provider value={{ failed: failed > 0, count }}>
+    <FormFailures.Provider value={{ failed: broken, count }}>
       <Stack
         {...aria}
+        ref={element}
         as="form"
         aria-label={props.label}
         direction="vertical"
@@ -67,9 +100,10 @@ export function A2UIForm(props: Control<"Form">) {
         style={{ minWidth: 0, ...layoutStyle(props) }}
         onSubmit={(event) => {
           event.preventDefault();
-          if (failed === 0) props.onSubmit?.({});
+          if (!broken) props.onSubmit?.({});
         }}
       >
+        {undrawn > 0 && <A2UIPartError />}
         {props.children}
       </Stack>
     </FormFailures.Provider>

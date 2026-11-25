@@ -289,6 +289,29 @@
   font-size: var(--text-xs);
 }
 
+/*
+ * An error node the SDK draws itself: for a part it refused outside a Form, or for a whole
+ * interface that threw. The SDK writes one fixed light scheme inline, which stays light in a dark
+ * conversation, so each rule here has to win. It takes the palette's error ink on its error tint,
+ * as the Astryx Banner does; anywhere outside the Astryx scope, the app's own error colour.
+ */
+.a2ui-surface [data-generative-ui-error] {
+  padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem) !important;
+  border: thin solid var(--color-border-error, var(--destructive)) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(
+    --color-error-muted,
+    color-mix(in oklch, var(--destructive) 10%, var(--background))
+  ) !important;
+  color: var(--color-on-error-muted, var(--destructive)) !important;
+  font-size: var(--text-sm) !important;
+}
+
+/* A part the SDK refused to draw inside a Form: the Form shows an Astryx error in its place. */
+.a2ui-surface form [data-generative-ui-error] {
+  display: none;
+}
+
 /* A boxed Card supplies its own border and padding. */
 [data-generative-ui-chat-surface]:not([data-a2ui-markdown-surface]):has(
   > .a2ui-surface
