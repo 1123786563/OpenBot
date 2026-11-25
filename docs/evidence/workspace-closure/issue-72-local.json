@@ -4,12 +4,7 @@
   "date": "2026-11-25",
   "result": "local verification passed; external acceptance pending",
   "implementation": "Existing integration/personal-saas implementation is already present; no duplicate port required.",
-  "history": [
-    "92fc03abd",
-    "13111fc10",
-    "3e00675fa",
-    "7e2feb6c0"
-  ],
+  "history": ["92fc03abd", "13111fc10", "3e00675fa", "7e2feb6c0"],
   "validation": {
     "command": "TEST_DATABASE_URL=<isolated pgvector PostgreSQL 17 database> bun test --no-env-file --env-file=.env.test server/tests/personal-saas-entry.integration.test.ts",
     "migration": "server/scripts/migrate.ts succeeded against isolated empty database",
