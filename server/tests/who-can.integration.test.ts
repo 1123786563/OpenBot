@@ -628,7 +628,9 @@ describe("POST /api/admin/enterprise/capabilities/batch", () => {
  */
 describe("a permission batch from a stale reading, and one the trail could not record", () => {
   /** Off for everybody: one switch, so what landed is unambiguous. */
-  const OFF: CapabilityChange[] = [
+  /** What a stored switch is, as the preview and the rows read it: `allowed` is never null. */
+  type StoredSwitch = Omit<CapabilityChange, "allowed"> & { allowed: boolean };
+  const OFF: StoredSwitch[] = [
     {
       scopeKind: "organization",
       scopeId: "",
@@ -637,7 +639,7 @@ describe("a permission batch from a stale reading, and one the trail could not r
     },
   ];
   /** A different draft from the same reading, touching another permission. */
-  const NO_CHECK_INS: CapabilityChange[] = [
+  const NO_CHECK_INS: StoredSwitch[] = [
     {
       scopeKind: "organization",
       scopeId: "",
