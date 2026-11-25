@@ -101,14 +101,22 @@ services:
     # `build` section away rather than trusting it.
     image: ${SERVER_IMAGE:-openbot-server:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
-    # The settings a host server reads with `--env-file=../.env`, so the two run the same deployment.
-    # Optional, because `docker compose config` and a first start both come before anything wrote it.
+    # The settings a host server reads with `--env-file`, so the two run the same deployment: the
+    # deployment's file for the database address, then the server's own and the agents'. There is no
+    # `.env` in the
+    # repository root. Optional, because `docker compose config` and a first start both come before
+    # anything wrote them.
     #
-    # Everything in `environment:` below wins over this file. That is what lets the addresses there
-    # name services on this network: the file says `127.0.0.1`, which inside this container is the
+    # Everything in `environment:` below wins over these files. That is what lets the addresses there
+    # name services on this network: the files say `127.0.0.1`, which inside this container is the
     # container.
     env_file:
-      - path: ./.env
+      - path: ./deploy/openbot/.env
+        required: false
+      - path: ./deploy/openbot/.env.server
+        required: false
+      # And the agents': the server picks each Bot's model from the settings the Bots run with.
+      - path: ./deploy/agents/.env
         required: false
     environment:
       DEPLOYMENT_ID:
@@ -120,7 +128,7 @@ services:
       OTEL_EXPORTER_OTLP_HEADERS:
       OTEL_EXPORTER_OTLP_LOGS_HEADERS:
       OPENBOT_OTEL_EXPORT:
-      # Both names, because `.env` carries `SERVER_PORT` for the host port, and the server refuses to
+      # Both names, because the deployment's file carries `SERVER_PORT` for the host port, and the server refuses to
       # start when the two disagree (`serverPort` in server/src/config.ts). Inside this container it
       # is always 3001; the host port is the mapping's business, below.
       PORT: "3001"
@@ -164,9 +172,10 @@ services:
       # The name this container reaches the person's machine by, which OpenBot Desktop writes. With
       # it, an agent a person registers on their own loopback (`http://127.0.0.1:8765/ag-ui`) is
       # dialled there rather than at this container. A container name only, so a host server reading
-      # the same `.env` never translates its own loopback.
+      # the same settings file never translates its own loopback.
       OPENBOT_THIS_MACHINE_HOST: ${OPENBOT_THIS_MACHINE_CONTAINER_HOST:-}
-      # The deployment's secrets, from the environment Compose runs in and then from `.env`, which
+      # The deployment's secrets, from the environment Compose runs in and then from the service
+      # files it is given with `--env-file`, which
       # Compose reads for these `${...}` and the host server reads for itself. OpenBot Desktop keeps
       # them out of that file and hands them to Compose in its environment, so they reach this
       # container only by being named here. The defaults are the ones every other service in this
@@ -185,8 +194,8 @@ services:
       # server alone, so it is named here and nowhere else in this file.
       OPENBOT_DESKTOP_HOST_TOKEN: ${OPENBOT_DESKTOP_HOST_TOKEN:-}
       # The app broker's settings. A Composio key the desktop provisioned at CopilotKit sign-in lives
-      # in its protected store, never in `.env`, so it reaches this container only by being named
-      # here. A key the person put in `.env` wins and arrives the same way.
+      # in its protected store, never in a settings file, so it reaches this container only by being
+      # named here. A key the person put in a settings file wins and arrives the same way.
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
       ARCADE_API_KEY: ${ARCADE_API_KEY:-}
       OPENBOT_BROKER_PROVIDER: ${OPENBOT_BROKER_PROVIDER:-}
@@ -252,8 +261,8 @@ services:
     image: ${SERVER_IMAGE:-openbot-server:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
     command: ["bun", "../worker/src/index.ts"]
-    # Database, dispatch and runtime log identity only. The worker does not get the deployment's
-    # .env or the audit export credentials.
+    # Database, dispatch and runtime log identity only. The worker does not get the server's settings
+    # file or the audit export credentials.
     environment:
       DEPLOYMENT_ID:
       OTEL_SERVICE_NAME:
@@ -304,7 +313,7 @@ services:
     # Per-Bot egress, in a file of its own because the names are not knowable here.
     #
     # `EGRESS_PROXY_<BOT>` is derived from the Bot's id, so there is no fixed list to write out the
-    # way COMPUTER_TOKEN is. Not `.env`: that holds the deployment's secrets, and this container
+    # way COMPUTER_TOKEN is. Not the service files under `deploy/`: those hold the deployment's secrets, and this container
     # drives a browser and runs a Bot's shell, so it is given what it needs and not the rest.
     # Optional, because going out directly is the ordinary case and must still start.
     env_file:
@@ -313,11 +322,11 @@ services:
     environment:
       # The secret every caller must present. The container refuses to start without it.
       #
-      # The default matches the one scripts/start.sh applies when .env leaves this blank, which
-      # .env.example does. Without it the two paths disagree: the script exports a value and brings
+      # The default matches the one scripts/start.sh applies when the settings files leave this blank,
+      # which their examples do. Without it the two paths disagree: the script exports a value and brings
       # the stack up working, while a plain `docker compose up -d` -- which this project's own
       # shutdown notes tell you to use -- hands the container an empty string instead. Reaches only
-      # a loopback-bound port; a deployment sets a real value in .env.
+      # a loopback-bound port; a deployment sets a real value in its settings.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-openbot-dev-computer-token}
       # Headed by default: full Chromium on the container's own X server, behind the same streamed
       # screen, which bot checks such as Cloudflare's challenge far less than headless. `headless`
@@ -535,7 +544,8 @@ services:
   # The harness somebody picked during setup, whichever one it is.
   #
   # ONE SERVICE RATHER THAN TWELVE, because a picked harness is a choice and not twelve branches in
-  # this file. The image and the port come from `.env`, which the shell writes from the pick, and
+  # this file. The image and the port come from `deploy/openbot/.env`, which the desktop shell
+  # writes from the pick, and
   # both are facts about the image: each harness fixes its own port in its own Dockerfile.
   #
   # Behind a profile so a deployment that has picked nothing does not try to start it.
@@ -545,7 +555,7 @@ services:
   # and a blank image there fails `compose config` for the whole project with "has neither
   # an image nor a build context specified". The stand-in is the one-shot image `spire-init` already
   # uses: it is never pulled or started while the profile is off, and the desktop shell only turns
-  # the profile on after writing the picked image to `.env`.
+  # the profile on after writing the picked image to that file.
   #
   # No `build:`, so `pull_policy` cannot be `build` here as it is elsewhere: this image is only ever
   # published, never built from this tree.

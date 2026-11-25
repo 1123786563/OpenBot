@@ -11,7 +11,7 @@
 | CopilotKit Intelligence | `INTELLIGENCE_API_URL`、`INTELLIGENCE_GATEWAY_WS_URL`、`INTELLIGENCE_API_KEY` |
 | Composio、Corsair Cloud | `COMPOSIO_API_KEY`、`CORSAIR_CLOUD_*`，按连接器注册第三方应用 |
 | 转写和实时语音 | `TRANSCRIPTION_*`、`VOICE_*` |
-| Twilio、Expo、AWS SES/SNS、OpenTag | 短信、移动推送、入站邮件和语音 Bot 按需配置，见根目录 [.env.example](../.env.example) |
+| Twilio、Expo、AWS SES/SNS、OpenTag | 短信、移动推送、入站邮件和语音 Bot 按需配置，见 [API 环境样例](openbot/.env.server.example) |
 | Webhook、SCIM、渠道应用 | 依对应平台配置回调地址、连接器凭据或目录令牌，见 [OpenBot 配置说明](../docs/configuration.md) |
 | WeKnora 托管 Embedding | 使用实现 OpenBot 计费协议的 WeKnora Worker，填写 `OPENBOT_WEKNORA_*`。托管额度还需要与发布版本匹配的计量器和凭据。见 [WeKnora 接入](../docs/billing-weknora-live.md) 和 [试用配置](../docs/billing-test-credit-pilot.md) |
 
@@ -184,7 +184,7 @@ docker compose ps
 
 ## OpenBot 主应用
 
-服务器部署目录为 `/opt/openbot/deploy/openbot`，Compose 项目名为 `openbot-server`。首次启动先运行 `migrate`，迁移成功后启动 API、Web 和 Worker。数据库使用专用的 `openbot_prod`，可由本仓库 Compose 或已有的 PostgreSQL 实例承载。服务配置保存在服务器的 `.env` 和 `.env.server`。新部署从 [API 环境样例](openbot/server.env.example) 创建 `.env.server`。完整参数见[应用配置项](../.env.example)。
+服务器部署目录为 `/opt/openbot/deploy/openbot`，Compose 项目名为 `openbot-server`。首次启动先运行 `migrate`，迁移成功后启动 API、Web 和 Worker。数据库使用专用的 `openbot_prod`，可由本仓库 Compose 或已有的 PostgreSQL 实例承载。服务配置按服务分文件保存在服务器的 `.env`、`.env.server` 和 `.env.worker`（仓库根目录没有 `.env`）。新部署从 [API 环境样例](openbot/.env.server.example) 创建 `.env.server`，从 [Worker 环境样例](openbot/.env.worker.example) 创建 `.env.worker`。完整参数见[应用配置项](../docs/configuration.md)。
 
 ```sh
 cd /opt/openbot/deploy/openbot

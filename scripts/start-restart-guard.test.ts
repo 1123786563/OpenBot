@@ -22,8 +22,8 @@ async function writeExecutable(path: string, contents: string) {
  * supported one and the one the docs name; `sh` is the one somebody reaches for out of habit, and
  * what it produced was exit 1 with no output at all.
  *
- * `omitFromEnv` IS THE OTHER HALF. Every key below has a default in the script, so a `.env` without
- * one is an ordinary `.env` rather than a broken one — `.env.example` does not list `APP_PORT` at
+ * `omitFromEnv` IS THE OTHER HALF. Every key below has a default in the script, so settings files
+ * without one are ordinary ones rather than broken — the examples do not list `APP_PORT` at
  * all.
  */
 type Run = {
@@ -95,7 +95,40 @@ async function runStartWithStaleServerProbe(
   environment.push(
     ...Object.entries(settings).map(([key, value]) => `${key}=${value}`),
   );
-  await writeFile(join(directory, ".env"), `${environment.join("\n")}\n`);
+  // One settings file per service, as the script requires: the deployment's holds the ports and the
+  // database, the agents' the tokens, the server's the rest.
+  const ownedBy = (keys: readonly string[]) =>
+    environment.filter((line) =>
+      keys.some((key) => line.startsWith(`${key}=`)),
+    );
+  const DEPLOYMENT = [
+    "APP_PORT",
+    "SERVER_PORT",
+    "COMPUTER_PORT",
+    "BOT_PORT",
+    "LANGGRAPH_PORT",
+    "SUPERVISOR_PORT",
+    "DATABASE_URL",
+    "WORKER_SHARED_SECRET",
+  ];
+  const AGENTS = [
+    "SUPERVISOR_TOKEN",
+    "COMPUTER_TOKEN",
+    "MANAGED_AGENT_TOKEN",
+    "AGENT_TOOL_TOKEN",
+  ];
+  for (const folder of ["deploy/openbot", "deploy/agents"])
+    await mkdir(join(directory, folder), { recursive: true });
+  const settingsFile = (file: string, lines: string[]) =>
+    writeFile(join(directory, file), `${lines.join("\n")}\n`);
+  await settingsFile("deploy/openbot/.env", ownedBy(DEPLOYMENT));
+  await settingsFile("deploy/openbot/.env.worker", []);
+  await settingsFile("deploy/openbot/.env.server", [
+    ...environment.filter(
+      (line) => !ownedBy([...DEPLOYMENT, ...AGENTS]).includes(line),
+    ),
+  ]);
+  await settingsFile("deploy/agents/.env", ownedBy(AGENTS));
   await writeFile(
     join(scripts, "start.sh"),
     await readFile("scripts/start.sh"),
@@ -124,7 +157,8 @@ async function runStartWithStaleServerProbe(
 import { writeFile, readFile } from "node:fs/promises";
 import { setupComposio } from ${JSON.stringify(resolve("scripts/setup-composio.ts"))};
 const result = await setupComposio({ runCli: async (args) => {
-  await writeFile(".env", (await readFile(".env", "utf8")) + "\\nCOMPOSIO_API_KEY=synthetic-project-key\\n");
+  const file = args[args.indexOf("--env-path") + 1];
+  await writeFile(file, (await readFile(file, "utf8")) + "\\nCOMPOSIO_API_KEY=synthetic-project-key\\n");
   return { exitCode: 0, stdout: JSON.stringify({type: "completed", installation_id: args[4], project_id: "project-synthetic", environment_file_written: true, reused: false}) };
 } });
 console.log(result === "configured" ? "COMPOSIO-CONFIGURED" : "COMPOSIO-PRESERVED");
@@ -216,7 +250,7 @@ exit 0
   // The Learning container check answers with one line, which start.sh relays.
   await writeExecutable(
     join(fakeBin, "bun"),
-    '#!/usr/bin/env bash\nif [ "$1" = run ] && [ "$2" = - ]; then\n  if [ -n "$BROKER_ENVIRONMENT_PROBE" ]; then "$REAL_BUN" --env-file=.env scripts/probe-broker-environment.ts; fi\n  exec "$REAL_BUN" "$@"\nfi\nif [ "$1" = scripts/setup-learning.ts ]; then echo "noise"; echo "LEARNING-CHECK $*"; fi\nif [ "$1" = scripts/setup-composio.ts ]; then\n  if [ "$TEST_COMPOSIO_SETUP" = unexpected ]; then echo "COMPOSIO-SETUP-RAN"; fi\n  if [ "$TEST_COMPOSIO_SETUP" = real-helper ] || [ "$TEST_COMPOSIO_SETUP" = real-cli ]; then exec "$REAL_BUN" "$@"; fi\n  if [ "$TEST_COMPOSIO_SETUP" = failed ]; then echo "Composio setup failed. Sign in and retry." >&2; exit 1; fi\n  if [ "$TEST_COMPOSIO_SETUP" = configured ]; then printf "COMPOSIO_API_KEY=synthetic-project-key\\n" >> .env; echo "COMPOSIO-CONFIGURED"; fi\nfi\nexit 0\n',
+    '#!/usr/bin/env bash\nif [ "$1" = run ] && [ "$2" = - ]; then\n  if [ -n "$BROKER_ENVIRONMENT_PROBE" ]; then "$REAL_BUN" --env-file=deploy/openbot/.env --env-file=deploy/openbot/.env.server scripts/probe-broker-environment.ts; fi\n  exec "$REAL_BUN" "$@"\nfi\nif [ "$1" = scripts/setup-learning.ts ]; then echo "noise"; echo "LEARNING-CHECK $*"; fi\nif [ "$1" = scripts/setup-composio.ts ]; then\n  if [ "$TEST_COMPOSIO_SETUP" = unexpected ]; then echo "COMPOSIO-SETUP-RAN"; fi\n  if [ "$TEST_COMPOSIO_SETUP" = real-helper ] || [ "$TEST_COMPOSIO_SETUP" = real-cli ]; then exec "$REAL_BUN" "$@"; fi\n  if [ "$TEST_COMPOSIO_SETUP" = failed ]; then echo "Composio setup failed. Sign in and retry." >&2; exit 1; fi\n  if [ "$TEST_COMPOSIO_SETUP" = configured ]; then printf "COMPOSIO_API_KEY=synthetic-project-key\\n" >> deploy/openbot/.env.server; echo "COMPOSIO-CONFIGURED"; fi\nfi\nexit 0\n',
   );
   // What `python3` is on a stock Windows machine: the Microsoft Store alias, which runs nothing. A
   // script that still needed it would stop at the health check in every test in this file.
@@ -259,22 +293,28 @@ exit 0
     const pkillLog = await Bun.file(logPath)
       .text()
       .catch(() => "");
-    const dockerLog = await Bun.file(dockerLogPath)
+    // Compose is given the four settings files by path, which differ per run; the services it is
+    // asked for are what these tests are about.
+    const dockerLogRaw = await Bun.file(dockerLogPath)
       .text()
       .catch(() => "");
+    const dockerLog = dockerLogRaw.replaceAll(/--env-file \S+ /g, "");
     const curlLog = await Bun.file(curlLogPath)
       .text()
       .catch(() => "");
     const brokerEnvironment = await Bun.file(brokerEnvironmentPath)
       .text()
       .catch(() => "");
-    const envFile = await Bun.file(join(directory, ".env")).text();
+    const envFile = await Bun.file(
+      join(directory, "deploy/openbot/.env.server"),
+    ).text();
     return {
       exitCode,
       stdout,
       stderr,
       pkillLog,
       dockerLog,
+      dockerLogRaw,
       curlLog,
       brokerEnvironment,
       envFile,
@@ -300,6 +340,27 @@ describe("start.sh server restart guard", () => {
         "bun --env-file=../.env src/production-entry.ts",
       );
       expect(result.pkillLog).toContain("bun --env-file=../.env src/index.ts");
+      // And the ones this version starts.
+      expect(result.pkillLog).toContain(
+        "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env src/production-entry.ts",
+      );
+      expect(result.pkillLog).toContain(
+        "--env-file=../deploy/infisical/.env.openbot-client --preload ./scripts/infisical-env.ts --watch src/index.ts",
+      );
+      // No `.env` in the repository root: Compose is given each service's file, never that one.
+      // Each of the three Compose calls is given the same four, so they are compared once.
+      expect([
+        ...new Set(
+          [...result.dockerLogRaw.matchAll(/--env-file (\S+)/g)].map((match) =>
+            match[1]?.split("/").slice(-2).join("/"),
+          ),
+        ),
+      ]).toEqual([
+        "openbot/.env.worker",
+        "agents/.env",
+        "openbot/.env.server",
+        "openbot/.env",
+      ]);
     },
   );
 });
@@ -413,7 +474,7 @@ describe("start.sh automatic Composio setup", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(
-      "Composio: project key configured in .env.",
+      "Composio: project key configured in deploy/openbot/.env.server.",
     );
     expect(result.envFile).toContain("COMPOSIO_API_KEY=synthetic-cli-key");
     expect(result.stdout).toContain(
@@ -474,7 +535,7 @@ describe("start.sh under the wrong shell", () => {
   });
 });
 
-describe("start.sh settings with no line in .env", () => {
+describe("start.sh settings with no line in any file", () => {
   /**
    * A KEY THIS SCRIPT HAS A DEFAULT FOR IS ALLOWED TO BE ABSENT, WHICH IS WHAT THE DEFAULT IS FOR.
    *
@@ -504,7 +565,7 @@ describe("start.sh settings with no line in .env", () => {
    * probe for `http://localhost:3010/` and nothing else, so a fallback that produced any other port
    * fails the run instead of quietly reporting a different number.
    */
-  test("a .env with no APP_PORT still starts, on the default port", async () => {
+  test("files with no APP_PORT still start, on the default port", async () => {
     const result = await runStartWithStaleServerProbe(401, {
       omitFromEnv: ["APP_PORT"],
     });
@@ -528,7 +589,7 @@ describe("start.sh one computer each", () => {
    * THE SUPERVISOR IS WHAT GIVES EACH BOT ITS OWN COMPUTER, so its absence from the services handed
    * to `docker compose up` is the observable half; the shared computer stays.
    */
-  test("false in .env starts no supervisor", async () => {
+  test("false in the server's file starts no supervisor", async () => {
     const result = await runStartWithStaleServerProbe(401, {
       settings: { OPENBOT_ONE_COMPUTER_EACH: "false" },
     });
@@ -566,7 +627,7 @@ describe("start.sh one computer each", () => {
 });
 
 describe("start.sh selected provider services", () => {
-  test.each([".env", "process environment"])(
+  test.each(["settings file", "process environment"])(
     "an Anthropic-only %s selection starts the managed Bot without the OpenAI-only sample",
     async (source) => {
       const selected = {
@@ -574,7 +635,8 @@ describe("start.sh selected provider services", () => {
         ANTHROPIC_API_KEY: "synthetic-anthropic-key",
       };
       const result = await runStartWithStaleServerProbe(401, {
-        settings: source === ".env" ? selected : { BOT_PROVIDER: "openai" },
+        settings:
+          source === "settings file" ? selected : { BOT_PROVIDER: "openai" },
         processEnvironment: source === "process environment" ? selected : {},
         unavailableHealthPorts: [4200],
       });

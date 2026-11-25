@@ -7,9 +7,9 @@ Open **Admin → Automatic learning** to choose which Bots contribute completed 
 
 Out of the box, OpenBot assigns that container itself: when nothing is saved in Admin and no container is named in the environment, the server makes its Intelligence project's `openbot` container the default as soon as that container exists. See [Automatic assignment](#automatic-assignment).
 
-OpenBot Desktop runs a local Intelligence of its own and names no container in `.env`, so the server creates and assigns that Intelligence's `openbot` container itself (see [Automatic assignment](#automatic-assignment)). An installation an earlier Desktop set up against managed or self-hosted Intelligence is not reopened against it. The local Learning agent thinks with the person's own model: their OpenAI or Anthropic key, or, for a Claude or ChatGPT plan, the OpenBot server's Learning endpoint (`server/src/learning/model-endpoint.ts`), which answers each call on that plan and accepts only a secret Desktop mints once per installation. With any other model sign-in Learning has no model, and Settings → Learning says so. Learning never gets a model through CopilotKit.
+OpenBot Desktop runs a local Intelligence of its own and names no container in its settings, so the server creates and assigns that Intelligence's `openbot` container itself (see [Automatic assignment](#automatic-assignment)). An installation an earlier Desktop set up against managed or self-hosted Intelligence is not reopened against it. The local Learning agent thinks with the person's own model: their OpenAI or Anthropic key, or, for a Claude or ChatGPT plan, the OpenBot server's Learning endpoint (`server/src/learning/model-endpoint.ts`), which answers each call on that plan and accepts only a secret Desktop mints once per installation. With any other model sign-in Learning has no model, and Settings → Learning says so. Learning never gets a model through CopilotKit.
 
-For a source checkout connecting to an existing managed Intelligence project, copy `.env.example` to `.env`, then run from the OpenBot root:
+For a source checkout connecting to an existing managed Intelligence project, copy each `.example` under `deploy/openbot` and `deploy/agents` to the file beside it, then run from the OpenBot root:
 
 ```sh
 bun install

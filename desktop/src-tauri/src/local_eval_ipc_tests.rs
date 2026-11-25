@@ -36,7 +36,13 @@ mod local_eval_ipc {
             .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
             .collect();
         let build = std::env::current_exe().unwrap();
-        let cache = build.parent().unwrap().parent().unwrap().join("intelligence-cli").join(name);
+        let cache = build
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("intelligence-cli")
+            .join(name);
         let entry = cache.join("package").join("index.js");
         if entry.is_file() {
             return entry;
@@ -207,7 +213,11 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
             .args(["-e", &script])
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let minted: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         (
             minted["token"].as_str().unwrap().to_owned(),
@@ -219,9 +229,14 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
     /// command's answer with serde, as here.
     fn status_answer(root: &Path) -> serde_json::Value {
         let stack = local_eval::StackId::parse(STACK).unwrap();
-        local_eval_answer(root, "local-update-status", local_eval::Action::Status, &stack)
-            .map(|report| serde_json::to_value(report).unwrap())
-            .unwrap_or_else(|failure| panic!("status failed: {failure:?}"))
+        local_eval_answer(
+            root,
+            "local-update-status",
+            local_eval::Action::Status,
+            &stack,
+        )
+        .map(|report| serde_json::to_value(report).unwrap())
+        .unwrap_or_else(|failure| panic!("status failed: {failure:?}"))
     }
 
     /**
@@ -261,15 +276,25 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
         let node_running = Arc::new(AtomicBool::new(true));
         let healthy = api_healthy.clone();
         let api = serve(move |path| match path {
-            "/api/health" if healthy.load(Ordering::SeqCst) => ("200 OK", r#"{"status":"ok"}"#.into()),
-            "/api/health" => ("503 Service Unavailable", r#"{"status":"unavailable"}"#.into()),
+            "/api/health" if healthy.load(Ordering::SeqCst) => {
+                ("200 OK", r#"{"status":"ok"}"#.into())
+            }
+            "/api/health" => (
+                "503 Service Unavailable",
+                r#"{"status":"unavailable"}"#.into(),
+            ),
             _ => ("404 Not Found", "{}".into()),
         });
         let gateway = serve(|path| match path {
             "/health/ready" => ("200 OK", r#"{"status":"ready"}"#.into()),
             _ => ("404 Not Found", "{}".into()),
         });
-        let dashboard = serve(|_| ("200 OK", "<!doctype html><title>Intelligence</title>".into()));
+        let dashboard = serve(|_| {
+            (
+                "200 OK",
+                "<!doctype html><title>Intelligence</title>".into(),
+            )
+        });
         // The engine API, in Docker Desktop's (or on Linux, Docker Engine's) shape.
         let running = node_running.clone();
         let engine_api = serve(move |path| {
@@ -381,11 +406,9 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
         std::env::set_var("XDG_CONFIG_HOME", home.join(".config"));
         std::env::set_var(
             "PATH",
-            std::env::join_paths(
-                std::iter::once(bin.clone()).chain(std::env::split_paths(
-                    &std::env::var_os("PATH").unwrap_or_default(),
-                )),
-            )
+            std::env::join_paths(std::iter::once(bin.clone()).chain(std::env::split_paths(
+                &std::env::var_os("PATH").unwrap_or_default(),
+            )))
             .unwrap(),
         );
         std::env::set_var("DOCKER_HOST", format!("tcp://127.0.0.1:{engine_api}"));
@@ -401,7 +424,10 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
             for ((field, port), (_, fixed)) in ports.iter().zip(FIXED) {
                 let url = &mut answer["stack"]["urls"][field];
                 let said = url.as_str().unwrap().to_owned();
-                assert!(said.ends_with(&format!(":{port}")), "{label}: {field} is {said}");
+                assert!(
+                    said.ends_with(&format!(":{port}")),
+                    "{label}: {field} is {said}"
+                );
                 *url = serde_json::json!(said.replace(&format!(":{port}"), &format!(":{fixed}")));
             }
             answer
@@ -459,7 +485,20 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
         let home = root.join("home");
         let installation = home.join("OpenBot");
         std::fs::create_dir_all(installation.join(".copilotkit")).unwrap();
-        std::fs::write(installation.join(".env"), "SERVER_PORT=3001\n").unwrap();
+        // An installation Start has laid out: its port in the deployment's file, and no `.env` in
+        // the root until the CLI writes one.
+        std::fs::create_dir_all(
+            installation
+                .join(openbot_env::SETTINGS_FILES[0])
+                .parent()
+                .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            installation.join(openbot_env::SETTINGS_FILES[0]),
+            "SERVER_PORT=3001\n",
+        )
+        .unwrap();
 
         // The CLI's own record of a ready stack for the installation, as `local setup` leaves it,
         // with its private files (synthetic) and the installation's reference to it.
@@ -556,7 +595,18 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
             ))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
+        // The `.env` in the root is the Intelligence CLI's own file: OpenBot reads what it wrote and
+        // takes the key out; Start's own services read the settings files.
         let env_file = installation.join(".env");
+        let everything = || {
+            let mut text = String::new();
+            for file in openbot_env::SETTINGS_FILES {
+                text.push_str(
+                    &std::fs::read_to_string(installation.join(file)).unwrap_or_default(),
+                );
+            }
+            text
+        };
         let connect = |label: &str| {
             tauri::async_runtime::block_on(connect_local_eval(
                 app.handle().clone(),
@@ -568,7 +618,7 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
         // What Start takes: the key from the credential store, and the stack's own addresses at
         // 127.0.0.1, each once, with no key and no `localhost` left in the file.
         let start_takes_the_connection = |label: &str| {
-            let env = std::fs::read_to_string(&env_file).unwrap();
+            let env = everything();
             for line in [
                 "INTELLIGENCE_API_URL=http://127.0.0.1:51796",
                 "INTELLIGENCE_GATEWAY_WS_URL=ws://127.0.0.1:51797",
@@ -582,7 +632,11 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
             }
             assert!(!env.contains("localhost"), "{label}:\n{env}");
             assert!(!env.contains("CPK_INTELLIGENCE_API_KEY"), "{label}:\n{env}");
-            assert!(local_eval_state::read(&installation, None).unwrap().connected);
+            assert!(
+                local_eval_state::read(&installation, None)
+                    .unwrap()
+                    .connected
+            );
             let kept = intelligence_key_for_start(&installation, |root, name| {
                 Ok(openbot_desktop_lib::vault::recall(root, name)?.unwrap_or_default())
             })
@@ -610,7 +664,7 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
             .map(|(name, value)| (name.to_owned(), value.to_owned()))
             .collect(),
         );
-        openbot_env::write(&env_file, &settings, &purged).unwrap();
+        openbot_env::write_settings(&installation, &settings, &purged).unwrap();
 
         // Retry, Back and forward, or a reinstall: the same folder connected again.
         for label in ["again", "and again"] {
@@ -627,7 +681,7 @@ process.stdout.write(JSON.stringify({{ token, keys: JSON.stringify({{ [kid]: key
         // Another port is a change somebody made, not the connection: still refused, file kept.
         let changed = std::fs::read_to_string(&env_file)
             .unwrap()
-            .replace("http://127.0.0.1:51796", "http://127.0.0.1:9999");
+            .replace("localhost:51796", "localhost:9999");
         std::fs::write(&env_file, &changed).unwrap();
         let connection = connect("changed");
         assert_eq!(

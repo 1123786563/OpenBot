@@ -4,9 +4,25 @@ OpenBot is configured with environment variables and a tenant package. The API s
 
 ## Environment setup
 
+Settings live in one file per service, and there is no `.env` in the repository root:
+
+| File | What it holds |
+| --- | --- |
+| `deploy/openbot/.env` | The database address, the ports, and the secret the server and the worker share. |
+| `deploy/openbot/.env.server` | Everything only the API server reads. |
+| `deploy/openbot/.env.worker` | Everything only the worker reads. The worker reads `.env` and `.env.server` as well, since it runs the server's billing and sign-in code. |
+| `deploy/agents/.env` | The Agent containers' model address and key, model names and tokens. The server reads it too, because it picks each Bot's model. |
+
 ```sh
-cp .env.example .env
+cp deploy/openbot/.env.example deploy/openbot/.env
+cp deploy/openbot/.env.server.example deploy/openbot/.env.server
+cp deploy/openbot/.env.worker.example deploy/openbot/.env.worker
+cp deploy/agents/.env.example deploy/agents/.env
 ```
+
+A checkout that still has a `.env` in the repository root is not read from there any more: copy
+each of its settings into the file whose `.example` lists it (anything the `.example` files do not
+name goes in `.env.server`), then delete it.
 
 Fill the required values, then run:
 
@@ -112,7 +128,7 @@ libraries from a CDN; deployments that prohibit that browser traffic can disable
 **`AGENT_STALL_TIMEOUT_MS`** watches for the failure a Bot has that nothing else in the trail can
 show: a stream that stops producing anything. Every other audit row is something that happened, and
 this one is the absence of anything happening, which leaves no trace of its own. Ending the turn
-writes `agent.stream_stalled`. Unset or `0` switches it off and nothing is watched. `.env.example`
+writes `agent.stream_stalled`. Unset or `0` switches it off and nothing is watched. The server's example
 ships `60000`, so a new clone has it on and an upgraded deployment does not acquire it unasked.
 
 **`AGENT_TOOL_TOKEN`** exists because a framework Bot runs its own loop in its own process and still
@@ -123,7 +139,7 @@ rather than quietly allowed.
 That default is right for a deployment and wrong for a laptop, where it meant every granted MCP tool
 was refused before it reached the grant, the boundary or the trail — and a refusal at that point is
 not visible in the transcript, so a Bot reported no results rather than an error. `scripts/start.sh`
-therefore generates one and writes it to `.env`, as it already does for `MANAGED_AGENT_TOKEN`. A
+therefore generates one and writes it to `deploy/agents/.env`, as it already does for `MANAGED_AGENT_TOKEN`. A
 value already set is kept.
 
 It is one of a pair, and they are not interchangeable: `MANAGED_AGENT_TOKEN` is the server proving
@@ -144,7 +160,7 @@ reachable like any other — but because this is a dev-only default on a machine
 the endpoint it guards accepts nothing but an unguessable `routine_run_<uuid>` id: the server
 re-reads the routine, the owner and the channel from its own tables rather than trusting anything
 else the caller says, so a well-known value from a public repository gates nothing sensitive here.
-`AGENT_TOOL_TOKEN` is generated fresh and written to `.env` precisely because it is not that: it is
+`AGENT_TOOL_TOKEN` is generated fresh and written to `deploy/agents/.env` precisely because it is not that: it is
 copied into every Bot container, and a framework Bot holding it may be running on a machine of its
 own, so a fixed default there would be no boundary at all. Production deployments must set a real
 `WORKER_SHARED_SECRET`; the Helm chart generates one and gives it to both the server and its routines
@@ -413,13 +429,13 @@ policies apply. See [OpenAI WebRTC](https://developers.openai.com/api/docs/guide
 [personal edition](personal-edition.md#openbot-desktop), so it writes `OPENBOT_EDITION=personal`,
 `TENANT_PACKAGE_DIR=../examples/personal` and `COMPUTER_PERSON_ID=personal`, and writes
 `COMPUTER_SUPERVISOR_URL` and `COMPUTER_SUPERVISOR_CONTAINER_URL` empty. It also writes these into
-its own deployment's `.env` and owns their values: `OPENBOT_MODEL_OAUTH_FILE`, `CHATGPT_AUTH_FILE`,
+its own deployment's settings files and owns their values: `OPENBOT_MODEL_OAUTH_FILE`, `CHATGPT_AUTH_FILE`,
 `CLAUDE_CODE_OAUTH_TOKEN`, `COMPUTER_LOOPBACK_RELAYS` (see the computer table below), and the
 `PICKED_HARNESS_*` names that describe the Bot picked during setup
 (`PICKED_HARNESS_IMAGE`, `PICKED_HARNESS_URL`, `PICKED_HARNESS_PORT` and the rest). The server reads
 `PICKED_HARNESS_IMAGE` and `PICKED_HARNESS_URL` to hand that Bot `MANAGED_AGENT_TOKEN`, and refuses to
 start when they are set without it. It hands the server `OPENBOT_DESKTOP_HOST_TOKEN` too, minted on every
-Start and never written to `.env`: its folder worker answers the server with it, and without it the
+Start and never written to any settings file: its folder worker answers the server with it, and without it the
 server has no desktop host, so Settings → Computer says folders need OpenBot Desktop (see
 [Folders on this computer](personal-edition.md#folders-on-this-computer)). When a model provider is connected by OAuth rather than by key, the
 desktop also points `OPENAI_BASE_URL` at OpenBot's own loopback route and sets `OPENAI_API_KEY` to a
@@ -429,7 +445,7 @@ in that mode. A server you configure yourself is unaffected by all of this.
 **With no provider at all, `OPENBOT_SINGLE_USER=true` is required.** A deployment that configures
 nothing to sign anybody in and does not say that was deliberate refuses to start, naming what to
 configure, because a public URL where every visitor is an administrator fails silently. `NODE_ENV`
-does not enter into it. `.env.example` ships the line switched on, so a clone runs with no
+does not enter into it. The server's example ships the line switched on, so a clone runs with no
 configuration at all. `OPENBOT_DEV_NO_AUTH=true`, the flag's former name, is still honoured.
 
 **But not on a public address.** The flag says you meant an open deployment; it does not say who can
@@ -812,7 +828,7 @@ pause procedure, see the [OpenObserve runbook](openobserve-runbook.md).
 
 ### OpenObserve link in Admin Audit
 
-Set `OPENBOT_OPENOBSERVE_URL` in the server environment (or in the root `.env` for
+Set `OPENBOT_OPENOBSERVE_URL` in the server environment (or in `deploy/openbot/.env.server` for
 Compose and source installs) to show **Open in OpenObserve** in Admin → Audit.
 Use an absolute HTTP(S) URL without credentials, a query string, or a fragment.
 The link is hidden when the value is missing or invalid. OpenObserve or its
@@ -1022,8 +1038,8 @@ bun install --frozen-lockfile
 bun install --cwd agent-computer --frozen-lockfile
 ```
 
-Use the same existing `COMPUTER_TOKEN` for the API and helper. It can be set in the checkout's `.env`
-(Bun loads it) or supplied securely in each process environment; the helper never prints it. Set the
+Use the same existing `COMPUTER_TOKEN` for the API and helper. It can be set in `deploy/agents/.env`
+or supplied securely in each process environment; the helper never prints it. Set the
 following API configuration and clear both supervisor selectors, including any inherited process
 environment values, because either selector takes precedence over the shared URL:
 
@@ -1110,7 +1126,7 @@ pass. Naming a secret or a credentialed proxy there is an operator's decision; t
 
 ### Per-Bot egress
 
-The two egress variables live in `egress.env` at the repository root, not in `.env`. `EGRESS_PROXY_<BOT_ID>`
+The two egress variables live in `egress.env` at the repository root, not in a settings file under `deploy/`. `EGRESS_PROXY_<BOT_ID>`
 is derived from a Bot's id, so there is no fixed set of names for Compose to list the way it lists
 every other variable, and Compose passes a container only the names it is given. A file of its own
 rather than `.env` because that one holds the deployment's secrets and neither the browser container

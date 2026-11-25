@@ -68,11 +68,15 @@ function announceServerPort(port: number): Plugin {
  * app rather than the dev server gets no `/api` proxy unless it is repeated here. A desktop install
  * serves the build, and without this every call it makes returns the app's own HTML.
  */
-const appPort = listenPort(process.env.APP_PORT, 3010);
+// The deployment's settings file holds the ports; the environment still wins over it, as Vite's
+// `loadEnv` reads them in that order.
+const settingsDir = path.resolve(__dirname, "../deploy/openbot");
+const deployment = loadEnv("", settingsDir, "");
+const appPort = listenPort(deployment.APP_PORT, 3010);
 if (!appPort.ok) {
   throw new Error(appPort.reason.replace(/^PORT /, "APP_PORT "));
 }
-const apiPort = listenPort(process.env.SERVER_PORT, 3001);
+const apiPort = listenPort(deployment.SERVER_PORT, 3001);
 if (!apiPort.ok) {
   throw new Error(apiPort.reason.replace(/^PORT /, "SERVER_PORT "));
 }
@@ -83,8 +87,8 @@ if (!apiPort.ok) {
  * The dev server passes `/api` to the server from this machine, and a single-user server admits a
  * caller from this machine as its administrator, so a dev server anybody on the network could open
  * handed them that. Refused here rather than by listening on one loopback, because Vite takes one
- * address and both loopbacks have to answer (see `serving`). Read from the root `.env` as well as the
- * environment, as the server reads it.
+ * address and both loopbacks have to answer (see `serving`). Read from the deployment's and the
+ * server's settings files under `deploy/openbot` as well as the environment, as the server reads them.
  */
 export function thisMachineOnly(
   environment: Record<string, string | undefined>,
@@ -211,7 +215,9 @@ export const routeBuildRollupOutputOptions = {
 
 export default defineConfig({
   plugins: [
-    thisMachineOnly(loadEnv("", path.resolve(__dirname, ".."), "")),
+    // Mode "server" makes Vite read `.env` and `.env.server` side by side: the two files the server is
+    // started with.
+    thisMachineOnly(loadEnv("server", settingsDir, "")),
     announceServerPort(apiPort.port),
     tanstackRouter({
       autoCodeSplitting: true,

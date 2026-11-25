@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -11,17 +11,30 @@ import { join, resolve } from "node:path";
  */
 
 const preload = resolve(import.meta.dir, "../scripts/infisical-env.ts");
-const directory = mkdtempSync(join(tmpdir(), "infisical-env-"));
+// Named the way the real ones are: the preload knows a file by the end of its path.
+const directory = join(
+  mkdtempSync(join(tmpdir(), "infisical-env-")),
+  "deploy/openbot",
+);
+mkdirSync(directory, { recursive: true });
 const dotEnv = join(directory, ".env");
+const serverEnv = join(directory, ".env.server");
 const CLIENT_SECRET = "secret";
 
-const SECRETS = [
-  { secretKey: "FROM_DOT_ENV", secretValue: "from-infisical" },
-  { secretKey: "FROM_SHELL", secretValue: "from-infisical" },
-  { secretKey: "ONLY_INFISICAL", secretValue: "added" },
-  { secretKey: "db.url", secretValue: "not-a-variable" },
-  { secretKey: "EMPTY", secretValue: "" },
-];
+// One Infisical folder per service, as the preload reads them.
+const SECRETS = {
+  "/": [{ secretKey: "DATABASE_URL", secretValue: "from-infisical" }],
+  "/server": [
+    { secretKey: "FROM_DOT_ENV", secretValue: "from-infisical" },
+    { secretKey: "FROM_SERVER_FILE", secretValue: "from-infisical" },
+    { secretKey: "db.url", secretValue: "not-a-variable" },
+    { secretKey: "EMPTY", secretValue: "" },
+  ],
+  "/agents": [
+    { secretKey: "AGENT_BOT_MODEL", secretValue: "agents-model" },
+    { secretKey: "MANAGED_AGENT_TOKEN", secretValue: "from-infisical" },
+  ],
+};
 
 type Asked = {
   path: string;
@@ -54,7 +67,16 @@ const infisical = Bun.serve({
         expiresIn: 3600,
       });
     }
-    return Response.json({ secrets: SECRETS });
+    const path = url.searchParams.get("secretPath") ?? "";
+    // As Infisical does for a folder nobody has created yet.
+    if (!(path in SECRETS))
+      return Response.json(
+        {
+          message: `Folder with path '${path}' in environment 'dev' was not found.`,
+        },
+        { status: 404 },
+      );
+    return Response.json({ secrets: SECRETS[path as keyof typeof SECRETS] });
   },
 });
 afterAll(() => {
@@ -78,6 +100,8 @@ async function start(
   const report =
     "console.log(JSON.stringify({ FROM_DOT_ENV: process.env.FROM_DOT_ENV, FROM_SHELL: " +
     "process.env.FROM_SHELL, ONLY_INFISICAL: process.env.ONLY_INFISICAL, EMPTY: process.env.EMPTY, " +
+    "FROM_SERVER_FILE: process.env.FROM_SERVER_FILE, AGENT_BOT_MODEL: process.env.AGENT_BOT_MODEL, " +
+    "MANAGED_AGENT_TOKEN: process.env.MANAGED_AGENT_TOKEN, DATABASE_URL: process.env.DATABASE_URL, " +
     "dotted: process.env['db.url'], CLIENT_SECRET: process.env.INFISICAL_CLIENT_SECRET }))";
   const child = Bun.spawn(
     ["bun", ...arguments_, "--preload", preload, "-e", report],
@@ -115,28 +139,49 @@ describe("Infisical preload", () => {
     expect(asked).toEqual([]);
   });
 
-  test("with .env on the command line, Infisical replaces what .env supplied and nothing else", async () => {
+  test("with the env files on the command line, Infisical replaces what they supplied and nothing else", async () => {
     writeFileSync(dotEnv, "FROM_DOT_ENV=from-dot-env\n");
+    writeFileSync(serverEnv, "FROM_SERVER_FILE=from-file\n");
     asked.length = 0;
-    const run = await start([`--env-file=${dotEnv}`], {
-      ...identity,
-      FROM_SHELL: "from-shell",
-    });
-    expect(run.status).toBe(0);
+    const run = await start(
+      [`--env-file=${dotEnv}`, `--env-file=${serverEnv}`],
+      { ...identity, FROM_SHELL: "from-shell" },
+    );
+    expect(run.status, run.stderr).toBe(0);
     expect(run.seen).toEqual({
       FROM_DOT_ENV: "from-infisical",
       FROM_SHELL: "from-shell",
-      ONLY_INFISICAL: "added",
+      FROM_SERVER_FILE: "from-infisical",
+      DATABASE_URL: "from-infisical",
       EMPTY: "",
+      // /agents is read whole: the server picks each Bot's model from the settings the Bots run with.
+      AGENT_BOT_MODEL: "agents-model",
+      MANAGED_AGENT_TOKEN: "from-infisical",
       dotted: undefined,
       CLIENT_SECRET: undefined,
     });
     expect(asked[0]).toMatchObject({
       body: { clientId: "identity", clientSecret: CLIENT_SECRET },
     });
-    expect(asked[1]?.authorization).toBe("Bearer access-token");
-    expect(asked[1]?.query).toContain("environment=dev");
-    expect(asked[1]?.query).toContain("expandSecretReferences=false");
+    const lists = asked.slice(1);
+    expect(
+      lists
+        .map((ask) => new URLSearchParams(ask.query).get("secretPath"))
+        .sort(),
+    ).toEqual(["/", "/agents", "/server"]);
+    for (const list of lists) {
+      expect(list.authorization).toBe("Bearer access-token");
+      expect(list.query).toContain("environment=dev");
+      expect(list.query).toContain("expandSecretReferences=false");
+    }
+  });
+
+  test("a file that is not the server's, such as the machine identity, is never replaced from", async () => {
+    const identityFile = join(directory, ".env.openbot-client");
+    writeFileSync(identityFile, "ONLY_INFISICAL=from-the-identity-file\n");
+    const run = await start([`--env-file=${identityFile}`], identity);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.seen?.ONLY_INFISICAL).toBe("from-the-identity-file");
   });
 
   test("without .env, the environment is kept and Infisical fills in the rest", async () => {
@@ -154,6 +199,28 @@ describe("Infisical preload", () => {
       FROM_SHELL: "from-shell",
     });
     expect(asked[1]?.query).toContain("environment=prod");
+  });
+
+  test("a service folder nobody has created yet reads as empty, and `/` must exist", async () => {
+    const agents = SECRETS["/agents"];
+    delete (SECRETS as Record<string, unknown>)["/agents"];
+    try {
+      const run = await start([`--env-file=${dotEnv}`], { ...identity });
+      expect(run.status, run.stderr).toBe(0);
+      expect(run.seen?.FROM_DOT_ENV).toBe("from-infisical");
+      expect(run.seen && "MANAGED_AGENT_TOKEN" in run.seen).toBe(false);
+    } finally {
+      SECRETS["/agents"] = agents;
+    }
+    const deployment = SECRETS["/"];
+    delete (SECRETS as Record<string, unknown>)["/"];
+    try {
+      const run = await start([`--env-file=${dotEnv}`], { ...identity });
+      expect(run.status).not.toBe(0);
+      expect(run.stderr).toContain("Could not read settings from Infisical");
+    } finally {
+      SECRETS["/"] = deployment;
+    }
   });
 
   test("a read that fails stops the start and says where it failed", async () => {

@@ -8,9 +8,22 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
-- `bun run sync:env` no longer stops on `MANAGED_AGENT_TOKEN` and `AGENT_TOOL_TOKEN` when
-  `scripts/start.sh` generated them in the local `.env`: it carries them over. Any other value that
-  only the local file holds still stops it, so nothing is lost unread.
+- Settings live in one file per service, and there is no `.env` in the repository root any more:
+  `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
+  `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model
+  settings and tokens, which the server reads too). Each has an `.example` beside it; the root
+  `.env.example` and `.env.personal.example` are gone, with their contents split between them. To
+  move an existing checkout, copy each part of its root `.env` into the file it belongs to, then
+  delete it: `scripts/start.sh` refuses to start while any of the four is missing. The worker reads
+  `.env` and `.env.server` as well as its own file.
+- OpenBot Desktop writes the same four files and, on Start, moves a root `.env` that an earlier
+  version left into them. One root `.env` can remain: the Intelligence CLI that `local connect`
+  runs writes the stack's addresses into `<installation>/.env` and compares them there on the next
+  connection, so that file is the CLI's. OpenBot's own services do not read it.
+- With Infisical, each file comes from one folder: `/`, `/server`, `/worker` and `/agents`.
+  `bun run sync:env` writes all four. A key in two folders that one process reads is refused.
+  It also no longer stops on `MANAGED_AGENT_TOKEN` and `AGENT_TOOL_TOKEN` that `scripts/start.sh`
+  generated: it carries them over. Any other value that only a local file holds still stops it.
 
 ## 1.0.3
 

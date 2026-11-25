@@ -17,7 +17,12 @@ services:
 
   server:
     <<: *openbot
-    env_file: ${OPENBOT_SERVER_ENV_FILE:-.env.server}
+    # The server's own settings, then the agents': it picks each Bot's model from the settings the
+    # Bots run with (deploy/agents/.env.example), so the model key and the tokens live there alone.
+    env_file:
+      - path: ${OPENBOT_SERVER_ENV_FILE:-.env.server}
+      - path: ../agents/.env
+        required: false
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:?Set WORKER_SHARED_SECRET}
@@ -43,12 +48,17 @@ services:
   worker:
     <<: *openbot
     command: ["bun", "--no-env-file", "../worker/src/index.ts"]
+    # The worker's own settings (.env.worker.example: the optional Lago export), and the server's:
+    # it runs the server's billing and sign-in code. The database address and the shared secret are
+    # the deployment's, given below.
+    env_file:
+      - path: ${OPENBOT_SERVER_ENV_FILE:-.env.server}
+        required: false
+      - path: ${OPENBOT_WORKER_ENV_FILE:-.env.worker}
+        required: false
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       SERVER_INTERNAL_URL: http://server:3001
-      LAGO_URL:
-      LAGO_API_KEY:
-      LAGO_USAGE_SUBSCRIPTION_ID:
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:?Set WORKER_SHARED_SECRET}
     depends_on:
       server:

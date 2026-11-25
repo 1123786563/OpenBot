@@ -1,6 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -8,8 +9,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse } from "yaml";
+import { WORKER_ENV_FILES } from "../shared/env-files";
 
 function composeFile() {
   return readFileSync(
@@ -226,6 +228,28 @@ function runLangGraphAguiModelProbe(
   }
 }
 
+let composeFilesOnly: string | undefined;
+
+/**
+ * The Compose files and nothing else, so the settings files a person has laid down in this checkout
+ * (`env_file:` below names them) never reach what these tests read.
+ */
+function composeFilesDirectory() {
+  composeFilesOnly ??= mkdtempSync(join(tmpdir(), "openbot-compose-files-"));
+  for (const file of [
+    "docker-compose.yml",
+    "desktop/src-tauri/telemetry.compose.yml",
+    "desktop/src-tauri/telemetry-disabled.compose.yml",
+  ]) {
+    mkdirSync(dirname(join(composeFilesOnly, file)), { recursive: true });
+    copyFileSync(
+      join(import.meta.dir, "..", file),
+      join(composeFilesOnly, file),
+    );
+  }
+  return composeFilesOnly;
+}
+
 function runComposeConfig(
   env: Record<string, string>,
   desktop = false,
@@ -260,7 +284,7 @@ function runComposeConfig(
       "json",
     ],
     {
-      cwd: join(import.meta.dir, ".."),
+      cwd: composeFilesDirectory(),
       env: {
         PATH: process.env.PATH ?? "",
         PICKED_HARNESS_IMAGE: "openbot-agent-langgraph-agui:test",
@@ -950,15 +974,53 @@ test("ships the worker in the server image", () => {
 /**
  * Every address the server is given names a service on its network.
  *
- * `.env` says `127.0.0.1` and `localhost`, which is right for a server on the host and means the
- * container itself inside one. The settings in `environment:` win over that file, so these are what
+ * The settings files say `127.0.0.1` and `localhost`, which is right for a server on the host and
+ * means the container itself inside one. The settings in `environment:` win over them, so these are what
  * the server actually uses.
  */
+/** The worker runs the server's billing and sign-in code, so it reads what that code reads. */
+test("the worker reads the server's settings, on the host and in an installed deployment", () => {
+  expect(WORKER_ENV_FILES).toEqual([
+    "deploy/openbot/.env",
+    "deploy/openbot/.env.server",
+    "deploy/openbot/.env.worker",
+  ]);
+  const startSh = readFileSync(
+    join(import.meta.dir, "..", "scripts", "start.sh"),
+    "utf8",
+  );
+  const workerLaunch = startSh
+    .split("\n")
+    .find((line) => line.includes("worker/src/index.ts)"));
+  for (const file of WORKER_ENV_FILES)
+    expect(workerLaunch).toContain(`--env-file=${file}`);
+
+  const installed = parse(
+    readFileSync(
+      join(import.meta.dir, "..", "deploy", "openbot", "docker-compose.yml"),
+      "utf8",
+    ),
+  ) as {
+    services: Record<
+      string,
+      { env_file?: Array<{ path: string; required: boolean }> }
+    >;
+  };
+  expect(installed.services.worker?.env_file).toEqual([
+    { path: "$" + "{OPENBOT_SERVER_ENV_FILE:-.env.server}", required: false },
+    { path: "$" + "{OPENBOT_WORKER_ENV_FILE:-.env.worker}", required: false },
+  ]);
+});
+
 test("gives the server container addresses, not the host's loopback", () => {
   const server = composeServices().server;
   const environment = server.environment ?? {};
 
-  expect(server.env_file).toEqual([{ path: "./.env", required: false }]);
+  expect(server.env_file).toEqual([
+    { path: "./deploy/openbot/.env", required: false },
+    { path: "./deploy/openbot/.env.server", required: false },
+    { path: "./deploy/agents/.env", required: false },
+  ]);
   expect(environment).toMatchObject({
     PORT: "3001",
     SERVER_PORT: "3001",

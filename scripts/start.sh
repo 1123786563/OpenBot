@@ -29,32 +29,47 @@ fi
 LOGS="$ROOT/.logs"
 mkdir -p "$LOGS"
 
-if [ ! -f "$ROOT/.env" ]; then
-  printf '\033[31m%s\033[0m\n' ".env is missing. Copy .env.example to .env and fill in the required settings."
-  exit 1
-fi
+# One settings file per service, and none in the repository root. `bun run sync:env` writes all four from
+# Infisical; without it, each is copied from the `.example` beside it.
+DEPLOYMENT_ENV="$ROOT/deploy/openbot/.env"
+SERVER_ENV="$ROOT/deploy/openbot/.env.server"
+WORKER_ENV="$ROOT/deploy/openbot/.env.worker"
+AGENTS_ENV="$ROOT/deploy/agents/.env"
 
-# The environment first, then .env, then the default. Compose and the API server both read .env, so a
-# port or token configured there is what this script must use as well.
+missing=false
+for settings in deploy/openbot/.env deploy/openbot/.env.server deploy/openbot/.env.worker deploy/agents/.env; do
+  if [ ! -f "$ROOT/$settings" ]; then
+    missing=true
+    printf '\033[31m%s\033[0m\n' "$settings is missing. Run bun run sync:env, or copy the .example beside it and fill in the required settings."
+  fi
+done
+if [ "$missing" = true ]; then exit 1; fi
+
+# The environment first, then the service files, then the default. Compose is given the same files and
+# the API server reads two of them, so a port or token configured there is what this script must use as
+# well. The deployment's file first: it holds the ports. Then the agents', which owns the model
+# settings and the tokens, then the server's own.
 setting() {
-  local name="$1" fallback="$2" value="${!1:-}"
+  local name="$1" fallback="$2" value="${!1:-}" file
   if [ -z "$value" ]; then
-    # `|| true`, BECAUSE A KEY THIS FUNCTION HAS A DEFAULT FOR IS ROUTINELY ABSENT FROM `.env`.
-    #
-    # That is the whole reason the second argument exists: `.env.example` does not list `APP_PORT`,
-    # so a perfectly ordinary `.env` has no line for it. `grep` finding nothing is an exit status of
-    # 1, `pipefail` makes it the pipeline's, and `set -e` then killed the script on the way to the
-    # fallback that was sitting right there — before the first line of output, so the failure
-    # named neither the key nor the file.
-    #
-    # Under bash that status did not escape the command substitution and the fallback won, which is
-    # why this stood for as long as it did: the bug was invisible until somebody ran the script with
-    # `sh`, where the same code exits 1 in silence. The refusal at the top of this file now names
-    # that, and this closes the trap underneath it — an absent key takes the default in either
-    # shell, which is what the argument always promised.
-    value="$(grep -E "^$name=" "$ROOT/.env" | tail -1 | cut -d= -f2- | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/" || true)"
+   for file in "$DEPLOYMENT_ENV" "$AGENTS_ENV" "$SERVER_ENV"; do
+    # `|| true`, because a key this function has a default for is routinely absent from every file:
+    # the examples do not list `APP_PORT`. `grep` finding nothing is an exit status of 1, `pipefail`
+    # makes it the pipeline's, and `set -e` then killed the script on the way to the fallback that was
+    # sitting right there. (`scripts/require-bash.sh` keeps this file out of `sh`, for the same reason.)
+    value="$(grep -E "^$name=" "$file" | tail -1 | cut -d= -f2- | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/" || true)"
+    [ -n "$value" ] && break
+   done
   fi
   printf '%s' "${value:-$fallback}"
+}
+
+# Set one key in a service file, any earlier line for it removed, so the key appears once.
+put_setting() {
+  local file="$1" name="$2" value="$3" tmp
+  tmp="$(mktemp)"
+  { grep -vE "^$name=" "$file" || true; printf '%s=%s\n' "$name" "$value"; } >"$tmp"
+  mv "$tmp" "$file"
 }
 
 APP_PORT="$(setting APP_PORT 3010)"
@@ -64,9 +79,9 @@ BOT_PORT="$(setting BOT_PORT 4200)"
 LANGGRAPH_PORT="$(setting LANGGRAPH_PORT 4201)"
 BOT_PROVIDER="$(setting BOT_PROVIDER openai | tr '[:upper:]' '[:lower:]' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 SUPERVISOR_PORT="$(setting SUPERVISOR_PORT 4500)"
-# Through `setting`, like every other key here, so `.env` counts as the comment above says and as
-# docs/configuration.md tells people to rely on. Read from the environment alone, `false` in `.env`
-# was ignored: the supervisor was still started and the server still told to use it.
+# Through `setting`, like every other key here, so the service files count as the comment above says
+# and as docs/configuration.md tells people to rely on. Read from the environment alone, `false` in a
+# file was ignored: the supervisor was still started and the server still told to use it.
 ONE_COMPUTER_EACH="$(setting OPENBOT_ONE_COMPUTER_EACH true)"
 export APP_PORT SERVER_PORT
 SUPERVISOR_TOKEN="$(setting SUPERVISOR_TOKEN openbot-dev-supervisor-token)"
@@ -88,14 +103,15 @@ WORKER_SHARED_SECRET="$(setting WORKER_SHARED_SECRET openbot-dev-worker-secret)"
 # per machine and persisted, because the server and the Bot are separate processes that have to
 # agree on it across restarts.
 #
-# Written into .env rather than exported for this run alone, so `docker compose up` by hand later
-# sees the same value the script used.
+# Written into the deployment's file rather than exported for this run alone, so `docker compose up`
+# by hand later sees the same value the script used.
 # The laptop stack runs agent-langgraph on LANGGRAPH_PORT. The one-container image does not, so
-# this default stays in the script rather than in .env: a `docker run --env-file .env` must not
+# this default stays in the script rather than in a settings file: a `docker run --env-file` must not
 # inherit a URL that points at a process the image does not contain.
 #
 # The personal edition runs its Personal Assistant inside the server, so it starts no Bot process and
-# names no managed endpoint unless .env does. Its one computer carries only the one person's Bots, so
+# names no managed endpoint unless the server's file does. Its one computer carries only the one
+# person's Bots, so
 # it is started as theirs, which lets them record in a Bot's browser (agent-computer's person-access.ts).
 EDITION="$(setting OPENBOT_EDITION team)"
 if [ "$EDITION" = "personal" ]; then
@@ -118,16 +134,9 @@ MANAGED_AGENT_TOKEN="$(setting MANAGED_AGENT_TOKEN "")"
 if [ -z "$MANAGED_AGENT_TOKEN" ]; then
   SECRETS_ROTATED=true
   MANAGED_AGENT_TOKEN="$(openssl rand -base64 32)"
-  if grep -qE '^MANAGED_AGENT_TOKEN=' "$ROOT/.env"; then
-    # A present but empty line, which is what .env.example ships.
-    tmp="$(mktemp)"
-    grep -vE '^MANAGED_AGENT_TOKEN=' "$ROOT/.env" > "$tmp"
-    printf 'MANAGED_AGENT_TOKEN=%s\n' "$MANAGED_AGENT_TOKEN" >> "$tmp"
-    mv "$tmp" "$ROOT/.env"
-  else
-    printf '\nMANAGED_AGENT_TOKEN=%s\n' "$MANAGED_AGENT_TOKEN" >> "$ROOT/.env"
-  fi
-  printf '\033[2m%s\033[0m\n' "Generated MANAGED_AGENT_TOKEN and wrote it to .env."
+  # A present but empty line, which is what the examples ship, is replaced.
+  put_setting "$AGENTS_ENV" MANAGED_AGENT_TOKEN "$MANAGED_AGENT_TOKEN"
+  printf '\033[2m%s\033[0m\n' "Generated MANAGED_AGENT_TOKEN and wrote it to deploy/agents/.env."
 fi
 export MANAGED_AGENT_TOKEN
 
@@ -135,7 +144,7 @@ export MANAGED_AGENT_TOKEN
 # direction of the pair above: that one is the server proving itself to the Bot, this one is the Bot
 # proving itself to the server, and they are deliberately two different secrets.
 #
-# Generated here for the same reason, and it has to be. `.env.example` ships it empty, which is the
+# Generated here for the same reason, and it has to be. The examples ship it empty, which is the
 # right default for a deployment: absent, no Bot may call tools back and it is told so rather than
 # quietly allowed. On a laptop that default meant every MCP tool was dead on arrival. An
 # administrator could enable Google Drive, grant `search_files` to a Bot, read "May call this tool"
@@ -146,16 +155,8 @@ AGENT_TOOL_TOKEN="$(setting AGENT_TOOL_TOKEN "")"
 if [ -z "$AGENT_TOOL_TOKEN" ]; then
   SECRETS_ROTATED=true
   AGENT_TOOL_TOKEN="$(openssl rand -base64 32)"
-  if grep -qE '^AGENT_TOOL_TOKEN=' "$ROOT/.env"; then
-    # A present but empty line, which is what .env.example ships.
-    tmp="$(mktemp)"
-    grep -vE '^AGENT_TOOL_TOKEN=' "$ROOT/.env" > "$tmp"
-    printf 'AGENT_TOOL_TOKEN=%s\n' "$AGENT_TOOL_TOKEN" >> "$tmp"
-    mv "$tmp" "$ROOT/.env"
-  else
-    printf '\nAGENT_TOOL_TOKEN=%s\n' "$AGENT_TOOL_TOKEN" >> "$ROOT/.env"
-  fi
-  printf '\033[2m%s\033[0m\n' "Generated AGENT_TOOL_TOKEN and wrote it to .env."
+  put_setting "$AGENTS_ENV" AGENT_TOOL_TOKEN "$AGENT_TOOL_TOKEN"
+  printf '\033[2m%s\033[0m\n' "Generated AGENT_TOOL_TOKEN and wrote it to deploy/agents/.env."
 fi
 export AGENT_TOOL_TOKEN
 
@@ -239,14 +240,16 @@ stop_server_processes_for_restart() {
   stop_matching "bun --env-file=../.env src/production-entry.ts"
   # The same server started with its settings loaded from Infisical; see where SERVER_LAUNCH is set.
   stop_matching "bun --env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts src/production-entry.ts"
+  stop_matching "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env src/production-entry.ts"
   stop_matching "bun --env-file=../.env src/index.ts"
+  stop_matching "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/infisical/.env.openbot-client --preload ./scripts/infisical-env.ts --watch src/index.ts"
 }
 
 echo
 echo "OpenBot"
 echo "======="
 
-# Bun preserves exported values over .env. Clear a blank export before starting the server.
+# Bun preserves exported values over the env files. Clear a blank export before starting the server.
 if [[ "${COMPOSIO_API_KEY:-}" != *[![:space:]]* ]]; then
   unset COMPOSIO_API_KEY
 fi
@@ -277,7 +280,8 @@ fi
 # never compares its configuration and never recreates it.
 #
 # Which is how a Bot ends up holding a secret this deployment no longer accepts. `AGENT_TOOL_TOKEN`
-# is generated above and written to .env; if the container was answering, it kept the previous one,
+# is generated above and written to the agents' file; if the container was
+# answering, it kept the previous one,
 # and every tool call it made was refused at the door. It returns nothing to its own model, and the
 # model tells the person there were no results — a false negative delivered as an answer.
 #
@@ -303,8 +307,11 @@ export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT
 # stdout, and stops with "failed to get console: provided file is not a console". An environment
 # variable rather than `--progress`, because a Compose too old to know the flag refuses it, and one
 # too old to know the variable ignores it.
-COMPOSE_PROGRESS=quiet docker compose up -d --build "${SERVICES[@]}" >/dev/null
-if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
+# No `.env` in the repository root: Compose is given the service files, the deployment's last so a
+# value there wins.
+COMPOSE_ENV=(--env-file "$WORKER_ENV" --env-file "$AGENTS_ENV" --env-file "$SERVER_ENV" --env-file "$DEPLOYMENT_ENV")
+COMPOSE_PROGRESS=quiet docker compose "${COMPOSE_ENV[@]}" up -d --build "${SERVICES[@]}" >/dev/null
+if ! docker compose "${COMPOSE_ENV[@]}" run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
   red "  Migrations did not apply. The database is not the schema this server expects."
   red "  Log: $LOGS/migrate.log"
   exit 1
@@ -318,7 +325,7 @@ if [ "$EDITION" != "personal" ]; then
 fi
 
 for table in agent_profiles agent_preferences; do
-  if ! docker compose exec -T postgres \
+  if ! docker compose "${COMPOSE_ENV[@]}" exec -T postgres \
        psql -U openbot -d openbot -tAc "select to_regclass('public.$table')" 2>/dev/null \
        | grep -q "^$table$"; then
     red "  $table is missing. Run: bun run --cwd server db:migrate"
@@ -327,10 +334,10 @@ for table in agent_profiles agent_preferences; do
 done
 green "  coworker tables migrated"
 
-# Resolved at the top, where the default that .env deliberately does not carry is applied. Reading
-# .env again here would have demanded the line be present in a file the comment above that default
-# says must not contain it, which is how this came to refuse every fresh clone: `cp .env.example
-# .env` leaves it commented out, so the grep matched nothing.
+# Resolved at the top, where the default that the settings files deliberately do not carry is applied.
+# Reading a file again here would have demanded the line be present in one the comment above that
+# default says must not contain it, which is how this came to refuse every fresh clone: copying the
+# example leaves it commented out, so the grep matched nothing.
 #
 # It failed silently, too. Under `set -o pipefail` a grep that matches nothing fails its whole
 # pipeline, and `set -e` then aborts the assignment before the check below could say why. The same
@@ -345,7 +352,7 @@ green "  managed coworker endpoint: ${MANAGED_AGENT_AG_UI_URL:-$MANAGED_ENDPOINT
 # desktop with the Recorder in it (docs/personal-edition.md). It runs on the host and runs nobody
 # else's (`COMPUTER_PEOPLE_ONLY=on`). OpenBot Desktop does not do this: it shows the person's browser
 # in the page, on the one computer. The server finds it through `OPENBOT_BROWSER_URL`, exported so the
-# server started below reads it over .env. Never fatal: without Chrome or Edge, or with a Recorder
+# server started below reads it over its files. Never fatal: without Chrome or Edge, or with a Recorder
 # that will not build, OpenBot starts without the person's browser and the line says why.
 if [ "$EDITION" = "personal" ]; then
   BROWSER_PORT="$(setting BROWSER_PORT 4101)"
@@ -437,10 +444,11 @@ if identifies_as_openbot "$SERVER_PORT" server; then
   fi
 fi
 # With Infisical's machine identity present, the server loads its settings from Infisical as it starts
-# and .env is not read. The ports and tokens this script works out are passed through the shell and must
-# stay final, and a value that came from .env could not be told from one of those. Without the identity,
-# .env is the configuration, as before. Word-split on purpose: one flag per word.
-SERVER_LAUNCH="--env-file=../.env"
+# and the files are not read. The ports and tokens this script works out are passed through the shell and
+# must stay final, and a value that came from a file could not be told from one of those. Without the
+# identity, the deployment's, the server's and the agents' files are the configuration. Word-split on
+# purpose: one flag per word.
+SERVER_LAUNCH="--env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env"
 if [ -f "$ROOT/deploy/infisical/.env.openbot-client" ]; then
   SERVER_LAUNCH="--env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts"
 fi
@@ -471,11 +479,11 @@ wait_for_openbot "$SERVER_PORT" server
 # The worker has no HTTP endpoint, so a process match plus its cwd is the ownership signal.
 # Unknown ownership refuses startup before another worker can be launched.
 #
-# Launched from `$ROOT` with `bun worker/src/index.ts`, not `cd worker && bun src/index.ts`: on a
+# Launched from `$ROOT` with its two settings files, not `cd worker && bun src/index.ts`: on a
 # Linux host, container processes are visible too and several services run `bun src/index.ts`.
 # Relative imports resolve from the importing file, so running the worker from `$ROOT` is safe.
 worker_running=false
-if running_here "bun worker/src/index.ts" "$ROOT"; then
+if running_here "worker/src/index.ts" "$ROOT"; then
   worker_running=true
 else
   ownership_status=$?
@@ -487,10 +495,10 @@ if [ "$worker_running" = false ]; then
     DATABASE_URL="$WORKER_DATABASE_URL" \
     SERVER_INTERNAL_URL="http://localhost:$SERVER_PORT" \
     WORKER_SHARED_SECRET="$WORKER_SHARED_SECRET" \
-    bun worker/src/index.ts) >"$LOGS/worker.log" 2>&1 &
+    bun --env-file=deploy/openbot/.env --env-file=deploy/openbot/.env.server --env-file=deploy/openbot/.env.worker worker/src/index.ts) >"$LOGS/worker.log" 2>&1 &
   info "  worker: started (routine sweep loop)"
   sleep 1
-  if running_here "bun worker/src/index.ts" "$ROOT"; then
+  if running_here "worker/src/index.ts" "$ROOT"; then
     :
   else
     ownership_status=$?

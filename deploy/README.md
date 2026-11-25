@@ -57,7 +57,7 @@ OpenBot API 和 Worker 通过数据库网络访问 PostgreSQL。Agent 和 Comput
 ## 首次启动
 
 1. 安装 Docker Engine 和 Docker Compose 2.24.4 或更新版本。在仓库根目录运行后续命令。
-2. 用各组件的 `.env.example` 创建私有 `.env`，填入各自凭据。给 OpenBot 设置 `DATABASE_URL`、`WORKER_SHARED_SECRET` 和 `OPENBOT_IMAGE`，复制 [API 环境样例](openbot/server.env.example) 到 `openbot/.env.server` 并填写凭据。Agent 端填写源码绝对路径和模型配置，设置 `OPENBOT_TOOL_URL=http://openbot-api:3001/api/agent-tools/call`。两端使用匹配的 Computer、Supervisor、Agent 和工具回调令牌。
+2. 用各组件的 `.env.example` 创建私有 `.env`，填入各自凭据。给 OpenBot 设置 `DATABASE_URL`、`WORKER_SHARED_SECRET` 和 `OPENBOT_IMAGE`，复制 [API 环境样例](openbot/.env.server.example) 到 `openbot/.env.server`、[Worker 环境样例](openbot/.env.worker.example) 到 `openbot/.env.worker` 并按需填写（Lago 用量导出为可选项）。API 服务端同时读取 `agents/.env`，其中的模型密钥和令牌只维护这一份。Agent 端填写源码绝对路径和模型配置，设置 `OPENBOT_TOOL_URL=http://openbot-api:3001/api/agent-tools/call`。两端使用匹配的 Computer、Supervisor、Agent 和工具回调令牌。
 3. 启动 PostgreSQL，按[数据库准备说明](operations.md#postgresql-和登录)创建专用数据库。使用本仓库的 PostgreSQL 项目时，把 OpenBot 的 `MIDDLEWARE_POSTGRES_NETWORK` 设为 `openbot-postgres`。
 4. 建立观测网络，启动 Agent 与 OpenBot。若选择 Bifrost 作为模型入口，先完成 [Bifrost 配置](operations.md#postgresql-和登录)，再给 OpenBot 和 Agent 设置各自容器可到达的模型地址。
 
