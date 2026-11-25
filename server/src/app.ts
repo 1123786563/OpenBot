@@ -7,6 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
 import { createBifrostAdminRoutes } from "./admin/bifrost-routes";
 import { createCapabilityChangeRoutes } from "./admin/capability-translate";
+import type { CredentialUsageReader } from "./admin/credential-usage";
 import { enterpriseControls } from "./admin/controls";
 import { createEnterpriseGate } from "./admin/gate";
 import { createNetworkAllowlistRoutes } from "./admin/network-routes";
@@ -248,6 +249,9 @@ import type { GovernanceReaders } from "./what-if-check";
  * memory a hostile request can pin by 0.8%, which was never the number that mattered.
  */
 const MULTIPART_FRAMING_ALLOWANCE = 64 * 1024;
+
+/** How many addresses the impact of removing an identity provider names on screen; the totals are exact. */
+const IMPACT_LIST_SIZE = 20;
 
 /**
  * The ceiling on the whole POST body of a channel attachment upload.
@@ -662,6 +666,16 @@ export function createApp(
       personId: string,
     ) => Promise<VerifiedBillingIdentity | undefined>;
   },
+  /**
+   * What points at a vault row: the apps, people and Bots that hold a credential.
+   *
+   * Appended last, like `billing` above it: these are positional, so inserting one anywhere else
+   * silently shifts every existing call site's arguments by one.
+   *
+   * Absent leaves the usage route answering 503 rather than "nothing uses it": a deployment that
+   * cannot read the pointers must not tell an administrator a credential is unused.
+   */
+  credentialUsage?: CredentialUsageReader,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   const skillMarket =
@@ -1612,6 +1626,57 @@ export function createApp(
     },
   );
 
+  /*
+   * Who a provider is the only way in for, read before an administrator removes it.
+   *
+   * The account rows decide, not the provider's email domain: who has signed in through the provider,
+   * and who else they can still sign in with. Each list is capped and answers its true total, and
+   * whether the person asking loses their only way in is read before the cap, since they may sit
+   * past it.
+   */
+  app.get(
+    "/api/admin/identity-providers/:providerId/impact",
+    requireUser,
+    async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) {
+        return denied;
+      }
+      if (!identityProviders) {
+        return context.json(
+          { error: "Identity providers are not available." },
+          503,
+        );
+      }
+      const impact = await identityProviders.impact(
+        context.req.param("providerId"),
+      );
+      if (!impact) {
+        return context.json({ error: "There is no such provider." }, 404);
+      }
+
+      return context.json({
+        impact: {
+          losing: {
+            total: impact.losing.length,
+            emails: impact.losing
+              .slice(0, IMPACT_LIST_SIZE)
+              .map((person) => person.email),
+          },
+          keeping: {
+            total: impact.keeping.length,
+            accounts: impact.keeping
+              .slice(0, IMPACT_LIST_SIZE)
+              .map(({ email, reason }) => ({ email, reason })),
+          },
+          includesYou: impact.losing.some(
+            (person) => person.userId === context.var.actor.id,
+          ),
+        },
+      });
+    },
+  );
+
   app.get("/api/admin/credentials", requireUser, async (context) => {
     const denied = requireAdmin(context);
     if (denied) {
@@ -1732,6 +1797,36 @@ export function createApp(
         }
         throw error;
       }
+    },
+  );
+  /*
+   * What points at a credential, read before an administrator revokes it.
+   *
+   * Asked of every table that holds the row's id rather than guessed from its type, so a credential
+   * nothing uses reads as such. A revoked row still answers: its pointers are what a screen needs to
+   * explain after the fact.
+   */
+  app.get(
+    "/api/admin/credentials/:credentialId/usage",
+    requireUser,
+    async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) {
+        return denied;
+      }
+      if (!credentialUsage) {
+        return context.json(
+          { error: "Credential storage is not configured." },
+          503,
+        );
+      }
+      const usage = await credentialUsage.usage(
+        context.req.param("credentialId"),
+      );
+      if (!usage) {
+        return context.json({ error: "Credential was not found." }, 404);
+      }
+      return context.json({ usage });
     },
   );
   app.get("/api/admin/package", requireUser, async (context) => {

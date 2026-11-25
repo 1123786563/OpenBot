@@ -634,6 +634,69 @@ describe("one live credential per key", () => {
     expect(await store.findLiveByKey(input)).toEqual({ id: credentialIds[0] });
     expect(events).toEqual(["credential.created"]);
   });
+
+  test("two rotations of one credential at once leave one live row and one recorded refusal", async () => {
+    // The lost-response case: the first replacement landed and its answer never arrived, so the
+    // screen sends it again while the first is still committing.
+    const events: string[] = [];
+    const store = createCredentialStore(database);
+    const service = {
+      encryptionKey: key,
+      store,
+      auditStore: {
+        insert: async (event: { eventType: string }) => {
+          events.push(event.eventType);
+        },
+      },
+    };
+    const keyId = `rotation-race-${randomUUID()}`;
+    const input = {
+      kind: "model",
+      provider: "openai",
+      keyId,
+      metadata: {},
+      actorUserId: "admin",
+    } as const;
+    const previous = await createCredential(service, {
+      ...input,
+      plaintext: "first-secret",
+    });
+    credentialIds.push(previous.id);
+
+    const rotate = (plaintext: string) =>
+      rotateCredential(service, {
+        ...input,
+        previousCredentialId: previous.id,
+        plaintext,
+      });
+    const results = await Promise.allSettled([
+      rotate("left-secret"),
+      rotate("right-secret"),
+    ]);
+    const winner = results.find((result) => result.status === "fulfilled");
+    if (winner?.status === "fulfilled") credentialIds.push(winner.value.id);
+
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      results.find((result) => result.status === "rejected"),
+    ).toMatchObject({
+      reason: {
+        status: 409,
+        message: "Previous credential is already revoked",
+      },
+    });
+    expect(
+      await store.findLiveByKey({ kind: "model", provider: "openai", keyId }),
+    ).toEqual({ id: winner?.status === "fulfilled" ? winner.value.id : null });
+    // Which one wrote first is not fixed; that only one succeeded is.
+    expect([...events].sort()).toEqual([
+      "credential.created",
+      "credential.rotated",
+      "credential.rotation_refused",
+    ]);
+  });
 });
 
 /**

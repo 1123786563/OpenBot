@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
+import { Hono } from "hono";
 import type { AuditEventInput } from "../src/audit";
+import type { AppVariables } from "../src/auth/guards";
 import { personSeat } from "../src/computer/computer-key";
 import { createDatabase } from "../src/db/client";
 import { users } from "../src/db/schema/core";
 import { savedLogins, signInRequests } from "../src/db/schema/passwords";
+import { createPasswordRoutes } from "../src/passwords/routes";
 import { createSignInService } from "../src/passwords/service";
 import { createPasswordStore } from "../src/passwords/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -166,4 +169,85 @@ test("a request waiting on its verification code is stored, listed, and then sig
     .where(inArray(signInRequests.id, [request.id]));
   expect(JSON.stringify(stored)).not.toContain("551234");
   expect(JSON.stringify(stored)).not.toContain(PASSWORD);
+});
+
+/**
+ * Deleting a saved login over the route, against the real store: two presses at once remove it once
+ * and answer one of them, another person's id is a missing one, and the trail names the site only.
+ */
+test("deleting a saved login over the route removes it once, and the trail names the site only", async () => {
+  const saved = createSignInService({
+    store,
+    encryptionKey: Buffer.alloc(32, 3).toString("base64"),
+    auditStore: { insert: async (event) => void audit.push(event) },
+    gateway: {
+      seatFor: async (botId, personId) => personSeat(personId, botId),
+      signIn: async () => ({
+        submitted: true,
+        passwordFieldVisible: false,
+        codeRequested: false,
+        url: "https://github.com/",
+      }),
+      signInCode: async () => {
+        throw new Error("not used");
+      },
+      requestHelp: async () => {
+        throw new Error("not used");
+      },
+    },
+  });
+  const request = await saved.request({
+    ownerUserId: owner,
+    botId: `${prefix}-bot`,
+    site: "https://github.com/login",
+    actor,
+  });
+  await saved.submit(owner, request.id, actor, {
+    username: "octocat",
+    password: PASSWORD,
+    save: true,
+  });
+  const [login] = (await saved.logins(owner)).logins.filter(
+    (row) => row.origin === "https://github.com",
+  );
+  if (!login) throw new Error("not saved");
+
+  const root = new Hono<{ Variables: AppVariables }>();
+  const asOwner = async (
+    context: {
+      set: (key: "actor", value: AppVariables["actor"]) => void;
+    },
+    next: () => Promise<void>,
+  ) => {
+    context.set("actor", {
+      id: owner,
+      email: `${owner}@example.test`,
+    } as AppVariables["actor"]);
+    await next();
+  };
+  root.route("/api/passwords", createPasswordRoutes(saved, asOwner as never));
+  const remove = (id: string) =>
+    root.fetch(
+      new Request(`http://127.0.0.1/api/passwords/${id}`, { method: "DELETE" }),
+    );
+
+  // An id this person does not own answers as a missing one.
+  expect((await remove(randomUUID())).status).toBe(404);
+
+  const responses = await Promise.all([remove(login.id), remove(login.id)]);
+  expect(responses.map((response) => response.status).sort()).toEqual([
+    200, 404,
+  ]);
+  for (const body of await Promise.all(responses.map((r) => r.text())))
+    expect(body).not.toContain(PASSWORD);
+  expect(
+    (await saved.logins(owner)).logins.filter((row) => row.id === login.id),
+  ).toEqual([]);
+
+  const recorded = audit.filter(
+    (row) => row.eventType === "password.deleted" && row.targetId === login.id,
+  );
+  expect(recorded).toHaveLength(1);
+  expect(recorded[0]?.payload).toMatchObject({ site: "https://github.com" });
+  expect(JSON.stringify(recorded)).not.toContain(PASSWORD);
 });

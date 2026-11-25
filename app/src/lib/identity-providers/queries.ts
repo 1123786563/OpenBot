@@ -24,9 +24,33 @@ export type IdentityProvider = {
   registeredBy: string | null;
 };
 
+/**
+ * Who a registered provider is the only way in for, read before an administrator removes it.
+ *
+ * The account rows decide, not the provider's email domain: somebody who signed in through a
+ * provider may still sign in with Google or a password, and somebody the configuration names as an
+ * emergency admin is exempt. Either list is capped and `total` is over everybody.
+ */
+export type IdentityProviderImpact = {
+  /** People with no other account and no emergency address. `emails` is the first few. */
+  losing: { total: number; emails: string[] };
+  /** People who keep a way in, and why. `accounts` is the first few. */
+  keeping: {
+    total: number;
+    accounts: {
+      email: string;
+      reason: "another-sign-in" | "emergency-admin";
+    }[];
+  };
+  /** Whether the person asking is among those losing their only way in. */
+  includesYou: boolean;
+};
+
 export const identityProviderKeys = {
   all: ["identity-providers"] as const,
   list: () => ["identity-providers", "list"] as const,
+  impact: (providerId: string) =>
+    ["identity-providers", "impact", providerId] as const,
 };
 
 export function identityProvidersAccessDenied(error: unknown): boolean {
@@ -68,5 +92,29 @@ export function identityProviderListQueryOptions() {
         }
         throw error;
       }),
+  });
+}
+
+/**
+ * Who signs in through one provider, asked when its removal is being confirmed.
+ *
+ * `staleTime: 0` because the accounts move: the dialog is opened to decide about this moment, and a
+ * cached answer from five minutes ago would name somebody who has since added another way in.
+ */
+export function identityProviderImpactQueryOptions(providerId: string) {
+  return queryOptions({
+    queryKey: identityProviderKeys.impact(providerId),
+    staleTime: 0,
+    // A provider that is gone stays gone: retrying a 404 only delays saying so.
+    retry: (failures, error) =>
+      failures < 1 &&
+      !identityProvidersAccessDenied(error) &&
+      !(error instanceof ClientError && error.status === 404),
+    queryFn: ({ signal }): Promise<IdentityProviderImpact> =>
+      client<IdentityProviderImpact>(
+        `/api/admin/identity-providers/${encodeURIComponent(providerId)}/impact`,
+        "impact",
+        { fallback: "Could not check who signs in with this provider", signal },
+      ),
   });
 }
