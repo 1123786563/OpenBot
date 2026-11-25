@@ -172,6 +172,11 @@ export function createHandoffDelivery(options: {
     text: string;
     /** The Bot whose words these are, when they are not the thread's own Bot's. */
     answeredBy?: string;
+    /**
+     * When the words were said; absent is now. The roster only moves forward, so a delivery told
+     * again of the same answer, at the same time, moves nothing.
+     */
+    at?: Date;
   }) => Promise<void>;
   /**
    * Show the asking conversation as working while a FORWARD hop runs, and stop when it is over.

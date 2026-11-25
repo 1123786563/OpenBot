@@ -19,7 +19,7 @@ import {
   type RunContextVersion,
   runContextVersions,
 } from "@openbot/toolkit/run-context";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
@@ -1626,6 +1626,8 @@ for (const scenario of [
         channelStore: mounted.channelStore,
         actorFor,
         mayAddress,
+        database,
+        groupConversations: mounted.groupConversations,
       });
     };
     const runner = createHandoffRunner({
@@ -1761,7 +1763,7 @@ const signRunAs =
  * runner — with only the two Bots' behaviour as a fixture: a local AG-UI endpoint that streams one
  * `message_bot` call and, once it has been answered, one sentence.
  */
-test("a Routine's Run hands off to another Bot, and every entry shows that Run, without Intelligence", async () => {
+test("a Routine's Run hands off to another Bot without Intelligence, every entry shows the handoff, and nothing runs twice", async () => {
   const actor = await person();
   const suite = crypto.randomUUID().slice(0, 8);
   const NAMES = {
@@ -2151,6 +2153,8 @@ test("a Routine's Run hands off to another Bot, and every entry shows that Run, 
         channelStore: app.channelStore,
         actorFor,
         mayAddress,
+        database,
+        groupConversations: app.groupConversations,
       }),
     });
     expect(await runner.sweep()).toEqual({
@@ -2185,18 +2189,47 @@ test("a Routine's Run hands off to another Bot, and every entry shows that Run, 
         },
       ],
     });
-    expect(await roster()).toMatchObject({
-      channels: [{ id: channel.id, lastMessage: ASKER_REPLY, work: [] }],
+    // The Conversation's entry: no longer waiting, and moved. A hop finishes with no browser
+    // attached, so nobody reports its answer: the entry moves only if the delivery records it.
+    const settled = await roster();
+    expect(settled).toMatchObject({
+      channels: [
+        {
+          id: channel.id,
+          lastMessage: ANSWER,
+          // Under the Conversation's own Bot: the roster admits nobody else in it.
+          lastMessageAgentId: asker.id,
+          work: [],
+        },
+      ],
     });
+    // Told of when the answer landed: the latest event of the Run that answered.
+    const [landed] = await database
+      .select({ at: directChatRunEvents.createdAt })
+      .from(directChatRunEvents)
+      .where(
+        and(
+          eq(directChatRunEvents.threadId, channel.threadId),
+          eq(directChatRunEvents.runId, deliveryRunId),
+        ),
+      )
+      .orderBy(desc(directChatRunEvents.createdAt))
+      .limit(1);
+    expect(new Date(settled.channels[0].lastMessageAt).getTime()).toBe(
+      landed.at.getTime(),
+    );
     expect(await hops()).toMatchObject([
       { key: hop.key, attempts: 1, finishedAt: expect.any(Date) },
     ]);
-    // The other Bot ran once, as itself, with nothing to hand on to, under the Routine's origin.
+    // The other Bot ran once, as itself, in the asking Conversation, under the Routine's origin.
     expect(seen.target.map((request) => request.runId)).toEqual([
       deliveryRunId,
     ]);
     const asked = seen.target[0];
-    expect(asked.tools).toEqual([]);
+    // The Bot that answered is offered no tool to hand the work on again. That holds today because
+    // the Conversation's own Bot is the one that asked, not because its statement carries the hop's
+    // depth: this delivery drops the statement the runner signed for it.
+    expect(asked.tools.map((tool) => tool.name)).not.toContain(HANDOFF_TOOL);
     expect(asked.messages.at(-1)?.content).toContain(
       `You are ${NAMES.target}.`,
     );
@@ -2277,8 +2310,8 @@ test("a Routine's Run hands off to another Bot, and every entry shows that Run, 
         },
       ],
     });
-    // The same handoff again: nothing left to claim, the same key is already there, and a row whose
-    // worker was lost before acknowledging it is delivered onto the Run that already answered.
+    // The same handoff again: nothing left to claim, the same key is already there, and a hop
+    // whose queue row went missing, offered again, lands on the Run that already answered.
     expect(await runner.sweep()).toEqual({ delivered: [], skipped: [] });
     expect(
       await queue.offer({
@@ -2305,6 +2338,59 @@ test("a Routine's Run hands off to another Bot, and every entry shows that Run, 
     expect(await hops()).toMatchObject([
       { key: hop.key, attempts: 1, finishedAt: expect.any(Date) },
     ]);
+    // Told again, of when the answer landed. The entry is where the first delivery left it, not
+    // lifted again for an old answer: the roster only goes forward.
+    expect(said).toHaveBeenCalledTimes(1);
+    expect(said.mock.calls[0][2]).toMatchObject({
+      text: ANSWER,
+      agentId: asker.id,
+    });
+    // Compared as numbers: toMatchObject takes any Date for a Date.
+    expect(said.mock.calls[0][2].at.getTime()).toBe(landed.at.getTime());
+    expect(await roster()).toMatchObject({
+      channels: [
+        { id: channel.id, lastMessageAt: settled.channels[0].lastMessageAt },
+      ],
+    });
+    // The Run's events go after an hour; its row stays. Told a third time, once they are gone, of
+    // when the Run started, which the same database stamped before the answer: still nothing moves.
+    await database
+      .delete(directChatRunEvents)
+      .where(
+        and(
+          eq(directChatRunEvents.threadId, channel.threadId),
+          eq(directChatRunEvents.runId, deliveryRunId),
+        ),
+      );
+    await database.delete(workItems).where(eq(workItems.key, hop.key));
+    await queue.offer({
+      kind: HANDOFF_KIND,
+      key: hop.key,
+      payload: hop.payload,
+    });
+    expect(await runner.sweep()).toEqual({
+      delivered: [target.id],
+      skipped: [],
+    });
+    const [started] = await database
+      .select({ startedAt: directChatRuns.startedAt })
+      .from(directChatRuns)
+      .where(
+        and(
+          eq(directChatRuns.threadId, channel.threadId),
+          eq(directChatRuns.id, deliveryRunId),
+        ),
+      );
+    expect(said).toHaveBeenCalledTimes(2);
+    expect(said.mock.calls[1][2].at.getTime()).toBe(
+      started.startedAt.getTime(),
+    );
+    expect(seen.target).toHaveLength(1);
+    expect(await roster()).toMatchObject({
+      channels: [
+        { id: channel.id, lastMessageAt: settled.channels[0].lastMessageAt },
+      ],
+    });
   } finally {
     await database
       .delete(workItems)

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { IntelligenceAgentRunner } from "@copilotkit/runtime/v2";
 import { workOwner } from "@openbot/shared/work-owner";
-import { eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { type AuditStore, handoffInitiator } from "../audit";
 import { BackgroundConversationBusy } from "../channels/direct-chat";
 import type { BackgroundModel } from "../billing/background-model";
@@ -12,10 +12,13 @@ import type { ThreadIdentity } from "../channels/thread-identity";
 import type { DeploymentConfig } from "../config";
 import type { mountCopilotRuntime } from "../copilot";
 import type { Database } from "../db/client";
+import { reasonWithoutStatement } from "../db/query-failure";
 import {
   agentProfiles,
   agents,
   channels,
+  directChatRunEvents,
+  directChatRuns,
   groupBotThreads,
   intelligenceChannelMappings,
 } from "../db/schema";
@@ -107,12 +110,20 @@ export function createOpenBotHandoffDelivery(options: {
   actorFor: (personId: string) => Promise<AgentActor>;
   mayAddress: (fromBotId: string, toBotId: string) => Promise<boolean>;
   channelStore: ChannelStore;
+  database: Database;
+  groupConversations: GroupConversations;
   backgroundModel?: BackgroundModel;
   authorizeBudgetedWork?: Parameters<
     typeof createHandoffDelivery
   >[0]["authorizeBudgetedWork"];
   coordination?: Parameters<typeof createHandoffDelivery>[0]["coordination"];
 }): HandoffDelivery {
+  const announce = announceDeliveredFrom({
+    database: options.database,
+    actorFor: options.actorFor,
+    groupConversations: options.groupConversations,
+    channelStore: options.channelStore,
+  });
   return {
     async deliver({
       work,
@@ -192,6 +203,72 @@ export function createOpenBotHandoffDelivery(options: {
           }
           throw error;
         });
+      /*
+       * Only once the Run is on record, and only when it said something: a conversation lifted to the
+       * top of somebody's list for a turn that failed, or said nothing, is a conversation they open to
+       * find nothing new. A hop finishes with no browser attached, so nobody else reports it.
+       *
+       * Not a shared Conversation: a relayed answer is written into its transcript as its own
+       * message, and a line from here would be a second one. (A failed hop's notice there is
+       * written by nothing yet; see docs/evidence/routine-handoff-37.md.)
+       *
+       * Told on every delivery, not only the one that ran the Bot: a worker lost between the answer
+       * landing and the telling is not the one that tells; the next delivery is. Told of when the
+       * answer landed, because the roster only goes forward: a delivery told again moves nothing.
+       * The Run's events go after an hour and its row stays, so once they are gone, when the Run
+       * started stands in. The database stamped both, so it is earlier by the same clock, and still
+       * moves nothing. Only a Run that cannot be read at all is told as now. An answer settled onto
+       * a failed Run has no event of its own, and is told at that failure.
+       */
+      if (!result.shared && result.replyText) {
+        const [landed] = await options.database
+          .select({ at: directChatRunEvents.createdAt })
+          .from(directChatRunEvents)
+          .where(
+            and(
+              eq(directChatRunEvents.threadId, threadId),
+              eq(directChatRunEvents.runId, runId),
+            ),
+          )
+          .orderBy(desc(directChatRunEvents.cursor))
+          .limit(1)
+          .catch(() => []);
+        let at = landed?.at;
+        if (!at) {
+          const [run] = await options.database
+            .select({ startedAt: directChatRuns.startedAt })
+            .from(directChatRuns)
+            .where(
+              and(
+                eq(directChatRuns.threadId, threadId),
+                eq(directChatRuns.id, runId),
+              ),
+            )
+            .limit(1)
+            .catch(() => []);
+          at = run?.startedAt;
+        }
+        await announce({
+          actorId: work.actorId,
+          threadId,
+          // Under the Conversation's own Bot: the roster's line names a Bot that is in it.
+          agentId: conversationBotId,
+          text: result.replyText,
+          at,
+        }).catch((error: unknown) => {
+          // The turn happened. A roster that has not caught up is worth less than a hop reported
+          // as failed and run a second time. A telling dropped here is dropped for good: the hop
+          // finishes, and nothing delivers it again unless its worker is lost before that.
+          console.error(
+            JSON.stringify({
+              type: "handoff-activity-unrecorded",
+              key,
+              runId,
+              reason: reasonWithoutStatement(error),
+            }),
+          );
+        });
+      }
       await options.channelStore.signalWork(threadId).catch(() => {});
       return {
         answer: result.replyText,
@@ -199,6 +276,48 @@ export function createOpenBotHandoffDelivery(options: {
         relayRequired: result.shared,
       };
     },
+  };
+}
+
+/**
+ * The roster, told that a delivered Bot's answer landed. A delivery knows only the thread it ran in;
+ * this resolves which channel shows that thread — a scratch thread maps to nothing and announces
+ * nowhere, which is the point of a scratch thread.
+ */
+function announceDeliveredFrom({
+  database,
+  actorFor,
+  groupConversations,
+  channelStore,
+}: {
+  database: Database;
+  actorFor: (ownerUserId: string) => Promise<AgentActor>;
+  groupConversations: GroupConversations;
+  channelStore: ChannelStore;
+}): NonNullable<Parameters<typeof createHandoffDelivery>[0]["announce"]> {
+  return async (input) => {
+    const [mapped] = await database
+      .select({ channelId: intelligenceChannelMappings.channelId })
+      .from(intelligenceChannelMappings)
+      .where(eq(intelligenceChannelMappings.threadId, input.threadId))
+      .limit(1);
+    // A Bot's group thread maps to no channel; its answer goes to the shared transcript, marked
+    // as the answering Bot's rather than the thread's own.
+    if (!mapped) {
+      await groupConversations.announceHandoff({
+        threadId: input.threadId,
+        actorId: input.actorId,
+        agentId: input.answeredBy ?? input.agentId,
+        text: input.text,
+      });
+      return;
+    }
+    const actor = await actorFor(input.actorId);
+    await channelStore.recordActivity(actor, mapped.channelId, {
+      text: input.text,
+      agentId: input.agentId,
+      at: input.at ?? new Date(),
+    });
   };
 }
 
@@ -258,6 +377,8 @@ export async function startHandoffDelivery(deps: {
           actorFor,
           mayAddress: deps.mayAddress,
           channelStore,
+          database,
+          groupConversations,
           backgroundModel: deps.backgroundModel,
           authorizeBudgetedWork: deps.authorizeBudgetedWork,
           coordination: deps.budgetedCoordination,
@@ -317,36 +438,13 @@ export async function startHandoffDelivery(deps: {
            * thread this deployment starts.
            */
           mintThreadId: () => threadIdentity.mint(),
-          /*
-           * The roster, told that a relayed answer landed. The delivery knows only the thread it ran
-           * in; this resolves which channel shows that thread — a scratch thread maps to nothing and
-           * announces nowhere, which is the point of a scratch thread.
-           */
-          announce: async (input) => {
-            const [mapped] = await database
-              .select({ channelId: intelligenceChannelMappings.channelId })
-              .from(intelligenceChannelMappings)
-              .where(eq(intelligenceChannelMappings.threadId, input.threadId))
-              .limit(1);
-            // A Bot's group thread maps to no channel; its answer goes to the shared transcript, marked
-            // as the answering Bot's rather than the thread's own.
-            if (!mapped) {
-              await groupConversations.announceHandoff({
-                threadId: input.threadId,
-                actorId: input.actorId,
-                agentId: input.answeredBy ?? input.agentId,
-                text: input.text,
-              });
-              return;
-            }
-            const actor = await actorFor(input.actorId).catch(() => null);
-            if (!actor) return;
-            await channelStore.recordActivity(actor, mapped.channelId, {
-              text: input.text,
-              agentId: input.agentId,
-              at: new Date(),
-            });
-          },
+          // The roster, told that a relayed answer landed; see `announceDeliveredFrom`.
+          announce: announceDeliveredFrom({
+            database,
+            actorFor,
+            groupConversations,
+            channelStore,
+          }),
           // The asking conversation shown as working while a hop runs in it. Keyed by thread, resolved
           // to its channel by the store; a scratch thread maps to none and signals nowhere.
           setBusy: (input) =>
