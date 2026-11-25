@@ -177,7 +177,7 @@ import {
   describeComputerIsolation,
 } from "./computer/provider";
 import { createSnapshotStore } from "./computer/snapshot-store";
-import { loadConfig } from "./config";
+import { configuredAuthProviders, loadConfig } from "./config";
 import {
   chooseOpenAIApi,
   mountCopilotRuntime,
@@ -662,6 +662,8 @@ const identityProviderStore = createIdentityProviderStore(
   database,
   // The emergency addresses, which keep a way in after the provider they used is removed.
   config.auth?.initialAdminEmails ?? [],
+  // The social providers configured here, which sign somebody in with no registered provider.
+  configuredAuthProviders(config.auth),
 );
 /*
  * Built before `auth` for the same reason the people store is: sign-in writes to the trail, and the

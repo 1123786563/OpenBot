@@ -1587,12 +1587,12 @@ export function createApp(
   );
 
   /*
-   * Who a provider is the only way in for, read before an administrator removes it.
+   * Who can still sign in once a provider is removed, read before an administrator removes it.
    *
-   * The account rows decide, not the provider's email domain: who has signed in through the provider,
-   * and who else they can still sign in with. Each list is capped and answers its true total, and
-   * whether the person asking loses their only way in is read before the cap, since they may sit
-   * past it.
+   * The account rows decide, not the provider's email domain, by the rule the sign-in path applies:
+   * who has signed in through the provider, and who of them keeps a way in. Each list is capped and
+   * answers its true total, and whether the person asking loses their only way in is read before the
+   * cap, since they may sit past it.
    */
   app.get(
     "/api/admin/identity-providers/:providerId/impact",
@@ -1608,8 +1608,21 @@ export function createApp(
           503,
         );
       }
+      // Require SSO as it stands, which the removal does not change. Read as the sign-in path reads
+      // it and failing closed as it does: a setting that cannot be read admits nobody but the
+      // emergency admins, and the preview must not say otherwise.
+      let ssoRequired = false;
+      const controls = enterpriseControls();
+      if (controls) {
+        try {
+          ssoRequired = (await controls.store.settings()).ssoRequired;
+        } catch {
+          ssoRequired = true;
+        }
+      }
       const impact = await identityProviders.impact(
         context.req.param("providerId"),
+        ssoRequired,
       );
       if (!impact) {
         return context.json({ error: "There is no such provider." }, 404);
