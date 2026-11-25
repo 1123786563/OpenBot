@@ -3,11 +3,14 @@ import { Stack } from "@astryxdesign/core/Stack";
 import {
   type GenerativeUIComponentProps,
   type GenerativeUIInvokeResult,
-  type GenerativeUITheme,
   type standardUI,
   useGenerativeUIAccessibility,
-  useGenerativeUIRuntime,
 } from "@copilotkit/react-core/v2/generative-ui";
+import {
+  backgroundColor,
+  borderColor,
+  radius,
+} from "@copilotkit/shared/generative-ui";
 import {
   type CSSProperties,
   createContext,
@@ -74,7 +77,6 @@ export function A2UINodeError() {
 
 export function A2UIForm(props: Control<"Form">) {
   const aria = useGenerativeUIAccessibility();
-  const { theme } = useGenerativeUIRuntime() ?? {};
   const element = useRef<HTMLFormElement>(null);
   const [failed, setFailed] = useState(0);
   const [undrawn, setUndrawn] = useState(0);
@@ -127,7 +129,7 @@ export function A2UIForm(props: Control<"Form">) {
         // Four steps between a form's fields is the catalog's default.
         gap={props.gap === undefined ? 4 : undefined}
         data-a2ui-input=""
-        style={layoutStyle(props, theme)}
+        style={layoutStyle(props)}
         onSubmit={(event) => {
           event.preventDefault();
           if (broken) return;
@@ -176,44 +178,28 @@ const FLEX_JUSTIFY = {
 const length = (value: number | string | undefined) =>
   typeof value === "number" ? `calc(var(--spacing-1) * ${value})` : value;
 
-/** Where a container puts its children, and how wide and tall it is. The catalog's layout props. */
+/**
+ * Where a container puts its children, and how wide and tall it is. The catalog's layout props,
+ * resolved as the SDK resolves them for its own containers.
+ *
+ * A colour or a corner radius the catalog names is a token, not CSS. The SDK writes it as the
+ * theme's variable, with its own value behind it, so a token the theme names no variable for
+ * still draws: the SDK's light value, and its dark value in a dark conversation. A raw colour or
+ * raw CSS passes through.
+ */
 function layoutStyle(
   props: Control<"Form"> | Control<"Pressable">,
-  theme: GenerativeUITheme | undefined,
 ): CSSProperties {
-  const themed = (name: string) =>
-    Object.hasOwn(theme ?? {}, name) || Object.hasOwn(theme?.dark ?? {}, name);
-  /**
-   * A surface or border colour the catalog names. A name the theme gives a `--a2ui-*` variable
-   * becomes that variable; anything else is CSS, as the catalog passes a raw colour through.
-   */
-  const paint = (
-    family: "color" | "color-border",
-    value: string | undefined,
-  ) => {
-    if (!value) return undefined;
-    const name = `--a2ui-${family}-${value}`;
-    return themed(name) ? `var(${name})` : value;
-  };
-  /** A radius token, a number of pixels, or one corner's raw CSS. */
-  const corner = (value: string | number | undefined) => {
-    if (value === undefined) return undefined;
-    if (typeof value === "number")
-      return `calc(var(--spacing-px, 0.0625rem) * ${value})`;
-    if (value === "full") return "var(--a2ui-radius-full, var(--radius-full))";
-    const name = `--a2ui-radius-${value}`;
-    return themed(name) ? `var(${name})` : value;
-  };
-  const radius = props.radius;
+  const radii = props.radius;
   const corners =
-    typeof radius === "object" && radius !== null
+    typeof radii === "object" && radii !== null
       ? {
-          borderTopLeftRadius: corner(radius.topLeft),
-          borderTopRightRadius: corner(radius.topRight),
-          borderBottomLeftRadius: corner(radius.bottomLeft),
-          borderBottomRightRadius: corner(radius.bottomRight),
+          borderTopLeftRadius: radius(radii.topLeft),
+          borderTopRightRadius: radius(radii.topRight),
+          borderBottomLeftRadius: radius(radii.bottomLeft),
+          borderBottomRightRadius: radius(radii.bottomRight),
         }
-      : { borderRadius: corner(radius) };
+      : { borderRadius: radius(radii) };
   return {
     display: props.inline ? "inline-flex" : undefined,
     // The catalog's props resolve as `any` (with the SDK's 1.85.0 types, `Control<"Form">` is `any`
@@ -230,9 +216,9 @@ function layoutStyle(
     rowGap: length(props.rowGap),
     columnGap: length(props.columnGap),
     padding: props.flush ? 0 : length(props.padding),
-    background: paint("color", props.background),
+    background: backgroundColor(props.background),
     border: props.border
-      ? `1px solid ${paint("color-border", props.borderColor ?? "default")}`
+      ? `1px solid ${borderColor(props.borderColor ?? "default")}`
       : undefined,
     ...corners,
     width: length(props.width),
@@ -254,7 +240,6 @@ function layoutStyle(
 
 export function A2UIPressable(props: Control<"Pressable">) {
   const aria = useGenerativeUIAccessibility();
-  const { theme } = useGenerativeUIRuntime() ?? {};
   const container = useRef<HTMLElement>(null);
   const seen = useRef(false);
   const { send } = useContext(FormFailures);
@@ -293,7 +278,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
       style={{
         cursor: props.disabled ? "not-allowed" : "pointer",
         opacity: props.disabled ? 0.5 : undefined,
-        ...layoutStyle(props, theme),
+        ...layoutStyle(props),
         ...(props.insetBorder
           ? { boxShadow: "inset 0 0 0 1px var(--a2ui-color-border-default)" }
           : {}),

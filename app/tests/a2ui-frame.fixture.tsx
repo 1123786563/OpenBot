@@ -4,6 +4,11 @@ import {
   CopilotKitProvider,
 } from "@copilotkit/react-core/v2";
 import { createGenerativeUI } from "@copilotkit/react-core/v2/generative-ui";
+import {
+  BACKGROUNDS,
+  BORDER_COLORS,
+  RADII,
+} from "@copilotkit/shared/generative-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
@@ -23,9 +28,10 @@ import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
  *
  * `forms` is two forms side by side in one interface, one of them with a part that cannot be drawn.
  * `refused` is the interfaces the SDK could not draw in part or in whole, `legacy` a form stored by
- * an earlier CopilotKit, and `controls` one form with every control in it. The turns their events
- * start are written to `window.__sent`. `forms` and `refused` are the only ones drawn from a
- * catalog that has a part that cannot be drawn.
+ * an earlier CopilotKit, `controls` one form with every control in it, and `tokens` a form and a
+ * pressable in colours and corners the theme names no variable for. The turns their events start
+ * are written to `window.__sent`. `forms` and `refused` are the only ones drawn from a catalog
+ * that has a part that cannot be drawn.
  */
 const THREAD = "thread-a2ui-frame";
 
@@ -546,6 +552,75 @@ const CONTROLS: Message[] = [
   ),
 ];
 
+/**
+ * Layout values the app's theme names no `--a2ui-*` variable for. The catalog's tokens are not CSS:
+ * drawn as the SDK resolves them, its own light value is behind the variable, and its dark value
+ * under the `dark` class. First a form and a pressable with known values, then one part for every
+ * value in the SDK's own lists.
+ */
+const TOKEN_PARTS: Component[] = [
+  {
+    id: "tinted",
+    component: "Form",
+    label: "Tinted",
+    background: "success",
+    radius: "2xs",
+    children: ["tinted-text"],
+  },
+  {
+    id: "tinted-text",
+    component: "Text",
+    text: "A tint, with small corners.",
+  },
+  {
+    id: "framed",
+    component: "Pressable",
+    border: true,
+    borderColor: "info",
+    radius: "xs",
+    children: ["framed-text"],
+  },
+  { id: "framed-text", component: "Text", text: "Framed" },
+  ...BACKGROUNDS.map((token, index) => ({
+    id: `background-${index}`,
+    component: "Form",
+    label: `Background ${token}`,
+    background: token,
+    children: [],
+  })),
+  ...BORDER_COLORS.flatMap((token, index) => [
+    {
+      id: `border-${index}`,
+      component: "Pressable",
+      border: true,
+      borderColor: token,
+      children: [`border-${index}-text`],
+    },
+    { id: `border-${index}-text`, component: "Text", text: `Border ${token}` },
+  ]),
+  ...RADII.map((token, index) => ({
+    id: `radius-${index}`,
+    component: "Form",
+    label: `Radius ${token}`,
+    radius: token,
+    children: [],
+  })),
+];
+const TOKENS: Message[] = [
+  surface(
+    "tokens",
+    [
+      {
+        id: "root",
+        component: "Column",
+        children: TOKEN_PARTS.map(({ id }) => id),
+      },
+      ...TOKEN_PARTS,
+    ],
+    { dataModel: {} },
+  ),
+];
+
 /** `window.__sent`: the user turns the forms' events start, as the agent receives them. */
 declare global {
   interface Window {
@@ -603,9 +678,11 @@ const messages: Message[] = [
         ? LEGACY
         : only === "controls"
           ? CONTROLS
-          : Object.entries(SURFACES)
-              .filter(([name]) => !only || name === only)
-              .map(([name, components]) => surface(name, components))),
+          : only === "tokens"
+            ? TOKENS
+            : Object.entries(SURFACES)
+                .filter(([name]) => !only || name === only)
+                .map(([name, components]) => surface(name, components))),
 ];
 
 const queryClient = new QueryClient({

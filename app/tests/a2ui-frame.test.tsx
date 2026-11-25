@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import {
+  BACKGROUNDS,
+  BORDER_COLORS,
+  RADII,
+} from "@copilotkit/shared/generative-ui";
 import type { Browser, Page } from "playwright-core";
 import { compile } from "tailwindcss";
 
@@ -719,6 +724,95 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
             of.words.filter((word) => word.contrast < 4.5),
             `${only} ${mode}`,
           ).toEqual([]);
+      }
+    },
+  );
+
+  /**
+   * What the browser paints around the parts of the `tokens` interface: the form and the pressable
+   * with known values, then every part of one kind, in the order the SDK's list names them.
+   */
+  function paintOf(page: Page) {
+    return card(page, "tokens").evaluate((frame) => {
+      const part = (selector: string) => {
+        const element = frame.querySelector(selector);
+        if (!element) throw new Error(`no part for ${selector}`);
+        return element;
+      };
+      const computed = (element: Element) => getComputedStyle(element);
+      const paint = (element: Element) => {
+        const style = computed(element);
+        return {
+          border: [
+            style.borderTopWidth,
+            style.borderTopStyle,
+            style.borderTopColor,
+          ],
+          background: style.backgroundColor,
+          corner: style.borderTopLeftRadius,
+        };
+      };
+      return {
+        tinted: paint(part('form[aria-label="Tinted"]')),
+        framed: paint(part('[role="button"]')),
+        backgrounds: [
+          ...frame.querySelectorAll('form[aria-label^="Background "]'),
+        ].map((form) => computed(form).backgroundColor),
+        borders: [...frame.querySelectorAll('[role="button"]')]
+          .filter((node) => node.textContent?.startsWith("Border "))
+          .map((node) => computed(node).borderTopWidth),
+        corners: [...frame.querySelectorAll('form[aria-label^="Radius "]')].map(
+          (form) => computed(form).borderTopLeftRadius,
+        ),
+      };
+    });
+  }
+
+  browserTest(
+    "every colour and corner radius the catalog allows draws, with the SDK's values where the theme names none, in light and in dark",
+    180_000,
+    async (deadline) => {
+      // The SDK's values for the two named parts: its light ones are the literals behind the
+      // variables, and its dark ones are the variables it sets under the `dark` class.
+      for (const [theme, border, background] of [
+        ["light", "rgb(156, 196, 234)", "rgba(0, 128, 93, 0.08)"],
+        ["dark", "rgb(47, 95, 143)", "rgba(60, 200, 150, 0.14)"],
+      ] as const) {
+        const page = await open("?only=tokens", deadline, theme);
+        try {
+          const paint = await paintOf(page);
+          // A border in a colour the theme does not name is a border, one pixel wide.
+          expect(paint.framed.border, theme).toEqual(["1px", "solid", border]);
+          expect(paint.tinted.background, theme).toBe(background);
+          // The catalog's two smallest corners, as the SDK names them in pixels.
+          expect(paint.tinted.corner, theme).toBe("2px");
+          expect(paint.framed.corner, theme).toBe("4px");
+
+          // No value in the SDK's lists is dropped: each background is painted, each border is a
+          // pixel wide, and each corner is round.
+          expect(paint.backgrounds, `${theme}: backgrounds`).toHaveLength(
+            BACKGROUNDS.length,
+          );
+          for (const [index, token] of BACKGROUNDS.entries())
+            expect(
+              paint.backgrounds[index],
+              `${theme}: background ${token}`,
+            ).not.toBe("rgba(0, 0, 0, 0)");
+          expect(paint.borders, `${theme}: borders`).toHaveLength(
+            BORDER_COLORS.length,
+          );
+          for (const [index, token] of BORDER_COLORS.entries())
+            expect(paint.borders[index], `${theme}: border ${token}`).toBe(
+              "1px",
+            );
+          expect(paint.corners, `${theme}: corners`).toHaveLength(RADII.length);
+          for (const [index, token] of RADII.entries())
+            expect(paint.corners[index], `${theme}: radius ${token}`).not.toBe(
+              "0px",
+            );
+        } finally {
+          await page.close();
+        }
       }
     },
   );
