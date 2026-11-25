@@ -75,8 +75,19 @@ export type CredentialUsage = {
   bots: { id: string; name: string }[];
 };
 
+/**
+ * What a failed usage read says when the server sent no sentence of its own. Exported because the
+ * page shows the same sentence for a failure that sent nothing at all, so one read has one sentence.
+ * `entry` is the page's own word: a key in the Personal edition, a credential in Team.
+ */
+export const credentialUseFallback = (entry: string) =>
+  `Couldn’t check what uses this ${entry}.`;
+
 /** `staleTime: 0`: what holds a key changes, and the answer is for this moment. */
-export function credentialUsageQueryOptions(credentialId: string) {
+export function credentialUsageQueryOptions(
+  credentialId: string,
+  entry: string,
+) {
   return queryOptions({
     queryKey: credentialKeys.usage(credentialId),
     staleTime: 0,
@@ -89,10 +100,7 @@ export function credentialUsageQueryOptions(credentialId: string) {
       client<CredentialUsage>(
         `/api/admin/credentials/${encodeURIComponent(credentialId)}/usage`,
         "usage",
-        {
-          fallback: "Could not check what uses this credential",
-          signal,
-        },
+        { fallback: credentialUseFallback(entry), signal },
       ),
   });
 }

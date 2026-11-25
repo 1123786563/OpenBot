@@ -64,6 +64,7 @@ import {
   identityProviderImpactQueryOptions,
   identityProviderListQueryOptions,
   identityProvidersAccessDenied,
+  IMPACT_FALLBACK,
 } from "@/lib/identity-providers/queries";
 import { queryClient } from "@/query-client";
 
@@ -100,18 +101,17 @@ const KEEPING_REASON = {
 } as const;
 
 /**
- * Who a provider is the only way in for, inside the confirmation that removes it.
+ * Who can still sign in once the provider is removed, inside the confirmation that removes it.
  *
- * Read while the dialog is open, from the account rows rather than the provider's email domain: a
- * failed read offers its own retry in place, and the Remove button stays disabled until the answer
- * is in, so nobody removes the last way in for somebody without seeing that first.
+ * Read while the dialog is open, by the rule the sign-in path applies rather than from the
+ * provider's email domain: a failed read offers its own retry in place, and the Remove button stays
+ * disabled until the answer is in, so nobody removes the last way in for somebody without seeing
+ * that first.
  */
 function ProviderImpact({
   impact,
-  providerId,
 }: {
   impact: UseQueryResult<IdentityProviderImpact>;
-  providerId: string;
 }) {
   if (impact.error)
     return (
@@ -120,7 +120,7 @@ function ProviderImpact({
         message={
           impact.error instanceof ClientError
             ? impact.error.message
-            : "Couldn’t check who signs in with this provider."
+            : IMPACT_FALLBACK
         }
         retry={() => impact.refetch()}
         retryLabel="Retry preview"
@@ -129,10 +129,7 @@ function ProviderImpact({
     );
   if (!impact.isSuccess || impact.fetchStatus !== "idle")
     return (
-      <ReadStatus
-        kind="loading"
-        message={`Checking who signs in with ${providerId}…`}
-      />
+      <ReadStatus kind="loading" message="Checking who can still sign in…" />
     );
 
   const { losing, keeping, includesYou } = impact.data;
@@ -148,7 +145,7 @@ function ProviderImpact({
       {losing.total > 0 ? (
         <>
           <p className="font-medium text-sm">
-            {count(losing.total, "person may", "people may")} be unable to sign
+            {count(losing.total, "person loses", "people lose")} their only way
             in{includesYou ? ", including you" : ""}.
           </p>
           <PageRows>
@@ -220,9 +217,7 @@ function IdentityProvidersPage() {
     enabled: removing !== null,
   });
   const { requestConfirmation, confirmation } = useActionConfirmation({
-    content: removing ? (
-      <ProviderImpact impact={impact} providerId={removing.providerId} />
-    ) : null,
+    content: removing ? <ProviderImpact impact={impact} /> : null,
     ready:
       removing !== null && impact.isSuccess && impact.fetchStatus === "idle",
     onClose: () => setRemoving(null),
@@ -458,7 +453,8 @@ function IdentityProvidersPage() {
                           setRemoving(provider);
                           requestConfirmation({
                             title: `Remove ${provider.providerId}?`,
-                            description: `For this deployment, people with email addresses at ${provider.domain} will lose this ${provider.protocol.toUpperCase()} sign-in option. If they rely on it, they may be unable to sign in. To restore it, register the provider again.`,
+                            // The scope and the recovery. Who loses their only way in is the list's to say, read from the accounts.
+                            description: `This removes ${provider.protocol.toUpperCase()} sign-in through ${provider.providerId} for the whole deployment. To restore it, register the provider again.`,
                             confirmLabel: "Remove provider",
                             pendingLabel: "Removing provider…",
                             failureMessage:

@@ -41,6 +41,7 @@ import {
   credentialKindLabel,
   credentialListQueryOptions,
   credentialUsageQueryOptions,
+  credentialUseFallback,
 } from "@/lib/credentials/queries";
 import { useManagePaths } from "@/lib/manage-paths";
 
@@ -68,7 +69,7 @@ export function CredentialsPage() {
   // confirmation cannot be submitted until that read has answered.
   const [revoking, setRevoking] = useState<CredentialStatus | null>(null);
   const usage = useQuery({
-    ...credentialUsageQueryOptions(revoking?.id ?? ""),
+    ...credentialUsageQueryOptions(revoking?.id ?? "", entry),
     enabled: revoking !== null,
   });
   const { requestConfirmation, confirmation } = useActionConfirmation({
@@ -263,9 +264,10 @@ export function CredentialsPage() {
                           setRevoking(credential);
                           requestConfirmation({
                             title: `Revoke ${credential.keyId} for ${credential.provider}?`,
+                            // Personal says only "key": no kind, since the kinds are names an admin reads.
                             description: personal
-                              ? `This is a ${credentialKindLabel(credential.kind)} key. Revocation is permanent. Add a replacement key to restore access.`
-                              : `This is a ${credentialKindLabel(credential.kind)} credential for this deployment. Revocation is permanent. Add a replacement credential to restore access.`,
+                              ? "Revoking this key is permanent. Add a replacement key to restore access."
+                              : `This is the ${credentialKindLabel(credential.kind)} for ${credential.provider}. Revocation is permanent. Add a replacement credential to restore access.`,
                             confirmLabel: `Revoke ${entry}`,
                             pendingLabel: `Revoking ${entry}…`,
                             failureMessage:
@@ -332,7 +334,7 @@ function CredentialUse({
         message={
           usage.error instanceof ClientError
             ? usage.error.message
-            : `Couldn’t check what uses this ${entry}.`
+            : credentialUseFallback(entry)
         }
         retry={() => usage.refetch()}
         retryLabel="Retry preview"

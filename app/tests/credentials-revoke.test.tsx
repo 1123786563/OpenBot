@@ -71,6 +71,8 @@ let credentials: CredentialStatus[];
 let usage: Record<string, Usage>;
 /** A status the usage read answers with instead of the usage. */
 let usageStatus: number | null;
+/** Whether the usage read fails with no sentence of its own, as a proxy's error page does. */
+let usageSilent: boolean;
 /** A test that wants the dialog open while usage is still being read holds it here. */
 let usageGate: Promise<void> | null;
 let edition: "team" | "personal";
@@ -112,6 +114,7 @@ beforeEach(() => {
     "cred-orphan": { features: [], bots: [] },
   };
   usageStatus = null;
+  usageSilent = false;
   usageGate = null;
   edition = "team";
   failingRevokes = 0;
@@ -133,6 +136,7 @@ beforeEach(() => {
     const usageMatch = path.match(/^\/api\/admin\/credentials\/(.+)\/usage$/);
     if (method === "GET" && usageMatch) {
       if (usageGate) await usageGate;
+      if (usageSilent) return new Response("Bad Gateway", { status: 502 });
       if (usageStatus) {
         return json(
           {
@@ -205,7 +209,7 @@ test("the revoke confirmation names the kind, and the Bots and features the vaul
   const { dialog, in: inside } = await open(view, "workspace");
   expect(dialog.textContent).toContain("Revoke workspace for notion?");
   expect(dialog.textContent).toContain(
-    "This is a Connector credential for this deployment.",
+    "This is the Connector for notion. Revocation is permanent. Add a replacement credential to restore access.",
   );
   await inside.findByText("Notion app");
   expect(dialog.textContent).toContain("Ada");
@@ -219,9 +223,7 @@ test("a model credential says it is the model access for every Bot", async () =>
     view.getByRole("button", { name: "Revoke max-tokens for openai" }),
   );
   const dialog = await view.findByRole("alertdialog");
-  expect(dialog.textContent).toContain(
-    "This is a Model credential for this deployment.",
-  );
+  expect(dialog.textContent).toContain("This is the Model for openai.");
   await within(dialog).findByText("Model access for every Bot");
 });
 
@@ -239,6 +241,35 @@ test("a credential nothing uses reads as used by nothing", async () => {
   );
 });
 
+/*
+ * A failure that carried no sentence of its own. The read's fallback is what reaches the screen, so
+ * it is the page's one sentence for this failure, in the edition's own word.
+ */
+test("a usage read that failed with no sentence of its own says so once, in the edition's own word", async () => {
+  edition = "personal";
+  usageSilent = true;
+  queryClient.setQueryData(deploymentKeys.capabilities(), {
+    generativeUi: true,
+    selfHostBanner: false,
+    localEvaluation: true,
+    edition,
+  });
+  const view = await draw();
+  const { in: inside } = await open(view, "workspace");
+  // The read retries once on its own before the error, and this one keeps failing.
+  await inside.findByText(
+    "Couldn’t check what uses this key.",
+    {},
+    {
+      timeout: 3000,
+    },
+  );
+  expect(
+    inside.queryByText("Could not check what uses this credential"),
+  ).toBeNull();
+  expect(writes).toEqual([]);
+});
+
 test("the personal edition calls it a key and names what has it in its own words", async () => {
   edition = "personal";
   usage["cred-live"] = { features: [], bots: [] };
@@ -250,7 +281,11 @@ test("the personal edition calls it a key and names what has it in its own words
   });
   const view = await draw();
   const { dialog, in: inside } = await open(view, "workspace");
-  expect(dialog.textContent).toContain("This is a Connector key.");
+  // No kind and no name a key's owner never sees: the page's word is key.
+  expect(dialog.textContent).toContain(
+    "Revoking this key is permanent. Add a replacement key to restore access.",
+  );
+  expect(dialog.textContent).not.toContain("Connector");
   await inside.findByText("Nothing in OpenBot points at this key.");
 });
 

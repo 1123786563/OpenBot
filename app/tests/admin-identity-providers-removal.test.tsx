@@ -81,6 +81,8 @@ let providers: IdentityProvider[];
 let impact: Impact;
 /** A status the impact read answers with instead of the impact. */
 let impactStatus: number | null;
+/** Whether the impact read fails with no sentence of its own, as a proxy's error page does. */
+let impactSilent: boolean;
 let impactReads: number;
 /** A test that wants the dialog open while the impact is still being read holds it here. */
 let impactGate: Promise<void> | null;
@@ -98,6 +100,7 @@ beforeEach(() => {
   providers = [{ ...PROVIDER }];
   impact = structuredClone(IMPACT);
   impactStatus = null;
+  impactSilent = false;
   impactReads = 0;
   impactGate = null;
   listStatus = null;
@@ -113,6 +116,7 @@ beforeEach(() => {
     if (method === "GET" && path.endsWith("/impact")) {
       impactReads += 1;
       if (impactGate) await impactGate;
+      if (impactSilent) return new Response("Bad Gateway", { status: 502 });
       return impactStatus
         ? json(
             {
@@ -179,7 +183,7 @@ async function open(view: Awaited<ReturnType<typeof draw>>) {
   return { trigger, dialog, in: within(dialog) };
 }
 
-test("the dialog names the deployment, the domain and the accounts that lose their only way in, and the ones that keep one", async () => {
+test("the dialog states its scope and how to undo it, and names who loses their only way in and who keeps one", async () => {
   const view = await draw();
   // Not on every list read: only when a removal is being confirmed.
   expect(impactReads).toBe(0);
@@ -187,11 +191,12 @@ test("the dialog names the deployment, the domain and the accounts that lose the
   expect(impactReads).toBe(1);
 
   expect(dialog.textContent).toContain(`Remove ${PROVIDER.providerId}?`);
-  expect(dialog.textContent).toContain(PROVIDER.domain);
-  expect(dialog.textContent).toContain("SAML");
-  // The scope: a provider is a fact about the deployment, not about one person.
-  expect(dialog.textContent).toContain("this deployment");
-  await inside.findByText("2 people may be unable to sign in.");
+  // The scope and the recovery, and no guess from the email domain: the list below names the people.
+  expect(dialog.textContent).toContain(
+    "This removes SAML sign-in through acme-okta for the whole deployment. To restore it, register the provider again.",
+  );
+  expect(dialog.textContent).not.toContain(PROVIDER.domain);
+  await inside.findByText("2 people lose their only way in.");
   expect(dialog.textContent).toContain("alice@acme.com");
   expect(dialog.textContent).toContain("bob@acme.com");
   expect(dialog.textContent).toContain("1 person keeps another way in.");
@@ -204,7 +209,7 @@ test("says including you when the admin asking loses their only way in", async (
   impact = { ...structuredClone(IMPACT), includesYou: true };
   const view = await draw();
   const { in: inside } = await open(view);
-  await inside.findByText("2 people may be unable to sign in, including you.");
+  await inside.findByText("2 people lose their only way in, including you.");
 });
 
 test("says nobody has signed in when the provider affects nobody", async () => {
@@ -250,12 +255,34 @@ test("a failed impact read says so and retries in place", async () => {
 
   impactStatus = null;
   fireEvent.click(retry);
-  await inside.findByText("2 people may be unable to sign in.");
+  await inside.findByText("2 people lose their only way in.");
   await waitFor(() =>
     expect(remove.getAttribute("aria-disabled")).not.toBe("true"),
   );
   expect(writes).toEqual([]);
 });
+/*
+ * A failure that carried no sentence of its own. The read's fallback is what reaches the screen, so
+ * it is the page's one sentence for this failure, not a second wording of it.
+ */
+test("an impact read that failed with no sentence of its own says so once", async () => {
+  impactSilent = true;
+  const view = await draw();
+  const { in: inside } = await open(view);
+  // The read retries once on its own before the error, and this one keeps failing.
+  await inside.findByText(
+    "Couldn’t check who can still sign in.",
+    {},
+    {
+      timeout: 3000,
+    },
+  );
+  expect(
+    inside.queryByText("Could not check who signs in with this provider"),
+  ).toBeNull();
+  expect(writes).toEqual([]);
+});
+
 test("cancel sends nothing and gives focus back to the control that opened the confirmation", async () => {
   const view = await draw();
   const trigger = view.getByRole("button", {
@@ -263,7 +290,7 @@ test("cancel sends nothing and gives focus back to the control that opened the c
   });
   trigger.focus();
   const { in: inside } = await open(view);
-  await inside.findByText("2 people may be unable to sign in.");
+  await inside.findByText("2 people lose their only way in.");
   // The first thing in the confirmation, so a keyboard does not start on the destructive control.
   expect(document.activeElement).toBe(
     inside.getByRole("button", { name: "Cancel" }),
@@ -282,7 +309,7 @@ test("pressing Remove three times during a submit sends one request", async () =
   });
   const view = await draw();
   const { in: inside } = await open(view);
-  await inside.findByText("2 people may be unable to sign in.");
+  await inside.findByText("2 people lose their only way in.");
 
   fireEvent.click(inside.getByRole("button", { name: "Remove provider" }));
   const pending = await inside.findByRole("button", {
@@ -304,7 +331,7 @@ test("a refusal keeps the confirmation with its preview, and Try again removes i
   failingDeletes = 1;
   const view = await draw();
   const { dialog, in: inside } = await open(view);
-  await inside.findByText("2 people may be unable to sign in.");
+  await inside.findByText("2 people lose their only way in.");
 
   fireEvent.click(inside.getByRole("button", { name: "Remove provider" }));
   await inside.findByText(
@@ -322,7 +349,7 @@ test("a refusal keeps the confirmation with its preview, and Try again removes i
 test("a provider whose setup changed under the dialog writes nothing and offers Close only", async () => {
   const view = await draw();
   const { in: inside } = await open(view);
-  await inside.findByText("2 people may be unable to sign in.");
+  await inside.findByText("2 people lose their only way in.");
   providers = [{ ...PROVIDER, domain: "changed.test" }];
 
   fireEvent.click(inside.getByRole("button", { name: "Remove provider" }));
@@ -339,7 +366,7 @@ test("a removal whose answer was lost is retried without a second write", async 
   loseDeleteResponse = true;
   const view = await draw();
   const { in: inside } = await open(view);
-  await inside.findByText("2 people may be unable to sign in.");
+  await inside.findByText("2 people lose their only way in.");
 
   fireEvent.click(inside.getByRole("button", { name: "Remove provider" }));
   await inside.findByText(
@@ -355,7 +382,7 @@ test("a removal whose answer was lost is retried without a second write", async 
 test("losing permission on the re-read says so, and writes nothing", async () => {
   const view = await draw();
   const { in: inside } = await open(view);
-  await inside.findByText("2 people may be unable to sign in.");
+  await inside.findByText("2 people lose their only way in.");
   listStatus = 403;
 
   fireEvent.click(inside.getByRole("button", { name: "Remove provider" }));
