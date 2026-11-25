@@ -1523,7 +1523,6 @@ describe("the runner's read of one firing", () => {
       enabled: true,
       instruction: "Post the standup summary.",
       budgetId: null,
-      status: null,
     });
   });
 
