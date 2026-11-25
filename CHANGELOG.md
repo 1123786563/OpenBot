@@ -32,6 +32,10 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - **Date and time fields in a generated form show where the keyboard focus is.** A date field, a
   time field and the time part of a date and time field showed no focus ring when Tab reached
   them. They now show the same ring as the other controls.
+- **The buttons and spacing inside an interface a Bot drew now follow the theme.** A button there
+  had lost its colour and its corners: a destructive button was not red, and a chosen option showed
+  no fill. The text of a field touched its border, and the options of an open list touched each
+  other. They now look like the rest of OpenBot, in light and in dark.
 - Settings live in one file per service, and there is no `.env` in the repository root any more:
   `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
   `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model

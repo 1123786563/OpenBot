@@ -324,6 +324,25 @@
   outline-offset: calc(var(--spacing) / 4);
 }
 
+/*
+ * A generated interface is Astryx's to draw. Tailwind's preflight sits in `@layer base`, which
+ * OpenBot loads after Astryx's layers, so inside an interface it outranked what Astryx writes
+ * there. Every part lost the margin and padding Astryx gives it: the text of a field touched its
+ * border, and the options of an open list touched each other. A button lost more: its fill and ink
+ * (a destructive button was not red, a picked chip had no fill), its corners and its inset. Undone
+ * inside that same layer, Astryx's own rules are the last word again, in each theme.
+ */
+@layer base {
+  .a2ui-surface :is(*, *::before, *::after) {
+    margin: revert-layer;
+    padding: revert-layer;
+  }
+
+  .a2ui-surface button {
+    all: revert-layer;
+  }
+}
+
 /* A boxed Card supplies its own border and padding. */
 [data-generative-ui-chat-surface]:not([data-a2ui-markdown-surface]):has(
   > .a2ui-surface

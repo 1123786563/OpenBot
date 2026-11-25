@@ -21,8 +21,9 @@ import { compile } from "tailwindcss";
  *
  *   OPENBOT_APP_BROWSER=1 bun test app/tests/a2ui-frame.test.tsx
  *
- * With OPENBOT_APP_SHOTS=<dir> it also saves the trip budget and the bare interface at a chat's
- * width, light and dark, as budget-light.png and so on.
+ * With OPENBOT_APP_SHOTS=<dir> it also saves each page, light and dark, at a chat's width and at a
+ * phone's: the trip budget as budget-light.png, the controls at 320px as controls-light-320.png,
+ * and the controls with the list and the calendar open as controls-light-320-list.png and so on.
  */
 const asked = process.env.OPENBOT_APP_BROWSER === "1";
 const shots = process.env.OPENBOT_APP_SHOTS;
@@ -734,6 +735,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
     300_000,
     async (deadline) => {
       const inks: Record<string, { field: string; label: string }> = {};
+      const fills: Record<string, string[]> = {};
       // One page at a time, as each has its own Chromium.
       for (const theme of ["light", "dark"] as const)
         for (const width of [680, 320]) {
@@ -756,14 +758,98 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
               `${at}, ${state}`,
             ).toEqual([]);
           };
+          const surface = card(page, "controls");
           try {
             await readNow("closed");
 
+            // Every button is drawn as Astryx writes it, from the theme's colours and with room
+            // around its label. Tailwind's preflight is in a later cascade layer, and left them all
+            // bare text with no inset: the picked chip without a fill, the destructive button not
+            // red, and two chips touching.
+            const painted = await surface.evaluate((card) => {
+              const probe = document.createElement("span");
+              /** A theme colour, resolved where the button is. */
+              const colour = (at: Element, name: string) => {
+                probe.style.color = `var(${name})`;
+                at.append(probe);
+                return getComputedStyle(probe).color;
+              };
+              return [...card.querySelectorAll("button[data-variant]")].map(
+                (button) => {
+                  const style = getComputedStyle(button);
+                  const read = (name: string) => colour(button, name);
+                  return {
+                    label: button.textContent?.trim(),
+                    variant: button.getAttribute("data-variant"),
+                    fill: style.backgroundColor,
+                    ink: style.color,
+                    // Inset on each side, so a label never touches the edge of its button.
+                    inset: [
+                      style.paddingTop,
+                      style.paddingRight,
+                      style.paddingBottom,
+                      style.paddingLeft,
+                    ].map(Number.parseFloat),
+                    accent: read("--color-accent"),
+                    onAccent: read("--color-on-accent"),
+                    neutral: read("--color-neutral"),
+                    errorMuted: read("--color-error-muted"),
+                    onErrorMuted: read("--color-on-error-muted"),
+                    inkOfTheme: read("--color-text-primary"),
+                  };
+                },
+              );
+            });
+            // All four variants are on the page, so the comparison below is not an empty one.
+            expect(new Set(painted.map((button) => button.variant))).toEqual(
+              new Set(["secondary", "primary", "destructive", "ghost"]),
+            );
+            for (const button of painted) {
+              // Each variant's fill and ink, by the names the theme gives them. The neutral
+              // theme draws a destructive button as a tint, not as a red block.
+              const [fill, ink] = {
+                primary: [button.accent, button.onAccent],
+                secondary: [button.neutral, button.inkOfTheme],
+                destructive: [button.errorMuted, button.onErrorMuted],
+                ghost: ["rgba(0, 0, 0, 0)", button.inkOfTheme],
+              }[button.variant ?? ""];
+              expect(
+                [button.fill, button.ink],
+                `${at}: ${button.variant} "${button.label}"`,
+              ).toEqual([fill, ink]);
+              for (const side of button.inset)
+                expect(
+                  side,
+                  `${at}: ${button.variant} "${button.label}"`,
+                ).toBeGreaterThan(0);
+            }
+            // A field's box has room around its text, as Astryx draws it.
+            const inset = (at: ReturnType<typeof card.locator>) =>
+              at.evaluate((box) => {
+                const style = getComputedStyle(box);
+                return [
+                  style.paddingTop,
+                  style.paddingRight,
+                  style.paddingBottom,
+                  style.paddingLeft,
+                ].map(Number.parseFloat);
+              });
+            const field = inset(surface.locator(".astryx-text-input").first());
+            for (const side of await field)
+              expect(side, `${at}: the text field's inset`).toBeGreaterThan(0);
+
+            fills[theme] = painted.map((button) => button.fill);
+
             // The list and the calendar are drawn inside the interface, and read the same way.
-            const surface = card(page, "controls");
             await surface.locator('[aria-haspopup="listbox"]').click();
             await page.getByRole("option", { name: "upper" }).waitFor();
             await readNow("the list open");
+            // So does each option of the open list.
+            const option = await inset(
+              page.getByRole("option", { name: "upper" }),
+            );
+            for (const side of option)
+              expect(side, `${at}: an option's inset`).toBeGreaterThan(0);
             await page.keyboard.press("Escape");
             const calendars = surface.getByRole("button", {
               name: "Open calendar",
@@ -773,6 +859,29 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
               await calendar.click();
               await page.getByRole("dialog").waitFor();
               await readNow("the calendar open");
+              // The selected day is the theme's accent, as Astryx paints it.
+              const day = page
+                .getByRole("dialog")
+                .locator('[role="gridcell"][aria-selected="true"] button');
+              const selected = await day.evaluate((button) => {
+                const probe = document.createElement("span");
+                button.append(probe);
+                const colour = (name: string) => {
+                  probe.style.color = `var(${name})`;
+                  return getComputedStyle(probe).color;
+                };
+                const style = getComputedStyle(button);
+                return {
+                  paint: [style.backgroundColor, style.color],
+                  theme: [
+                    colour("--color-accent"),
+                    colour("--color-on-accent"),
+                  ],
+                };
+              });
+              expect(selected.paint, `${at}: the selected day`).toEqual(
+                selected.theme,
+              );
               await page.keyboard.press("Escape");
               await page.getByRole("dialog").waitFor({ state: "hidden" });
             }
@@ -859,33 +968,77 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
             await page.close();
           }
         }
-      // The ink of a field and of its label changes with the theme.
+      // The ink of a field and of its label, and the fill of a button, change with the theme.
       expect(inks.dark).not.toEqual(inks.light);
+      expect(fills.dark).not.toEqual(fills.light);
     },
   );
 
   if (shots)
-    browserTest("screenshots at a chat's width", 300_000, async (deadline) => {
-      mkdirSync(shots, { recursive: true });
-      for (const theme of ["light", "dark"] as const) {
-        for (const only of ["budget", "plain", "forms"]) {
-          const page = await open(`?only=${only}`, deadline, theme);
-          try {
-            // Once the turns have faded in.
-            await settle(page);
-            const bottom = await page.$eval(
+    browserTest(
+      "screenshots at a chat's width and at a phone's",
+      600_000,
+      async (deadline) => {
+        mkdirSync(shots, { recursive: true });
+        /** The conversation from its top to the end of its last interface. */
+        const shot = async (
+          page: Page,
+          only: string,
+          theme: string,
+          width: number,
+          state = "",
+        ) => {
+          // A form taller than the window is cut off by the transcript's scroll area, so the window
+          // is made as tall as the conversation first.
+          const tall = await page.evaluate(() => {
+            const frame = document.querySelector(
               "[data-generative-ui-chat-surface]",
-              (frame) => frame.getBoundingClientRect().bottom,
             );
-            await page.screenshot({
-              path: join(shots, `${only}-${theme}.png`),
-              clip: { x: 0, y: 0, width: 680, height: Math.ceil(bottom) + 32 },
-            });
-          } finally {
-            await page.close();
-          }
-        }
-      }
-      // One Chromium per page, six pages, on a machine that may be busy.
-    });
+            for (let at = frame?.parentElement; at; at = at.parentElement)
+              if (at.scrollHeight > at.clientHeight + 1)
+                return at.scrollHeight + 48;
+            return 0;
+          });
+          if (tall) await page.setViewportSize({ width, height: tall });
+          const bottom = await page.$eval(
+            "[data-generative-ui-chat-surface]",
+            (frame) => frame.getBoundingClientRect().bottom,
+          );
+          await page.screenshot({
+            path: join(
+              shots,
+              `${only}-${theme}${width === 680 ? "" : `-${width}`}${state}.png`,
+            ),
+            fullPage: true,
+            clip: { x: 0, y: 0, width, height: Math.ceil(bottom) + 32 },
+          });
+        };
+        for (const theme of ["light", "dark"] as const)
+          for (const width of [680, 320])
+            for (const only of ["budget", "plain", "forms", "controls"]) {
+              const page = await open(`?only=${only}`, deadline, theme, width);
+              try {
+                await shot(page, only, theme, width);
+                if (only !== "controls") continue;
+                // Every control, with the list and the calendar open.
+                const surface = card(page, only);
+                await surface.locator('[aria-haspopup="listbox"]').click();
+                await page.getByRole("option", { name: "upper" }).waitFor();
+                await settle(page);
+                await shot(page, only, theme, width, "-list");
+                await page.keyboard.press("Escape");
+                await surface
+                  .getByRole("button", { name: "Open calendar" })
+                  .first()
+                  .click();
+                await page.getByRole("dialog").waitFor();
+                await settle(page);
+                await shot(page, only, theme, width, "-calendar");
+              } finally {
+                await page.close();
+              }
+            }
+        // One Chromium per page, sixteen pages, on a machine that may be busy.
+      },
+    );
 });
