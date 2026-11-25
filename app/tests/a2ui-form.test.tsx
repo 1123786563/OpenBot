@@ -1272,6 +1272,80 @@ test("a Form sent again once the reply is over shows no notice while the Bot ans
   expect(view.getByText(NOT_SENT)).toBeTruthy();
 });
 
+/*
+ * A FORM INSIDE A FORM. The inner form's submit bubbles to the one around it, and the outer form's
+ * own `onSubmit` ran for it: it sent its own event for a submit that was not its, and, while the
+ * Bot was replying, showed "Nothing was sent." for an event it never meant to send.
+ */
+async function nestedFormsPage() {
+  sent.length = 0;
+  const running = { ...agent, isRunning: false } as unknown as Agent;
+  const view = render(
+    <Page
+      runningAgent={running}
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "nested",
+          dataModel: { outer: "", inner: "" },
+          components: [
+            {
+              ...form("root", "sendOuter", ["outer"]),
+              children: ["outer", "inner-form", "root-send"],
+            },
+            field("outer", "Outer"),
+            form("inner-form", "sendInner", ["inner"]),
+            field("inner", "Inner"),
+            {
+              id: "inner-form-send",
+              component: "Button",
+              label: "Send inner",
+              submit: true,
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send outer",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="nested" />
+    </Page>,
+  );
+  const inner = (await view.findByLabelText("Inner")) as HTMLInputElement;
+  const innerForm = inner.form as HTMLFormElement;
+  // The shape the bug needs: one form element inside another. Read off the parent chain, because
+  // happy-dom wraps a form in a Proxy and cannot compare two of them.
+  const enclosing: string[] = [];
+  for (let at = inner.parentNode; at; at = at.parentNode)
+    if (at.nodeName === "FORM") enclosing.push(at.nodeName);
+  expect(enclosing).toEqual(["FORM", "FORM"]);
+  await userEvent.setup({ document }).type(inner, "Tea");
+  return { running, view, innerForm };
+}
+
+test("a form inside a form handles only its own submit, so the form around it never says nothing was sent", async () => {
+  const { running, view, innerForm } = await nestedFormsPage();
+  // The inner form's submit sends its own event, and nothing for the form around it.
+  fireEvent.submit(innerForm);
+  expect(sent).toEqual(["Inner\n\ninner: Tea"]);
+  expect(view.queryByText(NOT_SENT)).toBeNull();
+
+  // While the Bot is replying, the inner form's submit is dropped and the inner form says so. The
+  // form around it sent nothing for that submit, and says nothing.
+  running.isRunning = true;
+  fireEvent.submit(innerForm);
+  const notices = await view.findAllByText(NOT_SENT);
+  expect(notices).toHaveLength(1);
+  // The one that says it is the inner form: it holds the Inner field and not the Outer one.
+  const holder = notices[0]?.closest("form")?.textContent;
+  expect(holder).toContain("Inner");
+  expect(holder).not.toContain("Outer");
+});
+
 test("a Form and a Pressable that scroll can take focus, so the keyboard can scroll them", async () => {
   const view = render(
     <Page

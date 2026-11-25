@@ -140,6 +140,10 @@ export function A2UIForm(props: Control<"Form">) {
         style={layoutStyle(props)}
         onSubmit={(event) => {
           event.preventDefault();
+          // A Form inside this one sends its own event. Its submit bubbles here too and is not
+          // this form's: handled, the form around it sent an event of its own for it, or said that
+          // one it never meant to send was dropped.
+          if (event.target !== event.currentTarget) return;
           if (broken) return;
           // The SDK drops an event that arrives while the Bot is still replying. Say so, or the
           // person believes the form was sent.
