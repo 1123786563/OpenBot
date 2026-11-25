@@ -614,12 +614,36 @@ export function createComponentRoutes(
 
     if (recordedBySource) return context.json({ published });
 
-    await audit(
-      context,
-      published ? "component.published" : "component.unpublished",
-      name,
-      {},
-    );
+    /*
+     * After the save, so the trail never records a publication that did not take. A save the trail
+     * could not record is said to be one, as a boundary's is: the component is already published or
+     * not, and an admin told only "couldn't change publication" would press the switch the other way
+     * to retry it. `published` goes back with the sentence, so the reply says what is in force.
+     */
+    try {
+      await audit(
+        context,
+        published ? "component.published" : "component.unpublished",
+        name,
+        {},
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          type: "component-publication-unrecorded",
+          error: String(error),
+        }),
+      );
+      return context.json(
+        {
+          error: published
+            ? "The component is published, but Audit couldn't record the change. Try again to record it."
+            : "The component is unpublished, but Audit couldn't record the change. Try again to record it.",
+          published,
+        },
+        500,
+      );
+    }
     return context.json({ published });
   });
 

@@ -220,6 +220,13 @@ async function lastTranslation() {
 
 type PreviewBody = {
   check: { ok: boolean };
+  /** The switches this preview read, which a save says it is based on. */
+  basedOn: {
+    scopeKind: string;
+    scopeId: string;
+    capability: string;
+    allowed: boolean;
+  }[];
   people: {
     id: string;
     role: string;
@@ -611,6 +618,171 @@ describe("POST /api/admin/enterprise/capabilities/batch", () => {
 
     expect(response.status).toBe(200);
     expect(await controls.capabilityFor(sam.id, LOCAL)).toBeFalse();
+  });
+});
+
+/**
+ * Two admins reading one preview and saving different drafts, and a save whose switches land while
+ * the trail refuses them. Both are the same question: what is in force afterwards, and what does the
+ * admin who did not get their way read?
+ */
+describe("a permission batch from a stale reading, and one the trail could not record", () => {
+  /** Off for everybody: one switch, so what landed is unambiguous. */
+  const OFF: CapabilityChange[] = [
+    {
+      scopeKind: "organization",
+      scopeId: "",
+      capability: LOCAL,
+      allowed: false,
+    },
+  ];
+  /** A different draft from the same reading, touching another permission. */
+  const NO_CHECK_INS: CapabilityChange[] = [
+    {
+      scopeKind: "organization",
+      scopeId: "",
+      capability: "proactive",
+      allowed: false,
+    },
+  ];
+
+  const rowsNow = () =>
+    controls.store.capabilityRows().then((rows) =>
+      rows.map(({ scopeKind, scopeId, capability, allowed }) => ({
+        scopeKind,
+        scopeId,
+        capability,
+        allowed,
+      })),
+    );
+
+  beforeAll(async () => {
+    await database.delete(capabilitySettings);
+    await controls.refresh();
+  });
+
+  test("the first save lands and the second is refused with the switches now in force", async () => {
+    // One reading, taken once, that both saves say they are based on.
+    const preview = (await (
+      await post("preview", { changes: OFF })
+    ).json()) as PreviewBody;
+    expect(preview.basedOn).toEqual([]);
+
+    const first = await post("batch", {
+      changes: OFF,
+      basedOn: preview.basedOn,
+    });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ saved: OFF });
+
+    const second = await post("batch", {
+      changes: NO_CHECK_INS,
+      basedOn: preview.basedOn,
+    });
+    expect(second.status).toBe(409);
+    expect((await second.json()).error).toBe(
+      "Permissions changed while you were reviewing them. Review the new impact and save again.",
+    );
+    // The loser wrote nothing: only the winner's switch is in force, and only it is on the trail.
+    expect(await rowsNow()).toEqual(OFF);
+    expect(await controls.capabilityFor(cam.id, "proactive")).toBeTrue();
+
+    // Reading again shows what is there now, and saving against that is accepted.
+    const latest = (await (
+      await post("preview", { changes: NO_CHECK_INS })
+    ).json()) as PreviewBody;
+    expect(latest.basedOn).toEqual(OFF);
+    const retry = await post("batch", {
+      changes: NO_CHECK_INS,
+      basedOn: latest.basedOn,
+    });
+    expect(retry.status).toBe(200);
+    expect(await rowsNow()).toEqual(
+      expect.arrayContaining([...OFF, ...NO_CHECK_INS]),
+    );
+  });
+
+  test("a save with no reading named still saves, as every caller before this sent it", async () => {
+    const response = await post("batch", { changes: OFF });
+    expect(response.status).toBe(200);
+    expect(await rowsNow()).toEqual(expect.arrayContaining(OFF));
+  });
+
+  test("a reading that is not switches is refused, and nothing is saved", async () => {
+    const before = await rowsNow();
+    const response = await post("batch", {
+      changes: NO_CHECK_INS,
+      // A stored switch is on or off. Inherited is what a change may say, not what a reading holds.
+      basedOn: [{ ...OFF[0], allowed: null }],
+    });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe(
+      "basedOn must be the switches the preview read.",
+    );
+    expect(await rowsNow()).toEqual(before);
+  });
+
+  test("the switches are in force when the trail refuses them, and saving again records them", async () => {
+    await database.delete(capabilitySettings);
+    await controls.refresh();
+    const preview = (await (
+      await post("preview", { changes: OFF })
+    ).json()) as PreviewBody;
+    const trail = controls.deps.auditStore;
+    const recorded = () =>
+      database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.actorUserId, ada.id),
+            eq(auditEvents.eventType, "capability.changed"),
+            eq(auditEvents.targetId, LOCAL),
+          ),
+        )
+        .orderBy(desc(auditEvents.createdAt));
+    const before = (await recorded()).length;
+    controls.deps.auditStore = {
+      ...trail,
+      insert: async (event, correlation) => {
+        if (event.eventType === "capability.changed")
+          throw new Error("the trail is unavailable");
+        return trail.insert(event, correlation);
+      },
+    };
+    let response: Response;
+    try {
+      response = await post("batch", {
+        changes: OFF,
+        basedOn: preview.basedOn,
+      });
+    } finally {
+      controls.deps.auditStore = trail;
+    }
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error:
+        "The switches were saved, but Audit couldn't record all of them. Save again to record them.",
+      saved: OFF,
+    });
+    // Effective now, not at the next restart: the row is written and the snapshot refreshed.
+    expect(await rowsNow()).toEqual(OFF);
+    expect(await controls.capabilityFor(cam.id, LOCAL)).toBeFalse();
+    expect(controls.snapshot()?.rows).toHaveLength(1);
+    expect(await recorded()).toHaveLength(before);
+
+    // Saving the same switches again is safe, and this time the trail has them.
+    const again = (await (
+      await post("preview", { changes: OFF })
+    ).json()) as PreviewBody;
+    const retry = await post("batch", { changes: OFF, basedOn: again.basedOn });
+    expect(retry.status).toBe(200);
+    expect(await rowsNow()).toEqual(OFF);
+    const rows = await recorded();
+    expect(rows).toHaveLength(before + 1);
+    expect(rows[0]?.payload).toMatchObject({ allowed: false, by: ada.email });
   });
 });
 

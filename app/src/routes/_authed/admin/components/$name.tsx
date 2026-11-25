@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/Stack";
 import {
   IconAlertTriangle,
   IconChevronRight,
@@ -25,6 +26,7 @@ import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SettingsItemBackground } from "@/components/settings/background";
 import { SettingsDraftDialog } from "@/components/settings/settings-draft-dialog";
 import {
+  ActionIncomplete,
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
@@ -57,7 +59,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { canKeepCachedRead } from "@/lib/client";
+import { canKeepCachedRead, ClientError } from "@/lib/client";
 import {
   saveComponentDraftMutationOptions,
   setComponentFunctionMutationOptions,
@@ -322,6 +324,8 @@ function ComponentDetail({
     setPublished.isPending || publishDescription.isPending;
 
   function confirmDescriptionPublication(trigger: HTMLButtonElement) {
+    /* Kept here, not in render state: the dialog keeps one `run` for every Try again. */
+    let unrecorded = false;
     requestConfirmation({
       title: "Publish this description?",
       description: `Bots allowed to use ${component.title} will read the saved draft. The component stays published and Bot access stays the same.`,
@@ -345,11 +349,21 @@ function ComponentDetail({
             "The saved draft or publication status changed. Review the current settings and try again.",
           );
         }
-        if (current.hasUnpublishedChanges) {
-          await publishDescription.mutateAsync({
-            name: component.name,
-            published: true,
-          });
+        // After a save only the trail refused, nothing is left to publish: the same write records it.
+        if (current.hasUnpublishedChanges || unrecorded) {
+          try {
+            await publishDescription.mutateAsync({
+              name: component.name,
+              published: true,
+            });
+          } catch (error) {
+            // A 500 carries the server's sentence about what landed, as a boundary's does.
+            if (error instanceof ClientError && error.status === 500) {
+              unrecorded = true;
+              throw new ActionIncomplete(error.message);
+            }
+            throw error;
+          }
         }
       },
     });
@@ -485,9 +499,35 @@ function ComponentDetail({
             </ItemActions>
           </Item>
           {setPublished.isError ? (
-            <p className="px-4 py-2 text-destructive text-sm" role="alert">
-              Couldn't change publication. Try the Published switch again.
-            </p>
+            /*
+             * The server's own sentence, which says what is already in force when the switch landed
+             * and only the trail failed. Try again sends the same publication, not the opposite one:
+             * the switch beside it now reads what OpenBot holds, so pressing it would undo the change.
+             */
+            <HStack
+              gap={3}
+              paddingBlock={2}
+              paddingInline={4}
+              vAlign="center"
+              wrap="wrap"
+            >
+              <p className="text-destructive text-sm" role="alert">
+                {setPublished.error.message}
+              </p>
+              <Button
+                className="min-h-11"
+                disabled={publicationBusy}
+                onClick={() => {
+                  if (setPublished.variables)
+                    setPublished.mutate(setPublished.variables);
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Try again
+              </Button>
+            </HStack>
           ) : null}
 
           <Separator />

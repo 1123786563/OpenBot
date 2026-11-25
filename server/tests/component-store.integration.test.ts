@@ -7,7 +7,12 @@ import {
   test,
 } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, inArray, sql } from "drizzle-orm";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { type AuditStore, createAuditStore } from "../src/audit";
+import type { AppVariables } from "../src/auth/guards";
+import { createComponentRoutes } from "../src/components/routes";
 import {
   ComponentNotFoundError,
   type ComponentStore,
@@ -20,6 +25,7 @@ import {
   componentExclusions,
   componentFunctions,
   components,
+  users,
 } from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -244,6 +250,7 @@ afterAll(async () => {
     .where(inArray(componentExclusions.componentName, names));
   await database.delete(components).where(inArray(components.name, names));
   await database.delete(agents).where(inArray(agents.id, [...fixtureAgentIds]));
+  await database.delete(users).where(like(users.id, `%_${suite}`));
 });
 
 describe("deciding whether a Bot may use a component", () => {
@@ -405,6 +412,108 @@ describe("publishing", () => {
       (component) => component.name === componentName,
     );
     expect(listed?.hasUnpublishedChanges).toBeFalse();
+  });
+});
+
+/**
+ * A publication whose Audit row fails, through the real route over the real store: the row is
+ * written before the trail is asked, so the reply has to say what is in force, and pressing the
+ * switch the same way again has to be a safe way to record it.
+ */
+describe("a publication the trail could not record", () => {
+  const admin = `admin_publication_${suite}`;
+  const asAdmin: MiddlewareHandler<{ Variables: AppVariables }> = async (
+    context,
+    next,
+  ) => {
+    context.set("actor", {
+      id: admin,
+      email: `${admin}@example.test`,
+      role: "admin",
+    });
+    await next();
+  };
+  const trail: AuditStore = createAuditStore(database);
+  const insert = trail.insert;
+  let failing = false;
+  trail.insert = async (event, correlation) => {
+    if (failing) throw new Error("the trail is unavailable");
+    return insert(event, correlation);
+  };
+  const hono = new Hono().route(
+    "/components",
+    createComponentRoutes(store, asAdmin, trail, async () => true),
+  );
+  const post = (name: string, published: boolean) =>
+    hono.request(`http://t/components/${name}/publication`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ published }),
+    });
+  const stored = async (name: string) =>
+    (await store.list()).find((component) => component.name === name);
+  const recorded = async (name: string) =>
+    database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.targetType, "component"),
+          eq(auditEvents.targetId, name),
+        ),
+      );
+
+  beforeAll(async () => {
+    await database
+      .insert(users)
+      .values({ id: admin, email: `${admin}@example.test` });
+  });
+
+  test("unpublishing is in force though the trail refused it, and trying it again records one row", async () => {
+    const name = `testUnrecorded_${suite}`;
+    await makeComponent(name, true);
+    failing = true;
+
+    const response = await post(name, false);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error:
+        "The component is unpublished, but Audit couldn't record the change. Try again to record it.",
+      published: false,
+    });
+    // In force now: no Bot may draw it, exactly as a recorded unpublish leaves things.
+    expect((await stored(name))?.published).toBeFalse();
+    expect(await recorded(name)).toHaveLength(0);
+
+    // The retry the sentence asks for is the same press, and it is what puts the row there.
+    failing = false;
+    const again = await post(name, false);
+    expect(again.status).toBe(200);
+    expect((await stored(name))?.published).toBeFalse();
+    const rows = await recorded(name);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "component.unpublished",
+      actorUserId: admin,
+      payload: { actor: `${admin}@example.test` },
+    });
+  });
+
+  test("a recorded publish is on the trail once, with who published it", async () => {
+    const name = `testRecorded_${suite}`;
+    await makeComponent(name, false);
+
+    const response = await post(name, true);
+
+    expect(response.status).toBe(200);
+    expect((await stored(name))?.published).toBeTrue();
+    const rows = await recorded(name);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "component.published",
+      actorUserId: admin,
+      payload: { actor: `${admin}@example.test` },
+    });
   });
 });
 
