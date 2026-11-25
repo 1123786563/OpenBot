@@ -328,6 +328,66 @@ test("a history read that fails is shown, keeps the draft, and recovers in place
   );
 });
 
+/*
+ * A READ THAT LANDS WHILE THE BOT IS REPLYING MERGES NOTHING, because the live stream owns the
+ * transcript until it ends. With no read after the turn, the earlier messages a failed opening read
+ * had left out never arrived, short of reopening the chat. The read after the turn brings them.
+ */
+test("earlier messages that could not be loaded arrive after the next reply, without reopening the chat", async () => {
+  const THREAD = "thread-late";
+  const earlier: Message[] = [
+    { id: "u-early", role: "user", content: "What did we decide?" },
+    { id: "a-early", role: "assistant", content: "To ship on Friday." },
+  ];
+  runtime.stored.set(THREAD, earlier);
+  // The server names a thread's runs in every read, as this one does for a run that answered.
+  runtime.threadRuns.set(THREAD, [
+    {
+      id: "run-early",
+      status: "completed",
+      userMessageId: "u-early",
+      assistantMessageId: "a-early",
+    },
+  ]);
+  let failReads = true;
+  answerWith((url) =>
+    url.pathname.endsWith("/messages") && failReads
+      ? new Response(null, { status: 503 })
+      : undefined,
+  );
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.plans = [HOLDING];
+  const view = open();
+  await view.findByText("Couldn't load earlier messages.");
+
+  await send(view, "And Saturday?");
+  // Try again while the Bot is replying: the read succeeds and the notice goes, but the reply
+  // still owns the transcript, so the earlier messages are not merged into it.
+  failReads = false;
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(view.getByRole("button", { name: "Try again" }));
+  await waitFor(() =>
+    expect(view.queryByText("Couldn't load earlier messages.")).toBeNull(),
+  );
+  expect(view.queryByText("To ship on Friday.")).toBeNull();
+
+  releaseRun([
+    {
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId: "partial",
+      delta: "Saturday is free.",
+    },
+    { type: "TEXT_MESSAGE_END", messageId: "partial" },
+    { type: "RUN_FINISHED", threadId: THREAD, runId: "run-late" },
+  ]);
+  await said(view, "Saturday is free.");
+  await settled(view);
+  // The thread is read once the turn ends, answered or not, and what was missing is on screen.
+  expect(await view.findByText("What did we decide?")).toBeTruthy();
+  expect(view.getByText("To ship on Friday.")).toBeTruthy();
+  expect(view.getByText("Saturday is free.")).toBeTruthy();
+});
+
 /**
  * The approval in a thread kept for this Bot, as the inbox holds it at whatever status it reached.
  * It names the tool call the transcript still shows unanswered, so the step shimmers while the
@@ -544,6 +604,50 @@ test("a stop the server refuses lets this browser's end of the turn go, and says
   await waitFor(() => expect(runtime.aborts).toEqual([threadId]));
   await settled(view);
   expect(view.queryByText("The run was stopped.")).toBeNull();
+});
+
+/*
+ * THE THREAD IS READ AGAIN AFTER EVERY TURN OF THIS TAB, answered or not. It was read only after a
+ * turn that failed, so "The run was stopped." stayed on screen under the next turn's answer.
+ */
+test("after a Stop is confirmed, the next turn's answer takes the sentence about the stop away", async () => {
+  runtime.plans = [HOLDING, { kind: "answers", text: "All done." }];
+  const view = open();
+  await send(view, "Take your time");
+  const { threadId } = currentJoin();
+  runtime.threadRuns.set(threadId, [liveRun("run-1")]);
+  await pressStop(view);
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId, runId: "run-1" }]),
+  );
+  expect(await view.findByText("The run was stopped.")).toBeTruthy();
+  releaseRun([
+    { type: "RUN_ERROR", message: "The Bot run was stopped.", code: "stopped" },
+  ]);
+  await settled(view);
+  expect(view.getByText("The run was stopped.")).toBeTruthy();
+
+  // The next turn answers. As the server then records the thread: the stopped run is no longer
+  // the last one, and a run that ended as it should has nothing to explain.
+  answerWith((url) => {
+    if (!url.pathname.endsWith("/run")) return undefined;
+    runtime.threadRuns.set(threadId, [
+      { ...liveRun("run-1"), status: "failed", stopReason: "stopped" },
+      {
+        id: "run-2",
+        status: "completed",
+        userMessageId: "u-run-2",
+        assistantMessageId: "a-run-2",
+      },
+    ]);
+    return undefined;
+  });
+  await send(view, "And now");
+  await said(view, "All done.");
+  await settled(view);
+  await waitFor(() =>
+    expect(view.queryByText("The run was stopped.")).toBeNull(),
+  );
 });
 
 /*

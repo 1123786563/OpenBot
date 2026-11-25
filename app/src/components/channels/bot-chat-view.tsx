@@ -253,12 +253,16 @@ export function BotChatView({
       inTurn.current = false;
       setSending(false);
     }
-    if (failed.current) {
-      // The run ended without an answer: read what the server holds of it now, not at some later
-      // read. Access that ended while the tab was open shows its way back from here too.
-      void readHistory();
-      throw new Error(failed.current);
-    }
+    /*
+     * READ WHAT THE SERVER HOLDS OF THE THREAD AFTER EVERY TURN OF THIS TAB, answered or not, as a
+     * conversation does. A read that lands while the Bot is replying merges nothing (`applyRead`),
+     * and nothing else reads when a run ends: a stopped run's notice outlived the turn that
+     * answered after it, and earlier messages a failed opening read had left out never arrived.
+     * After a turn that failed, the same read is what puts an outcome to check, or the way back,
+     * on screen at once rather than at some later read.
+     */
+    void readHistory();
+    if (failed.current) throw new Error(failed.current);
   };
 
   /*
