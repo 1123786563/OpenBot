@@ -1632,7 +1632,8 @@ export function ChannelChat({
      * finished. A turn that touches the browser is several runs, and `awaitingReply` comes down when
      * the first one ends on its browser step, so a Bot that failed in the run after it (out of time
      * nine steps into a form) ended the turn with its steps on screen and nothing said. Only a
-     * RUN_ERROR counts there: the Bot said it failed, where a Stop ends a run as finished, cancelled.
+     * RUN_ERROR counts there: the Bot said it failed. A run aborted from this browser ends as
+     * finished, cancelled, and one the server stopped at the person's request is passed over below.
      */
     const fail = (message: string, laterRun = false) => {
       if (!awaitingReply.current && !(laterRun && turnsRef.current > 0)) return;
@@ -1655,6 +1656,18 @@ export function ChannelChat({
           void queryClient.invalidateQueries(
             testCreditModelQuery(runtimeAgentId, channel.threadId),
           );
+        /*
+         * A RUN THE SERVER STOPPED AT THE PERSON'S REQUEST ENDS THE TURN, AND IS NOT A FAILURE.
+         * Read as one, it drew "The Bot run was stopped." in red and put the words back in the box,
+         * under the plain notice that already says the run was stopped. The person asked for this
+         * ending, from Stop pressed here or in another tab, and what became of the run is the
+         * notice's to say, from the thread read a turn's end makes (`say`). A run stopped for any
+         * other reason is still a failure.
+         */
+        if (event?.code === "stopped") {
+          awaitingReply.current = false;
+          return;
+        }
         fail(stoppedReason(event?.message), true);
       },
       onCustomEvent: ({ event }) => {
