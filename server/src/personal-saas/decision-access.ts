@@ -10,9 +10,6 @@ import { PERSONAL_BOT_WORK } from "./bot-work";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
-/** Read here by what acts on a request; the sentence and the person's words for it are shared. */
-export { decisionInvalidated };
-
 export async function readDecisionAccess(
   tx: Transaction,
   owner: string,

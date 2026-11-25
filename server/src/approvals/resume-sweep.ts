@@ -1,3 +1,4 @@
+import { decisionInvalidated } from "@openbot/shared/approval-outcomes";
 import {
   CONTEXT_REVOKED,
   CONTEXT_REVOKED_MESSAGE,
@@ -14,10 +15,7 @@ import type { createDirectChatRoutes } from "../channels/direct-chat";
 import { matchingRun, stopDirectChatRun } from "../channels/direct-chat-replay";
 import type { GroupConversations } from "../channels/group";
 import { approvalRequests, directChatRuns } from "../db/schema";
-import {
-  decisionInvalidated,
-  runWithDecisionAccess,
-} from "../personal-saas/decision-access";
+import { runWithDecisionAccess } from "../personal-saas/decision-access";
 import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import type { createSlackGoalAction } from "../plugins/corsair/slack/goal-action";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
