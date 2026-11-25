@@ -1,5 +1,5 @@
 import { and, asc, eq, isNull, ne, or } from "drizzle-orm";
-import { recordAuditEvent } from "../../audit";
+import { recordAuditEvent, withAuditTransaction } from "../../audit";
 import type { Database } from "../../db/client";
 import {
   agentProfiles,
@@ -28,8 +28,14 @@ export function registeredBotProfiles(database: Pick<Database, "select">) {
 
 /** Skills, and what the store answers about Bots and servers for the routes and the desk. */
 export function skillMethods(context: StoreContext) {
-  const { database, auditStore, grantsFor, toolsDeclaredBy, knownToolRefs } =
-    context;
+  const {
+    database,
+    auditStore,
+    auditFor,
+    grantsFor,
+    toolsDeclaredBy,
+    knownToolRefs,
+  } = context;
   return {
     /**
      * The skills this person may see: the deployment's, plus their own.
@@ -302,8 +308,12 @@ export function skillMethods(context: StoreContext) {
       });
     },
 
+    /**
+     * The grants, the skill and its row go together. A row filed after the commit left the skill gone
+     * when the trail refused it, and asking again was refused for a skill that is no longer there.
+     */
     async uninstallSkill(slug: string, by: string): Promise<void> {
-      await database.transaction(async (transaction) => {
+      await withAuditTransaction(database, async (transaction, deferTap) => {
         await transaction
           .delete(pluginGrants)
           .where(
@@ -317,12 +327,12 @@ export function skillMethods(context: StoreContext) {
               ne(skills.origin, SKILL_MARKET_RESERVATION),
             ),
           );
-      });
-      await recordAuditEvent(auditStore, {
-        eventType: "configuration.changed",
-        targetType: "skill",
-        targetId: slug,
-        payload: { actor: by, change: "skill_uninstalled", skill: slug },
+        await recordAuditEvent(auditFor(transaction, deferTap), {
+          eventType: "configuration.changed",
+          targetType: "skill",
+          targetId: slug,
+          payload: { actor: by, change: "skill_uninstalled", skill: slug },
+        });
       });
     },
 

@@ -382,6 +382,20 @@ test("a memory only Intelligence holds is the person's own: recalled, edited and
   ).rejects.toBeInstanceOf(MemoryRefusedError);
   await store.remove(ada, edited.id);
   expect(fake.live(ada)).toEqual([]);
+  // A forget the person asked for, on the trail like any other, naming the memory as they saw it.
+  const forgotten = await database
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.targetType, "personal_memory"),
+        eq(auditEvents.targetId, edited.id),
+      ),
+    );
+  expect(forgotten.map((row) => [row.payload.change, row.actorUserId])).toEqual(
+    [["memory_deleted", ada]],
+  );
+  expect(JSON.stringify(forgotten)).not.toContain("emacs keybindings");
 });
 
 test("a memory OpenBot describes cannot be forgotten through its Intelligence id", async () => {

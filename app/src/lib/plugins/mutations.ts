@@ -70,10 +70,11 @@ const FALLBACK = "That didn't work. Try again.";
  * THE SHAPE, IN THE SERVER'S OWN WORDS. `POST /servers` inserts the row and then refreshes the
  * server's tools, answering 409 when that refresh faults over a row that is now there.
  * `POST /composio/apps` creates the authorization config at Composio, writes the row, and says so in
- * its own 409. `POST /grants`, `DELETE /grants`, `POST /skills` and `DELETE /skills/:slug` each
- * commit and then file the trail row, and a failing audit insert is a 500 over a change that
- * happened. `DELETE /servers/:id/connection` revokes the account at the vendor before it deletes
- * anything here. And the two brokered writes the screens draw hardest on raise from inside the
+ * its own 409. `POST /grants`, `DELETE /grants` and `POST /skills` each commit and then file the
+ * trail row, and a failing audit insert is a 500 over a change that happened. `DELETE
+ * /skills/:slug` files its row in the removal's own transaction, so its 500 leaves the skill there
+ * for Try again. `DELETE /servers/:id/connection` revokes the account at the vendor before it
+ * deletes anything here. And the two brokered writes the screens draw hardest on raise from inside the
  * store AFTER recording what they found: `recheckBrokeredConnection` writes the verdict and the
  * action it spent and then raises with Composio's refusal, and `connectBrokeredWithFields` records
  * the account it could not withdraw and then raises with a sentence telling the person to disconnect
