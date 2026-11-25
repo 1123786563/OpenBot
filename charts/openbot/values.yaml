@@ -669,10 +669,10 @@ secrets:
   # ANTHROPIC_API_KEY (`anthropic-api-key`). Which one a Bot spends is the tenant package's provider,
   # or `config.model.provider` above: with an Anthropic key alone, set that to `anthropic`.
   #
-  # LEARNING SPENDS THEM TOO. The bundled Intelligence's Learning agent runs `openai/gpt-5.5` on
-  # `modelApiKey`, or `anthropic/claude-sonnet-5-5` on `anthropicApiKey` when that is the only key,
-  # and is never handed the Anthropic key under the OpenAI name. See `config.learning.model` above
-  # and `intelligence.learning.agent` below.
+  # LEARNING SPENDS THEM TOO where CopilotKit Intelligence still runs: its Learning agent uses
+  # `openai/gpt-5.5` on `modelApiKey`, or `anthropic/claude-sonnet-5-5` on `anthropicApiKey` when
+  # that is the only key, and is never handed the Anthropic key under the OpenAI name. This chart
+  # bundles no Intelligence: there, Learning's analysis runs on a published platform model route.
   modelApiKey: ""
   anthropicApiKey: ""
   # What the API presents to a Bot's computer (`computers.mode` shared or sandbox). With the bundled
