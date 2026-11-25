@@ -835,6 +835,45 @@ test("a turn that fails leaves an outcome to check on /bot, without reopening th
 });
 
 /*
+ * A RUN STOPPED IN ANOTHER TAB while this one streams the turn. The server ends the stream with a
+ * RUN_ERROR carrying its reason (`stoppedRunEvent`), and read as a failure it drew the stop in red
+ * with the words put back in the box. It is not a failure: the notice says "The run was stopped."
+ * from the read after the turn, as it does in a conversation.
+ */
+test("a run stopped in another tab is not drawn as a failure on /bot, and the notice says it was stopped", async () => {
+  const THREAD = "thread-stopped-elsewhere";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.plans = [
+    { kind: "fails", message: "The Bot run was stopped.", code: "stopped" },
+  ];
+  answerWith((url) => {
+    if (url.pathname.endsWith("/run"))
+      runtime.threadRuns.set(THREAD, [
+        {
+          id: "run-1",
+          status: "failed",
+          stopReason: "stopped",
+          userMessageId: "u-1",
+          assistantMessageId: null,
+        },
+      ]);
+    return undefined;
+  });
+  const view = open();
+  await waitFor(() => expect(runtime.reads).toEqual([THREAD]));
+  await send(view, "Plan my week");
+
+  await settled(view);
+  expect(view.queryByTestId("transcript-stopped")).toBeNull();
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe("");
+  expect(
+    await view.findByText("The run was stopped.", {
+      selector: "[role=status]",
+    }),
+  ).toBeTruthy();
+});
+
+/*
  * Access that ends while the chat is open showed only on the next send, as a red run error with the
  * old content still on screen. The read after a failed send hides it and offers the way back.
  */
@@ -866,10 +905,11 @@ test("a send that fails because access ended hides what was read and offers the 
 });
 
 /*
- * After a reload the stopped run comes back as the server recorded it, a RUN_ERROR that carries its
- * reason, and the replay drew that in red under the plain notice. A stop is not a failure.
+ * A stopped run comes back as the server recorded it, a RUN_ERROR that carries its reason, and read
+ * as a failure it was drawn in red under the plain notice: live, and again after a reload, when the
+ * replay sends it back. A stop is not a failure, either time.
  */
-test("a run the person stopped is not drawn as a failure after a reload", async () => {
+test("a run the person stopped is not drawn as a failure, live or after a reload", async () => {
   const THREAD = "thread-stopped-reload";
   localStorage.setItem(botThreadKey(BOT.id), THREAD);
   runtime.threadRuns.set(THREAD, [
@@ -886,7 +926,10 @@ test("a run the person stopped is not drawn as a failure after a reload", async 
   ];
   const live = open();
   await send(live, "Take your time");
-  await live.findByTestId("transcript-stopped");
+  await settled(live);
+  await said(live, "Take your time");
+  expect(live.queryByTestId("transcript-stopped")).toBeNull();
+  expect(live.getByText("The run was stopped.")).toBeTruthy();
 
   live.unmount();
   const back = open();

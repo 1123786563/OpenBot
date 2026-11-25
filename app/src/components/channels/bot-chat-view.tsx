@@ -102,7 +102,11 @@ export function BotChatView({
       setRunError(reason);
     };
     const subscription = agent.subscribe({
-      onRunErrorEvent: ({ event }) => fail(stoppedReason(event?.message)),
+      // A run the server stopped at the person's request is not a failure, pressed here or in
+      // another tab: the notice says so from the read after the turn.
+      onRunErrorEvent: ({ event }) => {
+        if (event?.code !== "stopped") fail(stoppedReason(event?.message));
+      },
       onRunFailed: ({ error }) =>
         fail(isBrokenStream(error) ? STREAM_BROKE : stoppedReason(error)),
       // A run the server stopped to ask the person draws its card now, not on the inbox's next read.
