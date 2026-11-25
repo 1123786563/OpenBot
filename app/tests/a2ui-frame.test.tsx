@@ -726,7 +726,8 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
    * One form with every control the catalog has, as a chat shows them: a field with typed text, a
    * list and a calendar open, buttons in each state. In each theme, at a chat's width and at a
    * phone's: the inks are the theme's, every visible word reads against what is behind it, each Tab
-   * stop shows a focus ring, a disabled button says so, and nothing runs past the page.
+   * stop shows a focus ring, a disabled button says so, the form sends what every control holds,
+   * and nothing runs past the page.
    */
   browserTest(
     "every control reads, shows a focus ring and fits a phone's width, in light and in dark",
@@ -786,7 +787,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
                 if (!element?.closest("[data-generative-ui-chat-surface]"))
                   return null;
                 // What the stop is called, by its label or by its text.
-                const label = [...(element.labels ?? [])]
+                const label = [...((element as HTMLInputElement).labels ?? [])]
                   .map((item) => item.textContent)
                   .join("");
                 const labelledBy = (
@@ -821,6 +822,33 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
               `${at}: disabled button`,
             ).toBe("true");
 
+            // The form sends what every control holds.
+            await surface
+              .getByRole("button", { name: "Send", exact: true })
+              .press("Enter");
+            await page.waitForFunction(() => window.__sent.length === 1);
+            expect(
+              await page.evaluate(() => window.__sent),
+              `${at}: sent`,
+            ).toEqual([
+              [
+                "Name",
+                "",
+                "name: Ada",
+                "note: Window seat, please",
+                'extras: ["bag"]',
+                'seat: ["window"]',
+                "alone: []",
+                "trip: economy",
+                "agree: false",
+                "day: 2026-10-23",
+                "at: 09:30",
+                "slot: 2026-10-23T09:30",
+                "rating: 10",
+                "deck: lower",
+                'split: [{"label":"Transport","amount":100},{"label":"Lodging","amount":250}]',
+              ].join("\n"),
+            ]);
             // Nothing runs past the page.
             const [scroll, client] = await page.evaluate(() => [
               document.documentElement.scrollWidth,
