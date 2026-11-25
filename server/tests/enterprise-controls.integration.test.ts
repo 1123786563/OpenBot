@@ -798,6 +798,7 @@ describe("offboarding", () => {
       `/api/admin/enterprise/people/${member.id}/terminate-computers`,
       { method: "POST" },
     );
+  // Oldest first. Without an order the planner's choice decides: an index scan answers newest first.
   const stopRows = () =>
     database
       .select()
@@ -807,7 +808,8 @@ describe("offboarding", () => {
           eq(auditEvents.eventType, "computer.terminated"),
           eq(auditEvents.targetId, member.id),
         ),
-      );
+      )
+      .orderBy(auditEvents.createdAt);
 
   test("terminating a member's computers stops their Bots and is audited", async () => {
     stopped.length = 0;
