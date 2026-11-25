@@ -23,20 +23,32 @@ export type UpdateReadiness =
  * Short enough for the banner's one line beside Update and restart at the default window width,
  * for a release's version, so the page under the banner never moves as the state changes
  * (app/tests/update-banner-layout.test.tsx).
+ *
+ * A surface speaking a language other than English hands in that language's three sentences. Which
+ * sentence fits which state, and the share shown, stay decided here, so they cannot drift apart.
  */
 export function updateOffered(
   version: string,
   ready?: UpdateReadiness | null,
+  sentences: {
+    available: (version: string) => string;
+    downloading: (version: string, share: number) => string;
+    ready: (version: string) => string;
+  } = {
+    available: (version) => `OpenBot ${version} is available.`,
+    downloading: (version, share) =>
+      `OpenBot ${version} is downloading in the background (${share}%).`,
+    ready: (version) =>
+      `OpenBot ${version} is ready to install. It takes a few minutes.`,
+  },
 ): string {
-  if (ready?.state === "ready") {
-    return `OpenBot ${version} is ready to install. It takes a few minutes.`;
-  }
+  if (ready?.state === "ready") return sentences.ready(version);
   if (ready?.state === "preparing") {
     const share =
       ready.total > 0
         ? Math.min(99, Math.floor((ready.done / ready.total) * 100))
         : 0;
-    return `OpenBot ${version} is downloading in the background (${share}%).`;
+    return sentences.downloading(version, share);
   }
-  return `OpenBot ${version} is available.`;
+  return sentences.available(version);
 }

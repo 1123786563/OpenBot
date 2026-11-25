@@ -1,6 +1,7 @@
 import { IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useTranslation } from "@/i18n";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
   dismissSelfHostBannerMutationOptions,
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
  */
 export function SelfHostBanner() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const { data: capabilities } = useQuery(deploymentCapabilitiesQueryOptions());
   const { data: preferences, userId } = useUserPreferences();
   const dismiss = useMutation(
@@ -29,7 +31,7 @@ export function SelfHostBanner() {
 
   return (
     <aside
-      aria-label="Self-host OpenBot"
+      aria-label={t("banner.selfHost.name", "Self-host OpenBot")}
       className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-border bg-muted/60 px-4 py-1.5 text-sm"
     >
       {/*
@@ -41,7 +43,7 @@ export function SelfHostBanner() {
        * together and drop to the next line as one, which keeps Dismiss on the left there too.
        */}
       <p className="text-foreground">
-        Self-host OpenBot for your organization.
+        {t("banner.selfHost.offer", "Self-host OpenBot for your organization.")}
       </p>
       <span className="flex items-center gap-2">
         {/* An anchor, not Button: Base UI gives a rendered anchor role="button", and this is a link. */}
@@ -55,10 +57,10 @@ export function SelfHostBanner() {
           rel="noopener noreferrer"
           target="_blank"
         >
-          Book a call
+          {t("banner.selfHost.call", "Book a call")}
         </a>
         <Button
-          aria-label="Dismiss"
+          aria-label={t("banner.dismiss", "Dismiss")}
           onClick={() => dismiss.mutate()}
           size="icon-xs"
           variant="ghost"

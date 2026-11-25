@@ -1,4 +1,5 @@
 import { type ShouldBlockFn, useBlocker } from "@tanstack/react-router";
+import { useTranslation } from "@/i18n";
 import { type RefObject, useLayoutEffect, useRef } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 
 export function DraftLeaveConfirmation({
-  description = "Your description and draft changes will be lost.",
+  description,
   hasDraft,
   leavesDraft,
   overlayClassName,
@@ -28,6 +29,7 @@ export function DraftLeaveConfirmation({
   submitting: RefObject<boolean>;
   title: string;
 }) {
+  const { t } = useTranslation();
   const keepEditing = useRef<HTMLButtonElement>(null);
   const isWorking = () =>
     submitting.current ||
@@ -61,7 +63,13 @@ export function DraftLeaveConfirmation({
       >
         <DialogTitle>{title}</DialogTitle>
         <DialogBody>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription>
+            {description ??
+              t(
+                "frame.draft.leaveDescriptionDefault",
+                "Your description and draft changes will be lost.",
+              )}
+          </DialogDescription>
         </DialogBody>
         <DialogFooter className="flex-wrap">
           <Button
@@ -73,7 +81,7 @@ export function DraftLeaveConfirmation({
             type="button"
             variant="outline"
           >
-            Keep editing
+            {t("frame.draft.keepEditing", "Keep editing")}
           </Button>
           <Button
             className="min-h-12"
@@ -83,7 +91,7 @@ export function DraftLeaveConfirmation({
             type="button"
             variant="destructive"
           >
-            Discard changes
+            {t("frame.draft.discard", "Discard changes")}
           </Button>
         </DialogFooter>
       </DialogContent>

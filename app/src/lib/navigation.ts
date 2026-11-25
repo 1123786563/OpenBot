@@ -14,6 +14,11 @@ import { OpenBotLogo } from "@/components/edition/openbot-logo";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 
+/** Marks a message for extraction without translating it at module scope. */
+function navigationMessage(messageId: string, label: string) {
+  return { messageId, label };
+}
+
 /** Shared destinations for the Web sidebar and account menu. */
 export type NavigationItem =
   | {
@@ -28,6 +33,7 @@ export type NavigationItem =
         | "admin"
         | "settings";
       label: string;
+      messageId: string;
       to:
         | "/bots"
         | "/routines"
@@ -52,6 +58,7 @@ export type NavigationItem =
       kind: "dialog";
       id: "team-features";
       label: string;
+      messageId: string;
       icon: Icon;
       section: "account";
     };
@@ -66,7 +73,7 @@ export function isNavigationLink(item: NavigationItem): item is NavigationLink {
 const TEAM_FEATURES_ITEM: NavigationItem = {
   kind: "dialog",
   id: "team-features",
-  label: "OpenBot for Business",
+  ...navigationMessage("nav.teamFeatures", "OpenBot for Business"),
   icon: OpenBotLogo,
   section: "account",
 };
@@ -74,21 +81,21 @@ const TEAM_FEATURES_ITEM: NavigationItem = {
 export const NAVIGATION: readonly NavigationItem[] = [
   {
     id: "bots",
-    label: "Bots",
+    ...navigationMessage("nav.bots", "Bots"),
     to: "/bots",
     icon: IconBolt,
     section: "primary",
   },
   {
     id: "routines",
-    label: "Routines",
+    ...navigationMessage("nav.routines", "Routines"),
     to: "/routines",
     icon: IconClock,
     section: "primary",
   },
   {
     id: "goals",
-    label: "Goals",
+    ...navigationMessage("nav.goals", "Goals"),
     to: "/responsibilities",
     search: { view: "goals" },
     icon: IconTarget,
@@ -96,28 +103,28 @@ export const NAVIGATION: readonly NavigationItem[] = [
   },
   {
     id: "capabilities",
-    label: "Capabilities",
+    ...navigationMessage("nav.capabilities", "Capabilities"),
     to: "/capabilities",
     icon: IconBox,
     section: "primary",
   },
   {
     id: "connections",
-    label: "Connections",
+    ...navigationMessage("nav.connections", "Connections"),
     to: "/connections",
     icon: IconPlug,
     section: "primary",
   },
   {
     id: "credits",
-    label: "Credits",
+    ...navigationMessage("nav.credits", "Credits"),
     to: "/billing",
     icon: IconCoins,
     section: "primary",
   },
   {
     id: "admin",
-    label: "Admin",
+    ...navigationMessage("nav.admin", "Admin"),
     to: "/admin",
     icon: IconShieldLock,
     section: "account",
@@ -125,7 +132,7 @@ export const NAVIGATION: readonly NavigationItem[] = [
   },
   {
     id: "settings",
-    label: "Settings",
+    ...navigationMessage("nav.settings", "Settings"),
     to: "/settings",
     icon: IconSettings,
     section: "account",

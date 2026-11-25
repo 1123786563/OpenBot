@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTranslation } from "@/i18n";
 
 const nestedOverlay = "bg-black/20 supports-backdrop-filter:backdrop-blur-sm";
 
@@ -44,6 +45,7 @@ export function SettingsDraftDialog({
   guardNavigation?: RefObject<boolean>;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [discard, setDiscard] = useState(false);
   const previousFocus = useRef<HTMLElement | null>(null);
   const keepEditing = useRef<HTMLButtonElement>(null);
@@ -92,19 +94,22 @@ export function SettingsDraftDialog({
             type="button"
             variant="outline"
           >
-            Cancel
+            {t("frame.cancel", "Cancel")}
           </Button>
           {action}
         </DialogFooter>
 
         {open && guardNavigation ? (
           <DraftLeaveConfirmation
-            description="Your changes will be lost when you leave this page."
+            description={t(
+              "frame.draft.leaveDescription",
+              "Your changes will be lost when you leave this page.",
+            )}
             hasDraft={dirty}
             overlayClassName={nestedOverlay}
             saving={saving}
             submitting={guardNavigation}
-            title="Leave without saving?"
+            title={t("frame.draft.leaveTitle", "Leave without saving?")}
           />
         ) : null}
 
@@ -126,9 +131,14 @@ export function SettingsDraftDialog({
             showCloseButton={false}
           >
             <DialogHeader>
-              <DialogTitle>Discard unsaved changes?</DialogTitle>
+              <DialogTitle>
+                {t("frame.draft.discardTitle", "Discard unsaved changes?")}
+              </DialogTitle>
               <DialogDescription>
-                Your changes will be lost when you close this editor.
+                {t(
+                  "frame.draft.discardDescription",
+                  "Your changes will be lost when you close this editor.",
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="flex-wrap">
@@ -139,7 +149,7 @@ export function SettingsDraftDialog({
                 type="button"
                 variant="outline"
               >
-                Keep editing
+                {t("frame.draft.keepEditing", "Keep editing")}
               </Button>
               <Button
                 className="min-h-11"
@@ -151,7 +161,7 @@ export function SettingsDraftDialog({
                 type="button"
                 variant="destructive"
               >
-                Discard changes
+                {t("frame.draft.discard", "Discard changes")}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -14,7 +14,7 @@ const origin = "http://backend:8080/api/v1/admin";
 let config;
 for (let attempt = 0; attempt < 60; attempt++) {
   try {
-    const response = await fetch(`${origin}/config`, {
+    const response = await fetch(origin + "/config", {
       signal: AbortSignal.timeout(4000),
     });
     if (response.ok) {
@@ -28,7 +28,7 @@ for (let attempt = 0; attempt < 60; attempt++) {
 }
 if (!config) throw new Error("Infisical did not become ready");
 if (!config.initialized) {
-  const response = await fetch(`${origin}/signup`, {
+  const response = await fetch(origin + "/signup", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

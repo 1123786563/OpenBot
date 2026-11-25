@@ -1,4 +1,5 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { t } from "@/i18n";
 import { client } from "@/lib/client";
 import { type AuthenticatedUser, authKeys } from "./queries";
 
@@ -30,7 +31,11 @@ export function updateProfileNameMutationOptions(queryClient: QueryClient) {
         {
           method: "PATCH",
           body: { name },
-          fallback: "Your name could not be saved",
+          // Read when the mutation runs, in the language in force then.
+          fallback: t(
+            "settings.name.saveFailed",
+            "Your name could not be saved",
+          ),
         },
       ),
     onMutate: () =>

@@ -15,7 +15,7 @@ if (mode === "init") {
       ];
     }),
   );
-  const temporary = `${path}.${randomBytes(8).toString("hex")}`;
+  const temporary = path + "." + randomBytes(8).toString("hex");
   writeFileSync(temporary, JSON.stringify(keys), { mode: 0o444, flag: "wx" });
   try {
     linkSync(temporary, path);

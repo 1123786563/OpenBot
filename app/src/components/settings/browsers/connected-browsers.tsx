@@ -39,6 +39,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { canKeepCachedRead } from "@/lib/client";
 import { revokeRecorderConnectionMutationOptions } from "@/lib/recorder/mutations";
 import { recorderConnectionsQueryOptions } from "@/lib/recorder/queries";
@@ -64,6 +65,8 @@ export function ConnectedBrowsers({
 }: {
   thisInstallId?: string;
 } = {}) {
+  // Subscribes this list to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const connections = useQuery(
     recorderConnectionsQueryOptions({ listed: true }),
   );

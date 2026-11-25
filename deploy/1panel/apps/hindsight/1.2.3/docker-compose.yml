@@ -26,8 +26,8 @@ services:
     volumes:
       - model-cache:/home/hindsight/.cache
     ports:
-      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-18888}:8888
-      - 127.0.0.1:${PANEL_APP_PORT_CP:-19999}:9999
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-19999}:9999
+      - 127.0.0.1:${PANEL_APP_PORT_API:-18888}:8888
     container_name: ${CONTAINER_NAME}
     labels:
       createdBy: Apps

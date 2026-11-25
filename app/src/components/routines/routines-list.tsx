@@ -41,6 +41,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { ClientError, canKeepCachedRead } from "@/lib/client";
+import { useTranslation } from "@/i18n";
 import { relativeTime } from "@/lib/relative-time";
 import {
   deleteRoutineMutationOptions,
@@ -179,6 +180,8 @@ function RoutineRuns({
   focusAfterRetry: () => HTMLElement | null;
   routine: RoutineRecord;
 }) {
+  // Subscribes this history to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const runs = useQuery(routineRunsQueryOptions(routine.id));
   const history = canKeepCachedRead(runs.error) ? runs.data : undefined;
   if (runs.isPending)
@@ -283,6 +286,8 @@ function RoutineRow({
   runHelpId?: string;
   showBot: boolean;
 }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const setEnabled = useMutation(setRoutineEnabledMutationOptions(queryClient));
   const runNow = useMutation(runRoutineNowMutationOptions(queryClient));
   const writePending = setEnabled.isPending || runNow.isPending;
@@ -562,6 +567,8 @@ export function RoutinesList({
   hasCreateAction?: boolean;
   searchable?: boolean;
 } = {}) {
+  // Subscribes this list to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const routines = useQuery(routinesQueryOptions());
   /* Names and faces for the Bot chip, hidden Bots included: a routine outlives hiding its Bot. */
   const shownBots = useQuery({

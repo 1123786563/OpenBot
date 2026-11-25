@@ -42,6 +42,7 @@ services:
     container_name: ${CONTAINER_NAME}-spire-init
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   spire-server:
     command:
       - -expandEnv

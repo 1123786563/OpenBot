@@ -19,15 +19,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslation } from "@/i18n";
+import { relativeTimeShort } from "@/lib/relative-time";
 import {
   saveUserPreferencesMutationOptions,
   useUserPreferences,
 } from "@/lib/settings/message-list";
 
+/*
+ * The sample conversation's last message, two hours before a fixed clock, and read through the same formatter as a real
+ * roster row. So the preview says what the sidebar says ("2h", "2 小时前") instead of a catalog literal that drifted from
+ * it, and never ages.
+ */
+const sampleNow = new Date("2026-05-04T08:00:00.000Z");
+const sampleLastMessageAt = new Date(
+  sampleNow.getTime() - 2 * 3_600_000,
+).toISOString();
+
 export function MessageListPreference() {
   const descriptionId = useId();
   const preferences = useUserPreferences();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const save = useMutation(
     saveUserPreferencesMutationOptions(queryClient, preferences.userId),
   );
@@ -42,9 +55,14 @@ export function MessageListPreference() {
           <IconLayoutSidebar />
         </ItemMedia>
         <ItemContent className="min-w-0">
-          <ItemTitle className="w-auto">Message list emphasis</ItemTitle>
+          <ItemTitle className="w-auto">
+            {t("settings.messageList.title", "Message list emphasis")}
+          </ItemTitle>
           <ItemDescription className="line-clamp-none" id={descriptionId}>
-            Show the conversation title or the Bot name first in the sidebar.
+            {t(
+              "settings.messageList.description",
+              "Show the conversation title or the Bot name first in the sidebar.",
+            )}
           </ItemDescription>
         </ItemContent>
         <ItemActions className="max-sm:basis-full">
@@ -59,20 +77,33 @@ export function MessageListPreference() {
           >
             <SelectTrigger
               aria-describedby={descriptionId}
-              aria-label="Message list emphasis"
+              aria-label={t(
+                "settings.messageList.title",
+                "Message list emphasis",
+              )}
               className="max-sm:w-full"
             >
               <SelectValue>
                 {emphasis
                   ? emphasis === "agent"
-                    ? "Bot name"
-                    : "Conversation title"
-                  : "Loading…"}
+                    ? t("settings.messageList.botName", "Bot name")
+                    : t(
+                        "settings.messageList.conversationTitle",
+                        "Conversation title",
+                      )
+                  : t("settings.messageList.loading", "Loading…")}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="thread">Conversation title</SelectItem>
-              <SelectItem value="agent">Bot name</SelectItem>
+              <SelectItem value="thread">
+                {t(
+                  "settings.messageList.conversationTitle",
+                  "Conversation title",
+                )}
+              </SelectItem>
+              <SelectItem value="agent">
+                {t("settings.messageList.botName", "Bot name")}
+              </SelectItem>
             </SelectContent>
           </Select>
         </ItemActions>
@@ -87,7 +118,7 @@ export function MessageListPreference() {
             size="sm"
             onClick={() => void preferences.refetch()}
           >
-            Try again
+            {t("frame.tryAgain", "Try again")}
           </Button>
         </div>
       ) : null}
@@ -98,20 +129,23 @@ export function MessageListPreference() {
       ) : null}
       {save.isPending ? (
         <p role="status" className="px-3 text-sm text-muted-foreground">
-          Saving…
+          {t("settings.messageList.saving", "Saving…")}
         </p>
       ) : null}
       {emphasis ? (
         <div className="flex justify-center px-6 pt-3 pb-6">
           <figure
-            aria-label="Message list preview"
+            aria-label={t(
+              "settings.messageList.preview",
+              "Message list preview",
+            )}
             className="flex h-16 w-full max-w-xs items-center rounded-lg border border-border bg-sidebar px-3"
           >
             <ChannelItemContent
               participantIds={["message-list-preview"]}
-              name="General Assistant"
-              title="Plan next week"
-              lastMessageAt="2h"
+              name={t("settings.messageList.sampleName", "General Assistant")}
+              title={t("settings.messageList.sampleTitle", "Plan next week")}
+              lastMessageAt={relativeTimeShort(sampleLastMessageAt, sampleNow)}
               emphasis={emphasis}
             />
           </figure>
