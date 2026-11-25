@@ -79,7 +79,10 @@ export function BotChatView({
   const [storedRuns, setStoredRuns] = useState<StoredThread["runs"]>();
   /** Whether any read of this thread has come back ready. See `applyRead`. */
   const readReady = useRef(false);
-  /** The person stopped this turn, so however its run ends is not a failure. */
+  /**
+   * The server stopped this turn at the person's request, so however its run ends is not a failure.
+   * Set when it says so (`stop`), not at the press.
+   */
   const personStopped = useRef(false);
   /** A Stop is being asked of the server: a second press would ask again for the same run. */
   const [stopping, setStopping] = useState(false);
@@ -293,14 +296,14 @@ export function BotChatView({
    * too, so the Bot went on working on the server while its reply stopped arriving, and Stop went
    * with the run: "Try again" pointed at a button that was no longer there. The run keeps streaming
    * and Stop stays for another press, as in a conversation. And the rest of the run is nobody's
-   * stop: a failure in it is still a failure.
+   * stop until the server says it was stopped: a failure while the Stop is being asked, or after
+   * a refusal, is still a failure.
    *
    * Not offered while the server carries a turn on (`stoppable` is this tab's run alone): there is
    * no run here to reach, and a Stop that does nothing is worse than none.
    */
   const stop = async () => {
     if (stopping) return;
-    personStopped.current = true;
     setStopping(true);
     try {
       const outcome = await stopStoredRun(threadId, agentId);
@@ -308,11 +311,15 @@ export function BotChatView({
       // an abort of it would stop that chat's run.
       if (!onScreen.current) return;
       if (outcome === "refused") {
-        personStopped.current = false;
-        setRunError(STOP_REFUSED);
+        // A failure since the press is the news: that run is over, and there is nothing to try again on.
+        if (!failed.current) setRunError(STOP_REFUSED);
       } else {
-        // A refusal from an earlier press of this run is old news once the server answers.
-        setRunError(null);
+        // The RUN_ERROR "stopped" that ends the run can arrive before this answer. The handler above
+        // lets that one past without this flag; what is left of the run is the person's stop from here.
+        personStopped.current = true;
+        // A refusal from an earlier press of this run is old news once the server answers. A failure
+        // since the press is not.
+        setRunError((shown) => (shown === STOP_REFUSED ? null : shown));
         if (outcome === "ended") copilotkit.stopAgent({ agent });
       }
       // What the run said before the Stop is stored; read it so it is on screen.

@@ -653,7 +653,6 @@ test("a stop the server did not make lets this browser's end of the turn go, and
   expect(view.queryByTestId("transcript-stopped")).toBeNull();
 });
 
-
 /*
  * THE SAME FOR A STOP THAT IS STILL WAITING ON THE SERVER WHEN ITS CHAT IS LEFT. It went on to abort
  * the agent and to read the thread again, and by then the agent was the next chat's of the same Bot:
@@ -758,6 +757,62 @@ test("a failure after a stop the server refused is still a failure", async () =>
   );
 });
 
+/*
+ * A FAILURE WHILE A STOP IS STILL BEING ASKED IS STILL A FAILURE, whatever the server then answers.
+ * From the press, before the server had said anything, the rest of the run was taken to be the
+ * person's stop. A run that failed in that time was swallowed: the person read "The Bot couldn't be
+ * stopped. Try again.", or nothing at all, with no word of what went wrong, and their words counted
+ * as sent.
+ */
+test.each([
+  [
+    "refuses the Stop",
+    () =>
+      new Response(JSON.stringify({ error: "The run could not be stopped." }), {
+        status: 500,
+      }),
+  ],
+  [
+    "says the run had already ended",
+    () =>
+      new Response(JSON.stringify({ stopped: false }), {
+        headers: { "content-type": "application/json" },
+      }),
+  ],
+])(
+  "a run that fails while its Stop is still being asked is a failure when the server %s",
+  async (_, fromServer: () => Response) => {
+    runtime.plans = [HOLDING];
+    const view = open();
+    await send(view, "Take your time");
+    const { threadId } = currentJoin();
+    runtime.threadRuns.set(threadId, [liveRun("run-live")]);
+    // The server holds the stop it is asked for until the run has failed.
+    let answer: ((response: Response) => void) | undefined;
+    answerWith((url) =>
+      url.pathname.endsWith("/stop")
+        ? new Promise<Response>((resolve) => {
+            answer = resolve;
+          })
+        : undefined,
+    );
+    await pressStop(view);
+    await waitFor(() => expect(answer).toBeDefined());
+
+    releaseRun([{ type: "RUN_ERROR", message: REJECTED }]);
+    await view.findByTestId("transcript-stopped");
+    answer?.(fromServer());
+    await settled(view);
+    // What went wrong stays on screen, nothing about the Stop replaces it, and the words come back.
+    expect(view.getByTestId("transcript-stopped").textContent).toBe(REJECTED);
+    expect(
+      view.queryByText("The Bot couldn't be stopped. Try again."),
+    ).toBeNull();
+    expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+      "Take your time",
+    );
+  },
+);
 
 /*
  * THE THREAD IS READ AGAIN AFTER EVERY TURN OF THIS TAB, answered or not. It was read only after a
