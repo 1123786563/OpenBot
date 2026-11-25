@@ -118,7 +118,7 @@ export function terminateMemberComputersMutationOptions() {
       userId: string,
     ): Promise<{
       stopped: string[];
-      failed: { botId: string; reason: string }[];
+      failed: { computer: string; reason: string }[];
     }> =>
       (
         await client(

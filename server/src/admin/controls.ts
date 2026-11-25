@@ -43,7 +43,7 @@ import {
 } from "../computer/policy-network";
 import type { ComputerProvider } from "../computer/provider";
 import type { Database } from "../db/client";
-import { agentProfiles, agents } from "../db/schema";
+import { agentProfiles, agents, users } from "../db/schema";
 import { isAlwaysOn } from "../plugins/personal-defaults";
 import type { ProactiveAdmin } from "../proactive/contracts";
 import { createOtelEventExporter, type EventExporter } from "../telemetry/otel";
@@ -608,6 +608,18 @@ export async function installEnterpriseControls(
           });
         }
       }
+      /*
+       * Nothing stopped and nothing failed: nothing was running. A row here would read as a second
+       * shutdown when an administrator asks again after a response was lost, as the idle sweep writes
+       * a row per computer it stops and none for the ones it leaves.
+       */
+      if (result.stopped.length === 0 && result.failed.length === 0)
+        return result;
+      const [person] = await deps.database
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
       await audit({
         eventType: "computer.terminated",
         targetType: "person",
@@ -615,6 +627,8 @@ export async function installEnterpriseControls(
         ...(by.id ? { actorUserId: by.id } : {}),
         payload: {
           by: by.email,
+          // Whose computers, by address: the row is read long after `person:<id>` means anything.
+          ...(person ? { email: person.email } : {}),
           stopped: result.stopped,
           failed: result.failed,
           note: "Running Bots stopped; durable disks kept; each Bot gets a fresh computer next session.",

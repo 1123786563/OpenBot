@@ -1516,8 +1516,30 @@ export function createApp(
       );
     }
 
+    /*
+     * The removal is already committed, so a retirement that fails is half a job rather than none of
+     * one. Say which half took effect and ask for the rest, as the sign-in policy does: removing them
+     * again reruns the retirement and writes no second removal on the trail.
+     */
     if (revoked) {
-      await peopleStore.retireOwned(userId, context.var.actor.id);
+      try {
+        await peopleStore.retireOwned(userId, context.var.actor.id);
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            type: "offboard-retire-failed",
+            userId,
+            error: String(error),
+          }),
+        );
+        return context.json(
+          {
+            error:
+              "Access is removed for this person, but some of their credentials or Recorders could not be retired yet. Try again to finish.",
+          },
+          503,
+        );
+      }
     }
 
     return context.json({ person: await peopleStore.find(userId) });

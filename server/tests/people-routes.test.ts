@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/app";
+import type { AuditEventInput } from "../src/audit";
 import { loadConfig } from "../src/config";
 import type { PeopleStore, Person } from "../src/people/store";
 import { testEnvironment } from "./support/environment";
@@ -35,11 +36,14 @@ function person(overrides: Partial<Person> = {}): Person {
 function appWith(
   people: Person[],
   role: "admin" | "user" = "admin",
+  overrides: Partial<PeopleStore> = {},
 ): {
   request: (path: string, init?: RequestInit) => Promise<Response>;
   calls: string[];
+  events: AuditEventInput[];
 } {
   const calls: string[] = [];
+  const events: AuditEventInput[] = [];
   const store: PeopleStore = {
     // One page, and no next one: what a small deployment answers. The paging itself is covered
     // against a real database in people-paging.integration.test.ts.
@@ -58,6 +62,7 @@ function appWith(
       calls.push(`restore:${userId}`);
     },
     isRevoked: async () => false,
+    ...overrides,
   };
 
   const app = createApp(
@@ -68,21 +73,27 @@ function appWith(
     } as never,
     { rolesForUser: async () => [role] },
     /*
-     * Positions 4-17 are the other stores; `store` is 18, peopleStore.
+     * Positions 4-12 are other stores; `auditStore` is 13, four more follow, and `store` is 18,
+     * peopleStore.
      *
-     * Fourteen, not fifteen. This arrived from main written against a signature that still had
-     * `connectorService`, which the knowledge lane removed along with the connector it served — so
-     * the count is one shorter here. Every parameter from 4 on is optional, so getting it wrong is a
-     * silent type-check pass: the store lands in `ssoProviderCount`, the people routes see no store,
-     * and every test below fails with a 503 that says nothing about why.
+     * Fourteen fillers in total, not fifteen. This arrived from main written against a signature
+     * that still had `connectorService`, which the knowledge lane removed along with the connector
+     * it served — so the count is one shorter here. Every parameter from 4 on is optional, so
+     * getting it wrong is a silent type-check pass: the store lands in `ssoProviderCount`, the
+     * people routes see no store, and every test below fails with a 503 that says nothing about why.
      */
-    ...(Array.from({ length: 14 }) as never[]),
+    ...(Array.from({ length: 9 }) as never[]),
+    {
+      insert: async (event: AuditEventInput) => void events.push(event),
+    } as never,
+    ...(Array.from({ length: 4 }) as never[]),
     store as never,
   );
 
   return {
     request: (path, init) => app.request(`http://openbot.test${path}`, init),
     calls,
+    events,
   };
 }
 
@@ -203,6 +214,97 @@ describe("people routes", () => {
     await request("/api/admin/people/u1/access", json({ revoked: false }));
 
     expect(calls).toEqual(["restore:u1"]);
+  });
+
+  /*
+   * The trail an administrator reads a year later. `person:u1` means nothing to them, so the row
+   * carries the address, and a role change carries both roles rather than only the new one.
+   */
+  test("a role change is on the trail with the address and both roles", async () => {
+    const { request, events } = appWith([person()]);
+
+    await request("/api/admin/people/u1/role", json({ role: "admin" }));
+
+    expect(events).toEqual([
+      {
+        eventType: "person.role_changed",
+        targetType: "person",
+        targetId: "u1",
+        actorUserId: ADMIN.id,
+        payload: { email: "member@openbot.test", from: "user", to: "admin" },
+      },
+    ]);
+  });
+
+  test("giving access back is on the trail with the address", async () => {
+    const { request, events } = appWith([person({ revoked: true })]);
+
+    await request("/api/admin/people/u1/access", json({ revoked: false }));
+
+    expect(events).toEqual([
+      {
+        eventType: "person.access_restored",
+        targetType: "person",
+        targetId: "u1",
+        actorUserId: ADMIN.id,
+        payload: { email: "member@openbot.test" },
+      },
+    ]);
+  });
+
+  /*
+   * The removal commits before the retirement runs, so a broker that will not answer leaves the
+   * person removed and their credentials live. A bare 500 told the administrator nothing had been
+   * confirmed; the answer now says which half took effect, and asking again finishes the other half
+   * without removing them twice or writing a second removal on the trail.
+   */
+  test("a removal whose retirement failed says what took effect and asks for a retry", async () => {
+    const member = person();
+    let attempts = 0;
+    const { request, calls, events } = appWith([member], "admin", {
+      // The removal sticks, as the real store's does: the retry finds them already removed.
+      revoke: async (userId, by) => {
+        calls.push(`revoke:${userId}:${by}`);
+        member.revoked = true;
+      },
+      retireOwned: async (userId, by) => {
+        calls.push(`retireOwned:${userId}:${by}`);
+        attempts += 1;
+        if (attempts === 1)
+          throw new Error("composio: 503 Service Unavailable");
+      },
+    });
+
+    const failed = await request(
+      "/api/admin/people/u1/access",
+      json({ revoked: true }),
+    );
+
+    expect(failed.status).toBe(503);
+    expect((await failed.json()).error).toBe(
+      "Access is removed for this person, but some of their credentials or Recorders could not be retired yet. Try again to finish.",
+    );
+    expect(calls).toEqual([
+      `revoke:u1:${ADMIN.id}`,
+      `retireOwned:u1:${ADMIN.id}`,
+    ]);
+    expect(events.map((event) => event.eventType)).toEqual([
+      "person.access_revoked",
+    ]);
+
+    expect(
+      (await request("/api/admin/people/u1/access", json({ revoked: true })))
+        .status,
+    ).toBe(200);
+    expect(attempts).toBe(2);
+    expect(calls).toEqual([
+      `revoke:u1:${ADMIN.id}`,
+      `retireOwned:u1:${ADMIN.id}`,
+      `retireOwned:u1:${ADMIN.id}`,
+    ]);
+    expect(events.map((event) => event.eventType)).toEqual([
+      "person.access_revoked",
+    ]);
   });
 
   test("refuses a role that is not one of the two", async () => {
