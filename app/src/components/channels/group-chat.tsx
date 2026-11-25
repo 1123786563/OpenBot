@@ -38,10 +38,6 @@ import {
 } from "@/lib/channels/compose-draft";
 import { canKeepCachedRead } from "@/lib/client";
 import {
-  controlThreadRun,
-  readThreadMessages,
-} from "@/lib/copilot/thread-messages";
-import {
   awaitingFirstReply,
   type GroupMessage,
   groupKeys,
@@ -63,9 +59,6 @@ import {
 } from "./conversation-status";
 import { RUN_STAGE, runOutcomeWords } from "./run-stage";
 import { TeamBotConsentCard } from "./team-bot-consent";
-
-/** What a stop says when the server would not stop the run. */
-const STOP_REFUSED = "The Bot couldn't be stopped. Try again.";
 
 const groupSubmission = z.discriminatedUnion("kind", [
   z.object({
@@ -131,48 +124,6 @@ export function GroupChat({
   );
   const messages = group.data?.messages ?? [];
   const background = group.data?.backgroundRuns ?? [];
-  /*
-   * THE STOP REACHES THE SERVER. A Bot's turn in a group runs on the server with nobody's browser
-   * attached, so it is stopped there, by its id. A Bot's line names only the Bot's thread in the
-   * group; the thread's read names the run, as a conversation with one Bot does (`stopTask`).
-   */
-  const stop = useMutation({
-    mutationFn: async ({
-      agentId,
-      threadId,
-      runId,
-    }: {
-      agentId: string;
-      threadId: string;
-      /** Known for a run of its own; a Bot's line has only its thread. */
-      runId?: string;
-    }) => {
-      const running =
-        runId ??
-        (await readThreadMessages(threadId, agentId)).runs?.find(
-          (run) => run.status === "running",
-        )?.id;
-      if (!running) throw new Error(STOP_REFUSED);
-      try {
-        await controlThreadRun({
-          threadId,
-          agentId,
-          runId: running,
-          action: "stop",
-        });
-      } catch {
-        throw new Error(STOP_REFUSED);
-      }
-    },
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
-  });
-  /** The Bots working on their own line here, each with the thread its run is on. */
-  const workingLines = messages.flatMap((message) =>
-    message.status === "running" && message.agentId && message.threadId
-      ? [{ agentId: message.agentId, threadId: message.threadId }]
-      : [],
-  );
   /*
    * A Bot waiting on an approval asks in this conversation, as it does in a conversation of its own:
    * the same card, from the same inbox. The wait shows on the Bot's line, or on the run the server
@@ -446,29 +397,14 @@ export function GroupChat({
                         : RUN_STAGE.completed)}
                 </Text>
               </MessageContent>
-              {/* Named for the Bot, so each of several Bots' stops is told apart by ear. */}
-              {run.status === "running" ? (
-                <RecoveryButton
-                  isDisabled={stop.isPending}
-                  label={`Stop ${names.get(run.agentId) ?? "the Bot"}`}
-                  onClick={() =>
-                    stop.mutate({
-                      agentId: run.agentId,
-                      threadId: run.threadId,
-                      runId: run.id,
-                    })
-                  }
-                  size="sm"
-                  variant="ghost"
-                />
-              ) : null}
+              {/*
+                NO STOP ON A GROUP'S RUN, ON PURPOSE. A Bot's turn here is a run the server owns,
+                and a stop leaves its outcome "unknown" (`direct-chat-replay.ts`). Nothing in a
+                group can then vouch for it, so the Bot answers "busy" to every later turn of its
+                own, for good (`store.start` in `group.ts`). A wait on an approval ends with Deny.
+              */}
             </MessageRow>
           ))}
-          {stop.error ? (
-            <Text as="p" role="alert" type="supporting">
-              {stop.error.message}
-            </Text>
-          ) : null}
           {awaitingReply && (
             <Stack align="start" gap={1}>
               <Text
@@ -554,14 +490,6 @@ export function GroupChat({
           disabled={bots.length === 0}
           key={draftKey}
           pending={send.isPending || answer.isPending || working}
-          stoppable={workingLines.length > 0 && !stop.isPending}
-          onStop={() =>
-            void Promise.all(
-              workingLines.map((line) =>
-                stop.mutateAsync(line).catch(() => undefined),
-              ),
-            )
-          }
           autoFocus={!returningFromActivity}
           onSubmit={async (draft) => {
             if (!draft.text) return;

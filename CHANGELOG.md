@@ -113,12 +113,11 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   server holds for it in the same words a conversation with one Bot uses, and offers Check outcome
   when nobody can vouch for how a run ended. Access that ends while the chat is open hides what was
   read and links back to Home as soon as a send fails, not on the next one.
-- **A conversation with several Bots can be stopped, and asks for an approval where it waits.**
-  While a Bot is working there, "Stop the Bot" stops its run on the server, and a run the server is
-  holding on its own has a Stop button that names the Bot. A Bot waiting for your approval asks in
-  the conversation with the same card a conversation with one Bot uses, once for that Bot, instead of
-  one sentence and a link to the Bot's page. A working Bot's avatar carries the working badge, as it
-  does on Home.
+- **A conversation with several Bots asks for an approval where it waits.** A Bot waiting for
+  your approval asks in the conversation with the same card a conversation with one Bot uses, once
+  for that Bot, instead of one sentence and a link to the Bot's page. A working Bot's avatar carries
+  the working badge, as it does on Home. A group offers no Stop while a Bot is working: a stop there
+  would leave the Bot unable to answer any later turn in that conversation.
 
 ## 1.0.3
 

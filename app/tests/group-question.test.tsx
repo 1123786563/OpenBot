@@ -76,10 +76,6 @@ let groupSends: unknown[] = [];
 /** The approval inbox's requests, as `/api/approvals` answers them. */
 let requests: unknown[] = [];
 let decisions: unknown[] = [];
-/** The runs a Bot's thread in the group has, as the thread's read answers them. */
-let threadRuns: unknown[] | undefined;
-/** Each stop this browser asked the server for. */
-let stops: { threadId: string; runId: string; agentId: string }[] = [];
 let originalFetch: typeof fetch;
 
 beforeAll(() => {
@@ -160,25 +156,6 @@ beforeAll(() => {
       requests = [];
       return Response.json({ id: "approval-1" });
     }
-    const thread = url.pathname.match(
-      /^\/api\/copilotkit\/threads\/([^/]+)\/messages$/,
-    );
-    if (thread)
-      return Response.json({
-        messages: [],
-        ...(threadRuns ? { runs: threadRuns } : {}),
-      });
-    const stop = url.pathname.match(
-      /^\/api\/copilotkit\/threads\/([^/]+)\/runs\/([^/]+)\/stop$/,
-    );
-    if (stop) {
-      stops.push({
-        threadId: decodeURIComponent(stop[1] ?? ""),
-        runId: decodeURIComponent(stop[2] ?? ""),
-        agentId: url.searchParams.get("agentId") ?? "",
-      });
-      return Response.json({ stopped: true });
-    }
     if (url.pathname === "/api/bots/attention")
       return Response.json({
         lastPingId: null,
@@ -226,8 +203,6 @@ beforeEach(() => {
   groupSends = [];
   requests = [];
   decisions = [];
-  threadRuns = undefined;
-  stops = [];
   background = undefined;
   messages = [
     line(
@@ -427,36 +402,37 @@ function waitingApproval(threadId: string) {
 }
 
 /*
- * A Bot working in the group could not be stopped here: the shared composer had no Stop, and the
- * one stop button there was showed only under a run waiting on an approval. A conversation with one
- * Bot stops the run on the server by its id, and so does a group now.
+ * NO STOP IN A GROUP. A Bot's turn here is a run the server owns, and a stop leaves its outcome
+ * "unknown". Nothing in a group can vouch for the run afterwards, so the Bot answers "busy" to
+ * every later turn of its own, for good. A working Bot offers no Stop, in the composer or on the
+ * run the server holds for it.
  */
-test("a Bot working in the group can be stopped, and the stop reaches its run on the server", async () => {
+test("a Bot working in the group is not offered a Stop, in the composer or on its run", async () => {
   showQuestion = false;
   messages = [
     line("queued-1", BUDGET, "", "queued"),
     { ...line("running-1", ERRANDS, "", "running"), threadId: ERRANDS_THREAD },
   ];
-  // The thread's read names the run, as it does for a conversation with one Bot.
-  threadRuns = [
+  background = [
     {
       id: "run-live",
+      agentId: BUDGET,
+      threadId: "budget-buddy-group-thread",
       status: "running",
-      userMessageId: "u-1",
-      assistantMessageId: null,
+      waitingForApproval: false,
+      partialReply: null,
+      externalOutcome: null,
     },
   ];
   const view = conversation();
-  const user = userEvent.setup({ document: view.container.ownerDocument });
 
-  // The Bot waiting its turn has no run to reach, so it is not offered.
-  await user.click(await view.findByRole("button", { name: "Stop the Bot" }));
-  await waitFor(() =>
-    expect(stops).toEqual([
-      { threadId: ERRANDS_THREAD, runId: "run-live", agentId: ERRANDS },
-    ]),
-  );
-  expect(view.queryByRole("alert")).toBeNull();
+  // The Errand Helper's line and the Budget Buddy's run are both working.
+  expect(await view.findAllByText("Thinking")).toHaveLength(2);
+  expect(
+    await view.findByText("All Bots reply in order. Type @ to ask one Bot."),
+  ).toBeTruthy();
+  // The composer names no Stop, and neither does the run the server holds for the Budget Buddy.
+  expect(view.queryByRole("button", { name: /Stop/ })).toBeNull();
 });
 
 /*
