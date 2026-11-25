@@ -1,5 +1,6 @@
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
@@ -98,7 +99,12 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
         to: "/channel/new",
       });
     }
-    return { composition, copiedFromHome: location.state.copiedFromHome };
+    return {
+      composition,
+      copiedFromHome: location.state.copiedFromHome,
+      copiedFromStart: location.state.copiedFromStart,
+      attachmentNames: location.state.attachmentNames,
+    };
   },
   component: RouteComponent,
 });
@@ -108,6 +114,10 @@ declare module "@tanstack/react-router" {
     /** Set by `/channel/new` on its own navigations: which new conversation they belong to. */
     newConversation?: string;
     copiedFromHome?: true;
+    /** Set when a refused `/start/$startId` hands its text over as a copy. */
+    copiedFromStart?: true;
+    /** Attachment names a refused start hands over for an explicit re-add checklist. */
+    attachmentNames?: string[];
   }
 }
 
@@ -117,13 +127,16 @@ function ownedBy(composition: string) {
 }
 
 function RouteComponent() {
-  const { composition, copiedFromHome } = Route.useRouteContext();
+  const { composition, copiedFromHome, copiedFromStart, attachmentNames } =
+    Route.useRouteContext();
   const { data: user } = useQuery(currentUserQueryOptions());
   const owner = user?.id;
   return (
     <NewConversation
       composition={composition}
       copiedFromHome={copiedFromHome}
+      copiedFromStart={copiedFromStart}
+      attachmentNames={attachmentNames}
       owner={owner}
       key={JSON.stringify([owner, composition])}
     />
@@ -133,13 +146,23 @@ function RouteComponent() {
 function NewConversation({
   composition,
   copiedFromHome,
+  copiedFromStart,
+  attachmentNames,
   owner,
 }: {
   composition: string;
   copiedFromHome: true | undefined;
+  copiedFromStart: true | undefined;
+  attachmentNames: string[] | undefined;
   owner: string | undefined;
 }) {
-  const historyState = { ...ownedBy(composition), copiedFromHome };
+  // The page's own navigations carry the handover forward, so picking a Bot keeps the checklist.
+  const historyState = {
+    ...ownedBy(composition),
+    copiedFromHome,
+    copiedFromStart,
+    attachmentNames,
+  };
   const { agent: urlAgent } = Route.useSearch();
   const messageKey = composeDraftKey(owner, composition, "message");
   const recipientsKey = composeDraftKey(owner, composition, "recipients");
@@ -589,12 +612,26 @@ function NewConversation({
               default model.
             </p>
           ) : null}
+          {/* No file can be staged before a conversation exists, so its names are only a checklist. */}
+          {attachmentNames?.length ? (
+            <Text
+              as="p"
+              className="[overflow-wrap:anywhere]"
+              color="secondary"
+              size="sm"
+            >
+              Attachments aren’t copied. Attach these again once the
+              conversation opens: {attachmentNames.join(", ")}.
+            </Text>
+          ) : null}
           <Composer
             draftStorageKey={messageKey}
             restoredDraftMessage={
-              copiedFromHome
-                ? "Original draft kept on Home. Review who will receive this copy in To."
-                : undefined
+              copiedFromStart
+                ? "Your original message stays saved. Review who will receive this copy in To."
+                : copiedFromHome
+                  ? "Original draft kept on Home. Review who will receive this copy in To."
+                  : undefined
             }
             agents={toAgentOptions(selected)}
             autoFocus={

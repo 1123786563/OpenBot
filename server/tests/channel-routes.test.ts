@@ -1775,6 +1775,41 @@ describe("channel soft delete", () => {
  * different snapshot and takes no lock, so a concurrent deletion lands between check and insert).
  */
 describe("channel store concurrency", () => {
+  test("concurrent single-Bot creates with one requestId share a channel and thread", async () => {
+    const owner = await createPersistentUser();
+    const agentId = await createPersistentAgent({
+      name: "Idempotent solo agent",
+      owner,
+    });
+    const requestId = randomUUID();
+    const [first, second] = await Promise.all([
+      persistentStore.create(owner, [agentId], undefined, requestId),
+      persistentStore.create(owner, [agentId], undefined, requestId),
+    ]);
+    createdChannelIds.push(first.id);
+    expect(second.id).toBe(first.id);
+    expect(second.threadId).toBe(first.threadId);
+    const persisted = await persistedChannel(first.id);
+    expect(persisted.memberships).toHaveLength(1);
+    expect(persisted.linkedAgents).toHaveLength(1);
+    expect(persisted.mappings).toHaveLength(1);
+
+    const otherOwner = await createPersistentUser();
+    const otherAgentId = await createPersistentAgent({
+      name: "Other owner's solo agent",
+      owner: otherOwner,
+    });
+    const other = await persistentStore.create(
+      otherOwner,
+      [otherAgentId],
+      undefined,
+      requestId,
+    );
+    createdChannelIds.push(other.id);
+    expect(other.id).not.toBe(first.id);
+    expect(other.threadId).not.toBe(first.threadId);
+  });
+
   test("creates a channel without borrowing a second connection", async () => {
     const singleConnection = createDatabase(databaseUrl, { max: 1 });
     const store = createChannelStore(
