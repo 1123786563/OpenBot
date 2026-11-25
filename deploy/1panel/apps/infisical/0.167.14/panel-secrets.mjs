@@ -6,10 +6,15 @@ const path = "/panel-secrets/keys.json";
 const [mode, ...args] = process.argv.slice(2);
 
 if (mode === "init") {
-  const keys = Object.fromEntries(args.map((entry) => {
-    const [name, bytes, encoding] = entry.split(":");
-    return [name, process.env[name] || randomBytes(Number(bytes)).toString(encoding)];
-  }));
+  const keys = Object.fromEntries(
+    args.map((entry) => {
+      const [name, bytes, encoding] = entry.split(":");
+      return [
+        name,
+        process.env[name] || randomBytes(Number(bytes)).toString(encoding),
+      ];
+    }),
+  );
   const temporary = path + "." + randomBytes(8).toString("hex");
   writeFileSync(temporary, JSON.stringify(keys), { mode: 0o444, flag: "wx" });
   try {
@@ -21,7 +26,10 @@ if (mode === "init") {
   }
   const saved = JSON.parse(readFileSync(path, "utf8"));
   for (const name of Object.keys(keys)) {
-    if (!saved[name] || (process.env[name] && process.env[name] !== saved[name])) {
+    if (
+      !saved[name] ||
+      (process.env[name] && process.env[name] !== saved[name])
+    ) {
       throw new Error(`Restore the original value for ${name}`);
     }
   }
