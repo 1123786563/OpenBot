@@ -34,6 +34,23 @@ additionalProperties:
         zh-Hant: API 埠（必填）
         zh: API 端口（必填）
         tr: API port (Zorunlu)
+    - envKey: HINDSIGHT_CP_ACCESS_KEY
+      type: password
+      default: ""
+      random: true
+      required: true
+      edit: true
+      label:
+        en: Console access key (Required)
+        es-es: Console access key (Obligatorio)
+        ja: Console access key (必須)
+        ms: Console access key (Wajib)
+        pt-br: Console access key (Obrigatório)
+        ru: Console access key (Обязательно)
+        ko: Console access key (필수)
+        zh-Hant: 控制台存取金鑰（必填）
+        zh: 控制台访问密钥（必填）
+        tr: Console access key (Zorunlu)
     - envKey: PANEL_DB_HOST
       type: service
       default: ""
