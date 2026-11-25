@@ -653,6 +653,57 @@ test("a form whose later update was refused shows an Astryx error and is not sen
   expect(sent).toEqual(["Note\n\nnote: Tea"]);
 });
 
+test("a form that looks whole, in an interface with one refused update, shows the error and sends nothing too", async () => {
+  sent.length = 0;
+  const view = render(
+    <StoredTranscript
+      messages={[
+        stored(
+          // The form has its field and its button, and needs nothing from the update that follows.
+          "sound",
+          [
+            form("root", "sendSound", ["name"]),
+            field("name", "Name"),
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send sound",
+              submit: true,
+            },
+          ],
+          [
+            {
+              version: "1.0",
+              // A line of the interface with a value the catalog refuses: the whole update is.
+              updateComponents: {
+                surfaceId: "sound",
+                components: [{ id: "aside", component: "Text", text: true }],
+              },
+            },
+          ],
+        ),
+      ]}
+    />,
+  );
+  await view.findByText("Part of this UI couldn't be shown.");
+  const name = (await view.findByLabelText("Name")) as HTMLInputElement;
+  const sound = name.form as HTMLFormElement;
+  // The form may hold values from before the refusal, so it says what happened...
+  const banner = sound.querySelector(".astryx-banner");
+  expect(banner?.getAttribute("data-status")).toBe("error");
+  expect(banner?.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn't show this part of the reply.",
+  );
+  // ...and sends nothing.
+  expect(
+    view
+      .getByRole("button", { name: "Send sound" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  fireEvent.submit(sound);
+  expect(sent).toEqual([]);
+});
+
 test("a cleared Select submits its empty value instead of losing the field", async () => {
   sent.length = 0;
   const view = render(

@@ -101,6 +101,10 @@ export function A2UIForm(props: Control<"Form">) {
   // whatever drew before it. No boundary catches either, so nothing counts it in the context: the
   // form reads both from the DOM. The stylesheet hides the SDK's node and this error stands in its
   // place. Both can also go away again when a later update repairs the interface.
+  //
+  // The gate is conservative on purpose. One refused update keeps every form in the interface from
+  // being sent, a form that looks whole among them: a form may hold values that were drawn before
+  // the refusal, and it cannot tell which update was refused.
   useEffect(() => {
     const form = element.current;
     if (!form) return;
