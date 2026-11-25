@@ -955,6 +955,134 @@ test("a form used while the Bot is still replying says nothing was sent, and sen
   await waitFor(() => expect(view.queryByText(notice)).toBeNull());
 });
 
+const NOT_SENT = "Nothing was sent. The Bot is still replying.";
+
+/**
+ * A page with one form, a button and a pressable in it, and an agent whose runs stay open until
+ * `finishRun` ends the latest one: while a run is open, the Bot is answering what was sent.
+ */
+async function openAgainPage() {
+  sent.length = 0;
+  const open: (() => void)[] = [];
+  const running = {
+    ...agent,
+    isRunning: true,
+    runAgent: () =>
+      new Promise<{ newMessages: [] }>((resolve) =>
+        open.push(() => resolve({ newMessages: [] })),
+      ),
+  } as unknown as Agent;
+  const view = render(
+    <Page
+      runningAgent={running}
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "again",
+          dataModel: { name: "" },
+          components: [
+            {
+              ...form("root", "sendName", ["name"]),
+              children: ["name", "add", "pick", "root-send"],
+            },
+            field("name", "Name"),
+            {
+              id: "add",
+              component: "Button",
+              label: "Add",
+              onClick: { event: { name: "addName" } },
+            },
+            {
+              id: "pick",
+              component: "Pressable",
+              children: ["pick-text"],
+              onClick: { event: { name: "pickName" } },
+            },
+            { id: "pick-text", component: "Text", text: "Pick" },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="again" />
+    </Page>,
+  );
+  const name = (await view.findByLabelText("Name")) as HTMLInputElement;
+  /** Ends the run the SDK is on, once it has started. */
+  const finishRun = async () => {
+    await waitFor(() => expect(open.length).toBeGreaterThan(0));
+    open.shift()?.();
+    // What the SDK does after a run ends.
+    await new Promise<void>((resolve) => setTimeout(resolve));
+  };
+  return { running, view, name, finishRun };
+}
+
+test("a Button or a Pressable used again once the reply is over sends, and the notice that nothing was sent goes", async () => {
+  const { running, view, finishRun } = await openAgainPage();
+  const user = userEvent.setup({ document });
+  for (const [control, event] of [
+    ["Add", "Add"],
+    ["Pick", "Pick"],
+  ] as const) {
+    // Used while the Bot is still replying: dropped, and the form says so.
+    running.isRunning = true;
+    await user.click(view.getByRole("button", { name: control }));
+    expect(
+      (await view.findByText(NOT_SENT)).closest(".astryx-banner"),
+    ).toBeTruthy();
+
+    // Used again once the reply is over: sent. The notice goes at once, and stays away while the
+    // Bot answers, and after it has answered.
+    running.isRunning = false;
+    await user.click(view.getByRole("button", { name: control }));
+    expect(sent.at(-1), control).toBe(event);
+    expect(view.queryByText(NOT_SENT), `${control}, answering`).toBeNull();
+    await finishRun();
+    expect(view.queryByText(NOT_SENT), `${control}, answered`).toBeNull();
+  }
+  expect(sent).toEqual(["Add", "Pick"]);
+});
+
+test("a Form sent again once the reply is over shows no notice while the Bot answers it", async () => {
+  const { running, view, name, finishRun } = await openAgainPage();
+  const formElement = name.form as HTMLFormElement;
+  await userEvent.setup({ document }).type(name, "Ada");
+
+  // Sent while the Bot is still replying: dropped, and the form says so.
+  fireEvent.submit(formElement);
+  expect(
+    (await view.findByText(NOT_SENT)).closest(".astryx-banner"),
+  ).toBeTruthy();
+  expect(sent).toEqual([]);
+
+  // Sent again once the reply is over: it goes, and no notice is shown while the Bot answers.
+  running.isRunning = false;
+  fireEvent.submit(formElement);
+  expect(sent).toEqual(["Name\n\nname: Ada"]);
+  expect(view.queryByText(NOT_SENT)).toBeNull();
+  await finishRun();
+  expect(view.queryByText(NOT_SENT)).toBeNull();
+
+  // A send that is dropped while an earlier one is still on its way keeps its notice after the
+  // earlier one is answered: that result belongs to the earlier send.
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: "Add" }));
+  fireEvent.submit(formElement);
+  expect(sent).toEqual(["Name\n\nname: Ada", "Add"]);
+  expect(
+    (await view.findByText(NOT_SENT)).closest(".astryx-banner"),
+  ).toBeTruthy();
+  await finishRun();
+  expect(view.getByText(NOT_SENT)).toBeTruthy();
+});
+
 test("a Button takes the catalog's href, copy, loading, icon, icon-only and variant", async () => {
   sent.length = 0;
   const opened: string[] = [];

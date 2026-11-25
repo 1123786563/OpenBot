@@ -13,7 +13,6 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { TimeInput } from "@astryxdesign/core/TimeInput";
 import {
   type GenerativeUIComponentProps,
-  type GenerativeUIInvokeResult,
   standardUI,
   useGenerativeUIAccessibility,
 } from "@copilotkit/react-core/v2/generative-ui";
@@ -27,7 +26,6 @@ import {
 import {
   A2UIForm,
   A2UIPressable,
-  droppedWhileRunning,
   FormFailures,
   openActionUrl,
 } from "./a2ui-form";
@@ -250,7 +248,7 @@ function A2UIButton(props: Control<"Button">) {
   const aria = useGenerativeUIAccessibility();
   const contentId = useId();
   const [copied, setCopied] = useState(false);
-  const { failed, notSent } = useContext(FormFailures);
+  const { failed, send } = useContext(FormFailures);
   useEffect(() => {
     if (!copied) return;
     const timeout = setTimeout(() => setCopied(false), 1500);
@@ -310,9 +308,7 @@ function A2UIButton(props: Control<"Button">) {
           );
           return;
         }
-        void props.onClick?.({}).then((result: GenerativeUIInvokeResult) => {
-          if (droppedWhileRunning(result)) notSent();
-        });
+        send(props.onClick?.({}));
       }}
     >
       {child ? (

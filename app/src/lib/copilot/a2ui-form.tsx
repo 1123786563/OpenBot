@@ -28,15 +28,18 @@ type Control<Name extends keyof (typeof standardUI)["definitions"] & string> =
 export const FormFailures = createContext({
   failed: false,
   count: (_change: number) => {},
-  /** Says an event of this form was not sent because the Bot is still replying. */
-  notSent: () => {},
+  /**
+   * Sends an event of this form. The notice that nothing was sent goes first, and comes back only
+   * if the SDK drops this event because the Bot is still replying.
+   */
+  send: (_event: Promise<GenerativeUIInvokeResult> | undefined) => {},
 });
 
 /**
  * Whether the SDK dropped an event because the Bot was still replying. It reports that on the
  * result of the event and nowhere else, so the control that sent it is the one that can say so.
  */
-export function droppedWhileRunning(result: GenerativeUIInvokeResult) {
+function droppedWhileRunning(result: GenerativeUIInvokeResult) {
   return !result.ok && result.error.code === "agent_busy";
 }
 
@@ -76,7 +79,18 @@ export function A2UIForm(props: Control<"Form">) {
   const [failed, setFailed] = useState(0);
   const [undrawn, setUndrawn] = useState(0);
   const [unsent, setUnsent] = useState(false);
-  const notSent = useRef(() => setUnsent(true)).current;
+  // Only the latest send's result counts. A send dropped while an earlier one is still on its way
+  // keeps its notice when the earlier one is answered.
+  const latest = useRef(0);
+  const send = useRef(
+    (event: Promise<GenerativeUIInvokeResult> | undefined) => {
+      const serial = ++latest.current;
+      setUnsent(false);
+      void event?.then((result) => {
+        if (serial === latest.current) setUnsent(droppedWhileRunning(result));
+      });
+    },
+  ).current;
   const count = useRef((_change: number) =>
     setFailed((total) => total + _change),
   ).current;
@@ -103,7 +117,7 @@ export function A2UIForm(props: Control<"Form">) {
   }, []);
   const broken = failed > 0 || undrawn > 0;
   return (
-    <FormFailures.Provider value={{ failed: broken, count, notSent }}>
+    <FormFailures.Provider value={{ failed: broken, count, send }}>
       <Stack
         {...aria}
         ref={element}
@@ -119,11 +133,7 @@ export function A2UIForm(props: Control<"Form">) {
           if (broken) return;
           // The SDK drops an event that arrives while the Bot is still replying. Say so, or the
           // person believes the form was sent.
-          void props
-            .onSubmit?.({})
-            .then((result: GenerativeUIInvokeResult) =>
-              setUnsent(droppedWhileRunning(result)),
-            );
+          send(props.onSubmit?.({}));
         }}
       >
         {unsent && (
@@ -246,7 +256,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
   const { theme } = useGenerativeUIRuntime() ?? {};
   const container = useRef<HTMLElement>(null);
   const seen = useRef(false);
-  const { notSent } = useContext(FormFailures);
+  const { send } = useContext(FormFailures);
   const { onVisible } = props;
   // `onVisible` is sent once, the first time the container scrolls into view.
   useEffect(() => {
@@ -265,10 +275,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
   const press = () => {
     if (props.disabled) return;
     if (props.href) openActionUrl(props.href);
-    else
-      void props.onClick?.({}).then((result: GenerativeUIInvokeResult) => {
-        if (droppedWhileRunning(result)) notSent();
-      });
+    else send(props.onClick?.({}));
   };
 
   return (

@@ -24,7 +24,8 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - **A generated form used while the Bot is still replying says nothing was sent.** A form, or a
   button in one, used while the reply is still being written was dropped in silence. It now shows
   "Nothing was sent. The Bot is still replying." and asks to send it again once the reply has
-  finished.
+  finished. The notice goes as soon as a later send goes through, so it is not still on screen
+  while the Bot answers that message.
 - **An interface that fails before its own error handling is named in a person's words.** The
   transcript used to say "Couldn't show generative-ui-surface." for an interface a Bot drew. It now
   says "Couldn't show this part of the reply.", and every such message ends with the next step:
