@@ -288,6 +288,8 @@ const FORMS: Component[] = [
  * - `unbuilt`: a surface whose creation the browser refuses. Its frame stays, empty, with its line.
  * - `thrown`: a part that throws, in a page whose error state throws too, so the whole surface is
  *   replaced by the SDK's own node.
+ * - `mistyped`: a form whose own label is bound to a number. The SDK refuses the form as a whole
+ *   when it is drawn, and its own error node stands in the form's place.
  *
  * `window.__sent` holds what their events start.
  */
@@ -382,6 +384,24 @@ const REFUSED: Message[] = [
       { id: "boom", component: "Broken" },
     ],
     { catalogId: FAILING_UI.id, dataModel: {} },
+  ),
+  surface(
+    "mistyped",
+    [
+      {
+        ...form("root", "sendMistyped", []),
+        // Bound, so the update passes the client's check, which cannot see what a bound value
+        // holds. A literal of the wrong type is refused on ingest instead, and nothing draws.
+        label: { "@path": "/title" },
+      },
+      {
+        id: "root-send",
+        component: "Button",
+        label: "Send mistyped",
+        submit: true,
+      },
+    ],
+    { dataModel: { title: 5 } },
   ),
 ];
 
