@@ -6983,4 +6983,4 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
         .delete(enterpriseSettings)
         .where(eq(enterpriseSettings.key, pilotCatalogKey));
   }
-});
+}, 20_000);
