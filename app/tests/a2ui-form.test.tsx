@@ -1100,7 +1100,6 @@ test("a Pressable presses by pointer, Enter and Space, opens a link, and sends o
     opened.push(url);
     return null;
   }) as typeof window.open;
-  const visible: string[] = [];
   const observers: {
     callback: IntersectionObserverCallback;
     target?: Element;

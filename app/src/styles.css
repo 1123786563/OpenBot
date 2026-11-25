@@ -295,6 +295,7 @@
  * conversation, so each rule here has to win. It takes the palette's error ink on its error tint,
  * as the Astryx Banner does; anywhere outside the Astryx scope, the app's own error colour.
  */
+/* biome-ignore-start lint/complexity/noImportantStyles: the SDK writes its colours inline, and only !important wins over an inline style. */
 .a2ui-surface [data-generative-ui-error] {
   padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem) !important;
   border: thin solid var(--color-border-error, var(--destructive)) !important;
@@ -306,6 +307,7 @@
   color: var(--color-on-error-muted, var(--destructive)) !important;
   font-size: var(--text-sm) !important;
 }
+/* biome-ignore-end lint/complexity/noImportantStyles: the SDK's inline colours. */
 
 /* A part the SDK refused to draw inside a Form: the Form shows an Astryx error in its place. */
 .a2ui-surface form [data-generative-ui-error] {
