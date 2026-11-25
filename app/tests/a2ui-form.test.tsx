@@ -1395,6 +1395,52 @@ test("a time field and a date-and-time field write the time in the format the ca
   ]);
 });
 
+/** A renderer for an interface that throws as soon as it is drawn, before any boundary of the SDK. */
+const THROWING_ACTIVITY = {
+  activityType: "generative-ui-surface",
+  content: z.any(),
+  render() {
+    throw new Error("fixture: this interface cannot be drawn");
+  },
+};
+
+test("an interface that throws before any SDK boundary is named like any other missing part", async () => {
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <CopilotKitProvider
+        agents__unsafe_dev_only={{ default: agent }}
+        {...generativeUiProviderOptions(true)}
+        renderActivityMessages={[THROWING_ACTIVITY]}
+      >
+        <CopilotChatConfigurationProvider agentId="default" threadId={THREAD}>
+          <TooltipProvider>
+            <ChatTranscript
+              messages={[
+                { id: "u1", role: "user", content: "Show me a form." },
+                stored("broken", []),
+              ]}
+              restoring={false}
+            />
+          </TooltipProvider>
+        </CopilotChatConfigurationProvider>
+      </CopilotKitProvider>
+    </QueryClientProvider>,
+  );
+  // The transcript's own boundary catches it, and says what is missing in a person's words rather
+  // than the protocol's, with the one next step.
+  expect(
+    (await view.findByText("Couldn't show this part of the reply."))
+      .textContent,
+  ).toBeTruthy();
+  expect(view.getByText("Show me a form.")).toBeTruthy();
+  expect(
+    view.getByText(
+      "The rest of the conversation still works. Ask the Bot to send it again.",
+    ),
+  ).toBeTruthy();
+  expect(view.queryByText(/generative-ui-surface/)).toBeNull();
+});
+
 function BookingPage() {
   return (
     <CopilotKitProvider

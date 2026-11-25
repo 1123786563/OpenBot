@@ -25,6 +25,10 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   button in one, used while the reply is still being written was dropped in silence. It now shows
   "Nothing was sent. The Bot is still replying." and asks to send it again once the reply has
   finished.
+- **An interface that fails before its own error handling is named in a person's words.** The
+  transcript used to say "Couldn't show generative-ui-surface." for an interface a Bot drew. It now
+  says "Couldn't show this part of the reply.", and every such message ends with the next step:
+  "Ask the Bot to send it again."
 - Settings live in one file per service, and there is no `.env` in the repository root any more:
   `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
   `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model

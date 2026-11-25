@@ -1653,12 +1653,15 @@ function AttachmentLightbox({
  *
  * An `activityType` is a protocol name and reads like one, so the boundary's sentence gets a phrase
  * a person can read instead. An unknown type falls back to its own name rather than to something
- * vague: whoever registered it will recognise it, and nobody else can act on either wording.
+ * vague: whoever registered it will recognise it, and nobody else can act on either wording. The
+ * A2UI type takes the words its own error state uses, so either boundary reads the same.
  */
 function activityName(activityType: string): string {
   return activityType === "open-generative-ui"
     ? "This Bot's generated interface"
-    : activityType;
+    : activityType === "generative-ui-surface"
+      ? "this part of the reply"
+      : activityType;
 }
 
 /**
