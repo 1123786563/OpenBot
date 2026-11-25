@@ -9,11 +9,11 @@ services:
     entrypoint: null
     environment:
       BIFROST_DB_HOST: ${PANEL_DB_HOST:?Select a database instance}
-      BIFROST_DB_NAME: ${DB_NAME:?Enter the database name}
-      BIFROST_DB_PASSWORD: ${DB_PASSWORD:?Enter the database password}
+      BIFROST_DB_NAME: ${PANEL_DB_NAME:?Enter the database name}
+      BIFROST_DB_PASSWORD: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
       BIFROST_DB_PORT: ${PANEL_DB_PORT:?Missing database instance port}
       BIFROST_DB_SSL_MODE: ${DB_SSL_MODE:-disable}
-      BIFROST_DB_USER: ${DB_USER:?Enter the database user}
+      BIFROST_DB_USER: ${PANEL_DB_USER:?Enter the database user}
       BIFROST_SETUP_TOKEN: ${BIFROST_SETUP_TOKEN}
     extra_hosts:
       - host.docker.internal=host-gateway

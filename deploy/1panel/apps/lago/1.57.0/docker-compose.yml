@@ -36,13 +36,15 @@ services:
       migrate:
         condition: service_completed_successfully
         required: true
-      redis:
-        condition: service_healthy
         restart: true
-        required: true
     entrypoint: [ruby, /lago-secrets.rb]
     environment:
-      DATABASE_URL: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}&search_path=public
+      PGHOST: ${PANEL_DB_HOST:?Select a database instance}
+      PGPORT: ${PANEL_DB_PORT:?Missing database instance port}
+      PGDATABASE: ${PANEL_DB_NAME:?Enter the database name}
+      PGUSER: ${PANEL_DB_USER:?Enter the database user}
+      PGPASSWORD: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
+      PGSSLMODE: ${DB_SSL_MODE:-disable}
       GOOGLE_AUTH_CLIENT_ID: ""
       GOOGLE_AUTH_CLIENT_SECRET: ""
       LAGO_API_URL: ${LAGO_API_URL:-http://localhost:13000}
@@ -56,7 +58,7 @@ services:
       LAGO_DATA_API_URL: http://data-api
       LAGO_DISABLE_PDF_GENERATION: "false"
       LAGO_DISABLE_SEGMENT: "true"
-      LAGO_DISABLE_SIGNUP: "false"
+      LAGO_DISABLE_SIGNUP: "true"
       LAGO_DISABLE_WALLET_REFRESH: ""
       LAGO_FROM_EMAIL: ""
       LAGO_FRONT_URL: ${LAGO_FRONT_URL:-http://localhost:13001}
@@ -71,11 +73,11 @@ services:
       LAGO_PDF_URL: http://pdf:3000
       LAGO_REDIS_CABLE_URL: ""
       LAGO_REDIS_CACHE_MASTER_NAME: master
-      LAGO_REDIS_CACHE_PASSWORD: ""
+      LAGO_REDIS_CACHE_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
       LAGO_REDIS_CACHE_SENTINELS: ""
       LAGO_REDIS_CACHE_SENTINEL_PASSWORD: ""
       LAGO_REDIS_CACHE_SENTINEL_USERNAME: ""
-      LAGO_REDIS_CACHE_URL: redis://redis:6379
+      LAGO_REDIS_CACHE_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
       LAGO_REDIS_SIDEKIQ_MASTER_NAME: master
       LAGO_REDIS_SIDEKIQ_SENTINELS: ""
       LAGO_REDIS_SIDEKIQ_SENTINEL_PASSWORD: ""
@@ -92,8 +94,8 @@ services:
       MISTRAL_API_KEY: ""
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
-      REDIS_PASSWORD: ""
-      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
+      REDIS_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
     healthcheck:
       test:
         - CMD-SHELL
@@ -128,13 +130,15 @@ services:
       migrate:
         condition: service_completed_successfully
         required: true
-      redis:
-        condition: service_healthy
         restart: true
-        required: true
     entrypoint: [ruby, /lago-secrets.rb]
     environment:
-      DATABASE_URL: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}&search_path=public
+      PGHOST: ${PANEL_DB_HOST:?Select a database instance}
+      PGPORT: ${PANEL_DB_PORT:?Missing database instance port}
+      PGDATABASE: ${PANEL_DB_NAME:?Enter the database name}
+      PGUSER: ${PANEL_DB_USER:?Enter the database user}
+      PGPASSWORD: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
+      PGSSLMODE: ${DB_SSL_MODE:-disable}
       GOOGLE_AUTH_CLIENT_ID: ""
       GOOGLE_AUTH_CLIENT_SECRET: ""
       LAGO_API_URL: ${LAGO_API_URL:-http://localhost:13000}
@@ -162,11 +166,11 @@ services:
       LAGO_PDF_URL: http://pdf:3000
       LAGO_REDIS_CABLE_URL: ""
       LAGO_REDIS_CACHE_MASTER_NAME: master
-      LAGO_REDIS_CACHE_PASSWORD: ""
+      LAGO_REDIS_CACHE_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
       LAGO_REDIS_CACHE_SENTINELS: ""
       LAGO_REDIS_CACHE_SENTINEL_PASSWORD: ""
       LAGO_REDIS_CACHE_SENTINEL_USERNAME: ""
-      LAGO_REDIS_CACHE_URL: redis://redis:6379
+      LAGO_REDIS_CACHE_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
       LAGO_REDIS_SIDEKIQ_MASTER_NAME: master
       LAGO_REDIS_SIDEKIQ_SENTINELS: ""
       LAGO_REDIS_SIDEKIQ_SENTINEL_PASSWORD: ""
@@ -183,8 +187,8 @@ services:
       MISTRAL_API_KEY: ""
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
-      REDIS_PASSWORD: ""
-      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
+      REDIS_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
     image: getlago/api:v1.57.0
     networks:
       default: null
@@ -205,13 +209,15 @@ services:
       migrate:
         condition: service_completed_successfully
         required: true
-      redis:
-        condition: service_healthy
         restart: true
-        required: true
     entrypoint: [ruby, /lago-secrets.rb]
     environment:
-      DATABASE_URL: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}&search_path=public
+      PGHOST: ${PANEL_DB_HOST:?Select a database instance}
+      PGPORT: ${PANEL_DB_PORT:?Missing database instance port}
+      PGDATABASE: ${PANEL_DB_NAME:?Enter the database name}
+      PGUSER: ${PANEL_DB_USER:?Enter the database user}
+      PGPASSWORD: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
+      PGSSLMODE: ${DB_SSL_MODE:-disable}
       GOOGLE_AUTH_CLIENT_ID: ""
       GOOGLE_AUTH_CLIENT_SECRET: ""
       LAGO_API_URL: ${LAGO_API_URL:-http://localhost:13000}
@@ -239,11 +245,11 @@ services:
       LAGO_PDF_URL: http://pdf:3000
       LAGO_REDIS_CABLE_URL: ""
       LAGO_REDIS_CACHE_MASTER_NAME: master
-      LAGO_REDIS_CACHE_PASSWORD: ""
+      LAGO_REDIS_CACHE_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
       LAGO_REDIS_CACHE_SENTINELS: ""
       LAGO_REDIS_CACHE_SENTINEL_PASSWORD: ""
       LAGO_REDIS_CACHE_SENTINEL_USERNAME: ""
-      LAGO_REDIS_CACHE_URL: redis://redis:6379
+      LAGO_REDIS_CACHE_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
       LAGO_REDIS_SIDEKIQ_MASTER_NAME: master
       LAGO_REDIS_SIDEKIQ_SENTINELS: ""
       LAGO_REDIS_SIDEKIQ_SENTINEL_PASSWORD: ""
@@ -260,8 +266,8 @@ services:
       MISTRAL_API_KEY: ""
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
-      REDIS_PASSWORD: ""
-      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
+      REDIS_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
     healthcheck:
       test:
         - CMD-SHELL
@@ -320,7 +326,12 @@ services:
         condition: service_completed_successfully
     entrypoint: [ruby, /lago-secrets.rb]
     environment:
-      DATABASE_URL: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}&search_path=public
+      PGHOST: ${PANEL_DB_HOST:?Select a database instance}
+      PGPORT: ${PANEL_DB_PORT:?Missing database instance port}
+      PGDATABASE: ${PANEL_DB_NAME:?Enter the database name}
+      PGUSER: ${PANEL_DB_USER:?Enter the database user}
+      PGPASSWORD: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
+      PGSSLMODE: ${DB_SSL_MODE:-disable}
       GOOGLE_AUTH_CLIENT_ID: ""
       GOOGLE_AUTH_CLIENT_SECRET: ""
       LAGO_AWS_S3_ACCESS_KEY_ID: azerty123456
@@ -341,17 +352,17 @@ services:
       LAGO_LICENSE: ""
       LAGO_OAUTH_PROXY_URL: https://proxy.getlago.com
       LAGO_ORG_API_KEY: ""
-      LAGO_ORG_NAME: ""
-      LAGO_ORG_USER_EMAIL: ""
-      LAGO_ORG_USER_PASSWORD: ""
+      LAGO_ORG_NAME: ${LAGO_ORG_NAME:-}
+      LAGO_ORG_USER_EMAIL: ${LAGO_ORG_USER_EMAIL:-}
+      LAGO_ORG_USER_PASSWORD: ${LAGO_ORG_USER_PASSWORD:-}
       LAGO_PDF_URL: http://pdf:3000
       LAGO_REDIS_CABLE_URL: ""
       LAGO_REDIS_CACHE_MASTER_NAME: master
-      LAGO_REDIS_CACHE_PASSWORD: ""
+      LAGO_REDIS_CACHE_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
       LAGO_REDIS_CACHE_SENTINELS: ""
       LAGO_REDIS_CACHE_SENTINEL_PASSWORD: ""
       LAGO_REDIS_CACHE_SENTINEL_USERNAME: ""
-      LAGO_REDIS_CACHE_URL: redis://redis:6379
+      LAGO_REDIS_CACHE_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
       LAGO_REDIS_SIDEKIQ_MASTER_NAME: master
       LAGO_REDIS_SIDEKIQ_SENTINELS: ""
       LAGO_REDIS_SIDEKIQ_SENTINEL_PASSWORD: ""
@@ -368,8 +379,8 @@ services:
       MISTRAL_API_KEY: ""
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
-      REDIS_PASSWORD: ""
-      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${PANEL_REDIS_ROOT_PASSWORD}
+      REDIS_URL: redis://${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
     image: getlago/api:v1.57.0
     networks:
       default: null
@@ -388,31 +399,6 @@ services:
     container_name: ${CONTAINER_NAME}-pdf
     labels:
       createdBy: Apps
-  redis:
-    command:
-      - --port
-      - "6379"
-    container_name: ${CONTAINER_NAME}-redis
-    entrypoint: null
-    healthcheck:
-      test:
-        - CMD
-        - redis-cli
-        - -p
-        - "6379"
-        - ping
-      timeout: 5s
-      interval: 10s
-      retries: 5
-    image: redis:7-alpine
-    networks:
-      default: null
-    restart: unless-stopped
-    volumes:
-      - lago_redis_data:/data
-    labels:
-      createdBy: Apps
 volumes:
-  lago_redis_data: {}
   lago_storage_data: {}
   lago_secrets: {}

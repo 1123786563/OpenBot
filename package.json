@@ -40,13 +40,13 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
     "@copilotkit/aimock": "1.43.0",
-    "@infisical/sdk": "5.3.1",
     "@types/bun": "^1.3.3",
     "roughjs": "^4.6.6",
     "typescript": "^5.9.3",
     "yaml": "^2.9.0"
   },
   "dependencies": {
+    "@infisical/sdk": "5.3.1",
     "playwright-core": "1.62.1"
   },
   "overrides": {
