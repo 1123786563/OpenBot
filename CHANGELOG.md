@@ -97,9 +97,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   its own. One ends when you withdraw it (asking is switched off while it waits), when the Bot's
   work is stopped under it, or when the same request is decided in another tab, and the line where
   the card was now reads, for example, "Withdrawn. You turned off asking before changes. Ask the Bot
-  again if you still need it." until the Bot's own answer for that step arrives. Each answer's
-  description also says that the Bot carries on in the same conversation afterwards. A fast double
-  press on a decision sends it once; the server refuses a second decision on the same request.
+  again if you still need it." until the Bot's own answer for that step arrives. That next step is
+  offered only where the step never ran. A step that may have run, because its outcome is unknown
+  or it could not be carried out, says to check whether it happened first. A computer step keeps its
+  own card once its request has ended. Each answer's description also says that the Bot carries on
+  in the same conversation afterwards. A fast double press on a decision sends it once; the server
+  refuses a second decision on the same request.
 - **A conversation you can no longer read offers the way back.** When your access to a conversation
   ends, a group conversation refuses to open, or a conversation page cannot open at all, the page
   now says why and links to Home instead of leaving you with a Retry that can never succeed.

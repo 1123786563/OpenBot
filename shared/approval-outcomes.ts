@@ -97,6 +97,24 @@ export function notCarriedOut(reason: string): string {
 export const decisionInvalidated =
   "This decision was invalidated when workspace execution stopped.";
 
+/** The endings after which nothing ran: the person declined the step, or its request was withdrawn. */
+const SAFE_TO_ASK_AGAIN = new Set([
+  DECLINED_BY_PERSON,
+  WITHDRAWN_APPROVALS_OFF,
+  WITHDRAWN_RULE_ALLOWS,
+  decisionInvalidated,
+]);
+
+/**
+ * Whether a person may simply ask the Bot again for a step that did not run. Only where the step
+ * never started: they declined it, or its request was withdrawn or invalidated. A step whose outcome
+ * is unknown, or that could not be carried out, may have happened, and its own words say to check
+ * before asking again; a next step here would contradict them.
+ */
+export function safeToAskAgain(text: string): boolean {
+  return SAFE_TO_ASK_AGAIN.has(text.trim());
+}
+
 const FOR_PERSON = new Map<string, string>([
   [DECLINED_BY_PERSON, "You declined it."],
   [ALREADY_WAITING, "It's already waiting for your answer."],

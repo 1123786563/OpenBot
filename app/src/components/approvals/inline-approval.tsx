@@ -2,7 +2,10 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
-import { outcomeForPerson } from "@openbot/shared/approval-outcomes";
+import {
+  outcomeForPerson,
+  safeToAskAgain,
+} from "@openbot/shared/approval-outcomes";
 import { offersStandingRule } from "@openbot/shared/standing-rule";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +21,9 @@ import {
 import { noteWatched } from "@/lib/computers/activity";
 import { EASE_OUT } from "@/lib/motion";
 
+/** What to do about a request that ended before the Bot's answer for its step arrived. */
+const ASK_AGAIN = "Ask the Bot again if you still need it.";
+
 /**
  * A pending approval, drawn in the conversation where the action it holds would have been.
  *
@@ -25,9 +31,6 @@ import { EASE_OUT } from "@/lib/motion";
  * in either place is the one decision. Once decided the server runs the action exactly once and
  * continues the conversation, and this gives the line back to the tool's own renderer.
  */
-/** What to do about a request that ended before the Bot's answer for its step arrived. */
-const ASK_AGAIN = "Ask the Bot again if you still need it.";
-
 /** What each answer does, as the row under it says it. */
 const CHOICE_WORDS: Record<
   ApprovalDecision,
@@ -76,7 +79,10 @@ export function InlineApproval({
 }: {
   toolCallId?: string;
   fallback: ReactNode;
-  /** Whether the tool call has its answer in the transcript. Leave it out where that is unknown. */
+  /**
+   * Whether the tool call has its answer in the transcript. A request that ended before its answer
+   * is explained only when this says so (`false`); where it is unknown, the line stays the caller's.
+   */
   resulted?: boolean;
 }) {
   const cache = useQueryClient();
@@ -121,16 +127,20 @@ export function InlineApproval({
   /*
    * No approval expires by itself. What ends one without an answer from this card is the person
    * withdrawing it, the Bot's work being stopped under it, or the same request decided in another
-   * tab, and each leaves its reason on the request. Said here, with what to do, until the Bot's own
-   * answer for this step reaches the transcript and takes the line back. A card this browser
-   * answered already shows that answer.
+   * tab, and each leaves its reason on the request. Said here, until the Bot's own answer for this
+   * step reaches the transcript and takes the line back. A card this browser answered already shows
+   * that answer.
+   *
+   * ONLY WHERE THE CALLER SAYS THE STEP HAS NO ANSWER YET. A computer step's card is drawn without
+   * saying (`approval-tools.tsx`), and read as "not yet" it had a completed step replaced for good
+   * by the warning for its own request.
    */
   const explain =
     request &&
     !pending &&
     request.result?.error &&
     !request.result.pauseReason &&
-    !resulted &&
+    resulted === false &&
     !answered
       ? request.result.error
       : null;
@@ -194,7 +204,8 @@ export function InlineApproval({
       ) : explain ? (
         <Banner
           collapsible={false}
-          description={ASK_AGAIN}
+          // Only where nothing ran. A step that may have run is to be checked first, as it says.
+          description={safeToAskAgain(explain) ? ASK_AGAIN : undefined}
           status="warning"
           title={outcomeForPerson(explain)}
         />
