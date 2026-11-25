@@ -29,6 +29,9 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   transcript used to say "Couldn't show generative-ui-surface." for an interface a Bot drew. It now
   says "Couldn't show this part of the reply.", and every such message ends with the next step:
   "Ask the Bot to send it again."
+- **Date and time fields in a generated form show where the keyboard focus is.** A date field, a
+  time field and the time part of a date and time field showed no focus ring when Tab reached
+  them. They now show the same ring as the other controls.
 - Settings live in one file per service, and there is no `.env` in the repository root any more:
   `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
   `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model

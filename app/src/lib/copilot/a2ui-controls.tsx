@@ -581,6 +581,9 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
   const common = {
     ...aria,
     ...fieldName(props),
+    // On the field, which passes it to its input: the SDK draws its focus ring there, and on a box
+    // around the field nothing is ever focused.
+    "data-a2ui-input": "",
     isRequired: props.required,
     isDisabled: props.disabled,
     hasClear: props.clearable,
@@ -591,11 +594,7 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
     onChange: (next: string | undefined) => props.setValue(next ?? ""),
   };
   return (
-    <Stack
-      onBlur={onBlur}
-      data-a2ui-input=""
-      style={{ flexGrow: props.weight }}
-    >
+    <Stack onBlur={onBlur} style={{ flexGrow: props.weight }}>
       {time && date ? (
         <DateTimeInput
           {...common}

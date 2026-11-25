@@ -22,9 +22,10 @@ import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
  * `?only=<surface>` draws one of them, under the starter request that asks for a trip budget.
  *
  * `forms` is two forms side by side in one interface, one of them with a part that cannot be drawn.
- * `refused` is the interfaces the SDK could not draw in part or in whole, and `legacy` a form stored
- * by an earlier CopilotKit. The turns their events start are written to `window.__sent`. `forms` and
- * `refused` are the only ones drawn from a catalog that has a part that cannot be drawn.
+ * `refused` is the interfaces the SDK could not draw in part or in whole, `legacy` a form stored by
+ * an earlier CopilotKit, and `controls` one form with every control in it. The turns their events
+ * start are written to `window.__sent`. `forms` and `refused` are the only ones drawn from a
+ * catalog that has a part that cannot be drawn.
  */
 const THREAD = "thread-a2ui-frame";
 
@@ -397,6 +398,180 @@ const LEGACY: Message[] = withCurrentA2uiVersions([
   ),
 ]);
 
+/**
+ * One form with every control the catalog has that OpenBot draws itself, plus
+ * the one it leaves to the SDK, in the states a chat shows: typed text, picked
+ * and unpicked, a date, a time and both, a slider with marks, a list that can
+ * be searched, a breakdown, and buttons in each variant and state.
+ */
+const CHOICE = (
+  id: string,
+  options: string[],
+  extra: Record<string, unknown> = {},
+): Component => ({
+  id,
+  component: "ChoicePicker",
+  label: id[0]?.toUpperCase() + id.slice(1),
+  options,
+  value: { "@path": `/${id}` },
+  ...extra,
+});
+const CONTROLS: Message[] = [
+  surface(
+    "controls",
+    [
+      {
+        ...form("root", "sendControls", [
+          "name",
+          "note",
+          "extras",
+          "seat",
+          "alone",
+          "trip",
+          "agree",
+          "day",
+          "at",
+          "slot",
+          "rating",
+          "deck",
+          "split",
+        ]),
+        children: [
+          "name",
+          "note",
+          "extras",
+          "seat",
+          "alone",
+          "trip",
+          "agree",
+          "day",
+          "at",
+          "slot",
+          "rating",
+          "deck",
+          "split",
+          "press",
+          "remove",
+          "plain",
+          "working",
+          "still",
+          "link",
+          "root-send",
+        ],
+      },
+      NAME,
+      {
+        id: "note",
+        component: "TextArea",
+        label: "Note",
+        value: { "@path": "/note" },
+      },
+      CHOICE("extras", ["bag", "meal"], { variant: "multipleSelection" }),
+      CHOICE("seat", ["aisle", "window"], { displayStyle: "chips" }),
+      CHOICE("alone", ["morning", "evening"]),
+      {
+        id: "trip",
+        component: "SegmentedControl",
+        label: "Trip",
+        options: ["economy", "business"],
+        value: { "@path": "/trip" },
+      },
+      { id: "agree", component: "Radio", label: "Agree to the terms" },
+      {
+        id: "day",
+        component: "DateTimeInput",
+        label: "Day",
+        value: { "@path": "/day" },
+      },
+      {
+        id: "at",
+        component: "DateTimeInput",
+        label: "At",
+        enableTime: true,
+        value: { "@path": "/at" },
+      },
+      {
+        id: "slot",
+        component: "DateTimeInput",
+        label: "Slot",
+        enableDate: true,
+        enableTime: true,
+        value: { "@path": "/slot" },
+      },
+      {
+        id: "rating",
+        component: "Slider",
+        label: "Rating",
+        min: 0,
+        max: 20,
+        steps: 4,
+        marks: [
+          { value: 0, label: "Low" },
+          { value: 20, label: "High" },
+        ],
+        value: { "@path": "/rating" },
+      },
+      {
+        id: "deck",
+        component: "Select",
+        label: "Deck",
+        searchable: true,
+        options: ["lower", "upper"],
+        value: { "@path": "/deck" },
+      },
+      {
+        id: "split",
+        component: "Breakdown",
+        totalLabel: "Budget",
+        currency: "USD",
+        items: { "@path": "/split" },
+      },
+      {
+        id: "press",
+        component: "Pressable",
+        children: ["press-text"],
+        onClick: { event: { name: "pressed" } },
+      },
+      { id: "press-text", component: "Text", text: "Press me" },
+      { id: "remove", component: "Button", label: "Remove", color: "danger" },
+      {
+        id: "plain",
+        component: "Button",
+        label: "Plain",
+        variant: "borderless",
+      },
+      { id: "working", component: "Button", label: "Working", loading: true },
+      { id: "still", component: "Button", label: "Still here", disabled: true },
+      {
+        id: "link",
+        component: "Button",
+        label: "Docs",
+        href: "https://example.test/docs",
+      },
+      { id: "root-send", component: "Button", label: "Send", submit: true },
+    ],
+    {
+      dataModel: {
+        name: "Ada",
+        note: "Window seat, please",
+        extras: ["bag"],
+        seat: ["window"],
+        alone: [],
+        trip: "economy",
+        day: "2026-10-23",
+        at: "09:30",
+        slot: "2026-10-23T09:30",
+        rating: 10,
+        deck: "lower",
+        split: [
+          { label: "Transport", amount: 100 },
+          { label: "Lodging", amount: 250 },
+        ],
+      },
+    },
+  ),
+];
+
 /** `window.__sent`: the user turns the forms' events start, as the agent receives them. */
 declare global {
   interface Window {
@@ -452,9 +627,11 @@ const messages: Message[] = [
       ? REFUSED
       : only === "legacy"
         ? LEGACY
-        : Object.entries(SURFACES)
-            .filter(([name]) => !only || name === only)
-            .map(([name, components]) => surface(name, components))),
+        : only === "controls"
+          ? CONTROLS
+          : Object.entries(SURFACES)
+              .filter(([name]) => !only || name === only)
+              .map(([name, components]) => surface(name, components))),
 ];
 
 const queryClient = new QueryClient({

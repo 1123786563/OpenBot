@@ -312,6 +312,16 @@
   display: none;
 }
 
+/*
+ * The time half of a date and time field. Astryx gives that input none of the field's own props,
+ * so the ring the SDK draws on every control marked `data-a2ui-input` cannot reach it. The same
+ * ring, in the same colour.
+ */
+.a2ui-surface .astryx-date-time-input-time-segment input:focus-visible {
+  outline: calc(var(--spacing) / 2) solid var(--ring);
+  outline-offset: calc(var(--spacing) / 4);
+}
+
 /* A boxed Card supplies its own border and padding. */
 [data-generative-ui-chat-surface]:not([data-a2ui-markdown-surface]):has(
   > .a2ui-surface

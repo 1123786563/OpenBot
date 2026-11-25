@@ -160,8 +160,9 @@ async function open(
   query: string,
   deadline: number,
   theme: "light" | "dark" = "light",
+  width = 680,
 ): Promise<Page> {
-  return within(deadline, () => openPage(query, theme));
+  return within(deadline, () => openPage(query, theme, width));
 }
 
 /**
@@ -198,14 +199,33 @@ function browserTest(
   );
 }
 
+/**
+ * Runs the page's animations to their end. A turn fades in when it first draws, and what is read is
+ * what stays.
+ */
+async function settle(page: Page) {
+  await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      try {
+        if (animation.effect?.getComputedTiming().endTime === Infinity)
+          animation.cancel();
+        else animation.finish();
+      } catch {
+        // One that cannot run to an end is not what anybody is waiting for.
+      }
+    }
+  });
+}
+
 /** The conversation at a chat's width, styled once its interfaces have drawn. */
 async function openPage(
   query = "",
   theme: "light" | "dark" = "light",
+  width = 680,
 ): Promise<Page> {
   const browser = await chromiumBrowser();
   const page = await browser.newPage({
-    viewport: { width: 680, height: 900 },
+    viewport: { width, height: 900 },
     deviceScaleFactor: 2,
   });
   page.on("close", () => void browser.close());
@@ -254,6 +274,7 @@ async function openPage(
   await page.addStyleTag({ content: styles });
   await page.addStyleTag({ content: await stylesheet(classes) });
   await page.evaluate(() => document.fonts.ready);
+  await settle(page);
   return page;
 }
 
@@ -701,6 +722,120 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
     },
   );
 
+  /**
+   * One form with every control the catalog has, as a chat shows them: a field with typed text, a
+   * list and a calendar open, buttons in each state. In each theme, at a chat's width and at a
+   * phone's: the inks are the theme's, every visible word reads against what is behind it, each Tab
+   * stop shows a focus ring, a disabled button says so, and nothing runs past the page.
+   */
+  browserTest(
+    "every control reads, shows a focus ring and fits a phone's width, in light and in dark",
+    300_000,
+    async (deadline) => {
+      const inks: Record<string, { field: string; label: string }> = {};
+      // One page at a time, as each has its own Chromium.
+      for (const theme of ["light", "dark"] as const)
+        for (const width of [680, 320]) {
+          const page = await open("?only=controls", deadline, theme, width);
+          const at = `${theme}, ${width}px`;
+          const readNow = async (state: string) => {
+            // A list or a calendar animates open in the same way.
+            await settle(page);
+            const of = await read(page);
+            inks[theme] = of.ink;
+            expect(of.palette.includes(of.ink.field), `${at}: field ink`).toBe(
+              true,
+            );
+            expect(of.palette.includes(of.ink.label), `${at}: label ink`).toBe(
+              true,
+            );
+            // WCAG AA for text.
+            expect(
+              of.words.filter((word) => word.contrast < 4.5),
+              `${at}, ${state}`,
+            ).toEqual([]);
+          };
+          try {
+            await readNow("closed");
+
+            // The list and the calendar are drawn inside the interface, and read the same way.
+            const surface = card(page, "controls");
+            await surface.locator('[aria-haspopup="listbox"]').click();
+            await page.getByRole("option", { name: "upper" }).waitFor();
+            await readNow("the list open");
+            await page.keyboard.press("Escape");
+            const calendars = surface.getByRole("button", {
+              name: "Open calendar",
+            });
+            // The date field, then the date and time field. A time alone has no calendar.
+            for (const calendar of await calendars.all()) {
+              await calendar.click();
+              await page.getByRole("dialog").waitFor();
+              await readNow("the calendar open");
+              await page.keyboard.press("Escape");
+              await page.getByRole("dialog").waitFor({ state: "hidden" });
+            }
+
+            // By keyboard: every Tab stop in the interface shows a focus ring.
+            await page.getByLabel("Name").focus();
+            const stops: string[] = [];
+            for (let step = 0; step < 60; step++) {
+              await page.keyboard.press("Tab");
+              const stop = await page.evaluate(() => {
+                const element = document.activeElement as HTMLElement | null;
+                if (!element?.closest("[data-generative-ui-chat-surface]"))
+                  return null;
+                // What the stop is called, by its label or by its text.
+                const label = [...(element.labels ?? [])]
+                  .map((item) => item.textContent)
+                  .join("");
+                const labelledBy = (
+                  element.getAttribute("aria-labelledby") ?? ""
+                )
+                  .split(/\s+/)
+                  .map((id) => document.getElementById(id)?.textContent ?? "")
+                  .join("");
+                const name =
+                  element.getAttribute("aria-label") ??
+                  (label ||
+                    labelledBy ||
+                    element.textContent ||
+                    element.tagName.toLowerCase());
+                return {
+                  name: name.trim(),
+                  outline: getComputedStyle(element).outlineStyle,
+                };
+              });
+              // Tab has left the interface.
+              if (!stop) break;
+              stops.push(stop.name);
+              expect(stop.outline, `${at}: ${stop.name}`).not.toBe("none");
+            }
+            // The walk reached the end of the form.
+            expect(stops.at(-1), `${at}: last Tab stop`).toBe("Send");
+            // Astryx keeps a disabled button a Tab stop, so it can say why it is disabled.
+            expect(
+              await surface
+                .getByRole("button", { name: "Still here" })
+                .getAttribute("aria-disabled"),
+              `${at}: disabled button`,
+            ).toBe("true");
+
+            // Nothing runs past the page.
+            const [scroll, client] = await page.evaluate(() => [
+              document.documentElement.scrollWidth,
+              document.documentElement.clientWidth,
+            ]);
+            expect(scroll, `${at}: page width`).toBe(client);
+          } finally {
+            await page.close();
+          }
+        }
+      // The ink of a field and of its label changes with the theme.
+      expect(inks.dark).not.toEqual(inks.light);
+    },
+  );
+
   if (shots)
     browserTest("screenshots at a chat's width", 300_000, async (deadline) => {
       mkdirSync(shots, { recursive: true });
@@ -709,17 +844,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
           const page = await open(`?only=${only}`, deadline, theme);
           try {
             // Once the turns have faded in.
-            await page.evaluate(() =>
-              Promise.all(
-                document
-                  .getAnimations()
-                  .map((animation) =>
-                    animation.effect?.getComputedTiming().endTime === Infinity
-                      ? animation.cancel()
-                      : animation.finish(),
-                  ),
-              ),
-            );
+            await settle(page);
             const bottom = await page.$eval(
               "[data-generative-ui-chat-surface]",
               (frame) => frame.getBoundingClientRect().bottom,
