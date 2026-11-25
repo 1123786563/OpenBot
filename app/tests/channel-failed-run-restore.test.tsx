@@ -718,6 +718,47 @@ test("a run stopped in another tab while this one watches its turn is not shown 
   ).toBeTruthy();
 });
 
+/*
+ * A STOP THE SERVER REFUSES is said under the notice. Keyed on the Stop's own result, it stayed
+ * until the next Stop, through turns that had nothing to do with it. It goes when a turn starts.
+ */
+test("a Stop the server refuses is said until the next turn starts", async () => {
+  threadRuns = new Map();
+  stopRefused = true;
+  plans = [
+    { kind: "stalls", text: "Reading your inbox" },
+    { kind: "answers", text: "Tomorrow is free." },
+  ];
+  const refused = "The Bot couldn't be stopped. Try again.";
+  const live = open();
+  const user = await send(live, "Summarise my inbox");
+  await live.findByText("Reading your inbox");
+  await user.click(await live.findByRole("button", { name: "Stop the Bot" }));
+  await waitFor(() => expect(serverStops).toHaveLength(1));
+  expect(await live.findByText(refused)).toBeTruthy();
+
+  // The Bot finishes its answer. The refusal stays until the next turn starts.
+  const held = stalled;
+  stalled = null;
+  held?.finish([
+    { type: "TEXT_MESSAGE_END", messageId: held.messageId },
+    {
+      type: "RUN_FINISHED",
+      threadId: held.input.threadId,
+      runId: held.input.runId,
+    },
+  ]);
+  await settled(live, "Reading your inbox");
+  expect(live.getByText(refused)).toBeTruthy();
+
+  await send(live, "And the day after");
+  await live.findByText("Tomorrow is free.");
+  await waitFor(() =>
+    expect(live.queryByRole("button", { name: "Stop the Bot" })).toBeNull(),
+  );
+  expect(live.queryByText(refused)).toBeNull();
+});
+
 test("a turn that fails in a run after its browser steps says so, as one that fails at once does", async () => {
   // The Bot works through browser steps, each answered here and sent back in a run of its own, and
   // the run after the last of them fails. That turn used to end on its steps with nothing said.

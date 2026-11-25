@@ -713,7 +713,8 @@ export function ChannelChat({
    * STOP READS THE THREAD FIRST, THEN STOPS THE RUN THE READ NAMES (`stopStoredRun`), so a run that
    * ended after the last read is not "stopped" while the one going goes on. A run that was already
    * over leaves this browser's end of the turn to let go, and a stop the server refused is said
-   * under the notice and can be pressed again. The notice and Check outcome are `StoredRunNotice`.
+   * under the notice, until the next turn starts, and can be pressed again. The notice and Check
+   * outcome are `StoredRunNotice`.
    */
   const stopRun = useMutation({
     mutationFn: () => stopStoredRun(channel.threadId, runtimeAgentId),
@@ -1323,6 +1324,8 @@ export function ChannelChat({
     if (beforeFirstSend) await beforeFirstSend();
     setRunError(null);
     turnFailure.current = null;
+    // A Stop the server refused in an earlier turn is old news once another turn starts.
+    stopRun.reset();
     reportedReply.current = null;
     assistantMessagesBeforeRun.current = new Set(
       target.messages
