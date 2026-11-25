@@ -467,6 +467,7 @@ function web(
       },
     },
   );
+  let managedApp: ReturnType<typeof createApp> | undefined;
   if (managed) {
     const args = new Array(createApp.length) as unknown as Parameters<
       typeof createApp
@@ -485,7 +486,7 @@ function web(
         managed.testCredit.casdoor,
       ),
     };
-    return createApp(...args);
+    managedApp = createApp(...args);
   }
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
     context,
@@ -534,7 +535,7 @@ function web(
   );
   app.route("/api/groups", createGroupRoutes(groupConversations, requireUser));
   app.route("/", copilot.handler);
-  return Object.assign(app, {
+  return Object.assign(managedApp ?? app, {
     copilotHandler: copilot.handler,
     sweepLearning: copilot.sweepLearning,
     learningConversations: copilot.learningConversations,
