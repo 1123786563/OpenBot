@@ -31,10 +31,16 @@ import {
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { desktopShell } from "@/lib/desktop/shell";
+import { useTranslation } from "@/i18n";
 import { managePaths } from "@/lib/manage-paths";
 import { mayOpenSetup, setupChecklistQueryOptions } from "@/lib/setup/queries";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
+
+/** Marks a message for extraction without translating it at module scope. */
+function navigationMessage(messageId: string, label: string) {
+  return { messageId, label };
+}
 
 type SettingsSidebarItem = {
   /**
@@ -49,13 +55,18 @@ type SettingsSidebarItem = {
   desktopOnly?: boolean;
   icon: React.ComponentType<{ className?: string }>;
   linkOptions: LinkOptions;
+  /** Control data: comparisons and tests match on it. The row shows `label`. */
   title: string;
+  /** The row's words, in the language in force (from `label` through `messageId`). */
+  label: string;
+  messageId: string;
   setup?: boolean;
 };
 
 export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     title: "General",
+    ...navigationMessage("settings.sidebar.general", "General"),
     group: "Preferences",
     icon: IconSettings,
     /* `/settings` prefixes every other route here, and would otherwise light up on all of them. */
@@ -65,6 +76,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* Where updates go for every Bot at once; how much each Bot sends is on that Bot's page. */
     title: "Notifications",
+    ...navigationMessage("settings.sidebar.notifications", "Notifications"),
     group: "Preferences",
     icon: IconBell,
     linkOptions: { to: "/settings/notifications" },
@@ -72,6 +84,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* Whether Bots ask first, and rules for every Bot. Team settings are an administrator's. */
     title: "Approvals",
+    ...navigationMessage("settings.sidebar.approvals", "Approvals"),
     group: "Access and devices",
     icon: IconChecks,
     linkOptions: { to: "/settings/approvals" },
@@ -79,6 +92,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* The browsers signed in to the Recorder extension as you; each can be disconnected here. */
     title: "Browsers",
+    ...navigationMessage("settings.sidebar.browsers", "Browsers"),
     group: "Access and devices",
     icon: IconBrowser,
     linkOptions: { to: "/settings/browsers" },
@@ -86,6 +100,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* Who else's Bots use the Skills learned from your recordings: none, all, or the ones you open. */
     title: "Learning",
+    ...navigationMessage("settings.sidebar.learning", "Learning"),
     group: "Preferences",
     icon: IconSchool,
     linkOptions: { to: "/settings/learning" },
@@ -93,6 +108,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* What the deployment has and still needs: onboarding's checklist, to come back to. */
     title: "Setup",
+    ...navigationMessage("settings.sidebar.setup", "Setup"),
     group: "Workspace tools",
     icon: IconListCheck,
     linkOptions: { to: "/settings/setup" },
@@ -101,6 +117,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* Logins saved from a Bot's private sign-in form. */
     title: "Passwords",
+    ...navigationMessage("settings.sidebar.passwords", "Passwords"),
     group: "Access and devices",
     icon: IconKey,
     linkOptions: { to: "/settings/passwords" },
@@ -108,6 +125,7 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* What OpenBot runs here and the memory it takes, with Restart and Stop. */
     title: "This computer",
+    ...navigationMessage("settings.sidebar.thisComputer", "This computer"),
     group: "Access and devices",
     icon: IconDeviceDesktop,
     desktopOnly: true,
@@ -116,6 +134,10 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     /* The same mark Admin gives UI Components. It is the same subject seen from the other side. */
     title: "Components gallery",
+    ...navigationMessage(
+      "settings.sidebar.componentsGallery",
+      "Components gallery",
+    ),
     group: "Workspace tools",
     icon: IconLayoutGrid,
     linkOptions: { to: "/settings/components-gallery" },
@@ -131,29 +153,52 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
 const PERSONAL_SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   {
     title: "Keys",
+    ...navigationMessage("settings.sidebar.keys", "Keys"),
     group: "Access and devices",
     icon: IconLock,
     linkOptions: { to: "/settings/credentials" },
   },
   {
     title: "Skills",
+    ...navigationMessage("settings.sidebar.skills", "Skills"),
     group: "Workspace tools",
     icon: IconBook,
     linkOptions: { to: "/settings/skills" },
   },
   {
     title: "Computer",
+    ...navigationMessage("settings.sidebar.computer", "Computer"),
     group: "Workspace tools",
     icon: IconDeviceDesktop,
     linkOptions: { to: "/settings/computer" },
   },
   {
     title: managePaths("personal").auditLabel,
+    ...navigationMessage("settings.sidebar.activity", "Activity"),
     group: "Workspace tools",
     icon: IconHistory,
     linkOptions: { to: "/settings/activity" },
   },
 ];
+
+/** Group names are control data too; these are the words the sidebar shows. */
+const GROUP_MESSAGES = {
+  Preferences: navigationMessage(
+    "settings.sidebar.groups.preferences",
+    "Preferences",
+  ),
+  "Access and devices": navigationMessage(
+    "settings.sidebar.groups.access",
+    "Access and devices",
+  ),
+  "Workspace tools": navigationMessage(
+    "settings.sidebar.groups.workspace",
+    "Workspace tools",
+  ),
+} as const satisfies Record<
+  SettingsSidebarItem["group"],
+  ReturnType<typeof navigationMessage>
+>;
 
 export function settingsSidebarItems(
   edition: "team" | "personal",
@@ -163,7 +208,14 @@ export function settingsSidebarItems(
     ? [
         ...SETTINGS_SIDEBAR_ITEMS.map((item) =>
           item.title === "Passwords"
-            ? { ...item, title: "Saved logins" }
+            ? {
+                ...item,
+                title: "Saved logins",
+                ...navigationMessage(
+                  "settings.sidebar.savedLogins",
+                  "Saved logins",
+                ),
+              }
             : item,
         ),
         ...PERSONAL_SETTINGS_SIDEBAR_ITEMS,
@@ -174,6 +226,7 @@ export function settingsSidebarItems(
 export function SettingsSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
+  const { t } = useTranslation();
   const user = useQuery(currentUserQueryOptions()).data;
   const capabilities = useQuery(deploymentCapabilitiesQueryOptions()).data;
   const canSetUp = mayOpenSetup(user, capabilities);
@@ -212,7 +265,7 @@ export function SettingsSidebar({
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
                   <IconArrowLeft className="mr-2 h-4 w-4" />
-                  Workspace
+                  {t("nav.workspace", "Workspace")}
                 </Link>
               )}
             />
@@ -220,40 +273,63 @@ export function SettingsSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <nav aria-label="Settings">
+        <nav aria-label={t("nav.settings", "Settings")}>
           {groups.map((group) => (
             <SidebarGroup key={group}>
-              <SidebarGroupLabel>{group}</SidebarGroupLabel>
+              <SidebarGroupLabel>
+                {t(
+                  GROUP_MESSAGES[group].messageId,
+                  GROUP_MESSAGES[group].label,
+                )}
+              </SidebarGroupLabel>
               <SidebarMenu className="gap-px">
                 {items
                   .filter((option) => option.group === group)
-                  .map((option) => (
-                    <SidebarMenuItem key={option.title}>
-                      <SidebarMenuButton
-                        render={(props) => (
-                          <Link
-                            {...option.linkOptions}
-                            activeOptions={{ exact: option.exact ?? false }}
-                            activeProps={{ "data-active": true }}
-                            {...props}
-                          >
-                            <option.icon className="mr-2 h-4 w-4" />
-                            {option.title}
-                            {option.setup && toFix > 0 ? (
-                              <span className="sr-only">
-                                , {toFix} {toFix === 1 ? "needs" : "need"} setup
-                              </span>
-                            ) : null}
-                          </Link>
-                        )}
-                      />
-                      {option.setup && toFix > 0 ? (
-                        <SidebarMenuBadge aria-hidden="true">
-                          {toFix}
-                        </SidebarMenuBadge>
-                      ) : null}
-                    </SidebarMenuItem>
-                  ))}
+                  .map((option) => {
+                    const suffix =
+                      option.setup && toFix > 0
+                        ? t(
+                            "settings.sidebar.setupSuffix",
+                            ", {count, plural, one {# needs setup} other {# need setup}}",
+                            { count: toFix },
+                          )
+                        : null;
+                    return (
+                      <SidebarMenuItem key={option.title}>
+                        <SidebarMenuButton
+                          render={(props) => (
+                            <Link
+                              {...option.linkOptions}
+                              activeOptions={{ exact: option.exact ?? false }}
+                              activeProps={{ "data-active": true }}
+                              {...props}
+                              /*
+                               * Chromium puts a space between the link's text and the absolutely
+                               * positioned suffix when it computes the name, which in Chinese lands
+                               * before the fullwidth comma. The name carries both without one.
+                               */
+                              aria-label={
+                                suffix
+                                  ? `${t(option.messageId, option.label)}${suffix}`
+                                  : undefined
+                              }
+                            >
+                              <option.icon className="mr-2 h-4 w-4" />
+                              {t(option.messageId, option.label)}
+                              {suffix ? (
+                                <span className="sr-only">{suffix}</span>
+                              ) : null}
+                            </Link>
+                          )}
+                        />
+                        {option.setup && toFix > 0 ? (
+                          <SidebarMenuBadge aria-hidden="true">
+                            {toFix}
+                          </SidebarMenuBadge>
+                        ) : null}
+                      </SidebarMenuItem>
+                    );
+                  })}
               </SidebarMenu>
             </SidebarGroup>
           ))}

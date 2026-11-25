@@ -51,7 +51,6 @@ import {
 } from "../db/schema/core";
 import { directChatRuns } from "../db/schema/direct-chat";
 import { groupBotThreads, groupMessages } from "../db/schema/group";
-import { workItems } from "../db/schema/work";
 import { withdrawLearningEvidence } from "../learning/evidence";
 import { leadingSkillCommand } from "../plugins/picked-skill";
 import type { CheckPrivateShare } from "../proactive/private-share";

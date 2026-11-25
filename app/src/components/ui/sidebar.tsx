@@ -21,6 +21,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useTranslation } from "@/i18n";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { keyOf } from "@/lib/hotkeys/hotkeys";
 import { clampSidebarWidth, SIDEBAR_MIN_WIDTH } from "@/lib/sidebar";
@@ -213,6 +214,7 @@ function Sidebar({
   };
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { t } = useTranslation();
 
   if (collapsible === "none") {
     return (
@@ -259,9 +261,16 @@ function Sidebar({
           side={side}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>{mobileNavigation?.title ?? "Sidebar"}</SheetTitle>
+            <SheetTitle>
+              {mobileNavigation?.title ?? t("nav.sidebar", "Sidebar")}
+            </SheetTitle>
             {mobileNavigation ? null : (
-              <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+              <SheetDescription>
+                {t(
+                  "nav.sidebarMobileDescription",
+                  "Displays the mobile sidebar.",
+                )}
+              </SheetDescription>
             )}
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
@@ -329,6 +338,7 @@ function SidebarTrigger({
   ...props
 }: React.ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar();
+  const { t } = useTranslation();
 
   return (
     <Button
@@ -344,7 +354,9 @@ function SidebarTrigger({
       {...props}
     >
       <IconLayoutSidebar />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">
+        {t("nav.toggleSidebar", "Toggle Sidebar")}
+      </span>
     </Button>
   );
 }
@@ -410,6 +422,7 @@ function footerWidth(panel: HTMLElement): number {
  */
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   const { toggleSidebar, state, isMobile } = useSidebar();
+  const { t } = useTranslation();
   const resize = React.useContext(SidebarResizeContext);
   const drag = React.useRef<{
     startX: number;
@@ -424,7 +437,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
     <button
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
+      aria-label={t("nav.toggleSidebar", "Toggle Sidebar")}
       tabIndex={-1}
       onPointerDown={(event) => {
         if (!resize || isMobile || state !== "expanded" || event.button !== 0)
@@ -477,7 +490,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
         }
         toggleSidebar();
       }}
-      title="Drag to resize, click to hide"
+      title={t("nav.sidebarResizeHint", "Drag to resize, click to hide")}
       className={cn(
         "absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",

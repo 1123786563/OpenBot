@@ -21,6 +21,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { useTranslation } from "@/i18n";
 import { describeAiConnection } from "@/lib/desktop/ai-connection";
 import { changeAiConnectionMutationOptions } from "@/lib/desktop/mutations";
 import {
@@ -39,11 +40,15 @@ import { desktopShell } from "@/lib/desktop/shell";
  */
 export function AiModelSection() {
   const connection = useQuery(desktopAiConnectionQueryOptions());
+  const { t } = useTranslation();
   if (desktopShell() === null || !connection.data) return null;
   return (
     <PageSection
-      description="Choose the AI provider your Bots use and how OpenBot signs in to it."
-      title="AI model"
+      description={t(
+        "settings.ai.sectionDescription",
+        "Choose the AI provider your Bots use and how OpenBot signs in to it.",
+      )}
+      title={t("settings.ai.title", "AI model")}
     >
       <PageRows>
         <AiConnectionRow connection={connection.data} />
@@ -55,6 +60,7 @@ export function AiModelSection() {
 function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
   const [open, setOpen] = useState(false);
   const change = useMutation(changeAiConnectionMutationOptions());
+  const { t } = useTranslation();
   const described = describeAiConnection(connection);
   // On success the desktop app is stopping OpenBot, and this page goes with it.
   const stopping = change.isPending || change.isSuccess;
@@ -68,9 +74,13 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
           <IconSparkles />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle>{described?.provider ?? "Not chosen yet"}</ItemTitle>
+          <ItemTitle>
+            {described?.provider ??
+              t("settings.ai.notChosen", "Not chosen yet")}
+          </ItemTitle>
           <ItemDescription>
-            {described?.summary ?? "Choose the AI your Bots use."}
+            {described?.summary ??
+              t("settings.ai.notChosenSummary", "Choose the AI your Bots use.")}
           </ItemDescription>
         </ItemContent>
         <ItemActions>
@@ -80,11 +90,20 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>AI connection</DialogTitle>
+            <DialogTitle>
+              {t("settings.ai.dialogTitle", "AI connection")}
+            </DialogTitle>
             <DialogDescription>
               {described
-                ? `Your Bots use ${described.provider}. Your key or sign-in stays on this computer.`
-                : "Your Bots don't have an AI provider yet."}
+                ? t(
+                    "settings.ai.usesConnection",
+                    "Your Bots use {provider}. Your key or sign-in stays on this computer.",
+                    { provider: described.provider },
+                  )
+                : t(
+                    "settings.ai.noProvider",
+                    "Your Bots don't have an AI provider yet.",
+                  )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4 flex flex-col gap-3 text-sm">
@@ -103,7 +122,8 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
                       </ItemTitle>
                     </ItemContent>
                     <ItemActions className="min-w-0">
-                      <span className="truncate font-medium">
+                      {/* An address has no spaces: wrap it anywhere so the whole value is readable. */}
+                      <span className="min-w-0 break-all text-right font-medium">
                         {detail.value}
                       </span>
                     </ItemActions>
@@ -112,25 +132,32 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
               </ItemGroup>
             )}
             <p className="text-muted-foreground">
-              To change it, OpenBot stops and the setup window opens. OpenBot
-              starts again with the connection you choose there.
+              {t(
+                "settings.ai.restartExplanation",
+                "To change it, OpenBot stops and the setup window opens. OpenBot starts again with the connection you choose there.",
+              )}
             </p>
             {change.error ? (
               <p className="text-destructive" role="alert">
-                Couldn't open the setup window. Try again.
+                {t(
+                  "settings.ai.openFailed",
+                  "Couldn't open the setup window. Try again.",
+                )}
               </p>
             ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
             <Button onClick={() => setOpen(false)} size="sm" variant="ghost">
-              Cancel
+              {t("settings.ai.cancel", "Cancel")}
             </Button>
             <Button
               disabled={stopping}
               onClick={() => change.mutate()}
               size="sm"
             >
-              {stopping ? "Stopping OpenBot…" : "Change AI connection"}
+              {stopping
+                ? t("settings.ai.stopping", "Stopping OpenBot…")
+                : t("settings.ai.change", "Change AI connection")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -10,6 +10,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "@/i18n";
 import { setUsageDataMutationOptions } from "@/lib/desktop/mutations";
 import { desktopUsageDataQueryOptions } from "@/lib/desktop/queries";
 import { desktopShell } from "@/lib/desktop/shell";
@@ -30,40 +31,52 @@ export const USAGE_DATA_DOC =
 export function UsageDataSection() {
   const usageData = useQuery(desktopUsageDataQueryOptions());
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const change = useMutation(setUsageDataMutationOptions(queryClient));
   if (desktopShell() === null || !usageData.data) return null;
   const { shared, offByEnvironment } = usageData.data;
   return (
-    <PageSection title="Privacy">
+    <PageSection title={t("settings.privacy.title", "Privacy")}>
       <PageRows>
         <Item size="sm">
           <ItemMedia variant="icon">
             <IconChartBar />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle>Share usage data</ItemTitle>
+            <ItemTitle>
+              {t("settings.privacy.share", "Share usage data")}
+            </ItemTitle>
             <ItemDescription className="line-clamp-none">
               {offByEnvironment
-                ? "Turned off on this computer. OpenBot sends no usage data."
-                : "OpenBot sends usage data, linked to your OpenBot account. It never sends your conversations, files or keys. Changes apply the next time OpenBot starts."}{" "}
+                ? t(
+                    "settings.privacy.offByEnvironment",
+                    "Turned off on this computer. OpenBot sends no usage data.",
+                  )
+                : t(
+                    "settings.privacy.explanation",
+                    "OpenBot sends usage data, linked to your OpenBot account. It never sends your conversations, files or keys. Changes apply the next time OpenBot starts.",
+                  )}{" "}
               <a
                 className="underline underline-offset-2 hover:text-foreground"
                 href={USAGE_DATA_DOC}
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                What OpenBot sends
+                {t("settings.privacy.whatIsSent", "What OpenBot sends")}
               </a>
             </ItemDescription>
             {change.error ? (
               <p className="text-destructive text-sm" role="alert">
-                Couldn't change this setting. Try again.
+                {t(
+                  "settings.privacy.changeFailed",
+                  "Couldn't change this setting. Try again.",
+                )}
               </p>
             ) : null}
           </ItemContent>
           <ItemActions>
             <Switch
-              aria-label="Share usage data"
+              aria-label={t("settings.privacy.share", "Share usage data")}
               checked={shared}
               disabled={offByEnvironment || change.isPending}
               onCheckedChange={(share) => change.mutate(share)}

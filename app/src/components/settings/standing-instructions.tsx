@@ -15,6 +15,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/i18n";
 import { canKeepCachedRead } from "@/lib/client";
 import { saveInstructionsMutationOptions } from "@/lib/settings/mutations";
 import {
@@ -24,19 +25,7 @@ import {
 import { queryClient } from "@/query-client";
 
 /**
- * One box, applied to every coworker in every channel.
- *
- * WHAT IT IS FOR, said on the screen rather than left to be guessed. A coworker's role and this are
- * both durable instructions and a person meeting them for the first time has no reason to know which
- * belongs where, so the description draws the line the prompt draws: the role says what a coworker
- * is for, this says how the person wants things done. Without that sentence the obvious mistake is
- * to write a job description here and get it applied to every coworker at once.
- */
-const DESCRIPTION =
-  "Applies to every Bot in every conversation. A Bot's role says what it does. This says how you want it done, like your writing style.";
-
-/**
- * The standing instructions as a row on General: what they say, cut to two lines, and a dialog to write them. A free
+ * The standing instructions as a row on General: what they say in full, and a dialog to write them. A free
  * text is a summary and a dialog on these screens, so a long box does not take over the page.
  */
 export function StandingInstructionsRow() {
@@ -49,6 +38,7 @@ export function StandingInstructionsRow() {
   const submitting = useRef(false);
   const countId = useId();
   const formId = useId();
+  const { t } = useTranslation();
   const written = stored.data?.trim();
   const text = draft ?? stored.data ?? "";
   const length = text.trim().length;
@@ -75,20 +65,28 @@ export function StandingInstructionsRow() {
           <IconNotes />
         </ItemMedia>
         <ItemContent className="min-w-0">
-          <ItemTitle className="w-auto">Standing instructions</ItemTitle>
+          <ItemTitle className="w-auto">
+            {t("settings.instructions", "Standing instructions")}
+          </ItemTitle>
           <ItemDescription className="line-clamp-none">
-            Applies to every Bot in every conversation.
+            {t(
+              "settings.instructions.appliesTo",
+              "Applies to every Bot in every conversation.",
+            )}
           </ItemDescription>
           <ItemDescription className="wrap-anywhere">
             {stored.isPending
-              ? "Loading your instructions…"
+              ? t("settings.instructions.loading", "Loading your instructions…")
               : stored.isError && !readable
-                ? "Couldn’t load your instructions."
-                : written || "None yet."}
+                ? t(
+                    "settings.instructions.loadFailed",
+                    "Couldn’t load your instructions.",
+                  )
+                : written || t("settings.instructions.none", "None yet.")}
           </ItemDescription>
           {stale ? (
             <Text as="p" color="secondary" display="block" size="base">
-              Last loaded · Refresh before saving.
+              {t("settings.lastLoaded", "Last loaded · Refresh before saving.")}
             </Text>
           ) : null}
         </ItemContent>
@@ -97,8 +95,11 @@ export function StandingInstructionsRow() {
         </ItemActions>
       </Item>
       <SettingsDraftDialog
-        title="Standing instructions"
-        description={DESCRIPTION}
+        title={t("settings.instructions", "Standing instructions")}
+        description={t(
+          "settings.instructions.description",
+          "Applies to every Bot in every conversation. A Bot's role says what it does. This says how you want it done, like your writing style.",
+        )}
         open={open}
         dirty={dirty}
         guardNavigation={submitting}
@@ -113,31 +114,55 @@ export function StandingInstructionsRow() {
               form={formId}
               type="submit"
             >
-              {save.isPending ? "Saving…" : "Save"}
+              {save.isPending
+                ? t("settings.instructions.saving", "Saving…")
+                : t("settings.instructions.save", "Save")}
             </Button>
           ) : undefined
         }
       >
         {stored.isPending ? (
-          <ReadStatus kind="loading" message="Loading your instructions…" />
+          <ReadStatus
+            kind="loading"
+            message={t(
+              "settings.instructions.loading",
+              "Loading your instructions…",
+            )}
+          />
         ) : stored.error ? (
           <ReadError
             focusAfterRetry={() => field.current}
             message={
               stale
-                ? "Couldn’t refresh your instructions."
-                : "Couldn’t load your instructions."
+                ? t(
+                    "settings.instructions.refreshFailed",
+                    "Couldn’t refresh your instructions.",
+                  )
+                : t(
+                    "settings.instructions.loadFailed",
+                    "Couldn’t load your instructions.",
+                  )
             }
             description={
               stale
                 ? dirty
-                  ? "Your draft is still here. Refresh before saving."
-                  : "Showing your last loaded instructions. Refresh before saving."
+                  ? t(
+                      "settings.draftKept",
+                      "Your draft is still here. Refresh before saving.",
+                    )
+                  : t(
+                      "settings.instructions.lastLoadedDescription",
+                      "Showing your last loaded instructions. Refresh before saving.",
+                    )
                 : undefined
             }
             retry={stored.refetch}
             retryBelow
-            retryLabel={stale ? "Refresh instructions" : undefined}
+            retryLabel={
+              stale
+                ? t("settings.instructions.refresh", "Refresh instructions")
+                : undefined
+            }
             retrying={stored.isFetching}
           />
         ) : null}
@@ -162,14 +187,17 @@ export function StandingInstructionsRow() {
               <Textarea
                 aria-describedby={countId}
                 aria-invalid={over || undefined}
-                aria-label="Standing instructions"
+                aria-label={t("settings.instructions", "Standing instructions")}
                 className="min-h-40"
                 readOnly={save.isPending}
                 onChange={(event) => {
                   setDraft(event.target.value);
                   save.reset();
                 }}
-                placeholder="Use British English and write dates in day–month–year order."
+                placeholder={t(
+                  "settings.instructions.placeholder",
+                  "Use British English and write dates in day–month–year order.",
+                )}
                 ref={field}
                 value={text}
               />
@@ -180,7 +208,11 @@ export function StandingInstructionsRow() {
                 id={countId}
                 size="sm"
               >
-                {length} of {INSTRUCTIONS_LIMIT} characters
+                {t(
+                  "settings.instructions.count",
+                  "{count} of {limit} characters",
+                  { count: length, limit: INSTRUCTIONS_LIMIT },
+                )}
               </Text>
               {save.error ? (
                 <Text
@@ -193,7 +225,7 @@ export function StandingInstructionsRow() {
                 </Text>
               ) : save.isSuccess ? (
                 <Text as="p" color="secondary" role="status" size="sm">
-                  Saved
+                  {t("settings.instructions.saved", "Saved")}
                 </Text>
               ) : null}
             </VStack>

@@ -22,6 +22,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { queryClient } from "@/query-client";
 import type { RouterContext } from "@/router-context";
 import { Route as SetupRoute } from "@/routes/_authed/settings/setup";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -60,6 +61,7 @@ const CHECKLIST = {
 const originalFetch = globalThis.fetch;
 let role: "admin" | "user";
 let localEvaluation: boolean;
+let edition: "team" | "personal";
 let rechecked: number;
 /** Every path asked for, to say what a member's sidebar never reads. */
 let requested: string[];
@@ -75,6 +77,7 @@ beforeEach(() => {
   });
   role = "admin";
   localEvaluation = false;
+  edition = "team";
   rechecked = 0;
   requested = [];
   checklist = CHECKLIST;
@@ -93,7 +96,7 @@ beforeEach(() => {
           },
         });
       if (path === "/api/capabilities")
-        return Response.json({ localEvaluation });
+        return Response.json({ localEvaluation, edition });
       if (path === "/api/setup/check" && init?.method === "POST") {
         rechecked += 1;
         return Response.json({ checklist: CHECKLIST });
@@ -104,8 +107,10 @@ beforeEach(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   globalThis.fetch = originalFetch;
   queryClient.clear();
   queryClient.setDefaultOptions(defaults);
@@ -297,4 +302,69 @@ test("the sidebar never offers Setup to a member", async () => {
   expect(view.container.querySelector('[data-sidebar="menu-badge"]')).toBe(
     null,
   );
+});
+
+test("in Chinese the sidebar speaks the interface language, destinations unchanged", async () => {
+  checklist = { audience: "admin", rows: [row("model")] };
+  await pinLocale("zh-CN");
+  const view = sidebar();
+
+  await view.findByRole("link", { name: "通用" });
+  expect(view.getByRole("link", { name: "通知" }).getAttribute("href")).toBe(
+    "/settings/notifications",
+  );
+  expect(view.getByRole("link", { name: "审批" }).getAttribute("href")).toBe(
+    "/settings/approvals",
+  );
+  expect(view.getByRole("link", { name: "浏览器" }).getAttribute("href")).toBe(
+    "/settings/browsers",
+  );
+  expect(view.getByRole("link", { name: "学习" }).getAttribute("href")).toBe(
+    "/settings/learning",
+  );
+  expect(view.getByRole("link", { name: "密码" }).getAttribute("href")).toBe(
+    "/settings/passwords",
+  );
+  expect(view.getByRole("link", { name: "组件库" }).getAttribute("href")).toBe(
+    "/settings/components-gallery",
+  );
+  const setup = view.getByRole("link", { name: /^配置/ });
+  await waitFor(() => expect(setup.textContent).toBe("配置，1 项需要配置"));
+  // Chromium puts a space between the text and the absolutely positioned suffix when it computes
+  // the name; the label carries both without one, so the fullwidth comma follows 配置 directly.
+  expect(setup.getAttribute("aria-label")).toBe("配置，1 项需要配置");
+  expect(setup.getAttribute("href")).toBe("/settings/setup");
+  const badge = view.container.querySelector('[data-sidebar="menu-badge"]');
+  expect(badge?.textContent).toBe("1");
+  expect(badge?.getAttribute("aria-hidden")).toBe("true");
+  for (const group of ["偏好设置", "访问与设备", "工作区工具"])
+    expect(view.getByText(group)).toBeTruthy();
+  expect(view.getByRole("navigation", { name: "设置" })).toBeTruthy();
+  expect(view.getByRole("link", { name: "工作区" })).toBeTruthy();
+});
+
+test("in Chinese the personal edition's own entries speak too, This computer included in OpenBot Desktop", async () => {
+  role = "user";
+  localEvaluation = true;
+  edition = "personal";
+  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {
+    invoke: async (command: string) => {
+      throw `command ${command} not found`;
+    },
+    transformCallback: () => 0,
+  };
+  await pinLocale("zh-CN");
+  const view = sidebar();
+
+  const destination = (name: string) =>
+    view.getByRole("link", { name }).getAttribute("href");
+  await view.findByRole("link", { name: "密钥" });
+  expect(destination("密钥")).toBe("/settings/credentials");
+  expect(destination("技能")).toBe("/settings/skills");
+  expect(destination("电脑")).toBe("/settings/computer");
+  expect(destination("活动")).toBe("/settings/activity");
+  // Passwords goes by the name Connections gives it there.
+  expect(destination("保存的登录")).toBe("/settings/passwords");
+  expect(view.queryByRole("link", { name: "密码" })).toBeNull();
+  expect(destination("这台电脑")).toBe("/settings/this-computer");
 });
