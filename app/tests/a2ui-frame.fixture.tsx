@@ -378,21 +378,19 @@ const REFUSED: Message[] = [
   ),
 ];
 
-/** A form a Bot drew on CopilotKit 1.83, read the way the app reads it on reopening. */
+/** A form a Bot drew on CopilotKit 1.83, as it is stored, read the way the app reads it on reopening. */
+const DESTINATION: Component = {
+  id: "destination",
+  component: "TextField",
+  label: "Destination",
+  value: { "@path": "/destination" },
+};
 const LEGACY: Message[] = withCurrentA2uiVersions([
   surface(
     "legacy",
     [
-      {
-        ...form("root", "saveDestination", ["destination"]),
-        children: ["destination", "root-send"],
-      },
-      {
-        id: "destination",
-        component: "TextField",
-        label: "Destination",
-        value: { "@path": "/destination" },
-      },
+      form("root", "saveDestination", [DESTINATION]),
+      DESTINATION,
       { id: "root-send", component: "Button", label: "Save", submit: true },
     ],
     { dataModel: { destination: "Paris" }, version: "v1.0" },

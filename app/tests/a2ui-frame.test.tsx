@@ -547,6 +547,35 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
   );
 
   browserTest(
+    "a form stored before the A2UI version upgrade draws and submits in the browser",
+    60_000,
+    async (deadline) => {
+      const page = await open("?only=legacy", deadline);
+      try {
+        // The fixture stores the version CopilotKit 1.83 wrote and reads it the way the app does
+        // on reopening: withCurrentA2uiVersions, as /bot and Conversation both do.
+        const destination = page.getByLabel("Destination");
+        await destination.waitFor({ timeout: 8000 });
+        expect(await destination.inputValue()).toBe("Paris");
+        expect(
+          await destination.evaluate(
+            (node) => node.closest(".astryx-text-input") !== null,
+          ),
+        ).toBe(true);
+
+        await destination.fill("Rome");
+        await destination.press("Enter");
+        await page.waitForFunction(() => window.__sent.length === 1);
+        expect(await page.evaluate(() => window.__sent)).toEqual([
+          "Destination\n\ndestination: Rome",
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  browserTest(
     "a part the SDK could not draw is an Astryx error and sends nothing, in a form or beside one",
     90_000,
     async (deadline) => {
