@@ -673,14 +673,12 @@ test("a Stop pressed in the conversation is not shown as a failure, and the noti
   await user.click(await live.findByRole("button", { name: "Stop the Bot" }));
 
   // The run this tab started, stopped on the server.
-  await waitFor(() =>
-    expect(serverStops).toEqual([
-      {
-        threadId: channel.threadId,
-        runId: threadRuns?.get(channel.threadId)?.[0]?.id,
-      },
-    ]),
-  );
+  await waitFor(() => expect(serverStops).toHaveLength(1));
+  const [stop] = serverStops;
+  const recorded = threadRuns?.get(channel.threadId)?.[0];
+  if (!stop || !recorded) throw new Error("No stop, or no run to stop");
+  expect(stop.threadId).toBe(channel.threadId);
+  expect(stop.runId).toBe(recorded.id);
   await waitFor(() =>
     expect(live.queryByRole("button", { name: "Stop the Bot" })).toBeNull(),
   );
