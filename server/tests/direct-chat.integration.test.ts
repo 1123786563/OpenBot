@@ -3593,35 +3593,34 @@ test("a revoked account loses its live Run and a restored account must start a n
     }),
   );
   const path = `/api/copilotkit/agent/${aliceBot.id}`;
-  const message = { role: "user", id: "original", content: "Hello." };
-  const payload = {
-    threadId: aliceChannel.threadId,
-    runId: "original",
-    messages: [message],
-  };
+  const history = `/api/copilotkit/threads/${aliceChannel.threadId}/messages?agentId=${aliceBot.id}`;
   try {
-    const reader = (
-      await aliceApp.request(`${path}/run`, post(payload))
-    ).body?.getReader();
-    if (!reader) throw new Error("Missing Run stream.");
+    // The Run in flight when access goes is the one the call started, not a plain HTTP turn.
+    const spoken = voiceTurn(
+      aliceApp,
+      aliceChannel,
+      aliceBot.id,
+      "Hello from the call.",
+    );
+    const spokenId = await spoken.id;
+    const payload = {
+      threadId: aliceChannel.threadId,
+      runId: spokenId,
+      messages: [
+        { role: "user", id: spokenId, content: "Hello from the call." },
+      ],
+    };
     let partial = "";
     while (!partial.includes("Before revocation.")) {
-      const read = await reader.read();
-      if (read.done) throw new Error("Missing partial output.");
-      partial += new TextDecoder().decode(read.value);
+      partial = await (await aliceApp.request(history)).text();
     }
     await people.revoke(alice.id, bob.id);
     const revokedAt = Date.now();
-    let tail = "";
-    for (
-      let read = await reader.read();
-      !read.done;
-      read = await reader.read()
-    ) {
-      tail += new TextDecoder().decode(read.value);
-    }
-    expect(tail).toContain("The Bot run is unavailable.");
+    expect(await spoken.result).toEqual({
+      error: expect.stringContaining("The Bot run is unavailable."),
+    });
     expect(Date.now() - revokedAt).toBeLessThan(60_000);
+    expect((await aliceApp.request(history)).status).toBe(404);
     expect((await aliceApp.request(`${path}/run`, post(payload))).status).toBe(
       404,
     );
