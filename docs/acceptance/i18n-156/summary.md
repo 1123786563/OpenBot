@@ -15,7 +15,7 @@ The browser ran the real Web app from its normal Vite entry point against an iso
 
 The run ended with two browser-language cases and one missing-key case. A first visit with a zh-CN browser language opened in Chinese, and zh-TW fell back to English. Removing one Chinese message showed the English source, kept the neighbouring copy Chinese, showed no message id, and the catalog was restored byte for byte.
 
-The branch also passed Web typecheck, the production build and the Astryx doctor on that build, formatting and lint on the files the review fixes changed, and 261 tests in the 28 files it touched. The catalogs hold 219 paired keys, and the extractor changes nothing.
+The run above was made twice on commit `68a99f783`, once by the implementer and once by the orchestrator, with the same 1,074 checks passing both times. On that commit the branch also passed Web typecheck, the production build and the Astryx doctor on that build, formatting and lint across the repository, and 261 tests in the 29 test files it touches under `app/tests`. The catalogs hold 219 paired keys, and the extractor changes nothing.
 
 ## Limits of this run
 

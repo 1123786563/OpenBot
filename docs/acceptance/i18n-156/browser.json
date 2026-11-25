@@ -1,6 +1,6 @@
 {
-  "integrationBase": "126cc4990706a90e05a048c9dacf2853f9524a45",
-  "ranAt": "2026-11-25T11:38:04.209Z",
+  "integrationBase": "68a99f78354327723c0891598f7cd1f072a05de1",
+  "ranAt": "2026-11-25T12:28:47.208Z",
   "runner": "scripts/browser-acceptance/matrix.mjs",
   "playwrightCore": "1.62.1",
   "chromium": "151.0.7922.34",
@@ -12,19 +12,20 @@
     "instructionsCharacters": 3960,
     "desktop": "IPC fixture injected before mount; not native desktop acceptance"
   },
-  "checks": 1042,
+  "checks": 1074,
   "failing": 0,
   "failures": [],
   "cells": [
     {
       "name": "en-1280-light",
-      "checks": 120,
+      "checks": 124,
       "passed": true,
       "screenshots": [
         "run/screenshots/en-1280-light-sign.png",
         "run/screenshots/en-1280-light-settings.png",
         "run/screenshots/en-1280-light-after-dialogs.png",
         "run/screenshots/en-1280-light-switched.png",
+        "run/screenshots/en-1280-light-sidebar.png",
         "run/screenshots/en-1280-light-home.png",
         "run/screenshots/en-1280-light-recovery.png"
       ],
@@ -41,7 +42,39 @@
           "signText": "Sign in to OpenBot Continue with Google Continue with Microsoft Continue with Okta or Company email ∙ Required Use the email address issued by your organization. Continue with your company account"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3959,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
+        },
+        {
           "settingsText": "Skip to content Workspace Preferences General Notifications Learning Access and devices Approvals Browsers Passwords This computer Workspace tools Setup Components gallery General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve"
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
         },
         {
           "switchedText": "跳到主要内容 工作区 偏好设置 通用 通知 学习 访问与设备 审批 浏览器 密码 这台电脑 工作区工具 配置 组件库 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain ev"
@@ -83,9 +116,9 @@
         "settings: settings.sidebar.setup sidebar link translated",
         "settings: settings.sidebar.componentsGallery sidebar link translated",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -123,6 +156,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches zh-CN",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to zh-CN",
@@ -140,6 +174,9 @@
         "language: document language restored",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
@@ -175,13 +212,14 @@
     },
     {
       "name": "en-1280-dark",
-      "checks": 120,
+      "checks": 124,
       "passed": true,
       "screenshots": [
         "run/screenshots/en-1280-dark-sign.png",
         "run/screenshots/en-1280-dark-settings.png",
         "run/screenshots/en-1280-dark-after-dialogs.png",
         "run/screenshots/en-1280-dark-switched.png",
+        "run/screenshots/en-1280-dark-sidebar.png",
         "run/screenshots/en-1280-dark-home.png",
         "run/screenshots/en-1280-dark-recovery.png"
       ],
@@ -198,7 +236,39 @@
           "signText": "Sign in to OpenBot Continue with Google Continue with Microsoft Continue with Okta or Company email ∙ Required Use the email address issued by your organization. Continue with your company account"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
+        },
+        {
           "settingsText": "Skip to content Workspace Preferences General Notifications Learning Access and devices Approvals Browsers Passwords This computer Workspace tools Setup Components gallery General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve"
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
         },
         {
           "switchedText": "跳到主要内容 工作区 偏好设置 通用 通知 学习 访问与设备 审批 浏览器 密码 这台电脑 工作区工具 配置 组件库 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain ev"
@@ -240,9 +310,9 @@
         "settings: settings.sidebar.setup sidebar link translated",
         "settings: settings.sidebar.componentsGallery sidebar link translated",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -280,6 +350,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches zh-CN",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to zh-CN",
@@ -297,6 +368,9 @@
         "language: document language restored",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
@@ -332,13 +406,14 @@
     },
     {
       "name": "en-360-light",
-      "checks": 139,
+      "checks": 143,
       "passed": true,
       "screenshots": [
         "run/screenshots/en-360-light-sign.png",
         "run/screenshots/en-360-light-settings.png",
         "run/screenshots/en-360-light-after-dialogs.png",
         "run/screenshots/en-360-light-switched.png",
+        "run/screenshots/en-360-light-sidebar.png",
         "run/screenshots/en-360-light-home.png",
         "run/screenshots/en-360-light-narrow-sheet.png",
         "run/screenshots/en-360-light-recovery.png"
@@ -356,7 +431,39 @@
           "signText": "Sign in to OpenBot Continue with Google Continue with Microsoft Continue with Okta or Company email ∙ Required Use the email address issued by your organization. Continue with your company account"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
+        },
+        {
           "settingsText": "Skip to content General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence a"
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
         },
         {
           "switchedText": "跳到主要内容 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence "
@@ -393,9 +500,9 @@
         "settings: settings.appearance section link",
         "settings: settings.shortcuts section link",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -433,6 +540,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches zh-CN",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to zh-CN",
@@ -452,6 +560,9 @@
         "narrow: navigation toggle now says close",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
@@ -509,13 +620,14 @@
     },
     {
       "name": "en-360-dark",
-      "checks": 139,
+      "checks": 143,
       "passed": true,
       "screenshots": [
         "run/screenshots/en-360-dark-sign.png",
         "run/screenshots/en-360-dark-settings.png",
         "run/screenshots/en-360-dark-after-dialogs.png",
         "run/screenshots/en-360-dark-switched.png",
+        "run/screenshots/en-360-dark-sidebar.png",
         "run/screenshots/en-360-dark-home.png",
         "run/screenshots/en-360-dark-narrow-sheet.png",
         "run/screenshots/en-360-dark-recovery.png"
@@ -533,7 +645,39 @@
           "signText": "Sign in to OpenBot Continue with Google Continue with Microsoft Continue with Okta or Company email ∙ Required Use the email address issued by your organization. Continue with your company account"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
+        },
+        {
           "settingsText": "Skip to content General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence a"
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
         },
         {
           "switchedText": "跳到主要内容 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence "
@@ -570,9 +714,9 @@
         "settings: settings.appearance section link",
         "settings: settings.shortcuts section link",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -610,6 +754,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches zh-CN",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to zh-CN",
@@ -629,6 +774,9 @@
         "narrow: navigation toggle now says close",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
@@ -686,13 +834,14 @@
     },
     {
       "name": "zh-CN-1280-light",
-      "checks": 120,
+      "checks": 124,
       "passed": true,
       "screenshots": [
         "run/screenshots/zh-cn-1280-light-sign.png",
         "run/screenshots/zh-cn-1280-light-settings.png",
         "run/screenshots/zh-cn-1280-light-after-dialogs.png",
         "run/screenshots/zh-cn-1280-light-switched.png",
+        "run/screenshots/zh-cn-1280-light-sidebar.png",
         "run/screenshots/zh-cn-1280-light-home.png",
         "run/screenshots/zh-cn-1280-light-recovery.png"
       ],
@@ -709,7 +858,39 @@
           "signText": "登录 OpenBot 使用 Google 继续 使用 Microsoft 继续 使用 Okta 继续 或 公司邮箱 ∙ 必填 请使用你的组织发放的邮箱地址。 使用公司账号继续"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
+        },
+        {
           "settingsText": "跳到主要内容 工作区 偏好设置 通用 通知 学习 访问与设备 审批 浏览器 密码 这台电脑 工作区工具 配置 组件库 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain ev"
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
         },
         {
           "switchedText": "Skip to content Workspace Preferences General Notifications Learning Access and devices Approvals Browsers Passwords This computer Workspace tools Setup Components gallery General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve"
@@ -751,9 +932,9 @@
         "settings: settings.sidebar.setup sidebar link translated",
         "settings: settings.sidebar.componentsGallery sidebar link translated",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -791,6 +972,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches en",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to en",
@@ -808,6 +990,9 @@
         "language: document language restored",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
@@ -843,13 +1028,14 @@
     },
     {
       "name": "zh-CN-1280-dark",
-      "checks": 120,
+      "checks": 124,
       "passed": true,
       "screenshots": [
         "run/screenshots/zh-cn-1280-dark-sign.png",
         "run/screenshots/zh-cn-1280-dark-settings.png",
         "run/screenshots/zh-cn-1280-dark-after-dialogs.png",
         "run/screenshots/zh-cn-1280-dark-switched.png",
+        "run/screenshots/zh-cn-1280-dark-sidebar.png",
         "run/screenshots/zh-cn-1280-dark-home.png",
         "run/screenshots/zh-cn-1280-dark-recovery.png"
       ],
@@ -866,7 +1052,39 @@
           "signText": "登录 OpenBot 使用 Google 继续 使用 Microsoft 继续 使用 Okta 继续 或 公司邮箱 ∙ 必填 请使用你的组织发放的邮箱地址。 使用公司账号继续"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
+        },
+        {
           "settingsText": "跳到主要内容 工作区 偏好设置 通用 通知 学习 访问与设备 审批 浏览器 密码 这台电脑 工作区工具 配置 组件库 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain ev"
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
         },
         {
           "switchedText": "Skip to content Workspace Preferences General Notifications Learning Access and devices Approvals Browsers Passwords This computer Workspace tools Setup Components gallery General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve"
@@ -908,9 +1126,9 @@
         "settings: settings.sidebar.setup sidebar link translated",
         "settings: settings.sidebar.componentsGallery sidebar link translated",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -948,6 +1166,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches en",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to en",
@@ -965,6 +1184,9 @@
         "language: document language restored",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
@@ -1000,13 +1222,14 @@
     },
     {
       "name": "zh-CN-360-light",
-      "checks": 139,
+      "checks": 143,
       "passed": true,
       "screenshots": [
         "run/screenshots/zh-cn-360-light-sign.png",
         "run/screenshots/zh-cn-360-light-settings.png",
         "run/screenshots/zh-cn-360-light-after-dialogs.png",
         "run/screenshots/zh-cn-360-light-switched.png",
+        "run/screenshots/zh-cn-360-light-sidebar.png",
         "run/screenshots/zh-cn-360-light-home.png",
         "run/screenshots/zh-cn-360-light-narrow-sheet.png",
         "run/screenshots/zh-cn-360-light-recovery.png"
@@ -1024,7 +1247,39 @@
           "signText": "登录 OpenBot 使用 Google 继续 使用 Microsoft 继续 使用 Okta 继续 或 公司邮箱 ∙ 必填 请使用你的组织发放的邮箱地址。 使用公司账号继续"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
+        },
+        {
           "settingsText": "跳到主要内容 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence "
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
         },
         {
           "switchedText": "Skip to content General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence a"
@@ -1061,9 +1316,9 @@
         "settings: settings.appearance section link",
         "settings: settings.shortcuts section link",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -1101,6 +1356,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches en",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to en",
@@ -1120,6 +1376,9 @@
         "narrow: navigation toggle now says close",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
@@ -1177,13 +1436,14 @@
     },
     {
       "name": "zh-CN-360-dark",
-      "checks": 139,
+      "checks": 143,
       "passed": true,
       "screenshots": [
         "run/screenshots/zh-cn-360-dark-sign.png",
         "run/screenshots/zh-cn-360-dark-settings.png",
         "run/screenshots/zh-cn-360-dark-after-dialogs.png",
         "run/screenshots/zh-cn-360-dark-switched.png",
+        "run/screenshots/zh-cn-360-dark-sidebar.png",
         "run/screenshots/zh-cn-360-dark-home.png",
         "run/screenshots/zh-cn-360-dark-narrow-sheet.png",
         "run/screenshots/zh-cn-360-dark-recovery.png"
@@ -1201,7 +1461,39 @@
           "signText": "登录 OpenBot 使用 Google 继续 使用 Microsoft 继续 使用 Okta 继续 或 公司邮箱 ∙ 必填 请使用你的组织发放的邮箱地址。 使用公司账号继续"
         },
         {
+          "settings designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 838,
+              "text": "已连接到 https://acceptance.example.test/long-path-segment/long-path-segment/long-pa"
+            }
+          ]
+        },
+        {
           "settingsText": "跳到主要内容 通用 设置你的名字、OpenBot 的外观，以及每个 Bot 都遵循的指令。 关于你 外观 键盘快捷键 关于你 姓名 Acceptance Tester 常设指令 适用于每个对话中的每个 Bot。 Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence "
+        },
+        {
+          "switched designedSummaries": [
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 3981,
+              "text": "Always preserve the complete evidence and explain every decision. Always preserv"
+            },
+            {
+              "slot": "item-description",
+              "clamp": "2",
+              "textLength": 851,
+              "text": "Connected to https://acceptance.example.test/long-path-segment/long-path-segment"
+            }
+          ]
         },
         {
           "switchedText": "Skip to content General Set your name, how OpenBot looks, and the instructions every Bot follows. About you Appearance Keyboard shortcuts About you Name Acceptance Tester Standing instructions Applies to every Bot in every conversation. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence and explain every decision. Always preserve the complete evidence a"
@@ -1238,9 +1530,9 @@
         "settings: settings.appearance section link",
         "settings: settings.shortcuts section link",
         "settings: standing instructions row",
-        "settings: standing instructions shown in full",
+        "settings: standing instructions row is a two-line summary",
         "settings: AI model row",
-        "settings: AI summary wraps instead of clipping",
+        "settings: AI model row is a two-line summary",
         "settings: privacy switch translated",
         "settings: language selector translated",
         "settings: message list selector translated",
@@ -1278,6 +1570,7 @@
         "dialog: AI model label translated",
         "dialog: AI address label translated",
         "dialog: AI address wraps",
+        "dialog: AI model shows in full",
         "language: keyboard switch reaches en",
         "language: focus stays on the selector after keyboard switch",
         "language: title follows to en",
@@ -1297,6 +1590,9 @@
         "narrow: navigation toggle now says close",
         "nav: every destination translated",
         "nav: Credits destination present",
+        "sidebar: the fixture's conversations are drawn",
+        "sidebar: each conversation says its time in the interface language",
+        "sidebar: no conversation time is cut off",
         "home: document language",
         "home: title translated",
         "home: no horizontal overflow",
