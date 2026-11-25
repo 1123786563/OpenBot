@@ -157,7 +157,7 @@ export function BotChatView({
   const readVersion = useRef(0);
   /**
    * Whether this view is still on screen. The Bot's agent is one object whoever's chat shows it, so
-   * work that outlives this view — a turn's read — checks this before it touches the agent.
+   * work that outlives this view — a turn's read, a Stop — checks this before it touches the agent.
    */
   const onScreen = useRef(true);
   useEffect(() => {
@@ -304,6 +304,9 @@ export function BotChatView({
     setStopping(true);
     try {
       const outcome = await stopStoredRun(threadId, agentId);
+      // Left while the server was being asked: the agent is showing the Bot's next chat by now, and
+      // an abort of it would stop that chat's run.
+      if (!onScreen.current) return;
       if (outcome === "refused") {
         personStopped.current = false;
         setRunError(STOP_REFUSED);

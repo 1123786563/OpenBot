@@ -655,6 +655,47 @@ test("a stop the server did not make lets this browser's end of the turn go, and
 
 
 /*
+ * THE SAME FOR A STOP THAT IS STILL WAITING ON THE SERVER WHEN ITS CHAT IS LEFT. It went on to abort
+ * the agent and to read the thread again, and by then the agent was the next chat's of the same Bot:
+ * the run that chat was watching was the one stopped.
+ */
+test("a Stop still waiting on the server when the chat is left neither aborts the agent nor reads again", async () => {
+  const THREAD = "thread-left-mid-stop";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.plans = [HOLDING];
+  const view = open();
+  await waitFor(() => expect(runtime.reads).toEqual([THREAD]));
+  await send(view, "Take your time");
+  // Stop reads the thread first. The server holds that read until the chat has been left.
+  let answer: ((response: Response) => void) | undefined;
+  answerWith((url) =>
+    url.pathname.includes(`/${THREAD}/messages`)
+      ? new Promise<Response>((resolve) => {
+          answer = resolve;
+        })
+      : undefined,
+  );
+  await pressStop(view);
+  await waitFor(() => expect(answer).toBeDefined());
+  view.unmount();
+
+  // The read names a run going, which the server then says had already ended.
+  runtime.stopAnswer = "ended";
+  answer?.(
+    new Response(
+      JSON.stringify({ messages: [], runs: [liveRun("run-live")] }),
+      { headers: { "content-type": "application/json" } },
+    ),
+  );
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId: THREAD, runId: "run-live" }]),
+  );
+  await settleReactWork();
+  expect(runtime.aborts).toEqual([]);
+  expect(runtime.reads).toEqual([THREAD]);
+});
+
+/*
  * A REFUSED STOP STOPS NOTHING. It used to abort this browser's copy of the run as well, so the Bot
  * went on working on the server while its reply stopped arriving here, and Stop went with the run:
  * "Try again" pointed at a button that was no longer there. Only a run that had already ended is
