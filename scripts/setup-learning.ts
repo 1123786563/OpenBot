@@ -30,7 +30,7 @@ export type { KeyIntelligence } from "../server/src/learning/ensure-container";
 const CONTAINER = "CPK_INTELLIGENCE_LEARNING_CONTAINER_ID";
 
 /**
- * - `configured`: fresh setup wrote a runtime key and the container to `.env`.
+ * - `configured`: fresh setup wrote a runtime key and the container to `deploy/openbot/.env.server`.
  * - `preserved`: the environment already names a container.
  * - `present`: the runtime key's project already has `openbot`; the server assigns it.
  * - `created`: `openbot` was created in the runtime key's project; the server assigns it.
@@ -129,10 +129,11 @@ export async function setupLearning(
   const directory = resolve(options.directory ?? process.cwd());
   const environment = options.environment ?? process.env;
   const run = options.runCli ?? runCli;
-  const envPath = resolve(directory, ".env");
+  // The server's settings file: the key and container names this writes are ones the server reads.
+  const envPath = resolve(directory, "deploy/openbot/.env.server");
   const original = await readFile(envPath, "utf8").catch(() => {
     throw new Error(
-      "Run this helper from the OpenBot root after copying .env.example to .env.",
+      "Run this helper from the OpenBot root after copying deploy/openbot/.env.server.example to deploy/openbot/.env.server.",
     );
   });
   const values = parseEnv(original);
@@ -147,7 +148,7 @@ export async function setupLearning(
     /*
      * The key cannot create containers, and it is never replaced here. Creation goes through a
      * credential that can (learning/ensure-container.ts) and counts only once the key itself can see
-     * the result. The server then assigns it; nothing is written to `.env`.
+     * the result. The server then assigns it; nothing is written to the settings file.
      */
     const apiUrl = intelligenceApiOrigin(effective("INTELLIGENCE_API_URL"));
     const serviceToken = effective("INTELLIGENCE_SERVICE_TOKEN");
@@ -180,7 +181,7 @@ export async function setupLearning(
       },
     });
   }
-  // Provisioning a key edits .env and may need a browser: a person runs that, not a start script.
+  // Provisioning a key edits the settings file and may need a browser: a person runs that, not a start script.
   if (options.nonInteractive) return "skipped";
   const apiUrl = intelligenceApiOrigin(effective("INTELLIGENCE_API_URL"));
   if (apiUrl !== MANAGED_API) {
@@ -199,7 +200,7 @@ export async function setupLearning(
     const current = await readFile(envPath, "utf8");
     if (current !== original) {
       throw new Error(
-        "Setup configuration changed while signing in. It was preserved; inspect .env and run this helper again.",
+        "Setup configuration changed while signing in. It was preserved; inspect the settings file and run this helper again.",
       );
     }
     await saveEnvironment(
@@ -284,7 +285,7 @@ export async function setupLearning(
     provisioned.INTELLIGENCE_API_KEY
   ) {
     throw new Error(
-      "Setup configuration changed while provisioning. It was preserved; inspect .env and run this helper again.",
+      "Setup configuration changed while provisioning. It was preserved; inspect the settings file and run this helper again.",
     );
   }
   const key = provisioned.CPK_INTELLIGENCE_API_KEY?.trim();
@@ -303,7 +304,7 @@ const RESULT_MESSAGES: Record<
   string
 > = {
   configured:
-    "Configured the selected project's openbot Learning container and OpenBot runtime key in .env. Saved Admin settings still take precedence.",
+    "Configured the selected project's openbot Learning container and OpenBot runtime key in deploy/openbot/.env.server. Saved Admin settings still take precedence.",
   preserved: "Preserved the existing Learning container assignment.",
   present:
     "This runtime key's project has the openbot Learning container. OpenBot assigns it as the default on start unless Admin → Automatic Learning has a saved setting.",
@@ -314,7 +315,10 @@ const RESULT_MESSAGES: Record<
 /** What to run instead, for the Intelligence this checkout points at. */
 async function skippedMessage(directory: string) {
   const values = parseEnv(
-    await readFile(resolve(directory, ".env"), "utf8").catch(() => ""),
+    await readFile(
+      resolve(directory, "deploy/openbot/.env.server"),
+      "utf8",
+    ).catch(() => ""),
   );
   let apiUrl = MANAGED_API;
   try {

@@ -48,8 +48,8 @@ describe("this machine's own addresses", () => {
 });
 
 describe("a deployment reached from beyond this machine", () => {
-  test("is not what .env.example or OpenBot Desktop write", () => {
-    // .env.example
+  test("is not what the server's example settings or OpenBot Desktop write", () => {
+    // deploy/openbot/.env.server.example
     expect(
       addressesBeyondThisMachine({
         TRUSTED_ORIGINS: "http://localhost:3010",

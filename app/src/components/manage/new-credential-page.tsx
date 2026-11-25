@@ -224,7 +224,6 @@ function CredentialForm({ replacement }: { replacement?: CredentialStatus }) {
               }
               throw error;
             }
-            toast.add({ title: `${entryTitle} replaced`, type: "success" });
             await navigate({
               ...paths.credentials(),
               state: { replacedCredentialId: saved.id },

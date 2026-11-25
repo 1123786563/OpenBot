@@ -87,7 +87,7 @@ async function readEnvironment(path: string) {
     return parseEnv(await readFile(path, "utf8"));
   } catch {
     throw new SetupComposioError(
-      "Could not read .env. Run this helper from the OpenBot root after copying .env.example to .env, and check file permissions.",
+      "Could not read deploy/openbot/.env.server. Run this helper from the OpenBot root after copying its .example beside it, and check file permissions.",
     );
   }
 }
@@ -102,7 +102,8 @@ export async function setupComposio(
 ): Promise<"configured" | "preserved"> {
   const directory = resolve(options.directory ?? process.cwd());
   const environment = options.environment ?? process.env;
-  const envPath = resolve(directory, ".env");
+  // The server's settings file: the key the CLI writes is one the server reads.
+  const envPath = resolve(directory, "deploy/openbot/.env.server");
   const values = await readEnvironment(envPath);
   const effective = (name: string) =>
     environment[name]?.trim() || values[name]?.trim() || "";
@@ -188,10 +189,10 @@ export async function setupComposio(
   const saved = await readEnvironment(envPath);
   if (!saved.COMPOSIO_API_KEY?.trim()) {
     throw new SetupComposioError(
-      "CopilotKit did not write a Composio project key to .env. Check file permissions and run bun run setup:composio again; the saved installation identity will be reused.",
+      "CopilotKit did not write a Composio project key to deploy/openbot/.env.server. Check file permissions and run bun run setup:composio again; the saved installation identity will be reused.",
     );
   }
-  // Bun read .env when this process started. Reload only the key the CLI was asked to write.
+  // Bun read the env files when this process started. Reload only the key the CLI was asked to write.
   environment.COMPOSIO_API_KEY = saved.COMPOSIO_API_KEY;
   return configured ? "configured" : "preserved";
 }
@@ -201,7 +202,7 @@ if (import.meta.main) {
     const result = await setupComposio();
     console.log(
       result === "configured"
-        ? "Composio: project key configured in .env."
+        ? "Composio: project key configured in deploy/openbot/.env.server."
         : "Composio: existing broker configuration preserved.",
     );
   } catch (error) {

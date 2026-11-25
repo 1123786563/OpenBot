@@ -85,14 +85,14 @@ export function SetupChecklist({
   const checking = checklist.isFetching || recheck.isPending;
   const checkAgain = (
     <Button
-      className="self-center lg:self-start"
+      className="min-h-11 self-center lg:self-start"
       disabled={checking}
       onClick={() => {
         if (checklist.error) void checklist.refetch();
         else recheck.mutate();
       }}
       size="sm"
-      variant="ghost"
+      variant="outline"
     >
       {checking ? "Checking…" : "Check again"}
     </Button>

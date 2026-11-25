@@ -1,0 +1,6 @@
+name: openbot-opik
+
+include:
+  - path:
+      - ${OPIK_SOURCE:-./upstream}/deployment/docker-compose/docker-compose.yaml
+      - ./docker-compose.openbot.yml

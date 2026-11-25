@@ -93,7 +93,7 @@ impl Ports {
     /// The ports this deployment's `.env` records, which an earlier Start chose and its containers
     /// published. A fresh install records none.
     pub fn recorded(root: &Path) -> std::io::Result<std::collections::HashSet<u16>> {
-        let values = read_already_set(&root.join(".env"), &PORT_KEYS)?;
+        let values = read_settings(root, &PORT_KEYS)?;
         Ok(values
             .iter()
             .filter_map(|(key, value)| parse_port(key, value).ok())
@@ -144,7 +144,7 @@ impl Ports {
     }
 
     pub fn read(root: &Path) -> std::io::Result<Self> {
-        let values = read_already_set(&root.join(".env"), &PORT_KEYS)?;
+        let values = read_settings(root, &PORT_KEYS)?;
         let mut ports = Self::default();
         for (key, port) in [
             ("APP_PORT", &mut ports.app),
@@ -680,6 +680,124 @@ mod port_tests {
         assert_eq!(
             Ports::recorded(&root).unwrap(),
             HashSet::from([3010, 61246])
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn text(root: &Path, file: &str) -> String {
+        std::fs::read_to_string(root.join(file)).unwrap_or_default()
+    }
+
+    #[test]
+    fn each_setting_is_written_to_its_own_file_and_never_the_root() {
+        let root = crate::test_support::temp_root("settings-own-files");
+        std::fs::create_dir_all(&root).unwrap();
+        let written = BTreeMap::from([
+            ("SERVER_PORT".to_string(), "3001".to_string()),
+            ("BOT_MODEL".to_string(), "glm-4.6".to_string()),
+            (
+                "COMPUTER_TOKEN".to_string(),
+                "synthetic-computer".to_string(),
+            ),
+            (
+                "DATABASE_URL".to_string(),
+                "postgres://synthetic".to_string(),
+            ),
+        ]);
+        write_settings(&root, &written, &BTreeMap::new()).unwrap();
+        let ports = text(&root, SETTINGS_FILES[DEPLOYMENT]);
+        let server = text(&root, SETTINGS_FILES[SERVER]);
+        let agents = text(&root, SETTINGS_FILES[AGENTS]);
+        assert!(ports.contains("SERVER_PORT=3001\n") && !ports.contains("BOT_MODEL"));
+        assert!(server.contains("DATABASE_URL=postgres://synthetic\n"));
+        assert!(agents.contains("BOT_MODEL=glm-4.6\n"));
+        assert!(agents.contains("COMPUTER_TOKEN=synthetic-computer\n"));
+        assert!(!root.join(".env").exists());
+        // Nothing is written to the worker's file, so a fresh installation never gets one.
+        assert!(!root.join(SETTINGS_FILES[2]).exists());
+        assert_eq!(
+            read_settings(
+                &root,
+                &["SERVER_PORT", "BOT_MODEL", "COMPUTER_TOKEN", "DATABASE_URL",]
+            )
+            .unwrap(),
+            written
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_written_setting_leaves_the_file_it_was_kept_in_before() {
+        let root = crate::test_support::temp_root("settings-move-between-files");
+        std::fs::create_dir_all(root.join(SETTINGS_FILES[DEPLOYMENT]).parent().unwrap()).unwrap();
+        std::fs::write(
+            root.join(SETTINGS_FILES[DEPLOYMENT]),
+            "DATABASE_URL=postgres://stale\nSERVER_PORT=3001\n",
+        )
+        .unwrap();
+        let moved = BTreeMap::from([("DATABASE_URL".to_string(), "postgres://fresh".to_string())]);
+        write_settings(&root, &moved, &BTreeMap::new()).unwrap();
+        let ports = text(&root, SETTINGS_FILES[DEPLOYMENT]);
+        assert!(ports.contains("SERVER_PORT=3001\n") && !ports.contains("DATABASE_URL"));
+        assert!(text(&root, SETTINGS_FILES[SERVER]).contains("DATABASE_URL=postgres://fresh\n"));
+        // And one a Start takes out is taken out of every file.
+        let gone = BTreeMap::from([("SERVER_PORT".to_string(), String::new())]);
+        write_settings(&root, &BTreeMap::new(), &gone).unwrap();
+        assert!(!text(&root, SETTINGS_FILES[DEPLOYMENT]).contains("SERVER_PORT"));
+        assert!(settings(&root, &["DATABASE_URL"]).contains_key("DATABASE_URL"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_root_env_from_an_earlier_version_is_read_until_start_moves_it() {
+        let root = crate::test_support::temp_root("settings-legacy-root");
+        std::fs::create_dir_all(root.join(SETTINGS_FILES[DEPLOYMENT]).parent().unwrap()).unwrap();
+        std::fs::write(
+            root.join(".env"),
+            "# mine\nSERVER_PORT=3010\nBOT_MODEL=glm-4.6\n\n",
+        )
+        .unwrap();
+        std::fs::write(root.join(SETTINGS_FILES[DEPLOYMENT]), "SERVER_PORT=3011\n").unwrap();
+        // Until it is moved, the files answer for what they hold and it answers for the rest.
+        assert_eq!(
+            settings(&root, &["SERVER_PORT", "BOT_MODEL"]),
+            BTreeMap::from([
+                ("SERVER_PORT".to_string(), "3011".to_string()),
+                ("BOT_MODEL".to_string(), "glm-4.6".to_string())
+            ])
+        );
+        move_legacy(&root).unwrap();
+        assert!(!root.join(".env").exists());
+        let ports = text(&root, SETTINGS_FILES[DEPLOYMENT]);
+        // A setting the files already hold stays as they have it.
+        assert!(ports.contains("SERVER_PORT=3011\n") && !ports.contains("# mine"));
+        assert!(text(&root, SETTINGS_FILES[AGENTS]).contains("BOT_MODEL=glm-4.6\n"));
+        // Moved once: a second Start finds nothing to move and changes nothing.
+        let before = text(&root, SETTINGS_FILES[DEPLOYMENT]);
+        move_legacy(&root).unwrap();
+        assert_eq!(text(&root, SETTINGS_FILES[DEPLOYMENT]), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_setting_in_two_files_reads_as_the_one_in_the_earlier_file() {
+        let root = crate::test_support::temp_root("settings-first-file-wins");
+        for file in [SETTINGS_FILES[DEPLOYMENT], SETTINGS_FILES[SERVER]] {
+            std::fs::create_dir_all(root.join(file).parent().unwrap()).unwrap();
+        }
+        std::fs::write(
+            root.join(SETTINGS_FILES[DEPLOYMENT]),
+            "DATABASE_URL=from-deployment\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(SETTINGS_FILES[SERVER]),
+            "DATABASE_URL=from-server\n",
+        )
+        .unwrap();
+        assert_eq!(
+            settings(&root, &["DATABASE_URL"])["DATABASE_URL"],
+            "from-deployment"
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1501,6 +1619,241 @@ pub fn read_already_set(path: &Path, keys: &[&str]) -> std::io::Result<BTreeMap<
 
 pub fn already_set(path: &Path, keys: &[&str]) -> BTreeMap<String, String> {
     read_already_set(path, keys).unwrap_or_default()
+}
+
+/**
+One settings file per service, as `scripts/start.sh` and the API server read them, and none in the
+installation's root. `write_settings` keeps each setting in exactly one of them, by [`owner`].
+*/
+pub const SETTINGS_FILES: [&str; 4] = [
+    "deploy/openbot/.env",
+    "deploy/openbot/.env.server",
+    "deploy/openbot/.env.worker",
+    "deploy/agents/.env",
+];
+const DEPLOYMENT: usize = 0;
+const SERVER: usize = 1;
+const AGENTS: usize = 3;
+
+/**
+What the Intelligence CLI writes into a `.env` in the installation's root. `local connect` names no
+other file and compares that one on the next connection, so the file is the CLI's: OpenBot reads it
+and only takes keys out of it. Its own services read the four files above.
+*/
+const CLI_KEYS: [&str; 4] = [
+    "CPK_INTELLIGENCE_API_KEY",
+    "INTELLIGENCE_API_URL",
+    "INTELLIGENCE_GATEWAY_WS_URL",
+    "SL_ENABLED",
+];
+
+/// The file that holds the deployment's own settings: its ports, its images, its edition.
+pub fn deployment_file(root: &Path) -> std::path::PathBuf {
+    root.join(SETTINGS_FILES[DEPLOYMENT])
+}
+
+/**
+The file a setting belongs in. The Bots' model settings and the tokens they prove themselves with
+go to the agents' file, the ports and images to the deployment's, and everything else to the
+server's: its list is the one that grows, and a setting nobody sorted yet reaches the server, which
+reads all three.
+*/
+fn owner(key: &str) -> usize {
+    if PORT_KEYS.contains(&key)
+        || matches!(
+            key,
+            "ENGINE_SOCKET" | "IMAGE_PULL_POLICY" | "OPENBOT_EDITION"
+        )
+        || crate::deployment::IMAGE_VARIABLES
+            .iter()
+            .any(|(_, variable)| *variable == key)
+    {
+        return DEPLOYMENT;
+    }
+    let agents = [
+        "AGENT_BOT_MODEL",
+        "AGENT_TOOL_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "COMPUTER_TOKEN",
+        "MANAGED_AGENT_TOKEN",
+        crate::learning_model::TOKEN,
+        "OPENBOT_MODEL_OAUTH_FILE",
+        "SUPERVISOR_TOKEN",
+        "WORKER_SHARED_SECRET",
+    ];
+    if agents.contains(&key)
+        || [
+            "BOT_",
+            "CHATGPT_",
+            "OPENAI_",
+            "ANTHROPIC_",
+            "PICKED_HARNESS_",
+        ]
+        .iter()
+        .any(|prefix| key.starts_with(prefix))
+    {
+        AGENTS
+    } else {
+        SERVER
+    }
+}
+
+/// [`read_settings`] over the four files alone.
+fn read_files(root: &Path, keys: &[&str]) -> std::io::Result<BTreeMap<String, String>> {
+    let mut found = BTreeMap::new();
+    for file in SETTINGS_FILES {
+        let path = root.join(file);
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    error.kind(),
+                    format!("{}: {error}", path.display()),
+                ))
+            }
+        };
+        for (key, value) in already_set_in(&text, keys) {
+            found.entry(key).or_insert(value);
+        }
+    }
+    Ok(found)
+}
+
+/**
+What this installation already has set, across its settings files. One set in two of them reads as
+the one in the earlier file.
+
+A `.env` in the root is from a version which kept everything there, before Start moves it
+([`move_legacy`]). Until then it is read for whatever the files do not hold.
+*/
+pub fn read_settings(root: &Path, keys: &[&str]) -> std::io::Result<BTreeMap<String, String>> {
+    let mut found = read_files(root, keys)?;
+    let legacy = root.join(".env");
+    for (key, value) in read_already_set(&legacy, keys).map_err(|error| {
+        std::io::Error::new(error.kind(), format!("{}: {error}", legacy.display()))
+    })? {
+        found.entry(key).or_insert(value);
+    }
+    Ok(found)
+}
+
+/// [`read_settings`], with nothing set when a file cannot be read.
+pub fn settings(root: &Path, keys: &[&str]) -> BTreeMap<String, String> {
+    read_settings(root, keys).unwrap_or_default()
+}
+
+/**
+Write the installation's settings, each into its own file ([`owner`]), and take `purge` out of every
+file. [`write`] lays each one down.
+
+A setting is also removed from the files that are not its own, so a copy an earlier layout left
+behind cannot outlive the one written here.
+*/
+pub fn write_settings(
+    root: &Path,
+    owned: &BTreeMap<String, String>,
+    purge: &BTreeMap<String, String>,
+) -> std::io::Result<()> {
+    if owned
+        .iter()
+        .chain(purge)
+        .any(|(key, value)| key.contains(['\r', '\n']) || value.contains(['\r', '\n']))
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "OpenBot setting names and values must not contain line breaks.",
+        ));
+    }
+    let mut files: [BTreeMap<String, String>; 4] = Default::default();
+    for (key, value) in owned {
+        files[owner(key)].insert(key.clone(), value.clone());
+    }
+    let mut removed: [BTreeMap<String, String>; 4] = std::array::from_fn(|_| purge.clone());
+    for key in owned.keys().chain(purge.keys()) {
+        for (file, out) in removed.iter_mut().enumerate() {
+            if file != owner(key) {
+                out.insert(key.clone(), String::new());
+            }
+        }
+    }
+    let mut result = Ok(());
+    for (index, (written, out)) in files.iter().zip(&removed).enumerate() {
+        let path = root.join(SETTINGS_FILES[index]);
+        // Nothing to write to a file that does not exist yet: a fresh install has no worker file.
+        if written.is_empty() && !path.is_file() {
+            continue;
+        }
+        result = result.and_then(|_| {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            write(&path, written, out)
+        });
+    }
+    // A `.env` in the root gives up everything but what the Intelligence CLI keeps there: a
+    // credential leaves every file, and a setting moved out is not read from behind the one written.
+    let legacy = root.join(".env");
+    if legacy.is_file() {
+        let out = purge
+            .keys()
+            .chain(owned.keys())
+            .filter(|key| key == &CLI_KEYS[0] || !CLI_KEYS.contains(&key.as_str()))
+            .map(|key| (key.clone(), String::new()))
+            .collect();
+        result = result.and_then(|_| write(&legacy, &BTreeMap::new(), &out));
+    }
+    result
+}
+
+/**
+Move a `.env` an earlier version kept in the root into the settings files: Start's first step.
+
+Values move as they were written; comments do not. A setting the new files already hold stays as
+they have it. What the Intelligence CLI keeps there ([`CLI_KEYS`]) stays too, and with it the file;
+without it the old file is removed once every new one is written.
+*/
+pub fn move_legacy(root: &Path) -> std::io::Result<()> {
+    let legacy = root.join(".env");
+    let text = match std::fs::read_to_string(&legacy) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(std::io::Error::new(
+                error.kind(),
+                format!("{}: {error}", legacy.display()),
+            ))
+        }
+    };
+    let keys: Vec<&str> = text
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, _)| key.trim())
+        .filter(|key| !key.is_empty() && !key.starts_with('#'))
+        .map(|key| key.strip_prefix("export ").unwrap_or(key).trim())
+        .collect();
+    let fresh = read_files(root, &keys)?;
+    let owned: BTreeMap<String, String> = already_set_in(&text, &keys)
+        .into_iter()
+        .filter(|(key, _)| !fresh.contains_key(key) && !CLI_KEYS.contains(&key.as_str()))
+        .collect();
+    let out: BTreeMap<String, String> = keys
+        .into_iter()
+        .filter(|key| !CLI_KEYS.contains(key))
+        .map(|key| (key.to_string(), String::new()))
+        .collect();
+    write_settings(root, &owned, &BTreeMap::new())?;
+    write(&legacy, &BTreeMap::new(), &out)?;
+    let left = std::fs::read_to_string(&legacy)?;
+    let settings_left = left
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .any(|(key, _)| !key.trim().is_empty() && !key.trim_start().starts_with('#'));
+    if settings_left {
+        Ok(())
+    } else {
+        std::fs::remove_file(&legacy)
+    }
 }
 
 /**

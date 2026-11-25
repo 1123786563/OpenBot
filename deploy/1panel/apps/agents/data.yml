@@ -1,0 +1,28 @@
+name: Agents
+tags:
+  - 实用工具
+title: Bot、LangGraph、Computer 与 Supervisor
+description: Bot、LangGraph、Computer 与 Supervisor
+additionalProperties:
+  key: agents
+  name: Agents
+  tags:
+    - Tool
+  shortDescZh: Bot、LangGraph、Computer 与 Supervisor
+  shortDescEn: Agents
+  description:
+    en: Agents
+    es-es: Agents
+    ja: Agents
+    ms: Agents
+    pt-br: Agents
+    ru: Agents
+    ko: Agents
+    zh-Hant: Bot、LangGraph、Computer 与 Supervisor
+    zh: Bot、LangGraph、Computer 与 Supervisor
+    tr: Agents
+  type: website
+  crossVersionUpdate: false
+  limit: 0
+  architectures:
+    - amd64

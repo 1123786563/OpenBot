@@ -8,7 +8,7 @@ fi
 
 source_dir=$(cd "$1" && pwd)
 repo=$(git rev-parse --show-toplevel)
-patch_dir="$repo/deploy/middleware/bifrost/patches"
+patch_dir="$repo/deploy/bifrost/patches"
 
 if [[ ! -f "$source_dir/zhipu-core/providers/openai/chat.go" ]]; then
   echo "Bifrost source is missing core/providers/openai/chat.go: $source_dir" >&2

@@ -1,7 +1,0 @@
-services:
-  otel-collector:
-    networks: [otel-collector, observability]
-networks:
-  observability:
-    external: true
-    name: openbot-observability

@@ -115,7 +115,7 @@ fn file_settings(path: &Path) -> Result<BTreeMap<String, String>, Problem> {
 /// What the person supplied comes first: the environment over `.env`, as Bun reads them. Only
 /// when neither holds a Composio key does a provisioned one fill in.
 pub fn resolve(root: &Path) -> Result<Brokers, Problem> {
-    let mut values = file_settings(&root.join(".env"))?;
+    let mut values = file_settings(&root.join(crate::env::SETTINGS_FILES[1]))?;
     for name in BROKER_KEYS
         .into_iter()
         .chain(["OPENBOT_BROKER_PROVIDER", "OPENBOT_INSTALLATION_ID"])
@@ -389,6 +389,13 @@ fn identity_problem() -> Problem {
 
 #[cfg(test)]
 mod tests {
+
+    /// The file the server reads broker settings from, as a test would have laid it down.
+    fn server_file(root: &Path) -> std::path::PathBuf {
+        let path = root.join(crate::env::SETTINGS_FILES[1]);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        path
+    }
     use super::*;
 
     fn connection(id: &str) -> ProjectConnection {
@@ -435,7 +442,7 @@ mod tests {
         let root = crate::test_support::temp_root("composio-supplied-wins");
         std::fs::create_dir_all(&root).unwrap();
         let env = "COMPOSIO_API_KEY=\"synthetic-person-key\" # mine\n";
-        std::fs::write(root.join(".env"), env).unwrap();
+        std::fs::write(server_file(&root), env).unwrap();
         crate::vault::remember(&root, PROVISIONED_KEY, "synthetic-provisioned-key").unwrap();
 
         let brokers = resolve(&root).unwrap();
@@ -459,7 +466,7 @@ mod tests {
         );
 
         std::env::set_var("COMPOSIO_API_KEY", "   ");
-        std::fs::write(root.join(".env"), "COMPOSIO_API_KEY=\n").unwrap();
+        std::fs::write(server_file(&root), "COMPOSIO_API_KEY=\n").unwrap();
         let brokers = resolve(&root).unwrap();
         assert_eq!(brokers.composio_source(), Some(KeySource::Provisioned));
         assert_eq!(
@@ -467,7 +474,7 @@ mod tests {
             "synthetic-provisioned-key"
         );
         assert_eq!(
-            std::fs::read_to_string(root.join(".env")).unwrap(),
+            std::fs::read_to_string(server_file(&root)).unwrap(),
             "COMPOSIO_API_KEY=\n"
         );
         std::fs::remove_dir_all(root).unwrap();
@@ -494,7 +501,7 @@ mod tests {
             for quote in ['\'', '"', '`'] {
                 let root = crate::test_support::temp_root("quoted-broker-runtime");
                 std::fs::create_dir_all(&root).unwrap();
-                let path = root.join(".env");
+                let path = server_file(&root);
                 let line = format!(
                     "{name}={quote}synthetic#key{quote} # comment with {quote}quotes{quote}\n"
                 );
@@ -514,7 +521,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let id = "E1503ABA-D1BA-4D21-AB5E-7B6CB109BFB6";
         std::fs::write(
-            root.join(".env"),
+            server_file(&root),
             format!(
                 "OPENBOT_BROKER_PROVIDER=\"arcade\" # choice\nOPENBOT_INSTALLATION_ID='{id}'\n"
             ),
@@ -528,7 +535,7 @@ mod tests {
             Provisioned::Preserved
         ));
         std::fs::write(
-            root.join(".env"),
+            server_file(&root),
             format!(
                 "OPENBOT_BROKER_PROVIDER=`composio`\nOPENBOT_INSTALLATION_ID='{id}' # identity\n"
             ),
@@ -688,7 +695,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let id = "e1503aba-d1ba-4d21-ab5e-7b6cb109bfb6";
         let env = format!("OPENBOT_INSTALLATION_ID={id}\nCOMPOSIO_API_KEY=   \n");
-        std::fs::write(root.join(".env"), &env).unwrap();
+        std::fs::write(server_file(&root), &env).unwrap();
         let mut asked = Vec::new();
         assert!(connect(&root, |id, _| {
             asked.push(id.to_owned());
@@ -712,7 +719,7 @@ mod tests {
             "synthetic-native-key"
         );
         assert!(!brokers.runtime().contains_key("OPENBOT_INSTALLATION_ID"));
-        assert_eq!(std::fs::read_to_string(root.join(".env")).unwrap(), env);
+        assert_eq!(std::fs::read_to_string(server_file(&root)).unwrap(), env);
         assert!(!root.join(HANDOFF).exists());
         assert_eq!(asked, [id, id]);
         std::fs::remove_dir_all(root).unwrap();
@@ -815,7 +822,7 @@ mod tests {
     fn fresh_setup_persists_identity_before_request_and_returns_only_project_key() {
         let root = crate::test_support::temp_root("desktop-composio-order");
         std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join(".env"), "DEPLOYMENT_ID=shared-tenant\n").unwrap();
+        std::fs::write(server_file(&root), "DEPLOYMENT_ID=shared-tenant\n").unwrap();
         let mut requests = 0;
         let key = new_key(provision_with(&root, &BTreeMap::new(), |id| {
             requests += 1;

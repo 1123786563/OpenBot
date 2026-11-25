@@ -15,7 +15,9 @@ The build records the source commit, archive hash, build arguments, Buildx
 metadata, image ID and platform manifest. Acceptance boots an isolated Compose
 project with PostgreSQL and a local AG-UI and Intelligence fixture. The smoke
 uses the Bot run and Routines APIs and correlates a successful scheduled run
-with the Worker dispatch log. It verifies the running image identity before and
+with a single firing in the verified Worker's structured sweep logs. The
+isolated database contains just the smoke Routine, whose ID is in the smoke
+receipt. It verifies the running image identity before and
 after the smoke and tests rejection of a mismatched Worker and untraceable
 Server. The script removes its Compose project and volume on exit.
 

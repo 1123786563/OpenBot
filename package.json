@@ -15,7 +15,7 @@
   "scripts": {
     "build": "bun run generate:app-config && bun run --filter '*' build",
     "dev": "bun run generate:app-config && bun run --filter app --filter server --parallel dev",
-    "generate:app-config": "bun --env-file=.env scripts/generate-app-config.ts",
+    "generate:app-config": "bun --env-file=deploy/openbot/.env --env-file=deploy/openbot/.env.server scripts/generate-app-config.ts",
     "format": "bunx biome format --write .",
     "format:check": "bunx biome format .",
     "lint": "bunx biome lint --error-on-warnings .",
@@ -33,6 +33,7 @@
     "test:live-arcade": "bun -e \"if (!process.env.ARCADE_API_KEY?.trim()) { console.error('ARCADE_API_KEY is empty or unset, so every case in this suite would skip and this command would still exit 0. Run it as ARCADE_API_KEY=... bun run test:live-arcade.'); process.exit(1) }\" && OPENBOT_LIVE_ARCADE=1 bun test server/tests/arcade-live.test.ts",
     "diagram": "bun scripts/architecture-diagram.ts",
     "setup:composio": "bun scripts/setup-composio.ts",
+    "sync:env": "bun --env-file=deploy/infisical/.env.openbot-client scripts/infisical-env.ts",
     "composio:smoke": "bun scripts/composio-smoke.ts",
     "mock:knowledge": "bun scripts/mock-knowledge-mcp.ts"
   },
@@ -45,6 +46,7 @@
     "yaml": "^2.9.0"
   },
   "dependencies": {
+    "@infisical/sdk": "5.3.1",
     "playwright-core": "1.62.1"
   },
   "overrides": {

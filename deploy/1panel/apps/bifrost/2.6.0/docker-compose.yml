@@ -1,0 +1,54 @@
+networks:
+  bifrost:
+    ipam: {}
+  1panel-network:
+    external: true
+services:
+  bifrost:
+    command: null
+    entrypoint: null
+    environment:
+      BIFROST_DB_HOST: ${PANEL_DB_HOST:?Select a database instance}
+      BIFROST_DB_NAME: ${PANEL_DB_NAME:?Enter the database name}
+      BIFROST_DB_PASSWORD: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
+      BIFROST_DB_PORT: ${PANEL_DB_PORT:?Missing database instance port}
+      BIFROST_DB_SSL_MODE: ${DB_SSL_MODE:-disable}
+      BIFROST_DB_USER: ${PANEL_DB_USER:?Enter the database user}
+      BIFROST_SETUP_TOKEN: ${BIFROST_SETUP_TOKEN}
+    extra_hosts:
+      - host.docker.internal=host-gateway
+    image: maximhq/bifrost:v2.6.0@sha256:5968d007ba4f74ee01bc4ceb071decb9927a0b7bb43dbb9072208f75e2d522e3
+    networks:
+      bifrost: null
+      1panel-network: {}
+    restart: unless-stopped
+    volumes:
+      - bifrost-data:/app/data
+      - ./bifrost.json:/app/data/config.json:ro
+    container_name: ${CONTAINER_NAME}-bifrost
+    labels:
+      createdBy: Apps
+  registry-proxy:
+    command: null
+    depends_on:
+      bifrost:
+        condition: service_started
+        required: true
+    entrypoint: null
+    image: nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    networks:
+      bifrost: null
+      1panel-network:
+        aliases:
+          - openbot-bifrost
+    restart: unless-stopped
+    volumes:
+      - ./registry-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./publication-freeze.d:/etc/nginx/publication-freeze.d:ro
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-18080}:8080
+    container_name: ${CONTAINER_NAME}
+    labels:
+      createdBy: Apps
+volumes:
+  bifrost-data: {}

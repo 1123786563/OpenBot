@@ -177,9 +177,13 @@ To run the open-source template locally, you’ll need the following.
 The example configuration sets `OPENBOT_SINGLE_USER=true`, so you can try the app as a local administrator. Configure [sign-in](#sign-in) before giving anyone else access.
 
 ```sh
-cp .env.example .env
 bun install
-# Supply OPENAI_API_KEY in .env.
+# One settings file per service, none in the repository root.
+cp deploy/openbot/.env.example deploy/openbot/.env
+cp deploy/openbot/.env.server.example deploy/openbot/.env.server
+cp deploy/openbot/.env.worker.example deploy/openbot/.env.worker
+cp deploy/agents/.env.example deploy/agents/.env
+# Supply OPENAI_API_KEY in deploy/agents/.env.
 bash scripts/start.sh
 ```
 
@@ -199,18 +203,22 @@ Ubuntu terminal open while you use OpenBot, and open the app from your Windows b
 
 ## Deploy it
 
+For separate PostgreSQL, Agent, and middleware services on one Docker host, see the [Compose deployment guide](deploy/README.md).
+
 One image carries the app, the API, the browser the Bots drive, and optionally PostgreSQL. Same
-`.env`, no Kubernetes.
+settings files, no Kubernetes.
 
 ```sh
 # The published image. Nothing to clone and nothing to build.
-docker run -p 3001:3001 --env-file .env \
+docker run -p 3001:3001 \
+  --env-file deploy/openbot/.env --env-file deploy/openbot/.env.server --env-file deploy/agents/.env \
   -e EMBEDDED_POSTGRES=on -v openbot-data:/var/lib/postgresql \
   ghcr.io/copilotkit/openbot:latest
 
 # Or the tree you have in front of you.
 docker build -t openbot .
-docker run -p 3001:3001 --env-file .env \
+docker run -p 3001:3001 \
+  --env-file deploy/openbot/.env --env-file deploy/openbot/.env.server --env-file deploy/agents/.env \
   -e EMBEDDED_POSTGRES=on -v openbot-data:/var/lib/postgresql openbot
 ```
 
@@ -341,7 +349,17 @@ See [docs/configuration.md](docs/configuration.md) and [docs/coworkers.md](docs/
 
 ## Configuration
 
-`.env.example` is the source template. The API server refuses to start without:
+Settings live in one file per service, and there is no `.env` in the repository root. Each has an
+`.example` beside it to copy; `bun run sync:env` writes all four from Infisical instead.
+
+| File | What it holds |
+| --- | --- |
+| `deploy/openbot/.env` | The database address, the ports, and the secret the server and the worker share. |
+| `deploy/openbot/.env.server` | Everything only the API server reads. |
+| `deploy/openbot/.env.worker` | Everything only the worker reads. The worker reads `.env` and `.env.server` as well, since it runs the server's billing and sign-in code. |
+| `deploy/agents/.env` | The Agent containers' model address and key, model names and tokens. The server reads it too, because it picks each Bot's model. |
+
+`deploy/openbot/.env.server.example` is the template for most of them. The API server refuses to start without:
 
 - `DATABASE_URL`
 - `KEY_ENCRYPTION_KEY`
@@ -355,7 +373,7 @@ Settings worth knowing:
 
 | Variable                             | Use                                                                       |
 | ------------------------------------ | ------------------------------------------------------------------------- |
-| `OPENBOT_SINGLE_USER`                | Admits every request as one administrator. Required when no identity provider is configured; `.env.example` ships it on. |
+| `OPENBOT_SINGLE_USER`                | Admits every request as one administrator. Required when no identity provider is configured; the server's example ships it on. |
 | `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy.  |
 | `COPILOTKIT_OPENAI_API`              | `responses` or `chat`: the OpenAI API the built-in Bots call behind that `OPENAI_BASE_URL`. Unset, models that take tools only through the Responses API (`gpt-5.6` and later) get `responses` and the rest get `chat`. |
 | `ANTHROPIC_BASE_URL`, `GOOGLE_GENERATIVE_AI_BASE_URL` | The same, for those two APIs.            |
@@ -398,7 +416,7 @@ More detail: [docs/architecture.md](docs/architecture.md).
 
 ## Sign in
 
-`.env.example` ships `OPENBOT_SINGLE_USER=true`, which is one administrator and no sign-in: how a
+The server's example ships `OPENBOT_SINGLE_USER=true`, which is one administrator and no sign-in: how a
 fresh clone reaches the product without registering an OAuth client first. Delete that line and
 configure **any one** of Google, Microsoft or Okta before anybody else can reach the deployment.
 With neither, it refuses to start rather than admitting everybody as an administrator. Configure
@@ -472,7 +490,7 @@ refuses `OPENBOT_ORGANIZATION_AUTH_URL`, and removes that setting from its `.env
 
 - `agent-computer` drives a browser holding real logins. `docker-compose.yml` binds it to loopback; leave it there.
 - Store credentials through `/admin/credentials`, which encrypts them. Do not put credential values in tenant YAML or in committed files.
-- `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` lets a Bot reach services on this machine. It ships commented out in `.env.example`, is for a laptop only, and a deployment running with `NODE_ENV=production` refuses to start while it is set.
+- `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` lets a Bot reach services on this machine. It ships commented out in the server's example, is for a laptop only, and a deployment running with `NODE_ENV=production` refuses to start while it is set.
 - To reach an agent on your own network from a deployment, list its address in `AGENT_ENDPOINT_ALLOWED_HOSTS` instead. That permits the one address, where the switch above permits the network.
 
 ## Development

@@ -10,6 +10,7 @@ import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import {
   ActionIncomplete,
+  ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
@@ -191,6 +192,8 @@ function PlaygroundPage() {
     setNotice(null);
     const payload = input();
     if (!payload) return;
+    let draftVersion: string | undefined;
+    let draftSaved = false;
     requestConfirmation({
       title: `Publish ${draft.title}?`,
       description:
@@ -201,20 +204,26 @@ function PlaygroundPage() {
       successMessage: "Published.",
       trigger,
       run: async () => {
-        let draftSaved = false;
         submitting.current = true;
         try {
           await publishDraft.mutateAsync({
             input: payload,
-            onDraftSaved: () => {
+            draftVersion,
+            onDraftSaved: (version) => {
+              draftVersion = version;
               draftSaved = true;
               setSavedDraft(draft);
             },
           });
         } catch (error) {
+          if (error instanceof ClientError && error.status === 409) {
+            throw new ActionUnavailable(
+              "The saved draft changed. Close this dialog and reopen the component from Saved here before publishing.",
+            );
+          }
           if (
             error instanceof ClientError &&
-            [401, 403, 404, 409].includes(error.status)
+            [401, 403, 404].includes(error.status)
           )
             throw error;
           throw new ActionIncomplete(

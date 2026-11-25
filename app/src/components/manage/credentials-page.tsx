@@ -79,7 +79,13 @@ export function CredentialsPage() {
     const frame = requestAnimationFrame(() => {
       restoredEntry.current = historyKey;
       if (document.activeElement === document.body) {
-        (replacedRow.current ?? heading.current)?.focus();
+        const row = replacedRow.current;
+        if (row) {
+          row.focus({ preventScroll: true });
+          row.scrollIntoView({ block: "center" });
+        } else {
+          heading.current?.focus();
+        }
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -116,6 +122,17 @@ export function CredentialsPage() {
     >
       <PageSection title={personal ? "Saved keys" : "Saved credentials"}>
         {confirmation}
+        {replacedCredentialId &&
+        !credentials.isPending &&
+        !credentials.isFetching &&
+        !entries?.some(
+          (credential) =>
+            credential.id === replacedCredentialId && !credential.revokedAt,
+        ) ? (
+          <p className="text-sm" role="status">
+            Replacement saved.
+          </p>
+        ) : null}
         {credentials.isPending ? (
           <ReadStatus kind="loading" message={`Loading ${entry}s…`} />
         ) : credentials.isError ? (
@@ -176,6 +193,14 @@ export function CredentialsPage() {
                         {credential.kind} · {credential.keyId} ·{" "}
                         {credential.revokedAt ? "revoked" : "active"}
                       </ItemDescription>
+                      {replaced ? (
+                        <ItemDescription
+                          className="line-clamp-none"
+                          role="status"
+                        >
+                          Replacement saved.
+                        </ItemDescription>
+                      ) : null}
                     </ItemContent>
                     <ItemActions style={{ flexWrap: "wrap" }}>
                       {credentials.isSuccess &&

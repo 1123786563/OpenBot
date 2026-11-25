@@ -1,3 +1,4 @@
+import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -161,6 +162,14 @@ function RouteComponent() {
             aria-label="Search published components"
             className="space-y-2"
           >
+            <Text
+              as="p"
+              size="sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Open a component to find its name. In a conversation, ask a Bot
+              with access to show the component by that name.
+            </Text>
             <TextInput
               autoComplete="off"
               controlClassName="min-h-11 [&_button]:min-h-11 [&_button]:min-w-11"

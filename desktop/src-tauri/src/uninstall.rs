@@ -265,6 +265,19 @@ pub fn remove_installation(root: &Path, home: Option<&Path>) -> Result<(), Strin
             }
         }
     }
+    // The settings files are OpenBot's too, in folders that are otherwise the person's.
+    for file in crate::env::SETTINGS_FILES {
+        let path = root.join(file);
+        if path.is_file() {
+            if let Err(error) = std::fs::remove_file(&path) {
+                failed.push(format!("{}: {error}", path.display()));
+            }
+        }
+    }
+    for folder in ["deploy/openbot", "deploy/agents", "deploy"] {
+        // Empty only: anything else in it is theirs.
+        let _ = std::fs::remove_dir(root.join(folder));
+    }
     let left = entries(root)?;
     if left.iter().all(|entry| entry.file_name() == ".gitignore") {
         for entry in &left {
@@ -620,6 +633,33 @@ mod tests {
             .collect();
         left.sort();
         assert_eq!(left, [".gitignore", "notes.txt", "photos"]);
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    /// The settings files go with the installation; the folders they sit in stay when they hold
+    /// anything else, and go when they hold nothing.
+    #[test]
+    fn the_settings_files_are_openbots_and_their_folders_are_only_emptied_when_empty() {
+        let (home, root) = installation("uninstall-settings-files");
+        for (file, text) in [
+            (crate::env::SETTINGS_FILES[0], "SERVER_PORT=3001\n"),
+            (crate::env::SETTINGS_FILES[3], "BOT_MODEL=glm-4.6\n"),
+            ("deploy/notes.txt", "mine\n"),
+        ] {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        }
+        remove_installation(&root, Some(&home)).unwrap();
+        for file in crate::env::SETTINGS_FILES {
+            assert!(!root.join(file).exists(), "{file}");
+        }
+        assert!(!root.join("deploy/agents").exists());
+        assert!(!root.join("deploy/openbot").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join("deploy/notes.txt")).unwrap(),
+            "mine\n"
+        );
         let _ = std::fs::remove_dir_all(home);
     }
 

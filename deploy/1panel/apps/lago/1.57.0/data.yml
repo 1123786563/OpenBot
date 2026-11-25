@@ -1,0 +1,303 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 13001
+      required: true
+      rule: paramPort
+      label:
+        en: HTTP port (Required)
+        es-es: HTTP port (Obligatorio)
+        ja: HTTP port (必須)
+        ms: HTTP port (Wajib)
+        pt-br: HTTP port (Obrigatório)
+        ru: HTTP port (Обязательно)
+        ko: HTTP port (필수)
+        zh-Hant: HTTP port（必填）
+        zh: HTTP port（必填）
+        tr: HTTP port (Zorunlu)
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing PostgreSQL instance (Required)
+        es-es: Existing PostgreSQL instance (Obligatorio)
+        ja: Existing PostgreSQL instance (必須)
+        ms: Existing PostgreSQL instance (Wajib)
+        pt-br: Existing PostgreSQL instance (Obrigatório)
+        ru: Existing PostgreSQL instance (Обязательно)
+        ko: Existing PostgreSQL instance (필수)
+        zh-Hant: 現有 PostgreSQL 執行個體（必填）
+        zh: 已有 PostgreSQL 实例（必填）
+        tr: Existing PostgreSQL instance (Zorunlu)
+      key: postgresql
+    - envKey: PANEL_DB_NAME
+      type: text
+      default: lago
+      random: true
+      required: true
+      label:
+        en: Database name (Required)
+        es-es: Database name (Obligatorio)
+        ja: Database name (必須)
+        ms: Database name (Wajib)
+        pt-br: Database name (Obrigatório)
+        ru: Database name (Обязательно)
+        ko: Database name (필수)
+        zh-Hant: 資料庫名稱（必填）
+        zh: 数据库名（必填）
+        tr: Database name (Zorunlu)
+      rule: paramCommon
+    - envKey: PANEL_DB_USER
+      type: text
+      default: lago
+      random: true
+      required: true
+      label:
+        en: Database user (Required)
+        es-es: Database user (Obligatorio)
+        ja: Database user (必須)
+        ms: Database user (Wajib)
+        pt-br: Database user (Obrigatório)
+        ru: Database user (Обязательно)
+        ko: Database user (필수)
+        zh-Hant: 資料庫使用者（必填）
+        zh: 数据库用户（必填）
+        tr: Database user (Zorunlu)
+      rule: paramCommon
+    - envKey: PANEL_DB_USER_PASSWORD
+      type: password
+      default: Lago
+      random: true
+      required: true
+      label:
+        en: Database password (Required)
+        es-es: Database password (Obligatorio)
+        ja: Database password (必須)
+        ms: Database password (Wajib)
+        pt-br: Database password (Obrigatório)
+        ru: Database password (Обязательно)
+        ko: Database password (필수)
+        zh-Hant: 資料庫密碼（必填）
+        zh: 数据库密码（必填）
+        tr: Database password (Zorunlu)
+    - envKey: DB_SSL_MODE
+      type: select
+      default: disable
+      required: true
+      label:
+        en: PostgreSQL TLS mode (Required)
+        es-es: PostgreSQL TLS mode (Obligatorio)
+        ja: PostgreSQL TLS mode (必須)
+        ms: PostgreSQL TLS mode (Wajib)
+        pt-br: PostgreSQL TLS mode (Obrigatório)
+        ru: PostgreSQL TLS mode (Обязательно)
+        ko: PostgreSQL TLS mode (필수)
+        zh-Hant: PostgreSQL TLS 模式（必填）
+        zh: PostgreSQL TLS 模式（必填）
+        tr: PostgreSQL TLS mode (Zorunlu)
+      values:
+        - label: disable
+          value: disable
+        - label: require
+          value: require
+        - label: verify-full
+          value: verify-full
+    - envKey: PANEL_REDIS_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing Redis instance (Required)
+        es-es: Existing Redis instance (Obligatorio)
+        ja: Existing Redis instance (必須)
+        ms: Existing Redis instance (Wajib)
+        pt-br: Existing Redis instance (Obrigatório)
+        ru: Existing Redis instance (Обязательно)
+        ko: Existing Redis instance (필수)
+        zh-Hant: Existing Redis instance（必填）
+        zh: Existing Redis instance（必填）
+        tr: Existing Redis instance (Zorunlu)
+      key: redis
+    - envKey: PANEL_REDIS_ROOT_PASSWORD
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Redis password
+        es-es: Redis password
+        ja: Redis password
+        ms: Redis password
+        pt-br: Redis password
+        ru: Redis password
+        ko: Redis password
+        zh-Hant: Redis password
+        zh: Redis password
+        tr: Redis password
+    - envKey: PANEL_APP_PORT_API
+      type: number
+      default: 13000
+      required: true
+      rule: paramPort
+      label:
+        en: Lago API port (Required)
+        es-es: Lago API port (Obligatorio)
+        ja: Lago API port (必須)
+        ms: Lago API port (Wajib)
+        pt-br: Lago API port (Obrigatório)
+        ru: Lago API port (Обязательно)
+        ko: Lago API port (필수)
+        zh-Hant: Lago API port（必填）
+        zh: Lago API port（必填）
+        tr: Lago API port (Zorunlu)
+    - envKey: LAGO_API_URL
+      type: text
+      default: http://localhost:13000
+      required: true
+      label:
+        en: Browser-accessible API URL (Required)
+        es-es: Browser-accessible API URL (Obligatorio)
+        ja: Browser-accessible API URL (必須)
+        ms: Browser-accessible API URL (Wajib)
+        pt-br: Browser-accessible API URL (Obrigatório)
+        ru: Browser-accessible API URL (Обязательно)
+        ko: Browser-accessible API URL (필수)
+        zh-Hant: Browser-accessible API URL（必填）
+        zh: Browser-accessible API URL（必填）
+        tr: Browser-accessible API URL (Zorunlu)
+    - envKey: LAGO_FRONT_URL
+      type: text
+      default: http://localhost:13001
+      required: true
+      label:
+        en: Browser-accessible UI URL (Required)
+        es-es: Browser-accessible UI URL (Obligatorio)
+        ja: Browser-accessible UI URL (必須)
+        ms: Browser-accessible UI URL (Wajib)
+        pt-br: Browser-accessible UI URL (Obrigatório)
+        ru: Browser-accessible UI URL (Обязательно)
+        ko: Browser-accessible UI URL (필수)
+        zh-Hant: Browser-accessible UI URL（必填）
+        zh: Browser-accessible UI URL（必填）
+        tr: Browser-accessible UI URL (Zorunlu)
+    - envKey: SECRET_KEY_BASE
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Rails secret
+        es-es: Rails secret
+        ja: Rails secret
+        ms: Rails secret
+        pt-br: Rails secret
+        ru: Rails secret
+        ko: Rails secret
+        zh-Hant: Rails secret
+        zh: Rails secret
+        tr: Rails secret
+    - envKey: LAGO_RSA_PRIVATE_KEY
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Base64 RSA private key
+        es-es: Base64 RSA private key
+        ja: Base64 RSA private key
+        ms: Base64 RSA private key
+        pt-br: Base64 RSA private key
+        ru: Base64 RSA private key
+        ko: Base64 RSA private key
+        zh-Hant: Base64 RSA private key
+        zh: Base64 RSA private key
+        tr: Base64 RSA private key
+    - envKey: LAGO_ENCRYPTION_PRIMARY_KEY
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Primary encryption key
+        es-es: Primary encryption key
+        ja: Primary encryption key
+        ms: Primary encryption key
+        pt-br: Primary encryption key
+        ru: Primary encryption key
+        ko: Primary encryption key
+        zh-Hant: Primary encryption key
+        zh: Primary encryption key
+        tr: Primary encryption key
+    - envKey: LAGO_ENCRYPTION_DETERMINISTIC_KEY
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Deterministic encryption key
+        es-es: Deterministic encryption key
+        ja: Deterministic encryption key
+        ms: Deterministic encryption key
+        pt-br: Deterministic encryption key
+        ru: Deterministic encryption key
+        ko: Deterministic encryption key
+        zh-Hant: Deterministic encryption key
+        zh: Deterministic encryption key
+        tr: Deterministic encryption key
+    - envKey: LAGO_ENCRYPTION_KEY_DERIVATION_SALT
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Encryption salt
+        es-es: Encryption salt
+        ja: Encryption salt
+        ms: Encryption salt
+        pt-br: Encryption salt
+        ru: Encryption salt
+        ko: Encryption salt
+        zh-Hant: Encryption salt
+        zh: Encryption salt
+        tr: Encryption salt
+    - envKey: LAGO_ORG_NAME
+      type: text
+      default: OpenBot
+      required: true
+      label:
+        en: Initial organization name (Required)
+        es-es: Initial organization name (Obligatorio)
+        ja: Initial organization name (必須)
+        ms: Initial organization name (Wajib)
+        pt-br: Initial organization name (Obrigatório)
+        ru: Initial organization name (Обязательно)
+        ko: Initial organization name (필수)
+        zh-Hant: 初始組織名稱（必填）
+        zh: 初始组织名称（必填）
+        tr: Initial organization name (Zorunlu)
+    - envKey: LAGO_ORG_USER_EMAIL
+      type: text
+      default: ""
+      required: true
+      label:
+        en: Initial admin email (Required)
+        es-es: Initial admin email (Obligatorio)
+        ja: Initial admin email (必須)
+        ms: Initial admin email (Wajib)
+        pt-br: Initial admin email (Obrigatório)
+        ru: Initial admin email (Обязательно)
+        ko: Initial admin email (필수)
+        zh-Hant: 初始管理員信箱（必填）
+        zh: 初始管理员邮箱（必填）
+        tr: Initial admin email (Zorunlu)
+    - envKey: LAGO_ORG_USER_PASSWORD
+      type: password
+      default: ""
+      required: true
+      label:
+        en: Initial admin password (Required)
+        es-es: Initial admin password (Obligatorio)
+        ja: Initial admin password (必須)
+        ms: Initial admin password (Wajib)
+        pt-br: Initial admin password (Obrigatório)
+        ru: Initial admin password (Обязательно)
+        ko: Initial admin password (필수)
+        zh-Hant: 初始管理員密碼（必填）
+        zh: 初始管理员密码（必填）
+        tr: Initial admin password (Zorunlu)
