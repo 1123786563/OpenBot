@@ -38,12 +38,15 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { grantRoster, skillHolderSentence } from "@/lib/agents/grant-roster";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   removeSkillMutationOptions,
   saveSkillMutationOptions,
 } from "@/lib/plugins/mutations";
 import {
+  type PluginSkill,
   pluginsPageQueryOptions,
   skillsAccessDenied,
 } from "@/lib/plugins/queries";
@@ -146,6 +149,9 @@ function SkillsPage() {
     refetch: refetchSkills,
   } = useQuery(pluginsPageQueryOptions());
   const profile = useQuery(currentUserQueryOptions());
+  const agents = useQuery(agentListQueryOptions());
+  /* The ones this person has hidden, so a Bot of theirs holding the skill is still named. */
+  const hiddenAgents = useQuery(agentListQueryOptions(true));
   const me = profile.data;
   /*
    * Both, because `mine` is the intersection of the two: until the person is known, nothing matches
@@ -172,6 +178,24 @@ function SkillsPage() {
   const mine = skills.filter((skill) => skill.ownerUserId === me?.id);
   const deployment = skills.filter((skill) => skill.ownerUserId === null);
   const heading = useRef<HTMLHeadingElement>(null);
+  /**
+   * Which of this person's Bots offer the skill, for the confirmation before deleting it. A personal
+   * skill only reaches Bots they own, so the roster is filtered to those; `undefined` is a roster
+   * that could not be read, which must never be stated as no Bot.
+   */
+  const holdersOf = (skill: PluginSkill) =>
+    agents.isError ||
+    hiddenAgents.isError ||
+    agents.isPending ||
+    hiddenAgents.isPending
+      ? undefined
+      : grantRoster({
+          roster: (agents.data ?? []).filter((agent) => agent.mine),
+          hidden: (hiddenAgents.data ?? []).filter((agent) => agent.mine),
+          holders: skill.grantedTo,
+        })
+          .filter((agent) => skill.grantedTo.includes(agent.id))
+          .map((agent) => agent.name);
   const [search, setSearch] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -383,8 +407,7 @@ function SkillsPage() {
                                 onClick={() => {
                                   requestConfirmation({
                                     title: `Delete ${skill.title}?`,
-                                    description:
-                                      "Your Bots will stop offering this skill. Deletion is permanent.",
+                                    description: `${skillHolderSentence(holdersOf(skill))} Deletion is permanent.`,
                                     confirmLabel: "Delete skill",
                                     pendingLabel: "Deleting…",
                                     failureMessage:

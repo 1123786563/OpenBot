@@ -35,3 +35,23 @@ export function grantRoster<T extends { id: string }>(input: {
     ...input.hidden.filter((bot) => holding.has(bot.id) && !shown.has(bot.id)),
   ];
 }
+
+/**
+ * Which Bots offer a skill, for the confirmation shown before it is deleted.
+ *
+ * `undefined` is a roster that could not be read, and it must not read as "no Bot": somebody
+ * deciding whether to delete cannot check that from the dialog, and an unreadable list is not an
+ * empty one.
+ */
+export function skillHolderSentence(
+  names: readonly string[] | undefined,
+): string {
+  if (names === undefined)
+    return "Couldn't read the Bot list, so this may not name every Bot that offers it.";
+  if (names.length === 0) return "No Bot offers this skill.";
+  const list =
+    names.length <= 2
+      ? names.join(" and ")
+      : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+  return `${list} ${names.length === 1 ? "offers" : "offer"} this skill.`;
+}
