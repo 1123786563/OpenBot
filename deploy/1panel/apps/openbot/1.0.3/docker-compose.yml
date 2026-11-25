@@ -2,6 +2,9 @@ services:
   init-secrets:
     image: ${OPENBOT_IMAGE:?Enter the source-built server image}
     container_name: ${CONTAINER_NAME}-init-secrets
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
     user: "0:0"
     network_mode: none
     restart: "no"
@@ -94,6 +97,7 @@ services:
       DATABASE_URL: *db-url
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
     networks:
       - 1panel-network
   worker:

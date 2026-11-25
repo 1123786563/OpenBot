@@ -180,6 +180,7 @@ services:
     container_name: ${CONTAINER_NAME}-clickhouse-init
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   frontend:
     command: null
     depends_on:
@@ -235,6 +236,7 @@ services:
     container_name: ${CONTAINER_NAME}-mc
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   minio:
     command:
       - mkdir -p /data && exec minio server --console-address ':9090' /data
@@ -280,6 +282,7 @@ services:
     container_name: ${CONTAINER_NAME}-minio-init
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   python-backend:
     command: null
     entrypoint: null
