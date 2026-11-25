@@ -98,7 +98,12 @@ test("a broker that will not answer still leaves the removal on the trail, and a
     return { retired: 0 };
   });
 
-  expect((await remove()).status).toBe(500);
+  const failed = await remove();
+  expect(failed.status).toBe(503);
+  // Half a job, said as half a job: the removal is done and the retirement is what is left.
+  expect((await failed.json()).error).toBe(
+    "Access is removed for this person, but some of their credentials or Recorders could not be retired yet. Try again to finish.",
+  );
 
   const denied = await database
     .select({ email: revokedAccess.email })

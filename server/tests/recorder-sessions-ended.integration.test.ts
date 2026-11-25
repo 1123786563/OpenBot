@@ -220,7 +220,10 @@ test("removing somebody ends their browsers' Recorders with their sessions, and 
 
   recorder = broken;
   const failed = await remove();
-  expect(failed.status).toBe(500);
+  expect(failed.status).toBe(503);
+  expect((await failed.json()).error).toBe(
+    "Access is removed for this person, but some of their credentials or Recorders could not be retired yet. Try again to finish.",
+  );
   expect(
     audits.find((event) => event.eventType === "recorder.sign_out_failed")
       ?.payload,

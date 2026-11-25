@@ -382,7 +382,29 @@ export function subjectText(event: AuditEvent, storedNames = true): string {
     typeof payload.scope === "string"
   )
     return payload.scope;
+  // A Person by their address, in Admin only, as the rule's expression is.
+  if (storedNames && event.targetType === "person") {
+    const person = personSubject(payload);
+    if (person) return person;
+  }
   return "";
+}
+
+/** The role a Person holds, in the words the People page uses for it. */
+const ROLE_WORDS: Record<string, string> = { admin: "Admin", user: "Member" };
+
+/**
+ * A Person by their address, and the role they moved between.
+ *
+ * The rows carry the address because `person:u1` means nothing to somebody reading the trail a year
+ * later. A row written before it carried an address names nobody, and draws no subject.
+ */
+function personSubject(payload: Record<string, unknown>): string | undefined {
+  const email = payload.email;
+  if (typeof email !== "string" || !email) return undefined;
+  const from = ROLE_WORDS[payload.from as string];
+  const to = ROLE_WORDS[payload.to as string];
+  return from && to ? `${email} · ${from} → ${to}` : email;
 }
 
 /**
