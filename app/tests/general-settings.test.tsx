@@ -5,6 +5,7 @@ import {
   beforeEach,
   describe,
   expect,
+  spyOn,
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
@@ -622,6 +623,68 @@ describe("the language row", () => {
       "简体中文",
     );
     expect(view.getByText("选择 OpenBot 界面文字使用的语言。")).toBeTruthy();
+  });
+
+  /*
+   * Story 6's second clause: a switch takes effect without a full reload, so the place and anything unsent survive. An
+   * open editor's draft is unsent content. The editor's modal dialog hides the page behind it from assistive technology,
+   * the selector included, so the switch goes through the function that selector's onChange calls.
+   */
+  test("switching the language keeps an open editor and its unsent draft, without navigating or reloading", async () => {
+    instructions = "Write in British English.";
+    queryClient.setQueryData(settingsKeys.instructions(), instructions);
+    const router = createRouter({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      routeTree: createRootRoute(),
+    });
+    let navigations = 0;
+    const stopWatching = router.subscribe("onBeforeNavigate", () => {
+      navigations += 1;
+    });
+    const reload = spyOn(window.location, "reload");
+    try {
+      const view = render(
+        <QueryClientProvider client={queryClient}>
+          <RouterContextProvider router={router as never}>
+            <StandingInstructionsRow />
+            <LanguageRow />
+          </RouterContextProvider>
+        </QueryClientProvider>,
+      );
+      const user = userEvent.setup({ document });
+      await user.click(
+        view.getByRole("button", { name: /^Standing instructions/ }),
+      );
+      const dialog = await view.findByRole("dialog", {
+        name: "Standing instructions",
+      });
+      const editor = within(dialog).getByRole("textbox", {
+        name: "Standing instructions",
+      });
+      await user.type(editor, " And a draft not saved yet.");
+      const draft = editor instanceof HTMLTextAreaElement && editor.value;
+      expect(draft).not.toBe(instructions);
+
+      await pinLocale("zh-CN");
+      await settleReactWork();
+
+      expect(document.documentElement.lang).toBe("zh-CN");
+      // The same place: nothing asked to navigate, even to this same route, and nothing reloaded.
+      expect(navigations).toBe(0);
+      expect(reload).not.toHaveBeenCalled();
+      expect(router.state.location.pathname).toBe("/");
+      expect(view.queryByRole("alertdialog")).toBeNull();
+      // Redrawn where it stands: the same open dialog and editor, now titled in the new language, draft intact.
+      const retitled = view.getByRole("dialog", { name: "常设指令" });
+      expect(retitled).toBe(dialog);
+      expect(within(retitled).getByRole("textbox", { name: "常设指令" })).toBe(
+        editor,
+      );
+      expect(editor instanceof HTMLTextAreaElement && editor.value).toBe(draft);
+    } finally {
+      reload.mockRestore();
+      stopWatching();
+    }
   });
 });
 
