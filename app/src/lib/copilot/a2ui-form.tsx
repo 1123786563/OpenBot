@@ -122,6 +122,7 @@ export function A2UIForm(props: Control<"Form">) {
     <FormFailures.Provider value={{ failed: broken, count, send }}>
       <Stack
         {...aria}
+        {...scrollMark(props.scrollable)}
         ref={element}
         as="form"
         aria-label={props.label}
@@ -129,6 +130,9 @@ export function A2UIForm(props: Control<"Form">) {
         // Four steps between a form's fields is the catalog's default.
         gap={props.gap === undefined ? 4 : undefined}
         data-a2ui-input=""
+        // A form that scrolls is a Tab stop of its own, so the keyboard can scroll it before it
+        // reaches the fields inside.
+        tabIndex={props.scrollable ? 0 : undefined}
         style={layoutStyle(props)}
         onSubmit={(event) => {
           event.preventDefault();
@@ -159,6 +163,15 @@ export function openActionUrl(href: string | undefined) {
   if (url && /^(https?:|mailto:)/i.test(url))
     window.open(url, "_blank", "noopener,noreferrer");
 }
+
+/**
+ * The mark the SDK puts on a container that scrolls, as its own containers carry it: the SDK's
+ * stylesheet draws a focus ring on it. Only a box that scrolls has it. One that clips its children
+ * is no Tab stop on purpose: Chromium does not scroll it by key, so the stop would do nothing.
+ */
+const scrollMark = (scrollable: boolean | undefined) => ({
+  "data-a2ui-scroll": scrollable ? "" : undefined,
+});
 
 const FLEX_ALIGN = {
   start: "flex-start",
@@ -267,6 +280,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
   return (
     <Stack
       {...aria}
+      {...scrollMark(props.scrollable)}
       ref={container}
       role="button"
       tabIndex={props.disabled ? -1 : 0}

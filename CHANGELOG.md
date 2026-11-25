@@ -26,6 +26,9 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   "Nothing was sent. The Bot is still replying." and asks to send it again once the reply has
   finished. The notice goes as soon as a later send goes through, so it is not still on screen
   while the Bot answers that message.
+- **A generated form that scrolls can be scrolled from the keyboard.** Tab now reaches the form
+  before the fields in it, and the arrow keys scroll it, with a focus ring to show where the
+  keyboard is. Before, Tab went straight to the first field, and no key could scroll the form.
 - **An interface that fails before its own error handling is named in a person's words.** The
   transcript used to say "Couldn't show generative-ui-surface." for an interface a Bot drew. It now
   says "Couldn't show this part of the reply.", and every such message ends with the next step:

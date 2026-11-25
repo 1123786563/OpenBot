@@ -1221,6 +1221,66 @@ test("a Form sent again once the reply is over shows no notice while the Bot ans
   expect(view.getByText(NOT_SENT)).toBeTruthy();
 });
 
+test("a Form and a Pressable that scroll can take focus, so the keyboard can scroll them", async () => {
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "scrolls",
+          dataModel: {},
+          components: [
+            {
+              id: "root",
+              component: "Column",
+              children: ["scrolls", "still", "pans", "off"],
+            },
+            {
+              id: "scrolls",
+              component: "Form",
+              label: "Scrolls",
+              scrollable: true,
+            },
+            { id: "still", component: "Form", label: "Still" },
+            {
+              id: "pans",
+              component: "Pressable",
+              scrollable: true,
+              children: ["pans-text"],
+            },
+            { id: "pans-text", component: "Text", text: "Pans" },
+            {
+              id: "off",
+              component: "Pressable",
+              scrollable: true,
+              disabled: true,
+              children: ["off-text"],
+            },
+            { id: "off-text", component: "Text", text: "Off" },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="scrolls" />
+    </Page>,
+  );
+  const form = (label: string) =>
+    view.container.querySelector(`[aria-label="${label}"]`) as HTMLFormElement;
+  // As the SDK's own containers do: a box that scrolls is a Tab stop, and carries the mark its
+  // stylesheet draws a focus ring on.
+  expect(form("Scrolls").getAttribute("tabindex")).toBe("0");
+  expect(form("Scrolls").hasAttribute("data-a2ui-scroll")).toBe(true);
+  // A box that does not scroll is no Tab stop of its own.
+  expect(form("Still").getAttribute("tabindex")).toBeNull();
+  expect(form("Still").hasAttribute("data-a2ui-scroll")).toBe(false);
+  // A pressable is a Tab stop already: it takes the mark, and a disabled one stays out of the order.
+  const pans = view.getByRole("button", { name: "Pans" });
+  expect(pans.getAttribute("tabindex")).toBe("0");
+  expect(pans.hasAttribute("data-a2ui-scroll")).toBe(true);
+  const off = view.getByRole("button", { name: "Off" });
+  expect(off.getAttribute("tabindex")).toBe("-1");
+});
+
 test("a Button takes the catalog's href, copy, loading, icon, icon-only and variant", async () => {
   sent.length = 0;
   const opened: string[] = [];

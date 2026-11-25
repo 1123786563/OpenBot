@@ -28,10 +28,10 @@ import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
  *
  * `forms` is two forms side by side in one interface, one of them with a part that cannot be drawn.
  * `refused` is the interfaces the SDK could not draw in part or in whole, `legacy` a form stored by
- * an earlier CopilotKit, `controls` one form with every control in it, and `tokens` a form and a
- * pressable in colours and corners the theme names no variable for. The turns their events start
- * are written to `window.__sent`. `forms` and `refused` are the only ones drawn from a catalog
- * that has a part that cannot be drawn.
+ * an earlier CopilotKit, `controls` one form with every control in it, `tokens` a form and a
+ * pressable in colours and corners the theme names no variable for, and `scrolls` a form and a
+ * pressable that scroll. The turns their events start are written to `window.__sent`. `forms` and
+ * `refused` are the only ones drawn from a catalog that has a part that cannot be drawn.
  */
 const THREAD = "thread-a2ui-frame";
 
@@ -629,6 +629,53 @@ const TOKENS: Message[] = [
   ),
 ];
 
+/** Four lines that together stand taller than the box that holds them. */
+const TALL = (prefix: string): Component[] =>
+  ["First line.", "Second line.", "Third line.", "Fourth line."].map(
+    (text, index) => ({
+      id: `${prefix}-${index}`,
+      component: "Text",
+      text,
+    }),
+  );
+
+/**
+ * Two boxes that scroll, a form and a pressable: each is shorter than what it holds, so the
+ * keyboard has to be able to scroll it. The form holds a field, as a form that scrolls does.
+ */
+const SCROLLABLE: Message[] = [
+  surface(
+    "scrolls",
+    [
+      { id: "root", component: "Column", children: ["scrolls", "pans"] },
+      {
+        id: "scrolls",
+        component: "Form",
+        label: "Scrolls",
+        scrollable: true,
+        height: 12,
+        children: [...TALL("line").map(({ id }) => id), "note"],
+      },
+      ...TALL("line"),
+      {
+        id: "note",
+        component: "TextField",
+        label: "Note",
+        value: { "@path": "/note" },
+      },
+      {
+        id: "pans",
+        component: "Pressable",
+        scrollable: true,
+        height: 12,
+        children: TALL("pan").map(({ id }) => id),
+      },
+      ...TALL("pan"),
+    ],
+    { dataModel: { note: "" } },
+  ),
+];
+
 /** `window.__sent`: the user turns the forms' events start, as the agent receives them. */
 declare global {
   interface Window {
@@ -688,9 +735,11 @@ const messages: Message[] = [
           ? CONTROLS
           : only === "tokens"
             ? TOKENS
-            : Object.entries(SURFACES)
-                .filter(([name]) => !only || name === only)
-                .map(([name, components]) => surface(name, components))),
+            : only === "scrolls"
+              ? SCROLLABLE
+              : Object.entries(SURFACES)
+                  .filter(([name]) => !only || name === only)
+                  .map(([name, components]) => surface(name, components))),
 ];
 
 const queryClient = new QueryClient({

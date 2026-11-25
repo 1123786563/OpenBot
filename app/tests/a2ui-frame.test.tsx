@@ -834,6 +834,68 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
     },
   );
 
+  browserTest(
+    "a form and a pressable that scroll are Tab stops, and the keyboard scrolls them",
+    90_000,
+    async (deadline) => {
+      const page = await open("?only=scrolls", deadline);
+      try {
+        /** The focused element inside the interface, by its label, else by what it is, and its ring. */
+        const focused = () =>
+          page.evaluate(() => {
+            const element = document.activeElement as HTMLElement | null;
+            if (!element?.closest("[data-generative-ui-chat-surface]"))
+              return null;
+            const labels = [...((element as HTMLInputElement).labels ?? [])]
+              .map((label) => label.textContent)
+              .join("");
+            return {
+              name: (
+                element.getAttribute("aria-label") ??
+                (labels || element.getAttribute("role")) ??
+                element.tagName
+              ).trim(),
+              outline: getComputedStyle(element).outlineStyle,
+            };
+          });
+        /** The box is where it was; the arrow key scrolls it. */
+        const scrollsByKey = async (selector: string) => {
+          const top = () =>
+            page.evaluate(
+              (selector) =>
+                (document.querySelector(selector) as HTMLElement | null)
+                  ?.scrollTop,
+              selector,
+            );
+          expect(await top()).toBe(0);
+          await page.keyboard.press("ArrowDown");
+          await page.waitForFunction(
+            (selector) =>
+              (document.querySelector(selector) as HTMLElement | null)
+                ?.scrollTop !== 0,
+            selector,
+            { timeout: 4000 },
+          );
+        };
+        // Tab into the interface: the first stop is the scrolling form itself. Without that stop,
+        // Tab goes straight to the field inside it, and no key can scroll the form.
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "Scrolls" });
+        expect((await focused())?.outline).not.toBe("none");
+        await scrollsByKey('form[aria-label="Scrolls"]');
+        // Then the field inside it, then the pressable, which scrolls the same way.
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "Note" });
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "button" });
+        expect((await focused())?.outline).not.toBe("none");
+        await scrollsByKey('[role="button"]');
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
   /**
    * One form with every control the catalog has, as a chat shows them: a field with typed text, a
    * list and a calendar open, buttons in each state. In each theme, at a chat's width and at a
