@@ -194,7 +194,11 @@ function run(input: RunAgentInput): Response {
         };
       },
     });
-    held = (ending) => rest(ending);
+    // Once: a released run is over, and an abort the browser makes after that has nothing to close.
+    held = (ending) => {
+      held = null;
+      rest(ending);
+    };
     return new NativeResponse(body, {
       headers: { "content-type": "text/event-stream" },
     });

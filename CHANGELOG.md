@@ -135,6 +135,9 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   of an earlier run gives way to the next answer, so "The run was stopped." does not stay on screen
   under it. Earlier messages that could not be loaded when the chat opened arrive after the next
   reply, even when Try again was pressed while the Bot was replying, without reopening the chat.
+  If a read fails after a turn that answered, `/bot` now says "Couldn't load earlier messages."
+  with Try again, and what was said stays on screen. Before, it said so only when `/bot` opened,
+  after a failed send, after a Stop, or after you answered an approval.
 - **A conversation with several Bots asks for an approval where it waits, and the reply follows
   the answer.** A Bot waiting for your approval asks in the conversation with the same card a
   conversation with one Bot uses, once for that Bot, instead of one sentence and a link to the
