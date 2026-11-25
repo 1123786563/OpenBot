@@ -14,6 +14,7 @@ import {
   type RunPlan,
   runtime,
 } from "./bot-route-default-agent.fixture";
+import { settleReactWork } from "./settle-react-work";
 
 botRuntime();
 
@@ -217,6 +218,69 @@ test("a new chat starts with an empty transcript", async () => {
   await waitFor(() => expect(currentJoin().threadId).not.toBe(first));
   expect(view.queryByText("Here is yesterday's plan.")).toBeNull();
   expect(view.queryByText("Plan my week")).toBeNull();
+});
+
+/*
+ * WORK THAT OUTLIVES ITS CHAT MUST NOT TOUCH THE NEXT CHAT OF THE SAME BOT. The Bot's agent is one
+ * object whoever's chat is on screen. A turn still going when the person started a new conversation
+ * read its own thread once it ended, after its view was gone, and merged that thread into the new
+ * chat: the first chat's words were on screen in the second, and its next run carried them.
+ */
+test("a turn that ends after its chat was left is not read into the next chat of the same Bot", async () => {
+  runtime.plans = [HOLDING, { kind: "answers", text: "Here is today's plan." }];
+  const view = open();
+  await send(view, "Plan my week");
+  const first = currentJoin().threadId;
+  await waitFor(() => expect(runtime.reads).toEqual([first]));
+  /*
+   * The first chat's turn ends when its view goes, and reads its thread at once. The server holds
+   * that read, so it lands when the test says and not when a load says.
+   */
+  let answer: ((response: Response) => void) | undefined;
+  answerWith((url) =>
+    url.pathname.includes(`/${first}/messages`)
+      ? new Promise<Response>((resolve) => {
+          answer = resolve;
+        })
+      : undefined,
+  );
+  fireEvent.click(view.getByRole("button", { name: "New chat with this Bot" }));
+  fireEvent.click(
+    await view.findByRole("button", { name: "Start new conversation" }),
+  );
+  await waitFor(() => expect(answer).toBeDefined());
+  await waitFor(() => expect(currentJoin().threadId).not.toBe(first));
+  // The new chat is open and restored before the first chat's read is answered.
+  await waitFor(() => expect(runtime.reads).toContain(currentJoin().threadId));
+  await view.findByRole("button", { name: "Send message" });
+  await settleReactWork();
+
+  releaseRun([
+    {
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId: "partial",
+      delta: "Here is yesterday's plan.",
+    },
+    { type: "TEXT_MESSAGE_END", messageId: "partial" },
+    { type: "RUN_FINISHED", threadId: first, runId: "run-1" },
+  ]);
+  // The read is answered with everything the first chat's thread holds.
+  answer?.(
+    new Response(JSON.stringify({ messages: runtime.stored.get(first) }), {
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  await settleReactWork();
+  expect(view.queryByText("Plan my week")).toBeNull();
+  expect(view.queryByText("Here is yesterday's plan.")).toBeNull();
+
+  // What the new chat sends is the new chat's words alone.
+  await send(view, "And today");
+  await said(view, "Here is today's plan.");
+  await settled(view);
+  expect(runtime.runs.at(-1)?.messages).toEqual([
+    { id: expect.any(String), role: "user", content: "And today" },
+  ]);
 });
 
 /** A turn that called an app's tool OpenBot asks about, and has no answer yet. */
@@ -589,6 +653,7 @@ test("a stop the server did not make lets this browser's end of the turn go, and
   expect(view.queryByTestId("transcript-stopped")).toBeNull();
 });
 
+
 /*
  * A REFUSED STOP STOPS NOTHING. It used to abort this browser's copy of the run as well, so the Bot
  * went on working on the server while its reply stopped arriving here, and Stop went with the run:
@@ -651,6 +716,7 @@ test("a failure after a stop the server refused is still a failure", async () =>
     "Take your time",
   );
 });
+
 
 /*
  * THE THREAD IS READ AGAIN AFTER EVERY TURN OF THIS TAB, answered or not. It was read only after a

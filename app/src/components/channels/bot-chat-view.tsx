@@ -155,10 +155,21 @@ export function BotChatView({
 
   /** Only the newest read owns the transcript; an older one that arrives late is dropped. */
   const readVersion = useRef(0);
+  /**
+   * Whether this view is still on screen. The Bot's agent is one object whoever's chat shows it, so
+   * work that outlives this view — a turn's read — checks this before it touches the agent.
+   */
+  const onScreen = useRef(true);
+  useEffect(() => {
+    onScreen.current = true;
+    return () => {
+      onScreen.current = false;
+    };
+  }, []);
   const readHistory = useCallback(async () => {
     const version = ++readVersion.current;
     const stored = await readThreadMessages(threadId, agentId);
-    if (version === readVersion.current) applyRead(stored);
+    if (version === readVersion.current && onScreen.current) applyRead(stored);
   }, [agentId, applyRead, threadId]);
 
   // Join the thread, restore what it holds, then the transcript is this Bot's.
