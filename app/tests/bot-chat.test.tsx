@@ -589,7 +589,14 @@ test("a stop the server did not make lets this browser's end of the turn go, and
   expect(view.queryByTestId("transcript-stopped")).toBeNull();
 });
 
-test("a stop the server refuses lets this browser's end of the turn go, and says the Bot could not be stopped", async () => {
+/*
+ * A REFUSED STOP STOPS NOTHING. It used to abort this browser's copy of the run as well, so the Bot
+ * went on working on the server while its reply stopped arriving here, and Stop went with the run:
+ * "Try again" pointed at a button that was no longer there. Only a run that had already ended is
+ * let go here. After a refusal the run keeps streaming and Stop stays for another press, and a
+ * press the server then confirms replaces the refusal with what it says.
+ */
+test("a stop the server refuses leaves the run going here, with Stop to press again, and a later stop that is confirmed says so", async () => {
   runtime.plans = [HOLDING];
   const view = open();
   await send(view, "Take your time");
@@ -598,12 +605,51 @@ test("a stop the server refuses lets this browser's end of the turn go, and says
   runtime.stopAnswer = "refused";
   await pressStop(view);
 
-  expect(
-    await view.findByText("The Bot couldn't be stopped. Try again."),
-  ).toBeTruthy();
-  await waitFor(() => expect(runtime.aborts).toEqual([threadId]));
+  const refused = "The Bot couldn't be stopped. Try again.";
+  expect(await view.findByText(refused)).toBeTruthy();
+  // Nothing was stopped: this browser's copy of the run was not ended.
+  expect(runtime.aborts).toEqual([]);
+  await view.findByRole("button", { name: "Stop the Bot" });
+
+  runtime.stopAnswer = "confirms";
+  await pressStop(view);
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([
+      { threadId, runId: "run-live" },
+      { threadId, runId: "run-live" },
+    ]),
+  );
+  expect(await view.findByText("The run was stopped.")).toBeTruthy();
+  expect(view.queryByText(refused)).toBeNull();
+  expect(runtime.aborts).toEqual([]);
+  releaseRun([
+    { type: "RUN_ERROR", message: "The Bot run was stopped.", code: "stopped" },
+  ]);
   await settled(view);
-  expect(view.queryByText("The run was stopped.")).toBeNull();
+  expect(view.queryByTestId("transcript-stopped")).toBeNull();
+});
+
+test("a failure after a stop the server refused is still a failure", async () => {
+  runtime.plans = [HOLDING];
+  const view = open();
+  await send(view, "Take your time");
+  const { threadId } = currentJoin();
+  runtime.threadRuns.set(threadId, [liveRun("run-live")]);
+  runtime.stopAnswer = "refused";
+  await pressStop(view);
+  const refused = "The Bot couldn't be stopped. Try again.";
+  expect(await view.findByText(refused)).toBeTruthy();
+  await view.findByRole("button", { name: "Stop the Bot" });
+
+  // The run then fails on its own. Nobody stopped it, so it fails like any other run.
+  releaseRun([{ type: "RUN_ERROR", message: REJECTED }]);
+  const shown = await view.findByTestId("transcript-stopped");
+  expect(shown.textContent).toBe(REJECTED);
+  await settled(view);
+  expect(view.queryByText(refused)).toBeNull();
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Take your time",
+  );
 });
 
 /*
