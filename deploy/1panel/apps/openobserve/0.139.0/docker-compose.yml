@@ -17,7 +17,7 @@ services:
       ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL}
       ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD}
       ZO_META_STORE: postgres
-      ZO_META_POSTGRES_DSN: postgresql://${DB_USER:?Enter the database user}:${DB_PASSWORD:?Enter the database password}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+      ZO_META_POSTGRES_DSN: postgresql://${PANEL_DB_USER:?Enter the database user}:${DB_URI_PASSWORD:-${PANEL_DB_USER_PASSWORD:?Enter the database password}}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${PANEL_DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
     image: openobserve/openobserve@sha256:26618f379c86b253c0d91624c487dd14b71293699845ecbc8457c94dca14819f
     networks:
       openobserve: null

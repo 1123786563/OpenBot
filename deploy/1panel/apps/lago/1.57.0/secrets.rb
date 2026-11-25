@@ -3,6 +3,7 @@ require "json"
 require "openssl"
 require "securerandom"
 require "tempfile"
+require "uri"
 
 path = "/lago-secrets/keys.json"
 generators = {
@@ -42,5 +43,15 @@ else
   abort "Missing Lago service command" if ARGV.empty?
   secrets = JSON.parse(File.read(path))
   generators.each_key { |name| ENV[name] = secrets.fetch(name) }
+  # Seeding needs all three values; a partial or legacy form must not fail the migration.
+  seed = %w[LAGO_ORG_NAME LAGO_ORG_USER_EMAIL LAGO_ORG_USER_PASSWORD]
+  ENV["LAGO_CREATE_ORG"] = seed.none? { |name| ENV.fetch(name, "").empty? }.to_s
+  host = ENV.fetch("PGHOST")
+  host = "[#{host}]" if host.include?(":") && !host.start_with?("[")
+  user = URI.encode_uri_component(ENV.fetch("PGUSER"))
+  password = URI.encode_uri_component(ENV.fetch("PGPASSWORD"))
+  database = URI.encode_uri_component(ENV.fetch("PGDATABASE"))
+  ssl_mode = URI.encode_uri_component(ENV.fetch("PGSSLMODE"))
+  ENV["DATABASE_URL"] = "postgresql://#{user}:#{password}@#{host}:#{ENV.fetch('PGPORT')}/#{database}?sslmode=#{ssl_mode}&search_path=public"
   exec(*ARGV)
 end

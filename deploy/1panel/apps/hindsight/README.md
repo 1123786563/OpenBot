@@ -4,6 +4,10 @@
 
 ## 数据库
 
-安装时在「已有 PostgreSQL 实例」下拉框中选择 1Panel 管理的实例，再填写已有数据库名、用户和密码。
+安装时选择 1Panel 管理的数据库实例。表单会随机填充库名、用户名和密码，1Panel 使用这些值自动建库和建用户。复用已登记的数据库时，填回原库名、用户名和密码。密码含 URI 特殊字符时，在「数据库密码」填原始值，再填写「URL 编码后的数据库密码」。
 
-PostgreSQL 实例需提供 pgvector。请管理员在目标库执行 `CREATE EXTENSION IF NOT EXISTS vector;`。API 容器加入共享 1Panel 网络，供可信容器访问。
+PostgreSQL 实例需提供 pgvector。复用已有数据库时，请管理员在目标库执行 `CREATE EXTENSION IF NOT EXISTS vector;`。API 容器加入共享 1Panel 网络，供可信容器访问。
+
+## 控制台
+
+控制台绑定宿主机回环端口 19999，默认没有登录门禁。在本机打开 `http://127.0.0.1:19999`，或经带访问控制的反向代理访问；不要直接暴露到公网。

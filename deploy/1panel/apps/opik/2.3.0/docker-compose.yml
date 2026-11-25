@@ -19,9 +19,6 @@ services:
       minio:
         condition: service_healthy
         required: true
-      redis:
-        condition: service_healthy
-        required: true
     entrypoint: null
     environment:
       ANALYTICS_DB_ASYNC_INSERT_BUSY_TIMEOUT_MAX_MS: ""
@@ -87,13 +84,13 @@ services:
       PARTITION_METRICS_INTERVAL: 5m
       PARTITION_METRICS_LWD_TABLES: traces,spans
       PYTHON_EVALUATOR_URL: http://python-backend:8000
-      REDIS_URL: redis://:opik@redis:6379/
+      REDIS_URL: redis://:${REDIS_URI_PASSWORD:-${PANEL_REDIS_ROOT_PASSWORD}}@${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}/
       S3_URL: http://minio:9000
-      STATE_DB_DATABASE_NAME: ${DB_NAME:?Enter the database name}
-      STATE_DB_PASS: ${DB_PASSWORD:?Enter the database password}
+      STATE_DB_DATABASE_NAME: ${PANEL_DB_NAME:?Enter the database name}
+      STATE_DB_PASS: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
       STATE_DB_PROTOCOL: jdbc:mysql://
-      STATE_DB_URL: ${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${DB_NAME:?Enter the database name}?rewriteBatchedStatements=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
-      STATE_DB_USER: ${DB_USER:?Enter the database user}
+      STATE_DB_URL: ${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${PANEL_DB_NAME:?Enter the database name}?rewriteBatchedStatements=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      STATE_DB_USER: ${PANEL_DB_USER:?Enter the database user}
       TOGGLE_ANNOTATION_QUEUE_AUTOMATION_ENABLED: '"true"'
       TOGGLE_CUSTOM_CHARTS_ENABLED: '"false"'
       TOGGLE_GUARDRAILS_ENABLED: '"false"'
@@ -310,7 +307,7 @@ services:
       PYTHON_CODE_EXECUTOR_PROCESS_NETWORK_ISOLATION: "true"
       PYTHON_CODE_EXECUTOR_READY_TIMEOUT_SECONDS: "10"
       PYTHON_CODE_EXECUTOR_STRATEGY: process
-      REDIS_URL: redis://:opik@redis:6379/0
+      REDIS_URL: redis://:${REDIS_URI_PASSWORD:-${PANEL_REDIS_ROOT_PASSWORD}}@${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}/0
       RQ_WORKER_ENABLED: "true"
       RQ_WORKER_TTL_FAILURE: "86400"
     hostname: python-backend
@@ -327,33 +324,8 @@ services:
     image: ghcr.io/comet-ml/opik/opik-python-backend:2.3.0
     networks:
       default: null
+      1panel-network: {}
     container_name: ${CONTAINER_NAME}-python-backend
-    labels:
-      createdBy: Apps
-  redis:
-    command:
-      - redis-server
-      - --requirepass
-      - opik
-    entrypoint: null
-    hostname: redis
-    healthcheck:
-      test:
-        - CMD
-        - nc
-        - -z
-        - localhost
-        - "6379"
-      timeout: 4s
-      interval: 2s
-      retries: 20
-      start_period: 30s
-    image: redis:7.2.4-alpine3.19
-    networks:
-      default: null
-    volumes:
-      - redis-data:/data
-    container_name: ${CONTAINER_NAME}-redis
     labels:
       createdBy: Apps
   zookeeper:
@@ -396,5 +368,4 @@ volumes:
   clickhouse-config: {}
   clickhouse-server: {}
   minio-data: {}
-  redis-data: {}
   zookeeper: {}
