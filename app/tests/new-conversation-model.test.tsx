@@ -376,7 +376,7 @@ test("switching accounts replaces the saved first message in an open conversatio
   await queryClient.fetchQuery(currentUserQueryOptions());
   const view = renderAt(`/channel/${channel.id}`);
   await view.findByText(previousDraft.text);
-  await view.findByRole("button", { name: "Check again" });
+  await view.findByRole("button", { name: "Check for message" });
 
   currentUserId = "another-tester";
   await act(async () => {
@@ -561,4 +561,11 @@ test("a model and effort picked before the first message survive reload and are 
     "run",
   ]);
   expect(saved).toEqual({ model: "gpt-6.1-terra", effort: "xhigh" });
+  expect(
+    JSON.parse(
+      localStorage.getItem(
+        `openbot:conversation-start:model-tester:${startId}`,
+      ) ?? "null",
+    ),
+  ).toEqual({ state: "finished", channelId: channel.id, group: false });
 });

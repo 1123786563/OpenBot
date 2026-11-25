@@ -4,6 +4,7 @@ import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
+import { text } from "prompt-area/helpers";
 import { useEffect, useRef, useState } from "react";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChatTranscript } from "@/components/channels/chat-transcript";
@@ -14,17 +15,26 @@ import {
 import { FirstMessageDraftCopy } from "@/components/channels/first-message-draft-copy";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
+import { useActionConfirmation } from "@/components/ui/action-confirmation";
 import { buttonVariants } from "@/components/ui/button";
 import { agentListQueryOptions, agentQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import type { BillingQuote } from "@/lib/billing/queries";
-import { readPendingStart } from "@/lib/channels/pending-start";
+import {
+  composeDraftKey,
+  writeComposeDraft,
+} from "@/lib/channels/compose-draft";
+import {
+  discardPendingStart,
+  readPendingStart,
+} from "@/lib/channels/pending-start";
 import {
   CoworkerRoutingQuoteRequired,
   CoworkerRoutingRefusedError,
 } from "@/lib/channels/route";
 import { resumeConversationStart } from "@/lib/channels/start";
 import { ClientError } from "@/lib/client";
+import { newId } from "@/lib/new-id";
 
 export const Route = createFileRoute("/_authed/_app/start/$startId")({
   component: RouteComponent,
@@ -60,6 +70,11 @@ function RouteComponent() {
 
 function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
   const queryClient = useQueryClient();
+  const navigate = Route.useNavigate();
+  const {
+    requestConfirmation: requestDiscard,
+    confirmation: discardConfirmation,
+  } = useActionConfirmation();
   const [start, setStart] = useState(() => readPendingStart(owner, startId));
   const [attempt, setAttempt] = useState(0);
   const [failure, setFailure] = useState<
@@ -249,7 +264,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                 title={failure.message}
                 description={
                   draft.text
-                    ? "Your original stays saved here. Copy its text to use it in a new conversation."
+                    ? "Your original stays saved here. A new conversation opens with a copy of its text."
                     : "Your original stays saved here."
                 }
               >
@@ -276,15 +291,29 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                       text={draft.text}
                     />
                   ) : null}
-                  <Link
-                    className={buttonVariants({
-                      className: "conversation-recovery-action",
-                      variant: "outline",
-                    })}
-                    to="/channel/new"
-                  >
-                    Choose Bots in a new conversation
-                  </Link>
+                  <Button
+                    className="conversation-recovery-action"
+                    label="Choose Bots in a new conversation"
+                    onClick={() => {
+                      const newConversation = newId();
+                      writeComposeDraft(
+                        composeDraftKey(owner, newConversation, "message"),
+                        draft.text ? [text(draft.text)] : undefined,
+                      );
+                      void navigate({
+                        to: "/channel/new",
+                        state: {
+                          newConversation,
+                          copiedFromHome: true,
+                          copiedFromStart: true,
+                          attachmentNames: draft.attachments.map(
+                            ({ name }) => name,
+                          ),
+                        },
+                      });
+                    }}
+                    variant="secondary"
+                  />
                 </Stack>
               </Banner>
             ) : failure ? (
@@ -315,6 +344,30 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                 }
               />
             )}
+            {failure ? (
+              <Button
+                className="conversation-recovery-action"
+                label="Discard saved message"
+                onClick={(event) => {
+                  requestDiscard({
+                    title: "Discard the message saved in this browser?",
+                    description:
+                      "This removes the copy saved in this browser and takes it off Home's resume list. Any message that reached the conversation stays there.",
+                    confirmLabel: "Discard saved message",
+                    pendingLabel: "Discarding message…",
+                    failureMessage:
+                      "Couldn't remove the saved message. Try again.",
+                    successMessage: "Saved message discarded.",
+                    trigger: event.currentTarget,
+                    run: async () => {
+                      discardPendingStart(owner, startId);
+                      await navigate({ to: "/" });
+                    },
+                  });
+                }}
+                size="sm"
+              />
+            ) : null}
             {failure?.kind === "retry" ? (
               <Text as="p" color="secondary" size="sm">
                 Your message is saved in this browser. You can also resume it
@@ -352,6 +405,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
           </Link>
         </Banner>
       )}
+      {discardConfirmation}
     </Stack>
   );
 }
