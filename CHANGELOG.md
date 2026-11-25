@@ -8,6 +8,10 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- `bun run sync:env` no longer stops on `MANAGED_AGENT_TOKEN` and `AGENT_TOOL_TOKEN` when
+  `scripts/start.sh` generated them in the local `.env`: it carries them over. Any other value that
+  only the local file holds still stops it, so nothing is lost unread.
+
 ## 1.0.3
 
 - The OpenMuse skin is now called OpenFuse. Anyone who picked it keeps it, with nothing to

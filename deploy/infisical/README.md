@@ -34,7 +34,7 @@ bun run sync:env
 bash scripts/start.sh
 ```
 
-`scripts/infisical-env.ts` does that with `@infisical/sdk`, a devDependency of the repository root. It logs in as the read-only machine identity in `.env.openbot-client` (git-ignored) and writes the file in one step. It leaves the file alone when Infisical is unreachable or empty, and when the local file holds a filled-in value that Infisical lacks. It takes the output file as an optional argument.
+`scripts/infisical-env.ts` does that with `@infisical/sdk`, a devDependency of the repository root. It logs in as the read-only machine identity in `.env.openbot-client` (git-ignored) and writes the file in one step. It leaves the file alone when Infisical is unreachable or empty, and when the local file holds a filled-in value that Infisical lacks, other than `MANAGED_AGENT_TOKEN` and `AGENT_TOOL_TOKEN`, which `start.sh` generates and the sync carries over. It takes the output file as an optional argument.
 
 ## Connect another checkout
 
