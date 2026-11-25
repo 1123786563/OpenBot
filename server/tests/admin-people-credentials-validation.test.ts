@@ -235,9 +235,9 @@ describe("GET /api/admin/credentials/:id/usage", () => {
     role = "admin",
   ) {
     const calls: string[] = [];
-    // createApp takes positional stores, and the usage reader is appended last. Built by index so a
-    // future appended store cannot silently shift it.
-    const args: never[] = Array.from({ length: 41 }) as never[];
+    // createApp takes positional stores: the usage reader is 40th, just before the billing ledgers,
+    // which stay last. Built by index so a store appended later cannot silently shift it.
+    const args = Array.from({ length: 41 }) as Parameters<typeof createApp>;
     args[0] = loadConfig(testEnvironment()) as never;
     args[1] = {
       handler: () => new Response(null, { status: 204 }),
@@ -245,7 +245,7 @@ describe("GET /api/admin/credentials/:id/usage", () => {
     } as never;
     args[2] = { rolesForUser: async () => [role] } as never;
     if (usage) {
-      args[40] = {
+      args[39] = {
         usage: async (credentialId: string) => {
           calls.push(credentialId);
           return usage(credentialId);

@@ -687,9 +687,14 @@ describe("one live credential per key", () => {
         message: "Previous credential is already revoked",
       },
     });
-    expect(
-      await store.findLiveByKey({ kind: "model", provider: "openai", keyId }),
-    ).toEqual({ id: winner?.status === "fulfilled" ? winner.value.id : null });
+    const live = await store.findLiveByKey({
+      kind: "model",
+      provider: "openai",
+      keyId,
+    });
+    expect(live).toEqual(
+      winner?.status === "fulfilled" ? { id: winner.value.id } : null,
+    );
     // Which one wrote first is not fixed; that only one succeeded is.
     expect([...events].sort()).toEqual([
       "credential.created",

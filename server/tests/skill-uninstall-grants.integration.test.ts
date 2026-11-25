@@ -20,10 +20,20 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 
 const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
 
+/** Whether the trail refuses a row written with its removal, as one that cannot be written does. */
+let trailRefuses = false;
 const store = createPluginStore({
   brokerProvider: "composio",
   database,
   auditStore: createAuditStore(database),
+  auditFor: (transaction, deferTap) =>
+    trailRefuses
+      ? {
+          insert: async () => {
+            throw new Error("the trail is unavailable");
+          },
+        }
+      : createAuditStore(transaction, deferTap),
   credentials: { readSecret: async () => null },
   encryptionKey: "x".repeat(44),
   policy: () => policy,
@@ -40,6 +50,7 @@ const deploymentSlug = `triage-${suite}`;
 const unwrittenSlug = `unwritten-${suite}`;
 const botlessSlug = `botless-${suite}`;
 const auditedSlug = `audited-${suite}`;
+const refusedSlug = `refused-${suite}`;
 const missingBot = `agent_missing_${suite}`;
 
 beforeAll(async () => {
@@ -82,6 +93,7 @@ afterAll(async () => {
         unwrittenSlug,
         botlessSlug,
         auditedSlug,
+        refusedSlug,
       ]),
     );
   await database
@@ -293,6 +305,64 @@ describe("a skill name written again after the skill was uninstalled", () => {
     });
     // The instructions themselves never reach the trail.
     expect(JSON.stringify(uninstalled)).not.toContain("Alice's audited skill.");
+  });
+
+  /*
+   * The removal and its row commit together. A trail that refuses the row leaves the skill and every
+   * grant on it exactly as they were, so asking again deletes it and records it once, instead of
+   * being refused for a skill that is no longer there.
+   */
+  test("a removal the trail refuses leaves the skill and its grants, and asking again removes them once", async () => {
+    const slug = refusedSlug;
+    expect(
+      (await writeSkill(asAlice(), slug, "Alice's refused skill.")).status,
+    ).toBe(200);
+    expect((await grant(asAlice(), slug, aliceBot)).status).toBe(200);
+    const uninstalls = () =>
+      database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.eventType, "configuration.changed"),
+            eq(auditEvents.targetType, "skill"),
+            eq(auditEvents.targetId, slug),
+            sql`${auditEvents.payload}->>'change' = 'skill_uninstalled'`,
+          ),
+        );
+    const grantsOn = () =>
+      database
+        .select({ ref: pluginGrants.ref, agentId: pluginGrants.agentId })
+        .from(pluginGrants)
+        .where(and(eq(pluginGrants.kind, "skill"), eq(pluginGrants.ref, slug)));
+
+    trailRefuses = true;
+    try {
+      expect((await uninstall(asAlice(), slug)).status).toBe(500);
+    } finally {
+      trailRefuses = false;
+    }
+    expect(
+      await database.select().from(skills).where(eq(skills.slug, slug)),
+    ).toHaveLength(1);
+    expect(await grantsOn()).toEqual([{ ref: slug, agentId: aliceBot }]);
+    expect(await uninstalls()).toHaveLength(0);
+
+    expect((await uninstall(asAlice(), slug)).status).toBe(200);
+    expect(
+      await database.select().from(skills).where(eq(skills.slug, slug)),
+    ).toEqual([]);
+    expect(await grantsOn()).toEqual([]);
+    expect(await uninstalls()).toEqual([
+      expect.objectContaining({
+        targetId: slug,
+        payload: {
+          actor: `${alice}@example.test`,
+          change: "skill_uninstalled",
+          skill: slug,
+        },
+      }),
+    ]);
   });
 });
 

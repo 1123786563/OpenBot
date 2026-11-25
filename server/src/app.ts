@@ -294,26 +294,6 @@ export type DeploymentToolCaller = (
   input: DeploymentToolCallInput,
 ) => Promise<{ text: string; isError: boolean } | null>;
 
-async function recordPersonEvent(
-  auditStore: AuditStore | undefined,
-  context: { var: AppVariables },
-  eventType:
-    | "person.role_changed"
-    | "person.access_revoked"
-    | "person.access_restored",
-  person: { id: string; email: string },
-  payload: Record<string, unknown>,
-) {
-  if (!auditStore) return;
-  await recordAuditEvent(auditStore, {
-    eventType,
-    targetType: "person",
-    targetId: person.id,
-    actorUserId: context.var.actor.id,
-    payload: { email: person.email, ...payload },
-  });
-}
-
 export function createApp(
   config: DeploymentConfig,
   auth?: AuthService,
@@ -636,8 +616,18 @@ export function createApp(
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
   profileStore?: ProfileStore,
   /**
+   * What points at a vault row: the apps, people and Bots that hold a credential.
+   *
+   * Absent leaves the usage route answering 503 rather than "nothing uses it": a deployment that
+   * cannot read the pointers must not tell an administrator a credential is unused.
+   */
+  credentialUsage?: CredentialUsageReader,
+  /**
    * The shared billing ledgers (#86): a person's Test Credit balance, the paid side of their bill
    * (#107), and their execution budgets. Absent, `/api/billing` is not mounted.
+   *
+   * These parameters are positional, and this one stays last: tests place it at
+   * `createApp.length - 1`. A parameter added after it silently shifts every such call.
    */
   billing?: {
     testLedger: TestCreditLedger;
@@ -666,16 +656,6 @@ export function createApp(
       personId: string,
     ) => Promise<VerifiedBillingIdentity | undefined>;
   },
-  /**
-   * What points at a vault row: the apps, people and Bots that hold a credential.
-   *
-   * Appended last, like `billing` above it: these are positional, so inserting one anywhere else
-   * silently shifts every existing call site's arguments by one.
-   *
-   * Absent leaves the usage route answering 503 rather than "nothing uses it": a deployment that
-   * cannot read the pointers must not tell an administrator a credential is unused.
-   */
-  credentialUsage?: CredentialUsageReader,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   const skillMarket =
@@ -1459,19 +1439,9 @@ export function createApp(
       );
     }
 
-    if (person.role !== role) {
-      await peopleStore.setRole(userId, role);
-      await recordPersonEvent(
-        auditStore,
-        context,
-        "person.role_changed",
-        person,
-        {
-          from: person.role,
-          to: role,
-        },
-      );
-    }
+    // The change and its row on the trail are one transaction, in the store.
+    if (person.role !== role)
+      await peopleStore.setRole(userId, role, context.var.actor.id);
 
     return context.json({ person: await peopleStore.find(userId) });
   });
@@ -1516,18 +1486,8 @@ export function createApp(
     }
 
     if (person.revoked !== revoked) {
-      if (revoked) {
-        await peopleStore.revoke(userId, context.var.actor.id);
-      } else {
-        await peopleStore.restore(userId);
-      }
-      await recordPersonEvent(
-        auditStore,
-        context,
-        revoked ? "person.access_revoked" : "person.access_restored",
-        person,
-        {},
-      );
+      if (revoked) await peopleStore.revoke(userId, context.var.actor.id);
+      else await peopleStore.restore(userId, context.var.actor.id);
     }
 
     /*
@@ -1627,12 +1587,12 @@ export function createApp(
   );
 
   /*
-   * Who a provider is the only way in for, read before an administrator removes it.
+   * Who can still sign in once a provider is removed, read before an administrator removes it.
    *
-   * The account rows decide, not the provider's email domain: who has signed in through the provider,
-   * and who else they can still sign in with. Each list is capped and answers its true total, and
-   * whether the person asking loses their only way in is read before the cap, since they may sit
-   * past it.
+   * The account rows decide, not the provider's email domain, by the rule the sign-in path applies:
+   * who has signed in through the provider, and who of them keeps a way in. Each list is capped and
+   * answers its true total, and whether the person asking loses their only way in is read before the
+   * cap, since they may sit past it.
    */
   app.get(
     "/api/admin/identity-providers/:providerId/impact",
@@ -1648,8 +1608,21 @@ export function createApp(
           503,
         );
       }
+      // Require SSO as it stands, which the removal does not change. Read as the sign-in path reads
+      // it and failing closed as it does: a setting that cannot be read admits nobody but the
+      // emergency admins, and the preview must not say otherwise.
+      let ssoRequired = false;
+      const controls = enterpriseControls();
+      if (controls) {
+        try {
+          ssoRequired = (await controls.store.settings()).ssoRequired;
+        } catch {
+          ssoRequired = true;
+        }
+      }
       const impact = await identityProviders.impact(
         context.req.param("providerId"),
+        ssoRequired,
       );
       if (!impact) {
         return context.json({ error: "There is no such provider." }, 404);

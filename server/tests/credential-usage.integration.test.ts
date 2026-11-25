@@ -178,7 +178,8 @@ async function seed() {
     ownerUserId: owner.id,
     responsibilityId: goal,
     kind: "linear",
-    config: {},
+    // As the trigger store writes it: a filter, with the schema's default applied.
+    config: { kind: "linear", filter: { eventTypes: [] } },
     credentialId: ids.trigger,
   });
 }

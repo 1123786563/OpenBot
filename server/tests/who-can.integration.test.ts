@@ -622,11 +622,10 @@ describe("POST /api/admin/enterprise/capabilities/batch", () => {
 });
 
 /**
- * Two admins reading one preview and saving different drafts, and a save whose switches land while
- * the trail refuses them. Both are the same question: what is in force afterwards, and what does the
- * admin who did not get their way read?
+ * Two admins reading one preview and saving different drafts, and a save the trail refuses. Both ask
+ * the same question: what is in force afterwards, and what does the admin read?
  */
-describe("a permission batch from a stale reading, and one the trail could not record", () => {
+describe("a permission batch from a stale reading, and one the trail refused", () => {
   /** Off for everybody: one switch, so what landed is unambiguous. */
   /** What a stored switch is, as the preview and the rows read it: `allowed` is never null. */
   type StoredSwitch = Omit<CapabilityChange, "allowed"> & { allowed: boolean };
@@ -725,7 +724,7 @@ describe("a permission batch from a stale reading, and one the trail could not r
     expect(await rowsNow()).toEqual(before);
   });
 
-  test("the switches are in force when the trail refuses them, and saving again records them", async () => {
+  test("a save the trail refuses leaves every switch as it was, and saving again records the change once", async () => {
     await database.delete(capabilitySettings);
     await controls.refresh();
     const preview = (await (
@@ -765,26 +764,29 @@ describe("a permission batch from a stale reading, and one the trail could not r
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({
-      error:
-        "The switches were saved, but Audit couldn't record all of them. Save again to record them.",
-      saved: OFF,
+      error: "Couldn't save the changes. Nothing changed. Try again.",
     });
-    // Effective now, not at the next restart: the row is written and the snapshot refreshed.
-    expect(await rowsNow()).toEqual(OFF);
-    expect(await controls.capabilityFor(cam.id, LOCAL)).toBeFalse();
-    expect(controls.snapshot()?.rows).toHaveLength(1);
+    // Nothing is in force: no switch moved, the snapshot still says so, and the trail has no row.
+    expect(await rowsNow()).toEqual([]);
+    expect(await controls.capabilityFor(cam.id, LOCAL)).toBeTrue();
+    expect(controls.snapshot()?.rows).toHaveLength(0);
     expect(await recorded()).toHaveLength(before);
 
-    // Saving the same switches again is safe, and this time the trail has them.
-    const again = (await (
-      await post("preview", { changes: OFF })
-    ).json()) as PreviewBody;
-    const retry = await post("batch", { changes: OFF, basedOn: again.basedOn });
+    // Saving again is the same save against the same reading. It lands once, and the row says what
+    // the switch was before it: nothing, which the first attempt would have had no way left to know.
+    const retry = await post("batch", {
+      changes: OFF,
+      basedOn: preview.basedOn,
+    });
     expect(retry.status).toBe(200);
     expect(await rowsNow()).toEqual(OFF);
     const rows = await recorded();
     expect(rows).toHaveLength(before + 1);
-    expect(rows[0]?.payload).toMatchObject({ allowed: false, by: ada.email });
+    expect(rows[0]?.payload).toMatchObject({
+      allowed: false,
+      by: ada.email,
+      before: null,
+    });
   });
 });
 

@@ -211,16 +211,13 @@ beforeEach(() => {
           },
           { status: 409 },
         );
-      rows = applyCapabilityChanges(rows, body.changes as CapabilityChange[]);
+      // The switches and their rows commit together: a trail that refuses changes nothing.
       if (trailFails)
         return Response.json(
-          {
-            error:
-              "The switches were saved, but Audit couldn't record all of them. Save again to record them.",
-            saved: body.changes,
-          },
+          { error: "Couldn't save the changes. Nothing changed. Try again." },
           { status: 500 },
         );
+      rows = applyCapabilityChanges(rows, body.changes as CapabilityChange[]);
       return Response.json({ saved: body.changes });
     }
     if (path.endsWith("/api/admin/enterprise"))
@@ -468,7 +465,7 @@ test("a save refused because the switches changed keeps the draft, shows the lat
   expect(rows).toHaveLength(5);
 });
 
-test("a save whose switches landed but whose Audit rows didn't says so, re-reads the server, and saves again safely", async () => {
+test("a save the trail refused changes nothing, keeps the draft, and saving again lands it once", async () => {
   trailFails = true;
   const { view, router } = open();
   await describeChange(view);
@@ -481,26 +478,29 @@ test("a save whose switches landed but whose Audit rows didn't says so, re-reads
   const readBefore = previews().length;
   fireEvent.click(save);
 
-  const message =
-    "The switches were saved, but Audit couldn't record all of them. Save again to record them.";
+  const message = "Couldn't save the changes. Nothing changed. Try again.";
   expect(await view.findByText(message)).toBeTruthy();
   expect(router.state.location.pathname).toBe("/admin/permissions/describe");
-  // The failed save re-read the server, and what it holds now is the draft's own switches: previewed
-  // again, they change nobody's access.
+  // Nothing landed: the server holds no switches, and the screen re-read it rather than drawing a
+  // state that never committed.
+  expect(rows).toEqual([]);
   await waitFor(() => expect(previews().length).toBeGreaterThan(readBefore));
-  expect(rows).toEqual(SAVED);
-  // The Permissions page's own switches were re-read too, so the screen cannot go on drawing the
-  // state from before the press.
+  // The Permissions page's own switches were re-read too.
   expect(
     reads.filter((path) => path.endsWith("/api/admin/enterprise")).length,
   ).toBeGreaterThan(1);
   await waitFor(() => expect(save.disabled).toBe(false));
-  expect(view.getByText("Nobody's access changes.")).toBeTruthy();
+  // The draft's own impact, worked out against the reading that never moved.
+  expect(
+    view.getByText(
+      "3 people lose access and 4 people keep it through a different switch.",
+    ),
+  ).toBeTruthy();
   expect(
     (view.getByLabelText("Describe the change") as HTMLTextAreaElement).value,
   ).toBe(TEXT);
 
-  // Saving again is the retry the message asks for: the same switches against what is now in force.
+  // Saving again is the same save against the same reading, and this time it lands.
   trailFails = false;
   fireEvent.click(save);
   await waitFor(() =>
@@ -508,7 +508,8 @@ test("a save whose switches landed but whose Audit rows didn't says so, re-reads
   );
   expect(saves()).toHaveLength(2);
   expect(saves()[1]?.body.changes).toEqual(WRITTEN);
-  expect(saves()[1]?.body.basedOn).toEqual(SAVED);
+  expect(saves()[1]?.body.basedOn).toEqual([]);
+  expect(rows).toEqual(SAVED);
   expect(view.queryByText(message)).toBeNull();
 });
 

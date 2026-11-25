@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { agents, auditEvents, users } from "../src/db/schema/core";
 import { defaultOptOuts } from "../src/db/schema/defaults";
@@ -382,6 +382,24 @@ test("a memory only Intelligence holds is the person's own: recalled, edited and
   ).rejects.toBeInstanceOf(MemoryRefusedError);
   await store.remove(ada, edited.id);
   expect(fake.live(ada)).toEqual([]);
+  // A forget the person asked for, on the trail like any other. The edit above has its own row for
+  // the same memory, and the fake's memory ids are the same in every run, so the forget's rows for
+  // this person are the ones read.
+  const forgotten = await database
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.actorUserId, ada),
+        eq(auditEvents.targetType, "personal_memory"),
+        eq(auditEvents.targetId, edited.id),
+        sql`${auditEvents.payload}->>'change' = 'memory_deleted'`,
+      ),
+    );
+  expect(forgotten.map((row) => [row.payload.change, row.actorUserId])).toEqual(
+    [["memory_deleted", ada]],
+  );
+  expect(JSON.stringify(forgotten)).not.toContain("emacs keybindings");
 });
 
 test("a memory OpenBot describes cannot be forgotten through its Intelligence id", async () => {

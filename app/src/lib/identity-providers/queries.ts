@@ -25,14 +25,16 @@ export type IdentityProvider = {
 };
 
 /**
- * Who a registered provider is the only way in for, read before an administrator removes it.
+ * Who can still sign in once a registered provider is removed, read before an administrator removes
+ * it.
  *
- * The account rows decide, not the provider's email domain: somebody who signed in through a
- * provider may still sign in with Google or a password, and somebody the configuration names as an
- * emergency admin is exempt. Either list is capped and `total` is over everybody.
+ * The server decides it by the rule sign-in applies, on account rows and not on the provider's email
+ * domain: an account at another provider is a way in only while that provider is registered, a
+ * password or social account only while Require SSO is off, and an address named as an emergency
+ * admin keeps a way in either way. Either list is capped and `total` is over everybody.
  */
 export type IdentityProviderImpact = {
-  /** People with no other account and no emergency address. `emails` is the first few. */
+  /** People who cannot sign in once this provider is gone. `emails` is the first few. */
   losing: { total: number; emails: string[] };
   /** People who keep a way in, and why. `accounts` is the first few. */
   keeping: {
@@ -96,7 +98,13 @@ export function identityProviderListQueryOptions() {
 }
 
 /**
- * Who signs in through one provider, asked when its removal is being confirmed.
+ * What a failed impact read says when the server sent no sentence of its own. Exported because the
+ * page shows the same sentence for a failure that sent nothing at all, so one read has one sentence.
+ */
+export const IMPACT_FALLBACK = "Couldn’t check who can still sign in.";
+
+/**
+ * Who can still sign in once one provider is removed, asked when its removal is being confirmed.
  *
  * `staleTime: 0` because the accounts move: the dialog is opened to decide about this moment, and a
  * cached answer from five minutes ago would name somebody who has since added another way in.
@@ -114,7 +122,7 @@ export function identityProviderImpactQueryOptions(providerId: string) {
       client<IdentityProviderImpact>(
         `/api/admin/identity-providers/${encodeURIComponent(providerId)}/impact`,
         "impact",
-        { fallback: "Could not check who signs in with this provider", signal },
+        { fallback: IMPACT_FALLBACK, signal },
       ),
   });
 }

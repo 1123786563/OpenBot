@@ -35,7 +35,19 @@ const GRANT_RACE = member("grant-race");
 const REMOVE_RACE = member("remove-race");
 const REMOVE_RETRY = member("remove-retry");
 const RESTORE = member("restore");
-const everybody = [ROLE, GRANT_RACE, REMOVE_RACE, REMOVE_RETRY, RESTORE];
+const TRAIL_ROLE = member("trail-role");
+const TRAIL_REMOVE = member("trail-remove");
+const TRAIL_RESTORE = member("trail-restore");
+const everybody = [
+  ROLE,
+  GRANT_RACE,
+  REMOVE_RACE,
+  REMOVE_RETRY,
+  RESTORE,
+  TRAIL_ROLE,
+  TRAIL_REMOVE,
+  TRAIL_RESTORE,
+];
 
 let retirements = 0;
 const store = createPeopleStore(database, [], async () => {
@@ -91,14 +103,24 @@ function appFor(people: PeopleStore) {
 
 const request = appFor(store);
 const racing = appFor(readTogether(store));
+/** The same people against a trail that refuses every row, as one that cannot be written does. */
+const refusing = appFor(
+  createPeopleStore(
+    database,
+    [],
+    async () => ({ retired: 0 }),
+    () => ({
+      insert: async () => {
+        throw new Error("the trail is unavailable");
+      },
+    }),
+  ),
+);
 
 const grant = (who: { id: string }, ask = request) =>
   ask(`/api/admin/people/${who.id}/role`, { role: "admin" });
 const remove = (who: { id: string }, ask = request) =>
   ask(`/api/admin/people/${who.id}/access`, { revoked: true });
-const restore = (who: { id: string }) =>
-  request(`/api/admin/people/${who.id}/access`, { revoked: false });
-
 const rowsFor = async (who: { id: string }, eventType: string) =>
   database
     .select()
@@ -109,6 +131,13 @@ const rowsFor = async (who: { id: string }, eventType: string) =>
         eq(auditEvents.targetId, who.id),
       ),
     );
+const sessionsOf = async (who: { id: string }) =>
+  database
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(eq(sessions.userId, who.id));
+const access = (who: { id: string }, revoked: boolean, ask = request) =>
+  ask(`/api/admin/people/${who.id}/access`, { revoked });
 
 beforeAll(async () => {
   await database.insert(users).values([
@@ -227,12 +256,59 @@ test("removing somebody again after it committed finishes the retirement and wri
 
 test("giving access back twice writes one restoration", async () => {
   expect((await remove(RESTORE)).status).toBe(200);
-  expect((await restore(RESTORE)).status).toBe(200);
+  expect((await access(RESTORE, false)).status).toBe(200);
   const committed = (await rowsFor(RESTORE, "person.access_restored")).length;
   expect(committed).toBe(1);
 
-  expect((await restore(RESTORE)).status).toBe(200);
+  expect((await access(RESTORE, false)).status).toBe(200);
 
   expect(await rowsFor(RESTORE, "person.access_restored")).toHaveLength(1);
   expect((await store.find(RESTORE.id))?.revoked).toBe(false);
+});
+
+/*
+ * A trail that refuses the row. The change and its row commit together, so the person is exactly as
+ * they were and the screen's Try again, which first checks that nothing else changed, passes its own
+ * check and records the change once.
+ */
+test("a change the trail refuses leaves the person as they were, and asking again records it once", async () => {
+  const role = `/api/admin/people/${TRAIL_ROLE.id}/role`;
+  expect((await refusing(role, { role: "admin" })).status).toBe(500);
+  expect((await store.find(TRAIL_ROLE.id))?.role).toBe("user");
+  expect(await rowsFor(TRAIL_ROLE, "person.role_changed")).toHaveLength(0);
+  expect((await request(role, { role: "admin" })).status).toBe(200);
+  expect((await store.find(TRAIL_ROLE.id))?.role).toBe("admin");
+  const granted = await rowsFor(TRAIL_ROLE, "person.role_changed");
+  expect(granted).toHaveLength(1);
+  expect(granted.map((row) => row.payload)).toEqual([
+    { email: TRAIL_ROLE.email, from: "user", to: "admin" },
+  ]);
+
+  expect((await access(TRAIL_REMOVE, true, refusing)).status).toBe(500);
+  expect((await store.find(TRAIL_REMOVE.id))?.revoked).toBe(false);
+  // Their session too: it ended in the same transaction as the removal, and was taken back with it.
+  expect(await sessionsOf(TRAIL_REMOVE)).toHaveLength(1);
+  expect(await rowsFor(TRAIL_REMOVE, "person.access_revoked")).toHaveLength(0);
+  expect((await access(TRAIL_REMOVE, true)).status).toBe(200);
+  expect((await store.find(TRAIL_REMOVE.id))?.revoked).toBe(true);
+  expect(await sessionsOf(TRAIL_REMOVE)).toEqual([]);
+  const removed = await rowsFor(TRAIL_REMOVE, "person.access_revoked");
+  expect(removed).toHaveLength(1);
+  expect(removed.map((row) => row.payload)).toEqual([
+    { email: TRAIL_REMOVE.email },
+  ]);
+
+  expect((await access(TRAIL_RESTORE, true)).status).toBe(200);
+  expect((await access(TRAIL_RESTORE, false, refusing)).status).toBe(500);
+  expect((await store.find(TRAIL_RESTORE.id))?.revoked).toBe(true);
+  expect(await rowsFor(TRAIL_RESTORE, "person.access_restored")).toHaveLength(
+    0,
+  );
+  expect((await access(TRAIL_RESTORE, false)).status).toBe(200);
+  expect((await store.find(TRAIL_RESTORE.id))?.revoked).toBe(false);
+  const restored = await rowsFor(TRAIL_RESTORE, "person.access_restored");
+  expect(restored).toHaveLength(1);
+  expect(restored.map((row) => row.payload)).toEqual([
+    { email: TRAIL_RESTORE.email },
+  ]);
 });

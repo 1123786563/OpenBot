@@ -89,13 +89,7 @@ export function finishPendingStart(
 
 /** Remove an abandoned start so its text and attachment refs stop being recoverable. */
 export function discardPendingStart(owner: string, id: string) {
-  try {
-    localStorage.removeItem(ownerPrefix(owner) + id);
-  } catch {
-    throw new Error(
-      "This browser couldn't remove your saved message. Check that site storage is available and try again.",
-    );
-  }
+  localStorage.removeItem(ownerPrefix(owner) + id);
 }
 
 export function pendingStartsFor(owner: string) {

@@ -609,6 +609,18 @@ export function createMemoryStore(
           throw new MemoryNotFoundError();
         if (!(await intelligence.remove(ownerUserId, remoteId)))
           throw new MemoryUnavailableError();
+        /*
+         * A forget the person asked for, on the trail like any other, though no row describes it. The
+         * removal itself is the backend's, which no transaction here can share: the row is written
+         * once the removal has answered, never before it.
+         */
+        await database.insert(auditEvents).values({
+          eventType: "configuration.changed",
+          targetType: "personal_memory",
+          targetId: id,
+          actorUserId: ownerUserId,
+          payload: { change: "memory_deleted" },
+        });
         return;
       }
       // Imported tombstones prevent the next sync from resurrecting a fact the person deleted.

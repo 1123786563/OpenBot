@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/app";
-import type { AuditEventInput } from "../src/audit";
 import { loadConfig } from "../src/config";
 import type { PeopleStore, Person } from "../src/people/store";
 import { testEnvironment } from "./support/environment";
@@ -9,7 +8,9 @@ import { testEnvironment } from "./support/environment";
  * Who may change who can get in.
  *
  * The rules worth pinning are the refusals, because each of them stops a deployment reaching a state
- * with nobody able to administer it, and none of them is obvious from the route's shape.
+ * with nobody able to administer it, and none of them is obvious from the route's shape. What a
+ * change puts on the trail is the store's, held against a real database in
+ * people-actions.integration.test.ts; here the store is a fake that only says what it was asked.
  */
 const ADMIN = {
   id: "admin-1",
@@ -40,17 +41,15 @@ function appWith(
 ): {
   request: (path: string, init?: RequestInit) => Promise<Response>;
   calls: string[];
-  events: AuditEventInput[];
 } {
   const calls: string[] = [];
-  const events: AuditEventInput[] = [];
   const store: PeopleStore = {
     // One page, and no next one: what a small deployment answers. The paging itself is covered
     // against a real database in people-paging.integration.test.ts.
     list: async () => ({ people, nextCursor: null }),
     find: async (userId) => people.find((entry) => entry.id === userId),
-    setRole: async (userId, next) => {
-      calls.push(`setRole:${userId}:${next}`);
+    setRole: async (userId, next, by) => {
+      calls.push(`setRole:${userId}:${next}:${by}`);
     },
     revoke: async (userId, by) => {
       calls.push(`revoke:${userId}:${by}`);
@@ -58,8 +57,8 @@ function appWith(
     retireOwned: async (userId, by) => {
       calls.push(`retireOwned:${userId}:${by}`);
     },
-    restore: async (userId) => {
-      calls.push(`restore:${userId}`);
+    restore: async (userId, by) => {
+      calls.push(`restore:${userId}:${by}`);
     },
     isRevoked: async () => false,
     ...overrides,
@@ -73,27 +72,18 @@ function appWith(
     } as never,
     { rolesForUser: async () => [role] },
     /*
-     * Positions 4-12 are other stores; `auditStore` is 13, four more follow, and `store` is 18,
-     * peopleStore.
-     *
-     * Fourteen fillers in total, not fifteen. This arrived from main written against a signature
-     * that still had `connectorService`, which the knowledge lane removed along with the connector
-     * it served — so the count is one shorter here. Every parameter from 4 on is optional, so
-     * getting it wrong is a silent type-check pass: the store lands in `ssoProviderCount`, the
-     * people routes see no store, and every test below fails with a 503 that says nothing about why.
+     * Fourteen fillers, not fifteen: positions 4-17 are other stores, and `store` is 18,
+     * peopleStore. Every parameter from 4 on is optional, so getting the count wrong is a silent
+     * type-check pass: the store lands in `ssoProviderCount`, the people routes see no store, and
+     * every test below fails with a 503 that says nothing about why.
      */
-    ...(Array.from({ length: 9 }) as never[]),
-    {
-      insert: async (event: AuditEventInput) => void events.push(event),
-    } as never,
-    ...(Array.from({ length: 4 }) as never[]),
+    ...(Array.from({ length: 14 }) as never[]),
     store as never,
   );
 
   return {
     request: (path, init) => app.request(`http://openbot.test${path}`, init),
     calls,
-    events,
   };
 }
 
@@ -133,7 +123,8 @@ describe("people routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(calls).toEqual(["setRole:u1:admin"]);
+    // Who asked goes with it, for the row the store writes.
+    expect(calls).toEqual(["setRole:u1:admin:admin-1"]);
   });
 
   /**
@@ -213,55 +204,19 @@ describe("people routes", () => {
 
     await request("/api/admin/people/u1/access", json({ revoked: false }));
 
-    expect(calls).toEqual(["restore:u1"]);
-  });
-
-  /*
-   * The trail an administrator reads a year later. `person:u1` means nothing to them, so the row
-   * carries the address, and a role change carries both roles rather than only the new one.
-   */
-  test("a role change is on the trail with the address and both roles", async () => {
-    const { request, events } = appWith([person()]);
-
-    await request("/api/admin/people/u1/role", json({ role: "admin" }));
-
-    expect(events).toEqual([
-      {
-        eventType: "person.role_changed",
-        targetType: "person",
-        targetId: "u1",
-        actorUserId: ADMIN.id,
-        payload: { email: "member@openbot.test", from: "user", to: "admin" },
-      },
-    ]);
-  });
-
-  test("giving access back is on the trail with the address", async () => {
-    const { request, events } = appWith([person({ revoked: true })]);
-
-    await request("/api/admin/people/u1/access", json({ revoked: false }));
-
-    expect(events).toEqual([
-      {
-        eventType: "person.access_restored",
-        targetType: "person",
-        targetId: "u1",
-        actorUserId: ADMIN.id,
-        payload: { email: "member@openbot.test" },
-      },
-    ]);
+    expect(calls).toEqual(["restore:u1:admin-1"]);
   });
 
   /*
    * The removal commits before the retirement runs, so a broker that will not answer leaves the
    * person removed and their credentials live. A bare 500 told the administrator nothing had been
    * confirmed; the answer now says which half took effect, and asking again finishes the other half
-   * without removing them twice or writing a second removal on the trail.
+   * without removing them twice.
    */
   test("a removal whose retirement failed says what took effect and asks for a retry", async () => {
     const member = person();
     let attempts = 0;
-    const { request, calls, events } = appWith([member], "admin", {
+    const { request, calls } = appWith([member], "admin", {
       // The removal sticks, as the real store's does: the retry finds them already removed.
       revoke: async (userId, by) => {
         calls.push(`revoke:${userId}:${by}`);
@@ -288,9 +243,6 @@ describe("people routes", () => {
       `revoke:u1:${ADMIN.id}`,
       `retireOwned:u1:${ADMIN.id}`,
     ]);
-    expect(events.map((event) => event.eventType)).toEqual([
-      "person.access_revoked",
-    ]);
 
     expect(
       (await request("/api/admin/people/u1/access", json({ revoked: true })))
@@ -301,9 +253,6 @@ describe("people routes", () => {
       `revoke:u1:${ADMIN.id}`,
       `retireOwned:u1:${ADMIN.id}`,
       `retireOwned:u1:${ADMIN.id}`,
-    ]);
-    expect(events.map((event) => event.eventType)).toEqual([
-      "person.access_revoked",
     ]);
   });
 

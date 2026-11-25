@@ -94,6 +94,8 @@ const app = createApp(
   undefined,
   undefined,
   undefined,
+  // The credential usage reader (40th); the billing ledgers after it stay last.
+  undefined,
   {
     testLedger,
     paidLedger: createPaidCreditLedger(database, () => clock),

@@ -1129,7 +1129,9 @@ export function addAuditTap(tap: AuditTap): () => void {
   return () => auditTaps.delete(tap);
 }
 
-type AuditTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+export type AuditTransaction = Parameters<
+  Parameters<Database["transaction"]>[0]
+>[0];
 type DeferAuditTap = (publish: () => void) => void;
 
 export type TransactionAuditStore = (

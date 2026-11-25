@@ -49,18 +49,27 @@ export type IdentityProviderStore = {
    */
   remove: (providerId: string) => Promise<boolean>;
   /**
-   * Who signs in through a provider, split into the people it is the only way in for and the people
-   * who keep another one. Null when no provider of that name is registered.
+   * Who can still sign in once this provider is removed, split into the people who cannot and the
+   * people who keep a way in. Null when no provider of that name is registered.
+   *
+   * The sign-in path's own rule (`decideSignInMethod`), so nobody is listed as safe who is in fact
+   * locked out. `ssoRequired` is the setting as it will stand after the removal: with it on, only an
+   * account at another provider that is still registered signs somebody in, or an address in
+   * `initialAdminEmails`, which is let in another way. With it off, a password or an account at a
+   * social provider this deployment configured does too.
    */
-  impact: (providerId: string) => Promise<IdentityProviderImpact | null>;
+  impact: (
+    providerId: string,
+    ssoRequired: boolean,
+  ) => Promise<IdentityProviderImpact | null>;
 };
 
 export type IdentityProviderImpact = {
-  /** The people whose only account is this provider, by email. */
+  /** The people who cannot sign in once this provider is gone, by email. */
   losing: { userId: string; email: string }[];
   /**
-   * The people who keep a way in once this provider is gone, by email: through another account, or
-   * because their address is one the configuration names as an emergency admin.
+   * The people who keep a way in once this provider is gone, by email: through another account that
+   * still signs them in, or because their address is one the configuration names as an emergency admin.
    */
   keeping: {
     userId: string;
@@ -69,14 +78,23 @@ export type IdentityProviderImpact = {
   }[];
 };
 
+/** How a password account is named in `accounts.provider_id`, as Better Auth writes it. */
+const PASSWORD_ACCOUNT = "credential";
+
 /**
  * `initialAdminEmails` is the emergency list, which lets an address in it sign in another way after
- * the provider it used is gone.
+ * the provider it used is gone. `socialProviders` are the ones this deployment is configured to sign
+ * in with, which need no registered provider.
  */
 export function createIdentityProviderStore(
   database: Database,
   initialAdminEmails: readonly string[] = [],
+  socialProviders: readonly string[] = [],
 ): IdentityProviderStore {
+  const signsInWithoutProvider = new Set([
+    PASSWORD_ACCOUNT,
+    ...socialProviders,
+  ]);
   return {
     list: async () => {
       const rows = await database
@@ -109,13 +127,16 @@ export function createIdentityProviderStore(
       return removed.length > 0;
     },
 
-    impact: async (providerId) => {
-      const [registered] = await database
-        .select({ id: ssoProviders.id })
-        .from(ssoProviders)
-        .where(eq(ssoProviders.providerId, providerId))
-        .limit(1);
-      if (!registered) return null;
+    impact: async (providerId, ssoRequired) => {
+      const registered = (
+        await database
+          .select({ providerId: ssoProviders.providerId })
+          .from(ssoProviders)
+      ).map((row) => row.providerId);
+      if (!registered.includes(providerId)) return null;
+      // Removing a provider deletes its row and nothing else, so an account at any provider that is
+      // not still registered signs nobody in, whichever way Require SSO is set.
+      const remaining = new Set(registered.filter((id) => id !== providerId));
 
       // One row per person who has an account here, with every provider they sign in through.
       const rows = await database
@@ -146,7 +167,12 @@ export function createIdentityProviderStore(
       for (const { userId, email, providers, removed } of rows) {
         // Somebody removed has no way in to lose.
         if (removed) continue;
-        if (providers.length > 1)
+        const otherWayIn = providers.some(
+          (provider) =>
+            remaining.has(provider) ||
+            (!ssoRequired && signsInWithoutProvider.has(provider)),
+        );
+        if (otherWayIn)
           impact.keeping.push({ userId, email, reason: "another-sign-in" });
         else if (isConfiguredAdmin(email, initialAdminEmails))
           impact.keeping.push({ userId, email, reason: "emergency-admin" });
