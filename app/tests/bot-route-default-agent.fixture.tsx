@@ -56,6 +56,10 @@ export type Runtime = {
   recorded: Map<string, unknown[]>;
   /** The thread store: what was said, and nothing about how a run ended. */
   stored: Map<string, Message[]>;
+  /** The runs each thread has, as the messages read returns them. */
+  threadRuns: Map<string, unknown[]>;
+  /** Each stop this browser asked the server for. */
+  stops: { threadId: string; runId: string }[];
   /** Each thread the chat joined, oldest first. */
   joins: { agentId: string; threadId: string }[];
   runs: RunAgentInput[];
@@ -66,6 +70,8 @@ export const runtime: Runtime = {
   plans: [],
   recorded: new Map(),
   stored: new Map(),
+  threadRuns: new Map(),
+  stops: [],
   joins: [],
   runs: [],
   decisions: [],
@@ -211,11 +217,22 @@ export function botRuntime() {
         const known = path.match(/^\/api\/threads\/([^/]+)$/);
         if (known) return NativeResponse.json({ known: true });
         const thread = path.match(/\/threads\/([^/]+)\/messages$/);
-        if (thread)
+        if (thread) {
+          const threadId = decodeURIComponent(thread[1] ?? "");
+          const runs = runtime.threadRuns.get(threadId);
           return NativeResponse.json({
-            messages:
-              runtime.stored.get(decodeURIComponent(thread[1] ?? "")) ?? [],
+            messages: runtime.stored.get(threadId) ?? [],
+            ...(runs ? { runs } : {}),
           });
+        }
+        const stop = path.match(/\/threads\/([^/]+)\/runs\/([^/]+)\/stop$/);
+        if (stop) {
+          runtime.stops.push({
+            threadId: decodeURIComponent(stop[1] ?? ""),
+            runId: decodeURIComponent(stop[2] ?? ""),
+          });
+          return NativeResponse.json({ ok: true });
+        }
         if (path.endsWith("/info"))
           return NativeResponse.json({
             version: "fixture",
@@ -261,6 +278,8 @@ export function botRuntime() {
     runtime.plans = [];
     runtime.recorded = new Map();
     runtime.stored = new Map();
+    runtime.threadRuns = new Map();
+    runtime.stops = [];
     runtime.joins = [];
     runtime.runs = [];
     runtime.decisions = [];

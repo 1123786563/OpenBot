@@ -72,6 +72,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - **A conversation you can no longer read offers the way back.** When your access to a conversation
   ends, a group conversation refuses to open, or a conversation page cannot open at all, the page
   now says why and links to Home instead of leaving you with a Retry that can never succeed.
+- **A Bot's own chat (`/bot`) picks up where the Bot left off.** Opening it loads the stored
+  conversation, and a read that fails keeps what is on screen and your draft, saying "Couldn't load
+  earlier messages." with Try again. After you decide an approval there, the chat shows the Bot
+  still working on the server and draws the reply when that turn ends, instead of sitting idle
+  until you reopened it. Stop stops the run on the server and reads "The run was stopped." instead
+  of an error, and access that ends while the chat is open links back to Home.
 
 ## 1.0.3
 
