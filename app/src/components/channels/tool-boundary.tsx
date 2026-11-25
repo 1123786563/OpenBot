@@ -73,7 +73,8 @@ export class ToolRenderBoundary extends Component<
           status={{
             kind: "error",
             message: `Couldn't show ${this.props.name}.`,
-            description: "The rest of the conversation is fine.",
+            description:
+              "The rest of the conversation still works. Ask the Bot to send it again.",
           }}
         />
       );

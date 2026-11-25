@@ -13,6 +13,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { TimeInput } from "@astryxdesign/core/TimeInput";
 import {
   type GenerativeUIComponentProps,
+  type GenerativeUIInvokeResult,
   standardUI,
   useGenerativeUIAccessibility,
 } from "@copilotkit/react-core/v2/generative-ui";
@@ -26,6 +27,7 @@ import {
 import {
   A2UIForm,
   A2UIPressable,
+  droppedWhileRunning,
   FormFailures,
   openActionUrl,
 } from "./a2ui-form";
@@ -248,7 +250,7 @@ function A2UIButton(props: Control<"Button">) {
   const aria = useGenerativeUIAccessibility();
   const contentId = useId();
   const [copied, setCopied] = useState(false);
-  const { failed } = useContext(FormFailures);
+  const { failed, notSent } = useContext(FormFailures);
   useEffect(() => {
     if (!copied) return;
     const timeout = setTimeout(() => setCopied(false), 1500);
@@ -308,7 +310,9 @@ function A2UIButton(props: Control<"Button">) {
           );
           return;
         }
-        props.onClick?.({});
+        void props.onClick?.({}).then((result: GenerativeUIInvokeResult) => {
+          if (droppedWhileRunning(result)) notSent();
+        });
       }}
     >
       {child ? (
@@ -356,10 +360,18 @@ function A2UISelect(props: Control<"Select">) {
         width={props.block === false ? undefined : "100%"}
         options={optionsOf(props.options)}
         value={text(props.value)}
-        placeholder={props.placeholder}
+        // Once cleared, the list shows the empty option's label, unless a placeholder is given.
+        placeholder={props.placeholder ?? props.clearLabel}
         hasClear={props.clearable}
         hasSearch={props.searchable}
-        onChange={props.setValue}
+        startIcon={
+          props.icon && CatalogIcon ? (
+            <CatalogIcon name={props.icon} />
+          ) : undefined
+        }
+        // An emptied Select writes the catalog's empty string, not null: the SDK omits a null
+        // context value from the message, which would drop the field the Bot expects.
+        onChange={(next: string | null) => props.setValue(next ?? "")}
       />
     </Stack>
   );
@@ -570,6 +582,9 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
   const common = {
     ...aria,
     ...fieldName(props),
+    // On the field, which passes it to its input: the SDK draws its focus ring there, and on a box
+    // around the field nothing is ever focused.
+    "data-a2ui-input": "",
     isRequired: props.required,
     isDisabled: props.disabled,
     hasClear: props.clearable,
@@ -580,7 +595,7 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
     onChange: (next: string | undefined) => props.setValue(next ?? ""),
   };
   return (
-    <Stack onBlur={onBlur} data-a2ui-input="">
+    <Stack onBlur={onBlur} style={{ flexGrow: props.weight }}>
       {time && date ? (
         <DateTimeInput
           {...common}
@@ -608,7 +623,21 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
   );
 }
 
-/** The interactive controls of `openbot/ui@1`, drawn by Astryx. Names, props and events are the catalog's. */
+/**
+ * The catalog's input controls that stay as the SDK draws them. Astryx's own SegmentedControl
+ * names its group for a screen reader and never shows a label, so drawing it with Astryx would
+ * lose the label the catalog gives it. It reads the same `--a2ui-*` theme variables and takes the
+ * keyboard like the catalog's other controls; a2ui-form.test.tsx holds it to that.
+ */
+export const SDK_DRAWN_CONTROLS = ["SegmentedControl"] as const;
+
+/**
+ * The interactive controls of `openbot/ui@1`, drawn by Astryx. Names, props and events are the
+ * catalog's. A prop Astryx has nothing to draw it with is not drawn: a TextArea's `maxRows` and
+ * `autoResize`, a CheckBox's `lineThrough` and `shape`, a RadioGroup's `variant`, a Slider's
+ * `sliderStyle`, a Pressable's `hoverBackground`, and a Button's `pill`, which would round every
+ * button the SDK draws by default.
+ */
 export const astryxA2UIOverrides = {
   Button: { component: A2UIButton },
   CheckBox: { component: A2UICheckBox },
