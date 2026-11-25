@@ -13,7 +13,6 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { TimeInput } from "@astryxdesign/core/TimeInput";
 import {
   type GenerativeUIComponentProps,
-  type GenerativeUIInvokeResult,
   standardUI,
   useGenerativeUIAccessibility,
 } from "@copilotkit/react-core/v2/generative-ui";
@@ -27,7 +26,6 @@ import {
 import {
   A2UIForm,
   A2UIPressable,
-  droppedWhileRunning,
   FormFailures,
   openActionUrl,
 } from "./a2ui-form";
@@ -250,7 +248,7 @@ function A2UIButton(props: Control<"Button">) {
   const aria = useGenerativeUIAccessibility();
   const contentId = useId();
   const [copied, setCopied] = useState(false);
-  const { failed, notSent } = useContext(FormFailures);
+  const { failed, send } = useContext(FormFailures);
   useEffect(() => {
     if (!copied) return;
     const timeout = setTimeout(() => setCopied(false), 1500);
@@ -310,9 +308,7 @@ function A2UIButton(props: Control<"Button">) {
           );
           return;
         }
-        void props.onClick?.({}).then((result: GenerativeUIInvokeResult) => {
-          if (droppedWhileRunning(result)) notSent();
-        });
+        send(props.onClick?.({}));
       }}
     >
       {child ? (
@@ -360,8 +356,9 @@ function A2UISelect(props: Control<"Select">) {
         width={props.block === false ? undefined : "100%"}
         options={optionsOf(props.options)}
         value={text(props.value)}
-        // Once cleared, the list shows the empty option's label, unless a placeholder is given.
-        placeholder={props.placeholder ?? props.clearLabel}
+        // Once cleared, the list shows the empty option's label: the clear label, else the
+        // placeholder, as the catalog's own Select names it.
+        placeholder={props.clearLabel ?? props.placeholder}
         hasClear={props.clearable}
         hasSearch={props.searchable}
         startIcon={
@@ -624,19 +621,17 @@ function A2UIDateTimeInput(props: Control<"DateTimeInput">) {
 }
 
 /**
- * The catalog's input controls that stay as the SDK draws them. Astryx's own SegmentedControl
- * names its group for a screen reader and never shows a label, so drawing it with Astryx would
- * lose the label the catalog gives it. It reads the same `--a2ui-*` theme variables and takes the
- * keyboard like the catalog's other controls; a2ui-form.test.tsx holds it to that.
- */
-export const SDK_DRAWN_CONTROLS = ["SegmentedControl"] as const;
-
-/**
  * The interactive controls of `openbot/ui@1`, drawn by Astryx. Names, props and events are the
  * catalog's. A prop Astryx has nothing to draw it with is not drawn: a TextArea's `maxRows` and
  * `autoResize`, a CheckBox's `lineThrough` and `shape`, a RadioGroup's `variant`, a Slider's
  * `sliderStyle`, a Pressable's `hoverBackground`, and a Button's `pill`, which would round every
  * button the SDK draws by default.
+ *
+ * SegmentedControl is left out on purpose, so it stays as the SDK draws it. Astryx's own
+ * SegmentedControl names its group for a screen reader and never shows a label, so drawing the
+ * catalog's with Astryx would lose the label a Bot gives it. It reads the same `--a2ui-*` theme
+ * variables and takes the keyboard like the catalog's other controls; a2ui-form.test.tsx holds it
+ * to that.
  */
 export const astryxA2UIOverrides = {
   Button: { component: A2UIButton },

@@ -3,11 +3,14 @@ import { Stack } from "@astryxdesign/core/Stack";
 import {
   type GenerativeUIComponentProps,
   type GenerativeUIInvokeResult,
-  type GenerativeUITheme,
   type standardUI,
   useGenerativeUIAccessibility,
-  useGenerativeUIRuntime,
 } from "@copilotkit/react-core/v2/generative-ui";
+import {
+  backgroundColor,
+  borderColor,
+  radius,
+} from "@copilotkit/shared/generative-ui";
 import {
   type CSSProperties,
   createContext,
@@ -28,15 +31,18 @@ type Control<Name extends keyof (typeof standardUI)["definitions"] & string> =
 export const FormFailures = createContext({
   failed: false,
   count: (_change: number) => {},
-  /** Says an event of this form was not sent because the Bot is still replying. */
-  notSent: () => {},
+  /**
+   * Sends an event of this form. The notice that nothing was sent goes first, and comes back only
+   * if the SDK drops this event because the Bot is still replying.
+   */
+  send: (_event: Promise<GenerativeUIInvokeResult> | undefined) => {},
 });
 
 /**
  * Whether the SDK dropped an event because the Bot was still replying. It reports that on the
  * result of the event and nowhere else, so the control that sent it is the one that can say so.
  */
-export function droppedWhileRunning(result: GenerativeUIInvokeResult) {
+function droppedWhileRunning(result: GenerativeUIInvokeResult) {
   return !result.ok && result.error.code === "agent_busy";
 }
 
@@ -71,12 +77,22 @@ export function A2UINodeError() {
 
 export function A2UIForm(props: Control<"Form">) {
   const aria = useGenerativeUIAccessibility();
-  const { theme } = useGenerativeUIRuntime() ?? {};
   const element = useRef<HTMLFormElement>(null);
   const [failed, setFailed] = useState(0);
   const [undrawn, setUndrawn] = useState(0);
   const [unsent, setUnsent] = useState(false);
-  const notSent = useRef(() => setUnsent(true)).current;
+  // Only the latest send's result counts. A send dropped while an earlier one is still on its way
+  // keeps its notice when the earlier one is answered.
+  const latest = useRef(0);
+  const send = useRef(
+    (event: Promise<GenerativeUIInvokeResult> | undefined) => {
+      const serial = ++latest.current;
+      setUnsent(false);
+      void event?.then((result) => {
+        if (serial === latest.current) setUnsent(droppedWhileRunning(result));
+      });
+    },
+  ).current;
   const count = useRef((_change: number) =>
     setFailed((total) => total + _change),
   ).current;
@@ -85,6 +101,10 @@ export function A2UIForm(props: Control<"Form">) {
   // whatever drew before it. No boundary catches either, so nothing counts it in the context: the
   // form reads both from the DOM. The stylesheet hides the SDK's node and this error stands in its
   // place. Both can also go away again when a later update repairs the interface.
+  //
+  // The gate is conservative on purpose. One refused update keeps every form in the interface from
+  // being sent, a form that looks whole among them: a form may hold values that were drawn before
+  // the refusal, and it cannot tell which update was refused.
   useEffect(() => {
     const form = element.current;
     if (!form) return;
@@ -103,9 +123,10 @@ export function A2UIForm(props: Control<"Form">) {
   }, []);
   const broken = failed > 0 || undrawn > 0;
   return (
-    <FormFailures.Provider value={{ failed: broken, count, notSent }}>
+    <FormFailures.Provider value={{ failed: broken, count, send }}>
       <Stack
         {...aria}
+        {...scrollMark(props.scrollable)}
         ref={element}
         as="form"
         aria-label={props.label}
@@ -113,17 +134,16 @@ export function A2UIForm(props: Control<"Form">) {
         // Four steps between a form's fields is the catalog's default.
         gap={props.gap === undefined ? 4 : undefined}
         data-a2ui-input=""
-        style={layoutStyle(props, theme)}
+        // A form that scrolls is a Tab stop of its own, so the keyboard can scroll it before it
+        // reaches the fields inside.
+        tabIndex={props.scrollable ? 0 : undefined}
+        style={layoutStyle(props)}
         onSubmit={(event) => {
           event.preventDefault();
           if (broken) return;
           // The SDK drops an event that arrives while the Bot is still replying. Say so, or the
           // person believes the form was sent.
-          void props
-            .onSubmit?.({})
-            .then((result: GenerativeUIInvokeResult) =>
-              setUnsent(droppedWhileRunning(result)),
-            );
+          send(props.onSubmit?.({}));
         }}
       >
         {unsent && (
@@ -148,6 +168,15 @@ export function openActionUrl(href: string | undefined) {
     window.open(url, "_blank", "noopener,noreferrer");
 }
 
+/**
+ * The mark the SDK puts on a container that scrolls, as its own containers carry it: the SDK's
+ * stylesheet draws a focus ring on it. Only a box that scrolls has it. One that clips its children
+ * is no Tab stop on purpose: Chromium does not scroll it by key, so the stop would do nothing.
+ */
+const scrollMark = (scrollable: boolean | undefined) => ({
+  "data-a2ui-scroll": scrollable ? "" : undefined,
+});
+
 const FLEX_ALIGN = {
   start: "flex-start",
   end: "flex-end",
@@ -166,48 +195,33 @@ const FLEX_JUSTIFY = {
 const length = (value: number | string | undefined) =>
   typeof value === "number" ? `calc(var(--spacing-1) * ${value})` : value;
 
-/** Where a container puts its children, and how wide and tall it is. The catalog's layout props. */
+/**
+ * Where a container puts its children, and how wide and tall it is. The catalog's layout props,
+ * resolved as the SDK resolves them for its own containers.
+ *
+ * A colour or a corner radius the catalog names is a token, not CSS. The SDK writes it as the
+ * theme's variable, with its own value behind it, so a token the theme names no variable for
+ * still draws: the SDK's light value, and its dark value in a dark conversation. A raw colour or
+ * raw CSS passes through.
+ */
 function layoutStyle(
   props: Control<"Form"> | Control<"Pressable">,
-  theme: GenerativeUITheme | undefined,
 ): CSSProperties {
-  const themed = (name: string) =>
-    Object.hasOwn(theme ?? {}, name) || Object.hasOwn(theme?.dark ?? {}, name);
-  /**
-   * A surface or border colour the catalog names. A name the theme gives a `--a2ui-*` variable
-   * becomes that variable; anything else is CSS, as the catalog passes a raw colour through.
-   */
-  const paint = (
-    family: "color" | "color-border",
-    value: string | undefined,
-  ) => {
-    if (!value) return undefined;
-    const name = `--a2ui-${family}-${value}`;
-    return themed(name) ? `var(${name})` : value;
-  };
-  /** A radius token, a number of pixels, or one corner's raw CSS. */
-  const corner = (value: string | number | undefined) => {
-    if (value === undefined) return undefined;
-    if (typeof value === "number")
-      return `calc(var(--spacing-px, 0.0625rem) * ${value})`;
-    if (value === "full") return "var(--a2ui-radius-full, var(--radius-full))";
-    const name = `--a2ui-radius-${value}`;
-    return themed(name) ? `var(${name})` : value;
-  };
-  const radius = props.radius;
+  const radii = props.radius;
   const corners =
-    typeof radius === "object" && radius !== null
+    typeof radii === "object" && radii !== null
       ? {
-          borderTopLeftRadius: corner(radius.topLeft),
-          borderTopRightRadius: corner(radius.topRight),
-          borderBottomLeftRadius: corner(radius.bottomLeft),
-          borderBottomRightRadius: corner(radius.bottomRight),
+          borderTopLeftRadius: radius(radii.topLeft),
+          borderTopRightRadius: radius(radii.topRight),
+          borderBottomLeftRadius: radius(radii.bottomLeft),
+          borderBottomRightRadius: radius(radii.bottomRight),
         }
-      : { borderRadius: corner(radius) };
+      : { borderRadius: radius(radii) };
   return {
     display: props.inline ? "inline-flex" : undefined,
-    // The catalog's props resolve as `any` (the SDK's types do not reach this project), so the
-    // two lookups name their keys: the SDK has already checked both against the catalog's enum.
+    // The catalog's props resolve as `any` (with the SDK's 1.85.0 types, `Control<"Form">` is `any`
+    // under the app's `tsc`), so the two lookups name their keys: the SDK has already checked both
+    // against the catalog's enum.
     alignItems: props.align
       ? FLEX_ALIGN[props.align as keyof typeof FLEX_ALIGN]
       : undefined,
@@ -219,9 +233,9 @@ function layoutStyle(
     rowGap: length(props.rowGap),
     columnGap: length(props.columnGap),
     padding: props.flush ? 0 : length(props.padding),
-    background: paint("color", props.background),
+    background: backgroundColor(props.background),
     border: props.border
-      ? `1px solid ${paint("color-border", props.borderColor ?? "default")}`
+      ? `1px solid ${borderColor(props.borderColor ?? "default")}`
       : undefined,
     ...corners,
     width: length(props.width),
@@ -243,10 +257,9 @@ function layoutStyle(
 
 export function A2UIPressable(props: Control<"Pressable">) {
   const aria = useGenerativeUIAccessibility();
-  const { theme } = useGenerativeUIRuntime() ?? {};
   const container = useRef<HTMLElement>(null);
   const seen = useRef(false);
-  const { notSent } = useContext(FormFailures);
+  const { send } = useContext(FormFailures);
   const { onVisible } = props;
   // `onVisible` is sent once, the first time the container scrolls into view.
   useEffect(() => {
@@ -265,15 +278,13 @@ export function A2UIPressable(props: Control<"Pressable">) {
   const press = () => {
     if (props.disabled) return;
     if (props.href) openActionUrl(props.href);
-    else
-      void props.onClick?.({}).then((result: GenerativeUIInvokeResult) => {
-        if (droppedWhileRunning(result)) notSent();
-      });
+    else send(props.onClick?.({}));
   };
 
   return (
     <Stack
       {...aria}
+      {...scrollMark(props.scrollable)}
       ref={container}
       role="button"
       tabIndex={props.disabled ? -1 : 0}
@@ -285,7 +296,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
       style={{
         cursor: props.disabled ? "not-allowed" : "pointer",
         opacity: props.disabled ? 0.5 : undefined,
-        ...layoutStyle(props, theme),
+        ...layoutStyle(props),
         ...(props.insetBorder
           ? { boxShadow: "inset 0 0 0 1px var(--a2ui-color-border-default)" }
           : {}),

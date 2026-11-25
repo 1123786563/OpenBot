@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import {
+  BACKGROUNDS,
+  BORDER_COLORS,
+  RADII,
+} from "@copilotkit/shared/generative-ui";
 import type { Browser, Page } from "playwright-core";
 import { compile } from "tailwindcss";
 
@@ -667,6 +672,20 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
         expect(await node.getAttribute("role")).toBe("alert");
         expect(await node.isVisible()).toBe(true);
         expect(await thrown.locator("form").count()).toBe(0);
+
+        // A form the SDK refuses as a whole is the SDK's error node alone, in the app's error
+        // colours: no Astryx error stands in for a form that is not there to hold one. Its button
+        // went with it, so nothing is left to send.
+        const mistyped = card(page, "mistyped");
+        const whole = mistyped.locator('[data-generative-ui-error="root"]');
+        expect(await whole.getAttribute("role")).toBe("alert");
+        expect(await whole.innerText()).toContain(
+          "Couldn’t display this part: invalid props",
+        );
+        expect(await mistyped.locator(".astryx-banner").count()).toBe(0);
+        expect(await mistyped.locator("form").count()).toBe(0);
+        expect(await mistyped.getByRole("button").count()).toBe(0);
+        expect(await sent()).toHaveLength(1);
       } finally {
         await page.close();
       }
@@ -724,6 +743,174 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
   );
 
   /**
+   * What the browser paints around the parts of the `tokens` interface: the form and the pressable
+   * with known values, then every part of one kind, in the order the SDK's list names them.
+   */
+  function paintOf(page: Page) {
+    return card(page, "tokens").evaluate((frame) => {
+      const part = (selector: string) => {
+        const element = frame.querySelector(selector);
+        if (!element) throw new Error(`no part for ${selector}`);
+        return element;
+      };
+      const computed = (element: Element) => getComputedStyle(element);
+      const paint = (element: Element) => {
+        const style = computed(element);
+        return {
+          border: [
+            style.borderTopWidth,
+            style.borderTopStyle,
+            style.borderTopColor,
+          ],
+          background: style.backgroundColor,
+          corner: style.borderTopLeftRadius,
+        };
+      };
+      const outlined = [...frame.querySelectorAll('[role="button"]')].find(
+        (node) => node.textContent?.trim() === "Outlined",
+      );
+      if (!outlined) throw new Error("no outlined pressable");
+      // The theme's default border colour, resolved where the pressable is.
+      const probe = document.createElement("span");
+      outlined.append(probe);
+      probe.style.color = "var(--a2ui-color-border-default)";
+      const themeBorder = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        tinted: paint(part('form[aria-label="Tinted"]')),
+        framed: paint(part('[role="button"]')),
+        outlined: { border: paint(outlined).border, themeBorder },
+        backgrounds: [
+          ...frame.querySelectorAll('form[aria-label^="Background "]'),
+        ].map((form) => computed(form).backgroundColor),
+        borders: [...frame.querySelectorAll('[role="button"]')]
+          .filter((node) => node.textContent?.startsWith("Border "))
+          .map((node) => computed(node).borderTopWidth),
+        corners: [...frame.querySelectorAll('form[aria-label^="Radius "]')].map(
+          (form) => computed(form).borderTopLeftRadius,
+        ),
+      };
+    });
+  }
+
+  browserTest(
+    "every colour and corner radius the catalog allows draws, with the SDK's values where the theme names none, in light and in dark",
+    180_000,
+    async (deadline) => {
+      // The SDK's values for the two named parts: its light ones are the literals behind the
+      // variables, and its dark ones are the variables it sets under the `dark` class.
+      for (const [theme, border, background] of [
+        ["light", "rgb(156, 196, 234)", "rgba(0, 128, 93, 0.08)"],
+        ["dark", "rgb(47, 95, 143)", "rgba(60, 200, 150, 0.14)"],
+      ] as const) {
+        const page = await open("?only=tokens", deadline, theme);
+        try {
+          const paint = await paintOf(page);
+          // A border in a colour the theme does not name is a border, one pixel wide.
+          expect(paint.framed.border, theme).toEqual(["1px", "solid", border]);
+          expect(paint.tinted.background, theme).toBe(background);
+          // The catalog's two smallest corners, as the SDK names them in pixels.
+          expect(paint.tinted.corner, theme).toBe("2px");
+          expect(paint.framed.corner, theme).toBe("4px");
+          // A border with no colour named is a border, in the theme's own colour.
+          expect(paint.outlined.border, theme).toEqual([
+            "1px",
+            "solid",
+            paint.outlined.themeBorder,
+          ]);
+
+          // No value in the SDK's lists is dropped: each background is painted, each border is a
+          // pixel wide, and each corner is round.
+          expect(paint.backgrounds, `${theme}: backgrounds`).toHaveLength(
+            BACKGROUNDS.length,
+          );
+          for (const [index, token] of BACKGROUNDS.entries())
+            expect(
+              paint.backgrounds[index],
+              `${theme}: background ${token}`,
+            ).not.toBe("rgba(0, 0, 0, 0)");
+          expect(paint.borders, `${theme}: borders`).toHaveLength(
+            BORDER_COLORS.length,
+          );
+          for (const [index, token] of BORDER_COLORS.entries())
+            expect(paint.borders[index], `${theme}: border ${token}`).toBe(
+              "1px",
+            );
+          expect(paint.corners, `${theme}: corners`).toHaveLength(RADII.length);
+          for (const [index, token] of RADII.entries())
+            expect(paint.corners[index], `${theme}: radius ${token}`).not.toBe(
+              "0px",
+            );
+        } finally {
+          await page.close();
+        }
+      }
+    },
+  );
+
+  browserTest(
+    "a form and a pressable that scroll are Tab stops, and the keyboard scrolls them",
+    90_000,
+    async (deadline) => {
+      const page = await open("?only=scrolls", deadline);
+      try {
+        /** The focused element inside the interface, by its label, else by what it is, and its ring. */
+        const focused = () =>
+          page.evaluate(() => {
+            const element = document.activeElement as HTMLElement | null;
+            if (!element?.closest("[data-generative-ui-chat-surface]"))
+              return null;
+            const labels = [...((element as HTMLInputElement).labels ?? [])]
+              .map((label) => label.textContent)
+              .join("");
+            return {
+              name: (
+                element.getAttribute("aria-label") ??
+                (labels || element.getAttribute("role")) ??
+                element.tagName
+              ).trim(),
+              outline: getComputedStyle(element).outlineStyle,
+            };
+          });
+        /** The box is where it was; the arrow key scrolls it. */
+        const scrollsByKey = async (selector: string) => {
+          const top = () =>
+            page.evaluate(
+              (selector) =>
+                (document.querySelector(selector) as HTMLElement | null)
+                  ?.scrollTop,
+              selector,
+            );
+          expect(await top()).toBe(0);
+          await page.keyboard.press("ArrowDown");
+          await page.waitForFunction(
+            (selector) =>
+              (document.querySelector(selector) as HTMLElement | null)
+                ?.scrollTop !== 0,
+            selector,
+            { timeout: 4000 },
+          );
+        };
+        // Tab into the interface: the first stop is the scrolling form itself. Without that stop,
+        // Tab goes straight to the field inside it, and no key can scroll the form.
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "Scrolls" });
+        expect((await focused())?.outline).not.toBe("none");
+        await scrollsByKey('form[aria-label="Scrolls"]');
+        // Then the field inside it, then the pressable, which scrolls the same way.
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "Note" });
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "button" });
+        expect((await focused())?.outline).not.toBe("none");
+        await scrollsByKey('[role="button"]');
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  /**
    * One form with every control the catalog has, as a chat shows them: a field with typed text, a
    * list and a calendar open, buttons in each state. In each theme, at a chat's width and at a
    * phone's: the inks are the theme's, every visible word reads against what is behind it, each Tab
@@ -762,10 +949,10 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
           try {
             await readNow("closed");
 
-            // Every button is drawn as Astryx writes it, from the theme's colours and with room
-            // around its label. Tailwind's preflight is in a later cascade layer, and left them all
-            // bare text with no inset: the picked chip without a fill, the destructive button not
-            // red, and two chips touching.
+            // Every button is drawn as Astryx writes it, from the theme's colours, with its corners
+            // and with room around its label. Tailwind's preflight is in a later cascade layer, and
+            // left them all bare text with no inset: the picked chip without a fill, the
+            // destructive button not red, square corners, and two chips touching.
             const painted = await surface.evaluate((root) => {
               const probe = document.createElement("span");
               /** A theme colour, resolved where the button is. */
@@ -778,11 +965,24 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
                 (button) => {
                   const style = getComputedStyle(button);
                   const read = (name: string) => colour(button, name);
+                  // The radius Astryx's rule gives a button, resolved from the theme.
+                  probe.style.borderRadius =
+                    "var(--_button-radius, var(--radius-element))";
+                  button.append(probe);
+                  const cornerOfTheme =
+                    getComputedStyle(probe).borderTopLeftRadius;
                   return {
                     label: button.textContent?.trim(),
                     variant: button.getAttribute("data-variant"),
                     fill: style.backgroundColor,
                     ink: style.color,
+                    corner: [
+                      style.borderTopLeftRadius,
+                      style.borderTopRightRadius,
+                      style.borderBottomLeftRadius,
+                      style.borderBottomRightRadius,
+                    ],
+                    cornerOfTheme,
                     // Inset on each side, so a label never touches the edge of its button.
                     inset: [
                       style.paddingTop,
@@ -823,10 +1023,15 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
             };
             for (const button of painted) {
               const [fill, ink] = paintOf(button);
-              expect(
-                [button.fill, button.ink],
-                `${at}: ${button.variant} "${button.label}"`,
-              ).toEqual([fill, ink]);
+              const which = `${at}: ${button.variant} "${button.label}"`;
+              expect([button.fill, button.ink], which).toEqual([fill, ink]);
+              // Rounded on all four corners, as the theme rounds a button.
+              expect(button.cornerOfTheme, `${which} corner of theme`).not.toBe(
+                "0px",
+              );
+              expect(button.corner, `${which} corners`).toEqual(
+                Array<string>(4).fill(button.cornerOfTheme),
+              );
               for (const side of button.inset)
                 expect(
                   side,

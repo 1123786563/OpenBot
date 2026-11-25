@@ -9,11 +9,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 ## Unreleased
 
 - **A generated form that could not be drawn whole is no longer sent.** If part of a form fails
-  to draw, because a control is bound to the wrong kind of value or because an update to it could
-  not be applied, the form says "Couldn't show this part of the reply." and cannot be sent, so the
-  Bot never receives an answer that is missing a field. The rest of the message, and the forms
-  beside it, still work. An interface that could not be drawn at all now shows its error in
-  OpenBot's error colours in both light and dark.
+  to draw, because a control is bound to the wrong kind of value, the form says "Couldn't show this
+  part of the reply." and cannot be sent, so the Bot never receives an answer that is missing a
+  field. The rest of the message, and the forms beside it, still work. If an update to an interface
+  could not be applied, every form in that interface says the same and cannot be sent, even one
+  that looks whole, because it may hold values from before the update. An interface that could not
+  be drawn at all now shows its error in OpenBot's error colours in both light and dark.
 - **A Select in a generated form that the person clears now sends an empty value.** Before, the
   field was left out of what the Bot received, so the Bot could read the answer as missing it.
 - **Generated forms and pressable areas take more of the layout a Bot gives them.** The spacing
@@ -24,7 +25,11 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - **A generated form used while the Bot is still replying says nothing was sent.** A form, or a
   button in one, used while the reply is still being written was dropped in silence. It now shows
   "Nothing was sent. The Bot is still replying." and asks to send it again once the reply has
-  finished.
+  finished. The notice goes as soon as a later send goes through, so it is not still on screen
+  while the Bot answers that message.
+- **A generated form that scrolls can be scrolled from the keyboard.** Tab now reaches the form
+  before the fields in it, and the arrow keys scroll it, with a focus ring to show where the
+  keyboard is. Before, Tab went straight to the first field, and no key could scroll the form.
 - **An interface that fails before its own error handling is named in a person's words.** The
   transcript used to say "Couldn't show generative-ui-surface." for an interface a Bot drew. It now
   says "Couldn't show this part of the reply.", and every such message ends with the next step:

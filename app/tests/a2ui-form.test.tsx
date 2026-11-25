@@ -19,10 +19,7 @@ import { z } from "zod";
 import { ChatTranscript } from "@/components/channels/chat-transcript";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { generativeUiProviderOptions, OPENBOT_UI } from "@/lib/copilot/a2ui";
-import {
-  astryxA2UIOverrides,
-  SDK_DRAWN_CONTROLS,
-} from "@/lib/copilot/a2ui-controls";
+import { astryxA2UIOverrides } from "@/lib/copilot/a2ui-controls";
 import { withCurrentA2uiVersions } from "@/lib/copilot/thread-messages";
 
 beforeAll(() => GlobalRegistrator.register());
@@ -656,6 +653,57 @@ test("a form whose later update was refused shows an Astryx error and is not sen
   expect(sent).toEqual(["Note\n\nnote: Tea"]);
 });
 
+test("a form that looks whole, in an interface with one refused update, shows the error and sends nothing too", async () => {
+  sent.length = 0;
+  const view = render(
+    <StoredTranscript
+      messages={[
+        stored(
+          // The form has its field and its button, and needs nothing from the update that follows.
+          "sound",
+          [
+            form("root", "sendSound", ["name"]),
+            field("name", "Name"),
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send sound",
+              submit: true,
+            },
+          ],
+          [
+            {
+              version: "1.0",
+              // A line of the interface with a value the catalog refuses: the whole update is.
+              updateComponents: {
+                surfaceId: "sound",
+                components: [{ id: "aside", component: "Text", text: true }],
+              },
+            },
+          ],
+        ),
+      ]}
+    />,
+  );
+  await view.findByText("Part of this UI couldn't be shown.");
+  const name = (await view.findByLabelText("Name")) as HTMLInputElement;
+  const sound = name.form as HTMLFormElement;
+  // The form may hold values from before the refusal, so it says what happened...
+  const banner = sound.querySelector(".astryx-banner");
+  expect(banner?.getAttribute("data-status")).toBe("error");
+  expect(banner?.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn't show this part of the reply.",
+  );
+  // ...and sends nothing.
+  expect(
+    view
+      .getByRole("button", { name: "Send sound" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  fireEvent.submit(sound);
+  expect(sent).toEqual([]);
+});
+
 test("a cleared Select submits its empty value instead of losing the field", async () => {
   sent.length = 0;
   const view = render(
@@ -704,7 +752,119 @@ test("a cleared Select submits its empty value instead of losing the field", asy
   expect(sent).toEqual(["Class\n\nclass: "]);
 });
 
-test("a Form and a Pressable take the layout the catalog gives them", async () => {
+test("a cleared Select shows its clear label before its placeholder, as the catalog's Select does", async () => {
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "clear-label",
+          dataModel: { class: "economy" },
+          components: [
+            { id: "root", component: "Column", children: ["class"] },
+            {
+              id: "class",
+              component: "Select",
+              label: "Class",
+              clearable: true,
+              clearLabel: "Any class",
+              placeholder: "Choose a class",
+              options: ["economy", "business"],
+              value: { "@path": "/class" },
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="clear-label" />
+    </Page>,
+  );
+  const select = await view.findByRole("combobox", { name: "Class" });
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: /clear/i }));
+  // Once cleared, the empty option is named by the clear label.
+  expect(select.textContent).toBe("Any class");
+});
+
+test("a Form and a Pressable take the layout the catalog gives them, key by key", async () => {
+  // One container per key, with that key alone, so a row fails when its line in layoutStyle goes.
+  const containers: Record<string, unknown>[] = [
+    { id: "align", component: "Form", label: "Align", align: "end" },
+    {
+      id: "justify",
+      component: "Form",
+      label: "Justify",
+      justify: "spaceBetween",
+    },
+    { id: "wrap", component: "Form", label: "Wrap", wrap: "wrap" },
+    { id: "gap", component: "Form", label: "Gap", gap: 3 },
+    {
+      id: "packed",
+      component: "Form",
+      label: "Packed",
+      disableAutoSpacing: true,
+    },
+    { id: "row-gap", component: "Form", label: "Row gap", rowGap: 2 },
+    {
+      id: "column-gap",
+      component: "Form",
+      label: "Column gap",
+      columnGap: "0.5rem",
+    },
+    { id: "padded", component: "Form", label: "Padded", padding: "1.5rem" },
+    { id: "flush", component: "Form", label: "Flush", flush: true },
+    { id: "width", component: "Form", label: "Width", width: "20rem" },
+    { id: "height", component: "Form", label: "Height", height: "6rem" },
+    {
+      id: "min-width",
+      component: "Form",
+      label: "Minimum width",
+      minWidth: 40,
+    },
+    {
+      id: "max-width",
+      component: "Form",
+      label: "Maximum width",
+      maxWidth: 72,
+    },
+    {
+      id: "min-height",
+      component: "Form",
+      label: "Minimum height",
+      minHeight: 2,
+    },
+    {
+      id: "max-height",
+      component: "Form",
+      label: "Maximum height",
+      maxHeight: 12,
+    },
+    { id: "min-size", component: "Form", label: "Minimum size", minSize: 6 },
+    { id: "max-size", component: "Form", label: "Maximum size", maxSize: 80 },
+    { id: "weight", component: "Form", label: "Weight", weight: 2 },
+    { id: "aspect", component: "Form", label: "Aspect", aspectRatio: "16 / 9" },
+    { id: "scrolls", component: "Form", label: "Scrolls", scrollable: true },
+    { id: "clips", component: "Form", label: "Clips", clip: true },
+    { id: "shadow", component: "Form", label: "Shadow", shadow: true },
+    { id: "round", component: "Form", label: "Round", radius: 8 },
+    {
+      id: "corners",
+      component: "Form",
+      label: "Corners",
+      radius: { topLeft: "0.5rem", bottomRight: "1rem" },
+    },
+    // A pressable has no label of its own: it is named by what it holds.
+    {
+      id: "chip",
+      component: "Pressable",
+      inline: true,
+      padding: "0.5rem",
+      insetBorder: true,
+      children: ["chip-text"],
+    },
+    { id: "chip-text", component: "Text", text: "Chip" },
+  ];
   const view = render(
     <Page
       ui={OPENBOT_UI}
@@ -713,37 +873,12 @@ test("a Form and a Pressable take the layout the catalog gives them", async () =
           surfaceId: "layout",
           dataModel: {},
           components: [
-            { id: "root", component: "Column", children: ["panel", "chip"] },
             {
-              ...form("panel", "sendPanel", []),
-              label: "Panel",
-              maxWidth: 72,
-              rowGap: 2,
-              columnGap: 4,
-              flush: true,
-              background: "surface-secondary",
-              radius: "lg",
-              shadow: true,
-              children: ["panel-send"],
+              id: "root",
+              component: "Column",
+              children: containers.map(({ id }) => id),
             },
-            {
-              id: "panel-send",
-              component: "Button",
-              label: "Send panel",
-              submit: true,
-            },
-            {
-              id: "chip",
-              component: "Pressable",
-              inline: true,
-              border: true,
-              borderColor: "danger",
-              padding: "0.5rem",
-              insetBorder: true,
-              children: ["chip-text"],
-              onClick: { event: { name: "pick" } },
-            },
-            { id: "chip-text", component: "Text", text: "Chip" },
+            ...containers,
           ],
         })
       }
@@ -751,40 +886,97 @@ test("a Form and a Pressable take the layout the catalog gives them", async () =
       <GenerativeUISurface id="layout" />
     </Page>,
   );
-  const panel = (
-    (view.getByRole("button", { name: "Send panel" }) as HTMLButtonElement)
-      .form as HTMLFormElement
-  ).style;
+  const form = (label: string) =>
+    view.container.querySelector(`[aria-label="${label}"]`) as HTMLElement;
   const chip = view.getByRole("button", { name: "Chip" }) as HTMLElement;
-  for (const [name, style, property, expected] of [
-    ["panel", panel, "maxWidth", "calc(var(--spacing-1) * 72)"],
-    ["panel", panel, "rowGap", "calc(var(--spacing-1) * 2)"],
-    ["panel", panel, "columnGap", "calc(var(--spacing-1) * 4)"],
-    ["panel", panel, "padding", "0"],
-    ["panel", panel, "background", "var(--a2ui-color-surface-secondary)"],
-    ["panel", panel, "borderRadius", "var(--a2ui-radius-lg)"],
-    ["panel", panel, "boxShadow", "var(--a2ui-shadow-sm, var(--shadow-low))"],
-    ["chip", chip.style, "display", "inline-flex"],
+  /** The CSS property as the element holds it. happy-dom drops a declaration it cannot parse. */
+  const read = (element: HTMLElement, property: string) =>
+    (element.style as unknown as Record<string, string>)[property];
+  // A background, a token radius and a border are read computed in the browser fixture: the SDK
+  // writes them as `var(--token, fallback)`, which happy-dom drops for the first two and for the
+  // default border colour. A padding and a width in steps are dropped by happy-dom as well, so
+  // those rows hold CSS lengths; the rows in between cover a number of steps.
+  for (const [name, element, property, expected] of [
+    ["align", form("Align"), "alignItems", "flex-end"],
+    ["justify", form("Justify"), "justifyContent", "space-between"],
+    ["wrap", form("Wrap"), "flexWrap", "wrap"],
+    // A number counts 4px steps.
+    ["gap", form("Gap"), "gap", "calc(var(--spacing-1) * 3)"],
+    ["disableAutoSpacing", form("Packed"), "gap", "0"],
+    ["rowGap", form("Row gap"), "rowGap", "calc(var(--spacing-1) * 2)"],
+    ["columnGap", form("Column gap"), "columnGap", "0.5rem"],
+    ["padding", form("Padded"), "padding", "1.5rem"],
+    ["flush", form("Flush"), "padding", "0px"],
+    ["width", form("Width"), "width", "20rem"],
+    ["height", form("Height"), "height", "6rem"],
     [
-      "chip",
-      chip.style,
-      "--a2ui-color-border-danger",
-      "var(--a2ui-color-border-danger)",
+      "minWidth",
+      form("Minimum width"),
+      "minWidth",
+      "calc(var(--spacing-1) * 40)",
     ],
-    ["chip", chip.style, "padding", "0.5rem"],
     [
-      "chip",
-      chip.style,
+      "maxWidth",
+      form("Maximum width"),
+      "maxWidth",
+      "calc(var(--spacing-1) * 72)",
+    ],
+    [
+      "minHeight",
+      form("Minimum height"),
+      "minHeight",
+      "calc(var(--spacing-1) * 2)",
+    ],
+    [
+      "maxHeight",
+      form("Maximum height"),
+      "maxHeight",
+      "calc(var(--spacing-1) * 12)",
+    ],
+    // A size is both a width and a height.
+    ["minSize", form("Minimum size"), "minWidth", "calc(var(--spacing-1) * 6)"],
+    [
+      "minSize",
+      form("Minimum size"),
+      "minHeight",
+      "calc(var(--spacing-1) * 6)",
+    ],
+    [
+      "maxSize",
+      form("Maximum size"),
+      "maxWidth",
+      "calc(var(--spacing-1) * 80)",
+    ],
+    [
+      "maxSize",
+      form("Maximum size"),
+      "maxHeight",
+      "calc(var(--spacing-1) * 80)",
+    ],
+    ["weight", form("Weight"), "flexGrow", "2"],
+    ["aspectRatio", form("Aspect"), "aspectRatio", "16 / 9"],
+    ["scrollable", form("Scrolls"), "overflow", "auto"],
+    ["clip", form("Clips"), "overflow", "hidden"],
+    [
+      "shadow",
+      form("Shadow"),
+      "boxShadow",
+      "var(--a2ui-shadow-sm, var(--shadow-low))",
+    ],
+    // A radius that is a number is so many pixels.
+    ["radius", form("Round"), "borderRadius", "8px"],
+    ["radius.topLeft", form("Corners"), "borderTopLeftRadius", "0.5rem"],
+    ["radius.bottomRight", form("Corners"), "borderBottomRightRadius", "1rem"],
+    ["inline", chip, "display", "inline-flex"],
+    ["padding", chip, "padding", "0.5rem"],
+    [
+      "insetBorder",
+      chip,
       "boxShadow",
       "inset 0 0 0 1px var(--a2ui-color-border-default)",
     ],
   ] as const)
-    expect(
-      property.startsWith("--")
-        ? style.cssText
-        : (style as unknown as Record<string, string>)[property],
-      `${name} ${property}`,
-    ).toContain(expected);
+    expect(read(element, property), `${name} ${property}`).toBe(expected);
 });
 
 test("Select and DateTimeInput take the props Astryx has an equivalent for", async () => {
@@ -873,13 +1065,10 @@ test("SegmentedControl stays as the SDK draws it, reads the theme and writes wha
       <GenerativeUISurface id="segment" />
     </Page>,
   );
-  // The one input control recorded as SDK-drawn is the one that is not overridden, and it is in
-  // the catalog a Bot draws from.
-  expect(SDK_DRAWN_CONTROLS).toEqual(["SegmentedControl"]);
-  for (const name of SDK_DRAWN_CONTROLS) {
-    expect(OPENBOT_UI.components.has(name)).toBe(true);
-    expect(astryxA2UIOverrides).not.toHaveProperty(name);
-  }
+  // SegmentedControl is in the catalog a Bot draws from and is not overridden, so it stays as the
+  // SDK draws it.
+  expect(OPENBOT_UI.components.has("SegmentedControl")).toBe(true);
+  expect(astryxA2UIOverrides).not.toHaveProperty("SegmentedControl");
   const economy = (await view.findByRole("radio", {
     name: "economy",
   })) as HTMLElement;
@@ -955,6 +1144,194 @@ test("a form used while the Bot is still replying says nothing was sent, and sen
   await waitFor(() => expect(view.queryByText(notice)).toBeNull());
 });
 
+const NOT_SENT = "Nothing was sent. The Bot is still replying.";
+
+/**
+ * A page with one form, a button and a pressable in it, and an agent whose runs stay open until
+ * `finishRun` ends the latest one: while a run is open, the Bot is answering what was sent.
+ */
+async function openAgainPage() {
+  sent.length = 0;
+  const open: (() => void)[] = [];
+  const running = {
+    ...agent,
+    isRunning: true,
+    runAgent: () =>
+      new Promise<{ newMessages: [] }>((resolve) =>
+        open.push(() => resolve({ newMessages: [] })),
+      ),
+  } as unknown as Agent;
+  const view = render(
+    <Page
+      runningAgent={running}
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "again",
+          dataModel: { name: "" },
+          components: [
+            {
+              ...form("root", "sendName", ["name"]),
+              children: ["name", "add", "pick", "root-send"],
+            },
+            field("name", "Name"),
+            {
+              id: "add",
+              component: "Button",
+              label: "Add",
+              onClick: { event: { name: "addName" } },
+            },
+            {
+              id: "pick",
+              component: "Pressable",
+              children: ["pick-text"],
+              onClick: { event: { name: "pickName" } },
+            },
+            { id: "pick-text", component: "Text", text: "Pick" },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="again" />
+    </Page>,
+  );
+  const name = (await view.findByLabelText("Name")) as HTMLInputElement;
+  /** Ends the run the SDK is on, once it has started. */
+  const finishRun = async () => {
+    await waitFor(() => expect(open.length).toBeGreaterThan(0));
+    open.shift()?.();
+    // What the SDK does after a run ends.
+    await new Promise<void>((resolve) => setTimeout(resolve));
+  };
+  return { running, view, name, finishRun };
+}
+
+test("a Button or a Pressable used again once the reply is over sends, and the notice that nothing was sent goes", async () => {
+  const { running, view, finishRun } = await openAgainPage();
+  const user = userEvent.setup({ document });
+  for (const [control, event] of [
+    ["Add", "Add"],
+    ["Pick", "Pick"],
+  ] as const) {
+    // Used while the Bot is still replying: dropped, and the form says so.
+    running.isRunning = true;
+    await user.click(view.getByRole("button", { name: control }));
+    expect(
+      (await view.findByText(NOT_SENT)).closest(".astryx-banner"),
+    ).toBeTruthy();
+
+    // Used again once the reply is over: sent. The notice goes at once, and stays away while the
+    // Bot answers, and after it has answered.
+    running.isRunning = false;
+    await user.click(view.getByRole("button", { name: control }));
+    expect(sent.at(-1), control).toBe(event);
+    expect(view.queryByText(NOT_SENT), `${control}, answering`).toBeNull();
+    await finishRun();
+    expect(view.queryByText(NOT_SENT), `${control}, answered`).toBeNull();
+  }
+  expect(sent).toEqual(["Add", "Pick"]);
+});
+
+test("a Form sent again once the reply is over shows no notice while the Bot answers it", async () => {
+  const { running, view, name, finishRun } = await openAgainPage();
+  const formElement = name.form as HTMLFormElement;
+  await userEvent.setup({ document }).type(name, "Ada");
+
+  // Sent while the Bot is still replying: dropped, and the form says so.
+  fireEvent.submit(formElement);
+  expect(
+    (await view.findByText(NOT_SENT)).closest(".astryx-banner"),
+  ).toBeTruthy();
+  expect(sent).toEqual([]);
+
+  // Sent again once the reply is over: it goes, and no notice is shown while the Bot answers.
+  running.isRunning = false;
+  fireEvent.submit(formElement);
+  expect(sent).toEqual(["Name\n\nname: Ada"]);
+  expect(view.queryByText(NOT_SENT)).toBeNull();
+  await finishRun();
+  expect(view.queryByText(NOT_SENT)).toBeNull();
+
+  // A send that is dropped while an earlier one is still on its way keeps its notice after the
+  // earlier one is answered: that result belongs to the earlier send.
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: "Add" }));
+  fireEvent.submit(formElement);
+  expect(sent).toEqual(["Name\n\nname: Ada", "Add"]);
+  expect(
+    (await view.findByText(NOT_SENT)).closest(".astryx-banner"),
+  ).toBeTruthy();
+  await finishRun();
+  expect(view.getByText(NOT_SENT)).toBeTruthy();
+});
+
+test("a Form and a Pressable that scroll can take focus, so the keyboard can scroll them", async () => {
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "scrolls",
+          dataModel: {},
+          components: [
+            {
+              id: "root",
+              component: "Column",
+              children: ["scrolls", "still", "pans", "off"],
+            },
+            {
+              id: "scrolls",
+              component: "Form",
+              label: "Scrolls",
+              scrollable: true,
+            },
+            { id: "still", component: "Form", label: "Still" },
+            {
+              id: "pans",
+              component: "Pressable",
+              scrollable: true,
+              children: ["pans-text"],
+            },
+            { id: "pans-text", component: "Text", text: "Pans" },
+            {
+              id: "off",
+              component: "Pressable",
+              scrollable: true,
+              disabled: true,
+              children: ["off-text"],
+            },
+            { id: "off-text", component: "Text", text: "Off" },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="scrolls" />
+    </Page>,
+  );
+  const form = (label: string) =>
+    view.container.querySelector(`[aria-label="${label}"]`) as HTMLFormElement;
+  // As the SDK's own containers do: a box that scrolls is a Tab stop, and carries the mark its
+  // stylesheet draws a focus ring on.
+  expect(form("Scrolls").getAttribute("tabindex")).toBe("0");
+  expect(form("Scrolls").hasAttribute("data-a2ui-scroll")).toBe(true);
+  // A box that does not scroll is no Tab stop of its own.
+  expect(form("Still").getAttribute("tabindex")).toBeNull();
+  expect(form("Still").hasAttribute("data-a2ui-scroll")).toBe(false);
+  // A pressable is a Tab stop already: it takes the mark, and a disabled one stays out of the order.
+  const pans = view.getByRole("button", { name: "Pans" });
+  expect(pans.getAttribute("tabindex")).toBe("0");
+  expect(pans.hasAttribute("data-a2ui-scroll")).toBe(true);
+  const off = view.getByRole("button", { name: "Off" });
+  expect(off.getAttribute("tabindex")).toBe("-1");
+});
+
 test("a Button takes the catalog's href, copy, loading, icon, icon-only and variant", async () => {
   sent.length = 0;
   const opened: string[] = [];
@@ -992,6 +1369,7 @@ test("a Button takes the catalog's href, copy, loading, icon, icon-only and vari
                   "copy",
                   "busy",
                   "pin",
+                  "square",
                   "remove",
                   "plain",
                   "click",
@@ -1029,6 +1407,14 @@ test("a Button takes the catalog's href, copy, loading, icon, icon-only and vari
                 component: "Button",
                 label: "Pin",
                 icon: "pin",
+                uniform: true,
+              },
+              {
+                // Uniform, for a square, but with no icon: there is nothing to fill the square
+                // with, so the label is what the button shows.
+                id: "square",
+                component: "Button",
+                label: "Square",
                 uniform: true,
               },
               {
@@ -1074,9 +1460,14 @@ test("a Button takes the catalog's href, copy, loading, icon, icon-only and vari
         .getByRole("button", { name: "Working" })
         .getAttribute("aria-disabled"),
     ).toBe("true");
-    // An icon-only button is named by its label and draws its icon.
+    // An icon-only button is named by its label, draws its icon, and shows no label as text.
     const pin = view.getByRole("button", { name: "Pin" });
     expect(pin.querySelector("svg")).toBeTruthy();
+    expect(pin.textContent).not.toContain("Pin");
+    // A uniform button with no icon is not icon-only: it keeps its label as its text.
+    const square = view.getByRole("button", { name: "Square" });
+    expect(square.textContent).toBe("Square");
+    expect(square.querySelector("svg")).toBeNull();
     expect(pin.getAttribute("data-variant")).toBe("secondary");
     expect(
       view.getByRole("button", { name: "Remove" }).getAttribute("data-variant"),
