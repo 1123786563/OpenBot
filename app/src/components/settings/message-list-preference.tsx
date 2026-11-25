@@ -20,10 +20,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTranslation } from "@/i18n";
+import { relativeTimeShort } from "@/lib/relative-time";
 import {
   saveUserPreferencesMutationOptions,
   useUserPreferences,
 } from "@/lib/settings/message-list";
+
+/*
+ * The sample conversation's last message, two hours before a fixed clock, and read through the same formatter as a real
+ * roster row. So the preview says what the sidebar says ("2h", "2 小时前") instead of a catalog literal that drifted from
+ * it, and never ages.
+ */
+const sampleNow = new Date("2026-05-04T08:00:00.000Z");
+const sampleLastMessageAt = new Date(
+  sampleNow.getTime() - 2 * 3_600_000,
+).toISOString();
 
 export function MessageListPreference() {
   const descriptionId = useId();
@@ -134,7 +145,7 @@ export function MessageListPreference() {
               participantIds={["message-list-preview"]}
               name={t("settings.messageList.sampleName", "General Assistant")}
               title={t("settings.messageList.sampleTitle", "Plan next week")}
-              lastMessageAt={t("settings.messageList.sampleTime", "2h")}
+              lastMessageAt={relativeTimeShort(sampleLastMessageAt, sampleNow)}
               emphasis={emphasis}
             />
           </figure>

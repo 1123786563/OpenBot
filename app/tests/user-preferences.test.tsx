@@ -74,6 +74,8 @@ test("loads preferences from the account and renders the saved emphasis", async 
   const { view } = setup();
   const agent = await view.findByText("General Assistant");
   expect(agent.className).toContain("text-sm");
+  // The sample's time is the roster's own short relative time, not a literal of its own.
+  expect(view.getByText("2h")).toBeTruthy();
   expect(requests).toEqual([
     { path: "/api/settings/preferences", method: "GET", body: undefined },
   ]);
@@ -159,7 +161,7 @@ test("in Chinese the preference row, trigger and preview speak the interface lan
   // emphasis "agent": the Bot name line is the prominent one.
   expect(view.getByText("通用助手").className).toContain("text-sm");
   expect(view.getByText("计划下周安排").className).toContain("text-[12px]");
-  expect(view.getByText("2 小时")).toBeTruthy();
+  expect(view.getByText("2 小时前")).toBeTruthy();
   expect(view.getByText("消息列表突出显示")).toBeTruthy();
   expect(view.getByText("在侧栏中优先显示对话标题或 Bot 名称。")).toBeTruthy();
   const combo = view.getByRole("combobox");
