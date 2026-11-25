@@ -13,12 +13,12 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { z } from "zod";
+import { ConversationApprovals } from "@/components/approvals/inline-approval";
 import {
   QuestionNotice,
   type WaitingQuestion,
 } from "@/components/approvals/question-notice";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Button } from "@/components/ui/button";
 import {
   MessageContent,
   MessageHeader,
@@ -36,10 +36,13 @@ import {
   readComposeDraft,
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
-import { canKeepCachedRead, client } from "@/lib/client";
+import { canKeepCachedRead } from "@/lib/client";
+import {
+  controlThreadRun,
+  readThreadMessages,
+} from "@/lib/copilot/thread-messages";
 import {
   awaitingFirstReply,
-  type GroupBackgroundRun,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
@@ -60,6 +63,9 @@ import {
 } from "./conversation-status";
 import { RUN_STAGE, runOutcomeWords } from "./run-stage";
 import { TeamBotConsentCard } from "./team-bot-consent";
+
+/** What a stop says when the server would not stop the run. */
+const STOP_REFUSED = "The Bot couldn't be stopped. Try again.";
 
 const groupSubmission = z.discriminatedUnion("kind", [
   z.object({
@@ -125,16 +131,65 @@ export function GroupChat({
   );
   const messages = group.data?.messages ?? [];
   const background = group.data?.backgroundRuns ?? [];
-  const stopRun = useMutation({
-    mutationFn: async (run: GroupBackgroundRun) => {
-      await client(
-        `/api/copilotkit/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}/stop?agentId=${encodeURIComponent(run.agentId)}`,
-        { method: "POST", fallback: "The Bot run could not be stopped." },
-      );
+  /*
+   * THE STOP REACHES THE SERVER. A Bot's turn in a group runs on the server with nobody's browser
+   * attached, so it is stopped there, by its id. A Bot's line names only the Bot's thread in the
+   * group; the thread's read names the run, as a conversation with one Bot does (`stopTask`).
+   */
+  const stop = useMutation({
+    mutationFn: async ({
+      agentId,
+      threadId,
+      runId,
+    }: {
+      agentId: string;
+      threadId: string;
+      /** Known for a run of its own; a Bot's line has only its thread. */
+      runId?: string;
+    }) => {
+      const running =
+        runId ??
+        (await readThreadMessages(threadId, agentId)).runs?.find(
+          (run) => run.status === "running",
+        )?.id;
+      if (!running) throw new Error(STOP_REFUSED);
+      try {
+        await controlThreadRun({
+          threadId,
+          agentId,
+          runId: running,
+          action: "stop",
+        });
+      } catch {
+        throw new Error(STOP_REFUSED);
+      }
     },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
   });
+  /** The Bots working on their own line here, each with the thread its run is on. */
+  const workingLines = messages.flatMap((message) =>
+    message.status === "running" && message.agentId && message.threadId
+      ? [{ agentId: message.agentId, threadId: message.threadId }]
+      : [],
+  );
+  /*
+   * A Bot waiting on an approval asks in this conversation, as it does in a conversation of its own:
+   * the same card, from the same inbox. The wait shows on the Bot's line, or on the run the server
+   * holds for it, and one thread asks once.
+   */
+  const askingThreads = [
+    ...new Set([
+      ...messages.flatMap((message) =>
+        message.status === "waiting" && message.threadId
+          ? [message.threadId]
+          : [],
+      ),
+      ...background.flatMap((run) =>
+        run.waitingForApproval && run.threadId ? [run.threadId] : [],
+      ),
+    ]),
+  ];
   const working =
     background.some(({ status }) => status === "running") ||
     messages.some(
@@ -371,6 +426,11 @@ export function GroupChat({
               ref={run.id === runId ? focus : undefined}
               className="items-center"
             >
+              <ChannelAvatar
+                participantIds={[run.agentId]}
+                size={24}
+                typing={run.status === "running"}
+              />
               <MessageContent>
                 <strong>{names.get(run.agentId)}</strong>
                 {run.partialReply && (
@@ -386,19 +446,29 @@ export function GroupChat({
                         : RUN_STAGE.completed)}
                 </Text>
               </MessageContent>
-              {run.waitingForApproval && (
-                <Button
-                  disabled={stopRun.isPending}
-                  onClick={() => stopRun.mutate(run)}
+              {/* Named for the Bot, so each of several Bots' stops is told apart by ear. */}
+              {run.status === "running" ? (
+                <RecoveryButton
+                  isDisabled={stop.isPending}
+                  label={`Stop ${names.get(run.agentId) ?? "the Bot"}`}
+                  onClick={() =>
+                    stop.mutate({
+                      agentId: run.agentId,
+                      threadId: run.threadId,
+                      runId: run.id,
+                    })
+                  }
                   size="sm"
                   variant="ghost"
-                >
-                  Stop run
-                </Button>
-              )}
+                />
+              ) : null}
             </MessageRow>
           ))}
-          {stopRun.error && <p role="alert">{stopRun.error.message}</p>}
+          {stop.error ? (
+            <Text as="p" role="alert" type="supporting">
+              {stop.error.message}
+            </Text>
+          ) : null}
           {awaitingReply && (
             <Stack align="start" gap={1}>
               <Text
@@ -440,6 +510,9 @@ export function GroupChat({
             waiting before replying again.
           </p>
         ) : null}
+        {askingThreads.map((threadId) => (
+          <ConversationApprovals key={threadId} threadId={threadId} />
+        ))}
         {/* The same drawer a conversation with one Bot draws its question in. */}
         {question ? (
           <div
@@ -481,6 +554,14 @@ export function GroupChat({
           disabled={bots.length === 0}
           key={draftKey}
           pending={send.isPending || answer.isPending || working}
+          stoppable={workingLines.length > 0 && !stop.isPending}
+          onStop={() =>
+            void Promise.all(
+              workingLines.map((line) =>
+                stop.mutateAsync(line).catch(() => undefined),
+              ),
+            )
+          }
           autoFocus={!returningFromActivity}
           onSubmit={async (draft) => {
             if (!draft.text) return;
@@ -578,7 +659,11 @@ function GroupLine({
       tabIndex={-1}
     >
       <div className="shrink-0 pt-0.5">
-        <ChannelAvatar participantIds={[message.agentId]} size={24} />
+        <ChannelAvatar
+          participantIds={[message.agentId]}
+          size={24}
+          typing={message.status === "running"}
+        />
       </div>
       <MessageContent>
         <MessageHeader className="text-xs font-medium text-muted-foreground">

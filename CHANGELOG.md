@@ -78,6 +78,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   still working on the server and draws the reply when that turn ends, instead of sitting idle
   until you reopened it. Stop stops the run on the server and reads "The run was stopped." instead
   of an error, and access that ends while the chat is open links back to Home.
+- **A conversation with several Bots can be stopped, and asks for an approval where it waits.**
+  While a Bot is working there, "Stop the Bot" stops its run on the server, and a run the server is
+  holding on its own has a Stop button that names the Bot. A Bot waiting for your approval asks in
+  the conversation with the same card a conversation with one Bot uses, once for that Bot, instead of
+  one sentence and a link to the Bot's page. A working Bot's avatar carries the working badge, as it
+  does on Home.
 
 ## 1.0.3
 
