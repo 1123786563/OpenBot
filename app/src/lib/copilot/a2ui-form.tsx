@@ -121,7 +121,9 @@ export function A2UIForm(props: Control<"Form">) {
           // person believes the form was sent.
           void props
             .onSubmit?.({})
-            .then((result) => setUnsent(droppedWhileRunning(result)));
+            .then((result: GenerativeUIInvokeResult) =>
+              setUnsent(droppedWhileRunning(result)),
+            );
         }}
       >
         {unsent && (
@@ -204,8 +206,14 @@ function layoutStyle(
       : { borderRadius: corner(radius) };
   return {
     display: props.inline ? "inline-flex" : undefined,
-    alignItems: props.align ? FLEX_ALIGN[props.align] : undefined,
-    justifyContent: props.justify ? FLEX_JUSTIFY[props.justify] : undefined,
+    // The catalog's props resolve as `any` (the SDK's types do not reach this project), so the
+    // two lookups name their keys: the SDK has already checked both against the catalog's enum.
+    alignItems: props.align
+      ? FLEX_ALIGN[props.align as keyof typeof FLEX_ALIGN]
+      : undefined,
+    justifyContent: props.justify
+      ? FLEX_JUSTIFY[props.justify as keyof typeof FLEX_JUSTIFY]
+      : undefined,
     flexWrap: props.wrap,
     gap: length(props.gap) ?? (props.disableAutoSpacing ? 0 : undefined),
     rowGap: length(props.rowGap),
@@ -258,7 +266,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
     if (props.disabled) return;
     if (props.href) openActionUrl(props.href);
     else
-      void props.onClick?.({}).then((result) => {
+      void props.onClick?.({}).then((result: GenerativeUIInvokeResult) => {
         if (droppedWhileRunning(result)) notSent();
       });
   };

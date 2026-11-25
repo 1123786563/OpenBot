@@ -13,6 +13,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { TimeInput } from "@astryxdesign/core/TimeInput";
 import {
   type GenerativeUIComponentProps,
+  type GenerativeUIInvokeResult,
   standardUI,
   useGenerativeUIAccessibility,
 } from "@copilotkit/react-core/v2/generative-ui";
@@ -309,7 +310,7 @@ function A2UIButton(props: Control<"Button">) {
           );
           return;
         }
-        void props.onClick?.({}).then((result) => {
+        void props.onClick?.({}).then((result: GenerativeUIInvokeResult) => {
           if (droppedWhileRunning(result)) notSent();
         });
       }}
@@ -370,7 +371,7 @@ function A2UISelect(props: Control<"Select">) {
         }
         // An emptied Select writes the catalog's empty string, not null: the SDK omits a null
         // context value from the message, which would drop the field the Bot expects.
-        onChange={(next) => props.setValue(next ?? "")}
+        onChange={(next: string | null) => props.setValue(next ?? "")}
       />
     </Stack>
   );

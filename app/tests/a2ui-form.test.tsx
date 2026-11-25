@@ -752,7 +752,8 @@ test("a Form and a Pressable take the layout the catalog gives them", async () =
     </Page>,
   );
   const panel = (
-    view.getByRole("button", { name: "Send panel" }).form as HTMLFormElement
+    (view.getByRole("button", { name: "Send panel" }) as HTMLButtonElement)
+      .form as HTMLFormElement
   ).style;
   const chip = view.getByRole("button", { name: "Chip" }) as HTMLElement;
   for (const [name, style, property, expected] of [
