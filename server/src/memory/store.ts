@@ -694,18 +694,23 @@ export function createMemoryStore(
       return row;
     },
     async removeSource(ownerUserId: string, id: string) {
-      // The source's memories cascade with it; retire their Intelligence copies first.
+      /*
+       * The source's memories cascade with it, and with them the only record of their Intelligence
+       * copies. A copy left behind is read back as the person's own (`intelligenceOnly`), reaching
+       * every Bot of theirs rather than the one this source fed, and nothing is left to retire it
+       * with. So the copies are retired first, and while any is still out there, with Intelligence
+       * out of reach or a retirement that failed, nothing is deleted: the rows that retry it stay.
+       */
+      const copies = and(
+        eq(personalMemories.ownerUserId, ownerUserId),
+        eq(personalMemories.sourceId, id),
+        isNotNull(personalMemories.intelligenceMemoryId),
+      );
       if (intelligence && (await intelligence.available())) {
         const linked = await database
           .select()
           .from(personalMemories)
-          .where(
-            and(
-              eq(personalMemories.ownerUserId, ownerUserId),
-              eq(personalMemories.sourceId, id),
-              isNotNull(personalMemories.intelligenceMemoryId),
-            ),
-          );
+          .where(copies);
         for (const row of linked)
           await mirrorRow(intelligence, {
             ...row,
@@ -713,6 +718,12 @@ export function createMemoryStore(
             enabled: false,
           }).catch(() => {});
       }
+      const [remaining] = await database
+        .select({ id: personalMemories.id })
+        .from(personalMemories)
+        .where(copies)
+        .limit(1);
+      if (remaining) throw new MemoryUnavailableError();
       const [source] = await database
         .select({ agentId: memorySources.agentId })
         .from(memorySources)
@@ -742,6 +753,18 @@ export function createMemoryStore(
           agentId: source.agentId,
           feature: "memory_source",
           scope: sourceServerId(row.toolRef),
+        });
+        // In the same transaction as the removal, so the trail cannot record a source that stayed.
+        await transaction.insert(auditEvents).values({
+          eventType: "configuration.changed",
+          targetType: "memory_source",
+          targetId: id,
+          actorUserId: ownerUserId,
+          payload: {
+            change: "memory_source_removed",
+            agentId: source.agentId,
+            app: sourceServerId(row.toolRef),
+          },
         });
       });
     },

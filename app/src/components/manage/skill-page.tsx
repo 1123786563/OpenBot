@@ -33,7 +33,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
-import { grantRoster } from "@/lib/agents/grant-roster";
+import { grantRoster, skillHolderSentence } from "@/lib/agents/grant-roster";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useManagePaths } from "@/lib/manage-paths";
 import {
@@ -310,8 +310,13 @@ export function SkillPage({ slug }: { slug: string }) {
                   onClick={(event) =>
                     requestConfirmation({
                       title: `Delete ${skill.title}?`,
-                      description:
-                        "Everyone who could run this skill will lose access to it, and no Bot will offer it. Deletion is permanent.",
+                      description: `${skillHolderSentence(
+                        rosterFailed || rosterLoading
+                          ? undefined
+                          : bots
+                              .filter((bot) => skill.grantedTo.includes(bot.id))
+                              .map((bot) => bot.name),
+                      )} Everyone who could run this skill will lose access to it. Deletion is permanent.`,
                       confirmLabel: "Delete",
                       pendingLabel: "Deleting…",
                       failureMessage: "Couldn't delete this skill. Try again.",

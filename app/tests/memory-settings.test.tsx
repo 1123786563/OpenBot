@@ -52,7 +52,7 @@ const memory = (overrides: Partial<MemoryRecord>): MemoryRecord => ({
 const writes: { request: string; body: unknown }[] = [];
 /** A refusal the server gives the next write, or none. */
 let refuseWrite: string | null = null;
-function serving() {
+function serving(extra: MemoryRecord[] = []) {
   writes.length = 0;
   refuseWrite = null;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -86,6 +86,7 @@ function serving() {
           sourceApp: "Gmail",
           reviewState: "unreviewed",
         }),
+        ...extra,
       ],
     });
   }) as unknown as typeof fetch;
@@ -206,6 +207,112 @@ test("each memory's switch is named for the memory it turns on or off", async ()
   ).toBeTruthy();
 });
 
+test("forgetting shows the whole fact, not a clipped opening", async () => {
+  const long =
+    "The quarterly planning meeting moved to the first Thursday of every month, and the Lisbon office joins remotely.";
+  serving([memory({ id: "m3", content: long })]);
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", {
+      name: `Forget memory: ${long.slice(0, 59)}…`,
+    }),
+  );
+  const dialog = await view.findByRole("alertdialog", {
+    name: "Forget this memory?",
+  });
+  expect(dialog.textContent).toContain(long);
+  expect(dialog.textContent).not.toContain("…");
+});
+
+test("forgetting a fact a Bot learned names that Bot as the only one affected", async () => {
+  serving();
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", {
+      name: "Forget memory: Receipts go to finance@.",
+    }),
+  );
+  const dialog = await view.findByRole("alertdialog");
+  expect(dialog.textContent).toContain("Only Expenses uses it.");
+  expect(dialog.textContent).not.toContain("All your Bots");
+});
+
+test("forgetting an imported fact names the source it came from", async () => {
+  serving([
+    memory({
+      id: "m4",
+      content: "The roadmap ships in May.",
+      formedBy: "import",
+      sourceId: "s1",
+      sourceApp: "Receipts folder",
+      provenance: "Receipts folder: Roadmap",
+    }),
+  ]);
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", {
+      name: "Forget memory: The roadmap ships in May.",
+    }),
+  );
+  const dialog = await view.findByRole("alertdialog");
+  expect(dialog.textContent).toContain(
+    "Only Bots reading Receipts folder use it.",
+  );
+  expect(dialog.textContent).not.toContain("All your Bots");
+});
+
+test("forgetting a fact of the person's own says every Bot of theirs is affected", async () => {
+  serving();
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", {
+      name: "Forget memory: I prefer mornings.",
+    }),
+  );
+  const dialog = await view.findByRole("alertdialog");
+  expect(dialog.textContent).toContain("All your Bots use it.");
+});
+
+test("forgetting a fact formed outside every Bot names all the person's Bots", async () => {
+  serving([
+    memory({
+      id: "m5",
+      content: "Uses vim keybindings.",
+      formedBy: "intelligence",
+      provenance: "OpenBot memory",
+      sourceApp: "OpenBot memory",
+    }),
+  ]);
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  await user.click(
+    await view.findByRole("button", {
+      name: "Forget memory: Uses vim keybindings.",
+    }),
+  );
+  const dialog = await view.findByRole("alertdialog");
+  expect(dialog.textContent).toContain("All your Bots use it.");
+});
+
+test("cancelling Forget returns focus to the Forget button it came from", async () => {
+  serving();
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  const opener = await view.findByRole("button", {
+    name: "Forget memory: I prefer mornings.",
+  });
+  await user.click(opener);
+  const dialog = await view.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(writes).toEqual([]);
+  expect(document.activeElement).toBe(opener);
+});
+
 test("forgetting a memory requires confirmation and can retry a failed deletion", async () => {
   serving();
   const view = draw(<MemoryList />);
@@ -218,7 +325,7 @@ test("forgetting a memory requires confirmation and can retry a failed deletion"
     name: "Forget this memory?",
   });
   expect(
-    within(dialog).getByText(/I prefer mornings.*Your Bots will stop using it/),
+    within(dialog).getByText(/I prefer mornings.*All your Bots use it/),
   ).toBeTruthy();
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());

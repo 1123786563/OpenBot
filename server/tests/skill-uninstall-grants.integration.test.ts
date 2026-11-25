@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
   agents,
+  auditEvents,
   pluginGrants,
   skills,
   users,
@@ -38,6 +39,7 @@ const keptSlug = `kept-${suite}`;
 const deploymentSlug = `triage-${suite}`;
 const unwrittenSlug = `unwritten-${suite}`;
 const botlessSlug = `botless-${suite}`;
+const auditedSlug = `audited-${suite}`;
 const missingBot = `agent_missing_${suite}`;
 
 beforeAll(async () => {
@@ -79,6 +81,7 @@ afterAll(async () => {
         deploymentSlug,
         unwrittenSlug,
         botlessSlug,
+        auditedSlug,
       ]),
     );
   await database
@@ -242,6 +245,54 @@ describe("a skill name written again after the skill was uninstalled", () => {
       );
 
     expect(held).toEqual([{ ref: keptSlug, agentId: aliceBot }]);
+  });
+
+  /*
+   * The whole removal, read back: the skill row, every Bot's grant on it, and one trail row saying
+   * it was uninstalled. The grant has a row of its own, so the count is of the uninstall alone.
+   */
+  test("uninstalling removes the skill and its grants, and writes one Audit row", async () => {
+    const slug = auditedSlug;
+    expect(
+      (await writeSkill(asAlice(), slug, "Alice's audited skill.")).status,
+    ).toBe(200);
+    expect((await grant(asAlice(), slug, aliceBot)).status).toBe(200);
+
+    expect((await uninstall(asAlice(), slug)).status).toBe(200);
+
+    expect(
+      await database.select().from(skills).where(eq(skills.slug, slug)),
+    ).toEqual([]);
+    expect(
+      await database
+        .select()
+        .from(pluginGrants)
+        .where(and(eq(pluginGrants.kind, "skill"), eq(pluginGrants.ref, slug))),
+    ).toEqual([]);
+    expect(await offered(asAlice(), aliceBot)).toEqual([
+      { slug: keptSlug, instructions: "Alice's other skill." },
+    ]);
+
+    const uninstalled = await database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.eventType, "configuration.changed"),
+          eq(auditEvents.targetType, "skill"),
+          eq(auditEvents.targetId, slug),
+          sql`${auditEvents.payload}->>'change' = 'skill_uninstalled'`,
+        ),
+      );
+    expect(uninstalled).toHaveLength(1);
+    expect(uninstalled[0]?.payload).toEqual({
+      // Who did it is the payload's actor, never `actorUserId`: the plugin store holds an email there.
+      actor: `${alice}@example.test`,
+      change: "skill_uninstalled",
+      skill: slug,
+    });
+    // The instructions themselves never reach the trail.
+    expect(JSON.stringify(uninstalled)).not.toContain("Alice's audited skill.");
   });
 });
 
