@@ -752,9 +752,12 @@ test("disconnect waits for a fresh connection check and denied reads clear old r
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
   await waitFor(() => expect(view.queryByText("Chrome on Mac")).toBeNull());
   connectionsDenied = false;
-  const retry = await view.findByRole("button", {
-    name: "Retry connected browsers",
-  });
+  // The refused read is retried after 1 s and fails again: the default 1 s budget raced the button.
+  const retry = await view.findByRole(
+    "button",
+    { name: "Retry connected browsers" },
+    { timeout: 4000 },
+  );
   fireEvent.click(retry);
   await waitFor(
     () => expect(retry.getAttribute("aria-busy")).not.toBe("true"),

@@ -54,7 +54,7 @@ test.each(["pause", "disablement", "expired status"] as const)(
       email: `${owner}@example.test`,
       status: active,
     });
-    const store = createApprovalStore(database, clock);
+    const store = createApprovalStore(database, undefined, clock);
     const questions = createApprovalQuestions(database, async () => {}, clock);
     const approvals = createApprovalService(store, questions);
     const ask = () =>
