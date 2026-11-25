@@ -90,6 +90,9 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   with one Bot do, and a run the person stopped says "The run was stopped." Before, the same run read
   "Waiting to reply" or "Run ended" there. A run that is waiting on the person says "Waiting for your
   approval." everywhere.
+- **A run you stopped is not shown as an error after a reload.** On `/bot` and in a conversation, a
+  run the server stopped at your request came back in red as "The Bot run was stopped." after every
+  reload, under the plain "The run was stopped." It now reads "The run was stopped." once.
 - **An approval that ends without your answer says why, and what to do.** No approval expires on
   its own. One ends when you withdraw it (asking is switched off while it waits), when the Bot's
   work is stopped under it, or when the same request is decided in another tab, and the line where

@@ -550,6 +550,26 @@ test("a run the person stopped is not shown as a failure, live or after a reload
   expect(back.queryByTestId("transcript-stopped")).toBeNull();
 });
 
+/*
+ * The replay also carries a run the server stopped at the person's request, as a RUN_ERROR with its
+ * reason (`stoppedRunEvent` in direct-chat-replay.ts). Read as a failure, it drew "The Bot run was
+ * stopped." in red after every reload, under the plain notice that says the run was stopped.
+ */
+test("a run the server stopped at the person's request is not shown as a failure after a reload", async () => {
+  plans = [
+    { kind: "fails", message: "The Bot run was stopped.", code: "stopped" },
+  ];
+  const live = open();
+  await send(live, "Summarise my inbox");
+  await live.findByTestId("transcript-stopped");
+
+  live.unmount();
+  const back = open();
+  await settled(back, "Summarise my inbox");
+  expect(back.queryByTestId("transcript-stopped")).toBeNull();
+  expect(back.queryByText("The Bot run was stopped.")).toBeNull();
+});
+
 test("a turn that fails in a run after its browser steps says so, as one that fails at once does", async () => {
   // The Bot works through browser steps, each answered here and sent back in a run of its own, and
   // the run after the last of them fails. That turn used to end on its steps with nothing said.
