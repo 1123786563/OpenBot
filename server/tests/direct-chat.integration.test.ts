@@ -30,6 +30,13 @@ import {
 } from "../../app/src/lib/voice/agent-bridge";
 import { VoiceSession } from "../../app/src/lib/voice/session";
 import type { VoiceEvent } from "../../app/src/lib/voice/types";
+import {
+  configure,
+  emptyCatalog,
+  pilotCatalogKey,
+  publish,
+  verify,
+} from "../src/admin/bifrost-catalog";
 import { createEnterpriseStore } from "../src/admin/settings-store";
 import {
   type ActorAgentResolver,
@@ -39,13 +46,6 @@ import { createHandoffDesk, HANDOFF_KIND } from "../src/agents/handoff";
 import { createHandoffRunner } from "../src/agents/handoff-runner";
 import { handoffTool } from "../src/agents/handoff-tool";
 import { createOpenBotHandoffDelivery } from "../src/agents/handoff-wiring";
-import {
-  configure,
-  emptyCatalog,
-  pilotCatalogKey,
-  publish,
-  verify,
-} from "../src/admin/bifrost-catalog";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApp } from "../src/app";
 import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
@@ -103,12 +103,6 @@ import { createDatabase } from "../src/db/client";
 import {
   accounts,
   agents,
-  lagoUsageEvents,
-  testCreditAccounts,
-  testCreditBatches,
-  testCreditEnrollments,
-  testCreditEvidence,
-  testCreditOperations,
   approvalRequests,
   attachments,
   auditEvents,
@@ -120,11 +114,17 @@ import {
   directChatRuns,
   directChatSkillShares,
   enterpriseSettings,
+  lagoUsageEvents,
   learningSettings,
   opikRuns,
   recorderConnections,
   revokedAccess,
   routineRuns,
+  testCreditAccounts,
+  testCreditBatches,
+  testCreditEnrollments,
+  testCreditEvidence,
+  testCreditOperations,
   userRoles,
   users,
   workItems,
@@ -135,6 +135,7 @@ import { readLearningSource } from "../src/learning/evidence";
 import { createLearningRoutes } from "../src/learning/routes";
 import { createLearningSettingsStore } from "../src/learning/settings";
 import { createLearningSharingStore } from "../src/learning/sharing";
+import { createManagedModel, operationId } from "../src/managed-model";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createMemoryRoutes } from "../src/memory/routes";
 import { createMemoryStore } from "../src/memory/store";
@@ -143,13 +144,12 @@ import { createPluginStore } from "../src/plugins/store";
 import { createRecorderConnectionStore } from "../src/recorder/connections";
 import { createOpenBotRecordings } from "../src/recorder/openbot-recordings";
 import { createRecorderRoutes } from "../src/recorder/routes";
+import { createRequestActor } from "../src/request-actor";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import { createRoutineRoutes } from "../src/routines/routes";
 import { createRoutineRunner, createRoutineTurn } from "../src/routines/runner";
 import { createRoutineStore } from "../src/routines/store";
 import { createWorkQueue } from "../src/work/queue";
-import { createManagedModel, operationId } from "../src/managed-model";
-import { createRequestActor } from "../src/request-actor";
 import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
