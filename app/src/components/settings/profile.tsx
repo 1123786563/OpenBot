@@ -15,6 +15,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { useTranslation } from "@/i18n";
 import { updateProfileNameMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { canKeepCachedRead } from "@/lib/client";
@@ -35,6 +36,7 @@ export function NameRow() {
   const field = useRef<HTMLInputElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const submitting = useRef(false);
+  const { t } = useTranslation();
   const name = user && !user.needsName ? (user.name ?? "") : "";
   const stale = profile.isError && !!user;
   const text = draft ?? name;
@@ -66,17 +68,17 @@ export function NameRow() {
           <IconUserCircle />
         </ItemMedia>
         <ItemContent className="min-w-0">
-          <ItemTitle>Name</ItemTitle>
+          <ItemTitle>{t("settings.name", "Name")}</ItemTitle>
           <ItemDescription className="line-clamp-none wrap-anywhere">
             {profile.isPending
-              ? "Loading your name…"
+              ? t("settings.name.loading", "Loading your name…")
               : profile.isError && !user
-                ? "Couldn’t load your name."
-                : name || "Not set yet."}
+                ? t("settings.name.loadFailed", "Couldn’t load your name.")
+                : name || t("settings.name.notSet", "Not set yet.")}
           </ItemDescription>
           {stale ? (
             <Text as="p" color="secondary" display="block" size="base">
-              Last loaded · Refresh before saving.
+              {t("settings.lastLoaded", "Last loaded · Refresh before saving.")}
             </Text>
           ) : null}
         </ItemContent>
@@ -86,12 +88,15 @@ export function NameRow() {
       </Item>
       {saved ? (
         <p role="status" className="px-4 pb-3 text-sm text-muted-foreground">
-          Your name has been saved.
+          {t("settings.name.saved", "Your name has been saved.")}
         </p>
       ) : null}
       <SettingsDraftDialog
-        title="Your name"
-        description="Choose the name OpenBot shows for you."
+        title={t("settings.name.dialogTitle", "Your name")}
+        description={t(
+          "settings.name.description",
+          "Choose the name OpenBot shows for you.",
+        )}
         open={open}
         dirty={dirty}
         guardNavigation={submitting}
@@ -106,29 +111,47 @@ export function NameRow() {
               form={formId}
               type="submit"
             >
-              {save.isPending ? "Saving…" : "Save name"}
+              {save.isPending
+                ? t("settings.name.saving", "Saving…")
+                : t("settings.name.save", "Save name")}
             </Button>
           ) : undefined
         }
       >
         {profile.isPending ? (
-          <ReadStatus kind="loading" message="Loading your name…" />
+          <ReadStatus
+            kind="loading"
+            message={t("settings.name.loading", "Loading your name…")}
+          />
         ) : profile.isError || !user ? (
           <ReadError
             focusAfterRetry={() => field.current}
             message={
-              stale ? "Couldn’t refresh your name." : "Couldn’t load your name."
+              stale
+                ? t(
+                    "settings.name.refreshFailed",
+                    "Couldn’t refresh your name.",
+                  )
+                : t("settings.name.loadFailed", "Couldn’t load your name.")
             }
             description={
               stale
                 ? dirty
-                  ? "Your draft is still here. Refresh before saving."
-                  : "Showing your last loaded name. Refresh before saving."
+                  ? t(
+                      "settings.draftKept",
+                      "Your draft is still here. Refresh before saving.",
+                    )
+                  : t(
+                      "settings.name.lastLoadedDescription",
+                      "Showing your last loaded name. Refresh before saving.",
+                    )
                 : undefined
             }
             retry={profile.refetch}
             retryBelow
-            retryLabel={stale ? "Refresh name" : undefined}
+            retryLabel={
+              stale ? t("settings.name.refresh", "Refresh name") : undefined
+            }
             retrying={profile.isFetching}
           />
         ) : null}
@@ -152,7 +175,9 @@ export function NameRow() {
             }}
           >
             <Field>
-              <FieldLabel htmlFor={`${formId}-name`}>Name</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-name`}>
+                {t("settings.name", "Name")}
+              </FieldLabel>
               <Input
                 id={`${formId}-name`}
                 autoComplete="name"

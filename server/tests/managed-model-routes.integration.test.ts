@@ -251,6 +251,8 @@ test("OpenBot's own model call goes through the ledger's entry, settles once and
     }),
   ]);
 
+  // The same call again asks as the same operation: it is answered from the
+  // record, and nothing is dispatched or charged a second time.
   expect(await model.complete(input)).toEqual({
     state: "completed",
     text: "Answer to: One question",

@@ -1,6 +1,6 @@
 ## Introduction
 
-OpenBot is a self-hosted AI collaboration app. The package runs the web app, API, and worker with an existing PostgreSQL instance and a separate Agents deployment.
+OpenBot is a self-hosted AI collaboration app. The package runs the web app, API, and worker with an existing PostgreSQL instance and a separate Agents deployment. Install Agents and OpenObserve first: Agents provides the Agents network, and OpenObserve creates the `openbot-observability` log network.
 
 ## Features
 

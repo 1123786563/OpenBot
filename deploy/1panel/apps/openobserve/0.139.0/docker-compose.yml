@@ -2,7 +2,7 @@ networks:
   observability:
     name: openbot-observability
     ipam: {}
-    external: true
+    internal: true
   openobserve:
     ipam: {}
   1panel-network:

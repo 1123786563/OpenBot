@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 15080
       required: true
+      edit: true
       rule: paramPort
       label:
         en: HTTP port (Required)
@@ -123,6 +124,7 @@ additionalProperties:
       type: number
       default: 14318
       required: true
+      edit: true
       rule: paramPort
       label:
         en: OTLP port (Required)
@@ -169,6 +171,7 @@ additionalProperties:
       type: text
       default: openbot
       required: true
+      edit: true
       label:
         en: OpenBot deployment ID (Required)
         es-es: OpenBot deployment ID (Obligatorio)
@@ -184,6 +187,7 @@ additionalProperties:
       type: text
       default: off
       required: true
+      edit: true
       label:
         en: Export logs on or off (Required)
         es-es: Export logs on or off (Obligatorio)
@@ -199,6 +203,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Runtime ingestion authorization
         es-es: Runtime ingestion authorization
@@ -214,6 +219,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Audit ingestion authorization
         es-es: Audit ingestion authorization

@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 13001
       required: true
+      edit: true
       rule: paramPort
       label:
         en: HTTP port (Required)
@@ -139,6 +140,7 @@ additionalProperties:
       type: number
       default: 13000
       required: true
+      edit: true
       rule: paramPort
       label:
         en: Lago API port (Required)
@@ -155,6 +157,7 @@ additionalProperties:
       type: text
       default: http://localhost:13000
       required: true
+      edit: true
       label:
         en: Browser-accessible API URL (Required)
         es-es: Browser-accessible API URL (Obligatorio)
@@ -170,6 +173,7 @@ additionalProperties:
       type: text
       default: http://localhost:13001
       required: true
+      edit: true
       label:
         en: Browser-accessible UI URL (Required)
         es-es: Browser-accessible UI URL (Obligatorio)

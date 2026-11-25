@@ -26,6 +26,7 @@ services:
       - lago_secrets:/lago-secrets
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   api:
     command:
       - ./scripts/start.api.sh
@@ -387,6 +388,7 @@ services:
       1panel-network: {}
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
     volumes:
       - ./secrets.rb:/lago-secrets.rb:ro
       - lago_secrets:/lago-secrets:ro

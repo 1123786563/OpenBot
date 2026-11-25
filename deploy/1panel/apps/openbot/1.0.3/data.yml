@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 18001
       required: true
+      edit: true
       rule: paramPort
       label:
         en: HTTP port (Required)
@@ -123,6 +124,7 @@ additionalProperties:
       type: text
       default: ""
       required: true
+      edit: true
       label:
         en: Public HTTPS URL (Required)
         es-es: Public HTTPS URL (Obligatorio)
@@ -138,6 +140,7 @@ additionalProperties:
       type: text
       default: ""
       required: true
+      edit: true
       label:
         en: Initial admin email (Required)
         es-es: Initial admin email (Obligatorio)
@@ -183,6 +186,7 @@ additionalProperties:
       type: text
       default: ""
       required: true
+      edit: true
       label:
         en: Google OAuth client ID (Required)
         es-es: Google OAuth client ID (Obligatorio)
@@ -198,6 +202,7 @@ additionalProperties:
       type: password
       default: ""
       required: true
+      edit: true
       label:
         en: Google OAuth client secret (Required)
         es-es: Google OAuth client secret (Obligatorio)
@@ -213,6 +218,7 @@ additionalProperties:
       type: password
       default: ""
       required: true
+      edit: true
       label:
         en: Model API key (Required)
         es-es: Model API key (Obligatorio)
@@ -228,6 +234,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Model API base URL
         es-es: Model API base URL
@@ -243,6 +250,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Model name
         es-es: Model name
@@ -258,6 +266,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Intelligence API URL (Required when using Intelligence)
         es-es: Intelligence API URL (Required when using Intelligence)
@@ -273,6 +282,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Intelligence WebSocket URL (Required when using Intelligence)
         es-es: Intelligence WebSocket URL (Required when using Intelligence)
@@ -288,6 +298,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Intelligence API key (Required when using Intelligence)
         es-es: Intelligence API key (Required when using Intelligence)
@@ -303,6 +314,7 @@ additionalProperties:
       type: text
       default: "openbot-server:1panel"
       required: true
+      edit: true
       label:
         en: OpenBot server image (Required)
         es-es: OpenBot server image (Obligatorio)
@@ -318,6 +330,7 @@ additionalProperties:
       type: text
       default: ""
       required: true
+      edit: true
       label:
         en: Agents Docker network (Required)
         es-es: Agents Docker network (Obligatorio)
@@ -363,6 +376,7 @@ additionalProperties:
       type: select
       default: "chat"
       required: true
+      edit: true
       label:
         en: Model API protocol (Required)
         es-es: Model API protocol (Obligatorio)
@@ -383,6 +397,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: LangGraph AG-UI URL
         es-es: LangGraph AG-UI URL
@@ -398,6 +413,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: LangGraph service token
         es-es: LangGraph service token
@@ -413,6 +429,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Computer URL
         es-es: Computer URL
@@ -428,6 +445,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Computer service token
         es-es: Computer service token
@@ -443,6 +461,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Supervisor URL
         es-es: Supervisor URL
@@ -458,6 +477,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Supervisor service token
         es-es: Supervisor service token
@@ -473,6 +493,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Agent callback shared token
         es-es: Agent callback shared token
@@ -488,6 +509,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Hindsight API URL
         es-es: Hindsight API URL
@@ -503,6 +525,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Hindsight API key
         es-es: Hindsight API key
@@ -518,6 +541,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Opik API URL
         es-es: Opik API URL
@@ -533,6 +557,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Opik API key
         es-es: Opik API key
@@ -548,6 +573,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Opik workspace
         es-es: Opik workspace
@@ -563,6 +589,7 @@ additionalProperties:
       type: text
       default: "openbot-runs"
       required: false
+      edit: true
       label:
         en: Opik project
         es-es: Opik project
@@ -578,6 +605,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Collector OTLP logs endpoint
         es-es: Collector OTLP logs endpoint
@@ -593,6 +621,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Collector OTLP logs headers
         es-es: Collector OTLP logs headers
@@ -608,6 +637,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: OpenObserve console URL
         es-es: OpenObserve console URL
@@ -623,6 +653,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Lago API URL (Required when using Lago)
         es-es: Lago API URL (Required when using Lago)
@@ -638,6 +669,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Lago API key (Required when using Lago)
         es-es: Lago API key (Required when using Lago)
@@ -653,6 +685,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Lago usage subscription external ID (Required when using Lago)
         es-es: Lago usage subscription external ID (Required when using Lago)
@@ -668,6 +701,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Infisical site URL (Required when using Infisical)
         es-es: Infisical site URL (Required when using Infisical)
@@ -683,6 +717,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Infisical project ID (Required when using Infisical)
         es-es: Infisical project ID (Required when using Infisical)
@@ -698,6 +733,7 @@ additionalProperties:
       type: text
       default: "prod"
       required: false
+      edit: true
       label:
         en: Infisical environment slug
         es-es: Infisical environment slug
@@ -713,6 +749,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Infisical machine identity client ID (Required when using Infisical)
         es-es: Infisical machine identity client ID (Required when using Infisical)
@@ -728,6 +765,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: Infisical machine identity client secret (Required when using Infisical)
         es-es: Infisical machine identity client secret (Required when using Infisical)

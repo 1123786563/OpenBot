@@ -2,6 +2,7 @@ import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { IconX } from "@tabler/icons-react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
@@ -54,6 +55,7 @@ function SheetContent({
   variant?: "default" | "inset";
   showCloseButton?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -81,7 +83,7 @@ function SheetContent({
             }
           >
             <IconX />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t("frame.close", "Close")}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>

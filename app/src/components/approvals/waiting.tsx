@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/i18n";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
@@ -392,6 +393,8 @@ function AnswerDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  // Subscribes this dialog to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const [text, setText] = useState("");
   const answer = useMutation(answerPersonQuestionMutationOptions(queryClient));
   const agents = useQuery(agentListQueryOptions());
