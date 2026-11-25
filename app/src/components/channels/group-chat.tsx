@@ -29,6 +29,7 @@ import {
   type ApprovalInboxData,
   answerPersonQuestionMutationOptions,
   approvalInboxOptions,
+  carryingOnAfterApproval,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
@@ -148,6 +149,32 @@ export function GroupChat({
     );
 
   const inbox = useQuery(approvalInboxOptions());
+  /*
+   * THE REPLY AFTER A DECISION. A Bot's line that waits on an approval stays "waiting" until the
+   * server has carried the turn on and written the reply into it (`continueWaiting` in group.ts), so
+   * nothing marks it as working, and the transcript is read slowly meanwhile (`groupPollInterval`).
+   * The approvals are read every 10 s and at once after a decision. When they say the server has
+   * started, or stopped, carrying a waiting line on, the transcript is read again.
+   */
+  const carriedOn = new Set(
+    messages.flatMap((message) =>
+      message.status === "waiting" &&
+      message.threadId &&
+      carryingOnAfterApproval(inbox.data, message.threadId)
+        ? [message.id]
+        : [],
+    ),
+  );
+  const seenCarriedOn = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    const before = seenCarriedOn.current;
+    const now = carriedOn.size > 0;
+    seenCarriedOn.current = now;
+    if (before !== undefined && before !== now)
+      void queryClient.invalidateQueries({
+        queryKey: groupKeys.detail(channelId),
+      });
+  }, [carriedOn, channelId, queryClient]);
   const question = groupQuestion(inbox.data, channelId);
   // The Bot whose conversation it is: for a hand-off, the one that handed the work on.
   const askerId = question?.conversationBotId ?? question?.botId;
@@ -353,6 +380,7 @@ export function GroupChat({
               }
               mine={message.ownerUserId === me?.id}
               available={message.agentId !== null && names.has(message.agentId)}
+              carryingOn={carriedOn.has(message.id)}
               rememberActivityLink={(event) => {
                 if (
                   historyEntry &&
@@ -551,6 +579,7 @@ function GroupLine({
   mine,
   rowRef,
   available,
+  carryingOn,
   rememberActivityLink,
 }: {
   message: GroupMessage;
@@ -559,6 +588,8 @@ function GroupLine({
   mine: boolean;
   rowRef?: Ref<HTMLDivElement>;
   available: boolean;
+  /** The line waits on an approval the server is carrying on from: the Bot's turn again. */
+  carryingOn: boolean;
   rememberActivityLink: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   if (message.agentId === null)
@@ -590,7 +621,7 @@ function GroupLine({
         <ChannelAvatar
           participantIds={[message.agentId]}
           size={24}
-          typing={message.status === "running"}
+          typing={message.status === "running" || carryingOn}
         />
       </div>
       <MessageContent>
@@ -598,7 +629,9 @@ function GroupLine({
           {name}
           {answeredBy ? ` · answer from ${answeredBy}` : null}
         </MessageHeader>
-        {(message.status === "running" || message.status === "queued") &&
+        {(message.status === "running" ||
+          message.status === "queued" ||
+          carryingOn) &&
         !message.text ? (
           <p
             className="tool-line-running text-sm text-muted-foreground"
@@ -606,7 +639,7 @@ function GroupLine({
           >
             {message.status === "queued" ? RUN_STAGE.queued : RUN_STAGE.running}
           </p>
-        ) : message.status === "waiting" ? (
+        ) : message.status === "waiting" && !carryingOn ? (
           <p className="text-sm text-muted-foreground">
             {message.reason ?? "Waiting for your response."}{" "}
             <Link

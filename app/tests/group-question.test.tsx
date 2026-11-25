@@ -18,7 +18,8 @@ import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BotsNavBadge } from "@/components/bot-profile/attention";
 import { GroupChat } from "@/components/channels/group-chat";
-import type { GroupMessage } from "@/lib/groups";
+import { type ApprovalInboxData, approvalInboxOptions } from "@/lib/approvals";
+import { type GroupMessage, groupPollInterval } from "@/lib/groups";
 import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
 
@@ -75,6 +76,8 @@ let answers: unknown[] = [];
 let groupSends: unknown[] = [];
 /** The approval inbox's requests, as `/api/approvals` answers them. */
 let requests: unknown[] = [];
+/** What the inbox holds for approval-1 once it is decided: nothing, unless a test says otherwise. */
+let decidedRequests: unknown[] = [];
 let decisions: unknown[] = [];
 let originalFetch: typeof fetch;
 
@@ -153,7 +156,7 @@ beforeAll(() => {
     if (url.pathname === "/api/approvals/approval-1/decision") {
       decisions.push(JSON.parse(String(init?.body)));
       // Decided: the server carries the turn on, so nothing is waiting on the person.
-      requests = [];
+      requests = decidedRequests;
       return Response.json({ id: "approval-1" });
     }
     if (url.pathname === "/api/bots/attention")
@@ -202,6 +205,7 @@ beforeEach(() => {
   answers = [];
   groupSends = [];
   requests = [];
+  decidedRequests = [];
   decisions = [];
   background = undefined;
   messages = [
@@ -487,6 +491,114 @@ test("a Bot waiting for approval asks in the group, once, and the answer is sent
       view.queryByRole("region", { name: "Waiting for your approval" }),
     ).toBeNull(),
   );
+});
+
+/*
+ * THE REPLY AFTER A DECISION. A Bot's line that stopped for an approval stays "waiting" until the
+ * server has carried the turn on and written the reply into it, and nothing else changes the
+ * transcript until then. The reading stopped with the line, and the decision only read the approvals
+ * again, so the reply never arrived without leaving the conversation.
+ */
+test("after an approval is answered in the group, the Bot's reply arrives without leaving", async () => {
+  showQuestion = false;
+  messages = [
+    {
+      ...line("waiting-1", ERRANDS, "", "waiting"),
+      threadId: ERRANDS_THREAD,
+      reason: "This action is waiting for your approval.",
+    },
+  ];
+  requests = [waitingApproval(ERRANDS_THREAD)];
+  // Decided: the server runs the action and carries the turn on, in a turn no browser streams.
+  decidedRequests = [
+    {
+      ...waitingApproval(ERRANDS_THREAD),
+      status: "approved",
+      decidedAt: new Date().toISOString(),
+    },
+  ];
+  const view = conversation();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const card = within(
+    await view.findByRole("region", { name: "Waiting for your approval" }),
+  );
+  await user.click(card.getByRole("radio", { name: "Allow once" }));
+  await user.click(card.getByRole("button", { name: "Allow once" }));
+  await waitFor(() => expect(decisions).toEqual([{ decision: "allow_once" }]));
+
+  // The line still waits on the server, and says the Bot is working, not that it waits on you.
+  await view.findByText("Thinking");
+  expect(
+    view.queryByText("This action is waiting for your approval."),
+  ).toBeNull();
+  expect(view.queryByRole("link", { name: "Open Errand Helper" })).toBeNull();
+
+  // The server ends the turn it carried on: the row that waited now holds the reply.
+  messages = [
+    {
+      ...line("waiting-1", ERRANDS, "Spec review booked for Thursday."),
+      threadId: ERRANDS_THREAD,
+    },
+  ];
+  requests = [];
+  // The approvals are read again, as their own reading does: the turn is over, so the group is read.
+  await act(() =>
+    queryClient.refetchQueries({ queryKey: approvalInboxOptions().queryKey }),
+  );
+  await view.findByText("Spec review booked for Thursday.");
+  expect(groupSends).toEqual([]);
+});
+
+/*
+ * The transcript is read while it can still change. A line that waited on an approval used to stop
+ * the reading, though the server writes that line's reply into it later. It is read slowly while
+ * nobody has decided, and at the ordinary pace once the server is carrying the line on.
+ */
+test("a group keeps reading while a Bot's line waits, and reads faster once the server carries it on", () => {
+  const now = Date.parse("2026-11-26T12:00:00.000Z");
+  const waiting = {
+    ...line("waiting-1", ERRANDS, "", "waiting"),
+    threadId: ERRANDS_THREAD,
+  };
+  const settled = {
+    bots: [],
+    people: [],
+    messages: [line("done-1", ERRANDS, "All set.")],
+  };
+  // Nothing owed: no reading.
+  expect(groupPollInterval(settled, null, now)).toBe(false);
+  // A line waiting on the person is read slowly, with no decision to go on.
+  expect(
+    groupPollInterval({ ...settled, messages: [waiting] }, null, now),
+  ).toBe(10_000);
+  const decided: ApprovalInboxData = {
+    enabled: true,
+    requests: [
+      // The inbox while the server carries the line on: decided, not yet completed.
+      {
+        ...(waitingApproval(
+          ERRANDS_THREAD,
+        ) as ApprovalInboxData["requests"][number]),
+        status: "approved",
+        decidedAt: new Date(now - 1_000).toISOString(),
+      },
+    ],
+    rules: [],
+    teamRules: [],
+    questions: [],
+  };
+  // The server is carrying that line on: the ordinary pace.
+  expect(
+    groupPollInterval({ ...settled, messages: [waiting] }, decided, now),
+  ).toBe(1_500);
+  // A line that is working is read at the ordinary pace whatever the approvals say.
+  expect(
+    groupPollInterval(
+      { ...settled, messages: [line("running-1", ERRANDS, "", "running")] },
+      null,
+      now,
+    ),
+  ).toBe(1_500);
 });
 
 /* A run the server holds for an approval, with no line of its own waiting, asks the same way. */
