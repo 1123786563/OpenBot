@@ -52,13 +52,23 @@ test("startup closes updater pipes while its background services remain live", a
       join(root, "scripts", name),
       await readFile(`scripts/${name}`),
     );
+  // One settings file per service; start.sh refuses to run without all four.
+  for (const directory of ["deploy/openbot", "deploy/agents"])
+    await mkdir(join(root, directory), { recursive: true });
+  await writeFile(join(root, "deploy/openbot/.env"), "");
+  await writeFile(join(root, "deploy/openbot/.env.worker"), "");
   await writeFile(
-    join(root, ".env"),
+    join(root, "deploy/openbot/.env.server"),
     [
       "OPENBOT_ONE_COMPUTER_EACH=false",
       "OPENBOT_LEARNING_AUTO_ASSIGN=false",
       "COMPOSIO_API_KEY=synthetic-configured-key",
       "OPENBOT_BROKER_PROVIDER=composio",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(root, "deploy/agents/.env"),
+    [
       "MANAGED_AGENT_TOKEN=synthetic-managed-token",
       "AGENT_TOOL_TOKEN=synthetic-tool-token",
     ].join("\n"),

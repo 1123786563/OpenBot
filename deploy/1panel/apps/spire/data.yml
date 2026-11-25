@@ -1,0 +1,28 @@
+name: SPIRE
+tags:
+  - 实用工具
+title: Docker 工作负载身份
+description: Docker 工作负载身份
+additionalProperties:
+  key: spire
+  name: SPIRE
+  tags:
+    - Tool
+  shortDescZh: 使用 1Panel 已有 PostgreSQL 数据库
+  shortDescEn: Use an existing PostgreSQL database in 1Panel
+  description:
+    en: SPIRE
+    es-es: SPIRE
+    ja: SPIRE
+    ms: SPIRE
+    pt-br: SPIRE
+    ru: SPIRE
+    ko: SPIRE
+    zh-Hant: Docker 工作负载身份
+    zh: Docker 工作负载身份
+    tr: SPIRE
+  type: website
+  crossVersionUpdate: false
+  limit: 0
+  architectures:
+    - amd64

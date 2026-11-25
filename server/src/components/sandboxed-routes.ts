@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import {
+  SandboxedDraftChangedError,
   SandboxedNameRefusedError,
   SandboxedNotFoundError,
   type SandboxedStore,
@@ -151,13 +152,34 @@ export function createSandboxedRoutes(
     const forbidden = requireAdmin(context);
     if (forbidden) return forbidden;
 
+    let expectedDraftVersion: string | undefined;
+    if (context.req.header("content-type")?.includes("application/json")) {
+      const body = (await context.req.json().catch(() => null)) as {
+        expectedDraftVersion?: unknown;
+      } | null;
+      if (
+        typeof body?.expectedDraftVersion !== "string" ||
+        !/^[a-f0-9]{64}$/.test(body.expectedDraftVersion)
+      ) {
+        return context.json(
+          { error: "A valid draft version is required." },
+          400,
+        );
+      }
+      expectedDraftVersion = body.expectedDraftVersion;
+    }
+
     try {
       const component = await store.publish(
         context.req.param("name"),
         actorEmail(context),
+        expectedDraftVersion,
       );
       return context.json({ component });
     } catch (error) {
+      if (error instanceof SandboxedDraftChangedError) {
+        return context.json({ error: "The saved draft has changed." }, 409);
+      }
       if (error instanceof SandboxedNotFoundError) {
         return context.json({ error: error.message }, 404);
       }

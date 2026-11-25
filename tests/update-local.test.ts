@@ -55,8 +55,9 @@ function fixture(topology: "host" | "image" = "image") {
   const candidate = parseReleaseManifest(structuredClone(targetFixture));
   candidate.source.commit = target;
   writeFileSync(join(root, ".openbot-release.json"), JSON.stringify(current));
+  mkdirSync(join(root, "deploy/openbot"), { recursive: true });
   writeFileSync(
-    join(root, ".env"),
+    join(root, "deploy/openbot/.env.server"),
     "ENCRYPTION_KEY=keep-this\nDATABASE_URL=postgres://openbot:openbot@localhost:5432/openbot\nTENANT_PACKAGE_DIR=../customer\n",
   );
   mkdirSync(join(root, "customer"));
@@ -160,11 +161,13 @@ test("local plan detects committed baseline divergence without touching the chec
 
 test("image apply preserves customer files and project identity and accepts only after readiness", async () => {
   const f = fixture();
-  const env = readFileSync(join(f.root, ".env"), "utf8");
+  const env = readFileSync(join(f.root, "deploy/openbot/.env.server"), "utf8");
   const result = await applyLocalUpdate(f.options);
   expect(result.phase).toBe("accepted");
   expect(f.git("rev-parse", "HEAD")).toBe(f.target);
-  expect(readFileSync(join(f.root, ".env"), "utf8")).toBe(env);
+  expect(readFileSync(join(f.root, "deploy/openbot/.env.server"), "utf8")).toBe(
+    env,
+  );
   expect(readFileSync(join(f.root, "customer", "branding.json"), "utf8")).toBe(
     '{"name":"Customer"}',
   );

@@ -1,0 +1,28 @@
+name: OpenBot
+tags:
+  - 实用工具
+title: 自托管 AI 协作应用
+description: 自托管 AI 协作应用
+additionalProperties:
+  key: openbot
+  name: OpenBot
+  tags:
+    - Tool
+  shortDescZh: 使用 1Panel 已有 PostgreSQL 数据库
+  shortDescEn: Use an existing PostgreSQL database in 1Panel
+  description:
+    en: Self-hosted AI collaboration (PostgreSQL)
+    es-es: Colaboración de IA autohospedada (PostgreSQL)
+    ja: セルフホスト型のAIコラボレーション (PostgreSQL)
+    ms: Kerjasama AI hos sendiri (PostgreSQL)
+    pt-br: Colaboração com IA auto-hospedada (PostgreSQL)
+    ru: Совместная работа с ИИ на собственном сервере (PostgreSQL)
+    ko: 자체 호스팅 AI 협업 (PostgreSQL)
+    zh-Hant: 自架 AI 協作應用
+    zh: 自托管 AI 协作应用
+    tr: Kendi sunucunuzda yapay zekâ iş birliği (PostgreSQL)
+  type: website
+  crossVersionUpdate: false
+  limit: 0
+  architectures:
+    - amd64

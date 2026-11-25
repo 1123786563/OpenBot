@@ -1651,12 +1651,9 @@ impl DesktopSteps {
         &self,
         work: impl FnOnce(&engine::Address, &Path, &stack::Secrets) -> Result<(), String>,
     ) -> Result<(), String> {
-        let secrets = openbot_desktop_lib::vault::already_given_no_ui(
-            &self.root,
-            &self.root.join(".env"),
-            &openbot_env::MINTED[..],
-        )
-        .map_err(problem_detail)?;
+        let secrets =
+            openbot_desktop_lib::vault::already_given_no_ui(&self.root, &openbot_env::MINTED[..])
+                .map_err(problem_detail)?;
         self.own_containers();
         let shell = self.app.state::<Shell>();
         let _startup = shell.startup.lock().unwrap();
@@ -1690,11 +1687,8 @@ impl upgrade::Steps for DesktopSteps {
     }
 
     fn has_database(&mut self) -> Result<bool, Problem> {
-        let secrets = openbot_desktop_lib::vault::already_given_no_ui(
-            &self.root,
-            &self.root.join(".env"),
-            &openbot_env::MINTED[..],
-        )?;
+        let secrets =
+            openbot_desktop_lib::vault::already_given_no_ui(&self.root, &openbot_env::MINTED[..])?;
         stack::postgres_volume_exists(&self.address, &self.root, &secrets)
     }
 
@@ -3709,7 +3703,7 @@ fn start_stack_credential_with(
 }
 
 fn saved_secret(root: &Path, key: &str) -> Result<String, Problem> {
-    openbot_desktop_lib::vault::already_given_no_ui(root, &root.join(".env"), &[key])
+    openbot_desktop_lib::vault::already_given_no_ui(root, &[key])
         .map(|found| found.get(key).cloned().unwrap_or_default())
 }
 
@@ -3745,8 +3739,7 @@ fn require_existing_encryption_key(
     let configured = openbot_desktop_lib::saved_intent::SavedIntent::read(root)
         .model
         .is_some()
-        || openbot_env::already_set(&root.join(".env"), &["DATABASE_URL"])
-            .contains_key("DATABASE_URL");
+        || openbot_env::settings(root, &["DATABASE_URL"]).contains_key("DATABASE_URL");
     // A reinstall can remove every root-local marker and secret while Compose keeps its volume.
     // Only a verified fresh database may receive a newly minted encryption key.
     if configured || existing_postgres_volume()? {
@@ -3879,8 +3872,7 @@ fn fresh_root_without_encryption_key(
     let unknown = || {
         Problem::plain("OpenBot could not verify that this is an unconfigured installation. Its leftover data cannot be reset here.")
     };
-    let settings = openbot_env::read_already_set(&root.join(".env"), &["DATABASE_URL"])
-        .map_err(|_| unknown())?;
+    let settings = openbot_env::read_settings(root, &["DATABASE_URL"]).map_err(|_| unknown())?;
     if settings.contains_key("DATABASE_URL") {
         return Ok(false);
     }
@@ -3971,13 +3963,7 @@ async fn reset_leftover_database<R: tauri::Runtime>(
         &volumes,
         &containers,
         confirmed,
-        || {
-            openbot_desktop_lib::vault::already_given_no_ui(
-                &root,
-                &root.join(".env"),
-                &openbot_env::MINTED[..],
-            )
-        },
+        || openbot_desktop_lib::vault::already_given_no_ui(&root, &openbot_env::MINTED[..]),
         |offer, secrets| {
             stack::reset_leftover_volumes(
                 &offer.address,
@@ -4281,12 +4267,15 @@ async fn start_stack_inner<R: tauri::Runtime>(
         }
 
         setup_phase("env");
+        openbot_env::move_legacy(&root).map_err(|error| {
+            Problem::with(
+                "OpenBot could not move its settings into their new files. Try Start again.",
+                error.to_string(),
+            )
+        })?;
         let api_key = intelligence_key_for_start(&root, saved_secret)?;
-        let existing_secrets = openbot_desktop_lib::vault::already_given_no_ui(
-            &root,
-            &root.join(".env"),
-            &openbot_env::MINTED[..],
-        )?;
+        let existing_secrets =
+            openbot_desktop_lib::vault::already_given_no_ui(&root, &openbot_env::MINTED[..])?;
         require_existing_encryption_key_with_recovery(
             &root,
             &existing_secrets,
@@ -4354,8 +4343,8 @@ async fn start_stack_inner<R: tauri::Runtime>(
             // new KEY_ENCRYPTION_KEY and orphans everything the server had encrypted under the old one.
             &existing_secrets,
         );
-        for (key, value) in openbot_env::read_already_set(
-            &root.join(".env"),
+        for (key, value) in openbot_env::read_settings(
+            &root,
             &[
                 "TENANT_PACKAGE_DIR",
                 "COMPUTER_NAMESPACE",
@@ -8229,9 +8218,8 @@ fn already_configured<R: tauri::Runtime>(
 
 fn already_configured_for_root(root: String) -> AlreadyConfigured {
     let root = stack::root_from(&root);
-    let env_file = root.join(".env");
     let mut values = openbot_desktop_lib::vault::already_given_file_only(
-        &env_file,
+        &root,
         &[
             /*
              * The model credentials, so the wizard never asks twice for one of these.
@@ -9091,6 +9079,8 @@ where
             "A different backend was connected. OpenBot did not use it.",
         ));
     };
+    // Read from the CLI's own file, the `.env` in the root: that is what it just wrote, and what it
+    // compares on the next connection.
     let env_file = root.join(".env");
     let written = openbot_env::read_already_set(
         &env_file,
@@ -9144,10 +9134,10 @@ where
                 .map(|(name, value)| ((*name).to_owned(), value.clone()))
                 .collect();
             let purge = [(LOCAL_EVAL_CONNECTED_KEY.to_owned(), String::new())].into();
-            openbot_env::write(&env_file, &settings, &purge).map_err(|error| {
+            openbot_env::write_settings(root, &settings, &purge).map_err(|error| {
                 ConnectError::Unconnected(Problem::with(
                     "OpenBot kept the backend's key but could not remove it from its settings file.",
-                    format!("{}: {}", env_file.display(), error.kind()),
+                    format!("{}: {}", root.display(), error.kind()),
                 ))
             })?;
         }
@@ -11794,6 +11784,23 @@ mod runtime_update_tests {
 
 #[cfg(test)]
 mod tests {
+    /// The settings OpenBot's own services read, as one text.
+    fn settings_text(root: &std::path::Path) -> String {
+        openbot_env::SETTINGS_FILES
+            .iter()
+            .map(|file| std::fs::read_to_string(root.join(file)).unwrap_or_default())
+            .collect()
+    }
+
+    /// The `.env` in the root: an earlier version's, or the Intelligence CLI's.
+    fn legacy_text(root: &std::path::Path) -> String {
+        std::fs::read_to_string(root.join(".env")).unwrap_or_default()
+    }
+
+    /// Everything a Start or a connection could change, as one text.
+    fn all_text(root: &std::path::Path) -> String {
+        format!("{}{}", settings_text(root), legacy_text(root))
+    }
     /// The window says "Updating OpenBot" and where an update stopped in plain words; the log
     /// keeps the releases and the CLI's own name for the step.
     #[test]
@@ -12602,7 +12609,7 @@ mod tests {
         assert!(!json.to_string().contains("synthetic-hosted-key"));
         // The model answer is still read back, and the saved files are untouched.
         assert_eq!(configured.saved.model_api_keys.openai, Some(true));
-        assert_eq!(std::fs::read_to_string(root.join(".env")).unwrap(), env);
+        assert_eq!(all_text(&root), env);
         assert!(preparation::launch(&root).is_some());
 
         // Once the local stack is recorded, the same installation's launch is offered again.
@@ -16839,15 +16846,17 @@ mod tests {
             Some(LOCAL_KEY)
         );
         assert_eq!(vault.borrow().len(), 1);
-        let env = std::fs::read_to_string(root.join(".env")).unwrap();
-        assert!(!env.contains(LOCAL_KEY), "{env}");
+        let env = settings_text(&root);
+        let legacy = legacy_text(&root);
+        // The CLI's key left its own file too.
+        assert!(!legacy.contains(LOCAL_KEY), "{legacy}");
         assert!(!env.contains("CPK_INTELLIGENCE_API_KEY"), "{env}");
         // Kept at 127.0.0.1 where the CLI wrote `localhost`: the browser is handed the gateway's.
+        // The port that was set before is left where it is, for Start to move.
+        assert!(legacy.contains("SERVER_PORT=3001"), "{legacy}");
         for line in [
             "INTELLIGENCE_API_URL=http://127.0.0.1:64770",
             "INTELLIGENCE_GATEWAY_WS_URL=ws://127.0.0.1:64772",
-            "SL_ENABLED=true",
-            "SERVER_PORT=3001",
         ] {
             assert_eq!(
                 env.lines().filter(|found| *found == line).count(),
@@ -16900,12 +16909,11 @@ mod tests {
             .map(|(key, value)| (key.to_owned(), value.to_owned()))
             .collect(),
         );
-        openbot_env::write(&root.join(".env"), &settings, &secrets).unwrap();
-        let env = std::fs::read_to_string(root.join(".env")).unwrap();
+        openbot_env::write_settings(&root, &settings, &secrets).unwrap();
+        let env = settings_text(&root);
         for key in [
             "INTELLIGENCE_API_URL=",
             "INTELLIGENCE_GATEWAY_WS_URL=",
-            "SL_ENABLED=",
             "SERVER_PORT=",
         ] {
             assert_eq!(
@@ -16952,12 +16960,12 @@ mod tests {
                 Some(local_eval_state::Ownership::Created),
             );
             local_eval_connected_env(&root);
-            let before = std::fs::read_to_string(root.join(".env")).unwrap();
+            let before = all_text(&root);
             let vault = FakeVault::default();
             let answer = connect_with_vault(&root, &vault, Ok(connection.clone())).unwrap();
             assert_eq!(answer, connection, "{label}");
             assert!(vault.borrow().is_empty(), "{label}");
-            assert_eq!(std::fs::read_to_string(root.join(".env")).unwrap(), before);
+            assert_eq!(all_text(&root), before);
             assert!(!local_eval_state::read(&root, None).unwrap().connected);
             let _ = std::fs::remove_dir_all(root);
         }
@@ -18443,20 +18451,18 @@ fn main() {
             Some("43".to_string()),
             "case={case}: Compose must be handed the host token before it starts the server"
         );
-        assert!(!std::fs::read_to_string(root.join(".env"))
-            .unwrap()
-            .contains("OPENBOT_DESKTOP_HOST_TOKEN"));
+        assert!(!all_text(&root).contains("OPENBOT_DESKTOP_HOST_TOKEN"));
         // Compose's bind mount does not create the sign-in folder, so Start must have.
         assert!(root.join(".openbot").is_dir());
         // Each Bot's computer goes on the network the server container is on.
         assert_eq!(
-            openbot_env::read_already_set(&root.join(".env"), &["COMPUTER_NETWORK"])
+            openbot_env::read_settings(&root, &["COMPUTER_NETWORK"])
                 .unwrap()
                 .get("COMPUTER_NETWORK"),
             Some(&format!("{}_default", stack::DESKTOP_PROJECT))
         );
-        let settings = openbot_env::read_already_set(
-            &root.join(".env"),
+        let settings = openbot_env::read_settings(
+            &root,
             &[
                 "TENANT_PACKAGE_DIR",
                 "MANAGED_AGENT_AG_UI_URL",
@@ -19286,14 +19292,15 @@ fn escaped(path: &Path) -> String {
         ))
         .unwrap_or_else(|error| panic!("{error:?}\n{}", calls()));
         assert_eq!(connection.outcome, local_eval::Outcome::Completed);
-        let env = std::fs::read_to_string(root.join(".env")).unwrap();
+        let env = settings_text(&root);
         for line in [
             "INTELLIGENCE_API_URL=http://127.0.0.1:51796",
             "INTELLIGENCE_GATEWAY_WS_URL=ws://127.0.0.1:51797",
-            "SERVER_PORT=3001",
         ] {
             assert!(env.lines().any(|found| found == line), "{line}\n{env}");
         }
+        // What was there before is kept, in the file Start moves it from.
+        assert!(legacy_text(&root).contains("SERVER_PORT=3001"));
         assert!(!env.contains("CPK_INTELLIGENCE_API_KEY"), "{env}");
         assert!(local_eval_state::read(&root, None).unwrap().connected);
 

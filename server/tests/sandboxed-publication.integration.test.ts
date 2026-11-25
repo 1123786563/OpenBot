@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createComponentRoutes } from "../src/components/routes";
+import { createSandboxedRoutes } from "../src/components/sandboxed-routes";
 import { createSandboxedStore } from "../src/components/sandboxed";
 import { createComponentStore } from "../src/components/store";
 import { createDatabase } from "../src/db/client";
@@ -42,16 +43,18 @@ const asAdmin: MiddlewareHandler<{ Variables: AppVariables }> = async (
   await next();
 };
 
-const routes = new Hono().route(
-  "/components",
-  createComponentRoutes(
-    componentStore,
-    asAdmin,
-    auditStore,
-    async () => true,
-    sandboxedStore,
-  ),
-);
+const routes = new Hono()
+  .route(
+    "/components",
+    createComponentRoutes(
+      componentStore,
+      asAdmin,
+      auditStore,
+      async () => true,
+      sandboxedStore,
+    ),
+  )
+  .route("/sandboxed", createSandboxedRoutes(sandboxedStore, asAdmin));
 
 function fixture(label: string) {
   const slug = `${label}_${randomUUID().slice(0, 8)}`;
@@ -113,6 +116,29 @@ afterEach(async () => {
     await database.delete(components).where(eq(components.name, name));
   }
   fixtureNames.clear();
+});
+
+test("retrying publish uses the same draft version and refuses a newer draft", async () => {
+  const { slug, name } = fixture("version");
+  const first = await saveDraft(slug);
+  const publish = () =>
+    routes.request(`http://t/sandboxed/${name}/publish`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expectedDraftVersion: first.draftVersion }),
+    });
+
+  expect((await publish()).status).toBe(200);
+  expect((await publish()).status).toBe(200);
+  expect((await sourceOf(name))?.revision).toBe(1);
+
+  await saveDraft(slug, "<p>newer draft</p>");
+  expect((await publish()).status).toBe(409);
+  expect((await sourceOf(name))?.draftHtml).toBe("<p>newer draft</p>");
+  expect((await sourceOf(name))?.publishedHtml).toBe("<p>draft</p>");
+
+  await sandboxedStore.remove(name, ADMIN.email);
+  expect((await publish()).status).toBe(409);
 });
 
 describe("the generic Published switch on a sandboxed component", () => {

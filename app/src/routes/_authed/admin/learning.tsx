@@ -443,44 +443,47 @@ function LegacyLearningPage() {
     >
       <PageSection
         title="Review and publish"
-        description="OpenBot studies finished conversations and proposes skills. Review and publish them below. Bots only use published skills."
+        description="Choose whose proposed skills to review. Bots only use published skills."
       >
-        <div className="grid gap-4">
-          <label className="grid gap-2 text-sm" htmlFor="learning-roster-bot">
-            Review skills for
-            {agents.error ? (
-              /* Without the roster every option would read as its raw id; say the read failed
+        <label className="grid gap-2 text-sm" htmlFor="learning-roster-bot">
+          Review skills for
+          {agents.error ? (
+            /* Without the roster every option would read as its raw id; say the read failed
                  and offer the retry rather than naming Bots by their ids. */
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="text-destructive text-sm" role="alert">
-                  Couldn't load the Bot list.
-                </p>
-                <Button
-                  disabled={agents.isFetching}
-                  onClick={() => void agents.refetch()}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {agents.isFetching ? "Retrying…" : "Retry"}
-                </Button>
-              </div>
-            ) : (
-              <select
-                className={selectClass}
-                id="learning-roster-bot"
-                value={selected}
-                onChange={(event) => setSelected(event.target.value)}
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-destructive text-sm" role="alert">
+                Couldn't load the Bot list.
+              </p>
+              <Button
+                disabled={agents.isFetching}
+                onClick={() => void agents.refetch()}
+                size="sm"
+                type="button"
+                variant="outline"
               >
-                <option value="">Deployment default</option>
-                {botIds.map((id) => (
-                  <option key={id} value={id}>
-                    {nameFor(id)}
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
+                {agents.isFetching ? "Retrying…" : "Retry"}
+              </Button>
+            </div>
+          ) : (
+            <select
+              className={selectClass}
+              id="learning-roster-bot"
+              value={selected}
+              onChange={(event) => setSelected(event.target.value)}
+            >
+              <option value="">Deployment default</option>
+              {botIds.map((id) => (
+                <option key={id} value={id}>
+                  {nameFor(id)}
+                </option>
+              ))}
+            </select>
+          )}
+        </label>
+      </PageSection>
+      <ProposedSkills agentId={selected || undefined} />
+      <PageSection title="Learning status">
+        <div className="grid gap-4">
           {overview.isPending && <p role="status">Checking the backend…</p>}
           {overview.error && (
             <SectionReadError
@@ -622,7 +625,6 @@ function LegacyLearningPage() {
           </p>
         </div>
       </PageSection>
-      <ProposedSkills agentId={selected || undefined} />
       {/* The review workflow first: it is what this page is opened for. Participation
           configures what new conversations use, and nothing there changes the lists below. */}
       <PageSection

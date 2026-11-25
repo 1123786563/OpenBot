@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { asc, eq } from "drizzle-orm";
 import { type AuditStore, recordAuditEvent } from "../audit";
@@ -28,6 +29,7 @@ import { components, sandboxedComponents } from "../db/schema";
 export type SandboxedRecord = {
   name: string;
   title: string;
+  draftVersion: string;
   draftDescription: string;
   draftHtml: string;
   draftCss: string;
@@ -82,6 +84,30 @@ export class SandboxedPublicationRefusedError extends Error {
   }
 }
 
+export class SandboxedDraftChangedError extends Error {}
+
+function draftVersion(row: typeof sandboxedComponents.$inferSelect): string {
+  const draft = [
+    row.title,
+    row.draftDescription,
+    row.draftHtml,
+    row.draftCss,
+    row.draftJsFunctions,
+    row.draftArgumentSchema,
+    row.sampleArguments,
+  ];
+  const ordered = JSON.stringify(draft, (_key, value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).sort(([left], [right]) =>
+            left < right ? -1 : left > right ? 1 : 0,
+          ),
+        )
+      : value,
+  );
+  return createHash("sha256").update(ordered).digest("hex");
+}
+
 const iso = (value: Date | string | null): string | null =>
   value === null ? null : value instanceof Date ? value.toISOString() : value;
 
@@ -108,21 +134,12 @@ export function createSandboxedStore(
   database: Database,
   auditStore: AuditStore,
 ) {
-  async function requireRow(name: string) {
-    const [row] = await database
-      .select()
-      .from(sandboxedComponents)
-      .where(eq(sandboxedComponents.name, name))
-      .limit(1);
-    if (!row) throw new SandboxedNotFoundError(name);
-    return row;
-  }
-
   const toRecord = (
     row: typeof sandboxedComponents.$inferSelect,
   ): SandboxedRecord => ({
     name: row.name,
     title: row.title,
+    draftVersion: draftVersion(row),
     draftDescription: row.draftDescription,
     draftHtml: row.draftHtml,
     draftCss: row.draftCss,
@@ -181,22 +198,11 @@ export function createSandboxedStore(
       }
       const name = sandboxedNameFor(input.slug);
 
-      await database
-        .insert(sandboxedComponents)
-        .values({
-          name,
-          title: input.title,
-          draftDescription: input.description,
-          draftHtml: input.html,
-          draftCss: input.css,
-          draftJsFunctions: input.jsFunctions,
-          draftArgumentSchema: input.argumentSchema,
-          sampleArguments: input.sampleArguments,
-          authoredBy: input.by,
-        })
-        .onConflictDoUpdate({
-          target: sandboxedComponents.name,
-          set: {
+      const saved = await database.transaction(async (transaction) => {
+        const [row] = await transaction
+          .insert(sandboxedComponents)
+          .values({
+            name,
             title: input.title,
             draftDescription: input.description,
             draftHtml: input.html,
@@ -205,32 +211,48 @@ export function createSandboxedStore(
             draftArgumentSchema: input.argumentSchema,
             sampleArguments: input.sampleArguments,
             authoredBy: input.by,
-            updatedAt: new Date(),
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: sandboxedComponents.name,
+            set: {
+              title: input.title,
+              draftDescription: input.description,
+              draftHtml: input.html,
+              draftCss: input.css,
+              draftJsFunctions: input.jsFunctions,
+              draftArgumentSchema: input.argumentSchema,
+              sampleArguments: input.sampleArguments,
+              authoredBy: input.by,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
 
-      // The governance row. `published` is left alone on conflict: an administrator publishing a
-      // description is their decision, and a save must not quietly undo or advance it.
-      await database
-        .insert(components)
-        .values({
-          name,
-          title: input.title,
-          kind: "sandboxed",
-          draftDescription: input.description,
-          publishedDescription: null,
-          published: false,
-          updatedBy: input.by,
-        })
-        .onConflictDoUpdate({
-          target: components.name,
-          set: {
+        // The governance row. `published` is left alone on conflict: an administrator publishing a
+        // description is their decision, and a save must not quietly undo or advance it.
+        await transaction
+          .insert(components)
+          .values({
+            name,
             title: input.title,
+            kind: "sandboxed",
             draftDescription: input.description,
+            publishedDescription: null,
+            published: false,
             updatedBy: input.by,
-            updatedAt: new Date(),
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: components.name,
+            set: {
+              title: input.title,
+              draftDescription: input.description,
+              updatedBy: input.by,
+              updatedAt: new Date(),
+            },
+          });
+        if (!row) throw new Error("The playground draft was not saved.");
+        return row;
+      });
 
       await recordAuditEvent(auditStore, {
         eventType: "component.draft_saved",
@@ -239,7 +261,7 @@ export function createSandboxedStore(
         payload: { actor: input.by, kind: "sandboxed" },
       });
 
-      return toRecord(await requireRow(name));
+      return toRecord(saved);
     },
 
     /**
@@ -250,7 +272,11 @@ export function createSandboxedStore(
      * wording would leave a component no model is told about. Either half on its own is a state
      * nobody wants and both would be reachable if this were two endpoints.
      */
-    async publish(name: string, by: string): Promise<SandboxedRecord> {
+    async publish(
+      name: string,
+      by: string,
+      expectedDraftVersion?: string,
+    ): Promise<SandboxedRecord> {
       const outcome = await database.transaction(async (transaction) => {
         const [row] = await transaction
           .select()
@@ -258,12 +284,17 @@ export function createSandboxedStore(
           .where(eq(sandboxedComponents.name, name))
           .limit(1)
           .for("update");
+        if (
+          expectedDraftVersion &&
+          (!row || draftVersion(row) !== expectedDraftVersion)
+        ) {
+          throw new SandboxedDraftChangedError();
+        }
         if (!row) {
           throw new SandboxedPublicationRefusedError(
             `${name} has no stored playground source to publish.`,
           );
         }
-
         const [governance] = await transaction
           .select()
           .from(components)

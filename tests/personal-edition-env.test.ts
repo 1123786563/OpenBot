@@ -39,7 +39,7 @@ async function run(envFile: string) {
 async function fresh(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "openbot-personal-env-"));
   directories.push(directory);
-  return join(directory, ".env");
+  return join(directory, ".env.server");
 }
 
 const PERSONAL = {
@@ -52,9 +52,9 @@ const PERSONAL = {
   AUDIT_RETENTION_DAYS: "90",
 };
 
-test("turns a copy of .env.example into a personal edition, one line per setting", async () => {
+test("turns a copy of the server's example into a personal edition, one line per setting", async () => {
   const envFile = await fresh();
-  await copyFile(join(root, ".env.example"), envFile);
+  await copyFile(join(root, "deploy/openbot/.env.server.example"), envFile);
   await run(envFile);
   const lines = values(await readFile(envFile, "utf8"));
   for (const [name, value] of Object.entries(PERSONAL)) {
@@ -65,13 +65,13 @@ test("turns a copy of .env.example into a personal edition, one line per setting
   }
 });
 
-test("starts from .env.example when there is no .env yet", async () => {
+test("starts from the server's example when there is no settings file yet", async () => {
   const envFile = await fresh();
   await run(envFile);
   const lines = values(await readFile(envFile, "utf8"));
   expect(lines.get("OPENBOT_EDITION")).toEqual(["personal"]);
-  // Everything else .env.example carries is still there to fill in.
-  expect(lines.has("OPENAI_API_KEY")).toBe(true);
+  // Everything else the example carries is still there to fill in.
+  expect(lines.has("KEY_ENCRYPTION_KEY")).toBe(true);
 });
 
 test("the result starts as a personal edition once the secrets are filled in", async () => {

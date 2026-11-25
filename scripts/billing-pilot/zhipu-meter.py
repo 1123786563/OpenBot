@@ -94,6 +94,7 @@ class Meter(BaseHTTPRequestHandler):
                 tokenizerRequestId=tokenizer_id,
             )
             proof = {
+                "requestId": record["requestId"],
                 "inputTokenUpperBound": bound + FRAMING_MARGIN,
                 "gatewayRevision": route["gatewayRevision"],
                 "meteringRevision": route["meteringRevision"],

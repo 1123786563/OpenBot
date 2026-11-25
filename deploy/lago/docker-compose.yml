@@ -1,0 +1,6 @@
+name: openbot-lago
+
+include:
+  - path:
+      - ${LAGO_SOURCE:-./upstream}/docker-compose.yml
+      - ./docker-compose.openbot.yml

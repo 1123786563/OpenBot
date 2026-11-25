@@ -24,10 +24,7 @@ pub struct AiConnection {
 /// What `root` starts with. Missing or unreadable records read as nothing chosen.
 pub fn read(root: &Path) -> AiConnection {
     let kind = SavedIntent::read(root).model;
-    let values = crate::vault::already_given_file_only(
-        &root.join(".env"),
-        &["BOT_MODEL", "OPENAI_BASE_URL"],
-    );
+    let values = crate::vault::already_given_file_only(root, &["BOT_MODEL", "OPENAI_BASE_URL"]);
     let named = |key: &str| {
         values
             .get(key)

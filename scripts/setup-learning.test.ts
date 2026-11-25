@@ -68,7 +68,8 @@ async function fixture(
     join(directory, ".copilotkit/project.json"),
     JSON.stringify({ projectId: "12", projectSlug: "chosen" }),
   );
-  const envPath = join(directory, ".env");
+  await mkdir(join(directory, "deploy/openbot"), { recursive: true });
+  const envPath = join(directory, "deploy/openbot/.env.server");
   await writeFile(
     envPath,
     `INTELLIGENCE_API_URL=https://api.intelligence.copilotkit.ai\nINTELLIGENCE_API_KEY=\n# Keep my other configuration\nOPENAI_API_KEY=synthetic-model\n${extra}`,

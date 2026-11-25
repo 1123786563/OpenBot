@@ -1,6 +1,6 @@
 # The built-in Bot only speaks AG-UI and a model provider; the browser runs in a separate computer
 # container so either side can be replaced independently.
-FROM oven/bun:1.4-alpine
+FROM oven/bun:1.4.3-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373
 
 WORKDIR /app
 RUN chown bun:bun /app

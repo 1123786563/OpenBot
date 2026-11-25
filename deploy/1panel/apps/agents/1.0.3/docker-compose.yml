@@ -1,0 +1,141 @@
+networks:
+  default:
+    name: ${CONTAINER_NAME}-agents
+    ipam: {}
+  1panel-network:
+    external: true
+services:
+  agent-bot:
+    command: null
+    entrypoint: null
+    environment:
+      BOT_MODEL: ${AGENT_BOT_MODEL:-gpt-5.5}
+      MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bun -e "await fetch('http://localhost:4200/health')"
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: ${BOT_IMAGE:-openbot-agent-bot:1panel}
+    networks:
+      default: null
+      1panel-network:
+        aliases:
+          - openbot-agents
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-4200}:4200
+    container_name: ${CONTAINER_NAME}
+    labels:
+      createdBy: Apps
+  agent-computer:
+    cap_add:
+      - NET_RAW
+    command: null
+    entrypoint: null
+    environment:
+      COMPUTER_BROWSER_IDLE_MS: ""
+      COMPUTER_BROWSER_MODE: headless
+      COMPUTER_LOOPBACK_RELAYS: ""
+      COMPUTER_MAX_BROWSERS: ""
+      COMPUTER_MEMORY_HIGH_PERCENT: ""
+      COMPUTER_PERSON_ID: ""
+      COMPUTER_SEPARATE_WORKSPACES: on
+      COMPUTER_TAB_IDLE_MS: ""
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN}
+      OPENBOT_EDITION: ""
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bun -e "await fetch('http://localhost:4100/health')"
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: ${COMPUTER_IMAGE:-openbot-agent-computer:1panel}
+    networks:
+      default: null
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - agent-workspace:/workspace
+      - agent-profiles:/profiles
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_COMPUTER:-4100}:4100
+    container_name: ${CONTAINER_NAME}-agent-computer
+    labels:
+      createdBy: Apps
+  agent-langgraph:
+    command: null
+    entrypoint: null
+    environment:
+      AGENT_TOOL_TOKEN: ${AGENT_TOOL_TOKEN}
+      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_BASE_URL: ""
+      BOT_MODEL: ${BOT_MODEL:-gpt-5.5}
+      BOT_PROVIDER: openai
+      BOT_REASONING_EFFORT: ""
+      BOT_RESPONSES_API: "false"
+      GOOGLE_API_KEY: ""
+      GOOGLE_GENERATIVE_AI_BASE_URL: ""
+      MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENBOT_TOOL_URL: ${OPENBOT_TOOL_URL:-http://openbot:3001/api/agent-tools/call}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bun -e "await fetch('http://localhost:4201/health')"
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: ${LANGGRAPH_IMAGE:-openbot-agent-langgraph:1panel}
+    networks:
+      default: null
+      1panel-network:
+        aliases:
+          - openbot-agent-langgraph
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_LANGGRAPH:-4201}:4201
+    container_name: ${CONTAINER_NAME}-agent-langgraph
+    labels:
+      createdBy: Apps
+  supervisor:
+    command: null
+    entrypoint: null
+    environment:
+      COMPUTER_BROWSER_MODE: headless
+      COMPUTER_IMAGE: ${COMPUTER_IMAGE:-openbot-agent-computer:1panel}
+      COMPUTER_NAMESPACE: ${CONTAINER_NAME}
+      COMPUTER_NETWORK: ${CONTAINER_NAME}-agents
+      COMPUTER_RUNTIME: ""
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN}
+      PORT: "4300"
+      SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bun -e "await fetch('http://localhost:4300/health')"
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: ${SUPERVISOR_IMAGE:-openbot-supervisor:1panel}
+    networks:
+      default: null
+    restart: unless-stopped
+    security_opt:
+      - label=disable
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_SUPERVISOR:-4500}:4300
+    container_name: ${CONTAINER_NAME}-supervisor
+    labels:
+      createdBy: Apps
+volumes:
+  agent-profiles: {}
+  agent-workspace: {}

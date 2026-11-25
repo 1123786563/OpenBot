@@ -42,18 +42,19 @@ EOF
   esac
 done
 
-# The environment first, then .env, then the default: the same resolution order start.sh uses, so a
-# port configured there is the port stopped here. A missing .env is not an error for stopping —
+# The environment first, then the deployment's settings file, then the default: the same resolution
+# order start.sh uses, so a port configured there is the port stopped here. A missing file is not an
+# error for stopping —
 # the defaults still find whatever a previous run left behind.
 setting() {
   local name="$1" fallback="$2" value="${!1:-}"
-  if [ -z "$value" ] && [ -f "$ROOT/.env" ]; then
+  if [ -z "$value" ] && [ -f "$ROOT/deploy/openbot/.env" ]; then
     # `|| true`, for `start.sh`'s reason: a key with a default here is routinely absent from `.env`
-    # — of the two this reads, `.env.example` lists `SERVER_PORT` and not `APP_PORT` — and `grep`
+    # — of the two this reads, the example lists `SERVER_PORT` and not `APP_PORT` — and `grep`
     # finding nothing is an exit status of 1 that `pipefail` makes the pipeline's. The fallback on
     # the next line is what the second argument promises, and it must not depend on whether the key
     # happened to be written down.
-    value="$(grep -E "^$name=" "$ROOT/.env" | tail -1 | cut -d= -f2- | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/" || true)"
+    value="$(grep -E "^$name=" "$ROOT/deploy/openbot/.env" | tail -1 | cut -d= -f2- | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/" || true)"
   fi
   printf '%s' "${value:-$fallback}"
 }
@@ -125,8 +126,8 @@ stop_port "$APP_PORT" app
 info "2/4  Routine worker"
 # The same pattern start.sh starts it with, and it has to stay that specific: a bare `bun
 # src/index.ts` matches the server, computer and supervisor containers on a Linux host too.
-if running "bun worker/src/index.ts"; then
-  stop_matching "bun worker/src/index.ts"
+if running "worker/src/index.ts"; then
+  stop_matching "worker/src/index.ts"
   green "  worker: stopped"
 else
   info "  worker: not running"
