@@ -387,6 +387,12 @@ export function subjectText(event: AuditEvent, storedNames = true): string {
     const person = personSubject(payload);
     if (person) return person;
   }
+  // The site a saved login was saved for or deleted from. Its id says nothing a person can read.
+  if (event.targetType === "password" && typeof payload.site === "string")
+    return payload.site;
+  // A Bot's app source for memory, by the app it read: the stored name in Admin, the app in words.
+  if (event.targetType === "memory_source" && typeof payload.app === "string")
+    return storedNames ? payload.app : connectorName(payload.app);
   return "";
 }
 
@@ -1180,6 +1186,8 @@ const NAMED_TARGETS = new Set([
   "mcp_server",
   "skill",
   "credential",
+  // A registered provider's id is its name, on the Identity providers page too.
+  "identity_provider",
 ]);
 
 const DECISIONS: Record<string, string> = {

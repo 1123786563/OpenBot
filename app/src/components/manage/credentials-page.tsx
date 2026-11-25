@@ -1,7 +1,12 @@
 import { IconKey, IconPlus } from "@tabler/icons-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Link, useLocation } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   PageEmpty,
   PageRows,
@@ -19,6 +24,7 @@ import {
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Item,
   ItemActions,
@@ -27,9 +33,15 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { canKeepCachedRead } from "@/lib/client";
+import { canKeepCachedRead, ClientError } from "@/lib/client";
 import { revokeCredentialMutationOptions } from "@/lib/credentials/mutations";
-import { credentialListQueryOptions } from "@/lib/credentials/queries";
+import {
+  type CredentialStatus,
+  type CredentialUsage,
+  credentialKindLabel,
+  credentialListQueryOptions,
+  credentialUsageQueryOptions,
+} from "@/lib/credentials/queries";
 import { useManagePaths } from "@/lib/manage-paths";
 
 declare module "@tanstack/react-router" {
@@ -50,9 +62,26 @@ export function CredentialsPage() {
   });
   const firstMatch = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
-  const { requestConfirmation, confirmation } = useActionConfirmation();
   const personal = paths.edition === "personal";
   const entry = personal ? "key" : "credential";
+  // The credential being revoked. What uses it is read while the confirmation is open, and the
+  // confirmation cannot be submitted until that read has answered.
+  const [revoking, setRevoking] = useState<CredentialStatus | null>(null);
+  const usage = useQuery({
+    ...credentialUsageQueryOptions(revoking?.id ?? ""),
+    enabled: revoking !== null,
+  });
+  const { requestConfirmation, confirmation } = useActionConfirmation({
+    content: revoking ? (
+      <CredentialUse
+        deploymentName={paths.deploymentName}
+        entry={entry}
+        usage={usage}
+      />
+    ) : null,
+    ready: revoking !== null && usage.isSuccess && usage.fetchStatus === "idle",
+    onClose: () => setRevoking(null),
+  });
   const queryClient = useQueryClient();
   const credentials = useQuery(credentialListQueryOptions());
   const entries = canKeepCachedRead(credentials.error)
@@ -190,7 +219,8 @@ export function CredentialsPage() {
                         {credential.provider}
                       </ItemTitle>
                       <ItemDescription className="line-clamp-none wrap-anywhere">
-                        {credential.kind} · {credential.keyId} ·{" "}
+                        {credentialKindLabel(credential.kind)} ·{" "}
+                        {credential.keyId} ·{" "}
                         {credential.revokedAt ? "revoked" : "active"}
                       </ItemDescription>
                       {replaced ? (
@@ -229,12 +259,13 @@ export function CredentialsPage() {
                           Boolean(credential.revokedAt) ||
                           !credentials.isSuccess
                         }
-                        onClick={(event) =>
+                        onClick={(event) => {
+                          setRevoking(credential);
                           requestConfirmation({
                             title: `Revoke ${credential.keyId} for ${credential.provider}?`,
                             description: personal
-                              ? "Apps or models using this credential may stop working. Revocation is permanent. Add a replacement credential to restore access."
-                              : "This revokes the credential for this deployment. Any apps or models using it may stop working. Revocation is permanent. Add a replacement credential to restore access.",
+                              ? `This is a ${credentialKindLabel(credential.kind)} key. Revocation is permanent. Add a replacement key to restore access.`
+                              : `This is a ${credentialKindLabel(credential.kind)} credential for this deployment. Revocation is permanent. Add a replacement credential to restore access.`,
                             confirmLabel: `Revoke ${entry}`,
                             pendingLabel: `Revoking ${entry}…`,
                             failureMessage:
@@ -257,8 +288,8 @@ export function CredentialsPage() {
                               }
                               await revokeCredential.mutateAsync(credential.id);
                             },
-                          })
-                        }
+                          });
+                        }}
                         size="sm"
                         className="min-h-11"
                         variant="outline"
@@ -275,5 +306,82 @@ export function CredentialsPage() {
         ) : null}
       </PageSection>
     </PageShell>
+  );
+}
+
+/**
+ * What holds a credential, inside the confirmation that revokes it.
+ *
+ * Read while the dialog is open, from the rows that keep the credential's id: a failed read offers
+ * its own retry in place, and the Revoke button stays disabled until the answer is in, so a key
+ * that stops a Bot's runs is not withdrawn without that first being on screen.
+ */
+function CredentialUse({
+  deploymentName,
+  entry,
+  usage,
+}: {
+  deploymentName: string;
+  entry: string;
+  usage: UseQueryResult<CredentialUsage>;
+}) {
+  if (usage.error)
+    return (
+      <ReadError
+        // The server's own sentence when it sent one: it knows whether the credential is gone.
+        message={
+          usage.error instanceof ClientError
+            ? usage.error.message
+            : `Couldn’t check what uses this ${entry}.`
+        }
+        retry={() => usage.refetch()}
+        retryLabel="Retry preview"
+        retrying={usage.isFetching}
+      />
+    );
+  if (!usage.isSuccess || usage.fetchStatus !== "idle")
+    return (
+      <ReadStatus
+        kind="loading"
+        message={`Checking what uses this ${entry}…`}
+      />
+    );
+
+  const { features, bots } = usage.data;
+  const rows = [
+    ...bots.map((bot) => ({
+      key: `bot:${bot.id}`,
+      title: bot.name,
+      note: "Bot",
+    })),
+    ...features.map((feature) => ({
+      key: `feature:${feature}`,
+      title: feature,
+      note: undefined,
+    })),
+  ];
+  return (
+    <Field aria-labelledby="credential-use" aria-live="polite">
+      <FieldLabel id="credential-use">What uses it</FieldLabel>
+      {rows.length === 0 ? (
+        <p>{`Nothing in ${deploymentName} points at this ${entry}.`}</p>
+      ) : (
+        <PageRows>
+          {rows.map((row, index) => (
+            <Fragment key={row.key}>
+              {index > 0 ? <Separator /> : null}
+              <Item className="px-0" size="sm">
+                <ItemContent>
+                  <ItemTitle className="wrap-anywhere">{row.title}</ItemTitle>
+                  {row.note ? (
+                    <ItemDescription>{row.note}</ItemDescription>
+                  ) : null}
+                </ItemContent>
+              </Item>
+            </Fragment>
+          ))}
+        </PageRows>
+      )}
+    </Field>
   );
 }

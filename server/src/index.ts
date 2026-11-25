@@ -25,6 +25,7 @@ import {
   skillSharingAllowed,
   skillSharingInSnapshot,
 } from "./admin/controls";
+import { createCredentialUsageReader } from "./admin/credential-usage";
 import { fixSettings } from "./admin/settings-store";
 import {
   CoworkerUnavailableError,
@@ -657,7 +658,11 @@ const peopleStore = createPeopleStore(
       recorders: () => signOutRecorders(userId, "person_removed"),
     }),
 );
-const identityProviderStore = createIdentityProviderStore(database);
+const identityProviderStore = createIdentityProviderStore(
+  database,
+  // The emergency addresses, which keep a way in after the provider they used is removed.
+  config.auth?.initialAdminEmails ?? [],
+);
 /*
  * Built before `auth` for the same reason the people store is: sign-in writes to the trail, and the
  * store that receives those rows has to exist before anything can sign in.
@@ -4210,6 +4215,12 @@ const app = createApp(
     testCreditConversations: directChatTestCredit !== undefined,
     canStartBackgroundBudget: backgroundModel?.canStart,
   },
+  // What holds a vault row, for the confirmation before an administrator revokes it. The model key
+  // is the one pointer no table holds, so it is passed in.
+  createCredentialUsageReader(database, {
+    provider: runtimeModel.provider,
+    keyId: tenantPackage.model.credentialSecretRef,
+  }),
 );
 if (reflectGateway) {
   app.post(REFLECT_MODEL_CALLBACK_PATH, (context) =>
