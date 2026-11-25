@@ -1,4 +1,3 @@
-import { Text } from "@astryxdesign/core/Text";
 import { IconLayoutSidebar } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId } from "react";
@@ -9,6 +8,7 @@ import {
   Item,
   ItemActions,
   ItemContent,
+  ItemDescription,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
@@ -47,18 +47,12 @@ export function MessageListPreference() {
           <ItemTitle className="w-auto">
             {t("settings.messageList.title", "Message list emphasis")}
           </ItemTitle>
-          {/* Text never truncates; the slot is what aligns the row's icon with its title. */}
-          <Text
-            as="p"
-            data-slot="item-description"
-            id={descriptionId}
-            type="supporting"
-          >
+          <ItemDescription className="line-clamp-none" id={descriptionId}>
             {t(
               "settings.messageList.description",
               "Show the conversation title or the Bot name first in the sidebar.",
             )}
-          </Text>
+          </ItemDescription>
         </ItemContent>
         <ItemActions className="max-sm:basis-full">
           <Select
