@@ -1790,6 +1790,7 @@ const ToolCallBody = memo(function ToolCallBody({
          */}
         {drawn ?? (
           <InlineApproval
+            resulted={result !== undefined}
             toolCallId={toolCallId}
             fallback={
               <ServerToolLine

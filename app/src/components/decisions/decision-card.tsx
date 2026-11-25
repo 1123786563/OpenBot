@@ -7,7 +7,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { IconCheck } from "@tabler/icons-react";
 import { type RegisterableHotkey, useHotkeys } from "@tanstack/react-hotkeys";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { type ReactNode, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Badge, type Tone } from "@/components/gallery/frame";
 import { EASE_OUT } from "@/lib/motion";
 import { useNewestDecision } from "./newest-decision";
@@ -94,9 +94,22 @@ export function DecisionCard({
   if (other) values.push(OTHER);
   const pickedOption = options.find((option) => option.value === picked);
   const canSend = !submitting && (picked !== OTHER || text.trim().length > 0);
+  /*
+   * A fast double press reaches this once. The rows stay open until the caller reports the answer on
+   * its way, so a double click on the button, or Enter twice in a row, used to ask twice: the
+   * server refuses the second decision and the conversation was carried on from the first only by
+   * luck of ordering.
+   */
+  const sent = useRef(false);
   const send = () => {
-    if (canSend) onSubmit(picked, picked === OTHER ? text.trim() : "");
+    if (!canSend || sent.current) return;
+    sent.current = true;
+    onSubmit(picked, picked === OTHER ? text.trim() : "");
   };
+  useEffect(() => {
+    // Nobody told the card the answer is on its way, or it came back refused: it can be pressed again.
+    if (!submitting) sent.current = false;
+  }, [submitting]);
   const pick = (value: string) => {
     setPicked(value);
     if (value === OTHER) field.current?.focus();

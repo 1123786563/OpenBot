@@ -1,6 +1,8 @@
+import { Banner } from "@astryxdesign/core/Banner";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { outcomeForPerson } from "@openbot/shared/approval-outcomes";
 import { offersStandingRule } from "@openbot/shared/standing-rule";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +25,9 @@ import { EASE_OUT } from "@/lib/motion";
  * in either place is the one decision. Once decided the server runs the action exactly once and
  * continues the conversation, and this gives the line back to the tool's own renderer.
  */
+/** What to do about a request that ended before the Bot's answer for its step arrived. */
+const ASK_AGAIN = "Ask the Bot again if you still need it.";
+
 /** What each answer does, as the row under it says it. */
 const CHOICE_WORDS: Record<
   ApprovalDecision,
@@ -30,26 +35,29 @@ const CHOICE_WORDS: Record<
 > = {
   allow_once: {
     label: "Allow once",
-    description: "The Bot does it this time. You're asked again next time.",
+    description:
+      "The Bot does it this time, then carries on in this conversation. You're asked again next time.",
     done: "Allowed once",
     tone: "positive",
   },
   allow_conversation: {
     label: "Allow for this conversation",
     description:
-      "The Bot does it now, and again in this conversation without asking.",
+      "The Bot does it now and carries on in this conversation, without asking again here.",
     done: "Allowed for this conversation",
     tone: "positive",
   },
   allow_always: {
     label: "Always allow here",
-    description: "The Bot does it now, and here without asking from now on.",
+    description:
+      "The Bot does it now and carries on in this conversation. It won't ask here again.",
     done: "Always allowed",
     tone: "positive",
   },
   deny: {
     label: "Deny",
-    description: "The Bot doesn't do it, and is told you said no.",
+    description:
+      "The Bot doesn't do it and is told you said no, then carries on without it.",
     done: "Denied",
     tone: "negative",
   },
@@ -64,9 +72,12 @@ const CHOICE_WORDS: Record<
 export function InlineApproval({
   toolCallId,
   fallback,
+  resulted,
 }: {
   toolCallId?: string;
   fallback: ReactNode;
+  /** Whether the tool call has its answer in the transcript. Leave it out where that is unknown. */
+  resulted?: boolean;
 }) {
   const cache = useQueryClient();
   const inbox = useQuery(approvalInboxOptions());
@@ -107,6 +118,22 @@ export function InlineApproval({
         ];
   // In the words the step and Activity use for the same action: "Save a file todo.txt in share".
   const title = request ? approvalPhrase(request.action) : "";
+  /*
+   * No approval expires by itself. What ends one without an answer from this card is the person
+   * withdrawing it, the Bot's work being stopped under it, or the same request decided in another
+   * tab, and each leaves its reason on the request. Said here, with what to do, until the Bot's own
+   * answer for this step reaches the transcript and takes the line back. A card this browser
+   * answered already shows that answer.
+   */
+  const explain =
+    request &&
+    !pending &&
+    request.result?.error &&
+    !request.result.pauseReason &&
+    !resulted &&
+    !answered
+      ? request.result.error
+      : null;
   return (
     <>
       {/* The card leaves by folding away; what is left behind is the tool's own line. */}
@@ -164,6 +191,13 @@ export function InlineApproval({
             />
           )}
         </Stack>
+      ) : explain ? (
+        <Banner
+          collapsible={false}
+          description={ASK_AGAIN}
+          status="warning"
+          title={outcomeForPerson(explain)}
+        />
       ) : pending ? null : (
         fallback
       )}

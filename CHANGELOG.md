@@ -62,6 +62,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   with one Bot do, and a run the person stopped says "The run was stopped." Before, the same run read
   "Waiting to reply" or "Run ended" there. A run that is waiting on the person says "Waiting for your
   approval." everywhere.
+- **An approval that ends without your answer says why, and what to do.** No approval expires on
+  its own. One ends when you withdraw it (asking is switched off while it waits), when the Bot's
+  work is stopped under it, or when the same request is decided in another tab, and the line where
+  the card was now reads, for example, "Withdrawn. You turned off asking before changes. Ask the Bot
+  again if you still need it." until the Bot's own answer for that step arrives. Each answer's
+  description also says that the Bot carries on in the same conversation afterwards. A fast double
+  press on a decision sends it once; the server refuses a second decision on the same request.
 
 ## 1.0.3
 

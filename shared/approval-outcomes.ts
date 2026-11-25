@@ -89,11 +89,23 @@ export function notCarriedOut(reason: string): string {
   return `Not done: this action could not be carried out (${reason.slice(0, 300)}). Check whether it happened before asking the person again.`;
 }
 
+/**
+ * A request the Bot could act on no longer, because the work it belonged to was stopped. The server
+ * writes it on the request itself (`personal-saas/decision-access.ts`), so it is written for a
+ * person already; it lives here beside the others so the card can add what to do next.
+ */
+export const decisionInvalidated =
+  "This decision was invalidated when workspace execution stopped.";
+
 const FOR_PERSON = new Map<string, string>([
   [DECLINED_BY_PERSON, "You declined it."],
   [ALREADY_WAITING, "It's already waiting for your answer."],
   [WITHDRAWN_APPROVALS_OFF, "Withdrawn. You turned off asking before changes."],
   [WITHDRAWN_RULE_ALLOWS, "Withdrawn. A rule you saved now allows it."],
+  [
+    decisionInvalidated,
+    "Withdrawn. The Bot's work was stopped before it could do this.",
+  ],
   [HANDLED_BY_PERSON, "You did it yourself."],
   [
     NOT_RUN_WHILE_WAITING,

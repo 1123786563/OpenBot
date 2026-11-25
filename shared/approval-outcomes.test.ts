@@ -5,6 +5,7 @@ import * as outcomes from "./approval-outcomes";
 const {
   ALREADY_WAITING,
   DECLINED_BY_PERSON,
+  decisionInvalidated,
   doneByPerson,
   HANDLED_BY_PERSON,
   OUTCOME_UNKNOWN,
@@ -27,6 +28,16 @@ test.each([
   [WITHDRAWN_RULE_ALLOWS, "Withdrawn. A rule you saved now allows it."],
 ])("the server's sentence %#: the person reads their own", (sent, read) => {
   expect(outcomeForPerson(sent)).toBe(read);
+});
+
+test("a decision the Bot's stopped work invalidated reads as withdrawn, in plain words", () => {
+  // Word for word what the server writes on a request when the work it belonged to was stopped.
+  expect(decisionInvalidated).toBe(
+    "This decision was invalidated when workspace execution stopped.",
+  );
+  expect(outcomeForPerson(decisionInvalidated)).toBe(
+    "Withdrawn. The Bot's work was stopped before it could do this.",
+  );
 });
 
 test("a step the person did themselves reads as theirs, and as done", () => {
