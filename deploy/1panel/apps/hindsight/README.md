@@ -8,6 +8,8 @@
 
 PostgreSQL 实例需提供 pgvector。复用已有数据库时，请管理员在目标库执行 `CREATE EXTENSION IF NOT EXISTS vector;`。API 容器加入共享 1Panel 网络，供可信容器访问。
 
+镜像已内置本地嵌入和重排模型，启动时使用 `HF_HUB_OFFLINE=1`，不访问 Hugging Face。首次启动会把这些模型复制到 `model-cache` 数据卷；若将来更换镜像版本导致模型缺失，离线模式会直接报错，需要重新准备模型缓存。
+
 ## 控制台
 
 控制台是应用的 Web 界面，也是 1Panel 的主访问端口（`PANEL_APP_PORT_HTTP`，默认 19999），安装后点「访问」即打开控制台。API 使用独立端口 `PANEL_APP_PORT_API`（默认 18888）；OpenBot 经容器网络 `http://hindsight:8888` 调用 API，不依赖该主机端口。
