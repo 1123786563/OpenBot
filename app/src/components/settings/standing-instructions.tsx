@@ -74,7 +74,7 @@ export function StandingInstructionsRow() {
               "Applies to every Bot in every conversation.",
             )}
           </ItemDescription>
-          <ItemDescription className="line-clamp-none wrap-anywhere">
+          <ItemDescription className="wrap-anywhere">
             {stored.isPending
               ? t("settings.instructions.loading", "Loading your instructions…")
               : stored.isError && !readable

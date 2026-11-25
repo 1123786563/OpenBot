@@ -625,10 +625,22 @@ describe("the language row", () => {
   });
 });
 
-test("standing instructions remain fully readable in the settings row", async () => {
-  instructions = "A long instruction ".repeat(40);
+// The house settings row: a two-line summary on the row, the whole text in its dialog.
+test("standing instructions are a two-line summary on the row and full in the dialog", async () => {
+  instructions = "A long instruction ".repeat(200);
   queryClient.setQueryData(settingsKeys.instructions(), instructions);
   const view = draw();
   const preview = await view.findByText(instructions.trim());
-  expect(preview.className).not.toMatch(/\bline-clamp-\d/);
+  expect(preview.className).toMatch(/\bline-clamp-2\b/);
+  const user = userEvent.setup({ document });
+  await user.click(
+    view.getByRole("button", { name: /^Standing instructions/ }),
+  );
+  const dialog = await view.findByRole("dialog");
+  const editor = within(dialog).getByRole("textbox", {
+    name: "Standing instructions",
+  });
+  expect(editor instanceof HTMLTextAreaElement && editor.value).toBe(
+    instructions,
+  );
 });

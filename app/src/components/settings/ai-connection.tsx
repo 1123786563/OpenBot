@@ -74,11 +74,11 @@ function AiConnectionRow({ connection }: { connection: DesktopAiConnection }) {
           <IconSparkles />
         </ItemMedia>
         <ItemContent>
-          <ItemTitle className="line-clamp-none wrap-anywhere">
+          <ItemTitle>
             {described?.provider ??
               t("settings.ai.notChosen", "Not chosen yet")}
           </ItemTitle>
-          <ItemDescription className="line-clamp-none wrap-anywhere">
+          <ItemDescription>
             {described?.summary ??
               t("settings.ai.notChosenSummary", "Choose the AI your Bots use.")}
           </ItemDescription>

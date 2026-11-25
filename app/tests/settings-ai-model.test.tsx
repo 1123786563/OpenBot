@@ -220,17 +220,24 @@ test("in Chinese the AI row and dialog speak the interface language, providers u
   ).toBe(true);
 });
 
-test("the custom AI summary remains fully readable before opening its dialog", async () => {
+// The house settings row: the title and summary keep their clamps; the dialog is where the whole address is read.
+test("the custom AI row clamps its title and summary, and the dialog holds the whole address", async () => {
+  const host = "a-very-long-private-endpoint.company.example.internal";
+  const model = "a-very-long-model-identifier-for-this-installation";
   connection = {
     kind: "compatible-endpoint",
-    endpointHost: "a-very-long-private-endpoint.company.example.internal",
-    model: "a-very-long-model-identifier-for-this-installation",
+    endpointHost: host,
+    model,
   };
   const view = renderGeneral();
   const row = await aiModelRow(view);
+  const title = row.querySelector('[data-slot="item-title"]');
   const summary = row.querySelector('[data-slot="item-description"]');
-  expect(summary?.textContent).toContain(
-    "a-very-long-model-identifier-for-this-installation",
-  );
-  expect(summary?.className).not.toMatch(/\bline-clamp-\d/);
+  expect(title?.className).toMatch(/\bline-clamp-1\b/);
+  expect(summary?.textContent).toContain(model);
+  expect(summary?.className).toMatch(/\bline-clamp-2\b/);
+  await userEvent.click(row);
+  const dialog = await view.findByRole("dialog");
+  expect(within(dialog).getByText(host)).toBeTruthy();
+  expect(within(dialog).getByText(model)).toBeTruthy();
 });
