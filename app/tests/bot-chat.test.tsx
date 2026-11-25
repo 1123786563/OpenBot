@@ -629,6 +629,13 @@ test("a run that was going when the chat opened, and has ended since, is not the
   await waitFor(() =>
     expect(runtime.stops).toEqual([{ threadId: THREAD, runId: "run-live" }]),
   );
+  // The server ends the stopped run's stream, as `stoppedRunEvent` does. Let the turn rest here:
+  // a run left open is aborted when the chat is closed after the test, and under load that abort
+  // landed in the next test's record.
+  releaseRun([
+    { type: "RUN_ERROR", code: "stopped", message: "The Bot run was stopped." },
+  ]);
+  await settled(view);
 });
 
 test("a stop the server did not make lets this browser's end of the turn go, and says nothing was stopped", async () => {
