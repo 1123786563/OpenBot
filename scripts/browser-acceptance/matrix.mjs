@@ -663,6 +663,22 @@ async function cellRun(browser, locale, width, scheme) {
         .isVisible(),
       "",
     );
+    check(
+      cell.name,
+      "dialog: name cancel translated",
+      await nameDialog
+        .getByRole("button", { name: say(locale, "frame.cancel") })
+        .isVisible(),
+      "",
+    );
+    check(
+      cell.name,
+      "dialog: name save translated",
+      await nameDialog
+        .getByRole("button", { name: say(locale, "settings.name.save") })
+        .isVisible(),
+      "",
+    );
     await page.keyboard.press("Escape");
     await nameDialog.waitFor({ state: "hidden" });
     check(
@@ -734,6 +750,58 @@ async function cellRun(browser, locale, width, scheme) {
       .click();
     await instructionsDialog.waitFor({ state: "hidden" });
     check(cell.name, "dialog: discard closes the editor", true, "");
+
+    // Save path: the action labels, the saved status, and the row after a real save.
+    await instructionsButton.focus();
+    await page.keyboard.press("Enter");
+    await instructionsDialog.waitFor();
+    const saveEditor = instructionsDialog.getByRole("textbox");
+    // Replace the previous run's marker so a shared fixture never grows past the limit.
+    const base = (await saveEditor.inputValue()).replace(/\nSaved [^\n]*$/, "");
+    const marker = `Saved ${Date.now()}.`;
+    await saveEditor.fill(`${base}\n${marker}`);
+    const saveAction = instructionsDialog.getByRole("button", {
+      name: say(locale, "settings.instructions.save"),
+    });
+    check(
+      cell.name,
+      "dialog: instructions save translated",
+      await saveAction.isVisible(),
+      "",
+    );
+    check(
+      cell.name,
+      "dialog: instructions cancel translated",
+      await instructionsDialog
+        .getByRole("button", { name: say(locale, "frame.cancel") })
+        .isVisible(),
+      "",
+    );
+    await saveAction.click();
+    const saved = instructionsDialog
+      .getByRole("status")
+      .filter({ hasText: say(locale, "settings.instructions.saved") });
+    await saved.waitFor();
+    check(cell.name, "dialog: saved status translated", true, "");
+    await instructionsDialog
+      .getByRole("button", { name: say(locale, "frame.close") })
+      .first()
+      .click();
+    await instructionsDialog.waitFor({ state: "hidden" });
+    check(
+      cell.name,
+      "dialog: a saved draft closes without the guard",
+      await discard.isHidden(),
+      "",
+    );
+    const savedRow = page.getByText(marker).first();
+    await savedRow.waitFor({ timeout: 5000 }).catch(() => {});
+    check(
+      cell.name,
+      "settings: the saved instructions reach the row",
+      await savedRow.isVisible(),
+      "",
+    );
     cell.shots.push(await shot(cell, "after-dialogs"));
 
     // AI dialog: the long fixture address wraps, labels translated.
