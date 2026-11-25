@@ -205,8 +205,10 @@ const length = (value: number | string | undefined) =>
  *
  * A colour or a corner radius the catalog names is a token, not CSS. The SDK writes it as the
  * theme's variable, with its own value behind it, so a token the theme names no variable for
- * still draws: the SDK's light value, and its dark value in a dark conversation. A raw colour or
- * raw CSS passes through.
+ * still draws. That value is the SDK's light one. Its dark values live in the SDK's stylesheet,
+ * which only the standard components it draws itself add to the page, so, until one has been
+ * drawn there, an interface drawn by OpenBot's controls alone keeps the light value in a dark
+ * conversation. A raw colour or raw CSS passes through.
  */
 function layoutStyle(
   props: Control<"Form"> | Control<"Pressable">,
