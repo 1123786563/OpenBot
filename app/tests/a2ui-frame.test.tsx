@@ -674,8 +674,8 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
         expect(await thrown.locator("form").count()).toBe(0);
 
         // A form the SDK refuses as a whole is the SDK's error node alone, in the app's error
-        // colours: no Astryx error stands in for a form that is not there to hold one, and
-        // nothing is left to send.
+        // colours: no Astryx error stands in for a form that is not there to hold one. Its button
+        // went with it, so nothing is left to send.
         const mistyped = card(page, "mistyped");
         const whole = mistyped.locator('[data-generative-ui-error="root"]');
         expect(await whole.getAttribute("role")).toBe("alert");
@@ -684,6 +684,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
         );
         expect(await mistyped.locator(".astryx-banner").count()).toBe(0);
         expect(await mistyped.locator("form").count()).toBe(0);
+        expect(await mistyped.getByRole("button").count()).toBe(0);
         expect(await sent()).toHaveLength(1);
       } finally {
         await page.close();
