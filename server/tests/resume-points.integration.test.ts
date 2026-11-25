@@ -33,6 +33,7 @@ import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
+  backgroundToolResults,
   channels,
   enterpriseSettings,
   lagoUsageEvents,
@@ -95,6 +96,19 @@ const { catalog } = publish(
   routeId,
   "test",
 );
+// The same route offering the coordination tools a model's action needs.
+const tooled = configure(emptyCatalog, {
+  harnessImage,
+  routes: { [routeId]: { ...routeSpec, tools: true } },
+});
+const offer = tooled.routes[routeId];
+if (!offer) throw new Error("Fixture tool route missing");
+const toolCatalog = publish(
+  verify(tooled, routeId, fixtureTraceReport(harnessImage, offer), "test"),
+  [routeId],
+  routeId,
+  "test",
+).catalog;
 
 const ledger = createTestCreditLedger(database);
 const paidAt = new Date("2026-02-15T04:30:00.000Z");
@@ -204,6 +218,7 @@ afterAll(async () => {
             "runner",
             "late-auth",
             "tool-worker",
+            "lost-tool",
           ].map((tag) => `resume-point-${tag}`),
         ),
       );
@@ -731,6 +746,94 @@ test("a background execution keeps completed steps, waits for evidence, and appl
   ]);
 });
 
+test("a connector action whose answer was lost is never dispatched again", async () => {
+  const { identity } = await enrolled("lost-tool", 100n);
+  await database
+    .update(enterpriseSettings)
+    .set({ value: toolCatalog })
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  try {
+    const quote = await ledger.quote();
+    if (!quote) throw new Error("Fixture quote missing");
+    await budgetOf(identity, {
+      budgetId: "lost-tool",
+      creditType: "test",
+      limitMicrocredits: 30n,
+      modelQuote: { route: quote.route, priceVersion: quote.priceVersion },
+    });
+    const scope = {
+      kind: "task" as const,
+      personId: "fixture-person",
+      executionId: "fixture-lost-tool",
+      budgetId: "lost-tool",
+    };
+    const call = { id: "lost-call", name: "update_notes", arguments: "{}" };
+    const worker = () =>
+      createBackgroundModel({
+        ledger,
+        identityOf: async () => identity,
+        execute: async () => ({
+          calls: [call],
+          usage: { inputTokens: 3, outputTokens: 0 },
+        }),
+      });
+    const operationId = backgroundModelOperationId(scope, "ask");
+    expect(
+      await worker().completeTurn(scope, {
+        step: "ask",
+        messages: [{ role: "user", content: "Update my notes." }],
+        authorize: async () => {},
+        coordinationTools: [
+          { name: call.name, description: "Update notes", parameters: {} },
+        ],
+      }),
+    ).toMatchObject({ calls: [call] });
+    const tool = (execute: () => Promise<string>) => ({
+      operationId,
+      call,
+      toolRef: "fixture/update_notes",
+      authorize: async () => {},
+      execute,
+    });
+    let dispatches = 0;
+    // The connector did the work; the process carrying its answer stopped.
+    await expect(
+      worker().completeTool(
+        scope,
+        tool(async () => {
+          dispatches++;
+          throw new Error("The worker stopped before the answer was saved.");
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: "tool_pending" });
+    expect(dispatches).toBe(1);
+    for (let attempt = 0; attempt < 2; attempt++)
+      await expect(
+        worker().completeTool(
+          scope,
+          tool(async () => {
+            dispatches++;
+            return "Fixture notes updated.";
+          }),
+        ),
+      ).rejects.toMatchObject({ reason: "tool_pending" });
+    expect(dispatches).toBe(1);
+    const [row] = await database
+      .select()
+      .from(backgroundToolResults)
+      .where(eq(backgroundToolResults.operationId, operationId));
+    expect(row).toMatchObject({ callId: call.id, result: null });
+    expect(await ledger.receipt(identity, operationId)).toMatchObject({
+      state: "settled",
+    });
+  } finally {
+    await database
+      .update(enterpriseSettings)
+      .set({ value: catalog })
+      .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  }
+});
+
 function fixtureTurnRunner(): Parameters<typeof budgetedTurn>[2] {
   const history = new Map<string, Message[]>();
   return (agent) =>
@@ -1187,18 +1290,6 @@ test("a revoked owner cannot send a reserved step after the input meter finishes
 
 test("persisted Routine and Task actions require approval and survive a capped model follow-up", async () => {
   const { identity } = await enrolled("tool-worker", 100n);
-  const toolRoute = configure(emptyCatalog, {
-    harnessImage,
-    routes: { [routeId]: { ...routeSpec, tools: true } },
-  });
-  const draft = toolRoute.routes[routeId];
-  if (!draft) throw new Error("Fixture tool route missing");
-  const published = publish(
-    verify(toolRoute, routeId, fixtureTraceReport(harnessImage, draft), "test"),
-    [routeId],
-    routeId,
-    "test",
-  );
   const requests: {
     id: string | null;
     messages: unknown;
@@ -1284,7 +1375,7 @@ test("persisted Routine and Task actions require approval and survive a capped m
   const taskStore = createTaskStore(database);
   await database
     .update(enterpriseSettings)
-    .set({ value: published.catalog })
+    .set({ value: toolCatalog })
     .where(eq(enterpriseSettings.key, pilotCatalogKey));
   await database.insert(users).values({
     id: owner.id,
