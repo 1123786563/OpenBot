@@ -954,6 +954,447 @@ test("a form used while the Bot is still replying says nothing was sent, and sen
   await waitFor(() => expect(view.queryByText(notice)).toBeNull());
 });
 
+test("a Button takes the catalog's href, copy, loading, icon, icon-only and variant", async () => {
+  sent.length = 0;
+  const opened: string[] = [];
+  const open = window.open;
+  window.open = ((url: string) => {
+    opened.push(url);
+    return null;
+  }) as typeof window.open;
+  const copied: string[] = [];
+  try {
+    const user = userEvent.setup({ document });
+    // userEvent installs its own clipboard, so the spy goes on the one it put there.
+    const clipboard = navigator.clipboard;
+    Object.defineProperty(clipboard, "writeText", {
+      value: async (text: string) => {
+        copied.push(text);
+      },
+      configurable: true,
+      writable: true,
+    });
+    const view = render(
+      <Page
+        ui={OPENBOT_UI}
+        surfaces={(commit) =>
+          commit({
+            surfaceId: "buttons",
+            dataModel: {},
+            components: [
+              {
+                id: "root",
+                component: "Column",
+                children: [
+                  "docs",
+                  "unsafe",
+                  "copy",
+                  "busy",
+                  "pin",
+                  "remove",
+                  "plain",
+                  "click",
+                ],
+              },
+              {
+                // With a link, a click opens it instead of sending the event.
+                id: "docs",
+                component: "Button",
+                label: "Docs",
+                href: "https://example.test/docs",
+                onClick: { event: { name: "openDocs" } },
+              },
+              {
+                // Any other scheme is ignored.
+                id: "unsafe",
+                component: "Button",
+                label: "Unsafe",
+                href: "javascript:alert(1)",
+              },
+              {
+                id: "copy",
+                component: "Button",
+                label: "Copy code",
+                copy: "npm i openbot",
+              },
+              {
+                id: "busy",
+                component: "Button",
+                label: "Working",
+                loading: true,
+              },
+              {
+                id: "pin",
+                component: "Button",
+                label: "Pin",
+                icon: "pin",
+                uniform: true,
+              },
+              {
+                id: "remove",
+                component: "Button",
+                label: "Remove",
+                color: "danger",
+              },
+              {
+                id: "plain",
+                component: "Button",
+                label: "Plain",
+                variant: "borderless",
+              },
+              {
+                id: "click",
+                component: "Button",
+                label: "Click",
+                onClick: { event: { name: "clicked" } },
+              },
+            ],
+          })
+        }
+      >
+        <GenerativeUISurface id="buttons" />
+      </Page>,
+    );
+    await user.click(view.getByRole("button", { name: "Docs" }));
+    expect(opened).toEqual(["https://example.test/docs"]);
+    await user.click(view.getByRole("button", { name: "Unsafe" }));
+    expect(opened).toEqual(["https://example.test/docs"]);
+    await user.click(view.getByRole("button", { name: "Copy code" }));
+    expect(copied).toEqual(["npm i openbot"]);
+    // The copy shows a check for a moment, which is its own attribute.
+    expect(
+      view
+        .getByRole("button", { name: "Copy code" })
+        .getAttribute("data-a2ui-copied"),
+    ).toBe("");
+    // A loading button cannot be pressed again while it works.
+    expect(
+      view
+        .getByRole("button", { name: "Working" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+    // An icon-only button is named by its label and draws its icon.
+    const pin = view.getByRole("button", { name: "Pin" });
+    expect(pin.querySelector("svg")).toBeTruthy();
+    expect(pin.getAttribute("data-variant")).toBe("secondary");
+    expect(
+      view.getByRole("button", { name: "Remove" }).getAttribute("data-variant"),
+    ).toBe("destructive");
+    expect(
+      view.getByRole("button", { name: "Plain" }).getAttribute("data-variant"),
+    ).toBe("ghost");
+    // A button with neither a link nor copy sends its event.
+    await user.click(view.getByRole("button", { name: "Click" }));
+    expect(sent).toEqual(["Click"]);
+  } finally {
+    window.open = open;
+  }
+});
+
+test("a Pressable presses by pointer, Enter and Space, opens a link, and sends onVisible once", async () => {
+  sent.length = 0;
+  const opened: string[] = [];
+  const open = window.open;
+  window.open = ((url: string) => {
+    opened.push(url);
+    return null;
+  }) as typeof window.open;
+  const visible: string[] = [];
+  const observers: {
+    callback: IntersectionObserverCallback;
+    target?: Element;
+  }[] = [];
+  const Observer = globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver = class {
+    private entry: { callback: IntersectionObserverCallback; target?: Element };
+    constructor(callback: IntersectionObserverCallback) {
+      this.entry = { callback };
+      observers.push(this.entry);
+    }
+    observe(target: Element) {
+      this.entry.target = target;
+    }
+    disconnect() {}
+    unobserve() {}
+    takeRecords() {
+      return [];
+    }
+  } as unknown as typeof IntersectionObserver;
+  try {
+    const view = render(
+      <Page
+        ui={OPENBOT_UI}
+        surfaces={(commit) =>
+          commit({
+            surfaceId: "pressables",
+            dataModel: {},
+            components: [
+              {
+                id: "root",
+                component: "Column",
+                children: ["pick", "off", "link", "seen"],
+              },
+              {
+                id: "pick",
+                component: "Pressable",
+                children: ["pick-text"],
+                onClick: { event: { name: "picked" } },
+              },
+              { id: "pick-text", component: "Text", text: "Pick" },
+              {
+                id: "off",
+                component: "Pressable",
+                disabled: true,
+                children: ["off-text"],
+              },
+              { id: "off-text", component: "Text", text: "Off" },
+              {
+                id: "link",
+                component: "Pressable",
+                href: "https://example.test/away",
+                children: ["link-text"],
+              },
+              { id: "link-text", component: "Text", text: "Away" },
+              {
+                id: "seen",
+                component: "Pressable",
+                children: ["seen-text"],
+                onVisible: { event: { name: "sawIt" } },
+              },
+              { id: "seen-text", component: "Text", text: "Seen" },
+            ],
+          })
+        }
+      >
+        <GenerativeUISurface id="pressables" />
+      </Page>,
+    );
+    const user = userEvent.setup({ document });
+    const pick = view.getByRole("button", { name: "Pick" });
+    await user.click(pick);
+    pick.focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    expect(sent).toEqual(["Pick", "Pick", "Pick"]);
+    // A disabled pressable takes no press.
+    const off = view.getByRole("button", { name: "Off" });
+    expect(off.getAttribute("aria-disabled")).toBe("true");
+    off.focus();
+    await user.keyboard("{Enter}");
+    await user.click(off);
+    expect(sent).toHaveLength(3);
+    // A linked pressable opens its URL and sends nothing.
+    await user.click(view.getByRole("button", { name: "Away" }));
+    expect(opened).toEqual(["https://example.test/away"]);
+    expect(sent).toHaveLength(3);
+    // onVisible is sent once, when the pressable first scrolls into view.
+    const seen = observers.find(
+      (entry) => entry.target?.textContent === "Seen",
+    );
+    expect(seen).toBeTruthy();
+    seen?.callback(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    );
+    seen?.callback(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    );
+    expect(sent).toHaveLength(4);
+  } finally {
+    window.open = open;
+    globalThis.IntersectionObserver = Observer;
+  }
+});
+
+test("a standalone Radio is chosen by a click, and not when disabled", async () => {
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "radios",
+          dataModel: {},
+          components: [
+            { id: "root", component: "Column", children: ["on", "off"] },
+            { id: "on", component: "Radio", label: "Agree" },
+            {
+              id: "off",
+              component: "Radio",
+              label: "Disagree",
+              disabled: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="radios" />
+    </Page>,
+  );
+  const agree = (await view.findByRole("radio", {
+    name: "Agree",
+  })) as HTMLInputElement;
+  expect(agree.checked).toBe(false);
+  await userEvent.setup({ document }).click(agree);
+  expect(
+    (view.getByRole("radio", { name: "Agree" }) as HTMLInputElement).checked,
+  ).toBe(true);
+  const disagree = view.getByRole("radio", {
+    name: "Disagree",
+  }) as HTMLInputElement;
+  await userEvent.setup({ document }).click(disagree);
+  expect(disagree.checked).toBe(false);
+});
+
+test("a searchable Select, a stepped and marked Slider, a time field and a text area take their props", async () => {
+  sent.length = 0;
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "props",
+          dataModel: { class: "economy", rating: 0, note: "" },
+          components: [
+            {
+              ...form("root", "sendProps", ["class", "rating", "note"]),
+              children: ["class", "rating", "note", "root-send"],
+            },
+            {
+              id: "class",
+              component: "Select",
+              label: "Class",
+              searchable: true,
+              options: ["economy", "business", "first class"],
+              value: { "@path": "/class" },
+            },
+            {
+              id: "rating",
+              component: "Slider",
+              label: "Rating",
+              min: 0,
+              max: 20,
+              steps: 4,
+              marks: [
+                { value: 0, label: "Low" },
+                { value: 20, label: "High" },
+              ],
+              value: { "@path": "/rating" },
+            },
+            {
+              id: "note",
+              component: "TextArea",
+              label: "Note",
+              rows: 5,
+              value: { "@path": "/note" },
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="props" />
+    </Page>,
+  );
+  const user = userEvent.setup({ document });
+  // The Select filters its list by what is typed in it.
+  const select = view.container.querySelector(
+    '.astryx-selector button[aria-haspopup="listbox"]',
+  ) as HTMLElement;
+  select.focus();
+  await user.keyboard("{ArrowDown}");
+  const search = view.container.querySelector(
+    'input[enterkeyhint="search"]',
+  ) as HTMLInputElement;
+  await user.type(search, "bus");
+  expect(view.getByRole("option", { name: "business" })).toBeTruthy();
+  expect(view.queryByRole("option", { name: "economy" })).toBeNull();
+  // happy-dom does not complete a pointer pick in the list; the arrows and Enter take the one left.
+  await user.keyboard("{ArrowDown}{Enter}");
+  expect(select.textContent).toBe("business");
+
+  // The marks are drawn with their labels, and the steps divide the range: 20 over 4 steps is 5.
+  expect(view.getByText("High")).toBeTruthy();
+  const rating = view.getByRole("slider", { name: "Rating" });
+  rating.focus();
+  await user.keyboard("{ArrowRight}");
+  await user.keyboard("{ArrowRight}");
+  // A text area takes the height the Bot gives it.
+  expect(view.getByLabelText("Note").getAttribute("rows")).toBe("5");
+
+  fireEvent.submit(view.container.querySelector("form") as HTMLFormElement);
+  expect(sent).toEqual(["Class\n\nclass: business\nrating: 10\nnote: "]);
+});
+test("a time field and a date-and-time field write the time in the format the catalog asks for", async () => {
+  sent.length = 0;
+  const view = render(
+    <Page
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "times",
+          dataModel: { at: "09:30", slot: "2026-10-23T09:30" },
+          components: [
+            {
+              ...form("root", "sendTimes", ["at", "slot"]),
+              children: ["at", "slot", "root-send"],
+            },
+            // enableTime on its own is a time; with enableDate as well it is a date and a time.
+            {
+              id: "at",
+              component: "DateTimeInput",
+              label: "At",
+              enableTime: true,
+              value: { "@path": "/at" },
+            },
+            {
+              id: "slot",
+              component: "DateTimeInput",
+              label: "Slot",
+              enableDate: true,
+              enableTime: true,
+              value: { "@path": "/slot" },
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="times" />
+    </Page>,
+  );
+  expect(view.container.querySelector(".astryx-time-input")).toBeTruthy();
+  expect(view.container.querySelector(".astryx-date-time-input")).toBeTruthy();
+  // The time the data model holds is what the field shows.
+  const at = (await view.findByLabelText("At")) as HTMLInputElement;
+  expect(at.value).toMatch(/9:30/i);
+  const user = userEvent.setup({ document });
+  await user.clear(at);
+  await user.type(at, "2:45 PM");
+  await user.tab();
+  // In a date and a time, the time is its own field.
+  const slotTime = view.getByLabelText("Slot time") as HTMLInputElement;
+  await user.clear(slotTime);
+  await user.type(slotTime, "3:15 PM");
+  await user.tab();
+
+  fireEvent.submit(view.container.querySelector("form") as HTMLFormElement);
+  expect(sent).toEqual([
+    // ISO 8601, as the catalog asks: "HH:MM" for a time, "YYYY-MM-DDTHH:MM" for a date and a time.
+    "At\n\nat: 14:45\nslot: 2026-10-23T15:15",
+  ]);
+});
+
 function BookingPage() {
   return (
     <CopilotKitProvider
