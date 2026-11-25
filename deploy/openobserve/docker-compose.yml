@@ -45,8 +45,8 @@ services:
 networks:
   openobserve:
   observability:
-    external: true
     name: openbot-observability
+    internal: true
 
 volumes:
   openobserve-data:

@@ -62,3 +62,6 @@ extension/**/*.pem
 
 # Browser acceptance runs write their screenshots and run.json here; the reviewed evidence sits one level up.
 docs/acceptance/*/run/
+
+# macOS Finder drops one of these into every folder it opens; one turned up under deploy/.
+.DS_Store
