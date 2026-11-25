@@ -6,9 +6,7 @@ merged. They used the published self-hosted `hindsight-api-slim` 1.2.0
 service, disposable migrated PostgreSQL 17.12, and synthetic Memory records.
 Embeddings, model completions, and model usage were fixtures. The Test Credit
 ledger and its HTTP execution routes ran real OpenBot code against
-PostgreSQL. The first verification, on November 23, 2026, used PostgreSQL
-18.6 with 106 migrations applied; its logs are kept beside the raw logs of
-this run.
+PostgreSQL.
 
 | Criterion | Observed result |
 | --- | --- |
@@ -45,12 +43,13 @@ All runs below are from `97c4c2283` on November 25, 2026.
 | Memory, callback and managed-model sweep, ten suites | 96 passed, 3 skipped, 0 failed, 399 assertions. The three skips are the opt-in Hindsight tests, run separately above. |
 | Repository test typecheck | Clean against the frozen baseline of 196 known errors. |
 
-The November 23 run used a temporary copy of the managed probe with extra
-checks and logged lines, which recorded 38 assertions; the checked-in probe
-records 20. Native Reflect recorded 7 on both days. That run's sweep had one
-failure in a billing replay test whose assertion has since been updated, and
-34 typecheck errors outside the baseline that have since been fixed. The
-sweep and the typecheck above are the current results.
+The November 23 run, at `989e834ed`, used an earlier managed probe against a
+fixture gateway and recorded 38 assertions. Commit `c54f1560b` replaced that
+gateway with the Test Credit ledger and its HTTP execution routes; the
+checked-in probe records 20. Native Reflect recorded 7 on both days. That
+run's sweep had one failure in a billing replay test whose assertion has
+since been updated, and 34 typecheck errors outside the baseline that have
+since been fixed. The sweep and the typecheck above are the current results.
 
 Use the repository test environment with a disposable `TEST_DATABASE_URL`.
 In `server/tests/memory-store.integration.test.ts`, run the two opt-in
