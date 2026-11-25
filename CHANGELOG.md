@@ -98,29 +98,46 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - **A run you stopped is not shown as an error after a reload.** On `/bot` and in a conversation, a
   run the server stopped at your request came back in red as "The Bot run was stopped." after every
   reload, under the plain "The run was stopped." It now reads "The run was stopped." once.
+- **A run you stopped is not shown as a failure in a conversation with one Bot.** When the run
+  was stopped from another tab while you watched, it came back in red as "The Bot run was
+  stopped." and your message was put back in the box. Your message stays sent, nothing is drawn in
+  red, and the conversation says "The run was stopped." The same holds when you press Stop there
+  yourself.
 - **An approval that ends without your answer says why, and what to do.** No approval expires on
   its own. One ends when you withdraw it (asking is switched off while it waits), when the Bot's
   work is stopped under it, or when the same request is decided in another tab, and the line where
   the card was now reads, for example, "Withdrawn. You turned off asking before changes. Ask the Bot
-  again if you still need it." until the Bot's own answer for that step arrives. That next step is
-  offered only where the step never ran. A step that may have run, because its outcome is unknown
-  or it could not be carried out, says to check whether it happened first. A computer step keeps its
-  own card once its request has ended. Each answer's description also says that the Bot carries on
-  in the same conversation afterwards. A decision is sent once: a fast double press, or a press
-  while the card folds away, sends nothing more, and one the server refused can be sent again.
+  again if you still need it." until the Bot's own answer for that step arrives. The next step
+  follows what ran. Where nothing ran, because you declined the step, it was withdrawn, or the
+  check just before it ran turned it away, it is "Ask the Bot again if you still need it." Where
+  the step may have run, because its outcome is unknown or it could not be carried out, it is
+  "Check whether it happened before you ask the Bot again." A computer step keeps its own card once
+  its request has ended. Each answer's description also says that the Bot carries on in the same
+  conversation afterwards. A decision is sent once: a fast double press, or a press while the card
+  folds away, sends nothing more, and one the server refused can be sent again.
 - **A conversation you can no longer read offers the way back.** When your access to a conversation
   ends, a group conversation refuses to open, or a conversation page cannot open at all, the page
   now says why and links to Home instead of leaving you with a Retry that can never succeed.
+- **Stop in a conversation with one Bot stops the run on the server.** Stop used to end only this
+  browser's copy of the turn, and the Bot went on working. It now reads the conversation first and
+  stops the run that is going now. A Stop on a run that had already ended lets this browser's end
+  of the turn go. A stop the server refuses says "The Bot couldn't be stopped. Try again." until
+  you send another message.
 - **A Bot's own chat (`/bot`) picks up where the Bot left off.** Opening it loads the stored
   conversation, and a read that fails keeps what is on screen and your draft, saying "Couldn't load
   earlier messages." with Try again. After you decide an approval there, the chat shows the Bot
   still working on the server and draws the reply when that turn ends, instead of sitting idle
   until you reopened it. Stop reads the conversation first and stops the run that is going now, on
   the server, and says "The run was stopped." only once the server confirms it. A stop the server
-  refuses says "The Bot couldn't be stopped. Try again." The chat says what became of a run the
-  server holds for it in the same words a conversation with one Bot uses, and offers Check outcome
-  when nobody can vouch for how a run ended. Access that ends while the chat is open hides what was
-  read and links back to Home as soon as a send fails, not on the next one.
+  refuses says "The Bot couldn't be stopped. Try again." and leaves the turn going here, with Stop
+  there to press again. The chat says what became of a run the server holds for it in the same words
+  a conversation with one Bot uses, and offers Check outcome when nobody can vouch for how a run
+  ended. Access that ends while the chat is open hides what was read and links back to Home as soon
+  as a send fails, not on the next one.
+- **`/bot` reads the conversation again after each of your turns, answered or not.** What was said
+  of an earlier run gives way to the next answer, so "The run was stopped." does not stay on screen
+  under it. Earlier messages that could not be loaded when the chat opened arrive after the next
+  reply, even when Try again was pressed while the Bot was replying, without reopening the chat.
 - **A conversation with several Bots asks for an approval where it waits, and the reply follows
   the answer.** A Bot waiting for your approval asks in the conversation with the same card a
   conversation with one Bot uses, once for that Bot, instead of one sentence and a link to the
