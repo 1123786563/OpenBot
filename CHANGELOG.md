@@ -24,6 +24,39 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   `bun run sync:env` writes all four. A key in two folders that one process reads is refused.
   It also no longer stops on `MANAGED_AGENT_TOKEN` and `AGENT_TOOL_TOKEN` that `scripts/start.sh`
   generated: it carries them over. Any other value that only a local file holds still stops it.
+- **Removing somebody's access now says when it is only half done.** The removal takes effect at
+  once. If their credentials or Recorders could not be retired, you see "Access is removed for this
+  person, but some of their credentials or Recorders could not be retired yet. Try again to finish."
+  Removing the access again finishes it and writes no second removal on the Audit trail. Before, the
+  same case answered with a plain error.
+- **A change and its Audit row are saved together.** Changing somebody's role, removing or
+  restoring their access, deleting a skill from the library and saving permission switches each
+  write their Audit row in the same transaction as the change. If the Audit trail refuses the row,
+  nothing changes and you can save again.
+- **Saving Permissions refuses a preview that is out of date.** If another admin changed the
+  switches after you read the impact, saving answers "Permissions changed while you were reviewing
+  them. Review the new impact and save again." and writes nothing.
+- **Publishing a component says when Audit could not record it.** The reply says whether the
+  component is published, so you know which way to switch to record it.
+- **Removing an identity provider or revoking a credential shows who is affected first.** Before
+  you confirm, the dialog lists the people who would lose their only way in and those who keep one,
+  or, for a credential, what holds it and the Bots that hold it. The button stays off until the list
+  has loaded. A long list of people shows 20 names and the true total.
+- **Removing an app source from Memory waits for the copies the backend holds.** The copies are
+  retired first. While any is left, nothing is deleted and the request is refused, so a retry can
+  finish. Before, a copy left behind came back as the person's own memory for every Bot of theirs.
+  Forgetting such a memory now writes an Audit row too.
+- **Confirmations name what they touch.** Deleting a skill names the Bots that offer it. Forgetting
+  a memory shows the whole fact and which of your Bots use it. Revoking a personal Bot key says
+  "Revoking this key is permanent. Add a replacement key to restore access."
+- **A message saved for a new conversation can be discarded.** Its page has "Discard saved message",
+  which removes the copy saved in the browser from Home's list of messages to resume. "Choose Bots
+  in a new conversation" opens the new conversation with a copy of the text and names the
+  attachments to add again.
+- **Audit rows are easier to read.** A person's rows show their email and the role change
+  ("ada@example.com · Member → Admin"). A stopped Recorder's row carries the email of the person it
+  belonged to, and no row is written when a stop stopped nothing. Password, app source and identity
+  provider rows have names.
 
 ## 1.0.3
 
