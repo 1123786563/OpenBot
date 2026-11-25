@@ -74,17 +74,26 @@ export function setComponentFunctionMutationOptions(queryClient: QueryClient) {
   });
 }
 
-/** Whether any Bot is told the component exists. */
+/** When the server says nothing about a publication that did not answer. */
+const PUBLICATION_FALLBACK = "Couldn't change publication. Try again.";
+
+/**
+ * Whether any Bot is told the component exists.
+ *
+ * The component is written before its Audit row, so a refusal can be a change that happened. The
+ * list is re-read on settled, never only on success: the switch then shows what OpenBot holds
+ * rather than what the screen held before the press. See `lib/plugins/mutations.ts`.
+ */
 export function setComponentPublishedMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: async (variables: { name: string; published: boolean }) => {
       await client(`${componentPath(variables.name)}/publication`, {
         method: "POST",
         body: { published: variables.published },
-        fallback: FALLBACK,
+        fallback: PUBLICATION_FALLBACK,
       });
     },
-    onSuccess: () => invalidateComponents(queryClient),
+    onSettled: () => invalidateComponents(queryClient),
   });
 }
 

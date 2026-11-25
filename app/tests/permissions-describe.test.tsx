@@ -7,7 +7,7 @@ import {
   test,
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -21,9 +21,11 @@ import userEvent from "@testing-library/user-event";
 import { previewHeadline } from "@/components/admin/controls/describe-capabilities";
 import { decisionText, subjectText } from "@/components/audit/audit-cells";
 import { Route as DescribeRoute } from "@/routes/_authed/admin/permissions_.describe";
+import { queryClient } from "@/query-client";
 import {
   CAPABILITIES,
   CAPABILITY_LABELS,
+  type CapabilityRow,
   DEFAULT_CAPABILITIES,
 } from "../../server/src/admin/capabilities";
 import {
@@ -121,6 +123,33 @@ const WRITTEN: CapabilityChange[] = (
   ...change,
   allowed: SETTING[setting],
 }));
+/** The same four switches as stored, which is what a save leaves in force. */
+const SAVED: CapabilityRow[] = [
+  {
+    scopeKind: "organization",
+    scopeId: "",
+    capability: "localComputer",
+    allowed: false,
+  },
+  {
+    scopeKind: "group",
+    scopeId: "Engineering",
+    capability: "localComputer",
+    allowed: true,
+  },
+  {
+    scopeKind: "group",
+    scopeId: "Field Sales (EMEA)",
+    capability: "localComputer",
+    allowed: true,
+  },
+  {
+    scopeKind: "group",
+    scopeId: "Sales",
+    capability: "localComputer",
+    allowed: true,
+  },
+];
 const TRANSLATION = {
   changes: WRITTEN,
   summary: reading.summary,
@@ -130,29 +159,70 @@ const TRANSLATION = {
 };
 
 const sent: { path: string; body: Record<string, unknown> }[] = [];
+/** Every read, so a test can say the screen re-read what the server holds after a failed write. */
+const reads: string[] = [];
+/** The switches this fake deployment holds, as `capability_settings` does. */
+let rows: CapabilityRow[] = [];
+/** Whether the trail refuses the rows a save writes after the switches land. */
+let trailFails = false;
 const originalFetch = global.fetch;
+/** The app's one cache, which the page's save invalidates. Put back as it was for the next file. */
+const defaults = queryClient.getDefaultOptions();
 
 beforeEach(() => {
   sent.length = 0;
+  reads.length = 0;
+  rows = [];
+  trailFails = false;
+  queryClient.clear();
+  queryClient.setDefaultOptions({
+    ...defaults,
+    queries: { ...defaults.queries, retry: false },
+  });
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     if (init?.method === "POST") sent.push({ path, body });
+    else reads.push(path);
     if (path.endsWith("/api/admin/enterprise/capabilities/translate"))
       return Response.json(TRANSLATION);
     if (path.endsWith("/api/admin/enterprise/capabilities/preview"))
-      return Response.json(
-        await previewCapabilityChanges({
+      return Response.json({
+        ...(await previewCapabilityChanges({
           changes: body.changes as CapabilityChange[],
-          rows: [],
+          rows,
           members: PEOPLE,
           groups: GROUPS,
           reader,
           now: new Date("2026-11-09T12:00:00.000Z"),
-        }),
-      );
-    if (path.endsWith("/api/admin/enterprise/capabilities/batch"))
+        })),
+        basedOn: rows,
+      });
+    if (path.endsWith("/api/admin/enterprise/capabilities/batch")) {
+      // The route compares the reading the save names with the switches under its write lock.
+      if (
+        body.basedOn !== undefined &&
+        JSON.stringify(body.basedOn) !== JSON.stringify(rows)
+      )
+        return Response.json(
+          {
+            error:
+              "Permissions changed while you were reviewing them. Review the new impact and save again.",
+          },
+          { status: 409 },
+        );
+      rows = applyCapabilityChanges(rows, body.changes as CapabilityChange[]);
+      if (trailFails)
+        return Response.json(
+          {
+            error:
+              "The switches were saved, but Audit couldn't record all of them. Save again to record them.",
+            saved: body.changes,
+          },
+          { status: 500 },
+        );
       return Response.json({ saved: body.changes });
+    }
     if (path.endsWith("/api/admin/enterprise"))
       return Response.json({
         capabilities: CAPABILITIES.map((capability) => ({
@@ -174,6 +244,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   global.fetch = originalFetch;
+  queryClient.clear();
+  queryClient.setDefaultOptions(defaults);
 });
 
 function open() {
@@ -197,11 +269,7 @@ function open() {
     }),
   });
   const view = render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={queryClient}>
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
@@ -300,6 +368,8 @@ test("a description lands as switches with their reading, shows who loses and ke
       },
     ],
     authoring: { source: "english", text: TEXT },
+    // The reading the impact was worked out from, which the server compares before it writes.
+    basedOn: [],
   });
   await waitFor(() =>
     expect(router.state.location.pathname).toBe("/admin/permissions"),
@@ -336,6 +406,110 @@ test("removing a change is called out and shows who the rest would change", asyn
   fireEvent.click(view.getByRole("button", { name: "Write changes" }));
   await view.findByRole("button", { name: "Remove change 4" });
   expect(view.queryByRole("button", { name: "Undo" })).toBeNull();
+});
+
+test("a save refused because the switches changed keeps the draft, shows the latest impact, and needs a fresh decision", async () => {
+  const { view, router } = open();
+  await describeChange(view);
+  const saves = () => sent.filter((call) => call.path.endsWith("/batch"));
+  const save = view.getByRole("button", {
+    name: "Save changes",
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false));
+  expect(
+    view.getByText(
+      "3 people lose access and 4 people keep it through a different switch.",
+    ),
+  ).toBeTruthy();
+
+  // Another admin lets Contractors keep their own computer while this draft is being read.
+  const other: CapabilityRow = {
+    scopeKind: "group",
+    scopeId: "Contractors",
+    capability: "localComputer",
+    allowed: true,
+  };
+  rows = [other];
+  const previews = () => sent.filter((call) => call.path.endsWith("/preview"));
+  const readBefore = previews().length;
+  fireEvent.click(save);
+
+  expect(
+    await view.findByText(
+      "Permissions changed while you were reviewing them. Review the new impact and save again.",
+    ),
+  ).toBeTruthy();
+  // Nothing was lost: the same words and the same four switches are still the draft.
+  expect(
+    (view.getByLabelText("Describe the change") as HTMLTextAreaElement).value,
+  ).toBe(TEXT);
+  for (const at of [1, 2, 3, 4])
+    expect(
+      view.getByRole("button", { name: `Remove change ${at}` }),
+    ).toBeTruthy();
+  expect(router.state.location.pathname).toBe("/admin/permissions/describe");
+
+  // The impact is read again against what is in force now: Contractors no longer lose it.
+  await view.findByText(
+    "2 people lose access and 3 people keep it through a different switch.",
+  );
+  expect(previews().length).toBeGreaterThan(readBefore);
+  expect(saves()).toHaveLength(1);
+  expect(saves()[0]?.body.basedOn).toEqual([]);
+
+  // One save had one request. A fresh press is a new decision on the new reading, and it lands.
+  await waitFor(() => expect(save.disabled).toBe(false));
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe("/admin/permissions"),
+  );
+  expect(saves()).toHaveLength(2);
+  expect(saves()[1]?.body.basedOn).toEqual([other]);
+  expect(rows).toHaveLength(5);
+});
+
+test("a save whose switches landed but whose Audit rows didn't says so, re-reads the server, and saves again safely", async () => {
+  trailFails = true;
+  const { view, router } = open();
+  await describeChange(view);
+  const saves = () => sent.filter((call) => call.path.endsWith("/batch"));
+  const save = view.getByRole("button", {
+    name: "Save changes",
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false));
+  const previews = () => sent.filter((call) => call.path.endsWith("/preview"));
+  const readBefore = previews().length;
+  fireEvent.click(save);
+
+  const message =
+    "The switches were saved, but Audit couldn't record all of them. Save again to record them.";
+  expect(await view.findByText(message)).toBeTruthy();
+  expect(router.state.location.pathname).toBe("/admin/permissions/describe");
+  // The failed save re-read the server, and what it holds now is the draft's own switches: previewed
+  // again, they change nobody's access.
+  await waitFor(() => expect(previews().length).toBeGreaterThan(readBefore));
+  expect(rows).toEqual(SAVED);
+  // The Permissions page's own switches were re-read too, so the screen cannot go on drawing the
+  // state from before the press.
+  expect(
+    reads.filter((path) => path.endsWith("/api/admin/enterprise")).length,
+  ).toBeGreaterThan(1);
+  await waitFor(() => expect(save.disabled).toBe(false));
+  expect(view.getByText("Nobody's access changes.")).toBeTruthy();
+  expect(
+    (view.getByLabelText("Describe the change") as HTMLTextAreaElement).value,
+  ).toBe(TEXT);
+
+  // Saving again is the retry the message asks for: the same switches against what is now in force.
+  trailFails = false;
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe("/admin/permissions"),
+  );
+  expect(saves()).toHaveLength(2);
+  expect(saves()[1]?.body.changes).toEqual(WRITTEN);
+  expect(saves()[1]?.body.basedOn).toEqual(SAVED);
+  expect(view.queryByText(message)).toBeNull();
 });
 
 test("a failed preview preserves the draft and a changed description blocks submission", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../src/auth/guards";
+import type { AuditStore } from "../src/audit";
 import { createComponentRoutes } from "../src/components/routes";
 import type { ComponentStore } from "../src/components/store";
 
@@ -21,7 +22,8 @@ const ADMIN = {
   role: "admin",
 } as const;
 
-function harness() {
+/** What a publication left behind, and what it put on the trail. */
+function harness(trail?: { fail: boolean; rows: unknown[] }) {
   const calls: { action: "publish" | "unpublish"; name: string }[] = [];
   const store = {
     publish: async (name: string) => {
@@ -31,6 +33,14 @@ function harness() {
       calls.push({ action: "unpublish", name });
     },
   } as unknown as ComponentStore;
+  const auditStore: AuditStore | undefined = trail
+    ? {
+        insert: async (event) => {
+          if (trail.fail) throw new Error("the trail is unavailable");
+          trail.rows.push(event);
+        },
+      }
+    : undefined;
 
   const asAdmin: MiddlewareHandler<{ Variables: AppVariables }> = async (
     context,
@@ -42,7 +52,7 @@ function harness() {
 
   const hono = new Hono().route(
     "/components",
-    createComponentRoutes(store, asAdmin, undefined, async () => true),
+    createComponentRoutes(store, asAdmin, auditStore, async () => true),
   );
   return { calls, hono };
 }
@@ -117,4 +127,85 @@ describe("publishing a component", () => {
     expect(response.status).toBe(400);
     expect(calls).toEqual([]);
   });
+});
+
+describe("a publication the trail could not record", () => {
+  test.each([
+    [
+      "published",
+      true,
+      "component.published",
+      "The component is published, but Audit couldn't record the change. Try again to record it.",
+    ],
+    [
+      "unpublished",
+      false,
+      "component.unpublished",
+      "The component is unpublished, but Audit couldn't record the change. Try again to record it.",
+    ],
+  ])(
+    "says the component is %s, which is what to save again",
+    async (_state, published, eventType, error) => {
+      const trail = { fail: true, rows: [] as unknown[] };
+      const { calls, hono } = harness(trail);
+      const response = await hono.request(
+        "http://t/components/showActivityReport/publication",
+        post(JSON.stringify({ published })),
+      );
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error, published });
+      expect(calls).toEqual([
+        {
+          action: published ? "publish" : "unpublish",
+          name: "showActivityReport",
+        },
+      ]);
+
+      // Saving the same thing again is the retry, and this time the trail has the one row.
+      trail.fail = false;
+      const again = await hono.request(
+        "http://t/components/showActivityReport/publication",
+        post(JSON.stringify({ published })),
+      );
+      expect(again.status).toBe(200);
+      await expect(again.json()).resolves.toEqual({ published });
+      expect(trail.rows).toHaveLength(1);
+      expect(trail.rows[0]).toMatchObject({
+        eventType,
+        targetType: "component",
+        targetId: "showActivityReport",
+        actorUserId: ADMIN.id,
+        payload: { actor: ADMIN.email },
+      });
+    },
+  );
+});
+
+describe("a publication the trail records", () => {
+  test.each([
+    ["publishes", true, "component.published"],
+    ["unpublishes", false, "component.unpublished"],
+  ])(
+    "%s with one row that names who changed it",
+    async (_verb, published, eventType) => {
+      const trail = { fail: false, rows: [] as unknown[] };
+      const { hono } = harness(trail);
+      const response = await hono.request(
+        "http://t/components/showActivityReport/publication",
+        post(JSON.stringify({ published })),
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ published });
+      expect(trail.rows).toHaveLength(1);
+      expect(trail.rows[0]).toMatchObject({
+        eventType,
+        targetType: "component",
+        targetId: "showActivityReport",
+        actorUserId: ADMIN.id,
+        payload: { actor: ADMIN.email },
+      });
+    },
+  );
 });

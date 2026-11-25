@@ -167,6 +167,26 @@ async function lockCapabilityWrites(tx: Pick<Database, "execute">) {
   );
 }
 
+/** The same switches set the same way, whatever order they were read in. */
+function sameCapabilities(
+  stored: readonly CapabilityRow[],
+  expected: readonly CapabilityRow[],
+) {
+  const byScope = (rows: readonly CapabilityRow[]) =>
+    new Map(
+      rows.map((row) => [
+        JSON.stringify([row.scopeKind, row.scopeId, row.capability]),
+        row.allowed,
+      ]),
+    );
+  const now = byScope(stored);
+  const read = byScope(expected);
+  return (
+    now.size === read.size &&
+    [...read].every(([scope, allowed]) => now.get(scope) === allowed)
+  );
+}
+
 async function writeCapability(
   tx: Pick<Database, "insert" | "delete">,
   row: CapabilitySwitch,
@@ -291,15 +311,32 @@ export function createEnterpriseStore(database: Database) {
      * Several switches in one transaction, with one NOTIFY. A change written from a description is
      * often "off for everybody, on for these groups", and half of it saved takes the permission from
      * everybody.
+     *
+     * `expected` is the reading the caller worked from, compared under the same lock as the write:
+     * two admins who previewed one state cannot both save over each other. False means nothing was
+     * written. Absent writes whatever is there now, which is what a caller with no reading asks for.
      */
     async setCapabilities(
       rows: readonly CapabilitySwitch[],
       by: string,
-    ): Promise<void> {
-      await database.transaction(async (tx) => {
+      expected?: readonly CapabilityRow[],
+    ): Promise<boolean> {
+      return database.transaction(async (tx) => {
         await lockCapabilityWrites(tx);
+        if (expected) {
+          const stored = await tx
+            .select({
+              scopeKind: capabilitySettings.scopeKind,
+              scopeId: capabilitySettings.scopeId,
+              capability: capabilitySettings.capability,
+              allowed: capabilitySettings.allowed,
+            })
+            .from(capabilitySettings);
+          if (!sameCapabilities(stored, expected)) return false;
+        }
         for (const row of rows) await writeCapability(tx, row, by);
         await announce(tx);
+        return true;
       });
     },
 

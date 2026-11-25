@@ -109,6 +109,9 @@ function DescribePermissionsPage() {
     save.mutate(
       {
         changes,
+        // What the impact above was worked out from. The server refuses the save if another admin
+        // has changed a switch since, and the draft stays here beside the newest impact.
+        basedOn: current?.basedOn,
         authoring: { source: "english", text: written.text },
       },
       {
