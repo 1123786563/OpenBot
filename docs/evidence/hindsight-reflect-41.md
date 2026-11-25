@@ -1,12 +1,14 @@
 # Hindsight Reflect acceptance for OpenBot #41
 
-The isolated checkout started at `4769ba422`, the local tip of
-`integration/intelligence-replacement-acceptance` and the merge of PR #113.
-The verification ran on November 24, 2026. Both Reflect probes used the
-published self-hosted `hindsight-api-slim` 1.2.0 service, disposable migrated
-PostgreSQL, and synthetic Memory records. Embeddings, model completions, and
-model usage were fixtures. The Test Credit ledger and its HTTP execution
-routes ran real OpenBot code against PostgreSQL.
+Both Reflect probes ran again on November 25, 2026, at `97c4c2283` on
+`integration/intelligence-replacement-acceptance`, with main `4a989395d`
+merged. They used the published self-hosted `hindsight-api-slim` 1.2.0
+service, disposable migrated PostgreSQL 17.12, and synthetic Memory records.
+Embeddings, model completions, and model usage were fixtures. The Test Credit
+ledger and its HTTP execution routes ran real OpenBot code against
+PostgreSQL. The first verification, on November 23, 2026, used PostgreSQL
+18.6 with 106 migrations applied; its logs are kept beside the raw logs of
+this run.
 
 | Criterion | Observed result |
 | --- | --- |
@@ -32,14 +34,21 @@ independent deployment qualification is tracked in issue #158.
 
 ## Verification runs
 
+All runs below are from `97c4c2283` on November 25, 2026.
+
 | Run | Result |
 | --- | --- |
-| Native Reflect against Hindsight 1.2.0 and PostgreSQL 18.6 | 1 passed, 7 assertions |
-| Managed Reflect against Hindsight 1.2.0 and PostgreSQL 17 | 1 passed, 20 assertions |
-| Bifrost catalog checks | 22 passed |
-| Authenticated Web `/reflect` regression | 1 passed |
-| Memory, callback, config, and managed-model regression sweep on PostgreSQL 18.6 | 214 passed, 3 skipped, 1 failed. The unchanged billing replay test expects `settled`. The adapter returns the stored completion. |
-| Repository test typecheck | 34 errors outside the frozen baseline in unchanged direct-chat, personal-approval-cutoff, and routines-store tests. The modified test added no diagnostics. |
+| Native Reflect against Hindsight 1.2.0 and PostgreSQL 17.12 | 1 passed, 7 assertions |
+| Managed Reflect against Hindsight 1.2.0 and PostgreSQL 17.12 | 1 passed, 20 assertions. Five callbacks settled five operations at 2 microcredits each, with no hold left. |
+| Bifrost catalog checks | 22 passed, 45 assertions |
+| Authenticated Web `/reflect` regression, inside the direct-chat suite | 53 passed, 1768 assertions |
+| Memory, callback and managed-model sweep, ten suites | 96 passed, 3 skipped, 0 failed, 399 assertions. The three skips are the opt-in Hindsight tests, run separately above. |
+| Repository test typecheck | Clean against the frozen baseline of 196 known errors. |
+
+The November 23 run recorded 38 assertions for managed Reflect and 7 for
+native Reflect, and its sweep had one failure in an unchanged billing replay
+test and 34 typecheck errors outside the baseline. Both have since been
+fixed; the sweep and the typecheck above are the current results.
 
 Use the repository test environment with a disposable `TEST_DATABASE_URL`.
 In `server/tests/memory-store.integration.test.ts`, run the two opt-in
@@ -49,5 +58,11 @@ managed Reflect, set `TEST_HINDSIGHT_MANAGED_REFLECT_API_URL`,
 `TEST_HINDSIGHT_MANAGED_REFLECT_CALLBACK_PORT`, and
 `TEST_HINDSIGHT_SYNTHETIC_MODEL_URL`. Point the managed Hindsight Reflect
 provider at the corresponding loopback callback under
-`/internal/hindsight/v1`. The fixture model must implement Hindsight's
-structured JSON response format and return synthetic usage.
+`/internal/hindsight/v1`, with the callback's own token as the provider key.
+The fixture model must implement Hindsight's structured JSON response
+format and return synthetic usage. Hindsight needs a Reflect model
+configured: with `HINDSIGHT_API_LLM_PROVIDER=none` and no Reflect provider,
+its Reflect endpoint answers 400 and OpenBot returns local retrieval
+instead of a reflection. The running `hindsight-api` 1.2.3 container in the
+local middleware stack is in that state, so it is not a Reflect target for
+these probes.
