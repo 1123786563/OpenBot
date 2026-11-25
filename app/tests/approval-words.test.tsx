@@ -1,6 +1,9 @@
 import {
+  DECLINED_BY_PERSON,
+  OUTCOME_UNKNOWN,
   WITHDRAWN_APPROVALS_OFF,
   decisionInvalidated,
+  notCarriedOut,
 } from "@openbot/shared/approval-outcomes";
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
@@ -282,6 +285,49 @@ test("a decision the Bot's stopped work invalidated is said in the person's word
   ).toBeTruthy();
   expect(view.queryByText(decisionInvalidated)).toBeNull();
 });
+
+test("a request the person declined is explained there, with the Bot to ask again", async () => {
+  decided("denied", DECLINED_BY_PERSON);
+  const view = draw(
+    <InlineApproval
+      fallback={<p>Waiting for a result</p>}
+      resulted={false}
+      toolCallId="call-mcp"
+    />,
+  );
+  expect(await view.findByText("You declined it.")).toBeTruthy();
+  expect(
+    view.getByText("Ask the Bot again if you still need it."),
+  ).toBeTruthy();
+});
+
+/*
+ * WHAT TO DO NEXT IS SAID ONLY WHERE IT IS SAFE. A step whose outcome nobody can vouch for, or that
+ * could not be carried out, may have happened, and its own words say to check before asking again.
+ * "Ask the Bot again if you still need it." under them contradicted that.
+ */
+test.each([
+  [
+    OUTCOME_UNKNOWN,
+    "It started, but OpenBot can't tell whether it finished. It wasn't run again.",
+  ],
+  [
+    notCarriedOut("the computer said: disk full. try later"),
+    "Not done: this action could not be carried out (the computer said: disk full. try later).",
+  ],
+])(
+  "a step that may have run (%#) is explained without telling the person to ask again",
+  async (reason, read) => {
+    decided("completed", reason);
+    const view = draw(
+      <InlineApproval fallback={null} resulted={false} toolCallId="call-mcp" />,
+    );
+    expect(await view.findByText(read)).toBeTruthy();
+    expect(
+      view.queryByText("Ask the Bot again if you still need it."),
+    ).toBeNull();
+  },
+);
 
 test("once the step has its own answer, the line is the tool's again", async () => {
   decided("denied", WITHDRAWN_APPROVALS_OFF);

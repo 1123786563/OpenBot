@@ -48,11 +48,14 @@ const storedRuns = z.array(
     assistantMessageId: z.string().nullish(),
     status: z.enum(["running", "completed", "failed"]),
     waitingForApproval: z.boolean().optional(),
+    // Nullable as well as optional: a group conversation's runs are the stored rows as they are.
     externalOutcome: z
       .enum(["dispatching", "unknown", "executed", "not_dispatched"])
+      .nullable()
       .optional(),
     stopReason: z
       .enum(["stopped", "access_revoked", "context_revoked"])
+      .nullable()
       .optional(),
   }),
 );
@@ -269,22 +272,44 @@ function threadPath(threadId: string) {
   return `/api/copilotkit/threads/${encodeURIComponent(threadId)}`;
 }
 
+type RunControl = {
+  threadId: string;
+  agentId: string;
+  runId: string;
+};
+
+/** What the server answers a stop with. A body that does not say so confirms nothing. */
+const stopAnswer = z.object({ stopped: z.boolean() });
+
+/**
+ * Ask the server to stop a run it holds, or to check the outcome of one nobody can vouch for.
+ *
+ * A stop answers whether the server stopped anything: `false` when the run had already ended, so a
+ * caller that reads a 200 as a stop tells the person the Bot was stopped while it finished its
+ * answer. A request the server fails throws.
+ */
+export async function controlThreadRun(
+  control: RunControl & { action: "stop" },
+): Promise<{ stopped: boolean }>;
+export async function controlThreadRun(
+  control: RunControl & { action: "reconcile" },
+): Promise<undefined>;
 export async function controlThreadRun({
   threadId,
   agentId,
   runId,
   action,
-}: {
-  threadId: string;
-  agentId: string;
-  runId: string;
-  action: "stop" | "reconcile";
-}) {
+}: RunControl & { action: "stop" | "reconcile" }): Promise<
+  { stopped: boolean } | undefined
+> {
   const response = await tryClient(
     `${threadPath(threadId)}/runs/${encodeURIComponent(runId)}/${action}?agentId=${encodeURIComponent(agentId)}`,
     { method: "POST", signal: AbortSignal.timeout(10_000) },
   );
   if (!response.ok) throw new Error("The conversation run is unavailable.");
+  if (action !== "stop") return undefined;
+  const answer = stopAnswer.safeParse(await response.json().catch(() => null));
+  return { stopped: answer.success && answer.data.stopped };
 }
 
 export async function readThreadMessages(

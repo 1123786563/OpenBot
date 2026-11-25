@@ -412,12 +412,14 @@ describe("thread history retrieval outcomes", () => {
           return Response.json({});
         },
         async () => {
-          await controlThreadRun({
+          const run = {
             threadId: "thread/1",
             agentId: "bot&2",
             runId: "run/3",
-            action,
-          });
+          };
+          // Each action is its own call: the two answer with different bodies.
+          if (action === "stop") await controlThreadRun({ ...run, action });
+          else await controlThreadRun({ ...run, action });
           expect(sent).toEqual({
             url: expect.stringContaining(
               `/api/copilotkit/threads/thread%2F1/runs/run%2F3/${action}?agentId=bot%262`,
@@ -428,6 +430,39 @@ describe("thread history retrieval outcomes", () => {
       );
     },
   );
+
+  /*
+   * The server answers a stop with whether it stopped anything: a run that had already ended is not
+   * stopped, and the browser used to read that 200 as a stop and tell the person it was.
+   */
+  test("a stop says whether the server stopped the run, and confirms nothing it does not say", async () => {
+    const control = {
+      threadId: "thread-1",
+      agentId: "bot-1",
+      runId: "run-1",
+      action: "stop",
+    } as const;
+    for (const [answer, stopped] of [
+      [{ stopped: true }, true],
+      [{ stopped: false }, false],
+      [{}, false],
+    ] as const) {
+      await withFetch(
+        async () => Response.json(answer),
+        async () => {
+          expect(await controlThreadRun(control)).toEqual({ stopped });
+        },
+      );
+    }
+    await withFetch(
+      async () => Response.json({ error: "Not yours." }, { status: 404 }),
+      async () => {
+        await expect(controlThreadRun(control)).rejects.toThrow(
+          "The conversation run is unavailable.",
+        );
+      },
+    );
+  });
 
   test("a readable empty response remains a valid empty history", async () => {
     await withFetch(

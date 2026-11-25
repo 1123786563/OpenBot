@@ -2,7 +2,9 @@ import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import * as ReactCoreV2 from "@copilotkit/react-core/v2";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { failedComputerCall } from "@/lib/computers/call";
 import { observeApprovalAgent } from "@/lib/copilot/approval-context";
 import { useFrontendTool } from "@/lib/copilot/approval-tools";
@@ -518,4 +520,95 @@ test("needing a conversation is not read as stale refs", () => {
     notPerformed: true,
     reason: "This action needs your approval.",
   });
+});
+
+/*
+ * A COMPUTER STEP KEEPS ITS OWN CARD IN EVERY LATER VIEW. The step's card is drawn without saying
+ * whether its tool call has its answer yet, and the approval card read that as "not yet": a step
+ * that was completed, whose request had ended with any reason, was replaced for good by the warning
+ * for a request that ended before its answer.
+ */
+function CardTools() {
+  useFrontendTool({
+    name: "computer_type",
+    description: "Type",
+    handler: async () => "typed",
+    render: () => <p>The step's own card</p>,
+  });
+  return null;
+}
+
+test("a computer step whose request ended keeps its own card, not the warning for an unanswered step", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = Object.assign(
+    async (path: Parameters<typeof fetch>[0]) => {
+      if (String(path) === "/api/approvals")
+        return Response.json({
+          enabled: true,
+          rules: [],
+          teamRules: [],
+          questions: [],
+          requests: [
+            {
+              id: "approval-1",
+              status: "completed",
+              createdAt: "2026-10-30T22:00:00Z",
+              decidedAt: "2026-10-30T22:05:00Z",
+              action: {
+                actorId: "me",
+                botId: "default",
+                toolRef: "computer_type",
+                effect: "write",
+                scope: "example.com",
+                threadId: "thread",
+                runId: "run-1",
+                toolCallId: "type-call",
+                actionDigest: "digest",
+                args: { text: "hello" },
+                target: null,
+              },
+              result: { content: OUTCOME_UNKNOWN, error: OUTCOME_UNKNOWN },
+            },
+          ],
+        });
+      if (String(path).startsWith("/api/agents"))
+        return Response.json({ agents: [{ id: "default", name: "Bot" }] });
+      return Response.json({ error: "not served" }, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  try {
+    // Registers the tool with the card the SDK keeps.
+    const { unmount } = render(
+      <QueryClientProvider client={queries}>
+        <CardTools />
+      </QueryClientProvider>,
+    );
+    unmount();
+    const tool = registered.find((entry) => entry.name === "computer_type");
+    // The card the tool was registered with, as the SDK calls it for one tool call.
+    const card = tool?.render as
+      | ((props: { toolCallId: string }) => ReactNode)
+      | undefined;
+    const view = render(
+      <QueryClientProvider client={queries}>
+        {card?.({ toolCallId: "type-call" })}
+      </QueryClientProvider>,
+    );
+    // Before the approvals arrive the card is the step's own; it has to stay so once they have.
+    await waitFor(() =>
+      expect(queries.getQueryData(["approvals"])).toBeDefined(),
+    );
+    expect(view.getByText("The step's own card")).toBeTruthy();
+    expect(
+      view.queryByText(
+        "It started, but OpenBot can't tell whether it finished. It wasn't run again.",
+      ),
+    ).toBeNull();
+  } finally {
+    global.fetch = originalFetch;
+  }
 });

@@ -185,8 +185,6 @@ type ChatTranscriptProps = {
    * be told, and only the thing that ended the turn knows which one happened.
    */
   stopped?: string;
-  /** A run the person stopped themselves. Drawn in the same slot, plainly, never as an error. */
-  stoppedNeutral?: string;
   /**
    * Work this conversation is waiting on that is not this tab's run: a Bot it asked, a routine.
    * Drawn in the same slot as `Thinking`, under the last thing said, because that is where the
@@ -330,24 +328,13 @@ function Thinking() {
  * and the conversation is sent back to the model on the next turn, so the Bot would then read its
  * own obituary as something it had written.
  */
-function Stopped({
-  reason,
-  tone = "error",
-}: {
-  reason: string;
-  /** A stop the person chose is not an error: it is said plainly, in the same place. */
-  tone?: "error" | "neutral";
-}) {
+function Stopped({ reason }: { reason: string }) {
   return (
     <Stack
       as="p"
-      className={
-        tone === "error"
-          ? "text-destructive text-sm"
-          : "text-muted-foreground text-sm"
-      }
-      {...(tone === "error" ? { "data-testid": "transcript-stopped" } : {})}
-      role={tone === "error" ? "alert" : "status"}
+      className="text-destructive text-sm"
+      data-testid="transcript-stopped"
+      role="alert"
     >
       <Text as="span" color="inherit" type="inherit">
         {reason}
@@ -2334,7 +2321,6 @@ export function ChatTranscript({
   queued = EMPTY_QUEUE,
   restoring = false,
   stopped,
-  stoppedNeutral,
   working,
 }: ChatTranscriptProps) {
   const isDrawn = useDrawnTool();
@@ -2939,8 +2925,6 @@ export function ChatTranscript({
                   >
                     {stopped ? (
                       <Stopped reason={stopped} />
-                    ) : stoppedNeutral ? (
-                      <Stopped reason={stoppedNeutral} tone="neutral" />
                     ) : waitingOnTheModel ? (
                       <Thinking />
                     ) : null}

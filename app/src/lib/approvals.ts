@@ -186,6 +186,19 @@ export function carryingOnAfterApproval(
   );
 }
 
+/**
+ * Whether the server is carrying this conversation on after one of its approvals was decided, read
+ * from the inbox and polled faster while it is, so a conversation stops saying the Bot is working
+ * soon after the turn is done. One factory for every surface that shows it.
+ */
+export const carryingOnQueryOptions = (threadId: string) =>
+  queryOptions({
+    ...approvalInboxOptions(),
+    select: (inbox) => carryingOnAfterApproval(inbox, threadId),
+    refetchInterval: (query) =>
+      carryingOnAfterApproval(query.state.data, threadId) ? 2_000 : 10_000,
+  });
+
 /** Whether a conversation asks before every step, by its thread. Its own root: see below. */
 export const approvalThreadKeys = {
   all: ["approval-thread"] as const,

@@ -68,8 +68,11 @@ function backEndUnreachable(said: string): string | null {
  * ONLY THE LAST RUN COUNTS. A run that started after a failure supersedes it, whatever came of it:
  * one that answered makes the failure old news, and one still going is not over yet.
  *
- * A STOP IS NOT A FAILURE, and needs nothing special: a run the person stopped ends with
- * RUN_FINISHED, outcome cancelled, as the runtime records it.
+ * A STOP IS NOT A FAILURE. A run aborted from this browser ends with RUN_FINISHED, outcome cancelled,
+ * and needs nothing special. A run the server stopped is stored with a RUN_ERROR that carries its
+ * reason (`stoppedRunEvent` in server/src/channels/direct-chat-replay.ts), and the replay of a thread
+ * sends that back: read as a failure it drew "The Bot run was stopped." in red under the plain
+ * notice that already says the run was stopped.
  *
  * NOTHING WHEN THE REPLAY BROKE. A connect that failed part way may have stopped after an old failure
  * and before the run that answered it, and a stale failure is worse than none. The caller drops the
@@ -100,7 +103,8 @@ export function followLastRun(agent: Pick<AbstractAgent, "subscribe">): {
       running = false;
     },
     onRunErrorEvent: ({ event }) => {
-      failure = stoppedReason(event?.message);
+      failure =
+        event?.code === "stopped" ? null : stoppedReason(event?.message);
       running = false;
     },
     onRunFailed: () => {

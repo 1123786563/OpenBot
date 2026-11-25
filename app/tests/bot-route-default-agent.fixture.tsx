@@ -37,14 +37,20 @@ let originalRect: typeof HTMLElement.prototype.getBoundingClientRect;
 type Event = Record<string, unknown>;
 
 /** How the next `/run` goes. A fresh list per test. */
-type RunPlan =
+export type RunPlan =
   | { kind: "answers"; text: string }
-  | { kind: "fails"; message: string }
+  | { kind: "fails"; message: string; code?: string }
   /** The runtime itself is down: no run starts. */
   | { kind: "refuses" }
   /** Streams `events` and stays open until `releaseRun` ends it, as a Bot still working does. */
   | { kind: "holds"; events: Event[] };
 let held: ((ending: Event[]) => void) | null = null;
+/** The message the held run left open, and the run's own thread and id, for a stop to close. */
+let heldOpen: {
+  messageId: string | null;
+  threadId: string;
+  runId: string;
+} | null = null;
 /** End the run that is holding: `ending` is what the Bot did to finish. */
 export function releaseRun(ending: Event[] = []) {
   held?.(ending);
@@ -57,9 +63,20 @@ export type Runtime = {
   /** The thread store: what was said, and nothing about how a run ended. */
   stored: Map<string, Message[]>;
   /** The runs each thread has, as the messages read returns them. */
-  threadRuns: Map<string, unknown[]>;
-  /** Each stop this browser asked the server for. */
+  threadRuns: Map<string, Record<string, unknown>[]>;
+  /** Each stop this browser asked the server for, for a run by its id. */
   stops: { threadId: string; runId: string }[];
+  /**
+   * How a stop answers. `"ended"` is a run that ended between the read and the stop, which the
+   * server confirms it did not stop; `"refused"` is a request the server fails.
+   */
+  stopAnswer: "confirms" | "ended" | "refused";
+  /** Each run this browser asked the server to check the outcome of, by run id. */
+  reconciles: string[];
+  /** Each thread read of the messages route, oldest first. */
+  reads: string[];
+  /** Each abort this browser made of its own copy of a run, by thread. */
+  aborts: string[];
   /** Each thread the chat joined, oldest first. */
   joins: { agentId: string; threadId: string }[];
   runs: RunAgentInput[];
@@ -72,6 +89,10 @@ export const runtime: Runtime = {
   stored: new Map(),
   threadRuns: new Map(),
   stops: [],
+  stopAnswer: "confirms",
+  reconciles: [],
+  reads: [],
+  aborts: [],
   joins: [],
   runs: [],
   decisions: [],
@@ -147,7 +168,8 @@ function run(input: RunAgentInput): Response {
     return finish({
       type: "RUN_ERROR",
       message: plan.message,
-      code: "agent_error",
+      // `agent_error`, or the reason the server stopped a run (`stoppedRunEvent`).
+      code: plan.code ?? "agent_error",
     });
   if (plan.kind === "holds") {
     // Open until released, as a stream the Bot is still writing to is.
@@ -155,6 +177,15 @@ function run(input: RunAgentInput): Response {
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
+        const opening = plan.events.find(
+          (event) => event.type === "TEXT_MESSAGE_START",
+        );
+        heldOpen = {
+          messageId:
+            typeof opening?.messageId === "string" ? opening.messageId : null,
+          threadId,
+          runId,
+        };
         controller.enqueue(encoder.encode(frames([started, ...plan.events])));
         rest = (ending) => {
           void finish(...plan.events, ...ending);
@@ -219,19 +250,87 @@ export function botRuntime() {
         const thread = path.match(/\/threads\/([^/]+)\/messages$/);
         if (thread) {
           const threadId = decodeURIComponent(thread[1] ?? "");
+          runtime.reads.push(threadId);
           const runs = runtime.threadRuns.get(threadId);
           return NativeResponse.json({
             messages: runtime.stored.get(threadId) ?? [],
             ...(runs ? { runs } : {}),
           });
         }
-        const stop = path.match(/\/threads\/([^/]+)\/runs\/([^/]+)\/stop$/);
-        if (stop) {
-          runtime.stops.push({
-            threadId: decodeURIComponent(stop[1] ?? ""),
-            runId: decodeURIComponent(stop[2] ?? ""),
-          });
-          return NativeResponse.json({ ok: true });
+        const controlled = path.match(
+          /\/threads\/([^/]+)\/runs\/([^/]+)\/(stop|reconcile)$/,
+        );
+        if (controlled) {
+          const threadId = decodeURIComponent(controlled[1] ?? "");
+          const runId = decodeURIComponent(controlled[2] ?? "");
+          const runs = runtime.threadRuns.get(threadId) ?? [];
+          const mine = (run: Record<string, unknown>) => run.id === runId;
+          if (controlled[3] === "stop") {
+            runtime.stops.push({ threadId, runId });
+            if (runtime.stopAnswer === "refused")
+              return NativeResponse.json(
+                { error: "The run could not be stopped." },
+                { status: 500 },
+              );
+            /*
+             * As `stopDirectChatRun` leaves a run it was asked to stop: over, with its reason, and an
+             * action it was dispatching left with an outcome nobody can vouch for. Only a run still
+             * going is stopped, and only that is confirmed.
+             */
+            const wasRunning =
+              runtime.stopAnswer === "confirms" &&
+              runs.some((run) => mine(run) && run.status === "running");
+            runtime.threadRuns.set(
+              threadId,
+              runs.map((run) =>
+                mine(run) && wasRunning
+                  ? {
+                      ...run,
+                      status: "failed",
+                      stopReason: "stopped",
+                      ...(run.externalOutcome === "dispatching" && {
+                        externalOutcome: "unknown",
+                      }),
+                    }
+                  : run,
+              ),
+            );
+            return NativeResponse.json({ stopped: wasRunning });
+          }
+          runtime.reconciles.push(runId);
+          // As `settleManagedReceipt` does: the model's record settles what became of the action.
+          runtime.threadRuns.set(
+            threadId,
+            runs.map((run) =>
+              mine(run) ? { ...run, externalOutcome: "executed" } : run,
+            ),
+          );
+          return NativeResponse.json({ externalOutcome: "executed" });
+        }
+        /*
+         * This browser's own abort, as the runtime carries it out: the run left open is closed and
+         * ends RUN_FINISHED, outcome cancelled, never a RUN_ERROR (`finalizeRunEvents` in
+         * @copilotkit/shared, with `stopRequested`).
+         */
+        const abort = path.match(
+          /\/api\/copilotkit\/agent\/([^/]+)\/stop\/([^/]+)$/,
+        );
+        if (abort) {
+          runtime.aborts.push(decodeURIComponent(abort[2] ?? ""));
+          const open = heldOpen;
+          heldOpen = null;
+          held?.([
+            ...(open?.messageId
+              ? [{ type: "TEXT_MESSAGE_END", messageId: open.messageId }]
+              : []),
+            {
+              type: "RUN_FINISHED",
+              threadId: open?.threadId ?? "",
+              runId: open?.runId ?? "",
+              outcome: { type: "cancelled" },
+            },
+          ]);
+          return NativeResponse.json({ stopped: true });
         }
         if (path.endsWith("/info"))
           return NativeResponse.json({
@@ -280,7 +379,12 @@ export function botRuntime() {
     runtime.stored = new Map();
     runtime.threadRuns = new Map();
     runtime.stops = [];
+    runtime.stopAnswer = "confirms";
+    runtime.reconciles = [];
+    runtime.reads = [];
+    runtime.aborts = [];
     runtime.joins = [];
+    heldOpen = null;
     runtime.runs = [];
     runtime.decisions = [];
     runtime.inbox = [];

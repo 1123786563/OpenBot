@@ -54,7 +54,12 @@ export function ConversationReadError({
  * left is why, and where to go next. Reached by an old link or from another person's history, the
  * alternative was an empty page with no control at all.
  */
-export function ConversationAccessEnded({ title }: { title: string }) {
+export function ConversationAccessEnded({
+  title = "Conversation access ended.",
+}: {
+  /** The sentence for a page that is not a conversation's own: a group conversation names itself. */
+  title?: string;
+}) {
   return (
     <Stack gap={3} padding={5}>
       <Banner collapsible={false} role="alert" status="error" title={title} />

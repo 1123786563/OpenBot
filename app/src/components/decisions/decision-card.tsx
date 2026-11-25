@@ -95,21 +95,25 @@ export function DecisionCard({
   const pickedOption = options.find((option) => option.value === picked);
   const canSend = !submitting && (picked !== OTHER || text.trim().length > 0);
   /*
-   * A fast double press reaches this once. The rows stay open until the caller reports the answer on
-   * its way, so a double click on the button, or Enter twice in a row, used to ask twice: the
-   * server refuses the second decision and the conversation was carried on from the first only by
-   * luck of ordering.
+   * A DECISION IS SENT ONCE. A fast double press reaches this once, because the rows stay open
+   * until the caller reports the answer on its way. A send that went through is final too: the rows
+   * fold away over a moment, and the card used to unlock again as soon as the caller said nothing
+   * was on its way, so a press in that moment sent a second decision.
+   *
+   * ONLY A REFUSAL UNLOCKS IT. The caller reports that through `error`, whether or not the send was
+   * ever shown to be on its way: one that settles inside a single render never says "Sending…", and
+   * the card used to stay locked for good, with a button that looked ready and did nothing.
    */
   const sent = useRef(false);
   const send = () => {
-    if (!canSend || sent.current) return;
+    if (answer || !canSend || sent.current) return;
     sent.current = true;
     onSubmit(picked, picked === OTHER ? text.trim() : "");
   };
+  const refused = error != null;
   useEffect(() => {
-    // Nobody told the card the answer is on its way, or it came back refused: it can be pressed again.
-    if (!submitting) sent.current = false;
-  }, [submitting]);
+    if (refused) sent.current = false;
+  }, [refused]);
   const pick = (value: string) => {
     setPicked(value);
     if (value === OTHER) field.current?.focus();

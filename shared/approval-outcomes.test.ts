@@ -10,6 +10,7 @@ const {
   HANDLED_BY_PERSON,
   OUTCOME_UNKNOWN,
   outcomeForPerson,
+  safeToAskAgain,
   WITHDRAWN_APPROVALS_OFF,
   WITHDRAWN_RULE_ALLOWS,
 } = outcomes;
@@ -38,6 +39,29 @@ test("a decision the Bot's stopped work invalidated reads as withdrawn, in plain
   expect(outcomeForPerson(decisionInvalidated)).toBe(
     "Withdrawn. The Bot's work was stopped before it could do this.",
   );
+});
+
+test("only a step that never ran may be asked for again", () => {
+  // Declined by the person, withdrawn, or invalidated by the Bot's stopped work: nothing ran.
+  for (const sent of [
+    DECLINED_BY_PERSON,
+    WITHDRAWN_APPROVALS_OFF,
+    WITHDRAWN_RULE_ALLOWS,
+    decisionInvalidated,
+  ])
+    expect(safeToAskAgain(sent)).toBe(true);
+  // It may have run: its own words say to check before asking again.
+  for (const sent of [
+    OUTCOME_UNKNOWN,
+    outcomes.NOT_DONE,
+    outcomes.notDoneOnRecheck("The disk is full."),
+    outcomes.notCarriedOut("The disk is full."),
+  ])
+    expect(safeToAskAgain(sent)).toBe(false);
+  // A boundary's or the computer's own sentence says nothing about whether the step ran.
+  expect(
+    safeToAskAgain("Commands that delete files are not allowed here."),
+  ).toBe(false);
 });
 
 test("a step the person did themselves reads as theirs, and as done", () => {

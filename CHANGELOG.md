@@ -90,13 +90,19 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   with one Bot do, and a run the person stopped says "The run was stopped." Before, the same run read
   "Waiting to reply" or "Run ended" there. A run that is waiting on the person says "Waiting for your
   approval." everywhere.
+- **A run you stopped is not shown as an error after a reload.** On `/bot` and in a conversation, a
+  run the server stopped at your request came back in red as "The Bot run was stopped." after every
+  reload, under the plain "The run was stopped." It now reads "The run was stopped." once.
 - **An approval that ends without your answer says why, and what to do.** No approval expires on
   its own. One ends when you withdraw it (asking is switched off while it waits), when the Bot's
   work is stopped under it, or when the same request is decided in another tab, and the line where
   the card was now reads, for example, "Withdrawn. You turned off asking before changes. Ask the Bot
-  again if you still need it." until the Bot's own answer for that step arrives. Each answer's
-  description also says that the Bot carries on in the same conversation afterwards. A fast double
-  press on a decision sends it once; the server refuses a second decision on the same request.
+  again if you still need it." until the Bot's own answer for that step arrives. That next step is
+  offered only where the step never ran. A step that may have run, because its outcome is unknown
+  or it could not be carried out, says to check whether it happened first. A computer step keeps its
+  own card once its request has ended. Each answer's description also says that the Bot carries on
+  in the same conversation afterwards. A decision is sent once: a fast double press, or a press
+  while the card folds away, sends nothing more, and one the server refused can be sent again.
 - **A conversation you can no longer read offers the way back.** When your access to a conversation
   ends, a group conversation refuses to open, or a conversation page cannot open at all, the page
   now says why and links to Home instead of leaving you with a Retry that can never succeed.
@@ -104,14 +110,19 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   conversation, and a read that fails keeps what is on screen and your draft, saying "Couldn't load
   earlier messages." with Try again. After you decide an approval there, the chat shows the Bot
   still working on the server and draws the reply when that turn ends, instead of sitting idle
-  until you reopened it. Stop stops the run on the server and reads "The run was stopped." instead
-  of an error, and access that ends while the chat is open links back to Home.
-- **A conversation with several Bots can be stopped, and asks for an approval where it waits.**
-  While a Bot is working there, "Stop the Bot" stops its run on the server, and a run the server is
-  holding on its own has a Stop button that names the Bot. A Bot waiting for your approval asks in
-  the conversation with the same card a conversation with one Bot uses, once for that Bot, instead of
-  one sentence and a link to the Bot's page. A working Bot's avatar carries the working badge, as it
-  does on Home.
+  until you reopened it. Stop reads the conversation first and stops the run that is going now, on
+  the server, and says "The run was stopped." only once the server confirms it. A stop the server
+  refuses says "The Bot couldn't be stopped. Try again." The chat says what became of a run the
+  server holds for it in the same words a conversation with one Bot uses, and offers Check outcome
+  when nobody can vouch for how a run ended. Access that ends while the chat is open hides what was
+  read and links back to Home as soon as a send fails, not on the next one.
+- **A conversation with several Bots asks for an approval where it waits, and the reply follows
+  the answer.** A Bot waiting for your approval asks in the conversation with the same card a
+  conversation with one Bot uses, once for that Bot, instead of one sentence and a link to the
+  Bot's page. Once you answer, its line says it is working again and the reply arrives without
+  leaving the conversation. A working Bot's avatar carries the working badge, as it does on Home.
+  A group offers no Stop while a Bot is working: a stop there would leave the Bot unable to answer
+  any later turn in that conversation.
 
 ## 1.0.3
 

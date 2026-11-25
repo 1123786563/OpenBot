@@ -65,7 +65,7 @@ describe("what became of a stored run, in one sentence", () => {
       "The outcome was verified and added to the conversation.",
     );
     expect(runOutcomeWords({ ...failed, externalOutcome: "unknown" })).toBe(
-      "The previous run’s external outcome is unknown. Check the outcome before sending again.",
+      "The previous run's external outcome is unknown. Check the outcome before sending again.",
     );
   });
 
@@ -84,7 +84,7 @@ describe("what became of a stored run, in one sentence", () => {
         stopReason: "stopped",
       }),
     ).toBe(
-      "The previous run’s external outcome is unknown. Check the outcome before sending again.",
+      "The previous run's external outcome is unknown. Check the outcome before sending again.",
     );
   });
 });

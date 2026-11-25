@@ -1,3 +1,4 @@
+import { decisionInvalidated } from "@openbot/shared/approval-outcomes";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { questionPartSchema } from "../agents/escalation";
@@ -5,7 +6,6 @@ import { groupSourceForRun, submitGroupTurn } from "../channels/group";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
 import {
-  decisionInvalidated,
   readDecisionAccess,
   reconcileDecisionHistory,
 } from "../personal-saas/decision-access";
