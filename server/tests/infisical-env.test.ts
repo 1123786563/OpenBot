@@ -71,17 +71,23 @@ const identity = {
 
 // What a server started this way would see, reported by the process itself. Spawned asynchronously:
 // a synchronous spawn would hold this process still, and the stand-in Infisical runs inside it.
-async function start(arguments_: string[], environment: Record<string, string>) {
+async function start(
+  arguments_: string[],
+  environment: Record<string, string>,
+) {
   const report =
     "console.log(JSON.stringify({ FROM_DOT_ENV: process.env.FROM_DOT_ENV, FROM_SHELL: " +
     "process.env.FROM_SHELL, ONLY_INFISICAL: process.env.ONLY_INFISICAL, EMPTY: process.env.EMPTY, " +
     "dotted: process.env['db.url'], CLIENT_SECRET: process.env.INFISICAL_CLIENT_SECRET }))";
-  const child = Bun.spawn(["bun", ...arguments_, "--preload", preload, "-e", report], {
-    cwd: directory,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, ...environment },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const child = Bun.spawn(
+    ["bun", ...arguments_, "--preload", preload, "-e", report],
+    {
+      cwd: directory,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, ...environment },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   const [stdout, stderr, status] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -90,7 +96,10 @@ async function start(arguments_: string[], environment: Record<string, string>) 
   return {
     status,
     stderr,
-    seen: JSON.parse(stdout || "null") as Record<string, string | undefined> | null,
+    seen: JSON.parse(stdout || "null") as Record<
+      string,
+      string | undefined
+    > | null,
   };
 }
 
@@ -149,7 +158,10 @@ describe("Infisical preload", () => {
 
   test("a read that fails stops the start and says where it failed", async () => {
     asked.length = 0;
-    const run = await start([], { ...identity, INFISICAL_CLIENT_SECRET: "wrong" });
+    const run = await start([], {
+      ...identity,
+      INFISICAL_CLIENT_SECRET: "wrong",
+    });
     expect(run.status).not.toBe(0);
     expect(run.seen).toBeNull();
     expect(run.stderr).toContain("Could not read settings from Infisical");

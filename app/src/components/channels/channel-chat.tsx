@@ -441,7 +441,8 @@ function uploadedAttachment(attachment: Attachment): {
   filename?: string;
 } {
   const metadata = attachment.metadata as
-    { attachmentId?: unknown; filename?: unknown } | undefined;
+    | { attachmentId?: unknown; filename?: unknown }
+    | undefined;
   const attachmentId = metadata?.attachmentId;
   if (typeof attachmentId !== "string") {
     throw new Error("Attachment is missing its uploaded id.");

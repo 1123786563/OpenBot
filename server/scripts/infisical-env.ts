@@ -65,5 +65,7 @@ if (
     }
   }
   // On stderr, so it stays out of whatever the entry point prints.
-  console.error(`Settings: ${secrets.length} loaded from Infisical (${environment})`);
+  console.error(
+    `Settings: ${secrets.length} loaded from Infisical (${environment})`,
+  );
 }

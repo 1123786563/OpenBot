@@ -51,7 +51,8 @@ const STARTER = {
 type Draft = typeof STARTER;
 
 type JsonObjectResult =
-  { ok: true; value: Record<string, unknown> } | { ok: false; message: string };
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; message: string };
 
 type PlaygroundValidation =
   | { ok: true; input: SandboxedDraftInput }
