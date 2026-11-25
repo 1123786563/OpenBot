@@ -23,7 +23,7 @@
 | Bifrost | 选择 PostgreSQL，保存初始化令牌。内网网关地址为 `http://openbot-bifrost:8080/v1` |
 | OpenObserve 和 OTel Collector | 安装 `openobserve.tar.gz`。先创建日志流及专用写入令牌，再启用 Collector。主机端口为 15080 和 14318 |
 | Infisical | 选择 PostgreSQL 和 Redis 实例，保存加密密钥及签名密钥。设置 `SITE_URL=https://infisical.persaas.cn` |
-| Hindsight | 准备支持 pgvector 的 PostgreSQL。当前服务器使用独立的可移植 pgvector 镜像。安装后检查 `127.0.0.1:18888/health` 并实际写入和召回一条测试记忆 |
+| Hindsight | 准备支持 pgvector 的 PostgreSQL。当前服务器使用独立的可移植 pgvector 镜像。记下表单中的控制台访问密钥。安装后检查 `127.0.0.1:18888/health` 并实际写入和召回一条测试记忆 |
 | Opik | 选择 MySQL 和 Redis，等待 MySQL 和 ClickHouse 迁移。检查 `127.0.0.1:15173/health` |
 | Lago | 选择支持 `pg_partman` 的 PostgreSQL。当前服务器复用已经安装该扩展的 1Panel PostgreSQL。设置前端和 API 的 HTTPS URL，并检查 API、Worker 和 PDF 服务 |
 | SPIRE | 启动 Server 后签发一次性加入令牌，再启动 Agent。在 Server 中确认 Agent 已注册 |

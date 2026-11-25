@@ -17,6 +17,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useTranslation } from "@/i18n";
 
 function WorkspaceLink({ href: _href, ...props }: ComponentProps<"a">) {
   return <Link {...props} replace to="/" />;
@@ -62,6 +63,7 @@ type Recovery =
 
 function RouteRecovery(recovery: Recovery) {
   const router = useRouter();
+  const { t } = useTranslation();
   const surface = useRef<HTMLElement>(null);
   const restoringNavigationFocus = useRef(false);
   useEffect(() => {
@@ -69,7 +71,9 @@ function RouteRecovery(recovery: Recovery) {
   }, []);
 
   const title =
-    recovery.kind === "error" ? "This page couldn’t load" : "Page not found";
+    recovery.kind === "error"
+      ? t("frame.pageLoadFailed", "This page couldn’t load")
+      : t("frame.pageNotFound", "Page not found");
   const canGoBack = router.history.canGoBack();
   const primary =
     recovery.kind === "error" && !recovery.offline
@@ -80,9 +84,12 @@ function RouteRecovery(recovery: Recovery) {
   const failureStatus =
     recovery.kind === "error" &&
     (recovery.offline
-      ? "You’re offline. Reconnect to try again."
+      ? t("frame.offlineStatus", "You’re offline. Reconnect to try again.")
       : recovery.repeated
-        ? "The page still couldn’t load. You can try again or open your workspace."
+        ? t(
+            "frame.repeatedFailureStatus",
+            "The page still couldn’t load. You can try again or open your workspace.",
+          )
         : undefined);
 
   function restoreFocusAfterNavigation() {
@@ -133,7 +140,7 @@ function RouteRecovery(recovery: Recovery) {
             focusCurrentPage();
           });
         }}
-        label="Try again"
+        label={t("frame.tryAgain", "Try again")}
         isDisabled={recovery.offline}
         size="lg"
         style={primary === "retry" ? primaryAction : actionSize}
@@ -178,7 +185,7 @@ function RouteRecovery(recovery: Recovery) {
               {primary === "retry" ? retry : null}
               {canGoBack ? (
                 <Button
-                  label="Go back"
+                  label={t("frame.goBack", "Go back")}
                   onClick={goBack}
                   size="lg"
                   style={primary === "back" ? primaryAction : actionSize}
@@ -188,7 +195,7 @@ function RouteRecovery(recovery: Recovery) {
               <Button
                 as={WorkspaceLink}
                 href="/"
-                label="Open workspace"
+                label={t("frame.openWorkspace", "Open workspace")}
                 size="lg"
                 onClick={(event) => {
                   if (
@@ -213,10 +220,19 @@ function RouteRecovery(recovery: Recovery) {
           recovery.kind === "error"
             ? failureStatus
               ? undefined
-              : "Try again. If the page still won’t open, check your connection or open your workspace to keep working."
+              : t(
+                  "frame.pageLoadFailedDescription",
+                  "Try again. If the page still won’t open, check your connection or open your workspace to keep working.",
+                )
             : canGoBack
-              ? "Check the address below, or return to the previous page."
-              : "Check the address below, or open your workspace to find your conversations and Bots."
+              ? t(
+                  "frame.pageNotFoundBackDescription",
+                  "Check the address below, or return to the previous page.",
+                )
+              : t(
+                  "frame.pageNotFoundDescription",
+                  "Check the address below, or open your workspace to find your conversations and Bots.",
+                )
         }
         headingLevel={1}
         title={title}

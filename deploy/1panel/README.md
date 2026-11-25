@@ -120,7 +120,7 @@ docker network inspect openbot-observability >/dev/null 2>&1 \
 ### 接入可选服务
 
 - 在主应用的模型地址填 `http://openbot-bifrost:8080/v1`，并填写 Bifrost 虚拟密钥及模型名。该地址通过 1Panel 网络访问 Bifrost 的 registry proxy。
-- Hindsight 的 API 和控制台、Opik 的 API 默认没有登录门禁。应用包保留它们各自的私有 Docker 网络与宿主机回环端口。使用时把 OpenBot API 加入对应的 `openbot-hindsight` 或 `openbot-opik` 网络。Lago 的用量投递需要独立 Worker，连接 `openbot-lago`。配置项见[可选服务接入](../operations.md#hindsightopik-和-lago)。
+- Hindsight 的控制台用安装表单中的「控制台访问密钥」登录；Hindsight 的 API 和 Opik 的 API 默认没有登录门禁。应用包保留它们各自的私有 Docker 网络与宿主机回环端口。使用时把 OpenBot API 加入对应的 `openbot-hindsight` 或 `openbot-opik` 网络。Lago 的用量投递需要独立 Worker，连接 `openbot-lago`。配置项见[可选服务接入](../operations.md#hindsightopik-和-lago)。
 - Infisical 的密钥生成和机器身份配置见 [Infisical 说明](../infisical/README.md)。Lago 的密钥要求和用量订阅见[用量投递说明](../../docs/billing-lago-usage-export.md)。
 - 需要独立 Agent 时，从仓库根目录运行下列构建命令。使用另一台主机构建时，将镜像推到 1Panel 主机可以拉取的镜像仓库，并在表单填写相应镜像地址。
 
@@ -147,7 +147,7 @@ SPIRE Server 健康后，执行 `docker exec <SPIRE主容器名> /opt/spire/bin/
 | Infisical | `infisical.example.com` | `http://127.0.0.1:18082` | 将 `SITE_URL` 设为实际 HTTPS 地址 |
 | Lago 前端 | `lago.example.com` | `http://127.0.0.1:13001` | 将 `LAGO_FRONT_URL` 设为此 HTTPS 地址 |
 | Lago API | `lago-api.example.com` | `http://127.0.0.1:13000` | 将 `LAGO_API_URL` 设为此 HTTPS 地址 |
-| Hindsight 控制台 | `hindsight.example.com` | `http://127.0.0.1:19999` | 控制台默认无登录门禁，仅在站点上启用访问控制后使用 |
+| Hindsight 控制台 | `hindsight.example.com` | `http://127.0.0.1:19999` | 登录时输入安装表单中的「控制台访问密钥」 |
 | Hindsight | 内部访问域名 | `http://127.0.0.1:18888` | API 默认无登录门禁，仅通过受限网络或带访问控制的站点使用 |
 | Opik | 内部访问域名 | `http://127.0.0.1:15173` | 代理前端入口，前端会转发 API。默认无登录门禁，仅通过受限网络或带访问控制的站点使用 |
 

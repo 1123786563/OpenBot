@@ -7,6 +7,9 @@ services:
   init-secrets:
     image: infisical/infisical:v0.167.14
     container_name: ${CONTAINER_NAME}-init-secrets
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
     user: "0:0"
     network_mode: none
     restart: "no"
@@ -48,6 +51,9 @@ services:
   bootstrap-admin:
     image: infisical/infisical:v0.167.14
     container_name: ${CONTAINER_NAME}-bootstrap-admin
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
     restart: "no"
     entrypoint: [node, /bootstrap-admin.mjs]
     volumes:

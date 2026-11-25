@@ -10,4 +10,8 @@ Use a PostgreSQL instance with pgvector. Have the administrator run `CREATE EXTE
 
 ## Console
 
-The console binds to host loopback port 19999 and has no login gate by default. Open `http://127.0.0.1:19999` on the host, or reach it through an access-controlled reverse proxy. Do not expose it to the public internet.
+The console is the app's web UI and its primary 1Panel access port (`PANEL_APP_PORT_HTTP`, default 19999), so the install's access link opens the console. The API uses a separate port, `PANEL_APP_PORT_API` (default 18888); OpenBot calls it over the container network at `http://hindsight:8888` and does not depend on that host port.
+
+The console is protected by the console access key from the install form: it opens on a login page, and neither the pages nor the console API answer until the key is entered. The key can be changed in the app's parameters after installation and takes effect when the app is rebuilt, which also signs out every existing session.
+
+The console binds to a host loopback port. Open `http://127.0.0.1:19999` on the host, or reach it through a reverse proxy. The API port has no login gate; do not proxy it to the public internet.

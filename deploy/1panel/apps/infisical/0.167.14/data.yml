@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 18082
       required: true
+      edit: true
       rule: paramPort
       label:
         en: HTTP port (Required)
@@ -199,6 +200,7 @@ additionalProperties:
       type: text
       default: http://localhost:18082
       required: true
+      edit: true
       label:
         en: Infisical public URL (Required)
         es-es: Infisical public URL (Obligatorio)

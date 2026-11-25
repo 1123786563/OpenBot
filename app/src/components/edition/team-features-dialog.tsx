@@ -30,6 +30,7 @@ import {
 import type { NavigationItem } from "@/lib/navigation";
 import { BUSINESS_URL } from "@/lib/openbot-for-business";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 
 /**
  * What the team edition has and the personal edition does not, one short line each, in the three
@@ -109,6 +110,7 @@ export function TeamFeaturesDialog() {
   const isOpen = useSyncExternalStore(subscribe, () => open);
   // Closed when the layout holding it goes (signing out), so it never reopens by itself later.
   useEffect(() => () => setOpen(false), []);
+  const { t } = useTranslation();
   /*
    * Focus starts on the list's own column. Left to the default, it lands on Talk to us, the first
    * thing to tab to, and the column scrolls down to it: the dialog opened past its own title
@@ -140,7 +142,9 @@ export function TeamFeaturesDialog() {
           >
             <DialogHeader>
               <DialogTitle className="text-xl">
-                <BrandName>OpenBot for Business</BrandName>
+                <BrandName>
+                  {t("nav.teamFeatures", "OpenBot for Business")}
+                </BrandName>
               </DialogTitle>
               <DialogDescription>
                 Everything you have here, on prem and for a whole team.
