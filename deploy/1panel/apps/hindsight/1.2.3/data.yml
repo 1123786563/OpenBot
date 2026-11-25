@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 18888
       required: true
+      edit: true
       rule: paramPort
       label:
         en: HTTP port (Required)

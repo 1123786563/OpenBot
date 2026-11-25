@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 4200
       required: true
+      edit: true
       rule: paramPort
       label:
         en: Bot AG-UI port (Required)
@@ -20,6 +21,7 @@ additionalProperties:
       type: number
       default: 4201
       required: true
+      edit: true
       rule: paramPort
       label:
         en: LangGraph AG-UI port (Required)
@@ -36,6 +38,7 @@ additionalProperties:
       type: number
       default: 4100
       required: true
+      edit: true
       rule: paramPort
       label:
         en: Computer port (Required)
@@ -52,6 +55,7 @@ additionalProperties:
       type: number
       default: 4500
       required: true
+      edit: true
       rule: paramPort
       label:
         en: Supervisor port (Required)
@@ -68,6 +72,7 @@ additionalProperties:
       type: text
       default: openbot-agent-bot:1panel
       required: true
+      edit: true
       label:
         en: Bot image (Required)
         es-es: Bot image (Obligatorio)
@@ -83,6 +88,7 @@ additionalProperties:
       type: text
       default: openbot-agent-langgraph:1panel
       required: true
+      edit: true
       label:
         en: LangGraph image (Required)
         es-es: LangGraph image (Obligatorio)
@@ -98,6 +104,7 @@ additionalProperties:
       type: text
       default: openbot-agent-computer:1panel
       required: true
+      edit: true
       label:
         en: Computer image (Required)
         es-es: Computer image (Obligatorio)
@@ -113,6 +120,7 @@ additionalProperties:
       type: text
       default: openbot-supervisor:1panel
       required: true
+      edit: true
       label:
         en: Supervisor image (Required)
         es-es: Supervisor image (Obligatorio)
@@ -128,6 +136,7 @@ additionalProperties:
       type: password
       default: ""
       required: true
+      edit: true
       label:
         en: Model API key (Required)
         es-es: Model API key (Obligatorio)
@@ -143,6 +152,7 @@ additionalProperties:
       type: text
       default: ""
       required: false
+      edit: true
       label:
         en: Model API base URL
         es-es: Model API base URL
@@ -158,6 +168,7 @@ additionalProperties:
       type: text
       default: gpt-5.5
       required: true
+      edit: true
       label:
         en: LangGraph model (Required)
         es-es: LangGraph model (Obligatorio)
@@ -173,6 +184,7 @@ additionalProperties:
       type: text
       default: gpt-5.5
       required: true
+      edit: true
       label:
         en: Bot model (Required)
         es-es: Bot model (Obligatorio)
@@ -189,6 +201,7 @@ additionalProperties:
       default: OpenBotAgent
       random: true
       required: true
+      edit: true
       label:
         en: Managed Agent token (Required)
         es-es: Managed Agent token (Obligatorio)
@@ -205,6 +218,7 @@ additionalProperties:
       default: OpenBotAgent
       random: true
       required: true
+      edit: true
       label:
         en: Computer token (Required)
         es-es: Computer token (Obligatorio)
@@ -221,6 +235,7 @@ additionalProperties:
       default: OpenBotAgent
       random: true
       required: true
+      edit: true
       label:
         en: Supervisor token (Required)
         es-es: Supervisor token (Obligatorio)
@@ -237,6 +252,7 @@ additionalProperties:
       default: OpenBotAgent
       random: true
       required: true
+      edit: true
       label:
         en: Agent tool callback token (Required)
         es-es: Agent tool callback token (Obligatorio)
@@ -252,6 +268,7 @@ additionalProperties:
       type: text
       default: http://openbot:3001/api/agent-tools/call
       required: true
+      edit: true
       label:
         en: OpenBot tool callback URL (Required)
         es-es: OpenBot tool callback URL (Obligatorio)
