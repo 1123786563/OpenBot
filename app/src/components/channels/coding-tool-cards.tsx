@@ -1,3 +1,6 @@
+import { Button } from "@astryxdesign/core/Button";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconChevronDown,
   IconChevronUp,
@@ -11,9 +14,8 @@ import {
 } from "@tabler/icons-react";
 import { structuredPatch } from "diff";
 import { type ReactNode, useState } from "react";
-import { byPosition } from "@/components/gallery/positions";
 import { Badge, GalleryFrame } from "@/components/gallery/frame";
-import { Button } from "@/components/ui/button";
+import { byPosition } from "@/components/gallery/positions";
 import type { Look } from "@/lib/copilot/coding-calls";
 import { asText, flaggedFailure } from "@/lib/plugins/tool-result";
 import { cn } from "@/lib/utils";
@@ -79,7 +81,7 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-/** The name of the file, which is what a person scans for; the whole path is its tooltip. */
+/** The name of the file, which is what a person scans for; the whole path is its accessible name. */
 function fileName(path: string | undefined): string {
   return path?.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
 }
@@ -103,23 +105,43 @@ function CodingFrame({
   children?: ReactNode;
 }) {
   return (
-    <section
+    <Stack
+      as="section"
       aria-label={label}
-      className="my-1.5 flex w-full min-w-0 flex-col gap-2 rounded-xl border border-border bg-sidebar p-2"
+      className="my-1.5 w-full min-w-0 rounded-xl border border-border bg-sidebar p-2"
+      gap={2}
     >
-      <header className="flex h-8 min-w-0 items-center gap-2 px-1 text-xs">
-        <span aria-hidden className="shrink-0 text-muted-foreground">
+      <Stack
+        as="header"
+        direction="horizontal"
+        align="center"
+        className="h-8 min-w-0 px-1 text-xs"
+        gap={2}
+      >
+        <Text
+          as="span"
+          aria-hidden
+          className="shrink-0"
+          color="secondary"
+          type="inherit"
+        >
           {icon}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono">{title}</span>
+        </Text>
+        <Text
+          as="span"
+          className="min-w-0 flex-1 truncate font-mono"
+          type="inherit"
+        >
+          {title}
+        </Text>
         {aside}
-      </header>
+      </Stack>
       {children ? (
-        <div className="min-w-0 overflow-hidden rounded-md border border-border bg-background">
+        <Stack className="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           {children}
-        </div>
+        </Stack>
       ) : null}
-    </section>
+    </Stack>
   );
 }
 
@@ -134,23 +156,35 @@ function OutcomeStatus({
 }) {
   if (outcome.state === "running")
     return (
-      <span className="tool-line-running shrink-0 text-xs text-muted-foreground">
+      <Text
+        as="span"
+        className="tool-line-running shrink-0 text-xs"
+        color="secondary"
+        type="inherit"
+      >
         {running}
-      </span>
+      </Text>
     );
   if (outcome.state === "stopped")
     return (
-      <span className="shrink-0 text-xs text-muted-foreground">
+      <Text
+        as="span"
+        className="shrink-0 text-xs"
+        color="secondary"
+        type="inherit"
+      >
         Not completed
-      </span>
+      </Text>
     );
   if (outcome.state === "failed")
     return (
-      <span className="shrink-0 text-xs text-amber-600 dark:text-amber-500">
-        {outcome.exitCode === undefined
-          ? "Didn't work"
-          : `Exit code ${outcome.exitCode}`}
-      </span>
+      <Stack as="span" className="shrink-0 text-xs text-(--color-text-warning)">
+        <Text as="span" color="inherit" type="inherit">
+          {outcome.exitCode === undefined
+            ? "Didn't work"
+            : `Exit code ${outcome.exitCode}`}
+        </Text>
+      </Stack>
     );
   return null;
 }
@@ -176,16 +210,17 @@ function Folded({
       {folds ? (
         <Button
           aria-expanded={open}
-          className="mx-1.5 mb-1.5 text-muted-foreground"
+          className="mx-1.5 mb-1.5"
+          icon={open ? <IconChevronUp /> : <IconChevronDown />}
+          label={
+            open
+              ? "Show less"
+              : `Show ${plural(total - limit, "more line", "more lines")}`
+          }
           onClick={() => setOpen((was) => !was)}
-          size="xs"
+          size="sm"
           variant="ghost"
-        >
-          {open ? <IconChevronUp /> : <IconChevronDown />}
-          {open
-            ? "Show less"
-            : `Show ${plural(total - limit, "more line", "more lines")}`}
-        </Button>
+        />
       ) : null}
     </>
   );
@@ -207,7 +242,11 @@ export function CommandCard({
       aside={<OutcomeStatus outcome={outcome} running="Running" />}
       icon={<IconTerminal2 className="size-4" />}
       label="Ran a command"
-      title={<span title={command}>{command}</span>}
+      title={
+        <Text as="span" type="inherit">
+          {command}
+        </Text>
+      }
     >
       {lines.length ? (
         <Folded limit={OUTPUT_LINES} total={lines.length}>
@@ -249,16 +288,16 @@ function diffRows(before: string, after: string): DiffRow[] {
   return rows;
 }
 
+// The theme's status colours, so a diff reads the same in light and dark and as every other card.
 const ROW_TONES = {
-  add: "bg-emerald-500/10 dark:bg-emerald-500/15",
-  del: "bg-red-500/10 dark:bg-red-500/15",
+  add: "bg-(--color-success-muted)",
+  del: "bg-(--color-error-muted)",
   same: "text-muted-foreground",
-  gap: "text-muted-foreground",
 } as const;
 
 const MARK_TONES = {
-  add: "text-emerald-700 dark:text-emerald-400",
-  del: "text-red-700 dark:text-red-400",
+  add: "text-(--color-text-success)",
+  del: "text-(--color-text-error)",
 } as const;
 
 const DIFF_ROWS = 12;
@@ -299,17 +338,36 @@ export function DiffCard({
       aside={
         <>
           {replaceAll ? (
-            <span className="shrink-0 text-xs text-muted-foreground">
+            <Text
+              as="span"
+              className="shrink-0 text-xs"
+              color="secondary"
+              type="inherit"
+            >
               All occurrences
-            </span>
+            </Text>
           ) : null}
           {added || removed ? (
-            <span className="flex shrink-0 gap-1.5 font-mono text-xs">
-              {added ? <span className={MARK_TONES.add}>+{added}</span> : null}
-              {removed ? (
-                <span className={MARK_TONES.del}>−{removed}</span>
+            <Stack
+              direction="horizontal"
+              className="shrink-0 font-mono text-xs"
+              gap={1.5}
+            >
+              {added ? (
+                <Stack as="span" className={MARK_TONES.add}>
+                  <Text as="span" color="inherit" type="inherit">
+                    +{added}
+                  </Text>
+                </Stack>
               ) : null}
-            </span>
+              {removed ? (
+                <Stack as="span" className={MARK_TONES.del}>
+                  <Text as="span" color="inherit" type="inherit">
+                    −{removed}
+                  </Text>
+                </Stack>
+              ) : null}
+            </Stack>
           ) : null}
           <OutcomeStatus
             outcome={outcome}
@@ -319,7 +377,11 @@ export function DiffCard({
       }
       icon={<Icon className="size-4" />}
       label={kind === "write" ? "Wrote a file" : "Edited a file"}
-      title={<span title={path}>{fileName(path)}</span>}
+      title={
+        <Text as="span" aria-label={path} type="inherit">
+          {fileName(path)}
+        </Text>
+      }
     >
       {rows.length ? (
         <Folded limit={DIFF_ROWS} total={rows.length}>
@@ -328,45 +390,57 @@ export function DiffCard({
              * Lines keep their indentation and scroll sideways, as a code block's do. The inner box is
              * as wide as the longest line, so a tinted row is tinted all the way across.
              */
-            <div className="overflow-x-auto py-1.5 font-mono text-xs leading-5">
-              <div className="w-max min-w-full">
+            <Stack className="overflow-x-auto py-1.5 font-mono text-xs leading-5">
+              <Stack className="w-max min-w-full">
                 {byPosition(rows.slice(0, shown)).map(({ item: row, key }) =>
                   row.kind === "gap" ? (
-                    <div
+                    <Stack
                       aria-hidden
-                      className={cn("px-3", ROW_TONES.gap)}
+                      className="px-3 text-muted-foreground"
                       key={key}
                     >
                       ⋯
-                    </div>
+                    </Stack>
                   ) : (
-                    <div className={cn("flex", ROW_TONES[row.kind])} key={key}>
-                      <span
+                    <Stack
+                      direction="horizontal"
+                      className={ROW_TONES[row.kind]}
+                      key={key}
+                    >
+                      <Stack
+                        as="span"
                         aria-hidden
                         className={cn(
                           "w-6 shrink-0 select-none text-center",
                           row.kind === "same" ? "" : MARK_TONES[row.kind],
                         )}
                       >
-                        {row.kind === "add"
-                          ? "+"
-                          : row.kind === "del"
-                            ? "−"
-                            : ""}
-                      </span>
-                      <span className="flex-1 whitespace-pre pr-3">
+                        <Text as="span" color="inherit" type="inherit">
+                          {row.kind === "add"
+                            ? "+"
+                            : row.kind === "del"
+                              ? "−"
+                              : ""}
+                        </Text>
+                      </Stack>
+                      <Text
+                        as="span"
+                        className="flex-1 whitespace-pre pr-3"
+                        color="inherit"
+                        type="inherit"
+                      >
                         {row.kind === "same" ? null : (
-                          <span className="sr-only">
+                          <Text as="span" className="sr-only" type="inherit">
                             {row.kind === "add" ? "Added: " : "Removed: "}
-                          </span>
+                          </Text>
                         )}
                         {row.text || " "}
-                      </span>
-                    </div>
+                      </Text>
+                    </Stack>
                   ),
                 )}
-              </div>
-            </div>
+              </Stack>
+            </Stack>
           )}
         </Folded>
       ) : null}
@@ -411,12 +485,15 @@ export function TodoCard({ todos }: { todos: readonly Todo[] }) {
             todo.status && todo.status in TODO_STATES ? todo.status : "pending";
           return (
             <li className="flex items-start gap-2.5 text-sm" key={key}>
-              <span
+              <Stack
+                as="span"
                 aria-hidden
+                align="center"
+                justify="center"
                 className={cn(
-                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[5px] border text-[10px]",
+                  "mt-0.5 size-4 shrink-0 rounded-(--radius-inner) border text-(--font-size-2xs)",
                   status === "completed"
-                    ? "border-transparent bg-emerald-500 text-white"
+                    ? "border-transparent bg-(--color-success) text-(--color-on-success)"
                     : status === "in_progress"
                       ? "border-foreground/60"
                       : "border-border",
@@ -425,20 +502,27 @@ export function TodoCard({ todos }: { todos: readonly Todo[] }) {
                 {status === "completed" ? (
                   "✓"
                 ) : status === "in_progress" ? (
-                  <span className="size-1.5 rounded-full bg-foreground" />
+                  <Stack
+                    as="span"
+                    className="size-1.5 rounded-full bg-foreground"
+                  />
                 ) : null}
-              </span>
-              <span
+              </Stack>
+              <Text
+                as="span"
                 className={cn(
                   "min-w-0",
-                  status === "completed" &&
-                    "text-muted-foreground line-through",
-                  status === "in_progress" && "font-medium",
+                  status === "completed" && "line-through",
                 )}
+                color={status === "completed" ? "secondary" : "primary"}
+                type="inherit"
+                weight={status === "in_progress" ? "medium" : undefined}
               >
                 {todo.content}
-                <span className="sr-only">, {TODO_STATES[status]}</span>
-              </span>
+                <Text as="span" className="sr-only" type="inherit">
+                  , {TODO_STATES[status]}
+                </Text>
+              </Text>
             </li>
           );
         })}

@@ -16,6 +16,7 @@ import {
 } from "@testing-library/react";
 import { Composer } from "@/components/channels/composer/composer";
 import type { ComposerDraft } from "@/components/channels/composer/draft";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -117,9 +118,7 @@ async function uploaded(
 ) {
   await waitFor(() => {
     expect(queryByLabelText(`Remove ${name}`)).not.toBeNull();
-    expect((getByLabelText("Send message") as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect(isDisabled(getByLabelText("Send message"))).toBe(false);
   });
 }
 
@@ -158,9 +157,7 @@ test("a send in flight takes its attachment off the composer, so a second press 
   // twice for the length of the run, and `canSendDraft` unlocks on attachments alone, so the empty
   // text box was not what kept the button from going again.
   expect(queryByLabelText("Remove notes.txt")).toBeNull();
-  expect((getByLabelText("Send message") as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(isDisabled(getByLabelText("Send message"))).toBe(true);
 
   // The press that used to queue the identical attachment ids into a second user message.
   fireEvent.submit(form);

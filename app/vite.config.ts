@@ -213,11 +213,23 @@ export const routeBuildRollupOutputOptions = {
   manualChunks: selectOpenBotManualChunk,
 };
 
+// The SDK entry also imports its global UI CSS as a side effect.
+function omitCopilotkitUiStyles(): Plugin {
+  return {
+    name: "openbot-omit-copilotkit-ui-styles",
+    enforce: "pre",
+    load(id) {
+      if (id.endsWith("/@copilotkit/react-core/dist/v2/index.css")) return "";
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     // Mode "server" makes Vite read `.env` and `.env.server` side by side: the two files the server is
     // started with.
     thisMachineOnly(loadEnv("server", settingsDir, "")),
+    omitCopilotkitUiStyles(),
     announceServerPort(apiPort.port),
     tanstackRouter({
       autoCodeSplitting: true,
@@ -226,6 +238,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  // Serve this entry through the plugin in dev as well as during builds.
+  optimizeDeps: { exclude: ["@copilotkit/react-core/v2"] },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

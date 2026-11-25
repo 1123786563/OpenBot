@@ -8,7 +8,6 @@ import { router } from "./router";
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "@astryxdesign/theme-neutral/theme.css";
-import "@copilotkit/react-core/v2/styles.css";
 import "./styles.css";
 
 // Speaks the language this browser opens in before the first frame, not after it.

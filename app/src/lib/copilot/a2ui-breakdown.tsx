@@ -1,13 +1,11 @@
-import { Slider } from "@base-ui/react/slider";
-import { useId, useState } from "react";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Slider } from "@astryxdesign/core/Slider";
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { useState } from "react";
 import { z } from "zod";
 import { SERIES_COLOURS } from "@/components/gallery/palette";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import { cn } from "@/lib/utils";
 
 const part = z.object({
   label: z.string().describe("What this part is, e.g. Lodging"),
@@ -138,8 +136,9 @@ function useScale(largest: number, max: number | undefined) {
  * task was grey sliders or number boxes and a line of black text adding them up. Nothing tied a
  * control to its share of the total, and the controls could not be coloured by part because a
  * slider does not know which total it belongs to. Here one component holds the parts, so a part's
- * colour is the same on its swatch, its slider and its slice of the bar, and the total and the
- * shares are computed here as the person edits, with no `calc` expression for the Bot to get wrong.
+ * colour is the same on its swatch and its slice of the bar, and the total and the shares are
+ * computed here as the person edits, with no `calc` expression for the Bot to get wrong. The
+ * sliders are Astryx's and take the theme's accent: Astryx's slider has no colour of its own.
  *
  * The colours are the gallery's series colours, so a part reads the same as a slice of a donut
  * chart. `items` is writable: bound to the data model, every edit is written back there.
@@ -182,7 +181,6 @@ export function A2UIBreakdown({
   const { top, step } = useScale(Math.max(0, ...amounts), max);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [active, setActive] = useState<number | null>(null);
-  const baseId = useId();
 
   const write = (index: number, amount: number) => {
     setItems(
@@ -192,138 +190,126 @@ export function A2UIBreakdown({
   const shares = wholeShares(amounts, shown);
 
   return (
-    <div
-      className="openbot-breakdown flex w-full min-w-0 flex-col gap-4"
-      data-slot="breakdown"
-    >
-      <div className="flex flex-col gap-2.5">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            {totalLabel?.trim() || "Total"}
-          </p>
-          <p
-            aria-live="polite"
-            className="text-3xl leading-tight font-semibold tracking-tight tabular-nums"
-            data-slot="breakdown-total"
-          >
-            {format(total)}
-          </p>
-        </div>
+    <Stack data-slot="breakdown" direction="vertical" gap={4}>
+      <Stack direction="vertical" gap={2}>
+        <Text type="supporting">{totalLabel?.trim() || "Total"}</Text>
+        <Text
+          aria-live="polite"
+          data-slot="breakdown-total"
+          hasTabularNumbers
+          weight="semibold"
+        >
+          {format(total)}
+        </Text>
         {/* The rows below name every share in words, so the bar is a picture of them. */}
-        <div
+        <Stack
           aria-hidden="true"
-          className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-muted"
           data-slot="breakdown-bar"
+          direction="horizontal"
+          gap={0.5}
+          style={{
+            blockSize: "var(--spacing-2)",
+            inlineSize: "100%",
+            borderRadius: "var(--radius-full)",
+            background: "var(--color-background-muted)",
+            overflow: "hidden",
+          }}
         >
           {amounts.map((amount, index) =>
             amount > 0 ? (
-              <div
-                className={cn(
-                  "h-full min-w-1 rounded-[3px] transition-[flex-grow,opacity] duration-300 ease-out first:rounded-l-full last:rounded-r-full motion-reduce:transition-none",
-                  active !== null && active !== index && "opacity-35",
-                )}
+              <Stack
                 data-part={items[index]?.label ?? ""}
                 // biome-ignore lint/suspicious/noArrayIndexKey: a part is its position; its label is still being written while the Bot streams it.
                 key={index}
-                onPointerEnter={() => setActive(index)}
-                onPointerLeave={() => setActive(null)}
-                style={{ background: colourAt(index), flexGrow: amount }}
+                style={{
+                  background: colourAt(index),
+                  flexGrow: amount,
+                  minInlineSize: "var(--spacing-1)",
+                  opacity:
+                    active !== null && active !== index ? 0.35 : undefined,
+                }}
               />
             ) : null,
           )}
-        </div>
-      </div>
+        </Stack>
+      </Stack>
 
-      <ul className="flex flex-col gap-4">
+      <Stack direction="vertical" gap={4}>
         {items.map((entry, index) => {
           const amount = amounts[index] ?? 0;
           const colour = colourAt(index);
-          const id = `${baseId}-${index}`;
           const label = typeof entry?.label === "string" ? entry.label : "";
+          const edit = (text: string) => {
+            setDrafts((current) => ({ ...current, [index]: text }));
+            // A box being cleared counts as nothing until a new amount is typed.
+            const number = text.trim() === "" ? 0 : Number(text);
+            if (Number.isFinite(number)) write(index, Math.max(0, number));
+          };
+          const slide = (value: number) => {
+            setDrafts(({ [index]: _, ...rest }) => rest);
+            write(index, value);
+          };
           return (
-            <li
-              className="flex flex-col gap-1"
+            <Stack
               // biome-ignore lint/suspicious/noArrayIndexKey: as above, a part is its position.
               key={index}
+              data-slot="breakdown-part"
+              direction="vertical"
+              gap={1}
               onBlur={() => setActive(null)}
               onFocus={() => setActive(index)}
               onPointerEnter={() => setActive(index)}
               onPointerLeave={() => setActive(null)}
             >
-              <div className="flex items-center gap-2">
-                <span
+              <HStack align="center" gap={2}>
+                <Stack
                   aria-hidden="true"
-                  className="size-2.5 shrink-0 rounded-[3px]"
-                  style={{ background: colour }}
+                  style={{
+                    background: colour,
+                    blockSize: "var(--spacing-2)",
+                    inlineSize: "var(--spacing-2)",
+                    borderRadius: "var(--radius-inner)",
+                    flexShrink: 0,
+                  }}
                 />
-                <label
-                  className="min-w-0 flex-1 truncate text-sm font-medium"
-                  htmlFor={id}
-                  title={label}
-                >
+                <Text hasTruncateTooltip maxLines={1}>
                   {label}
-                </label>
-                <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                </Text>
+                <Text hasTabularNumbers type="supporting">
                   {`${shares[index] ?? 0}%`}
-                </span>
-                <InputGroup className="h-8 w-28 shrink-0">
-                  {affix ? (
-                    <InputGroupAddon
-                      align={after ? "inline-end" : "inline-start"}
-                    >
-                      {affix}
-                    </InputGroupAddon>
-                  ) : null}
-                  <InputGroupInput
-                    className="tabular-nums"
-                    id={id}
-                    inputMode="decimal"
-                    min={0}
-                    onBlur={() => setDrafts(({ [index]: _, ...rest }) => rest)}
-                    onChange={(event) => {
-                      const text = event.target.value;
-                      setDrafts((current) => ({ ...current, [index]: text }));
-                      // A box being cleared counts as nothing until a new amount is typed.
-                      const number = text.trim() === "" ? 0 : Number(text);
-                      if (Number.isFinite(number))
-                        write(index, Math.max(0, number));
-                    }}
-                    step="any"
-                    type="number"
-                    value={drafts[index] ?? String(amount)}
-                  />
-                </InputGroup>
-              </div>
-              <Slider.Root
+                </Text>
+                {affix ? (
+                  <Text type="supporting" style={{ order: after ? 1 : -1 }}>
+                    {affix}
+                  </Text>
+                ) : null}
+                <TextInput
+                  data-a2ui-input=""
+                  inputMode="decimal"
+                  isLabelHidden
+                  label={label}
+                  onBlur={() => setDrafts(({ [index]: _, ...rest }) => rest)}
+                  onChange={edit}
+                  size="sm"
+                  value={drafts[index] ?? String(amount)}
+                  width="8rem"
+                />
+              </HStack>
+              <Slider
+                formatValue={format}
+                isLabelHidden
+                label={label}
                 max={top}
                 min={0}
-                onValueChange={(value) => {
-                  setDrafts(({ [index]: _, ...rest }) => rest);
-                  write(index, value);
-                }}
+                onChange={slide}
                 step={step}
-                thumbAlignment="edge"
                 value={Math.min(Math.max(0, amount), top)}
-              >
-                <Slider.Control className="flex h-5 w-full touch-none items-center select-none">
-                  <Slider.Track className="h-1.5 w-full rounded-full bg-muted">
-                    <Slider.Indicator
-                      className="rounded-full"
-                      style={{ background: colour }}
-                    />
-                    <Slider.Thumb
-                      className="size-4 rounded-full border-2 bg-card shadow-sm outline-none transition-[box-shadow] has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                      getAriaLabel={() => label}
-                      getAriaValueText={() => format(amount)}
-                      style={{ borderColor: colour }}
-                    />
-                  </Slider.Track>
-                </Slider.Control>
-              </Slider.Root>
-            </li>
+                valueDisplay="none"
+              />
+            </Stack>
           );
         })}
-      </ul>
-    </div>
+      </Stack>
+    </Stack>
   );
 }

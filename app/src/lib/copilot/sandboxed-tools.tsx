@@ -10,7 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import * as z from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
-import { RefusedCard } from "@/components/gallery/refused";
+import { SandboxHost } from "@/components/gallery/sandbox-host";
 import {
   agentComponentsQueryOptions,
   decideComponent,
@@ -27,6 +27,9 @@ import {
   type PublishedSandboxed,
   publishedSandboxedQueryOptions,
 } from "@/lib/sandboxed/queries";
+
+/** In a conversation the frame keeps the spacing of the tool cards around it. */
+const IN_CONVERSATION = { className: "my-2" } as const;
 
 /**
  * Browser-authored components use the same component grants as compiled gallery components, but
@@ -111,14 +114,18 @@ function SandboxedTool({
       const refusal = props.toolCallId
         ? refusals.get(props.toolCallId)
         : undefined;
-      if (refusal) {
-        return <RefusedCard reason={refusal} title={component.name} />;
-      }
-      if (!isHeld) {
+      if (refusal || !isHeld) {
         return (
-          <RefusedCard
-            reason={`${component.name} is not available to this Bot at the moment. An administrator grants components per Bot.`}
+          <SandboxHost
+            status={{
+              kind: "refused",
+              message: `Not shown: ${component.name}`,
+              description:
+                refusal ??
+                `${component.name} is not available to this Bot at the moment. An administrator grants components per Bot.`,
+            }}
             title={component.name}
+            {...IN_CONVERSATION}
           />
         );
       }
@@ -129,7 +136,7 @@ function SandboxedTool({
       }
 
       return (
-        <div className="my-2">
+        <SandboxHost title={component.name} {...IN_CONVERSATION}>
           <OpenGenerativeUIActivityRenderer
             activityType="open-generative-ui"
             agent={null}
@@ -145,7 +152,7 @@ function SandboxedTool({
             key={JSON.stringify(props.args ?? {})}
             message={null}
           />
-        </div>
+        </SandboxHost>
       );
     },
     [component, isHeld, refusals],

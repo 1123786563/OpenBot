@@ -98,7 +98,9 @@ function childIndex(container: HTMLElement, element: Element): number {
 }
 
 function contentsBlock(container: HTMLElement): Element {
-  return content(container).querySelector(":scope > .contents") as Element;
+  return content(container).querySelector(
+    ":scope > [data-transcript-tail]",
+  ) as Element;
 }
 
 test("page arithmetic", () => {

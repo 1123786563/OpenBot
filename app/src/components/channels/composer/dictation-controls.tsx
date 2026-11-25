@@ -1,3 +1,7 @@
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { HStack, Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   IconArrowUp,
   IconLoader2,
@@ -7,13 +11,13 @@ import {
 } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
 import { LiveWaveform } from "@/components/ui/live-waveform";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { useDictation } from "./use-dictation";
 
 type Dictation = ReturnType<typeof useDictation>;
+const MotionStack = motion.create(Stack);
 
 export function DictationButton({
   dictation,
@@ -35,23 +39,21 @@ export function DictationButton({
       />
     );
   return (
-    <Button
-      aria-label="Dictate a message"
+    <IconButton
       data-slot="composer-dictate"
-      title={
+      icon={<IconMicrophone className="size-4" />}
+      isDisabled={disabled || !dictation.supported || dictation.busy}
+      label="Dictate a message"
+      onClick={() => void dictation.session.start()}
+      size="sm"
+      tooltip={
         dictation.supported
           ? "Dictate a message"
           : "Dictation needs a supported browser and a secure (HTTPS) connection"
       }
-      className="size-8 shrink-0 self-end rounded-full"
-      disabled={disabled || !dictation.supported || dictation.busy}
-      onClick={() => void dictation.session.start()}
-      size="icon"
       type="button"
       variant="ghost"
-    >
-      <IconMicrophone className="size-4" />
-    </Button>
+    />
   );
 }
 
@@ -72,56 +74,52 @@ function LiveDictationButton({
   const { session, state, active } = dictation.live;
   if (!active)
     return (
-      <Button
-        aria-label="Dictate a message"
+      <IconButton
         data-slot="composer-dictate"
-        title="Dictate a message"
-        className="size-8 shrink-0 self-end rounded-full"
-        disabled={disabled}
+        icon={<IconMicrophone className="size-4" />}
+        isDisabled={disabled}
+        label="Dictate a message"
         onClick={() => {
           void session.start();
           onStarted?.();
         }}
-        size="icon"
+        size="sm"
+        tooltip="Dictate a message"
         type="button"
         variant="ghost"
-      >
-        <IconMicrophone className="size-4" />
-      </Button>
+      />
     );
   const stopping = state.phase === "stopping";
   return (
-    <Button
-      aria-label={stopping ? "Finishing dictation" : "Stop dictation"}
+    <IconButton
       data-slot="composer-dictate-stop"
       data-state={state.phase}
-      title="Stop dictation"
-      className="relative size-8 shrink-0 self-end rounded-full bg-muted text-foreground hover:bg-muted"
-      disabled={stopping}
+      icon={
+        <>
+          {state.phase === "listening" && (
+            <Stack
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-primary/40 motion-safe:animate-pulse"
+            />
+          )}
+          {stopping ? (
+            <IconLoader2
+              aria-hidden="true"
+              className="size-4 motion-safe:animate-spin"
+            />
+          ) : (
+            <IconPlayerStopFilled className="size-3.5" />
+          )}
+        </>
+      }
+      isDisabled={stopping}
+      label={stopping ? "Finishing dictation" : "Stop dictation"}
       onClick={session.stop}
-      size="icon"
+      size="sm"
+      tooltip="Stop dictation"
       type="button"
       variant="ghost"
-    >
-      {state.phase === "listening" && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-primary/40 motion-safe:animate-pulse"
-        />
-      )}
-      {/*
-       * No fade-in on the icon. Motion starts it at opacity 0 and needs animation frames to show it,
-       * and a Desktop window behind other windows gets none: Stop was there and could not be seen.
-       */}
-      {stopping ? (
-        <IconLoader2
-          aria-hidden="true"
-          className="size-4 motion-safe:animate-spin"
-        />
-      ) : (
-        <IconPlayerStopFilled className="size-3.5" />
-      )}
-    </Button>
+    />
   );
 }
 
@@ -131,37 +129,37 @@ export function LiveDictationNotice({ dictation }: { dictation: Dictation }) {
   if (dictation.mode !== "live") return null;
   if (state.phase === "listening" || state.phase === "stopping")
     return (
-      <span className="sr-only" role="status">
+      <Text className="sr-only" role="status">
         {state.phase === "listening" ? "Listening" : "Finishing dictation"}
-      </span>
+      </Text>
     );
   if (state.phase === "preparing")
     return (
-      <p className="pb-2 text-sm text-muted-foreground" role="status">
+      <Text as="p" className="pb-2 text-muted-foreground text-sm" role="status">
         Waiting for permission to use the microphone and speech recognition.
-      </p>
+      </Text>
     );
   if (state.phase !== "error") return null;
   return (
-    <div className="flex items-start gap-2 pb-2">
-      <p
-        className="min-w-0 flex-1 text-sm text-destructive"
+    <HStack align="start" className="pb-2" gap={2}>
+      <Text
+        as="p"
+        className="min-w-0 flex-1 text-destructive text-sm"
         data-slot="composer-dictate-error"
         role="alert"
       >
         {state.error}
-      </p>
-      <Button
-        aria-label="Dismiss"
-        className="shrink-0"
+      </Text>
+      <IconButton
+        icon={<IconX />}
+        label="Dismiss"
         onClick={session.release}
-        size="icon-xs"
+        size="sm"
+        tooltip="Dismiss"
         type="button"
         variant="ghost"
-      >
-        <IconX />
-      </Button>
-    </div>
+      />
+    </HStack>
   );
 }
 
@@ -178,11 +176,10 @@ export function DictationSurface({
   className?: string;
 }) {
   return (
-    <div className={cn("min-w-0", className)}>
-      <div className="relative min-w-0">
-        <div
+    <Stack className={cn("min-w-0", className)}>
+      <Stack className="relative min-w-0">
+        <Stack
           aria-hidden={dictation.busy || undefined}
-          inert={dictation.busy}
           className={cn(
             /*
              * NO TRANSLATE AT REST, NOT EVEN ZERO. Tailwind's `translate-y-0` sets the `translate`
@@ -199,14 +196,15 @@ export function DictationSurface({
               ? "pointer-events-none -translate-y-1 opacity-0"
               : "opacity-100",
           )}
+          inert={dictation.busy}
         >
           {children}
-        </div>
+        </Stack>
         {dictation.busy && (
           <RecordingControls dictation={dictation} canSend={canSend} />
         )}
-      </div>
-    </div>
+      </Stack>
+    </Stack>
   );
 }
 
@@ -232,130 +230,130 @@ function RecordingControls({
   const arrive = { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 3 };
   const time = `${Math.floor(state.seconds / 60)}:${String(state.seconds % 60).padStart(2, "0")}`;
   return (
-    <motion.div
-      initial={{ opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 4 }}
+    <MotionStack
       animate={{ opacity: 1, y: 0 }}
+      className="absolute inset-0 min-w-0"
+      direction="horizontal"
+      gap={3}
+      initial={{ opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 4 }}
       transition={transition}
-      className="absolute inset-0 flex min-w-0 items-center gap-3"
+      vAlign="center"
     >
-      <Button
-        ref={cancel}
-        aria-label="Cancel dictation"
+      <IconButton
         data-slot="composer-dictate-cancel"
-        title="Cancel dictation"
-        size="icon"
+        icon={<IconX className="size-4" />}
+        label="Cancel dictation"
+        onClick={session.cancel}
+        ref={cancel}
+        size="sm"
+        tooltip="Cancel dictation"
         type="button"
         variant="ghost"
-        className="size-8 shrink-0 rounded-full"
-        onClick={session.cancel}
-      >
-        <IconX className="size-4" />
-      </Button>
-      <motion.div
+      />
+      <MotionStack
+        animate={{ opacity: 1, y: 0 }}
+        className="max-h-full min-w-0 flex-1 overflow-y-auto"
+        initial={arrive}
         key={
           state.phase === "error" || state.phase === "requesting"
             ? state.phase
             : "waveform"
         }
-        initial={arrive}
-        animate={{ opacity: 1, y: 0 }}
         transition={transition}
-        className="max-h-full min-w-0 flex-1 overflow-y-auto"
       >
         {state.phase === "error" ? (
-          <p className="text-sm text-destructive" role="alert">
+          <Text as="p" className="text-destructive text-sm" role="alert">
             {state.error}
-          </p>
+          </Text>
         ) : state.phase === "requesting" ? (
-          <p className="text-sm text-muted-foreground" role="status">
+          <Text as="p" className="text-muted-foreground text-sm" role="status">
             Waiting for microphone permission…
-          </p>
+          </Text>
         ) : (
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="sr-only" role="status">
+          <HStack align="center" className="min-w-0" gap={3}>
+            <Text className="sr-only" role="status">
               {transcribing ? "Transcribing…" : "Listening"}
-            </span>
+            </Text>
             <LiveWaveform
-              stream={state.stream}
-              processing={transcribing}
-              height={28}
               className="flex-1 text-foreground"
+              height={28}
+              processing={transcribing}
+              stream={state.stream}
             />
-            <span
-              role="timer"
+            <Text
               aria-label="Recording duration"
-              className="shrink-0 text-xs text-muted-foreground tabular-nums"
+              className="shrink-0 text-muted-foreground text-xs"
+              hasTabularNumbers
+              role="timer"
             >
               {time}
-            </span>
-          </div>
+            </Text>
+          </HStack>
         )}
-      </motion.div>
-      <motion.div
-        key={state.phase === "error" ? "recovery" : "actions"}
-        initial={arrive}
+      </MotionStack>
+      <MotionStack
         animate={{ opacity: 1, y: 0 }}
-        transition={transition}
         className="shrink-0"
+        initial={arrive}
+        key={state.phase === "error" ? "recovery" : "actions"}
+        transition={transition}
       >
         {state.phase === "error" ? (
           <Button
-            size="sm"
-            type="button"
-            variant="ghost"
+            label={state.canRetry ? "Retry" : "Record again"}
             onClick={() =>
               void (state.canRetry ? session.retry() : session.start())
             }
-          >
-            {state.canRetry ? "Retry" : "Record again"}
-          </Button>
+            size="sm"
+            type="button"
+            variant="ghost"
+          />
         ) : (
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              aria-label="Stop and transcribe"
+          <HStack align="center" className="shrink-0" gap={2}>
+            <IconButton
               data-slot="composer-dictate-stop"
-              title="Stop and add to draft"
-              disabled={!recording}
-              size="icon"
+              icon={<IconPlayerStopFilled className="size-3.5" />}
+              isDisabled={!recording}
+              label="Stop and transcribe"
+              onClick={() => void session.finish("draft")}
+              size="sm"
+              tooltip="Stop and add to draft"
               type="button"
               variant="ghost"
-              className="size-8 rounded-full"
-              onClick={() => void session.finish("draft")}
-            >
-              <IconPlayerStopFilled className="size-3.5" />
-            </Button>
-            <Button
-              aria-label="Transcribe and send"
-              title="Transcribe and send"
-              disabled={!recording || !canSend}
-              size="icon"
-              type="button"
-              className="size-8 rounded-full"
+            />
+            <IconButton
+              icon={
+                <MotionStack
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="inline-flex"
+                  initial={{
+                    opacity: reduceMotion ? 1 : 0,
+                    scale: reduceMotion ? 1 : 0.85,
+                  }}
+                  key={transcribing ? "transcribing" : "send"}
+                  transition={transition}
+                >
+                  {transcribing ? (
+                    <IconLoader2
+                      aria-hidden="true"
+                      className="size-4 motion-safe:animate-spin"
+                    />
+                  ) : (
+                    <IconArrowUp className="size-4" />
+                  )}
+                </MotionStack>
+              }
+              isDisabled={!recording || !canSend}
+              label="Transcribe and send"
               onClick={() => void session.finish("send")}
-            >
-              <motion.span
-                key={transcribing ? "transcribing" : "send"}
-                initial={{
-                  opacity: reduceMotion ? 1 : 0,
-                  scale: reduceMotion ? 1 : 0.85,
-                }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={transition}
-                className="flex"
-              >
-                {transcribing ? (
-                  <IconLoader2
-                    aria-hidden="true"
-                    className="size-4 motion-safe:animate-spin"
-                  />
-                ) : (
-                  <IconArrowUp className="size-4" />
-                )}
-              </motion.span>
-            </Button>
-          </div>
+              size="sm"
+              tooltip="Transcribe and send"
+              type="button"
+              variant="primary"
+            />
+          </HStack>
         )}
-      </motion.div>
-    </motion.div>
+      </MotionStack>
+    </MotionStack>
   );
 }

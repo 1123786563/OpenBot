@@ -15,6 +15,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { Composer } from "@/components/channels/composer/composer";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -115,9 +116,7 @@ async function uploaded(
 ) {
   await waitFor(() => {
     expect(queryByLabelText(`Remove ${name}`)).not.toBeNull();
-    expect((getByLabelText("Send message") as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect(isDisabled(getByLabelText("Send message"))).toBe(false);
   });
 }
 
@@ -127,7 +126,7 @@ test("a composer with a channel offers a file picker behind the plus button", ()
   );
 
   const attach = getByLabelText("Attach a file") as HTMLButtonElement;
-  expect(attach.disabled).toBe(false);
+  expect(isDisabled(attach)).toBe(false);
 
   // The button is only worth anything if it has an input to open. Clicking it must reach a real
   // `<input type="file">` — the one the hook's ref is on — rather than a placeholder.
@@ -330,9 +329,7 @@ test("a disabled composer takes no dropped file, and offers no way to pick one",
 
   // Visibly shut rather than merely ignored: a button that opens a picker whose file will be
   // dropped on the floor is worse than one that says it cannot.
-  expect((getByLabelText("Attach a file") as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(isDisabled(getByLabelText("Attach a file"))).toBe(true);
   expect(
     (container.querySelector('input[type="file"]') as HTMLInputElement)
       .disabled,

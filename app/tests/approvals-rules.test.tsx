@@ -410,7 +410,8 @@ test("a pending change is drawn in the conversation where the action was, and de
     </QueryClientProvider>,
   );
   await view.findByRole("region", { name: "Waiting for your approval" });
-  expect(view.getByText("Click on shop.example")).toBeTruthy();
+  // The card's title, and the same words as the radio group's hidden name.
+  expect(view.getAllByText("Click on shop.example").length).toBeGreaterThan(0);
   // Another call's line is left to its own renderer.
   expect(view.getByText("Filled in field")).toBeTruthy();
   expect(view.queryByText("Clicked on page")).toBeNull();

@@ -257,7 +257,10 @@ test("a decision stopped while it waited keeps the question it asked", async () 
     turn("askApproval", asked, "Error: Human-in-the-loop interaction aborted"),
   );
 
-  expect(await view.findByText("Refund this order?")).toBeTruthy();
+  // Once as the card title, once as the radio group's accessible name.
+  expect(
+    (await view.findAllByText("Refund this order?")).length,
+  ).toBeGreaterThan(0);
   expect(view.queryByText(failure("Approval"))).toBeNull();
 });
 
