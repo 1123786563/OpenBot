@@ -45,10 +45,12 @@ All runs below are from `97c4c2283` on November 25, 2026.
 | Memory, callback and managed-model sweep, ten suites | 96 passed, 3 skipped, 0 failed, 399 assertions. The three skips are the opt-in Hindsight tests, run separately above. |
 | Repository test typecheck | Clean against the frozen baseline of 196 known errors. |
 
-The November 23 run recorded 38 assertions for managed Reflect and 7 for
-native Reflect, and its sweep had one failure in an unchanged billing replay
-test and 34 typecheck errors outside the baseline. Both have since been
-fixed; the sweep and the typecheck above are the current results.
+The November 23 run used a temporary copy of the managed probe with extra
+checks and logged lines, which recorded 38 assertions; the checked-in probe
+records 20. Native Reflect recorded 7 on both days. That run's sweep had one
+failure in a billing replay test whose assertion has since been updated, and
+34 typecheck errors outside the baseline that have since been fixed. The
+sweep and the typecheck above are the current results.
 
 Use the repository test environment with a disposable `TEST_DATABASE_URL`.
 In `server/tests/memory-store.integration.test.ts`, run the two opt-in
