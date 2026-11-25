@@ -948,10 +948,10 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
           try {
             await readNow("closed");
 
-            // Every button is drawn as Astryx writes it, from the theme's colours and with room
-            // around its label. Tailwind's preflight is in a later cascade layer, and left them all
-            // bare text with no inset: the picked chip without a fill, the destructive button not
-            // red, and two chips touching.
+            // Every button is drawn as Astryx writes it, from the theme's colours, with its corners
+            // and with room around its label. Tailwind's preflight is in a later cascade layer, and
+            // left them all bare text with no inset: the picked chip without a fill, the
+            // destructive button not red, square corners, and two chips touching.
             const painted = await surface.evaluate((root) => {
               const probe = document.createElement("span");
               /** A theme colour, resolved where the button is. */
@@ -964,11 +964,24 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
                 (button) => {
                   const style = getComputedStyle(button);
                   const read = (name: string) => colour(button, name);
+                  // The radius Astryx's rule gives a button, resolved from the theme.
+                  probe.style.borderRadius =
+                    "var(--_button-radius, var(--radius-element))";
+                  button.append(probe);
+                  const cornerOfTheme =
+                    getComputedStyle(probe).borderTopLeftRadius;
                   return {
                     label: button.textContent?.trim(),
                     variant: button.getAttribute("data-variant"),
                     fill: style.backgroundColor,
                     ink: style.color,
+                    corner: [
+                      style.borderTopLeftRadius,
+                      style.borderTopRightRadius,
+                      style.borderBottomLeftRadius,
+                      style.borderBottomRightRadius,
+                    ],
+                    cornerOfTheme,
                     // Inset on each side, so a label never touches the edge of its button.
                     inset: [
                       style.paddingTop,
@@ -1009,10 +1022,15 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
             };
             for (const button of painted) {
               const [fill, ink] = paintOf(button);
-              expect(
-                [button.fill, button.ink],
-                `${at}: ${button.variant} "${button.label}"`,
-              ).toEqual([fill, ink]);
+              const which = `${at}: ${button.variant} "${button.label}"`;
+              expect([button.fill, button.ink], which).toEqual([fill, ink]);
+              // Rounded on all four corners, as the theme rounds a button.
+              expect(button.cornerOfTheme, `${which} corner of theme`).not.toBe(
+                "0px",
+              );
+              expect(button.corner, `${which} corners`).toEqual(
+                Array<string>(4).fill(button.cornerOfTheme),
+              );
               for (const side of button.inset)
                 expect(
                   side,
