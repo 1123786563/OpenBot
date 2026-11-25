@@ -239,6 +239,11 @@ const personalSaasMigrations = [
 
 const intelligenceSkillMigrations = [
   [
+    "0160_direct_chat_credit_request",
+    "7798db1d942c0ee3a5426abe4c2a5c50fa02e129ed769ce80d1dceb3878349d8",
+    1795511248832,
+  ],
+  [
     "0112_direct_chat_skill_shares",
     "3ef664cc44b84a6ff20a3a532b629218ce15d6617486ee980e03dc5e425c8928",
     1795444185213,
