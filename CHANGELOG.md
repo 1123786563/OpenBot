@@ -101,8 +101,8 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   offered only where the step never ran. A step that may have run, because its outcome is unknown
   or it could not be carried out, says to check whether it happened first. A computer step keeps its
   own card once its request has ended. Each answer's description also says that the Bot carries on
-  in the same conversation afterwards. A fast double press on a decision sends it once; the server
-  refuses a second decision on the same request.
+  in the same conversation afterwards. A decision is sent once: a fast double press, or a press
+  while the card folds away, sends nothing more, and one the server refused can be sent again.
 - **A conversation you can no longer read offers the way back.** When your access to a conversation
   ends, a group conversation refuses to open, or a conversation page cannot open at all, the page
   now says why and links to Home instead of leaving you with a Retry that can never succeed.
