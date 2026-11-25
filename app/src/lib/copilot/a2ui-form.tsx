@@ -2,6 +2,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Stack } from "@astryxdesign/core/Stack";
 import {
   type GenerativeUIComponentProps,
+  type GenerativeUIInvokeResult,
   type GenerativeUITheme,
   type standardUI,
   useGenerativeUIAccessibility,
@@ -27,7 +28,17 @@ type Control<Name extends keyof (typeof standardUI)["definitions"] & string> =
 export const FormFailures = createContext({
   failed: false,
   count: (_change: number) => {},
+  /** Says an event of this form was not sent because the Bot is still replying. */
+  notSent: () => {},
 });
+
+/**
+ * Whether the SDK dropped an event because the Bot was still replying. It reports that on the
+ * result of the event and nowhere else, so the control that sent it is the one that can say so.
+ */
+export function droppedWhileRunning(result: GenerativeUIInvokeResult) {
+  return !result.ok && result.error.code === "agent_busy";
+}
 
 /**
  * The error state for a part of a reply that could not be drawn. It says what is missing and the
@@ -64,6 +75,8 @@ export function A2UIForm(props: Control<"Form">) {
   const element = useRef<HTMLFormElement>(null);
   const [failed, setFailed] = useState(0);
   const [undrawn, setUndrawn] = useState(0);
+  const [unsent, setUnsent] = useState(false);
+  const notSent = useRef(() => setUnsent(true)).current;
   const count = useRef((_change: number) =>
     setFailed((total) => total + _change),
   ).current;
@@ -90,7 +103,7 @@ export function A2UIForm(props: Control<"Form">) {
   }, []);
   const broken = failed > 0 || undrawn > 0;
   return (
-    <FormFailures.Provider value={{ failed: broken, count }}>
+    <FormFailures.Provider value={{ failed: broken, count, notSent }}>
       <Stack
         {...aria}
         ref={element}
@@ -103,9 +116,22 @@ export function A2UIForm(props: Control<"Form">) {
         style={layoutStyle(props, theme)}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!broken) props.onSubmit?.({});
+          if (broken) return;
+          // The SDK drops an event that arrives while the Bot is still replying. Say so, or the
+          // person believes the form was sent.
+          void props
+            .onSubmit?.({})
+            .then((result) => setUnsent(droppedWhileRunning(result)));
         }}
       >
+        {unsent && (
+          <Banner
+            role="status"
+            status="warning"
+            title="Nothing was sent. The Bot is still replying."
+            description="Send it again once the reply has finished."
+          />
+        )}
         {undrawn > 0 && <A2UIPartError />}
         {props.children}
       </Stack>
@@ -212,6 +238,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
   const { theme } = useGenerativeUIRuntime() ?? {};
   const container = useRef<HTMLElement>(null);
   const seen = useRef(false);
+  const { notSent } = useContext(FormFailures);
   const { onVisible } = props;
   // `onVisible` is sent once, the first time the container scrolls into view.
   useEffect(() => {
@@ -230,7 +257,10 @@ export function A2UIPressable(props: Control<"Pressable">) {
   const press = () => {
     if (props.disabled) return;
     if (props.href) openActionUrl(props.href);
-    else props.onClick?.({});
+    else
+      void props.onClick?.({}).then((result) => {
+        if (droppedWhileRunning(result)) notSent();
+      });
   };
 
   return (

@@ -162,10 +162,12 @@ function Page({
   ui,
   surfaces,
   children,
+  runningAgent = agent,
 }: {
   ui: Ui;
   surfaces: (commit: (surface: Surface) => void) => void;
   children: ReactNode;
+  runningAgent?: Agent;
 }) {
   const options = generativeUiProviderOptions(true);
   function Commit() {
@@ -204,7 +206,7 @@ function Page({
   }
   return (
     <CopilotKitProvider
-      agents__unsafe_dev_only={{ default: agent }}
+      agents__unsafe_dev_only={{ default: runningAgent }}
       {...options}
       generativeUI={{ ...options.generativeUI, ui }}
     >
@@ -892,6 +894,64 @@ test("SegmentedControl stays as the SDK draws it, reads the theme and writes wha
   ).toBe("true");
   fireEvent.submit(view.container.querySelector("form") as HTMLFormElement);
   expect(sent).toEqual(["Class\n\ntrip: business"]);
+});
+
+test("a form used while the Bot is still replying says nothing was sent, and sends once the reply is over", async () => {
+  sent.length = 0;
+  const running = { ...agent, isRunning: true } as unknown as Agent;
+  const view = render(
+    <Page
+      runningAgent={running}
+      ui={OPENBOT_UI}
+      surfaces={(commit) =>
+        commit({
+          surfaceId: "busy",
+          dataModel: { name: "" },
+          components: [
+            {
+              ...form("root", "sendName", ["name"]),
+              children: ["name", "add", "root-send"],
+            },
+            field("name", "Name"),
+            {
+              id: "add",
+              component: "Button",
+              label: "Add",
+              onClick: { event: { name: "addName" } },
+            },
+            {
+              id: "root-send",
+              component: "Button",
+              label: "Send",
+              submit: true,
+            },
+          ],
+        })
+      }
+    >
+      <GenerativeUISurface id="busy" />
+    </Page>,
+  );
+  const notice = "Nothing was sent. The Bot is still replying.";
+  const name = (await view.findByLabelText("Name")) as HTMLInputElement;
+  await userEvent.setup({ document }).type(name, "Grace");
+
+  // A button and the form's own submit both reach the Bot while it is replying, and are dropped.
+  // The form says so instead of staying quiet.
+  await userEvent
+    .setup({ document })
+    .click(view.getByRole("button", { name: "Add" }));
+  expect(
+    (await view.findByText(notice)).closest(".astryx-banner"),
+  ).toBeTruthy();
+  fireEvent.submit(name.form as HTMLFormElement);
+  expect(sent).toEqual([]);
+
+  // Once the reply is over the same form sends, and the notice goes.
+  running.isRunning = false;
+  fireEvent.submit(name.form as HTMLFormElement);
+  expect(sent).toEqual(["Name\n\nname: Grace"]);
+  await waitFor(() => expect(view.queryByText(notice)).toBeNull());
 });
 
 function BookingPage() {

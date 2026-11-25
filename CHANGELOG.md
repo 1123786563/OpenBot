@@ -21,6 +21,10 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   sizes, a shadow, and an inline or scrollable box are now drawn as the Bot wrote them. Before,
   only the gap, padding, width and height were. A Select now shows the icon and the empty option's
   label a Bot gives it, and a date field takes its share of the width.
+- **A generated form used while the Bot is still replying says nothing was sent.** A form, or a
+  button in one, used while the reply is still being written was dropped in silence. It now shows
+  "Nothing was sent. The Bot is still replying." and asks to send it again once the reply has
+  finished.
 - Settings live in one file per service, and there is no `.env` in the repository root any more:
   `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
   `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model

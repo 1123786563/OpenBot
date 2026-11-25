@@ -26,6 +26,7 @@ import {
 import {
   A2UIForm,
   A2UIPressable,
+  droppedWhileRunning,
   FormFailures,
   openActionUrl,
 } from "./a2ui-form";
@@ -248,7 +249,7 @@ function A2UIButton(props: Control<"Button">) {
   const aria = useGenerativeUIAccessibility();
   const contentId = useId();
   const [copied, setCopied] = useState(false);
-  const { failed } = useContext(FormFailures);
+  const { failed, notSent } = useContext(FormFailures);
   useEffect(() => {
     if (!copied) return;
     const timeout = setTimeout(() => setCopied(false), 1500);
@@ -308,7 +309,9 @@ function A2UIButton(props: Control<"Button">) {
           );
           return;
         }
-        props.onClick?.({});
+        void props.onClick?.({}).then((result) => {
+          if (droppedWhileRunning(result)) notSent();
+        });
       }}
     >
       {child ? (
