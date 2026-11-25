@@ -41,7 +41,6 @@ import {
   CAPABILITY_LABELS,
   type CapabilityRow,
   DEFAULT_CAPABILITIES,
-  isCapability,
 } from "./capabilities";
 import {
   applyCapabilityChanges,
@@ -531,9 +530,10 @@ const UNAVAILABLE = "Admin settings aren't available on this server.";
  *   request that reaches the model is on the trail (`capability.changes_translated`).
  * - `POST /preview`: `{ changes }` in, each member's permissions before and after and the recent use
  *   of what anybody loses (`CapabilityPreview`). Writes nothing.
- * - `POST /batch`: `{ changes, authoring? }`. Refused, with what is wrong, unless every change checks;
- *   then written in one transaction, each switch on the trail as `capability.changed` with what it
- *   was before and the sentence it was written from.
+ * - `POST /batch`: `{ changes, basedOn?, authoring? }`. Refused, with what is wrong, unless every
+ *   change checks, and refused again when `basedOn` is no longer what is stored; then written in one
+ *   transaction together with each switch's `capability.changed` row, which says what it was before
+ *   and the sentence it was written from.
  *
  * Admin only, like every other switch.
  */
@@ -689,12 +689,33 @@ export function createCapabilityChangeRoutes(options: {
       );
 
     const actor = context.var.actor;
-    const before = await controls.store.capabilityRows();
-    const saved = await controls.store.setCapabilities(
-      parsed.changes,
-      actor.email,
-      basedOn?.data,
-    );
+    let saved: boolean;
+    try {
+      saved = await controls.store.setCapabilities(
+        parsed.changes,
+        actor.email,
+        basedOn?.data,
+        {
+          actorId: actor.id,
+          ...(authoring.data ? { authoring: authoring.data } : {}),
+        },
+      );
+    } catch (error) {
+      /*
+       * The switches and their rows commit together, so nothing is in force. Saving again is the
+       * same save, and it records each switch with what it was before.
+       */
+      console.error(
+        JSON.stringify({
+          type: "capability-change-unrecorded",
+          error: String(error),
+        }),
+      );
+      return context.json(
+        { error: "Couldn't save the changes. Nothing changed. Try again." },
+        500,
+      );
+    }
     if (!saved)
       return context.json(
         {
@@ -704,53 +725,6 @@ export function createCapabilityChangeRoutes(options: {
         409,
       );
     await controls.refresh();
-    // One id for the switches saved together, so the trail can put them back together.
-    const batch = crypto.randomUUID();
-    try {
-      for (const change of parsed.changes)
-        await recordAuditEvent(controls.deps.auditStore, {
-          eventType: "capability.changed",
-          targetType: "capability",
-          targetId: change.capability,
-          actorUserId: actor.id,
-          payload: {
-            ...change,
-            title: isCapability(change.capability)
-              ? CAPABILITY_LABELS[change.capability].title
-              : change.capability,
-            by: actor.email,
-            before:
-              before.find(
-                (row) =>
-                  row.scopeKind === change.scopeKind &&
-                  row.scopeId === change.scopeId &&
-                  row.capability === change.capability,
-              )?.allowed ?? null,
-            batch,
-            ...(authoring.data ? { authoring: authoring.data } : {}),
-          },
-        });
-    } catch (error) {
-      /*
-       * The switches are in force and the trail is missing rows. Saying only "couldn't save" would
-       * send the admin away believing nothing changed, so the reply names what did, as a boundary's
-       * does. Saving the same switches again writes the same values and records them.
-       */
-      console.error(
-        JSON.stringify({
-          type: "capability-change-unrecorded",
-          error: String(error),
-        }),
-      );
-      return context.json(
-        {
-          error:
-            "The switches were saved, but Audit couldn't record all of them. Save again to record them.",
-          saved: parsed.changes,
-        },
-        500,
-      );
-    }
     return context.json({ saved: parsed.changes });
   });
 

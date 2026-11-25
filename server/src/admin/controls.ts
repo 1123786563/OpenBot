@@ -26,6 +26,7 @@ import {
   addAuditTap,
   DEPLOYMENT_INITIATOR,
   recordAuditEvent,
+  type TransactionAuditStore,
 } from "../audit";
 import { isConfiguredAdmin } from "../auth/roles";
 import { type ComputerKey, computerKeyText } from "../computer/computer-key";
@@ -85,6 +86,12 @@ export type EnterpriseDeps = {
   database: Database;
   databaseUrl: string;
   auditStore: AuditStore;
+  /**
+   * Where a permission switch's own row goes, given the transaction that writes it: index.ts passes
+   * `createAuditStore` over it. Absent, `auditStore` as it is: a test's own, which keeps a row
+   * whether or not the transaction commits.
+   */
+  auditFor?: TransactionAuditStore;
   auditRunProofKey?: string;
   provider?: ComputerProvider;
   computerToken?: string;
@@ -430,7 +437,10 @@ export async function installEnterpriseControls(
   deps: EnterpriseDeps,
 ): Promise<EnterpriseControls> {
   if (installed) return installed;
-  const store = createEnterpriseStore(deps.database);
+  const store = createEnterpriseStore(
+    deps.database,
+    deps.auditFor ?? (() => deps.auditStore),
+  );
   const env = deps.env ?? process.env;
   let snapshot: Snapshot | undefined;
 

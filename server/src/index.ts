@@ -3700,6 +3700,8 @@ await installEnterpriseControls({
   database,
   databaseUrl: config.databaseUrl,
   auditStore: bootAuditStore,
+  // A permission switch's row commits with the switch it is about.
+  auditFor: createAuditStore,
   auditRunProofKey: config.keyEncryptionKey,
   personBrowserPolicy,
   // While a person records in a Bot's browser, the Recorder there reaches OpenBot and the gateway; the Bot does not.

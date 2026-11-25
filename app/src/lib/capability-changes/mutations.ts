@@ -36,10 +36,10 @@ export const saveCapabilityChangesMutationOptions = (
      * The switches are the Permissions page's, and a Bot's profile says whether its computer of its
      * own is in effect, decided from its owner's "Isolated Bots" switch, as the one-switch save does.
      *
-     * On settled, never on success: the switches commit before their Audit rows, so a save that
-     * answers with an Audit failure has still changed them. Re-reading on both outcomes is the only
-     * way the screen shows what is in force, and it gives a refused save the latest preview to
-     * decide on again. See `lib/plugins/mutations.ts` for the same rule.
+     * On settled, never on success: a save refused because another admin changed a switch (409) has
+     * to show the draft beside the impact of what is in force now, so the admin decides again on the
+     * latest reading. A save that failed changed nothing: the switches and their Audit rows commit
+     * together. See `lib/plugins/mutations.ts` for the same rule.
      */
     onSettled: () =>
       Promise.all([
