@@ -98,11 +98,6 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - **A run you stopped is not shown as an error after a reload.** On `/bot` and in a conversation, a
   run the server stopped at your request came back in red as "The Bot run was stopped." after every
   reload, under the plain "The run was stopped." It now reads "The run was stopped." once.
-- **A run you stopped is not shown as a failure in a conversation with one Bot.** When the run
-  was stopped from another tab while you watched, it came back in red as "The Bot run was
-  stopped." and your message was put back in the box. Your message stays sent, nothing is drawn in
-  red, and the conversation says "The run was stopped." The same holds when you press Stop there
-  yourself.
 - **An approval that ends without your answer says why, and what to do.** No approval expires on
   its own. One ends when you withdraw it (asking is switched off while it waits), when the Bot's
   work is stopped under it, or when the same request is decided in another tab, and the line where
@@ -118,11 +113,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - **A conversation you can no longer read offers the way back.** When your access to a conversation
   ends, a group conversation refuses to open, or a conversation page cannot open at all, the page
   now says why and links to Home instead of leaving you with a Retry that can never succeed.
-- **Stop in a conversation with one Bot stops the run on the server.** Stop used to end only this
-  browser's copy of the turn, and the Bot went on working. It now reads the conversation first and
-  stops the run that is going now. A Stop on a run that had already ended lets this browser's end
-  of the turn go. A stop the server refuses says "The Bot couldn't be stopped. Try again." until
-  you send another message.
+- **Stop in a conversation with one Bot stops the run on the server, and says so.** Stop used to
+  end only this browser's copy of the turn, and the Bot went on working. It now reads the
+  conversation first and stops the run that is going now. Your message stays sent, nothing is drawn
+  in red, and the conversation says "The run was stopped." A run stopped from another tab while you
+  watch reads the same. A Stop on a run that had already ended lets this browser's end of the turn
+  go. A stop the server refuses says "The Bot couldn't be stopped. Try again." until you send
+  another message.
 - **A Bot's own chat (`/bot`) picks up where the Bot left off.** Opening it loads the stored
   conversation, and a read that fails keeps what is on screen and your draft, saying "Couldn't load
   earlier messages." with Try again. After you decide an approval there, the chat shows the Bot
