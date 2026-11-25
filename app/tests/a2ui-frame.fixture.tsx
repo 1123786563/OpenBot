@@ -581,6 +581,14 @@ const TOKEN_PARTS: Component[] = [
     children: ["framed-text"],
   },
   { id: "framed-text", component: "Text", text: "Framed" },
+  {
+    // A border with no colour named: the theme's own default border colour.
+    id: "outlined",
+    component: "Pressable",
+    border: true,
+    children: ["outlined-text"],
+  },
+  { id: "outlined-text", component: "Text", text: "Outlined" },
   ...BACKGROUNDS.map((token, index) => ({
     id: `background-${index}`,
     component: "Form",

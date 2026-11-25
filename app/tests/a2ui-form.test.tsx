@@ -736,7 +736,84 @@ test("a cleared Select shows its clear label before its placeholder, as the cata
   expect(select.textContent).toBe("Any class");
 });
 
-test("a Form and a Pressable take the layout the catalog gives them", async () => {
+test("a Form and a Pressable take the layout the catalog gives them, key by key", async () => {
+  // One container per key, with that key alone, so a row fails when its line in layoutStyle goes.
+  const containers: Record<string, unknown>[] = [
+    { id: "align", component: "Form", label: "Align", align: "end" },
+    {
+      id: "justify",
+      component: "Form",
+      label: "Justify",
+      justify: "spaceBetween",
+    },
+    { id: "wrap", component: "Form", label: "Wrap", wrap: "wrap" },
+    { id: "gap", component: "Form", label: "Gap", gap: 3 },
+    {
+      id: "packed",
+      component: "Form",
+      label: "Packed",
+      disableAutoSpacing: true,
+    },
+    { id: "row-gap", component: "Form", label: "Row gap", rowGap: 2 },
+    {
+      id: "column-gap",
+      component: "Form",
+      label: "Column gap",
+      columnGap: "0.5rem",
+    },
+    { id: "padded", component: "Form", label: "Padded", padding: "1.5rem" },
+    { id: "flush", component: "Form", label: "Flush", flush: true },
+    { id: "width", component: "Form", label: "Width", width: "20rem" },
+    { id: "height", component: "Form", label: "Height", height: "6rem" },
+    {
+      id: "min-width",
+      component: "Form",
+      label: "Minimum width",
+      minWidth: 40,
+    },
+    {
+      id: "max-width",
+      component: "Form",
+      label: "Maximum width",
+      maxWidth: 72,
+    },
+    {
+      id: "min-height",
+      component: "Form",
+      label: "Minimum height",
+      minHeight: 2,
+    },
+    {
+      id: "max-height",
+      component: "Form",
+      label: "Maximum height",
+      maxHeight: 12,
+    },
+    { id: "min-size", component: "Form", label: "Minimum size", minSize: 6 },
+    { id: "max-size", component: "Form", label: "Maximum size", maxSize: 80 },
+    { id: "weight", component: "Form", label: "Weight", weight: 2 },
+    { id: "aspect", component: "Form", label: "Aspect", aspectRatio: "16 / 9" },
+    { id: "scrolls", component: "Form", label: "Scrolls", scrollable: true },
+    { id: "clips", component: "Form", label: "Clips", clip: true },
+    { id: "shadow", component: "Form", label: "Shadow", shadow: true },
+    { id: "round", component: "Form", label: "Round", radius: 8 },
+    {
+      id: "corners",
+      component: "Form",
+      label: "Corners",
+      radius: { topLeft: "0.5rem", bottomRight: "1rem" },
+    },
+    // A pressable has no label of its own: it is named by what it holds.
+    {
+      id: "chip",
+      component: "Pressable",
+      inline: true,
+      padding: "0.5rem",
+      insetBorder: true,
+      children: ["chip-text"],
+    },
+    { id: "chip-text", component: "Text", text: "Chip" },
+  ];
   const view = render(
     <Page
       ui={OPENBOT_UI}
@@ -745,37 +822,12 @@ test("a Form and a Pressable take the layout the catalog gives them", async () =
           surfaceId: "layout",
           dataModel: {},
           components: [
-            { id: "root", component: "Column", children: ["panel", "chip"] },
             {
-              ...form("panel", "sendPanel", []),
-              label: "Panel",
-              maxWidth: 72,
-              rowGap: 2,
-              columnGap: 4,
-              flush: true,
-              background: "surface-secondary",
-              radius: "lg",
-              shadow: true,
-              children: ["panel-send"],
+              id: "root",
+              component: "Column",
+              children: containers.map(({ id }) => id),
             },
-            {
-              id: "panel-send",
-              component: "Button",
-              label: "Send panel",
-              submit: true,
-            },
-            {
-              id: "chip",
-              component: "Pressable",
-              inline: true,
-              border: true,
-              borderColor: "danger",
-              padding: "0.5rem",
-              insetBorder: true,
-              children: ["chip-text"],
-              onClick: { event: { name: "pick" } },
-            },
-            { id: "chip-text", component: "Text", text: "Chip" },
+            ...containers,
           ],
         })
       }
@@ -783,40 +835,97 @@ test("a Form and a Pressable take the layout the catalog gives them", async () =
       <GenerativeUISurface id="layout" />
     </Page>,
   );
-  const panel = (
-    (view.getByRole("button", { name: "Send panel" }) as HTMLButtonElement)
-      .form as HTMLFormElement
-  ).style;
+  const form = (label: string) =>
+    view.container.querySelector(`[aria-label="${label}"]`) as HTMLElement;
   const chip = view.getByRole("button", { name: "Chip" }) as HTMLElement;
-  // The panel's background and corner radius are read in the browser fixture: the SDK writes them
-  // as `var(--token, fallback)`, and happy-dom drops that form for both.
-  for (const [name, style, property, expected] of [
-    ["panel", panel, "maxWidth", "calc(var(--spacing-1) * 72)"],
-    ["panel", panel, "rowGap", "calc(var(--spacing-1) * 2)"],
-    ["panel", panel, "columnGap", "calc(var(--spacing-1) * 4)"],
-    ["panel", panel, "padding", "0"],
-    ["panel", panel, "boxShadow", "var(--a2ui-shadow-sm, var(--shadow-low))"],
-    ["chip", chip.style, "display", "inline-flex"],
+  /** The CSS property as the element holds it. happy-dom drops a declaration it cannot parse. */
+  const read = (element: HTMLElement, property: string) =>
+    (element.style as unknown as Record<string, string>)[property];
+  // A background, a token radius and a border are read computed in the browser fixture: the SDK
+  // writes them as `var(--token, fallback)`, which happy-dom drops for the first two and for the
+  // default border colour. A padding and a width in steps are dropped by happy-dom as well, so
+  // those rows hold CSS lengths; the rows in between cover a number of steps.
+  for (const [name, element, property, expected] of [
+    ["align", form("Align"), "alignItems", "flex-end"],
+    ["justify", form("Justify"), "justifyContent", "space-between"],
+    ["wrap", form("Wrap"), "flexWrap", "wrap"],
+    // A number counts 4px steps.
+    ["gap", form("Gap"), "gap", "calc(var(--spacing-1) * 3)"],
+    ["disableAutoSpacing", form("Packed"), "gap", "0"],
+    ["rowGap", form("Row gap"), "rowGap", "calc(var(--spacing-1) * 2)"],
+    ["columnGap", form("Column gap"), "columnGap", "0.5rem"],
+    ["padding", form("Padded"), "padding", "1.5rem"],
+    ["flush", form("Flush"), "padding", "0px"],
+    ["width", form("Width"), "width", "20rem"],
+    ["height", form("Height"), "height", "6rem"],
     [
-      "chip",
-      chip.style,
-      "--a2ui-color-border-danger",
-      "var(--a2ui-color-border-danger,",
+      "minWidth",
+      form("Minimum width"),
+      "minWidth",
+      "calc(var(--spacing-1) * 40)",
     ],
-    ["chip", chip.style, "padding", "0.5rem"],
     [
-      "chip",
-      chip.style,
+      "maxWidth",
+      form("Maximum width"),
+      "maxWidth",
+      "calc(var(--spacing-1) * 72)",
+    ],
+    [
+      "minHeight",
+      form("Minimum height"),
+      "minHeight",
+      "calc(var(--spacing-1) * 2)",
+    ],
+    [
+      "maxHeight",
+      form("Maximum height"),
+      "maxHeight",
+      "calc(var(--spacing-1) * 12)",
+    ],
+    // A size is both a width and a height.
+    ["minSize", form("Minimum size"), "minWidth", "calc(var(--spacing-1) * 6)"],
+    [
+      "minSize",
+      form("Minimum size"),
+      "minHeight",
+      "calc(var(--spacing-1) * 6)",
+    ],
+    [
+      "maxSize",
+      form("Maximum size"),
+      "maxWidth",
+      "calc(var(--spacing-1) * 80)",
+    ],
+    [
+      "maxSize",
+      form("Maximum size"),
+      "maxHeight",
+      "calc(var(--spacing-1) * 80)",
+    ],
+    ["weight", form("Weight"), "flexGrow", "2"],
+    ["aspectRatio", form("Aspect"), "aspectRatio", "16 / 9"],
+    ["scrollable", form("Scrolls"), "overflow", "auto"],
+    ["clip", form("Clips"), "overflow", "hidden"],
+    [
+      "shadow",
+      form("Shadow"),
+      "boxShadow",
+      "var(--a2ui-shadow-sm, var(--shadow-low))",
+    ],
+    // A radius that is a number is so many pixels.
+    ["radius", form("Round"), "borderRadius", "8px"],
+    ["radius.topLeft", form("Corners"), "borderTopLeftRadius", "0.5rem"],
+    ["radius.bottomRight", form("Corners"), "borderBottomRightRadius", "1rem"],
+    ["inline", chip, "display", "inline-flex"],
+    ["padding", chip, "padding", "0.5rem"],
+    [
+      "insetBorder",
+      chip,
       "boxShadow",
       "inset 0 0 0 1px var(--a2ui-color-border-default)",
     ],
   ] as const)
-    expect(
-      property.startsWith("--")
-        ? style.cssText
-        : (style as unknown as Record<string, string>)[property],
-      `${name} ${property}`,
-    ).toContain(expected);
+    expect(read(element, property), `${name} ${property}`).toBe(expected);
 });
 
 test("Select and DateTimeInput take the props Astryx has an equivalent for", async () => {
@@ -1149,6 +1258,7 @@ test("a Button takes the catalog's href, copy, loading, icon, icon-only and vari
                   "copy",
                   "busy",
                   "pin",
+                  "square",
                   "remove",
                   "plain",
                   "click",
@@ -1186,6 +1296,14 @@ test("a Button takes the catalog's href, copy, loading, icon, icon-only and vari
                 component: "Button",
                 label: "Pin",
                 icon: "pin",
+                uniform: true,
+              },
+              {
+                // Uniform, for a square, but with no icon: there is nothing to fill the square
+                // with, so the label is what the button shows.
+                id: "square",
+                component: "Button",
+                label: "Square",
                 uniform: true,
               },
               {
@@ -1231,9 +1349,14 @@ test("a Button takes the catalog's href, copy, loading, icon, icon-only and vari
         .getByRole("button", { name: "Working" })
         .getAttribute("aria-disabled"),
     ).toBe("true");
-    // An icon-only button is named by its label and draws its icon.
+    // An icon-only button is named by its label, draws its icon, and shows no label as text.
     const pin = view.getByRole("button", { name: "Pin" });
     expect(pin.querySelector("svg")).toBeTruthy();
+    expect(pin.textContent).not.toContain("Pin");
+    // A uniform button with no icon is not icon-only: it keeps its label as its text.
+    const square = view.getByRole("button", { name: "Square" });
+    expect(square.textContent).toBe("Square");
+    expect(square.querySelector("svg")).toBeNull();
     expect(pin.getAttribute("data-variant")).toBe("secondary");
     expect(
       view.getByRole("button", { name: "Remove" }).getAttribute("data-variant"),

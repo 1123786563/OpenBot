@@ -752,9 +752,20 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
           corner: style.borderTopLeftRadius,
         };
       };
+      const outlined = [...frame.querySelectorAll('[role="button"]')].find(
+        (node) => node.textContent?.trim() === "Outlined",
+      );
+      if (!outlined) throw new Error("no outlined pressable");
+      // The theme's default border colour, resolved where the pressable is.
+      const probe = document.createElement("span");
+      outlined.append(probe);
+      probe.style.color = "var(--a2ui-color-border-default)";
+      const themeBorder = getComputedStyle(probe).color;
+      probe.remove();
       return {
         tinted: paint(part('form[aria-label="Tinted"]')),
         framed: paint(part('[role="button"]')),
+        outlined: { border: paint(outlined).border, themeBorder },
         backgrounds: [
           ...frame.querySelectorAll('form[aria-label^="Background "]'),
         ].map((form) => computed(form).backgroundColor),
@@ -787,6 +798,12 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
           // The catalog's two smallest corners, as the SDK names them in pixels.
           expect(paint.tinted.corner, theme).toBe("2px");
           expect(paint.framed.corner, theme).toBe("4px");
+          // A border with no colour named is a border, in the theme's own colour.
+          expect(paint.outlined.border, theme).toEqual([
+            "1px",
+            "solid",
+            paint.outlined.themeBorder,
+          ]);
 
           // No value in the SDK's lists is dropped: each background is painted, each border is a
           // pixel wide, and each corner is round.
