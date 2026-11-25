@@ -8,7 +8,13 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BotsNavBadge } from "@/components/bot-profile/attention";
 import { GroupChat } from "@/components/channels/group-chat";
@@ -60,10 +66,20 @@ function line(
 
 let open = true;
 let showQuestion = true;
+let denied = false;
 let failNextAnswer = false;
 let messages: GroupMessage[] = [];
+/** Runs of their own the Bots are making in the group; undefined when there are none. */
+let background: unknown[] | undefined;
 let answers: unknown[] = [];
 let groupSends: unknown[] = [];
+/** The approval inbox's requests, as `/api/approvals` answers them. */
+let requests: unknown[] = [];
+let decisions: unknown[] = [];
+/** The runs a Bot's thread in the group has, as the thread's read answers them. */
+let threadRuns: unknown[] | undefined;
+/** Each stop this browser asked the server for. */
+let stops: { threadId: string; runId: string; agentId: string }[] = [];
 let originalFetch: typeof fetch;
 
 beforeAll(() => {
@@ -94,6 +110,11 @@ beforeAll(() => {
         ],
       });
     if (url.pathname === `/api/groups/${CHANNEL}`) {
+      if (denied)
+        return Response.json(
+          { error: "This group conversation was not found." },
+          { status: 403 },
+        );
       if (method === "POST") {
         groupSends.push(JSON.parse(String(init?.body)));
         return Response.json({ queued: true }, { status: 202 });
@@ -107,12 +128,13 @@ beforeAll(() => {
           { userId: "me", email: "me@example.test", name: null, creator: true },
         ],
         messages,
+        ...(background ? { backgroundRuns: background } : {}),
       });
     }
     if (url.pathname === "/api/approvals")
       return Response.json({
         enabled: true,
-        requests: [],
+        requests,
         rules: [],
         teamRules: [],
         questions:
@@ -132,6 +154,31 @@ beforeAll(() => {
               ]
             : [],
       });
+    if (url.pathname === "/api/approvals/approval-1/decision") {
+      decisions.push(JSON.parse(String(init?.body)));
+      // Decided: the server carries the turn on, so nothing is waiting on the person.
+      requests = [];
+      return Response.json({ id: "approval-1" });
+    }
+    const thread = url.pathname.match(
+      /^\/api\/copilotkit\/threads\/([^/]+)\/messages$/,
+    );
+    if (thread)
+      return Response.json({
+        messages: [],
+        ...(threadRuns ? { runs: threadRuns } : {}),
+      });
+    const stop = url.pathname.match(
+      /^\/api\/copilotkit\/threads\/([^/]+)\/runs\/([^/]+)\/stop$/,
+    );
+    if (stop) {
+      stops.push({
+        threadId: decodeURIComponent(stop[1] ?? ""),
+        runId: decodeURIComponent(stop[2] ?? ""),
+        agentId: url.searchParams.get("agentId") ?? "",
+      });
+      return Response.json({ stopped: true });
+    }
     if (url.pathname === "/api/bots/attention")
       return Response.json({
         lastPingId: null,
@@ -173,9 +220,15 @@ beforeEach(() => {
   queryClient.clear();
   open = true;
   showQuestion = true;
+  denied = false;
   failNextAnswer = false;
   answers = [];
   groupSends = [];
+  requests = [];
+  decisions = [];
+  threadRuns = undefined;
+  stops = [];
+  background = undefined;
   messages = [
     line(
       "m-1",
@@ -201,10 +254,21 @@ afterAll(async () => {
 });
 
 function conversation() {
+  // A Bot's line can link to its page, which needs a router as the route provides one.
+  const router = createRouter({
+    routeTree: createRootRoute({
+      component: () => (
+        <>
+          <BotsNavBadge />
+          <GroupChat channelId={CHANNEL} />
+        </>
+      ),
+    }),
+    history: createMemoryHistory({ initialEntries: [`/group/${CHANNEL}`] }),
+  });
   return render(
     <QueryClientProvider client={queryClient}>
-      <BotsNavBadge />
-      <GroupChat channelId={CHANNEL} />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }
@@ -270,4 +334,233 @@ test("a failed answer restored after reload still goes to the original question"
   );
   expect(groupSends).toEqual([]);
   await restored.findByText(REPLY);
+});
+
+/*
+ * One vocabulary for the stages a Bot run can be in. A group used to keep its own: "Waiting to
+ * reply", "Run ended". `/bot` and a conversation with one Bot say "Queued" and "The run was
+ * stopped." for the same stored facts, and so does a group now.
+ */
+test("a group names a queued Bot, a working Bot and a stopped run as every conversation does", async () => {
+  showQuestion = false;
+  messages = [
+    line("queued-1", BUDGET, "", "queued"),
+    line("running-1", ERRANDS, "", "running"),
+  ];
+  background = [
+    {
+      id: "run-stopped",
+      agentId: ERRANDS,
+      threadId: "errand-helper-group-thread",
+      status: "failed",
+      waitingForApproval: false,
+      partialReply: null,
+      externalOutcome: null,
+      stopReason: "stopped",
+    },
+  ];
+  const view = conversation();
+
+  expect(await view.findByText("Queued")).toBeTruthy();
+  expect(view.getByText("Thinking")).toBeTruthy();
+  expect(
+    await view.findByText("The run was stopped.", {
+      selector: "[role=status]",
+    }),
+  ).toBeTruthy();
+  expect(view.queryByText("Waiting to reply")).toBeNull();
+  expect(view.queryByText("Run ended")).toBeNull();
+});
+
+test("a group this person can no longer read hides its old messages and offers the way back", async () => {
+  showQuestion = false;
+  messages = [
+    line("before-denied", null, "An old message must not stay here."),
+    line("before-denied:bot", ERRANDS, "", "running"),
+  ];
+  const view = conversation();
+  await view.findByText("An old message must not stay here.");
+
+  denied = true;
+  // The same read a poll or another action would ask for: the server refuses it, and the query
+  // drops its cache rather than leaving this person's old messages on screen.
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: ["groups", CHANNEL] }),
+  );
+  expect(
+    await view.findByRole("link", { name: "Back to Home" }, { timeout: 5_000 }),
+  ).toBeTruthy();
+  expect(view.queryByText("An old message must not stay here.")).toBeNull();
+  expect(view.queryByText("Thinking")).toBeNull();
+  expect(
+    view.getByText("You can't access this group conversation."),
+  ).toBeTruthy();
+  // The only thing left to try is Home, not a Retry that can never be allowed.
+  expect(view.queryByRole("button", { name: "Try again" })).toBeNull();
+});
+
+const ERRANDS_THREAD = "errand-helper-group-thread";
+
+/** An approval waiting on the Errand Helper's thread in the group. */
+function waitingApproval(threadId: string) {
+  return {
+    id: "approval-1",
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    action: {
+      botId: ERRANDS,
+      toolRef: "arcade-GoogleCalendar/CreateEvent",
+      effect: "write",
+      scope: "arcade-GoogleCalendar",
+      threadId,
+      toolCallId: "call-invite",
+      args: { summary: "Spec review" },
+      target: {},
+      policy: {
+        behaviour: "ask",
+        source: "safety",
+        reason: "Sending something to other people asks you first.",
+        kind: "sending",
+      },
+    },
+  };
+}
+
+/*
+ * A Bot working in the group could not be stopped here: the shared composer had no Stop, and the
+ * one stop button there was showed only under a run waiting on an approval. A conversation with one
+ * Bot stops the run on the server by its id, and so does a group now.
+ */
+test("a Bot working in the group can be stopped, and the stop reaches its run on the server", async () => {
+  showQuestion = false;
+  messages = [
+    line("queued-1", BUDGET, "", "queued"),
+    { ...line("running-1", ERRANDS, "", "running"), threadId: ERRANDS_THREAD },
+  ];
+  // The thread's read names the run, as it does for a conversation with one Bot.
+  threadRuns = [
+    {
+      id: "run-live",
+      status: "running",
+      userMessageId: "u-1",
+      assistantMessageId: null,
+    },
+  ];
+  const view = conversation();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+
+  // The Bot waiting its turn has no run to reach, so it is not offered.
+  await user.click(await view.findByRole("button", { name: "Stop the Bot" }));
+  await waitFor(() =>
+    expect(stops).toEqual([
+      { threadId: ERRANDS_THREAD, runId: "run-live", agentId: ERRANDS },
+    ]),
+  );
+  expect(view.queryByRole("alert")).toBeNull();
+});
+
+/*
+ * A Bot that stopped for an approval asked in one sentence and sent the person to the Bot's own
+ * page. The same card a conversation with one Bot draws now waits in the group, once for the Bot's
+ * thread, whether the wait shows on the Bot's line or on the run the server is holding.
+ */
+test("a Bot waiting for approval asks in the group, once, and the answer is sent once", async () => {
+  showQuestion = false;
+  messages = [
+    {
+      ...line("waiting-1", ERRANDS, "", "waiting"),
+      threadId: ERRANDS_THREAD,
+      reason: "This action is waiting for your approval.",
+    },
+  ];
+  background = [
+    {
+      id: "run-waiting",
+      agentId: ERRANDS,
+      threadId: ERRANDS_THREAD,
+      status: "running",
+      waitingForApproval: true,
+      partialReply: null,
+      externalOutcome: null,
+    },
+  ];
+  requests = [waitingApproval(ERRANDS_THREAD)];
+  const view = conversation();
+
+  const card = within(
+    await view.findByRole("region", { name: "Waiting for your approval" }),
+  );
+  // One thread, one card: the line and the run behind it do not each ask.
+  expect(
+    view.getAllByRole("region", { name: "Waiting for your approval" }),
+  ).toHaveLength(1);
+  expect(
+    card.getByText("Sending something to other people asks you first."),
+  ).toBeTruthy();
+  expect(
+    view.getByText("This action is waiting for your approval."),
+  ).toBeTruthy();
+
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(card.getByRole("radio", { name: "Allow once" }));
+  await user.click(card.getByRole("button", { name: "Allow once" }));
+  await waitFor(() => expect(decisions).toEqual([{ decision: "allow_once" }]));
+  // Answered: the server carries the turn on, so the card goes and nothing asks twice.
+  await waitFor(() =>
+    expect(
+      view.queryByRole("region", { name: "Waiting for your approval" }),
+    ).toBeNull(),
+  );
+});
+
+/* A run the server holds for an approval, with no line of its own waiting, asks the same way. */
+test("a run waiting on an approval in the group asks there, under no Bot's line", async () => {
+  showQuestion = false;
+  messages = [line("done-1", BUDGET, "All set.")];
+  background = [
+    {
+      id: "run-waiting",
+      agentId: ERRANDS,
+      threadId: ERRANDS_THREAD,
+      status: "running",
+      waitingForApproval: true,
+      partialReply: null,
+      externalOutcome: null,
+    },
+  ];
+  requests = [waitingApproval(ERRANDS_THREAD)];
+  const view = conversation();
+  expect(
+    await view.findByRole("region", { name: "Waiting for your approval" }),
+  ).toBeTruthy();
+});
+
+/*
+ * Which Bot is working was said in words only. The roster's avatar says it too, with the same
+ * working badge the Home page draws.
+ */
+test("a working Bot's avatar says it is working", async () => {
+  showQuestion = false;
+  messages = [
+    { ...line("running-1", ERRANDS, "", "running"), threadId: ERRANDS_THREAD },
+    line("done-1", BUDGET, "All set."),
+  ];
+  background = [
+    {
+      id: "run-live",
+      agentId: BUDGET,
+      threadId: "budget-buddy-group-thread",
+      status: "running",
+      waitingForApproval: false,
+      partialReply: null,
+      externalOutcome: null,
+    },
+  ];
+  const view = conversation();
+  // The Errand Helper's line and the Budget Buddy's run; the finished line's avatar is still.
+  expect(await view.findAllByText("Working…")).toHaveLength(2);
+  const working = view.getAllByText("Working…");
+  expect(
+    working[0]?.closest("[data-speaker]")?.getAttribute("data-speaker"),
+  ).toBe(ERRANDS);
 });

@@ -230,6 +230,28 @@ async function mounted() {
   return view;
 }
 
+test("when access to a conversation ends, it says so and the way back is one Tab away", async () => {
+  let authorized = true;
+  const view = mounting(async () =>
+    authorized
+      ? NativeResponse.json({
+          messages: [initial],
+          runs: [{ id: "active", status: "running", userMessageId: "sent" }],
+        })
+      : new NativeResponse(null, { status: 404 }),
+  );
+  await view.findByText("Stored opening", {}, { timeout: 5_000 });
+  authorized = false;
+  await view.findByText("Conversation access ended.", {}, { timeout: 8_000 });
+  // Nothing of the conversation is left on screen.
+  expect(view.queryByText("Stored opening")).toBeNull();
+  const back = view.getByRole("link", { name: "Back to Home" });
+  expect(back.getAttribute("href")).toBe("/");
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.tab();
+  expect(view.container.ownerDocument.activeElement).toBe(back);
+}, 15_000);
+
 test("the Desktop Conversation clears the transcript and Stop when current access ends", async () => {
   installDesktopShell();
   let authorized = true;

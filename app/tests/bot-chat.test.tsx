@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import { fireEvent, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { botThreadKey } from "@/lib/copilot/bot-thread";
 import {
   agent,
+  answerWith,
   botRuntime,
   currentJoin,
   queryClientWithAgents,
@@ -299,4 +300,176 @@ test("a thread reopened with an approval still waiting shows it, and answering i
   expect((await card.findAllByText("Allowed once")).length).toBeGreaterThan(0);
   // The server continues the original run from that decision; this browser starts none of its own.
   expect(runtime.runs).toHaveLength(0);
+});
+
+/** A message read that fails says so, keeps the words typed before it, and comes back in place. */
+test("a history read that fails is shown, keeps the draft, and recovers in place", async () => {
+  let failReads = true;
+  answerWith((url) =>
+    url.pathname.endsWith("/messages") && failReads
+      ? new Response(null, { status: 503 })
+      : undefined,
+  );
+  const view = open();
+  await view.findByText("Couldn't load earlier messages.");
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const box = view.getByRole("textbox", { name: "Message" });
+  await user.type(box, "Keep these words");
+
+  // The backend answers again: the notice goes and nothing typed was lost.
+  failReads = false;
+  await user.click(view.getByRole("button", { name: "Try again" }));
+  await waitFor(() =>
+    expect(view.queryByText("Couldn't load earlier messages.")).toBeNull(),
+  );
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Keep these words",
+  );
+});
+
+/**
+ * The approval in a thread kept for this Bot, as the inbox holds it at whatever status it reached.
+ * It names the tool call the transcript still shows unanswered, so the step shimmers while the
+ * server carries the turn on.
+ */
+function approvedInbox(status: "approved" | "completed", threadId: string) {
+  return [
+    {
+      id: "approval-1",
+      status,
+      createdAt: "2026-11-05T10:00:00.000Z",
+      // Just now: the server carries a turn on for ten minutes after a decision.
+      decidedAt: new Date().toISOString(),
+      action: {
+        botId: BOT.id,
+        toolRef: "arcade-GoogleCalendar/CreateEvent",
+        effect: "write",
+        scope: "arcade-GoogleCalendar",
+        threadId,
+        toolCallId: CALL,
+        args: { summary: "Spec review" },
+        target: {},
+        policy: {
+          behaviour: "ask",
+          source: "safety",
+          reason: "Sending something to other people asks you first.",
+          kind: "sending",
+        },
+      },
+    },
+  ];
+}
+
+test("after a decision, the Bot working on the server shows here and its reply arrives without reopening", async () => {
+  const THREAD = "thread-remembered";
+  runtime.stored.set(THREAD, asked);
+  runtime.inbox = approvedInbox("approved", THREAD);
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  const client = queryClientWithAgents([BOT]);
+  const view = renderBot(client, ROUTE);
+  expect(
+    await view.findByText(
+      "Invite sam@example.com to Spec review on Friday at 10.",
+    ),
+  ).toBeTruthy();
+
+  // The server has the turn: the step it is on shimmers, and this tab has no run to stop.
+  await waitFor(() =>
+    expect(view.container.querySelector(".tool-line-running")).toBeTruthy(),
+  );
+  expect(view.queryByRole("button", { name: "Stop the Bot" })).toBeNull();
+
+  // It ended and wrote the reply. Read when it did, without opening the conversation again.
+  const reply = {
+    id: "reply-1",
+    role: "assistant",
+    content: "Invited sam@example.com to the Spec review.",
+  } satisfies Message;
+  runtime.stored.set(THREAD, [
+    ...asked,
+    { id: "result-1", role: "tool", toolCallId: CALL, content: "sent" },
+    reply,
+  ]);
+  runtime.inbox = approvedInbox("completed", THREAD);
+  await act(() => client.invalidateQueries({ queryKey: ["approvals"] }));
+  // The reply draws the address as its own element, so the sentence is read off the transcript.
+  await waitFor(() =>
+    expect(view.container.textContent).toContain(reply.content),
+  );
+  await waitFor(() =>
+    expect(view.container.querySelector(".tool-line-running")).toBeNull(),
+  );
+});
+
+test("access to the thread ending hides what was read and offers the way back", async () => {
+  const THREAD = "thread-remembered";
+  runtime.stored.set(THREAD, asked);
+  runtime.inbox = approvedInbox("approved", THREAD);
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  let denyReads = false;
+  answerWith((url) =>
+    url.pathname.endsWith("/messages") && denyReads
+      ? new Response(null, { status: 403 })
+      : undefined,
+  );
+  const client = queryClientWithAgents([BOT]);
+  const view = renderBot(client, ROUTE);
+  expect(
+    await view.findByText(
+      "Invite sam@example.com to Spec review on Friday at 10.",
+    ),
+  ).toBeTruthy();
+
+  denyReads = true;
+  runtime.inbox = approvedInbox("completed", THREAD);
+  await act(() => client.invalidateQueries({ queryKey: ["approvals"] }));
+  expect(await view.findByRole("link", { name: "Back to Home" })).toBeTruthy();
+  expect(view.getByText("Conversation access ended.")).toBeTruthy();
+  expect(
+    view.queryByText("Invite sam@example.com to Spec review on Friday at 10."),
+  ).toBeNull();
+});
+
+test("Stop the Bot stops the run on the server and says so without an error", async () => {
+  const THREAD = "thread-stopped";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  // The read says this thread has a run going, so Stop can name it.
+  runtime.threadRuns.set(THREAD, [
+    {
+      id: "run-live",
+      status: "running",
+      userMessageId: "u-1",
+      assistantMessageId: null,
+    },
+  ]);
+  runtime.plans = [
+    {
+      kind: "holds",
+      events: [
+        {
+          type: "TEXT_MESSAGE_START",
+          messageId: "partial",
+          role: "assistant",
+        },
+      ],
+    },
+  ];
+  const view = open();
+  const user = await send(view, "Take your time");
+  await waitFor(() =>
+    expect(view.getByRole("button", { name: "Stop the Bot" })).toBeTruthy(),
+  );
+  await user.click(view.getByRole("button", { name: "Stop the Bot" }));
+
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId: THREAD, runId: "run-live" }]),
+  );
+  // A stop is not a failure: the row under the transcript says so without an error.
+  expect(view.queryByTestId("transcript-stopped")).toBeNull();
+  expect(await view.findByText("The run was stopped.")).toBeTruthy();
+  releaseRun([
+    { type: "TEXT_MESSAGE_END", messageId: "partial" },
+    { type: "RUN_FINISHED", threadId: THREAD, runId: "run-1" },
+  ]);
+  await settled(view);
 });

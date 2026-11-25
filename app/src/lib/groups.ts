@@ -13,6 +13,8 @@ export type GroupMessage = {
   /** Who sent it, for a person's line; whose run it was, for a Bot's. */
   ownerUserId: string;
   agentId: string | null;
+  /** For a Bot's line, the Bot's thread in the group that its run is on. */
+  threadId?: string | null;
   text: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;

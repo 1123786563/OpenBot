@@ -201,6 +201,7 @@ function RouteComponent() {
         ) : null}
         <ChannelBody
           channel={channel.error ? undefined : channel.data}
+          error={channel.error}
           isPending={channel.isPending}
           runId={runId}
           retry={() => void channel.refetch()}
@@ -217,30 +218,31 @@ function RouteComponent() {
  */
 function ChannelBody({
   channel,
+  error,
   isPending,
   retry,
   retrying,
   runId,
 }: {
   channel: AgentChannel | undefined;
+  error: Error | null;
   isPending: boolean;
   retry: () => void;
   retrying: boolean;
   runId?: string;
 }) {
   if (isPending) return <ConversationLoading label="Opening conversation…" />;
-  if (!channel) {
+  // A refused read is not a read to try again: the conversation is not this person's any more.
+  if (!channel)
     return (
-      <Stack padding={5}>
-        <ConversationReadError
-          title="Couldn't open this conversation."
-          retry={retry}
-          retrying={retrying}
-          retryBelow
-        />
-      </Stack>
+      <ConversationUnavailable
+        denied="You can't access this conversation."
+        error={error}
+        retry={retry}
+        retrying={retrying}
+        title="Couldn't open this conversation."
+      />
     );
-  }
 
   const runtimeAgentId =
     channel.agentIds.length === 1 ? channel.agentIds[0] : undefined;
@@ -268,8 +270,7 @@ function ChannelBody({
   );
 }
 
-import { Stack } from "@astryxdesign/core/Stack";
 import {
   ConversationLoading,
-  ConversationReadError,
+  ConversationUnavailable,
 } from "@/components/channels/conversation-status";

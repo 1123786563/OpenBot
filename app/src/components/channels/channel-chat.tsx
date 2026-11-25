@@ -1,6 +1,7 @@
 import type { Message } from "@ag-ui/core";
 import { Button as RecoveryButton } from "@astryxdesign/core/Button";
 import { HStack, Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   type Attachment,
   CopilotChatConfigurationProvider,
@@ -33,6 +34,7 @@ import { ConversationIntro } from "@/components/channels/conversation-intro";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { FirstMessageDraftCopy } from "@/components/channels/first-message-draft-copy";
 import { ProgressRow } from "@/components/channels/progress-row";
+import { runOutcomeWords } from "@/components/channels/run-stage";
 import { TestCreditModelPicker } from "@/components/channels/test-credit-model-picker";
 import { transcriptMessages } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
@@ -42,7 +44,6 @@ import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
-import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
@@ -120,7 +121,10 @@ import {
 import { useVoiceCall } from "@/lib/voice/use-voice-call";
 import { queryClient } from "@/query-client";
 import { newId } from "../../lib/new-id";
-import { ConversationReadError } from "./conversation-status";
+import {
+  ConversationAccessEnded,
+  ConversationReadError,
+} from "./conversation-status";
 
 /**
  * How long a stalled thread join is worth waiting for before it is ended.
@@ -704,6 +708,16 @@ export function ChannelChat({
     (run) => run.externalOutcome === "unknown",
   );
   const latestRun = storedRuns?.at(-1);
+  /*
+   * The run the notice below explains: one whose outcome nobody can vouch for, wherever it sits in
+   * the thread; else the one waiting on the person; else the newest, when it ended short. The same
+   * choice a group conversation's transcript makes of its own runs.
+   */
+  const explainedRun =
+    unresolvedRun ??
+    (activeRun?.waitingForApproval ? activeRun : undefined) ??
+    latestRun;
+  const runWords = explainedRun ? runOutcomeWords(explainedRun) : null;
   const runControl = useMutation({
     mutationFn: async ({
       runId,
@@ -1954,7 +1968,8 @@ export function ChannelChat({
     user?.id,
   ]);
 
-  if (accessEnded) return <p role="alert">Conversation access ended.</p>;
+  if (accessEnded)
+    return <ConversationAccessEnded title="Conversation access ended." />;
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's
@@ -2250,49 +2265,32 @@ export function ChannelChat({
                     {historyNotice}
                   </p>
                 ) : null}
-                {(unresolvedRun ||
-                  activeRun?.waitingForApproval ||
-                  latestRun?.stopReason ||
-                  latestRun?.externalOutcome === "not_dispatched" ||
-                  (latestRun?.status === "failed" &&
-                    latestRun.externalOutcome === "executed")) && (
+                {runWords && (
                   <HStack
                     wrap="wrap"
                     align="center"
                     gap={2}
                     paddingBlockEnd={2}
-                    className="text-sm text-muted-foreground"
                   >
-                    <p role="status">
-                      {unresolvedRun
-                        ? "The previous run’s external outcome is unknown. Check the outcome before sending again."
-                        : activeRun?.waitingForApproval
-                          ? "The run is waiting for approval."
-                          : latestRun?.stopReason === "context_revoked"
-                            ? "The run paused because Memory or Learned skill access changed."
-                            : latestRun?.externalOutcome === "not_dispatched"
-                              ? "The action was not dispatched. Send your request again to retry."
-                              : latestRun?.externalOutcome === "executed"
-                                ? "The outcome was verified and added to the conversation."
-                                : latestRun?.stopReason === "stopped"
-                                  ? "The run was stopped."
-                                  : "The run ended when access was revoked."}
-                    </p>
+                    {/* The words of every surface, for a run the server ended short. */}
+                    <Text as="p" role="status" type="supporting">
+                      {runWords}
+                    </Text>
                     {unresolvedRun && channel.active && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={runControl.isPending}
+                      <RecoveryButton
+                        isDisabled={runControl.isPending}
+                        label={
+                          runControl.isPending ? "Checking…" : "Check outcome"
+                        }
                         onClick={() =>
                           runControl.mutate({
                             action: "reconcile",
                             runId: unresolvedRun.id,
                           })
                         }
-                      >
-                        {runControl.isPending ? "Checking…" : "Check outcome"}
-                      </Button>
+                        size="sm"
+                        variant="secondary"
+                      />
                     )}
                   </HStack>
                 )}

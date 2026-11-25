@@ -4,8 +4,10 @@ import {
   useAgent,
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
+import { approvalInboxOptions, carryingOnAfterApproval } from "@/lib/approvals";
 import { whileObserved } from "@/lib/copilot/approval-context";
 import { isBrokenStream, STREAM_BROKE } from "@/lib/copilot/broken-stream";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
@@ -13,13 +15,20 @@ import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import { releaseServerOwnedInterrupts } from "@/lib/copilot/server-owned-interrupts";
 import { followLastRun, stoppedReason } from "@/lib/copilot/stopped-turn";
 import {
+  controlThreadRun,
   readThreadMessages,
+  type StoredThread,
   withCurrentA2uiVersions,
 } from "@/lib/copilot/thread-messages";
 import { newId } from "@/lib/new-id";
 import { mergeStoredMessages, toMessageContent } from "./channel-chat";
 import type { ComposerDraft } from "./composer";
+import {
+  ConversationAccessEnded,
+  ConversationReadError,
+} from "./conversation-status";
 import { ConversationView } from "./conversation-view";
+import { RUN_WAS_STOPPED } from "./run-stage";
 
 /** How long a stalled thread join is worth waiting for before it is ended. See `join-thread.ts`. */
 const JOIN_DEADLINE_MS = 1500;
@@ -58,19 +67,37 @@ export function BotChatView({
   const [runError, setRunError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
+  /**
+   * What the last read of the thread found. `"failed"` is a read that could not be completed; the
+   * transcript already on screen and the draft stay where they are. `"access-ended"` is a read the
+   * server refused after one had succeeded, which is evidence the thread is no longer this person's.
+   */
+  const [history, setHistory] = useState<"ready" | "failed" | "access-ended">(
+    "ready",
+  );
+  const [retrying, setRetrying] = useState(false);
+  /** The runs the last ready read named, so Stop can reach the one on the server by its id. */
+  const [storedRuns, setStoredRuns] = useState<StoredThread["runs"]>();
+  /** Whether any read of this thread has come back ready. See `applyRead`. */
+  const readReady = useRef(false);
+  /** The person stopped this turn, so however its run ends is not a failure. */
+  const personStopped = useRef(false);
+  const [stoppedHere, setStoppedHere] = useState(false);
+
   /*
    * A turn that fails, kept where `send` can still see it. `copilotkit.runAgent` resolves as if it had
    * answered when the run fails, so this is the only way the composer learns that its words were not
    * sent and puts them back.
    *
    * Only a turn started here counts. The join replays runs that failed long ago, and how the last of
-   * those ended is `lastRun`'s to say.
+   * those ended is `lastRun`'s to say. A run the person stopped ends through here too, and is not a
+   * failure: nothing was refused.
    */
   const failed = useRef<string | null>(null);
   const inTurn = useRef(false);
   useEffect(() => {
     const fail = (reason: string) => {
-      if (!inTurn.current) return;
+      if (!inTurn.current || personStopped.current) return;
       failed.current = reason;
       setRunError(reason);
     };
@@ -84,6 +111,49 @@ export function BotChatView({
     });
     return () => subscription.unsubscribe();
   }, [agent, queryClient]);
+
+  /**
+   * Take what a read found into the transcript, and say what it came to.
+   *
+   * A `/bot` thread has no conversation behind it until its first run is stored, and the history
+   * route answers 404 for a thread it does not know, which the reader reports as access denied. That
+   * 404 is ordinary: nothing was lost and there is nothing to load, so it is said only once a read of
+   * the thread has succeeded. The same answer after one did means the thread was taken away, and
+   * whatever was read of it goes with it.
+   */
+  const applyRead = useCallback(
+    (stored: StoredThread) => {
+      if (stored.availability === "ready") {
+        readReady.current = true;
+        setHistory("ready");
+        setStoredRuns(stored.runs);
+        const merged = mergeStoredMessages(
+          withCurrentA2uiVersions(agent.messages),
+          stored.messages,
+        );
+        if (merged !== agent.messages) agent.setMessages(merged);
+        return;
+      }
+      if (stored.accessDenied) {
+        if (!readReady.current) return;
+        setHistory("access-ended");
+        setStoredRuns([]);
+        agent.setMessages([]);
+        void queryClient.invalidateQueries(approvalInboxOptions());
+        return;
+      }
+      setHistory("failed");
+    },
+    [agent, queryClient],
+  );
+
+  /** Only the newest read owns the transcript; an older one that arrives late is dropped. */
+  const readVersion = useRef(0);
+  const readHistory = useCallback(async () => {
+    const version = ++readVersion.current;
+    const stored = await readThreadMessages(threadId, agentId);
+    if (version === readVersion.current) applyRead(stored);
+  }, [agentId, applyRead, threadId]);
 
   // Join the thread, restore what it holds, then the transcript is this Bot's.
   useEffect(() => {
@@ -114,14 +184,7 @@ export function BotChatView({
       const earlier = joined === "connected" ? lastRun.failure() : null;
       if (current && earlier !== null) setRunError(earlier);
       try {
-        const stored = await readThreadMessages(threadId, agentId);
-        if (current && stored.availability === "ready") {
-          const merged = mergeStoredMessages(
-            withCurrentA2uiVersions(agent.messages),
-            stored.messages,
-          );
-          if (merged !== agent.messages) agent.setMessages(merged);
-        }
+        await readHistory();
       } finally {
         // Cleared on failure too: placeholders promise messages that may never come.
         if (current) setRestoring(false);
@@ -130,9 +193,42 @@ export function BotChatView({
     // A connect left in flight is torn down by the next run, and ends by replacing the messages.
     return () => {
       current = false;
+      readVersion.current += 1;
       void agent.detachActiveRun().catch(() => undefined);
     };
-  }, [agent, agentId, copilotkit, isReady, threadId]);
+  }, [agent, copilotkit, isReady, readHistory, threadId]);
+
+  /*
+   * THE SERVER HAS THE TURN. After the person decides an approval, the run that asked ended here on
+   * the interrupt, and the server runs the action and carries the conversation on in a turn no
+   * browser streams. Nothing above sees it, so a conversation with one Bot showed "Thinking" from
+   * this same record (`channel-chat.tsx`), and `/bot` sat idle with no sign of the Bot still working.
+   *
+   * Read from the approval itself, which the server marks `completed` only once that turn has ended.
+   * When it does, the read is taken again so the reply the turn wrote is on screen without reopening.
+   */
+  const carryingOn =
+    useQuery({
+      ...approvalInboxOptions(),
+      select: (inbox) => carryingOnAfterApproval(inbox, threadId),
+      refetchInterval: (query) =>
+        carryingOnAfterApproval(query.state.data, threadId) ? 2_000 : 10_000,
+    }).data === true;
+  const wasCarryingOn = useRef(false);
+  useEffect(() => {
+    if (wasCarryingOn.current && !carryingOn) void readHistory();
+    wasCarryingOn.current = carryingOn;
+  }, [carryingOn, readHistory]);
+
+  const retryRead = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await readHistory();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const send = async (draft: ComposerDraft) => {
     /*
@@ -151,6 +247,8 @@ export function BotChatView({
       content: toMessageContent(draft.text, draft.attachments),
     });
     failed.current = null;
+    personStopped.current = false;
+    setStoppedHere(false);
     setRunError(null);
     inTurn.current = true;
     setSending(true);
@@ -162,19 +260,81 @@ export function BotChatView({
     }
     if (failed.current) throw new Error(failed.current);
   };
+
+  /*
+   * A Conversation stops the run on the server by its id when a read has named the thread's runs
+   * (`stopTask`), and only falls back to aborting this browser's copy. Stopping here alone left the
+   * Bot working, its reply stored for nobody to read until the conversation was opened again.
+   *
+   * Not offered while the server carries a turn on (`stoppable` is this tab's run alone): there is
+   * no run here to reach, and a Stop that does nothing is worse than none.
+   */
+  const stop = async () => {
+    personStopped.current = true;
+    setStoppedHere(true);
+    const active = storedRuns?.find((run) => run.status === "running");
+    if (!active) {
+      copilotkit.stopAgent({ agent });
+      return;
+    }
+    try {
+      await controlThreadRun({
+        threadId,
+        agentId,
+        runId: active.id,
+        action: "stop",
+      });
+    } catch {
+      // The server would not stop it, so at least this browser's end of the turn is let go.
+      personStopped.current = false;
+      setStoppedHere(false);
+      setRunError("The Bot couldn't be stopped. Try again.");
+      copilotkit.stopAgent({ agent });
+      return;
+    }
+    // What the run said before the Stop is stored; read it so it is on screen.
+    void readHistory();
+  };
+
+  if (history === "access-ended")
+    return <ConversationAccessEnded title="Conversation access ended." />;
+
   return (
     <CopilotChatConfigurationProvider agentId={agentId} threadId={threadId}>
       <ConversationView
-        busy={agent.isRunning || sending}
+        busy={agent.isRunning || sending || carryingOn}
         draftStorageKey={draftKey}
         messages={agent.messages}
+        notice={
+          <>
+            <HandoffResumeNotice
+              agent={agent}
+              botId={agentId}
+              ready={isReady && !restoring}
+              run={async () => {
+                await whileObserved(agent, () =>
+                  copilotkit.runAgent({ agent }),
+                );
+              }}
+            />
+            {history === "failed" ? (
+              <ConversationReadError
+                description="You can keep using this conversation."
+                retry={retryRead}
+                retrying={retrying}
+                title="Couldn't load earlier messages."
+              />
+            ) : null}
+          </>
+        }
         onSubmit={send}
-        onStop={() => copilotkit.stopAgent({ agent })}
-        pending={agent.isRunning || sending}
+        onStop={() => void stop()}
+        pending={agent.isRunning || sending || carryingOn}
         restoring={restoring}
         stoppable={agent.isRunning}
         threadId={threadId}
         {...(runError ? { stopped: runError } : {})}
+        {...(stoppedHere ? { stoppedNeutral: RUN_WAS_STOPPED } : {})}
       />
     </CopilotChatConfigurationProvider>
   );
