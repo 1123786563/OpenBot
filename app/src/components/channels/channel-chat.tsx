@@ -121,7 +121,10 @@ import {
 import { useVoiceCall } from "@/lib/voice/use-voice-call";
 import { queryClient } from "@/query-client";
 import { newId } from "../../lib/new-id";
-import { ConversationReadError } from "./conversation-status";
+import {
+  ConversationAccessEnded,
+  ConversationReadError,
+} from "./conversation-status";
 
 /**
  * How long a stalled thread join is worth waiting for before it is ended.
@@ -1965,7 +1968,8 @@ export function ChannelChat({
     user?.id,
   ]);
 
-  if (accessEnded) return <p role="alert">Conversation access ended.</p>;
+  if (accessEnded)
+    return <ConversationAccessEnded title="Conversation access ended." />;
 
   return (
     // Activity renderers resolve their agent through this SDK context. It must match useAgent's

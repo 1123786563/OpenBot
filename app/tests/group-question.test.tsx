@@ -8,7 +8,7 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BotsNavBadge } from "@/components/bot-profile/attention";
 import { GroupChat } from "@/components/channels/group-chat";
@@ -60,6 +60,7 @@ function line(
 
 let open = true;
 let showQuestion = true;
+let denied = false;
 let failNextAnswer = false;
 let messages: GroupMessage[] = [];
 /** Runs of their own the Bots are making in the group; undefined when there are none. */
@@ -96,6 +97,11 @@ beforeAll(() => {
         ],
       });
     if (url.pathname === `/api/groups/${CHANNEL}`) {
+      if (denied)
+        return Response.json(
+          { error: "This group conversation was not found." },
+          { status: 403 },
+        );
       if (method === "POST") {
         groupSends.push(JSON.parse(String(init?.body)));
         return Response.json({ queued: true }, { status: 202 });
@@ -176,6 +182,7 @@ beforeEach(() => {
   queryClient.clear();
   open = true;
   showQuestion = true;
+  denied = false;
   failNextAnswer = false;
   answers = [];
   groupSends = [];
@@ -310,4 +317,31 @@ test("a group names a queued Bot, a working Bot and a stopped run as every conve
   ).toBeTruthy();
   expect(view.queryByText("Waiting to reply")).toBeNull();
   expect(view.queryByText("Run ended")).toBeNull();
+});
+
+test("a group this person can no longer read hides its old messages and offers the way back", async () => {
+  showQuestion = false;
+  messages = [
+    line("before-denied", null, "An old message must not stay here."),
+    line("before-denied:bot", ERRANDS, "", "running"),
+  ];
+  const view = conversation();
+  await view.findByText("An old message must not stay here.");
+
+  denied = true;
+  // The same read a poll or another action would ask for: the server refuses it, and the query
+  // drops its cache rather than leaving this person's old messages on screen.
+  await act(() =>
+    queryClient.invalidateQueries({ queryKey: ["groups", CHANNEL] }),
+  );
+  expect(
+    await view.findByRole("link", { name: "Back to Home" }, { timeout: 5_000 }),
+  ).toBeTruthy();
+  expect(view.queryByText("An old message must not stay here.")).toBeNull();
+  expect(view.queryByText("Thinking")).toBeNull();
+  expect(
+    view.getByText("You can't access this group conversation."),
+  ).toBeTruthy();
+  // The only thing left to try is Home, not a Retry that can never be allowed.
+  expect(view.queryByRole("button", { name: "Try again" })).toBeNull();
 });

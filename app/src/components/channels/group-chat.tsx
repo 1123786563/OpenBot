@@ -56,6 +56,7 @@ import { Composer, toAgentOptions } from "./composer";
 import {
   ConversationLoading,
   ConversationReadError,
+  ConversationUnavailable,
 } from "./conversation-status";
 import { RUN_STAGE, runOutcomeWords } from "./run-stage";
 import { TeamBotConsentCard } from "./team-bot-consent";
@@ -284,23 +285,17 @@ export function GroupChat({
 
   if (group.isPending && group.errorUpdateCount === 0)
     return <ConversationLoading label="Opening group conversation…" />;
-  if (!group.data || !canKeepCachedRead(group.error)) {
+  if (!group.data || !canKeepCachedRead(group.error))
     return (
-      <Stack padding={5}>
-        <ConversationReadError
-          title={
-            canKeepCachedRead(group.error)
-              ? "Couldn't open this group conversation."
-              : "You can't access this group conversation."
-          }
-          description="The messages and participant list are unavailable."
-          retry={() => void group.refetch()}
-          retryBelow
-          retrying={group.isFetching}
-        />
-      </Stack>
+      <ConversationUnavailable
+        denied="You can't access this group conversation."
+        description="The messages and participant list are unavailable."
+        error={group.error}
+        retry={() => void group.refetch()}
+        retrying={group.isFetching}
+        title="Couldn't open this group conversation."
+      />
     );
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
