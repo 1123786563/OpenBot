@@ -1167,6 +1167,7 @@ const ALLOW: Allowed[] = [
 // intentionally retained while the broader review cycle owns the wording cleanup.
 const MERGED_MAINLINE_SHAPE_EXCEPTIONS = new Set([
   "server/tests/config.test.ts",
+  "server/tests/infisical-env.test.ts",
   "server/tests/product-telemetry-boundaries.test.ts",
   "server/tests/product-telemetry.test.ts",
   "app/tests/corsair-connections.test.tsx",

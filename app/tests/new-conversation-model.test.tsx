@@ -376,7 +376,7 @@ test("switching accounts replaces the saved first message in an open conversatio
   await queryClient.fetchQuery(currentUserQueryOptions());
   const view = renderAt(`/channel/${channel.id}`);
   await view.findByText(previousDraft.text);
-  await view.findByRole("button", { name: "Check again" });
+  await view.findByRole("button", { name: "Check for message" });
 
   currentUserId = "another-tester";
   await act(async () => {
