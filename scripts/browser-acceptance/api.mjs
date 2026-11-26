@@ -23,6 +23,12 @@ const user = {
   role: "admin",
   onboarding: null,
 };
+const runtimeInfo = {
+  version: "fixture",
+  agents: {},
+  mode: "sse",
+  telemetryDisabled: true,
+};
 Bun.serve({
   hostname: "127.0.0.1",
   port,
@@ -89,6 +95,39 @@ Bun.serve({
     if (path === "/api/auth/sign-out") {
       signedIn = false;
       return json({ success: true });
+    }
+    if (path === "/api/components/catalogue" && request.method === "PUT") {
+      if (!signedIn) return json({ error: "Unauthorized" }, 401);
+      const body = await request.json().catch(() => null);
+      if (!Array.isArray(body?.components))
+        return json({ error: "A list of components is required." }, 400);
+      const invalid = body.components.findIndex(
+        (entry) =>
+          !entry ||
+          !["name", "title", "kind", "description"].every(
+            (field) => typeof entry[field] === "string" && entry[field].trim(),
+          ),
+      );
+      if (invalid !== -1)
+        return json(
+          {
+            error: `Component at index ${invalid} needs a name, a title, a kind and a description.`,
+          },
+          400,
+        );
+      // The fixture keeps its component data fixed across gallery announcements.
+      return json({ added: [] });
+    }
+    if (path === "/api/sandboxed/published" && request.method === "GET")
+      return signedIn
+        ? json({ components: [] })
+        : json({ error: "Unauthorized" }, 401);
+    if (path === "/api/copilotkit/info" && request.method === "GET")
+      return json(runtimeInfo);
+    if (path === "/api/copilotkit" && request.method === "POST") {
+      // CopilotKit probes the single-route transport when REST discovery fails.
+      const body = await request.json().catch(() => null);
+      if (body?.method === "info") return json(runtimeInfo);
     }
     if (path === "/api/settings/preferences") {
       if (request.method !== "GET")
