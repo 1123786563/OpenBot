@@ -27,14 +27,33 @@ import { Route as ThisComputerRoute } from "@/routes/_authed/settings/this-compu
  * the pages are the app's own components, the server is stood in at `window.fetch`, the Recorder is a
  * stand-in at `window.chrome.runtime`, and OpenBot Desktop's IPC is at `window.__TAURI_INTERNALS__`.
  *
- * `?page=` picks one of the ten entries; `?edition=personal|team` what the server says the deployment is.
- * A MutationObserver records every class the page wears so the test can compile the app's stylesheet for
- * what actually drew, dialogs included.
+ * `?page=` picks one of the ten entries; `?edition=personal|team` what the server says the deployment is;
+ * `?state=error|denied|changed` puts the page in a first read that fails (until `__recover`), a 403,
+ * or a lost write. A MutationObserver records every class the page wears so the test can compile
+ * the app's stylesheet for what actually drew, dialogs included.
  */
 
 const params = new URLSearchParams(location.search);
 const PAGE = params.get("page") ?? "browser";
 const EDITION = params.get("edition") === "personal" ? "personal" : "team";
+/**
+ * What the server says on this load: `error` fails the page's first read once until the test says
+ * the service is back (`__recover`), so a person's Retry has something to recover; `denied` answers
+ * every read with 403; `changed` loses the write and reports the row changed, which is the
+ * unconfirmed-outcome dialog.
+ */
+const STATE = params.get("state") ?? "ok";
+
+/** The read a page leads with: the one that fails in `error`, and the one 403 denies. */
+const PRIMARY: Record<string, string | undefined> = {
+  browser: "/api/browser",
+  browsers: "/api/recorder/connections",
+  "computers-personal": "/api/computers/fleet",
+  "computers-team": "/api/computers/fleet",
+  credentials: "/api/admin/credentials",
+  "new-credential": "/api/admin/credentials",
+  passwords: "/api/passwords",
+};
 
 const EXTENSION_ID = "a".repeat(32);
 /** The copy of the Recorder in the browser this page is open in. */
@@ -263,11 +282,33 @@ const desktopStatus = {
 
 const answers = (path: string): unknown => {
   if (path === "/api/capabilities") return CAPABILITIES;
-  if (path === "/api/computers/fleet") return fleet();
+  if (path === "/api/computers/fleet") {
+    const now = fleet();
+    // After the lost write, the row the confirmation came from has stopped: the latest status the
+    // unconfirmed-outcome dialog shows. Before it, the fleet is exactly what was reviewed.
+    return lostWrite
+      ? {
+          ...now,
+          computers: now.computers.map((computer) =>
+            computer.running
+              ? { ...computer, running: false, startedAt: null }
+              : computer,
+          ),
+        }
+      : now;
+  }
   if (path === "/api/host-access") return HOST_ACCESS;
   if (path.startsWith("/api/agents")) return AGENTS;
   if (path === "/api/admin/enterprise") return ENTERPRISE;
   if (path === "/api/admin/credentials") return { credentials: CREDENTIALS };
+  // What holds a credential, read inside the revoke confirmation.
+  if (path.startsWith("/api/admin/credentials/") && path.endsWith("/usage"))
+    return {
+      usage: {
+        features: ["The workspace's model route"],
+        bots: [{ id: "ops-bot", name: "Operations Bot" }],
+      },
+    };
   if (path === "/api/passwords") return SAVED_LOGINS;
   if (path === "/api/browser") return BROWSER_STATE;
   if (path === "/api/recorder/connections")
@@ -277,15 +318,31 @@ const answers = (path: string): unknown => {
   return undefined;
 };
 
+/** Once the write is lost, the reads after it report the row stopped. */
+let lostWrite = false;
+/** The test turns the first-read failure off before pressing the page's Retry. */
+let recovered = false;
+(globalThis as { __recover?: () => void }).__recover = () => {
+  recovered = true;
+};
+
 window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const path = String(input).split("?")[0] ?? "";
   const method = init?.method ?? "GET";
+  if (STATE === "denied" && path !== "/api/capabilities")
+    return Response.json({ error: "Read denied" }, { status: 403 });
+  if (STATE === "error" && !recovered && path === PRIMARY[PAGE])
+    return Response.json({ error: "Service unavailable" }, { status: 503 });
   if (method === "POST" && path === "/api/recorder/connect-codes")
     return Response.json({
       code: "obc_0123456789abcdef",
       expiresAt: iso(-5),
     });
   if (method === "POST" && path === "/api/computers/fleet") {
+    if (STATE === "changed") {
+      lostWrite = true;
+      return Response.json({ error: "Response lost" }, { status: 503 });
+    }
     // A success that changes nothing: the page's confirmation re-reads the fleet and compares it
     // with the row as reviewed, so a changed row is reported as "changed while reviewing".
     return Response.json({ saved: true });
@@ -339,6 +396,13 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 /** OpenBot Desktop's IPC: what runs here, its version, and Intelligence's readiness. */
 (globalThis as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
   invoke: async (command: string) => {
+    // This page's data comes over IPC, not HTTP: its first read fails the same way.
+    if (
+      STATE === "error" &&
+      !recovered &&
+      command === "plugin:openbot-desktop|status"
+    )
+      throw new Error("status unavailable");
     if (command === "plugin:openbot-desktop|status") return desktopStatus;
     if (command === "plugin:openbot-desktop|update_offer")
       return {

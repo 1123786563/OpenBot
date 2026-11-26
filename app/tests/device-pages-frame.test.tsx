@@ -9,18 +9,21 @@ import { read } from "./browser-read";
  * The device and credential pages read and take a keyboard, on this build.
  *
  * Every entry is mounted whole (the real route components; the fixture stands in for the server, the
- * Recorder and OpenBot Desktop), then read in a real Chromium: the contrast of every visible word
- * against its backdrop (WCAG AA for text), the empty field's placeholder included; and the block
- * size of every button, at a desktop's width and at a phone's, in light and in dark. The
- * keyboard-only pass walks Connect then Disconnect, Stop then confirm, Review replacement then
- * Cancel, and Restart then Cancel with Tab and Enter alone, and every focused step shows a focus
- * ring.
+ * Recorder and OpenBot Desktop), in both editions, then read in a real Chromium: the contrast of
+ * every visible word against its backdrop (WCAG AA for text), the empty field's placeholder
+ * included; and the block size of every button, at a desktop's width and at a phone's, in light and
+ * in dark. That reading is taken in each state the map names: loaded, a first read that failed and
+ * was recovered with Retry, a 403, and a confirmation dialog left open.
+ *
+ * The keyboard-only pass walks Connect then Disconnect, Stop then confirm, Review replacement then
+ * Cancel, and Restart then Cancel with Tab and Enter alone, in both editions, and walks the
+ * unconfirmed-outcome dialog after a lost write: every focused step shows a focus ring.
  *
  *   OPENBOT_APP_BROWSER=1 bun test app/tests/device-pages-frame.test.tsx
  *
- * With OPENBOT_APP_SHOTS=<dir> it also saves each page at 1440 and 320, light and dark, as
- * device-<page>-<theme>-<width>.png, and each keyboard step's focused element as
- * keyboard-<flow>-<step>-<theme>-<width>.png.
+ * With OPENBOT_APP_SHOTS=<dir> it also saves each state as
+ * device-<page>-<edition>-<state>-<theme>-<width>.png, and each keyboard step's focused element as
+ * keyboard-<flow>-<edition>-<step>-<theme>-<width>.png.
  */
 const asked = process.env.OPENBOT_APP_BROWSER === "1";
 const shots = process.env.OPENBOT_APP_SHOTS;
@@ -28,20 +31,181 @@ const shots = process.env.OPENBOT_APP_SHOTS;
 const APP = join(import.meta.dir, "..");
 const ORIGIN = "http://openbot.test";
 
-const entries = [
-  { page: "browser", edition: "personal" },
-  { page: "browsers", edition: "personal" },
-  { page: "this-computer", edition: "personal" },
-  { page: "computers-personal", edition: "personal" },
-  { page: "computers-team", edition: "team" },
-  { page: "credentials", edition: "team" },
-  { page: "credentials", edition: "personal" },
-  { page: "new-credential", edition: "team" },
-  { page: "new-credential", edition: "personal" },
-  { page: "passwords", edition: "personal" },
-] as const;
-
+type Edition = "personal" | "team";
 type Theme = "light" | "dark";
+type State = "ok" | "error" | "denied" | "changed";
+
+/** The copy of the Recorder in the browser this page is open in. */
+const LONG =
+  "a notebook for the quarterly revenue reconciliation across every regional team";
+
+/** Something the page shows only once its read succeeds, so recovery is not an empty page. */
+type Ready =
+  | { by: "text"; value: string }
+  | { by: "heading"; value: string }
+  | { by: "label"; value: string }
+  | { by: "placeholder"; value: string };
+
+type Entry = {
+  page: string;
+  edition: Edition;
+  /** The Retry that recovers a first read that failed with 503. */
+  retry: string;
+  /** Shown only once the read succeeds (absent where the form is always there). */
+  ready?: Ready;
+  /** This page reads over OpenBot Desktop's IPC, so a server 403 has no state here. */
+  ipc?: boolean;
+  /** The confirmation this page opens; the dialog-open reading drives it. */
+  dialog?: "disconnect" | "restart" | "stop" | "revoke" | "replace" | "delete";
+};
+
+const entries: Entry[] = [
+  {
+    page: "browser",
+    edition: "personal",
+    retry: "Retry browser status",
+    ready: { by: "text", value: "Do it once, and your Bots learn it" },
+  },
+  {
+    page: "browser",
+    edition: "team",
+    retry: "Retry browser status",
+    ready: { by: "text", value: "Do it once, and your Bots learn it" },
+  },
+  {
+    page: "browsers",
+    edition: "personal",
+    retry: "Retry connected browsers",
+    ready: { by: "text", value: "Chrome on Mac" },
+    dialog: "disconnect",
+  },
+  {
+    page: "browsers",
+    edition: "team",
+    retry: "Retry connected browsers",
+    ready: { by: "text", value: "Chrome on Mac" },
+    dialog: "disconnect",
+  },
+  {
+    page: "this-computer",
+    edition: "personal",
+    retry: "Retry",
+    ready: { by: "heading", value: "App" },
+    ipc: true,
+    dialog: "restart",
+  },
+  {
+    page: "this-computer",
+    edition: "team",
+    retry: "Retry",
+    ready: { by: "heading", value: "App" },
+    ipc: true,
+    dialog: "restart",
+  },
+  {
+    page: "computers-personal",
+    edition: "personal",
+    retry: "Retry loading devices",
+    ready: { by: "label", value: "Search devices" },
+    dialog: "stop",
+  },
+  {
+    page: "computers-team",
+    edition: "team",
+    retry: "Retry loading devices",
+    ready: { by: "label", value: "Search devices" },
+    dialog: "stop",
+  },
+  {
+    page: "credentials",
+    edition: "personal",
+    retry: "Retry",
+    ready: { by: "placeholder", value: "Provider, type or key ID" },
+    dialog: "revoke",
+  },
+  {
+    page: "credentials",
+    edition: "team",
+    retry: "Retry",
+    ready: { by: "placeholder", value: "Provider, type or key ID" },
+    dialog: "revoke",
+  },
+  {
+    page: "new-credential",
+    edition: "personal",
+    retry: "Retry",
+    dialog: "replace",
+  },
+  {
+    page: "new-credential",
+    edition: "team",
+    retry: "Retry",
+    dialog: "replace",
+  },
+  {
+    page: "passwords",
+    edition: "personal",
+    retry: "Retry",
+    ready: { by: "placeholder", value: "Website or username" },
+    dialog: "delete",
+  },
+  {
+    page: "passwords",
+    edition: "team",
+    retry: "Retry",
+    ready: { by: "placeholder", value: "Website or username" },
+    dialog: "delete",
+  },
+];
+
+/** The locator for what a page shows once its read succeeds. */
+function readyLocator(page: Page, ready: Ready) {
+  if (ready.by === "text") return page.getByText(ready.value);
+  if (ready.by === "heading")
+    return page.getByRole("heading", { name: ready.value });
+  if (ready.by === "label") return page.getByLabel(ready.value);
+  return page.getByPlaceholder(ready.value);
+}
+
+type View = { theme: Theme; width: number; height: number };
+
+/** The map's B1 reading: a desktop in light, a phone in dark, and the narrowest phone. */
+const views: View[] = [
+  { theme: "light", width: 1440, height: 900 },
+  { theme: "dark", width: 1440, height: 900 },
+  { theme: "dark", width: 390, height: 844 },
+  { theme: "dark", width: 320, height: 844 },
+];
+
+/** The map's named viewports for the error, 403 and dialog-open readings. */
+const evidenceViews = views.filter(
+  (view) => view.width !== 1440 || view.theme === "light",
+);
+
+/** The keyboard pass reads a desktop in light and a phone in both themes. */
+const walkViews: View[] = [
+  { theme: "light", width: 1440, height: 900 },
+  { theme: "dark", width: 1440, height: 900 },
+  { theme: "light", width: 390, height: 844 },
+  { theme: "dark", width: 390, height: 844 },
+];
+
+/** The first row with a running browser, per edition, and what its Stop is called. */
+const stopTarget = (edition: Edition) =>
+  edition === "personal"
+    ? {
+        title: "Personal Assistant",
+        stop: "Stop browser: Personal Assistant",
+        receipt: "Browser stopped for Personal Assistant.",
+        audit: { label: "Open Activity", href: "/settings/activity" },
+      }
+    : {
+        title: "person-1@acme-distribution.example.com's computer",
+        stop: "Stop browser: person-1@acme-distribution.example.com's computer",
+        receipt:
+          "Browser stopped for person-1@acme-distribution.example.com's computer.",
+        audit: { label: "Open Audit", href: "/admin/audit" },
+      };
 
 let script: string;
 const classes: Set<string> = new Set();
@@ -198,16 +362,15 @@ async function dress(page: Page) {
   await page.addStyleTag({ content: css as string });
 }
 
-/** The page at `page`/`edition`, theme and width, styled for what it wears so far. */
+/** The entry at a theme and width, in `state`, styled for what it wears so far. */
 async function open(
-  name: string,
-  edition: string,
-  theme: Theme,
-  width: number,
+  entry: { page: string; edition: Edition },
+  view: View,
+  state: State = "ok",
 ): Promise<Page> {
   if (!browser) throw new Error("no browser");
   const page = await browser.newPage({
-    viewport: { width, height: 900 },
+    viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
   });
   page.on("pageerror", (error) => console.error(error));
@@ -219,7 +382,7 @@ async function open(
     if (path === "/")
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><html lang="en" class="${theme}" style="color-scheme: ${theme}"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/device.js"></script></body></html>`,
+        body: `<!doctype html><html lang="en" class="${view.theme}" style="color-scheme: ${view.theme}"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/device.js"></script></body></html>`,
       });
     if (path === "/device.js")
       return route.fulfill({ contentType: "text/javascript", body: script });
@@ -228,7 +391,9 @@ async function open(
       return route.fulfill({ path: font });
     return route.fulfill({ status: 404 });
   });
-  await page.goto(`${ORIGIN}/?page=${name}&edition=${edition}`);
+  await page.goto(
+    `${ORIGIN}/?page=${entry.page}&edition=${entry.edition}&state=${state}`,
+  );
   await page.locator("h1").first().waitFor({ timeout: 15_000 });
   await page.evaluate(() => document.fonts.ready);
   // Astryx's own sheets, read from their packages rather than bundled: Bun's CSS bundler rewrites
@@ -317,6 +482,9 @@ const sizes = (page: Page) =>
       if (!element.checkVisibility()) continue;
       // A link inside a sentence is prose, not an action.
       if (element.tagName === "A" && element.closest("p")) continue;
+      // A dialog's dismissal X is not a device action, and its Cancel beside it is the same
+      // function at 44px, so the 44px rule judges the actions, not the shortcut (WCAG 2.5.5).
+      if (element.closest('[data-slot="dialog-close"]')) continue;
       targets.push({
         name:
           element.getAttribute("aria-label") ??
@@ -328,63 +496,168 @@ const sizes = (page: Page) =>
     return targets;
   });
 
+/**
+ * Everything a person must read or press on the page as it stands, dialog included: every word is
+ * at least 4.5:1 against its backdrop, and every button is at least 44px.
+ */
+async function measure(
+  page: Page,
+  label: string,
+  failed: string[] = [],
+): Promise<string[]> {
+  const of = await read(page, {
+    scope: "[data-astryx-theme]",
+    placeholders: true,
+  });
+  for (const word of of.words)
+    if (word.contrast < 4.5)
+      failed.push(
+        `${label}: "${word.text}" reads ${word.contrast.toFixed(2)}:1`,
+      );
+  for (const target of await sizes(page))
+    if (target.size < 44)
+      failed.push(`${label}: "${target.name}" is ${target.size}px`);
+  return failed;
+}
+
 /** Write a keyboard step's focus ring where OPENBOT_APP_SHOTS asks for it. */
 async function shotFocus(
   page: Page,
   flow: string,
+  edition: Edition,
   step: string,
-  theme: Theme,
-  width: number,
+  view: View,
 ) {
   if (!shots) return;
   const handle = await page.locator(":focus").elementHandle();
   await handle?.screenshot({
-    path: join(shots, `keyboard-${flow}-${step}-${theme}-${width}.png`),
+    path: join(
+      shots,
+      `keyboard-${flow}-${edition}-${step}-${view.theme}-${view.width}.png`,
+    ),
   });
 }
 
 /** The page, clipped to its content, saved where OPENBOT_APP_SHOTS asks. */
-async function shotPage(page: Page, name: string, theme: Theme, width: number) {
+async function shotPage(
+  page: Page,
+  name: string,
+  view: View,
+  state: string = "ok",
+) {
   if (!shots) return;
   await page.screenshot({
-    path: join(shots, `device-${name}-${theme}-${width}.png`),
+    path: join(
+      shots,
+      `device-${name}-${state}-${view.theme}-${view.width}.png`,
+    ),
     fullPage: true,
   });
 }
+
+/** The Stop that opens a computer's confirmation: the row's button, or the menu a phone shows. */
+async function askStop(page: Page, edition: Edition, width: number) {
+  const { title, stop } = stopTarget(edition);
+  const menu = `Device actions for ${title}`;
+  await tabTo(page, width < 640 ? menu : stop);
+  await page.keyboard.press("Enter");
+  if (width < 640) {
+    await page.getByRole("menuitem", { name: "Stop browser" }).waitFor();
+    // The menu's first item is Update when the computer has one, and the keys step through the
+    // items; a reopen starts on the first item, a first open on the row's trigger.
+    for (let step = 0; step < 4; step++) {
+      if ((await focused(page)).name === "Stop browser") break;
+      await page.keyboard.press("ArrowDown");
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+    await focusSettles(page, "Stop browser");
+    await page.keyboard.press("Enter");
+  }
+  await page.getByRole("alertdialog").waitFor({ timeout: 5_000 });
+  await dress(page);
+}
+
+/**
+ * Drive the entry into the confirmation it opens, the way a person would, and leave it open.
+ * The computer pages' confirmation is the unconfirmed-outcome one: the write is lost and the
+ * dialog reports the latest status.
+ */
+async function showDialog(page: Page, entry: Entry, width: number) {
+  if (entry.dialog === "disconnect") {
+    await page
+      .getByRole("button", { name: `Disconnect Chrome on Mac · ${LONG}` })
+      .click();
+    return page.getByRole("dialog");
+  }
+  if (entry.dialog === "restart") {
+    await page
+      .getByRole("button", { name: "Restart OpenBot services" })
+      .click();
+    return page.getByRole("alertdialog");
+  }
+  if (entry.dialog === "stop") {
+    const { title, stop } = stopTarget(entry.edition);
+    if (width < 640) {
+      await page
+        .getByRole("button", { name: `Device actions for ${title}` })
+        .click();
+      await page.getByRole("menuitem", { name: "Stop browser" }).click();
+    } else {
+      await page.getByRole("button", { name: stop }).click();
+    }
+    const dialog = page.getByRole("alertdialog");
+    await dialog.waitFor({ timeout: 5_000 });
+    await dialog.getByRole("button", { name: "Stop browser" }).click();
+    await dialog.getByText(/Latest device status:/).waitFor({
+      timeout: 10_000,
+    });
+    return dialog;
+  }
+  if (entry.dialog === "revoke") {
+    await page
+      .getByRole("button", { name: "Revoke sk-live-1 for openai" })
+      .click();
+    return page.getByRole("alertdialog");
+  }
+  if (entry.dialog === "replace") {
+    await tabTo(page, "Provider");
+    await page.keyboard.type("openai");
+    await tabTo(page, "Key ID");
+    await page.keyboard.type("sk-live-1");
+    await tabTo(page, "Secret");
+    await page.keyboard.type("not-the-live-secret");
+    await tabTo(page, "Review replacement");
+    await page.keyboard.press("Enter");
+    return page.getByRole("alertdialog");
+  }
+  await page
+    .getByRole("button", {
+      name: "Delete saved login for marguerite.oyelaran-abernathy@acme-distribution.example.com at accounts.revenue-operations.example.com",
+    })
+    .click();
+  return page.getByRole("alertdialog");
+}
+
 describe.skipIf(!asked)(
   "the device and credential pages, on this build",
   () => {
     browserTest(
-      "every word reads against its backdrop and every button is big enough to press, in light and in dark",
+      "every word reads against its backdrop and every button is big enough to press, in both editions, light and dark",
       900_000,
       async () => {
         const failed: string[] = [];
         for (const entry of entries) {
-          for (const theme of ["light", "dark"] as const) {
-            for (const width of [1440, 320]) {
-              const page = await open(entry.page, entry.edition, theme, width);
-              try {
-                const of = await read(page, {
-                  scope: "[data-astryx-theme]",
-                  placeholders: true,
-                });
-                const unreadable = of.words.filter(
-                  (word) => word.contrast < 4.5,
-                );
-                if (unreadable.length > 0)
-                  failed.push(
-                    `${entry.page} (${entry.edition}) ${theme} ${width}: ${JSON.stringify(unreadable.slice(0, 8))}`,
-                  );
-                for (const target of await sizes(page)) {
-                  if (target.size < 44)
-                    failed.push(
-                      `${entry.page} (${entry.edition}) ${theme} ${width}: "${target.name}" is ${target.size}px`,
-                    );
-                }
-                await shotPage(page, entry.page, theme, width);
-              } finally {
-                await page.close();
-              }
+          for (const view of views) {
+            const page = await open(entry, view);
+            try {
+              await measure(
+                page,
+                `${entry.page} (${entry.edition}) ${view.theme} ${view.width}`,
+                failed,
+              );
+              await shotPage(page, `${entry.page}-${entry.edition}`, view);
+            } finally {
+              await page.close();
             }
           }
         }
@@ -392,21 +665,145 @@ describe.skipIf(!asked)(
       },
     );
 
-    /** One flow, walked with Tab and Enter alone, in one theme and width. */
+    browserTest(
+      "a first read that fails is measured in its error state, then Retry recovers it",
+      900_000,
+      async () => {
+        const failed: string[] = [];
+        for (const entry of entries) {
+          for (const view of evidenceViews) {
+            const label = `${entry.page} (${entry.edition}) ${view.theme} ${view.width} error`;
+            const page = await open(entry, view, "error");
+            try {
+              await page.locator('[role="alert"]').first().waitFor({
+                timeout: 10_000,
+              });
+              await measure(page, label, failed);
+              await shotPage(
+                page,
+                `${entry.page}-${entry.edition}`,
+                view,
+                "error",
+              );
+              // The service comes back; the person presses the page's own Retry.
+              await page.evaluate(() =>
+                (
+                  globalThis as unknown as { __recover?: () => void }
+                ).__recover?.(),
+              );
+              const retry = page.getByRole("button", {
+                name: entry.retry,
+                exact: true,
+              });
+              await retry.first().click();
+              if (entry.ready)
+                await readyLocator(page, entry.ready)
+                  .first()
+                  .waitFor({ timeout: 15_000 });
+              await retry
+                .first()
+                .waitFor({ state: "detached", timeout: 15_000 });
+            } catch (error) {
+              failed.push(`${label}: retry — ${(error as Error).message}`);
+            } finally {
+              await page.close();
+            }
+          }
+        }
+        expect(failed).toEqual([]);
+      },
+    );
+
+    browserTest(
+      "a 403 is measured in its denial state, on every page the server authorizes",
+      600_000,
+      async () => {
+        const failed: string[] = [];
+        for (const entry of entries.filter((each) => !each.ipc)) {
+          for (const view of evidenceViews) {
+            const label = `${entry.page} (${entry.edition}) ${view.theme} ${view.width} denied`;
+            const page = await open(entry, view, "denied");
+            try {
+              await page.locator('[role="alert"]').first().waitFor({
+                timeout: 10_000,
+              });
+              await measure(page, label, failed);
+              await shotPage(
+                page,
+                `${entry.page}-${entry.edition}`,
+                view,
+                "denied",
+              );
+            } catch (error) {
+              failed.push(`${label}: ${(error as Error).message}`);
+            } finally {
+              await page.close();
+            }
+          }
+        }
+        expect(failed).toEqual([]);
+      },
+    );
+
+    browserTest(
+      "an open confirmation reads and its actions are big enough to press",
+      900_000,
+      async () => {
+        const failed: string[] = [];
+        for (const entry of entries.filter((each) => each.dialog)) {
+          for (const view of evidenceViews) {
+            const label = `${entry.page} (${entry.edition}) ${view.theme} ${view.width} dialog`;
+            const page = await open(
+              entry,
+              view,
+              entry.dialog === "stop" ? "changed" : "ok",
+            );
+            try {
+              const dialog = await showDialog(page, entry, view.width);
+              await dress(page);
+              await settle(page);
+              expect(await dialog.count()).toBeGreaterThan(0);
+              await measure(page, label, failed);
+              await shotPage(
+                page,
+                `${entry.page}-${entry.edition}`,
+                view,
+                "dialog",
+              );
+            } catch (error) {
+              failed.push(`${label}: ${(error as Error).message}`);
+            } finally {
+              await page.close();
+            }
+          }
+        }
+        expect(failed).toEqual([]);
+      },
+    );
+
+    /** One flow, walked with Tab and Enter alone, in one edition, theme and width. */
     async function walk(
       flow: "recorder" | "computer" | "credential" | "this-computer",
-      theme: Theme,
-      width: number,
+      edition: Edition,
+      view: View,
     ) {
-      const page =
-        flow === "recorder"
-          ? await open("browsers", "personal", theme, width)
-          : flow === "computer"
-            ? await open("computers-personal", "personal", theme, width)
-            : flow === "credential"
-              ? await open("new-credential", "team", theme, width)
-              : await open("this-computer", "personal", theme, width);
-      const shot = (step: string) => shotFocus(page, flow, step, theme, width);
+      const page = await open(
+        {
+          page:
+            flow === "recorder"
+              ? "browsers"
+              : flow === "computer"
+                ? edition === "personal"
+                  ? "computers-personal"
+                  : "computers-team"
+                : flow === "credential"
+                  ? "new-credential"
+                  : "this-computer",
+          edition,
+        },
+        view,
+      );
+      const shot = (step: string) => shotFocus(page, flow, edition, step, view);
       try {
         if (flow === "recorder") {
           await tabTo(page, "Connect this browser");
@@ -462,32 +859,10 @@ describe.skipIf(!asked)(
           await focusSettles(page, "Disconnected Chrome in this browser.");
           await shot("disconnected");
         } else if (flow === "computer") {
-          const stop = "Stop browser: Personal Assistant";
-          // A phone has no room for the row's buttons: its actions live behind the row's one menu button,
-          // which is where Stop is reached there, and where the focus goes back after the dialog.
-          const menu = "Device actions for Personal Assistant";
-          const inMenu = width < 640;
-          const back = inMenu ? menu : stop;
-          /** Open the Stop dialog: from the row's button, or from its menu on a phone. */
-          const askStop = async () => {
-            await tabTo(page, back);
-            await page.keyboard.press("Enter");
-            if (inMenu) {
-              await page
-                .getByRole("menuitem", { name: "Stop browser" })
-                .waitFor();
-              // The menu highlights its first item when it opens from the row, but a reopen leaves
-              // the trigger focused, so step in where it did not.
-              if ((await focused(page)).name !== "Stop browser") {
-                await page.keyboard.press("ArrowDown");
-                await focusSettles(page, "Stop browser");
-              }
-              await page.keyboard.press("Enter");
-            }
-            await page.getByRole("alertdialog").waitFor({ timeout: 5_000 });
-            await dress(page);
-          };
-          await askStop();
+          const { stop, receipt } = stopTarget(edition);
+          const menu = `Device actions for ${stopTarget(edition).title}`;
+          const back = view.width < 640 ? menu : stop;
+          await askStop(page, edition, view.width);
           expect((await focused(page)).name).toBe("Cancel");
           await shot("stop-asked");
           await page.keyboard.press("Enter");
@@ -496,14 +871,12 @@ describe.skipIf(!asked)(
           // Cancel gives the Stop that opened it its focus back.
           await focusSettles(page, back);
           await shot("stop-cancelled");
-          await askStop();
+          await askStop(page, edition, view.width);
           await page.keyboard.press("Tab");
           expect((await focused(page)).name).toBe("Stop browser");
           await shot("stop-confirm");
           await page.keyboard.press("Enter");
-          await page
-            .getByText("Browser stopped for Personal Assistant.")
-            .waitFor({ timeout: 10_000 });
+          await page.getByText(receipt).waitFor({ timeout: 10_000 });
           await dress(page);
           // The row is still there, so its action takes the focus back after the receipt is said.
           await focusSettles(page, back);
@@ -555,13 +928,77 @@ describe.skipIf(!asked)(
       "this-computer",
     ] as const) {
       browserTest(
-        `the ${flow} flow is taken with the keyboard alone, in light and in dark`,
-        300_000,
+        `the ${flow} flow is taken with the keyboard alone, in both editions, light and dark`,
+        600_000,
         async () => {
-          for (const theme of ["light", "dark"] as const)
-            for (const width of [1440, 390]) await walk(flow, theme, width);
+          for (const edition of ["personal", "team"] as const)
+            for (const view of walkViews) await walk(flow, edition, view);
         },
       );
     }
+
+    browserTest(
+      "the unconfirmed-outcome dialog is walked with the keyboard, in both editions",
+      600_000,
+      async () => {
+        for (const edition of ["personal", "team"] as const) {
+          const { audit } = stopTarget(edition);
+          for (const view of evidenceViews) {
+            const page = await open(
+              {
+                page:
+                  edition === "personal"
+                    ? "computers-personal"
+                    : "computers-team",
+                edition,
+              },
+              view,
+              "changed",
+            );
+            const shot = (step: string) =>
+              shotFocus(page, "unconfirmed", edition, step, view);
+            try {
+              await askStop(page, edition, view.width);
+              expect((await focused(page)).name).toBe("Cancel");
+              await shot("asked");
+              await page.keyboard.press("Tab");
+              expect((await focused(page)).name).toBe("Stop browser");
+              await page.keyboard.press("Enter");
+              // The write is lost; the dialog reports the latest status and the audit trail.
+              await page
+                .getByText(/Latest device status: No browser running/)
+                .waitFor({ timeout: 10_000 });
+              await dress(page);
+              // The dialog comes back as an unavailable one, its Close focused.
+              await focusSettles(page, "Close");
+              await shot("unconfirmed");
+              const link = page.getByRole("link", { name: audit.label });
+              expect(await link.getAttribute("href")).toBe(audit.href);
+              await shotPage(
+                page,
+                `unconfirmed-${edition}`,
+                view,
+                "unconfirmed",
+              );
+              await page.keyboard.press("Enter");
+              await page.getByRole("alertdialog").waitFor({ state: "hidden" });
+              await dress(page);
+              // The dialog returns focus to what opened it: the row's now-disabled Stop falls back to the
+              // page heading, while the row's menu trigger on a phone is still the opener.
+              await focusSettles(
+                page,
+                view.width < 640
+                  ? `Device actions for ${stopTarget(edition).title}`
+                  : edition === "personal"
+                    ? "Your Bots' browsers"
+                    : "Computers in this deployment",
+              );
+            } finally {
+              await page.close();
+            }
+          }
+        }
+      },
+    );
   },
 );
