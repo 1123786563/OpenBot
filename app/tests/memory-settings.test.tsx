@@ -2,6 +2,13 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -96,9 +103,20 @@ function draw(node: ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>{node}</QueryClientProvider>,
+  // The draft dialogs read the navigation blocker, so they need a mounted router.
+  const router = createRouter({
+    history: createMemoryHistory({
+      initialEntries: ["/before", "/"],
+      initialIndex: 1,
+    }),
+    routeTree: createRootRoute({ component: () => <>{node}</> }),
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router as never} />
+    </QueryClientProvider>,
   );
+  return Object.assign(view, { router });
 }
 
 test("a memory a Bot formed names the Bot that formed it", async () => {
@@ -176,7 +194,7 @@ test("remembering a fact saves it", async () => {
   const view = draw(<RememberFact />);
   const user = userEvent.setup({ document });
   // The form lives in a dialog behind the page's action, not on the page.
-  fireEvent.click(view.getByRole("button", { name: "Remember a fact" }));
+  fireEvent.click(await view.findByRole("button", { name: "Remember a fact" }));
   await user.type(
     await view.findByRole("textbox", {
       name: "Something you want your Bots to know",
@@ -189,6 +207,51 @@ test("remembering a fact saves it", async () => {
       request: "POST /api/memory",
       body: { content: "I work from Lisbon." },
     }),
+  );
+});
+
+test("leaving a typed fact for another page asks first, and Keep editing keeps the text", async () => {
+  serving();
+  const view = draw(<RememberFact />);
+  const user = userEvent.setup({ document });
+  fireEvent.click(await view.findByRole("button", { name: "Remember a fact" }));
+  const field = (await view.findByRole("textbox", {
+    name: "Something you want your Bots to know",
+  })) as HTMLTextAreaElement;
+  await user.type(field, "I work from Lisbon.");
+
+  // Browser Back reaches the same `history.block` through popstate; the memory history in this
+  // harness only consults blockers on push, so push stands in for leaving the page.
+  await act(async () => view.router.history.push("/before"));
+
+  const leave = await view.findByRole("alertdialog", {
+    name: "Leave without saving?",
+  });
+  await user.click(within(leave).getByRole("button", { name: "Keep editing" }));
+  await waitFor(() =>
+    expect(
+      view.queryByRole("alertdialog", { name: "Leave without saving?" }),
+    ).toBeNull(),
+  );
+  expect(view.router.state.location.pathname).toBe("/");
+  expect(field.value).toBe("I work from Lisbon.");
+});
+
+test("leaving a clean editor for another page does not ask", async () => {
+  serving();
+  const view = draw(<RememberFact />);
+  fireEvent.click(await view.findByRole("button", { name: "Remember a fact" }));
+  await view.findByRole("textbox", {
+    name: "Something you want your Bots to know",
+  });
+
+  await act(async () => view.router.history.push("/before"));
+
+  expect(
+    view.queryByRole("alertdialog", { name: "Leave without saving?" }),
+  ).toBeNull();
+  await waitFor(() =>
+    expect(view.router.state.location.pathname).toBe("/before"),
   );
 });
 
@@ -353,7 +416,9 @@ test("a failed fact stays in the editor until explicitly discarded", async () =>
   refuseWrite = "Memory is full.";
   const view = draw(<RememberFact />);
   const user = userEvent.setup({ document });
-  await user.click(view.getByRole("button", { name: "Remember a fact" }));
+  await user.click(
+    await view.findByRole("button", { name: "Remember a fact" }),
+  );
   await user.type(
     await view.findByRole("textbox", {
       name: "Something you want your Bots to know",
@@ -378,7 +443,9 @@ test("a failed fact stays in the editor until explicitly discarded", async () =>
     within(discard).getByRole("button", { name: "Discard changes" }),
   );
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
-  await user.click(view.getByRole("button", { name: "Remember a fact" }));
+  await user.click(
+    await view.findByRole("button", { name: "Remember a fact" }),
+  );
   const field = (await view.findByRole("textbox", {
     name: "Something you want your Bots to know",
   })) as HTMLTextAreaElement;

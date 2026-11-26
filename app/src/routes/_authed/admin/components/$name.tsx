@@ -431,7 +431,11 @@ function ComponentDetail({
           <SettingsItemBackground className="h-full w-full" />
         </div>
         <div className="absolute inset-0 z-10">
-          <AdminComponentPreview kind={component.kind} name={component.name} />
+          <AdminComponentPreview
+            focusAfterRetry={() => heading.current}
+            kind={component.kind}
+            name={component.name}
+          />
         </div>
       </div>
 

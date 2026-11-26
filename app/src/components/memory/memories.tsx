@@ -7,7 +7,14 @@ import {
   IconUser,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useId, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  type RefObject,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   PageEmpty,
   PageRows,
@@ -83,6 +90,7 @@ export function RememberFact({
   const [content, setContent] = useState("");
   const formId = useId();
   const opener = useRef<HTMLButtonElement>(null);
+  const submitting = useRef(false);
   const remember = useMutation(createMemoryMutationOptions(queryClient));
   return (
     <>
@@ -118,6 +126,7 @@ export function RememberFact({
         }
         description="All your Bots will know it."
         dirty={!!content.trim()}
+        guardNavigation={submitting}
         onClose={() => setOpen(false)}
         open={open}
         opener={() => opener.current ?? fallbackFocus?.() ?? null}
@@ -130,10 +139,14 @@ export function RememberFact({
           onSubmit={(event) => {
             event.preventDefault();
             if (!canWrite || remember.isPending || !content.trim()) return;
+            submitting.current = true;
             remember.mutate(content, {
               onSuccess: () => {
                 setContent("");
                 setOpen(false);
+              },
+              onSettled: () => {
+                submitting.current = false;
               },
             });
           }}
@@ -397,6 +410,7 @@ function MemoryRow({
     .trimEnd();
   const hasPreview = preview !== memory.content.trimEnd();
   const editButton = useRef<HTMLButtonElement>(null);
+  const submitting = useRef(false);
   const save = useMutation(updateMemoryMutationOptions(queryClient));
   const update = (input: {
     content?: string;
@@ -547,16 +561,23 @@ function MemoryRow({
           canWrite={canWrite}
           memory={memory}
           onClose={() => setEditing(false)}
-          onSave={(content) =>
+          onSave={(content) => {
+            submitting.current = true;
             save.mutate(
               { id: memory.id, input: { content } },
-              { onSuccess: () => setEditing(false) },
-            )
-          }
+              {
+                onSuccess: () => setEditing(false),
+                onSettled: () => {
+                  submitting.current = false;
+                },
+              },
+            );
+          }}
           error={save.error?.message ?? null}
           finalFocus={() => editButton.current ?? fallbackFocus()}
           refresh={refresh}
           saving={save.isPending}
+          submitting={submitting}
         />
       ) : null}
     </Item>
@@ -604,6 +625,7 @@ function EditMemoryDialog({
   onClose,
   finalFocus,
   refresh,
+  submitting,
 }: {
   canWrite: boolean;
   memory: MemoryRecord;
@@ -613,6 +635,7 @@ function EditMemoryDialog({
   onClose: () => void;
   finalFocus: () => HTMLElement | null;
   refresh?: MemoryRefresh;
+  submitting: RefObject<boolean>;
 }) {
   const [content, setContent] = useState(memory.content);
   const id = useId();
@@ -631,6 +654,7 @@ function EditMemoryDialog({
       }
       description={memory.provenance}
       dirty={dirty}
+      guardNavigation={submitting}
       onClose={onClose}
       open
       opener={finalFocus}

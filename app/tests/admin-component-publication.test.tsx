@@ -17,9 +17,16 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { queryClient } from "@/query-client";
+import { Route as ListRoute } from "@/routes/_authed/admin/components/index";
 import { Route as ComponentRoute } from "@/routes/_authed/admin/components/$name";
 import type { ComponentRecord } from "@/lib/components/queries";
 import * as gallery from "@/lib/copilot/gallery-registry";
@@ -134,12 +141,12 @@ afterEach(() => {
   queryClient.setDefaultOptions(defaults);
 });
 
-function open() {
+function open(at = `/admin/components/${NAME}`) {
   const root = createRootRoute({ component: Outlet });
   const list = createRoute({
     getParentRoute: () => root,
     path: "/admin/components",
-    component: () => null,
+    component: ListRoute.options.component,
   });
   const one = (
     ComponentRoute as unknown as { update: (options: unknown) => never }
@@ -151,7 +158,7 @@ function open() {
   const router = createRouter({
     routeTree: root.addChildren([list, one]),
     history: createMemoryHistory({
-      initialEntries: [`/admin/components/${NAME}`],
+      initialEntries: [at],
     }),
   });
   const view = render(
@@ -381,5 +388,58 @@ describe("Publish description", () => {
       { published: true },
     ]);
     expect(view.getByText("Description published.")).toBeTruthy();
+  });
+});
+
+describe("the components list", () => {
+  test("a failed read is retried in place, and focus returns to the heading", async () => {
+    const serve = global.fetch;
+    let unavailable = true;
+    global.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (
+          String(input).split("?")[0] === "/api/components" &&
+          (init?.method ?? "GET") === "GET" &&
+          unavailable
+        ) {
+          return Response.json({ error: "Temporary outage" }, { status: 503 });
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    const { view } = open("/admin/components");
+    expect(await view.findByText("Couldn't load components.")).toBeTruthy();
+    unavailable = false;
+    const retry = view.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+
+    expect(await view.findByText("Activity report")).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
+    // The tile is still a link, so the failure keeps its list context.
+    expect(view.getByTestId(`component-${NAME}`).tagName).toBe("A");
+    // The retry button is gone; focus lands on the page it recovered, not on BODY.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        view.getByRole("heading", { name: "UI components" }),
+      ),
+    );
+  });
+});
+
+describe("Bot access", () => {
+  test("Available to says what turning a Bot off does before any switch is pressed", async () => {
+    const { view, user } = open();
+    await user.click(await view.findByTestId(`grants-${NAME}`));
+    const dialog = await view.findByRole("dialog", { name: "Available to" });
+    expect(
+      within(dialog).getByText(
+        "Turn a Bot off to withhold this component from it.",
+      ),
+    ).toBeTruthy();
+    // The switch that follows the sentence is the Bot grant it describes.
+    expect(within(dialog).getByTestId(`grant-${NAME}-bot-ada`)).toBeTruthy();
   });
 });

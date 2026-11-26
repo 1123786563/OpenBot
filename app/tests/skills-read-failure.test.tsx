@@ -280,9 +280,17 @@ test("the admin can retry a failed skills read in place", async () => {
     { preconnect: originalFetch.preconnect },
   );
 
-  fireEvent.click(view.getByRole("button", { name: "Retry" }));
+  const retry = view.getByRole("button", { name: "Retry" });
+  retry.focus();
+  fireEvent.click(retry);
   expect(await view.findByText("No skills yet")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
+  // The retry button is gone; focus lands on the section it recovered, not on BODY.
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      view.getByRole("heading", { name: "Skills" }),
+    ),
+  );
 });
 
 test("a deployment with genuinely no skills still says so on the admin page", async () => {

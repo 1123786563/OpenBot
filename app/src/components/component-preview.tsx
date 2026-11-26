@@ -15,27 +15,36 @@ import {
 export function AdminComponentPreview({
   name,
   kind,
+  tile = false,
+  focusAfterRetry,
 }: {
   name: string;
   kind: string;
+  /** Inside a link's tile: no nested action, and nothing for a screen reader to read there. */
+  tile?: boolean;
+  focusAfterRetry?: () => HTMLElement | null;
 }) {
   const sandboxed = useQuery({
     ...sandboxedListQueryOptions(),
     enabled: kind === "sandboxed",
   });
-  if (kind === "sandboxed" && sandboxed.isPending) {
-    return <SandboxHost status={LOADING} {...TILE} />;
-  }
-  if (kind === "sandboxed" && sandboxed.error) {
-    return (
+  const content =
+    kind === "sandboxed" && sandboxed.isPending ? (
+      <SandboxHost status={LOADING} {...TILE} />
+    ) : kind === "sandboxed" && sandboxed.error ? (
       <SandboxHost
         status={{
           kind: "error",
           message: "Couldn't load the preview.",
-          action: (
+          action: tile ? undefined : (
             <Button
-              clickAction={async () => {
+              clickAction={async (event) => {
+                const wasFocused =
+                  document.activeElement === event.currentTarget;
                 await sandboxed.refetch();
+                if (wasFocused) {
+                  requestAnimationFrame(() => focusAfterRetry?.()?.focus());
+                }
               }}
               label="Retry"
               size="sm"
@@ -44,14 +53,19 @@ export function AdminComponentPreview({
         }}
         {...TILE}
       />
+    ) : (
+      <ComponentPreview
+        kind={kind}
+        name={name}
+        sandboxed={sandboxed.data?.find((component) => component.name === name)}
+      />
     );
-  }
+  if (!tile) return content;
+  // A tile is one link: its preview is artwork, so keep it out of the accessible name and tab order.
   return (
-    <ComponentPreview
-      kind={kind}
-      name={name}
-      sandboxed={sandboxed.data?.find((component) => component.name === name)}
-    />
+    <Stack aria-hidden="true" height="100%" inert width="100%">
+      {content}
+    </Stack>
   );
 }
 
