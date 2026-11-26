@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import { createOpenBotHandoffDelivery } from "../src/agents/handoff-wiring";
 import type { HandoffWork } from "../src/agents/handoff-runner";
 import {
+  channelAgents,
   directChatRunEvents,
   directChatRuns,
+  groupBotThreads,
   intelligenceChannelMappings,
 } from "../src/db/schema";
 
@@ -41,11 +43,23 @@ type Line = {
   at: Date;
 };
 
+/** A shared Conversation's transcript line, as `announceHandoff` is given it: no time of its own. */
+type TranscriptLine = {
+  actor: string;
+  threadId: string;
+  text: string;
+  agentId: string;
+  /** The Run whose words these are, so the transcript takes them once. */
+  conversationRunId?: string;
+};
+
 type Outcome = { replyText: string; shared: boolean };
 
 /**
- * The delivery over stores that only record: `told` is every line the roster was given, `sent` the
- * threads it was told to look at. One channel shows the asking thread.
+ * The delivery over stores that only record: `told` is every line the roster was given,
+ * `transcript` every line a shared Conversation was, `sent` the threads it was told to look at,
+ * `turns` the Runs it was asked to start. A channel shows the asking thread; a Bot's group thread
+ * maps to no channel, and its transcript is told instead.
  */
 function harness(
   outcome: Outcome | Error,
@@ -56,11 +70,21 @@ function harness(
     | "run unreadable"
     | "owner unreadable"
     | "query failure" = "none",
+  thread: "channel" | "group" = "channel",
 ) {
   const told: Line[] = [];
+  const transcript: TranscriptLine[] = [];
   const sent: string[] = [];
+  const turns: Record<string, unknown>[] = [];
+  // The thread is the conversation's own Bot's: in a group its own row, in a direct channel its
+  // mapping and the channel's one agent. A second hop's asking Bot differs from both.
   const rows = new Map<object, unknown[]>([
-    [intelligenceChannelMappings, [{ channelId: "channel-1" }]],
+    [groupBotThreads, thread === "group" ? [{ agentId: "assistant" }] : []],
+    [
+      intelligenceChannelMappings,
+      thread === "group" ? [] : [{ channelId: "channel-1" }],
+    ],
+    [channelAgents, thread === "group" ? [] : [{ agentId: "assistant" }]],
     [directChatRunEvents, [{ at: LANDED }]],
     [directChatRuns, [{ dispatchedAt: SENT, startedAt: STARTED }]],
   ]);
@@ -84,7 +108,8 @@ function harness(
     }),
   };
   const delivery = createOpenBotHandoffDelivery({
-    runBackground: (async () => {
+    runBackground: (async (turn: Record<string, unknown>) => {
+      turns.push(turn);
       if (outcome instanceof Error) throw outcome;
       return outcome;
     }) as never,
@@ -116,18 +141,26 @@ function harness(
     database: database as never,
     groupConversations: {
       // A shared Conversation's transcript, which a direct Conversation never has.
-      announceHandoff: async () => {
-        told.push({
-          actor: "",
-          channelId: "shared",
-          text: "",
-          agentId: null,
-          at: SENT,
+      announceHandoff: async (input: {
+        threadId: string;
+        actorId: string;
+        agentId: string;
+        text: string;
+        conversationRunId?: string;
+      }) => {
+        transcript.push({
+          actor: input.actorId,
+          threadId: input.threadId,
+          text: input.text,
+          agentId: input.agentId,
+          ...(input.conversationRunId && {
+            conversationRunId: input.conversationRunId,
+          }),
         });
       },
     } as never,
   });
-  return { delivery, told, sent };
+  return { delivery, told, transcript, sent, turns };
 }
 
 const HOP = {
@@ -163,6 +196,20 @@ describe("a handoff delivered without Intelligence", () => {
       },
     ]);
     expect(sent).toEqual(["thread-1"]);
+  });
+
+  test("gives the Run it starts the statement the runner signed, which carries the hop's depth", async () => {
+    const { delivery, turns } = harness(ANSWERED);
+
+    await delivery.deliver({
+      work: WORK,
+      ...HOP,
+      assertion: "signed",
+    });
+
+    // Without it the Run is taken to have begun with a person: depth zero, and no claim of its own.
+    expect(turns).toHaveLength(1);
+    expect(turns[0].assertion).toBe("signed");
   });
 
   test("tells again, of a hop that already answered, the same line at the same time", async () => {
@@ -204,6 +251,49 @@ describe("a handoff delivered without Intelligence", () => {
 
       expect(told.map((line) => line.agentId)).toEqual(["assistant"]);
     }
+  });
+
+  test("writes a notice into a shared Conversation's transcript under its own Bot, and a relayed answer not a second time", async () => {
+    const back = {
+      ...WORK,
+      fromBotId: "researcher",
+      toBotId: "assistant",
+      answerIn: "thread-1",
+    };
+    const shared: Outcome = { replyText: ANSWER, shared: true };
+
+    // A notice carries no answer, so the asking Bot speaks; nothing else writes its turn in. Its
+    // thread is a Bot's group thread, which maps to no channel.
+    const notice = harness(shared, "none", "group");
+
+    await notice.delivery.deliver({
+      work: back,
+      ...HOP,
+      assertion: "signed",
+    });
+
+    expect(notice.transcript).toEqual([
+      {
+        actor: "user-1",
+        threadId: "thread-1",
+        text: ANSWER,
+        agentId: "assistant",
+        conversationRunId: createHash("sha256").update("hop-1").digest("hex"),
+      },
+    ]);
+    expect(notice.told).toEqual([]);
+
+    // A relayed answer is already in the transcript as the answering Bot's own message.
+    const relay = harness(shared);
+
+    await relay.delivery.deliver({
+      work: { ...back, answer: ANSWER },
+      ...HOP,
+      assertion: "signed",
+    });
+
+    expect(relay.transcript).toEqual([]);
+    expect(relay.told).toEqual([]);
   });
 
   test("tells of when the Run started once its events are gone", async () => {

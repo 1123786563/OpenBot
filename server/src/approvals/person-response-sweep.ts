@@ -1,4 +1,5 @@
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
+import type { mountCopilotRuntime } from "../copilot";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { RunAssertion } from "../agents/callback-token";
@@ -10,6 +11,7 @@ import type { DeliveryScope } from "../delivery/types";
 import { runWithDecisionAccess } from "../personal-saas/decision-access";
 import type { ResponsibilityStore } from "../responsibilities/types";
 import type { WorkQueue } from "../work/queue";
+import { createPersonResponseTurn } from "./person-response-turn";
 import { resumePersonQuestion } from "./question-resume";
 import {
   type PersonQuestion,
@@ -32,6 +34,10 @@ export function createPersonResponseTick(deps: {
   personResponseOwner: string;
   authoriseQuestion: (question: PersonQuestion) => Promise<unknown>;
   approvalContinuationRunner: TurnRunner;
+  /** The OpenBot background engine, on a deployment without Intelligence; see person-response-turn.ts. */
+  runBackground?: NonNullable<
+    ReturnType<typeof mountCopilotRuntime>["runBackground"]
+  >;
   responsibilityStore: ResponsibilityStore;
   responsibilityAnswerTurn: NonNullable<
     Parameters<typeof resumePersonQuestion>[0]["responsibilityTurn"]
@@ -51,12 +57,18 @@ export function createPersonResponseTick(deps: {
     personResponseOwner,
     authoriseQuestion,
     approvalContinuationRunner,
+    runBackground,
     responsibilityStore,
     responsibilityAnswerTurn,
     sourceForCoordinationRun,
     channelStore,
     actorFor,
   } = deps;
+  // Without Intelligence the toolkit runner cannot open a thread (issue #133); the answer runs
+  // on the OpenBot background engine instead, as deliveries already do.
+  const runTurn = runBackground
+    ? createPersonResponseTurn(runBackground, actorFor)
+    : approvalContinuationRunner;
   return async () => {
     try {
       const [item] = await approvalQueue.claim({
@@ -121,7 +133,7 @@ export function createPersonResponseTick(deps: {
               question: payload.question,
               response: payload.response,
               messageId: `person-response:${item.key}`,
-              runTurn: approvalContinuationRunner,
+              runTurn,
               responsibilities: responsibilityStore,
               responsibilityTurn: responsibilityAnswerTurn,
               ...execution,

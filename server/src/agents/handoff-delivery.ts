@@ -177,6 +177,11 @@ export function createHandoffDelivery(options: {
      * again of the same answer, at the same time, moves nothing.
      */
     at?: Date;
+    /**
+     * The Run that said them, when the delivery knows it. A shared transcript takes each Run's words
+     * once, so it is told again of the same Run without a second message.
+     */
+    conversationRunId?: string;
   }) => Promise<void>;
   /**
    * Show the asking conversation as working while a FORWARD hop runs, and stop when it is over.

@@ -197,11 +197,22 @@ export type BackgroundTurn = {
   // A forwarded message (delivery) is not remapped to a group thread and its reply is not
   // published to one, the two things `source === "routine"` switches on below.
   | { source: "delivery"; literalAnswer?: never; handoffFromBotId?: never }
-  | { source: "handoff"; literalAnswer?: never; handoffFromBotId: string }
+  /*
+   * A hop carries the signed statement of the Run it starts, which says how deep the chain has
+   * gone and that this Run is a delivery's. A relay — the variant that carries an answer — runs no
+   * model and ignores it, but every delivery is signed one.
+   */
+  | {
+      source: "handoff";
+      literalAnswer?: never;
+      handoffFromBotId: string;
+      assertion: string;
+    }
   | {
       source: "handoff";
       literalAnswer?: { botId: string; text: string };
       handoffFromBotId?: never;
+      assertion: string;
     }
 );
 
@@ -498,6 +509,31 @@ export function createDirectChatRoutes(deps: {
     if (!row) return null;
     const profile = await profiles.getWithin(executor, actor, agentId);
     return profile && !profile.deletedAt && !profile.hidden ? row : null;
+  }
+
+  /** The Bot whose conversation a thread is, by its group row or its direct channel's agent. */
+  async function conversationBotFor(
+    executor: ProfileReadExecutor,
+    threadId: string,
+  ) {
+    const [group] = await executor
+      .select({ agentId: groupBotThreads.agentId })
+      .from(groupBotThreads)
+      .where(eq(groupBotThreads.threadId, threadId))
+      .limit(1);
+    if (group) return group.agentId;
+    const [mapped] = await executor
+      .select({ channelId: intelligenceChannelMappings.channelId })
+      .from(intelligenceChannelMappings)
+      .where(eq(intelligenceChannelMappings.threadId, threadId))
+      .limit(1);
+    if (!mapped) return undefined;
+    const [agent] = await executor
+      .select({ agentId: channelAgents.agentId })
+      .from(channelAgents)
+      .where(eq(channelAgents.channelId, mapped.channelId))
+      .limit(1);
+    return agent?.agentId;
   }
 
   async function runThreadFor(
@@ -1839,7 +1875,13 @@ export function createDirectChatRoutes(deps: {
       const actor = await deps
         .backgroundActor?.(action.actorId)
         .catch(() => null);
-      const scopeBot = run.handoffFromBotId ?? action.botId;
+      // A Run handed on by another Bot still runs in the conversation's own thread, two deep.
+      // The handing Bot grants the work; it is not the Bot whose thread this is, and checking the
+      // thread under its id refused every approval in a delivered Run past the first hop.
+      const scopeBot =
+        (await conversationBotFor(database, key.threadId)) ??
+        run.handoffFromBotId ??
+        action.botId;
       const profile = actor && (await profiles.get(actor, action.botId));
       const allowed =
         actor?.id === action.actorId &&
@@ -2726,6 +2768,17 @@ export function createDirectChatRoutes(deps: {
         continuation,
         skill: background?.source === "group" ? background.skill : undefined,
       });
+      /*
+       * The hop's own statement, so the tools this Run is offered follow the depth the chain has
+       * actually reached and the claim under which it may coordinate further. Without it the
+       * delivery's Run read as a person's own: depth zero, no claim, and a notice went back to
+       * asking another Bot for ever.
+       */
+      if (background?.source === "handoff")
+        input.forwardedProps = {
+          ...(input.forwardedProps ?? {}),
+          openbotRun: background.assertion,
+        };
       let failure = false;
       let marketPause: string | undefined;
       let waitingApprovalId: string | undefined;

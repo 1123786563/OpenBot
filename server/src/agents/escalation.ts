@@ -49,6 +49,11 @@ export type EscalationRoute = (input: {
   runId: string;
   /** Preserved for a durable question routed from an unattended routine or delegated run. */
   initiator?: AuditInitiator;
+  /**
+   * The hop this run is a delivery of. The Bot asking is not the conversation's own, so the source
+   * is found by the claim — the same fallback the coordination authorisation uses.
+   */
+  handoff?: RunAssertion["handoff"];
   question: string;
   why?: string;
   /** The decisions inside the question, one or several, when the Bot sent them as parts. */
@@ -231,6 +236,7 @@ export function escalationTool(options: {
           ...(from.threadId ? { threadId: from.threadId } : {}),
           runId: from.runId,
           ...(from.initiator ? { initiator: from.initiator } : {}),
+          ...(from.handoff ? { handoff: from.handoff } : {}),
           question,
           ...(parsed.data.why ? { why: parsed.data.why } : {}),
           ...(parsed.data.parts

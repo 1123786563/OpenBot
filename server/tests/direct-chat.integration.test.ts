@@ -49,21 +49,25 @@ import {
 } from "../src/agents/callback-token";
 import { wireCoordination } from "../src/agents/coordination-wiring";
 import { createAgentFetch } from "../src/agents/endpoint";
+import { ESCALATE_TOOL, PUT_TO } from "../src/agents/escalation";
 import {
   createHandoffDesk,
   HANDOFF_GRANT,
   HANDOFF_KIND,
 } from "../src/agents/handoff";
 import { createHandoffRunner } from "../src/agents/handoff-runner";
-import { signHandoffDeliveryRun } from "../src/agents/handoff-signing";
 import { HANDOFF_TOOL, handoffTool } from "../src/agents/handoff-tool";
 import {
   answerGoneFrom,
   createOpenBotHandoffDelivery,
+  handoffRunId,
+  handoffRunSigner,
 } from "../src/agents/handoff-wiring";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
 import { createApp } from "../src/app";
+import { createPersonResponseTick } from "../src/approvals/person-response-sweep";
+import { createApprovalQuestions } from "../src/approvals/questions";
 import { createApprovalResumeTick } from "../src/approvals/resume-sweep";
 import { createApprovalRoutes } from "../src/approvals/routes";
 import { createApprovalService } from "../src/approvals/service";
@@ -622,6 +626,7 @@ test("a shared channel submits one native Run without Intelligence", async () =>
 test.each([
   "shared",
   "handoff",
+  "second hop",
   "group",
   "pre-execution race",
   "lost dispatch",
@@ -657,9 +662,15 @@ test.each([
     expect(channelReply.status).toBe(201);
     const { channel } = await channelReply.json();
     const group = createGroupStore(database, () => crypto.randomUUID());
+    // A second-hop Run runs in the first Bot's thread, but its `handoffFromBotId` names the Bot
+    // that handed it on. Only the thread's own Bot can authorise its approval now.
     const conversationBotId = kind === "handoff" ? peer.id : bot.id;
     const backgroundSource =
-      kind === "group" ? undefined : kind === "handoff" ? "handoff" : "routine";
+      kind === "group"
+        ? undefined
+        : kind === "handoff" || kind === "second hop"
+          ? "handoff"
+          : "routine";
     const threadId = await group.thread(
       actor.id,
       channel.id,
@@ -752,7 +763,9 @@ test.each([
         userMessageId: backgroundSource
           ? backgroundMessageId(backgroundSource, runId)
           : messageId,
-        ...(kind === "handoff" ? { handoffFromBotId: peer.id } : {}),
+        ...(kind === "handoff" || kind === "second hop"
+          ? { handoffFromBotId: peer.id }
+          : {}),
         prompt: "Fixture prompt.",
       });
       await appendDirectChatEvent(
@@ -1756,6 +1769,124 @@ const signRunAs =
     );
   };
 
+/**
+ * The wiring for Bots handing work to each other without Intelligence, as far as the handoff tests
+ * need it: the real resolver, so each Bot is a remote AG-UI endpoint holding its per-run
+ * coordination tools, and the real desk and coordination. Wired the way index.ts wires it;
+ * `mayAddress` reads the same grants the desk does.
+ */
+function nativeHandoffWiring(
+  actor: AuthenticatedActor,
+  options: {
+    /** This deployment's ceiling, when a test needs a chain deeper than the default one. */
+    maxDepth?: number;
+    notify?: Parameters<typeof wireCoordination>[0]["notify"];
+  } = {},
+) {
+  const caps = {
+    ...config.handoff,
+    ...(options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth }),
+  };
+  const auditStore = createAuditStore(database);
+  const pluginStore = createPluginStore({
+    brokerProvider: "composio",
+    database,
+    auditStore,
+    credentials: createCredentialStore(database),
+    encryptionKey: config.keyEncryptionKey,
+    policy: () => ({ mode: "enforce", deny: [], allow: ["true"] }),
+  });
+  const actorFor = async (id: string) => {
+    if (id !== actor.id) throw new Error("Unexpected person.");
+    return actor;
+  };
+  const mayAddress = async (fromBotId: string, toBotId: string) =>
+    (
+      await pluginStore.botsReachableFrom(fromBotId).catch((): string[] => [])
+    ).includes(toBotId);
+  const channelStore = createChannelStore(
+    database,
+    profiles,
+    createThreadIdentity("issue-31"),
+  );
+  const queue = createWorkQueue(database);
+  const { coordinationForActor } = wireCoordination({
+    handoffDesk: createHandoffDesk({
+      queue,
+      profiles,
+      mayAddress,
+      addressable: (fromBotId) => pluginStore.botsReachableFrom(fromBotId),
+      actorFor,
+      auditStore,
+      caps,
+      onOffered: (threadId) => channelStore.signalWork(threadId),
+    }),
+    config: { ...config, handoff: caps },
+    approvalService: createApprovalService(createApprovalStore(database)),
+    agentProfileStore: profiles,
+    actorFor,
+    channelSourceForRun: channelSourceOfRun,
+    database,
+    pluginStore,
+    bootAuditStore: auditStore,
+    peopleStore: createPeopleStore(database, []),
+    sourceForCoordinationRun: async (run) =>
+      (await channelSourceOfRun(run)) ?? groupSourceForRun(database, run),
+    channelStore,
+    notify:
+      options.notify ??
+      (async () => {
+        throw new Error("Asking a person is not on this path.");
+      }),
+  });
+  const app = web(database, actor, "", stubBotNotBuilt, {
+    resolver: createActorAgentResolver({
+      loadAgents: createRuntimeAgentLoader(database),
+      model: { provider: "openai", defaultModel: "unused" },
+      resolveModelApiKey: async () => null,
+      agentFetch: createAgentFetch({ allowPrivateHosts: true }),
+      signRunForActor: signRunAs,
+      handoffForActor: (actorId, initiator, depth) =>
+        restrictCoordinationForRun(
+          initiator,
+          coordinationForActor(actorId, initiator, depth),
+        ),
+    }),
+  });
+  if (!app.runBackground) throw new Error("Missing OpenBot runtime.");
+  return {
+    app,
+    runBackground: app.runBackground,
+    auditStore,
+    channelStore,
+    queue,
+    actorFor,
+    mayAddress,
+  };
+}
+
+const stubBotNotBuilt = async (): Promise<never> => {
+  throw new Error("The fixture Bot must not be built.");
+};
+
+/** What a fixture Bot's endpoint is asked, as far as the handoff tests read it. */
+type BotRequest = {
+  threadId: string;
+  runId: string;
+  messages: { role: string; toolCallId?: string; content?: unknown }[];
+  tools: {
+    name: string;
+    parameters: { properties: { bot: { enum?: string[] } } };
+  }[];
+  forwardedProps?: { openbotRun?: unknown };
+};
+
+const sse = (frames: Record<string, unknown>[]) =>
+  new Response(
+    frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+
 /*
  * Issue #37: a Routine fires with Intelligence switched off, its Bot hands the work to another Bot
  * over the AG-UI tool path, the handoff is delivered, and the same trigger and the same handoff
@@ -1776,22 +1907,7 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
   const TASK = "Find the status.";
   const ASKER_REPLY = "I asked the other Bot to find the status.";
   const ANSWER = "Everything is clear.";
-  type BotRequest = {
-    threadId: string;
-    runId: string;
-    messages: { role: string; toolCallId?: string; content?: unknown }[];
-    tools: {
-      name: string;
-      parameters: { properties: { bot: { enum?: string[] } } };
-    }[];
-    forwardedProps?: { openbotRun?: unknown };
-  };
   const seen = { asker: [] as BotRequest[], target: [] as BotRequest[] };
-  const sse = (frames: Record<string, unknown>[]) =>
-    new Response(
-      frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
-      { headers: { "content-type": "text/event-stream" } },
-    );
   const harness = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -1854,7 +1970,7 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
     visibility: "private",
     endpoint: new URL("/target/ag-ui", harness.url).href,
   });
-  await profiles.create(actor, {
+  const bystander = await profiles.create(actor, {
     name: NAMES.bystander,
     title: "Bot",
     roleDescription: "Was never granted.",
@@ -1863,82 +1979,13 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
   const edition = currentEdition();
   // The team edition: a Bot may ask exactly the Bots it was granted.
   setEdition("team");
+  let restore: (() => void) | undefined;
+  let made: { id: string; threadId: string } | undefined;
   try {
     expect(config.runtime.intelligence).toBeUndefined();
     expect(config.handoff.maxDepth).toBeGreaterThan(0);
-    const auditStore = createAuditStore(database);
-    const pluginStore = createPluginStore({
-      brokerProvider: "composio",
-      database,
-      auditStore,
-      credentials: createCredentialStore(database),
-      encryptionKey: config.keyEncryptionKey,
-      policy: () => ({ mode: "enforce", deny: [], allow: ["true"] }),
-    });
-    const actorFor = async (id: string) => {
-      if (id !== actor.id) throw new Error("Unexpected person.");
-      return actor;
-    };
-    const mayAddress = async (fromBotId: string, toBotId: string) =>
-      (
-        await pluginStore.botsReachableFrom(fromBotId).catch((): string[] => [])
-      ).includes(toBotId);
-    const channelStore = createChannelStore(
-      database,
-      profiles,
-      createThreadIdentity("issue-31"),
-    );
-    const queue = createWorkQueue(database);
-    const { coordinationForActor } = wireCoordination({
-      handoffDesk: createHandoffDesk({
-        queue,
-        profiles,
-        mayAddress,
-        addressable: (fromBotId) => pluginStore.botsReachableFrom(fromBotId),
-        actorFor,
-        auditStore,
-        caps: config.handoff,
-        onOffered: (threadId) => channelStore.signalWork(threadId),
-      }),
-      config,
-      approvalService: createApprovalService(createApprovalStore(database)),
-      agentProfileStore: profiles,
-      actorFor,
-      channelSourceForRun: channelSourceOfRun,
-      database,
-      pluginStore,
-      bootAuditStore: auditStore,
-      peopleStore: createPeopleStore(database, []),
-      sourceForCoordinationRun: async (run) =>
-        (await channelSourceOfRun(run)) ?? groupSourceForRun(database, run),
-      channelStore,
-      notify: async () => {
-        throw new Error("Asking a person is not on this path.");
-      },
-    });
-    const app = web(
-      database,
-      actor,
-      asker.id,
-      async () => {
-        throw new Error("The fixture Bot must not be built.");
-      },
-      {
-        resolver: createActorAgentResolver({
-          loadAgents: createRuntimeAgentLoader(database),
-          model: { provider: "openai", defaultModel: "unused" },
-          resolveModelApiKey: async () => null,
-          agentFetch: createAgentFetch({ allowPrivateHosts: true }),
-          signRunForActor: signRunAs,
-          handoffForActor: (actorId, initiator, depth) =>
-            restrictCoordinationForRun(
-              initiator,
-              coordinationForActor(actorId, initiator, depth),
-            ),
-        }),
-      },
-    );
-    if (!app.runBackground) throw new Error("Missing OpenBot runtime.");
+    const { app, runBackground, auditStore, queue, actorFor, mayAddress } =
+      nativeHandoffWiring(actor);
     await database.insert(pluginGrants).values({
       kind: HANDOFF_GRANT,
       ref: target.id,
@@ -1951,6 +1998,7 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
     );
     expect(created.status).toBe(201);
     const { channel } = await created.json();
+    made = channel;
     const routine = await createRoutineStore(database).create({
       ownerUserId: actor.id,
       agentId: asker.id,
@@ -2145,12 +2193,12 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
       },
       owner: `routine-handoff-${suite}`,
       auditStore,
-      sign: (work, claim) =>
-        signHandoffDeliveryRun(work, config.keyEncryptionKey, undefined, claim),
+      // As index.ts wires it.
+      sign: handoffRunSigner(config.keyEncryptionKey, true),
       answerGone: answerGoneFrom(database),
       onSettled: (work) => app.channelStore.signalWork(work.threadId),
       delivery: createOpenBotHandoffDelivery({
-        runBackground: app.runBackground,
+        runBackground,
         channelStore: app.channelStore,
         actorFor,
         mayAddress,
@@ -2227,14 +2275,16 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
       deliveryRunId,
     ]);
     const asked = seen.target[0];
-    // The Bot that answered is offered no tool to hand the work on again. That holds today because
-    // the Conversation's own Bot is the one that asked, not because its statement carries the hop's
-    // depth: this delivery drops the statement the runner signed for it.
-    expect(asked.tools.map((tool) => tool.name)).not.toContain(HANDOFF_TOOL);
     expect(asked.messages.at(-1)?.content).toContain(
       `You are ${NAMES.target}.`,
     );
     expect(asked.messages.at(-1)?.content).toContain(`Task: ${TASK}`);
+    // The Run that answered carries the statement the runner signed for the hop: its depth, its
+    // claim, and the Routine that started the chain. Its tools are offered from that statement, so a
+    // Bot one hop in, already as deep as this deployment allows, is offered a person to ask and no
+    // Bot to hand the work on to.
+    expect(asked.tools.map((tool) => tool.name)).toContain(ESCALATE_TOOL);
+    expect(asked.tools.map((tool) => tool.name)).not.toContain(HANDOFF_TOOL);
     expect(
       readRunAssertion(
         asked.forwardedProps?.openbotRun,
@@ -2245,11 +2295,9 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
       actorId: actor.id,
       runId: deliveryRunId,
       threadId: channel.threadId,
-      initiator: {
-        kind: "handoff",
-        id: asker.id,
-        origin: { kind: "routine", id: routine.id },
-      },
+      depth: 1,
+      initiator: { kind: "routine", id: routine.id },
+      handoff: { key: hop.key, owner: `routine-handoff-${suite}` },
     });
     expect(
       await database
@@ -2300,6 +2348,7 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
 
     // The same trigger again: the Run is finished, so nothing is said and nothing runs.
     const said = spyOn(app.channelStore, "recordActivity");
+    restore = () => said.mockRestore();
     await app.routineRunner.run(runId);
     expect(said).not.toHaveBeenCalled();
     expect(await runs()).toMatchObject({
@@ -2393,6 +2442,8 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
       ],
     });
   } finally {
+    restore?.();
+    const { id: channelId, threadId } = made ?? { id: "", threadId: "" };
     await database
       .delete(workItems)
       .where(
@@ -2403,10 +2454,1131 @@ test("a Routine's Run hands off to another Bot without Intelligence, every entry
       );
     await database
       .delete(pluginGrants)
-      .where(eq(pluginGrants.agentId, asker.id));
+      .where(inArray(pluginGrants.agentId, [asker.id, target.id]));
+    await database
+      .delete(directChatRunEvents)
+      .where(eq(directChatRunEvents.threadId, threadId));
+    await database
+      .delete(directChatRuns)
+      .where(eq(directChatRuns.threadId, threadId));
+    await database.delete(channels).where(eq(channels.id, channelId));
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [asker.id, target.id, bystander.id]));
+    await database.delete(users).where(eq(users.id, actor.id));
     setEdition(edition);
   }
 }, 60_000);
+
+/*
+ * Issue #37: when a hop fails for good, the Bot that asked tells the person, in the conversation
+ * they are watching. The same wiring as the test above. The hop is refused before its Run starts,
+ * as one whose addressed Bot can no longer be run, so the notice is the only Run here, and only the
+ * asking Bot's answer is a fixture.
+ */
+for (const scenario of [
+  "direct",
+  "shared",
+  "second hop, direct",
+  "second hop, shared",
+] as const) {
+  test(`a failed hop's notice reaches the person (${scenario}), and is offered no Bot to hand on to`, async () => {
+    const actor = await person();
+    const suite = crypto.randomUUID().slice(0, 8);
+    const NAMES = {
+      asker: `Asker ${suite}`,
+      target: `Answerer ${suite}`,
+      other: `Other ${suite}`,
+    };
+    const TASK = "Find the status.";
+    const NOTICE = "The other Bot did not come back.";
+    // A hop handed on again: the Bot that asked it is not the conversation's own Bot.
+    const deeper = scenario.startsWith("second hop");
+    const shared = scenario.endsWith("shared");
+    const seen: BotRequest[] = [];
+    const harness = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const body = (await request.json()) as BotRequest;
+        seen.push(body);
+        const run = { threadId: body.threadId, runId: body.runId };
+        const reply = `reply-${body.runId}`;
+        return sse([
+          { type: EventType.RUN_STARTED, ...run },
+          {
+            type: EventType.TEXT_MESSAGE_START,
+            messageId: reply,
+            role: "assistant",
+          },
+          {
+            type: EventType.TEXT_MESSAGE_CONTENT,
+            messageId: reply,
+            delta: NOTICE,
+          },
+          { type: EventType.TEXT_MESSAGE_END, messageId: reply },
+          { type: EventType.RUN_FINISHED, ...run },
+        ]);
+      },
+    });
+    onTestFinished(() => {
+      harness.stop(true);
+    });
+    const asker = await profiles.create(actor, {
+      name: NAMES.asker,
+      title: "Bot",
+      roleDescription: "Coordinates work.",
+      visibility: "private",
+      endpoint: new URL("/asker/ag-ui", harness.url).href,
+    });
+    const target = await profiles.create(actor, {
+      name: NAMES.target,
+      title: "Bot",
+      roleDescription: "Answers handoffs.",
+      visibility: "private",
+      ...(deeper
+        ? { endpoint: new URL("/target/ag-ui", harness.url).href }
+        : {}),
+    });
+    const other = await profiles.create(actor, {
+      name: NAMES.other,
+      title: "Bot",
+      roleDescription: "Was never asked.",
+      visibility: "private",
+    });
+    const edition = currentEdition();
+    let channelRow: { id: string; threadId: string } | undefined;
+    let threadId = "";
+    // The team edition: a Bot may ask exactly the Bots it was granted.
+    setEdition("team");
+    try {
+      const { app, runBackground, auditStore, channelStore, queue, actorFor } =
+        nativeHandoffWiring(actor, deeper ? { maxDepth: 2 } : {});
+      await database.insert(pluginGrants).values([
+        {
+          kind: HANDOFF_GRANT,
+          ref: target.id,
+          agentId: asker.id,
+          grantedBy: "test",
+        },
+        {
+          kind: HANDOFF_GRANT,
+          ref: other.id,
+          agentId: asker.id,
+          grantedBy: "test",
+        },
+        ...(deeper
+          ? [
+              {
+                kind: HANDOFF_GRANT,
+                ref: other.id,
+                agentId: target.id,
+                grantedBy: "test",
+              },
+            ]
+          : []),
+      ]);
+      const created = await app.request(
+        "/api/channels",
+        post({ agentIds: shared ? [asker.id, target.id] : [asker.id] }),
+      );
+      expect(created.status).toBe(201);
+      const { channel } = await created.json();
+      channelRow = channel;
+      threadId = shared
+        ? await createGroupStore(database, () => crypto.randomUUID()).thread(
+            actor.id,
+            channel.id,
+            asker.id,
+          )
+        : channel.threadId;
+      // The hop that failed, one Bot deep or a second hop handed on by a delivered Bot.
+      const hopKey = crypto.randomUUID();
+      await queue.offer({
+        kind: HANDOFF_KIND,
+        key: hopKey,
+        payload: {
+          fromBotId: deeper ? target.id : asker.id,
+          toBotId: deeper ? other.id : target.id,
+          actorId: actor.id,
+          threadId,
+          runId: crypto.randomUUID(),
+          depth: deeper ? 2 : 1,
+          fromName: deeper ? NAMES.target : NAMES.asker,
+          toName: deeper ? NAMES.other : NAMES.target,
+          task: TASK,
+        },
+      });
+      const owner = `failed-hop-${suite}-${deeper ? "deeper" : "first"}-${shared ? "shared" : "direct"}`;
+      const runner = createHandoffRunner({
+        // `claim` filters by kind alone, so a hop another test leaked would be delivered here.
+        queue: {
+          ...queue,
+          claim: (input) =>
+            queue.claim({
+              ...input,
+              ready: sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+            }),
+        },
+        owner,
+        auditStore,
+        // As index.ts wires it.
+        sign: handoffRunSigner(config.keyEncryptionKey, true),
+        answerGone: answerGoneFrom(database),
+        onSettled: (work) => channelStore.signalWork(work.threadId),
+        delivery: createOpenBotHandoffDelivery({
+          runBackground,
+          channelStore,
+          actorFor,
+          // Over before its Run starts. Not put to a hop going backwards, so the notice still runs.
+          mayAddress: async () => false,
+          database,
+          groupConversations: app.groupConversations,
+        }),
+      });
+
+      // Refused for good on its only try, and the person is not left waiting: a notice is queued.
+      expect(await runner.sweep()).toEqual({
+        delivered: [],
+        skipped: [
+          { key: hopKey, reason: "This account or Bot cannot run this work." },
+        ],
+      });
+      const noticeKey = `notice:${hopKey}`;
+      const speaker = deeper ? target.id : asker.id;
+      expect(await runner.sweep()).toEqual({
+        delivered: [speaker],
+        skipped: [],
+      });
+
+      // The asking Bot, back in the conversation the person is watching, and what it was told to say.
+      expect(seen).toHaveLength(1);
+      const [notice] = seen;
+      expect(notice.threadId).toBe(threadId);
+      expect(notice.runId).toBe(handoffRunId(noticeKey));
+      expect(notice.messages.at(-1)?.content).toContain(
+        "Tell the person plainly that it did not come back",
+      );
+      // Offered from the statement the runner signed for the notice, which carries the failed hop's
+      // depth: a person to ask, and no Bot to hand the work on to. At depth zero it was offered both.
+      expect(notice.tools.map((tool) => tool.name)).toContain(ESCALATE_TOOL);
+      expect(notice.tools.map((tool) => tool.name)).not.toContain(HANDOFF_TOOL);
+      expect(
+        readRunAssertion(
+          notice.forwardedProps?.openbotRun,
+          config.keyEncryptionKey,
+        ),
+      ).toMatchObject({
+        botId: speaker,
+        actorId: actor.id,
+        runId: notice.runId,
+        threadId,
+        depth: deeper ? 2 : 1,
+        handoff: { key: noticeKey, owner },
+      });
+      const group = async () =>
+        await (await app.request(`/api/groups/${channel.id}`)).json();
+      const read = async () =>
+        shared
+          ? (await group()).messages
+          : (await (await app.request("/api/channels")).json()).channels;
+      // What the person reads: under the Conversation's own Bot, whoever's words the notice carries.
+      // A notice a delivered Bot speaks is named as its words, under the conversation's own Bot.
+      const noticeLine = {
+        agentId: asker.id,
+        text: NOTICE,
+        status: "completed",
+        ...(deeper ? { answeredBy: target.id } : {}),
+      };
+      const before = await read();
+      expect(before).toMatchObject(
+        shared
+          ? [noticeLine]
+          : [
+              {
+                id: channel.id,
+                lastMessage: NOTICE,
+                lastMessageAgentId: asker.id,
+                work: [],
+              },
+            ],
+      );
+      // Its Run is the message, not a second "Run completed" bubble.
+      if (shared) expect((await group()).backgroundRuns).toEqual([]);
+
+      // Restore the notice the queue would still hold had its worker died before acknowledging it.
+      // The next delivery finds the Run that answered and tells of it again: nothing moves.
+      const [queued] = await database
+        .select({ payload: workItems.payload })
+        .from(workItems)
+        .where(eq(workItems.key, noticeKey));
+      if (!queued) throw new Error("The notice was not queued.");
+      await database.delete(workItems).where(eq(workItems.key, noticeKey));
+      await queue.offer({
+        kind: HANDOFF_KIND,
+        key: noticeKey,
+        payload: queued.payload,
+      });
+      expect(await runner.sweep()).toEqual({
+        delivered: [speaker],
+        skipped: [],
+      });
+      expect(seen).toHaveLength(1);
+      const after = await read();
+      expect(after).toMatchObject(
+        shared ? [noticeLine] : [{ lastMessage: NOTICE, work: [] }],
+      );
+      if (shared) {
+        expect(after.length).toBe(1);
+        expect((await group()).backgroundRuns).toEqual([]);
+      } else {
+        // Told again of when the notice landed: a direct entry does not move.
+        expect(after[0].lastMessageAt).toBe(before[0].lastMessageAt);
+      }
+    } finally {
+      await database
+        .delete(workItems)
+        .where(
+          and(
+            eq(workItems.kind, HANDOFF_KIND),
+            sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+          ),
+        );
+      await database
+        .delete(pluginGrants)
+        .where(inArray(pluginGrants.agentId, [asker.id, target.id]));
+      if (threadId) {
+        await database
+          .delete(directChatRunEvents)
+          .where(eq(directChatRunEvents.threadId, threadId));
+        await database
+          .delete(directChatRuns)
+          .where(eq(directChatRuns.threadId, threadId));
+      }
+      if (channelRow)
+        await database.delete(channels).where(eq(channels.id, channelRow.id));
+      await database
+        .delete(agents)
+        .where(inArray(agents.id, [asker.id, target.id, other.id]));
+      await database.delete(users).where(eq(users.id, actor.id));
+      setEdition(edition);
+    }
+  }, 60_000);
+}
+
+/*
+ * Issue #37: the Bot a hop was delivered to asks the person. It is not the Conversation's own Bot,
+ * so the question has to find the conversation that asked by the hop's claim, and be put under the
+ * Bot whose conversation it is — the same fallback the coordination authorisation already uses.
+ */
+test("a delivered Bot's question reaches the person in the conversation that asked", async () => {
+  const actor = await person();
+  const suite = crypto.randomUUID().slice(0, 8);
+  const NAMES = { asker: `Asker ${suite}`, target: `Answerer ${suite}` };
+  const TASK = "Find the status.";
+  const QUESTION = "Which region should I check?";
+  const AFTER = "I have asked them which region to check.";
+  const seen: BotRequest[] = [];
+  const harness = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as BotRequest;
+      seen.push(body);
+      const run = { threadId: body.threadId, runId: body.runId };
+      const answered = body.messages.some((message) => message.role === "tool");
+      return sse(
+        answered
+          ? [
+              { type: EventType.RUN_STARTED, ...run },
+              {
+                type: EventType.TEXT_MESSAGE_START,
+                messageId: `reply-${body.runId}`,
+                role: "assistant",
+              },
+              {
+                type: EventType.TEXT_MESSAGE_CONTENT,
+                messageId: `reply-${body.runId}`,
+                delta: AFTER,
+              },
+              {
+                type: EventType.TEXT_MESSAGE_END,
+                messageId: `reply-${body.runId}`,
+              },
+              { type: EventType.RUN_FINISHED, ...run },
+            ]
+          : [
+              { type: EventType.RUN_STARTED, ...run },
+              {
+                type: EventType.TOOL_CALL_START,
+                toolCallId: "ask",
+                toolCallName: ESCALATE_TOOL,
+              },
+              {
+                type: EventType.TOOL_CALL_ARGS,
+                toolCallId: "ask",
+                delta: JSON.stringify({ question: QUESTION }),
+              },
+              { type: EventType.TOOL_CALL_END, toolCallId: "ask" },
+              { type: EventType.RUN_FINISHED, ...run },
+            ],
+      );
+    },
+  });
+  onTestFinished(() => {
+    harness.stop(true);
+  });
+  const asker = await profiles.create(actor, {
+    name: NAMES.asker,
+    title: "Bot",
+    roleDescription: "Coordinates work.",
+    visibility: "private",
+  });
+  const target = await profiles.create(actor, {
+    name: NAMES.target,
+    title: "Bot",
+    roleDescription: "Answers handoffs.",
+    visibility: "private",
+    endpoint: new URL("/target/ag-ui", harness.url).href,
+  });
+  const edition = currentEdition();
+  setEdition("team");
+  const told: {
+    scope: unknown;
+    input: { text: string; kind: string; requestId: string };
+  }[] = [];
+  let channelRow: { id: string; threadId: string } | undefined;
+  let restore: (() => void) | undefined;
+  try {
+    const { app, runBackground, auditStore, channelStore, queue, actorFor } =
+      nativeHandoffWiring(actor, {
+        notify: async (scope, input) => {
+          told.push({ scope, input });
+        },
+      });
+    await database.insert(pluginGrants).values({
+      kind: HANDOFF_GRANT,
+      ref: target.id,
+      agentId: asker.id,
+      grantedBy: "test",
+    });
+    const created = await app.request(
+      "/api/channels",
+      post({ agentIds: [asker.id] }),
+    );
+    expect(created.status).toBe(201);
+    const { channel } = await created.json();
+    channelRow = channel;
+    const hopKey = crypto.randomUUID();
+    await queue.offer({
+      kind: HANDOFF_KIND,
+      key: hopKey,
+      payload: {
+        fromBotId: asker.id,
+        toBotId: target.id,
+        actorId: actor.id,
+        threadId: channel.threadId,
+        runId: crypto.randomUUID(),
+        depth: 1,
+        initiator: { kind: "person" },
+        fromName: NAMES.asker,
+        toName: NAMES.target,
+        task: TASK,
+      },
+    });
+    const said = spyOn(channelStore, "recordActivity");
+    restore = () => said.mockRestore();
+    const owner = `delivered-question-${suite}`;
+    const runner = createHandoffRunner({
+      queue: {
+        ...queue,
+        claim: (input) =>
+          queue.claim({
+            ...input,
+            ready: sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+          }),
+      },
+      owner,
+      auditStore,
+      sign: handoffRunSigner(config.keyEncryptionKey, true),
+      answerGone: answerGoneFrom(database),
+      onSettled: (work) => channelStore.signalWork(work.threadId),
+      delivery: createOpenBotHandoffDelivery({
+        runBackground,
+        channelStore,
+        actorFor,
+        mayAddress: async () => true,
+        database,
+        groupConversations: app.groupConversations,
+      }),
+    });
+    expect(await runner.sweep()).toEqual({
+      delivered: [target.id],
+      skipped: [],
+    });
+    // The delivered Bot was told its question was put, not refused.
+    expect(seen).toHaveLength(2);
+    expect(seen[0].tools.map((tool) => tool.name)).toContain(ESCALATE_TOOL);
+    expect(
+      seen[1].messages.find((message) => message.role === "tool"),
+    ).toMatchObject({
+      toolCallId: "ask",
+      content: expect.stringContaining(PUT_TO),
+    });
+    // Saved for the person under the Conversation's own Bot, which is whose turn their answer is.
+    const [question] = await database
+      .select({ payload: workItems.payload })
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.kind, "person.question"),
+          sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+        ),
+      );
+    expect(question?.payload).toMatchObject({
+      botId: target.id,
+      sourceBotId: asker.id,
+      channelId: channel.id,
+      threadId: channel.threadId,
+      question: QUESTION,
+      initiator: { kind: "person" },
+    });
+    expect(
+      said.mock.calls.map((call) => [call[1], call[2].agentId, call[2].text]),
+    ).toContainEqual([
+      channel.id,
+      asker.id,
+      `A question needs your answer: ${QUESTION}`,
+    ]);
+    expect(told).toHaveLength(1);
+    expect(told[0].input).toMatchObject({
+      text: `${NAMES.target} asks: ${QUESTION}`,
+      kind: "question",
+      requestId: expect.any(String),
+    });
+    // The outbox binds a delivery by its whole scope, thread included: a question routed to the
+    // Run id instead of the conversation is refused by no test unless this is pinned.
+    expect(told[0].scope).toMatchObject({
+      ownerUserId: actor.id,
+      channelId: channel.id,
+      agentId: asker.id,
+      threadId: channel.threadId,
+    });
+  } finally {
+    restore?.();
+    await database
+      .delete(workItems)
+      .where(sql`${workItems.payload}->>'actorId' = ${actor.id}`);
+    await database
+      .delete(pluginGrants)
+      .where(eq(pluginGrants.agentId, asker.id));
+    if (channelRow) {
+      await database
+        .delete(directChatRunEvents)
+        .where(eq(directChatRunEvents.threadId, channelRow.threadId));
+      await database
+        .delete(directChatRuns)
+        .where(eq(directChatRuns.threadId, channelRow.threadId));
+      await database.delete(channels).where(eq(channels.id, channelRow.id));
+    }
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [asker.id, target.id]));
+    await database.delete(users).where(eq(users.id, actor.id));
+    setEdition(edition);
+  }
+}, 60_000);
+
+/*
+ * Issue #37: the person answers. A question asked under a Routine or a hand-off is queued even when
+ * it is answered in the open conversation, and the pass that resumes a queued answer runs it through
+ * the headless toolkit runner, which cannot open a thread without Intelligence. As for a delivery,
+ * the answer runs on the OpenBot background engine instead, as the conversation's own Bot's turn.
+ */
+test("an answer to a delivered Bot's question comes back as the conversation's own Bot's turn, without Intelligence", async () => {
+  const actor = await person();
+  const suite = crypto.randomUUID().slice(0, 8);
+  const NAMES = { asker: `Asker ${suite}`, target: `Answerer ${suite}` };
+  const routineId = `routine-${suite}`;
+  const TASK = "Find the status.";
+  const QUESTION = "Which region should I check?";
+  const AFTER = "I have asked them which region to check.";
+  const REPLY = "Check eu-west, then report.";
+  const seen = { asker: [] as BotRequest[], target: [] as BotRequest[] };
+  const harness = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const asking = new URL(request.url).pathname === "/asker/ag-ui";
+      const body = (await request.json()) as BotRequest;
+      seen[asking ? "asker" : "target"].push(body);
+      const run = { threadId: body.threadId, runId: body.runId };
+      const reply = `reply-${body.runId}`;
+      const answered = body.messages.some((message) => message.role === "tool");
+      if (!asking && !answered)
+        return sse([
+          { type: EventType.RUN_STARTED, ...run },
+          {
+            type: EventType.TOOL_CALL_START,
+            toolCallId: "ask",
+            toolCallName: ESCALATE_TOOL,
+          },
+          {
+            type: EventType.TOOL_CALL_ARGS,
+            toolCallId: "ask",
+            delta: JSON.stringify({ question: QUESTION }),
+          },
+          { type: EventType.TOOL_CALL_END, toolCallId: "ask" },
+          { type: EventType.RUN_FINISHED, ...run },
+        ]);
+      return sse([
+        { type: EventType.RUN_STARTED, ...run },
+        {
+          type: EventType.TEXT_MESSAGE_START,
+          messageId: reply,
+          role: "assistant",
+        },
+        {
+          type: EventType.TEXT_MESSAGE_CONTENT,
+          messageId: reply,
+          delta: asking ? REPLY : AFTER,
+        },
+        { type: EventType.TEXT_MESSAGE_END, messageId: reply },
+        { type: EventType.RUN_FINISHED, ...run },
+      ]);
+    },
+  });
+  onTestFinished(() => {
+    harness.stop(true);
+  });
+  const asker = await profiles.create(actor, {
+    name: NAMES.asker,
+    title: "Bot",
+    roleDescription: "Coordinates work.",
+    visibility: "private",
+    endpoint: new URL("/asker/ag-ui", harness.url).href,
+  });
+  const target = await profiles.create(actor, {
+    name: NAMES.target,
+    title: "Bot",
+    roleDescription: "Answers handoffs.",
+    visibility: "private",
+    endpoint: new URL("/target/ag-ui", harness.url).href,
+  });
+  const edition = currentEdition();
+  setEdition("team");
+  const told: { scope: unknown; input: Record<string, unknown> }[] = [];
+  let channelRow: { id: string; threadId: string } | undefined;
+  let restore: (() => void) | undefined;
+  try {
+    const { app, runBackground, auditStore, channelStore, queue, actorFor } =
+      nativeHandoffWiring(actor, {
+        notify: async (scope, input) => {
+          told.push({ scope, input });
+        },
+      });
+    await database.insert(pluginGrants).values({
+      kind: HANDOFF_GRANT,
+      ref: target.id,
+      agentId: asker.id,
+      grantedBy: "test",
+    });
+    const created = await app.request(
+      "/api/channels",
+      post({ agentIds: [asker.id] }),
+    );
+    expect(created.status).toBe(201);
+    const { channel } = await created.json();
+    channelRow = channel;
+    const mine = sql`${workItems.payload}->>'actorId' = ${actor.id}`;
+    await queue.offer({
+      kind: HANDOFF_KIND,
+      key: crypto.randomUUID(),
+      payload: {
+        fromBotId: asker.id,
+        toBotId: target.id,
+        actorId: actor.id,
+        threadId: channel.threadId,
+        runId: crypto.randomUUID(),
+        depth: 1,
+        // A Routine's chain: its question is queued even when answered in the conversation.
+        initiator: { kind: "routine", id: routineId },
+        fromName: NAMES.asker,
+        toName: NAMES.target,
+        task: TASK,
+      },
+    });
+    const said = spyOn(channelStore, "recordActivity");
+    restore = () => said.mockRestore();
+    const runner = createHandoffRunner({
+      queue: {
+        ...queue,
+        claim: (input) => queue.claim({ ...input, ready: mine }),
+      },
+      owner: `answered-question-${suite}`,
+      auditStore,
+      sign: handoffRunSigner(config.keyEncryptionKey, true),
+      answerGone: answerGoneFrom(database),
+      onSettled: (work) => channelStore.signalWork(work.threadId),
+      delivery: createOpenBotHandoffDelivery({
+        runBackground,
+        channelStore,
+        actorFor,
+        mayAddress: async () => true,
+        database,
+        groupConversations: app.groupConversations,
+      }),
+    });
+    expect(await runner.sweep()).toEqual({
+      delivered: [target.id],
+      skipped: [],
+    });
+    const [question] = await database
+      .select({ key: workItems.key, payload: workItems.payload })
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.kind, "person.question"),
+          sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+        ),
+      );
+    if (!question) throw new Error("The question was not saved.");
+    expect(question.payload).toMatchObject({
+      botId: target.id,
+      sourceBotId: asker.id,
+      initiator: { kind: "routine", id: routineId },
+    });
+
+    // Answered where the person read it. Not a person's own turn, so it is queued, not continued.
+    expect(
+      await createApprovalQuestions(database, async () => undefined).respond(
+        actor.id,
+        question.key,
+        "Check eu-west, please.",
+        {
+          inConversation: true,
+        },
+      ),
+    ).toEqual({ id: question.key, queued: true });
+    const answers = createWorkQueue(database);
+    const tick = createPersonResponseTick({
+      // `claim` filters by kind alone, so an answer another test leaked would be taken here.
+      approvalQueue: {
+        ...answers,
+        claim: (input) =>
+          answers.claim({
+            ...input,
+            ready: sql`${workItems.payload}->>'ownerUserId' = ${actor.id}`,
+          }),
+      },
+      database,
+      personResponseOwner: `answer-${suite}`,
+      authoriseQuestion: async () => undefined,
+      approvalContinuationRunner: async () => {
+        // The toolkit runner cannot open a thread without Intelligence; the sweep must not use it.
+        throw new Error("Intelligence is not configured.");
+      },
+      // As index.ts wires it.
+      runBackground,
+      responsibilityStore: createResponsibilityStore(database, {
+        resolveTarget: async () => null,
+      }),
+      responsibilityAnswerTurn: () => async () => {
+        throw new Error("No responsibility asked this.");
+      },
+      sourceForCoordinationRun: async (run) =>
+        (await channelSourceOfRun(run)) ?? groupSourceForRun(database, run),
+      channelStore,
+      actorFor,
+      notify: async (scope, input) => {
+        told.push({ scope, input });
+      },
+    });
+    await tick();
+
+    // The conversation's own Bot took the answer as its turn, under the question's initiator.
+    expect(seen.asker).toHaveLength(1);
+    const answerRunId = createHash("sha256")
+      .update(`person-response:${question.key}`)
+      .digest("hex");
+    expect(seen.asker[0]).toMatchObject({
+      threadId: channel.threadId,
+      runId: answerRunId,
+    });
+    expect(String(seen.asker[0].messages.at(-1)?.content)).toContain(
+      `In response to your question: ${QUESTION}`,
+    );
+    expect(String(seen.asker[0].messages.at(-1)?.content)).toContain(
+      "Check eu-west, please.",
+    );
+    expect(
+      readRunAssertion(
+        seen.asker[0].forwardedProps?.openbotRun,
+        config.keyEncryptionKey,
+      ),
+    ).toMatchObject({
+      botId: asker.id,
+      actorId: actor.id,
+      initiator: { kind: "routine", id: routineId },
+    });
+    // What the person reads: the answer and its reply in the transcript, the reply in the entry.
+    expect(
+      (
+        await (
+          await app.request(
+            `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${asker.id}`,
+          )
+        ).json()
+      ).messages,
+    ).toMatchObject([
+      {
+        role: "user",
+        content: expect.stringContaining(`asked ${NAMES.target}`),
+      },
+      { role: "assistant", content: AFTER },
+      {
+        role: "user",
+        content: expect.stringContaining(
+          `In response to your question: ${QUESTION}\n\nCheck eu-west, please.`,
+        ),
+      },
+      { role: "assistant", content: REPLY },
+    ]);
+    expect(
+      said.mock.calls.map((call) => [call[1], call[2].agentId, call[2].text]),
+    ).toContainEqual([channel.id, asker.id, REPLY]);
+    expect(told.at(-1)?.input).toMatchObject({ text: REPLY, kind: "reply" });
+    const [response] = await database
+      .select({
+        finishedAt: workItems.finishedAt,
+        lastError: workItems.lastError,
+      })
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.kind, "person.response"),
+          eq(workItems.key, question.key),
+        ),
+      );
+    expect(response).toMatchObject({
+      finishedAt: expect.any(Date),
+      lastError: null,
+    });
+    // Nothing left to run: a second pass runs no second turn.
+    await tick();
+    expect(seen.asker).toHaveLength(1);
+  } finally {
+    restore?.();
+    await database
+      .delete(workItems)
+      .where(
+        and(
+          inArray(workItems.kind, [
+            HANDOFF_KIND,
+            "person.question",
+            "person.response",
+          ]),
+          sql`coalesce(${workItems.payload}->>'actorId', ${workItems.payload}->>'ownerUserId') = ${actor.id}`,
+        ),
+      );
+    await database
+      .delete(pluginGrants)
+      .where(eq(pluginGrants.agentId, asker.id));
+    if (channelRow) {
+      await database
+        .delete(directChatRunEvents)
+        .where(eq(directChatRunEvents.threadId, channelRow.threadId));
+      await database
+        .delete(directChatRuns)
+        .where(eq(directChatRuns.threadId, channelRow.threadId));
+      await database.delete(channels).where(eq(channels.id, channelRow.id));
+    }
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [asker.id, target.id]));
+    await database.delete(users).where(eq(users.id, actor.id));
+    setEdition(edition);
+  }
+}, 60_000);
+
+/*
+ * Issue #37, a ceiling deeper than one: the Bot a hop was delivered to hands the work on again. The
+ * second hop still runs in the conversation the person is watching, whose voice is the first Bot's,
+ * so the delivery has to scope it by that thread's own Bot rather than by the Bot that asked.
+ */
+for (const shared of [false, true] as const) {
+  test(`a delivered Bot hands the work on again without Intelligence, and the second answer lands in the ${shared ? "shared" : "direct"} Conversation`, async () => {
+    const actor = await person();
+    const suite = crypto.randomUUID().slice(0, 8);
+    const NAMES = {
+      asker: `Asker ${suite}`,
+      middle: `Middle ${suite}`,
+      last: `Last ${suite}`,
+    };
+    const TASK = "Find the status.";
+    const MIDDLE_REPLY = "I asked the last Bot for the status.";
+    const ANSWER = "Everything is clear.";
+    const seen = { middle: [] as BotRequest[], last: [] as BotRequest[] };
+    const harness = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const middle = new URL(request.url).pathname === "/middle/ag-ui";
+        const body = (await request.json()) as BotRequest;
+        seen[middle ? "middle" : "last"].push(body);
+        const run = { threadId: body.threadId, runId: body.runId };
+        const answered = body.messages.some(
+          (message) => message.role === "tool",
+        );
+        if (middle && !answered)
+          return sse([
+            { type: EventType.RUN_STARTED, ...run },
+            {
+              type: EventType.TOOL_CALL_START,
+              toolCallId: "ask",
+              toolCallName: HANDOFF_TOOL,
+            },
+            {
+              type: EventType.TOOL_CALL_ARGS,
+              toolCallId: "ask",
+              delta: JSON.stringify({ bot: NAMES.last, task: TASK }),
+            },
+            { type: EventType.TOOL_CALL_END, toolCallId: "ask" },
+            { type: EventType.RUN_FINISHED, ...run },
+          ]);
+        const text = middle ? MIDDLE_REPLY : ANSWER;
+        return sse([
+          { type: EventType.RUN_STARTED, ...run },
+          {
+            type: EventType.TEXT_MESSAGE_START,
+            messageId: `reply-${body.runId}`,
+            role: "assistant",
+          },
+          {
+            type: EventType.TEXT_MESSAGE_CONTENT,
+            messageId: `reply-${body.runId}`,
+            delta: text,
+          },
+          {
+            type: EventType.TEXT_MESSAGE_END,
+            messageId: `reply-${body.runId}`,
+          },
+          { type: EventType.RUN_FINISHED, ...run },
+        ]);
+      },
+    });
+    onTestFinished(() => {
+      harness.stop(true);
+    });
+    const asker = await profiles.create(actor, {
+      name: NAMES.asker,
+      title: "Bot",
+      roleDescription: "Coordinates work.",
+      visibility: "private",
+    });
+    const middle = await profiles.create(actor, {
+      name: NAMES.middle,
+      title: "Bot",
+      roleDescription: "Hands the work on.",
+      visibility: "private",
+      endpoint: new URL("/middle/ag-ui", harness.url).href,
+    });
+    const last = await profiles.create(actor, {
+      name: NAMES.last,
+      title: "Bot",
+      roleDescription: "Answers handoffs.",
+      visibility: "private",
+      endpoint: new URL("/last/ag-ui", harness.url).href,
+    });
+    const edition = currentEdition();
+    setEdition("team");
+    let channelRow: { id: string; threadId: string } | undefined;
+    let threadId = "";
+    try {
+      const { app, runBackground, auditStore, channelStore, queue, actorFor } =
+        nativeHandoffWiring(actor, { maxDepth: 2 });
+      await database.insert(pluginGrants).values([
+        {
+          kind: HANDOFF_GRANT,
+          ref: middle.id,
+          agentId: asker.id,
+          grantedBy: "test",
+        },
+        {
+          kind: HANDOFF_GRANT,
+          ref: last.id,
+          agentId: middle.id,
+          grantedBy: "test",
+        },
+      ]);
+      const created = await app.request(
+        "/api/channels",
+        post({
+          agentIds: shared ? [asker.id, middle.id, last.id] : [asker.id],
+        }),
+      );
+      expect(created.status).toBe(201);
+      const { channel } = await created.json();
+      channelRow = channel;
+      threadId = shared
+        ? await createGroupStore(database, () => crypto.randomUUID()).thread(
+            actor.id,
+            channel.id,
+            asker.id,
+          )
+        : channel.threadId;
+      const hopKey = crypto.randomUUID();
+      await queue.offer({
+        kind: HANDOFF_KIND,
+        key: hopKey,
+        payload: {
+          fromBotId: asker.id,
+          toBotId: middle.id,
+          actorId: actor.id,
+          threadId,
+          runId: crypto.randomUUID(),
+          depth: 1,
+          fromName: NAMES.asker,
+          toName: NAMES.middle,
+          task: TASK,
+        },
+      });
+      const owner = `deeper-chain-${shared ? "shared" : "direct"}-${suite}`;
+      const runner = createHandoffRunner({
+        queue: {
+          ...queue,
+          claim: (input) =>
+            queue.claim({
+              ...input,
+              ready: sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+            }),
+        },
+        owner,
+        auditStore,
+        sign: handoffRunSigner(config.keyEncryptionKey, true),
+        answerGone: answerGoneFrom(database),
+        onSettled: (work) => channelStore.signalWork(work.threadId),
+        delivery: createOpenBotHandoffDelivery({
+          runBackground,
+          channelStore,
+          actorFor,
+          mayAddress: async () => true,
+          database,
+          groupConversations: app.groupConversations,
+        }),
+      });
+      expect(await runner.sweep()).toEqual({
+        delivered: [middle.id],
+        skipped: [],
+      });
+      const [second] = await database
+        .select({ key: workItems.key, payload: workItems.payload })
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.kind, HANDOFF_KIND),
+            sql`${workItems.payload}->>'fromBotId' = ${middle.id}`,
+          ),
+        );
+      if (!second) throw new Error("The second hop was not offered.");
+      expect(second.payload).toMatchObject({
+        fromBotId: middle.id,
+        toBotId: last.id,
+        threadId,
+        depth: 2,
+      });
+      // The second hop, and in a shared Conversation the middle Bot's own answer coming home.
+      const delivered = (await runner.sweep()).delivered;
+      // The second hop and the middle Bot's relay are claimed in one sweep; their order follows
+      // the queue's runAt timestamps, which need not be monotonic across a VM clock adjustment.
+      expect(delivered).toHaveLength(shared ? 2 : 1);
+      expect(delivered).toEqual(
+        expect.arrayContaining(shared ? [last.id, asker.id] : [last.id]),
+      );
+      // The last Bot ran in the conversation the person is watching, two deep, at the ceiling.
+      expect(seen.last).toHaveLength(1);
+      expect(seen.last[0].threadId).toBe(threadId);
+      expect(seen.last[0].tools.map((tool) => tool.name)).toEqual([
+        ESCALATE_TOOL,
+      ]);
+      expect(
+        readRunAssertion(
+          seen.last[0].forwardedProps?.openbotRun,
+          config.keyEncryptionKey,
+        ),
+      ).toMatchObject({
+        botId: last.id,
+        actorId: actor.id,
+        threadId,
+        depth: 2,
+        handoff: { key: second.key, owner },
+      });
+      if (shared) {
+        // The second answer comes home as a relay, in the voice of the thread it lands in.
+        expect(await runner.sweep()).toEqual({
+          delivered: [middle.id],
+          skipped: [],
+        });
+        const group = await (
+          await app.request(`/api/groups/${channel.id}`)
+        ).json();
+        expect(group.messages).toMatchObject([
+          {
+            agentId: asker.id,
+            text: MIDDLE_REPLY,
+            status: "completed",
+            answeredBy: middle.id,
+          },
+          {
+            agentId: asker.id,
+            text: ANSWER,
+            status: "completed",
+            answeredBy: last.id,
+          },
+        ]);
+      } else {
+        expect(
+          (await (await app.request("/api/channels")).json()).channels,
+        ).toMatchObject([
+          {
+            id: channel.id,
+            lastMessage: ANSWER,
+            lastMessageAgentId: asker.id,
+            work: [],
+          },
+        ]);
+      }
+      expect(await runner.sweep()).toEqual({ delivered: [], skipped: [] });
+    } finally {
+      await database
+        .delete(workItems)
+        .where(
+          and(
+            eq(workItems.kind, HANDOFF_KIND),
+            sql`${workItems.payload}->>'actorId' = ${actor.id}`,
+          ),
+        );
+      await database
+        .delete(pluginGrants)
+        .where(inArray(pluginGrants.agentId, [asker.id, middle.id]));
+      if (threadId) {
+        await database
+          .delete(directChatRunEvents)
+          .where(eq(directChatRunEvents.threadId, threadId));
+        await database
+          .delete(directChatRuns)
+          .where(eq(directChatRuns.threadId, threadId));
+      }
+      if (channelRow)
+        await database.delete(channels).where(eq(channels.id, channelRow.id));
+      await database
+        .delete(agents)
+        .where(inArray(agents.id, [asker.id, middle.id, last.id]));
+      await database.delete(users).where(eq(users.id, actor.id));
+      setEdition(edition);
+    }
+  }, 60_000);
+}
 
 function events(sse: string) {
   return sse
