@@ -62,7 +62,12 @@ import {
  */
 
 /** What a person's own browser answers under this router: the reads its live screen makes. */
-const PERSON_BROWSER_READS = new Set(["control", "status", "screenshot"]);
+const PERSON_BROWSER_READS = new Set([
+  "control",
+  "status",
+  "screenshot",
+  "browser-downloads",
+]);
 
 export function createComputerRoutes(
   gateway: ComputerGateway,
@@ -91,6 +96,7 @@ export function createComputerRoutes(
    * is: a deployment wired without a trail still saves its boundary, and has nowhere to record it.
    */
   auditStore?: AuditStore,
+  ownsDownloadRecipient?: BotAccessCheck,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -394,6 +400,39 @@ export function createComputerRoutes(
    * Each one hands the gateway the Bot, the actor and the input, and does no checking
    * of its own beyond the shape of the request. Where a decision gets made is a single place.
    */
+  routes.get("/:botId/browser-downloads", async (context) => {
+    try {
+      if (!ownsDownloadRecipient || !gateway.listManualBrowserDownloads)
+        throw new WorkspaceNotFoundError(
+          "Personal browser downloads are unavailable.",
+        );
+      const downloads = await gateway.listManualBrowserDownloads(
+        await seatOf(context),
+        actorOf(context.var.actor),
+        context.req.raw.signal,
+      );
+      return context.json(downloads, 200, { "cache-control": "no-store" });
+    } catch (error) {
+      return actionFailure(context, error);
+    }
+  });
+
+  routes.post("/:botId/browser-downloads/deliver", (context) =>
+    act(context, gateway.seatFor, async (seat, actor, body, signal) => {
+      if (typeof body?.id !== "string" || !BROWSER_DOWNLOAD_ID.test(body.id))
+        return { error: "A browser download id is required." };
+      if (
+        !gateway.deliverManualBrowserDownload ||
+        !(await ownsDownloadRecipient?.(context.var.actor, seat.botId))
+      ) {
+        throw new WorkspaceNotFoundError(
+          "Browser download recipient not found.",
+        );
+      }
+      return gateway.deliverManualBrowserDownload(seat, actor, body.id, signal);
+    }),
+  );
+
   routes.post("/:botId/browser-downloads/retry", (context) =>
     act(context, gateway.seatFor, (seat, actor, body, signal) => {
       if (typeof body?.id !== "string" || !BROWSER_DOWNLOAD_ID.test(body.id))

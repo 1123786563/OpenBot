@@ -26,6 +26,7 @@ import { recorderKeys } from "@/lib/recorder/queries";
 import { queryClient } from "@/query-client";
 import { TEACH_A_BOT } from "./browser-nav-item";
 import { OpeningBrowser, ScreenBrowser } from "./browser-screen";
+import { ManualDownloadDelivery } from "./manual-download-delivery";
 import { TeachSteps } from "./teach-steps";
 import { recordingOnItsWay, YourRecordings } from "./your-recordings";
 
@@ -287,6 +288,10 @@ function OpenedBrowser({
         reopenFailed={reopen.isError}
         reopening={reopen.isPending}
       >
+        <ManualDownloadDelivery
+          key={opened.computerId}
+          computerId={opened.computerId}
+        />
         <YourRecordings
           action={<LearnedLink />}
           variant="pane"

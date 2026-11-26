@@ -1,11 +1,16 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  BROWSER_DOWNLOAD_LIMIT,
+  manualBrowserDownloads,
+} from "../../shared/browser-download";
 import { reservePort } from "../../tests/support/reserved-port";
 
 test.skipIf(process.env.OPENBOT_COMPUTER_BROWSER !== "1")(
-  "the browser-only computer stages a completed Bot download under its initiating Bot",
+  "the browser-only computer separates Bot downloads from manually downloaded files",
   async () => {
     const root = await mkdtemp(join(tmpdir(), "openbot-chromium-download-"));
     const port = await reservePort();
@@ -16,7 +21,15 @@ test.skipIf(process.env.OPENBOT_COMPUTER_BROWSER !== "1")(
       hostname: "127.0.0.1",
       port: 0,
       fetch(request) {
-        if (new URL(request.url).pathname === "/download") {
+        const path = new URL(request.url).pathname;
+        if (path === "/large-download") {
+          return new Response(new Uint8Array(BROWSER_DOWNLOAD_LIMIT + 1), {
+            headers: {
+              "content-disposition": 'attachment; filename="large.bin"',
+            },
+          });
+        }
+        if (path === "/download") {
           attachmentRequests++;
           return new Response(binary, {
             headers: {
@@ -25,7 +38,9 @@ test.skipIf(process.env.OPENBOT_COMPUTER_BROWSER !== "1")(
           });
         }
         return new Response(
-          "<button autofocus onclick=\"location.href='/download'\">Download</button>",
+          path === "/large"
+            ? "<button autofocus onclick=\"location.href='/large-download'\">Download</button>"
+            : "<button autofocus onclick=\"location.href='/download'\">Download</button>",
           {
             headers: { "content-type": "text/html" },
           },
@@ -44,6 +59,7 @@ test.skipIf(process.env.OPENBOT_COMPUTER_BROWSER !== "1")(
           PORT: String(port),
           COMPUTER_PERSON_ID: "download-owner",
           OPENBOT_BROWSER_ONLY: "on",
+          OPENBOT_RECORDER_DIR: join(import.meta.dir, "fixtures", "recorder"),
           COMPUTER_BROWSER_BACKEND: "managed",
           COMPUTER_BROWSER_MODE: "headless",
           EGRESS_POLICY_REQUIRED: "0",
@@ -140,6 +156,81 @@ test.skipIf(process.env.OPENBOT_COMPUTER_BROWSER !== "1")(
           await readdir(join(root, "profiles", "notes", ".openbot-downloads"))
         ).sort(),
       ).toEqual([id, clickedId].sort());
+
+      const person =
+        "person-" +
+        createHash("sha256")
+          .update("download-owner")
+          .digest("hex")
+          .slice(0, 32);
+      const personal = (path: string, body?: object) =>
+        call(path, body, person);
+      expect(
+        (
+          await personal("/browser/open", {
+            connection: {
+              openbotUrl: site.url.origin,
+              connectionId: "manual-download-fixture",
+              token: "obr_manual-download",
+              user: {
+                id: "download-owner",
+                name: "Download Owner",
+                email: "owner@example.test",
+              },
+            },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (await personal("/browser/navigate", { url: site.url.href })).status,
+      ).toBe(200);
+      const clickDownload = async () =>
+        expect((await personal("/human/click", { x: 30, y: 18 })).status).toBe(
+          200,
+        );
+      const waitForDownloads = async (count: number) => {
+        const deadline = Date.now() + 5_000;
+        for (;;) {
+          const response = await personal("/browser-downloads");
+          expect(response.status).toBe(200);
+          const catalog = manualBrowserDownloads.parse(await response.json());
+          if (catalog.downloads.length >= count || Date.now() >= deadline)
+            return catalog.downloads;
+          await Bun.sleep(25);
+        }
+      };
+      await clickDownload();
+      const downloads = await waitForDownloads(1);
+      expect(downloads).toEqual([
+        {
+          id: expect.any(String),
+          name: "report.bin",
+          bytes: 4,
+          downloadedAt: expect.any(String),
+        },
+      ]);
+      const manualPath = `/browser-downloads/${downloads[0]?.id}`;
+      expect((await call(manualPath)).status).toBe(404);
+      expect(
+        (
+          await personal("/browser/navigate", {
+            url: new URL("/large", site.url).href,
+          })
+        ).status,
+      ).toBe(200);
+      await clickDownload();
+      const newest = (await waitForDownloads(2))[0];
+      expect(newest).toMatchObject({
+        name: "large.bin",
+        bytes: BROWSER_DOWNLOAD_LIMIT + 1,
+      });
+      expect((await personal(`/browser-downloads/${newest?.id}`)).status).toBe(
+        413,
+      );
+      expect((await personal("/browser/close", {})).status).toBe(200);
+      expect(
+        new Uint8Array(await (await personal(manualPath)).arrayBuffer()),
+      ).toEqual(binary);
     } finally {
       child.kill();
       await child.exited;

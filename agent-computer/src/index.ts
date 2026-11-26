@@ -43,6 +43,7 @@ import {
   parseLoopbackRelays,
   startLoopbackRelays,
 } from "./loopback-relay";
+import { storeManualBrowserDownloads } from "./manual-browser-downloads";
 import {
   assertPageAccess,
   navigateWebPage,
@@ -156,6 +157,13 @@ const OWNER = computerOwner(process.env);
 const browserDownloads =
   OWNER.kind === "browser"
     ? stageBrowserDownloads(process.env.PROFILES_DIR?.trim() || "/profiles")
+    : undefined;
+
+const manualDownloads =
+  OWNER.kind === "browser"
+    ? storeManualBrowserDownloads(
+        process.env.PROFILES_DIR?.trim() || "/profiles",
+      )
     : undefined;
 
 const BROWSER_MODE = RUNTIME.mode;
@@ -378,6 +386,7 @@ const profiles = createProfiles(
   },
   {
     personDisplay: PERSON_DISPLAY,
+    onPersonPage: manualDownloads?.watch,
     // A Bot's browser a person is working in, or has been asked to, is never closed for memory, and
     // none of its tabs are closed for being idle. A person's own browser has no Bot's wheel to hold:
     // it is never closed for memory whoever is at it (`chooseForMemory`), and its tabs are never swept.
@@ -1173,6 +1182,18 @@ serve<StreamData & TerminalSocketData>({
     // person's browser id sent here is told it has the wrong routes rather than that it may not use them.
     if (isBotBrowserPath(url.pathname))
       return botBrowser.handle(request, url.pathname, botId);
+    if (
+      manualDownloads &&
+      OWNER.kind === "browser" &&
+      botId === OWNER.browserId &&
+      request.method === "GET"
+    ) {
+      if (url.pathname === "/browser-downloads") return manualDownloads.list();
+      if (url.pathname.startsWith("/browser-downloads/"))
+        return manualDownloads.read(
+          url.pathname.slice("/browser-downloads/".length),
+        );
+    }
     // A person's browser id reaches the person's browser routes, the live screen and the computer's
     // housekeeping, and nothing a Bot acts or reads through. See person-access.ts.
     if (isPersonBrowserId(botId) && !personMayUse(url.pathname))
@@ -2061,7 +2082,8 @@ function browserOnlyPath(path: string): boolean {
     personMayUse(path) ||
     isBotBrowserPath(path) ||
     (browserDownloads !== undefined &&
-      path.startsWith("/browser-downloads/")) ||
+      (path === "/browser-downloads" ||
+        path.startsWith("/browser-downloads/"))) ||
     HOLDS_THE_BROWSER.has(path) ||
     WAITS_FOR_THE_BROWSER.has(path) ||
     HUMAN_INPUT.has(path) ||

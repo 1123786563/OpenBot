@@ -420,6 +420,7 @@ export type ProfilesOptions = {
    * as it is now.
    */
   personDisplay?: PersonDisplay;
+  onPersonPage?: (page: Page) => void;
   /**
    * The built Recorder (`OPENBOT_RECORDER_DIR`), read at every launch of a Bot's browser, so a rebuilt Recorder is the
    * one the next browser gets. Defaults to this process's environment as it is at that launch.
@@ -1048,6 +1049,7 @@ export function createProfiles(
         void evict(botId, "its last window was closed");
     };
     const follow = (opened: Page) => {
+      options.onPersonPage?.(opened);
       opened.on("close", closed);
       // A tab that becomes one of the Recorder's own pages is never the one in front.
       opened.on("framenavigated", (frame) => {

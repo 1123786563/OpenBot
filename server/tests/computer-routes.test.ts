@@ -5,8 +5,9 @@ import { join } from "node:path";
 import type { MiddlewareHandler } from "hono";
 import { receiveBrowserDownload } from "../../agent-computer/src/browser-downloads";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
+import { personBrowserId } from "../src/browser/person";
 import type { ComputerSeat } from "../src/computer/computer-key";
-import { personSeat } from "../src/computer/computer-key";
+import { personSeat, seatOf } from "../src/computer/computer-key";
 import {
   type ComputerGateway,
   ComputerStillStartingError,
@@ -594,5 +595,130 @@ test("retrying a pilot download transfers only the initiating seat's file withou
     await browser.stop(true);
     await execution.stop(true);
     await rm(workspaces, { recursive: true, force: true });
+  }
+});
+
+test("manual browser downloads reach only an owned recipient workspace after explicit selection", async () => {
+  const id = "136a7716-7a42-448e-a6b0-ffec2ae66ead";
+  const person = personBrowserId("pilot");
+  const file = {
+    id,
+    name: "invoice.pdf",
+    bytes: 4,
+    downloadedAt: "2026-11-26T00:00:00.000Z",
+  };
+  const bytes = new Uint8Array([0, 255, 128, 10]);
+  const workspace = await mkdtemp(join(tmpdir(), "openbot-manual-download-"));
+  const writes: string[] = [];
+  const browser = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (
+        request.headers.get("x-openbot-computer-token") === "browser-pilot" &&
+        request.headers.get("x-openbot-bot-id") === person
+      ) {
+        if (path === "/browser-downloads")
+          return Response.json({ downloads: [file] });
+        if (path === `/browser-downloads/${id}`)
+          return new Response(bytes, { headers: { "content-length": "4" } });
+      }
+      return Response.json({ error: "Download not found." }, { status: 404 });
+    },
+  });
+  const execution = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const token = request.headers.get("x-openbot-computer-token");
+      if (token) writes.push(token);
+      return (
+        (await receiveBrowserDownload(request, workspace)) ??
+        new Response(null, { status: 404 })
+      );
+    },
+  });
+  try {
+    const gateway = createComputerGateway({
+      provider: createSharedComputerProvider({ baseUrl: "http://127.0.0.1:1" }),
+      browserProvider: {
+        serves: () => true,
+        locate: async () => browser.url.href,
+        status: async (seat) => ({ botId: seat.botId, state: "ready" }),
+        tokenFor: (seat) =>
+          seat.key.kind === "person"
+            ? `browser-${seat.key.personId}`
+            : seat.botId === person
+              ? "browser-pilot"
+              : "browser-other",
+      },
+      seats: { seatFor: async (bot, user) => seatOf(bot, user, null, false) },
+      execution: {
+        pilotUsers: new Set(["pilot", "other"]),
+        connect: async (seat) => ({
+          url: execution.url.href,
+          token:
+            seat.key.kind === "person"
+              ? `${seat.key.personId}/${seat.botId}`
+              : "isolated",
+        }),
+      },
+      auditStore: { insert: async () => {} },
+      policy: () => ({ mode: "enforce", allow: [], deny: [] }),
+    });
+    const routesFor = (user: string) =>
+      createComputerRoutes(
+        gateway,
+        {} as PolicyStore,
+        asActor({ ...member, id: user }),
+        async () => true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async (actor, bot) =>
+          (actor.id === "pilot" && bot === "notes") ||
+          (actor.id === "other" && bot === "other-notes"),
+      );
+    const post = (bot: string, user = "pilot", action = "deliver") =>
+      routesFor(user).request(`/${bot}/browser-downloads/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+    const list = await routesFor("pilot").request(
+      `/${person}/browser-downloads`,
+    );
+    expect(list.status).toBe(200);
+    expect(await list.json()).toEqual({ downloads: [file] });
+    expect(
+      (await routesFor("other").request(`/${person}/browser-downloads`)).status,
+    ).toBe(404);
+    expect((await post("foreign")).status).toBe(404);
+    expect((await post("notes", "other")).status).toBe(404);
+    expect((await post("other-notes", "other")).status).toBe(404);
+    expect((await post("notes", "pilot", "retry")).status).toBe(404);
+    expect(writes).toEqual([]);
+    for (const response of await Promise.all([post("notes"), post("notes")])) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        status: "delivered",
+        id,
+        path: `download-${id}`,
+        bytes: 4,
+      });
+    }
+    expect(writes).toEqual(["pilot/notes", "pilot/notes"]);
+    expect(await readdir(workspace)).toEqual([`download-${id}`]);
+    expect(
+      new Uint8Array(
+        await Bun.file(join(workspace, `download-${id}`)).arrayBuffer(),
+      ),
+    ).toEqual(bytes);
+  } finally {
+    await browser.stop(true);
+    await execution.stop(true);
+    await rm(workspace, { recursive: true, force: true });
   }
 });

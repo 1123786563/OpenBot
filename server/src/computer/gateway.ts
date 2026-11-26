@@ -31,6 +31,8 @@ import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import {
   BROWSER_DOWNLOAD_ID,
   type BrowserDownloadResult,
+  type ManualBrowserDownloads,
+  manualBrowserDownloads,
 } from "../../../shared/browser-download";
 import {
   ApprovalAlreadyAnsweredError,
@@ -45,6 +47,7 @@ import {
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
+import { ownsPersonBrowser, personBrowserId } from "../browser/person";
 import { withUntrustedNotice } from "../untrusted-content";
 import { createBrowserDownloadHandoff } from "./browser-download";
 import {
@@ -257,6 +260,17 @@ export interface ComputerGateway {
   screenshot(seat: ComputerSeat): Promise<ScreenshotResult>;
   snapshot(seat: ComputerSeat): Promise<SnapshotResult>;
   read(seat: ComputerSeat): Promise<ReadResult>;
+  listManualBrowserDownloads?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    signal?: AbortSignal,
+  ): Promise<ManualBrowserDownloads>;
+  deliverManualBrowserDownload?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserDownloadResult>;
   retryBrowserDownload?(
     seat: ComputerSeat,
     actor: ActionActor,
@@ -664,6 +678,20 @@ export function createComputerGateway(
     seat.key.personId === actor.id &&
     !isPersonBrowserId(seat.botId) &&
     browserProviderFor(seat) !== undefined;
+
+  function personalDownloadSource(seat: ComputerSeat, actor: ActionActor) {
+    const browser = browserFor(seat);
+    if (
+      !ownsPersonBrowser(actor, seat.botId) ||
+      !browser ||
+      !options.execution?.pilotUsers.has(actor.id)
+    ) {
+      throw new WorkspaceNotFoundError(
+        "Personal browser downloads are unavailable.",
+      );
+    }
+    return browser;
+  }
 
   async function browserAction<T extends object>(
     seat: ComputerSeat,
@@ -1657,6 +1685,34 @@ export function createComputerGateway(
         );
       }
       return post<HumanInputResult>(seat, `/human/${kind}`, payload);
+    },
+
+    async listManualBrowserDownloads(seat, actor, signal) {
+      const browser = personalDownloadSource(seat, actor);
+      return manualBrowserDownloads.parse(
+        await transport.call<unknown>(
+          await at(seat),
+          browser.addressOf(seat),
+          "/browser-downloads",
+          undefined,
+          signal,
+        ),
+      );
+    },
+
+    async deliverManualBrowserDownload(seat, actor, id, signal) {
+      if (!pilotBot(seat, actor) || !BROWSER_DOWNLOAD_ID.test(id))
+        throw new WorkspaceNotFoundError("Browser download not found.");
+      const source = await seats.seatFor(personBrowserId(actor.id), actor.id);
+      const browser = personalDownloadSource(source, actor);
+      return browserDownloads.deliver(
+        seat,
+        actor,
+        id,
+        await at(source),
+        browser.addressOf(source),
+        signal,
+      );
     },
 
     async retryBrowserDownload(seat, actor, id, signal) {
