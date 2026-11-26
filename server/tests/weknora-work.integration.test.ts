@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Hono } from "hono";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { runWeKnoraWorkLive } from "../scripts/weknora-work-live";
@@ -50,7 +51,7 @@ import {
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 import {
   loadPilotTarget,
-  pilotChatEntry,
+  runPilotTargetLegs,
 } from "../scripts/pilot-matrix-target";
 
 test("WeKnora resource paths dispatch independently and deny invalid authority before the gateway", async () => {
@@ -978,49 +979,80 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
   }
 }, 120_000);
 
-test("the pilot matrix target is parameterized and its product entry refuses new work once the account is suspended", async () => {
+test("the pilot matrix routing drives every #98 leg through the target's product entries", async () => {
   const db = createDatabase(testDatabaseUrl(), TEST_POOL);
   const run = crypto.randomUUID().slice(0, 8);
-  const subject = crypto.randomUUID();
-  const identity = { issuer: `pilot-target-casdoor-${run}`, subject };
-  const token = `fixture-target-${run}`;
-  const routeId = `pilot-target-${run}`;
+  const issuer = `pilot-target-casdoor-${run}`;
+  const identityA = { issuer, subject: crypto.randomUUID() };
+  const identityB = { issuer, subject: crypto.randomUUID() };
+  const identityC = { issuer, subject: crypto.randomUUID() };
+  const tokens = {
+    A: `fixture-target-a-${run}`,
+    B: `fixture-target-b-${run}`,
+    C: `fixture-target-c-${run}`,
+  };
+  const serviceToken = `fixture-weknora-service-${run}`;
+  const operatorToken = `fixture-operator-${run}`;
+  const workspaceId = crypto.randomUUID();
+  const resourceId = "weknora:tenant:1:kb:kb-1";
   const harnessImage = `agent-langgraph-agui@sha256:${"e".repeat(64)}`;
   const ledger = createTestCreditLedger(db);
+  const paid = createPaidCreditLedger(db);
   const [original] = await db
     .select()
     .from(enterpriseSettings)
     .where(eq(enterpriseSettings.key, pilotCatalogKey));
-  const batchId = crypto.randomUUID();
+
+  const route = {
+    provider: "fixture-pilot",
+    model: "pilot-target",
+    gatewayRevision: "pilot-g",
+    meteringRevision: "pilot-m",
+    maxInputTokens: 10,
+    maxOutputTokens: 2,
+    tools: false,
+    price: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
+  };
   const drafted = configure(emptyCatalog, {
     harnessImage,
     routes: {
-      [routeId]: {
-        provider: "fixture-pilot",
-        model: "pilot-target",
+      "route-a": { ...route, provider: "fixture-pilot-a" },
+      "route-b": { ...route, provider: "fixture-pilot-b", model: "route-b" },
+      "local-bge": {
+        purpose: "embedding",
+        provider: "openai",
+        model: "BAAI/bge-small-en-v1.5",
         gatewayRevision: "pilot-g",
         meteringRevision: "pilot-m",
         maxInputTokens: 10,
-        maxOutputTokens: 2,
+        maxOutputTokens: 0,
         tools: false,
-        price: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
+        price: { inputPerMillion: 1_000_000, outputPerMillion: 0 },
       },
     },
   });
-  const proposed = drafted.routes[routeId];
-  if (!proposed) throw new Error("fixture route missing");
-  const published = publish(
-    verify(
-      drafted,
-      routeId,
-      fixtureTraceReport(harnessImage, proposed),
+  let catalog = drafted;
+  for (const id of ["route-a", "route-b", "local-bge"]) {
+    const proposed = drafted.routes[id];
+    if (!proposed) throw new Error(`fixture route ${id} missing`);
+    catalog = verify(
+      catalog,
+      id,
+      proposed.purpose === "embedding"
+        ? fixtureEmbeddingReport(harnessImage, proposed)
+        : fixtureTraceReport(harnessImage, proposed),
       "test",
-    ),
-    [routeId],
-    routeId,
+    );
+  }
+  const published = publish(
+    catalog,
+    ["route-a", "route-b", "local-bge"],
+    "route-a",
     "test",
   ).catalog;
-  let dispatched = 0;
+
+  const batches: string[] = [];
+  let dispatches = 0;
   let server: ReturnType<typeof Bun.serve> | undefined;
   try {
     await db
@@ -1030,13 +1062,34 @@ test("the pilot matrix target is parameterized and its product entry refuses new
         target: enterpriseSettings.key,
         set: { value: published },
       });
-    await ledger.enroll({ identity, batchId, amount: 100n });
-    await ledger.claim(identity, batchId);
+    for (const [identity, amount] of [
+      [identityA, 100_000n],
+      [identityB, 100_000n],
+      [identityC, 24n], // exactly two chat reservations
+    ] as const) {
+      const batchId = crypto.randomUUID();
+      batches.push(batchId);
+      await ledger.enroll({ identity, batchId, amount });
+      await ledger.claim(identity, batchId);
+    }
+    await ledger.registerApplication({
+      id: "weknora",
+      name: "WeKnora",
+      operator: "platform",
+      resourcePrefix: "weknora:",
+    });
+    await ledger.approveApplication("weknora", "matrix-fixture");
+
+    const identities = new Map([
+      [tokens.A, identityA],
+      [tokens.B, identityB],
+      [tokens.C, identityC],
+    ]);
     const execute: TestCreditExecutor = async ({
       bindGatewayRequest,
       messages,
     }) => {
-      dispatched += 1;
+      dispatches += 1;
       const bound = await bindGatewayRequest({
         requestId: crypto.randomUUID(),
         digest: "a".repeat(64),
@@ -1048,15 +1101,64 @@ test("the pilot matrix target is parameterized and its product entry refuses new
         usage: { inputTokens: 3, outputTokens: 2 },
       };
     };
-    const api = createTestCreditRoutes({
-      ledger,
-      authenticate: async (request) =>
-        request.headers.get("authorization") === `Bearer ${token}`
-          ? identity
-          : undefined,
-      execute,
+    const embed: NonNullable<
+      Parameters<typeof createWeKnoraRoutes>[0]["execute"]
+    > = async ({ input, beforeDispatch }) => {
+      if (
+        !(await beforeDispatch({
+          requestId: crypto.randomUUID(),
+          requestSha256: "b".repeat(64),
+          inputTokenUpperBound: 3,
+        }))
+      )
+        throw new Error("embedding was not admitted");
+      return {
+        outcome: "complete",
+        vectors: input.map(() => [0.1, 0.2, 0.3]),
+        usage: { inputTokens: 3, outputTokens: 0 },
+      };
+    };
+    const accountA = await ledger.accountOf(identityA);
+    if (!accountA) throw new Error("missing Billing Account A");
+
+    const root = new Hono();
+    root.route(
+      "/billing",
+      createTestCreditRoutes({
+        ledger,
+        authenticate: async (request) =>
+          identities.get(
+            (request.headers.get("authorization") ?? "").replace(
+              /^Bearer /,
+              "",
+            ),
+          ),
+        execute,
+      }),
+    );
+    root.route(
+      "/weknora",
+      createWeKnoraRoutes({
+        issuer,
+        serviceToken,
+        routeId: "local-bge",
+        execute: embed,
+        ledger,
+      }),
+    );
+    root.post("/operator/workspaces/:id/suspension", async (context) => {
+      if (context.req.header("authorization") !== `Bearer ${operatorToken}`)
+        return context.json({ error: "suspension_permission_required" }, 403);
+      const body = (await context.req.json()) as { action?: string };
+      await paid.suspendAccount(accountA, body.action === "pause");
+      return context.json({ operationId: crypto.randomUUID() }, 201);
     });
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: api.fetch });
+    server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => root.fetch(request),
+    });
+    const origin = server.url.origin;
 
     // The default target is the local fixture deployment.
     expect(loadPilotTarget({}).evidence).toBe("fixture");
@@ -1067,7 +1169,7 @@ test("the pilot matrix target is parameterized and its product entry refuses new
       loadPilotTarget({
         PILOT_EVIDENCE: "deployment",
         PILOT_TARGET_URL: "http://127.0.0.1:3000/api/billing",
-        PILOT_TARGET_TOKEN: token,
+        PILOT_TARGET_TOKEN: tokens.A,
         PILOT_DEPLOYMENT_ID: "target-1",
         PILOT_BUILD_VERSION: "build-1",
         PILOT_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
@@ -1077,79 +1179,105 @@ test("the pilot matrix target is parameterized and its product entry refuses new
     ).toThrow("loopback");
     const target = loadPilotTarget({
       PILOT_EVIDENCE: "fixture",
-      PILOT_TARGET_URL: server.url.origin,
-      PILOT_TARGET_TOKEN: token,
+      PILOT_TARGET_URL: `${origin}/billing`,
+      PILOT_TARGET_TOKEN: tokens.A,
+      PILOT_WEKNORA_URL: `${origin}/weknora`,
+      PILOT_ACCOUNT_STATUS_URL: `${origin}/operator`,
+      PILOT_WORKSPACE_ID: workspaceId,
     });
 
-    // The chat leg drives the product HTTP entry, not the ledger directly.
-    const first = await pilotChatEntry(target, {
-      operationId: "pilot-entry-settled",
-      prompt: "Hello target",
+    // The same routing the script uses against a target: every enumerated
+    // #98 leg is driven through the product HTTP entries above.
+    const legs = await runPilotTargetLegs({
+      target,
+      tokens,
+      routes: { A: "route-a", B: "route-b" },
+      weknora: {
+        serviceToken,
+        subject: identityA.subject,
+        resourceId,
+        createGrant: true,
+      },
+      suspension: { token: operatorToken, workspaceId },
     });
-    expect(first.dispatch?.state).toBe("completed");
-    expect(dispatched).toBe(1);
-    expect(first.receipt).toMatchObject({
-      state: "settled",
-      chargedMicrocredits: "5",
-      inputTokens: "3",
-      outputTokens: "2",
+    for (const leg of legs)
+      if (leg.outcome === "fail")
+        throw new Error(`${leg.scenario}: ${leg.error}`);
+    expect(legs.map(({ scenario }) => scenario)).toEqual([
+      "target-model-switch",
+      "target-cross-app-isolation",
+      "target-concurrent-budgets",
+      "target-failures-refusals",
+      "target-weknora-ingest-after-signout",
+      "target-account-status-suspension",
+    ]);
+    expect(legs.every(({ outcome }) => outcome === "pass")).toBe(true);
+    // The model switch reserved a named route per call; the refusals never
+    // reached the executor.
+    expect(legs[0]).toMatchObject({
+      outcome: "pass",
+      detail: { routeA: "route-a", routeB: "route-b" },
     });
-    const settledBalance = await ledger.balance(identity);
-    expect(settledBalance).toMatchObject({
-      chargedMicrocredits: "5",
-      availableMicrocredits: "95",
+    expect(legs[3]).toMatchObject({
+      outcome: "pass",
+      detail: { forged: "not_authorized", unknownRoute: "route_unavailable" },
     });
-
-    // #69 joint leg: the identity provider disables the account; the product
-    // entry refuses new work while the settled receipt stands.
-    const accountId = await ledger.accountOf(identity);
-    if (!accountId) throw new Error("missing Billing Account");
-    await createPaidCreditLedger(db).suspendAccount(accountId, true);
-    const refused = await pilotChatEntry(target, {
-      operationId: "pilot-entry-suspended",
-      prompt: "Hello again",
+    // Cross-app isolation read A's unchanged balance after B's charge.
+    expect(legs[1]).toMatchObject({
+      outcome: "pass",
+      detail: { chargedA: "10", chargedB: "5" },
     });
-    expect(refused.reservation).toEqual({
-      state: "denied",
-      reason: "not_authorized",
+    // The settled receipt and balance survive the target's suspension while
+    // new work is refused.
+    expect(legs[5]).toMatchObject({
+      outcome: "pass",
+      detail: { receipt: "settled" },
     });
-    expect(refused.dispatch).toBeUndefined();
-    expect(dispatched).toBe(1);
-    expect(await ledger.receipt(identity, "pilot-entry-settled")).toMatchObject(
-      { state: "settled", chargedMicrocredits: "5" },
-    );
-    expect(await ledger.balance(identity)).toEqual(settledBalance);
+    expect(dispatches).toBe(4);
   } finally {
     await server?.stop(true);
     await db.transaction(async (tx) => {
-      const accounts = tx
+      // Account C's rows are reached by its own subject plus the batch join.
+      const subjectAccounts = tx
         .select({ id: testCreditAccounts.id })
         .from(testCreditAccounts)
-        .where(eq(testCreditAccounts.subject, subject));
+        .where(
+          inArray(testCreditAccounts.subject, [
+            identityA.subject,
+            identityB.subject,
+            identityC.subject,
+          ]),
+        );
       await tx
         .delete(lagoUsageEvents)
-        .where(inArray(lagoUsageEvents.accountId, accounts));
+        .where(inArray(lagoUsageEvents.accountId, subjectAccounts));
       await tx
         .delete(testCreditEvidence)
-        .where(inArray(testCreditEvidence.accountId, accounts));
+        .where(inArray(testCreditEvidence.accountId, subjectAccounts));
       await tx
         .delete(pilotProviderCostHolds)
-        .where(inArray(pilotProviderCostHolds.accountId, accounts));
+        .where(inArray(pilotProviderCostHolds.accountId, subjectAccounts));
       await tx
         .delete(testCreditOperations)
-        .where(inArray(testCreditOperations.accountId, accounts));
+        .where(inArray(testCreditOperations.accountId, subjectAccounts));
       await tx
         .delete(testCreditBudgets)
-        .where(inArray(testCreditBudgets.accountId, accounts));
+        .where(inArray(testCreditBudgets.accountId, subjectAccounts));
       await tx
         .delete(testCreditEnrollments)
-        .where(inArray(testCreditEnrollments.accountId, accounts));
+        .where(inArray(testCreditEnrollments.accountId, subjectAccounts));
       await tx
         .delete(testCreditAccounts)
-        .where(eq(testCreditAccounts.subject, subject));
+        .where(
+          inArray(testCreditAccounts.subject, [
+            identityA.subject,
+            identityB.subject,
+            identityC.subject,
+          ]),
+        );
       await tx
         .delete(testCreditBatches)
-        .where(eq(testCreditBatches.id, batchId));
+        .where(inArray(testCreditBatches.id, batches));
     });
     if (original)
       await db
@@ -1162,4 +1290,4 @@ test("the pilot matrix target is parameterized and its product entry refuses new
         .where(eq(enterpriseSettings.key, pilotCatalogKey));
     await db.$client.close();
   }
-}, 120_000);
+}, 180_000);

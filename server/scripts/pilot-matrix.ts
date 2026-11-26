@@ -46,9 +46,14 @@ import {
   fixtureEmbeddingReport,
   fixtureTraceReport,
 } from "../tests/support/bifrost-evidence";
-import { loadPilotTarget, pilotChatEntry } from "./pilot-matrix-target";
+import { loadPilotTarget, runPilotTargetLegs } from "./pilot-matrix-target";
 
 const target = loadPilotTarget(process.env);
+// The fixture server below is the local implementation of this entry; a
+// target run points the same ingest leg at the deployment's own entry.
+const weknoraEndpoint = `${(
+  target.weknora?.url ?? "http://127.0.0.1:25172/api/weknora"
+).replace(/\/+$/, "")}/embeddings`;
 
 const runDir = process.argv[2];
 if (!runDir) throw new Error("usage: bun scripts/pilot-matrix.ts <run-dir>");
@@ -75,6 +80,14 @@ async function scenario(
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+// Fixture-only legs reach into the local ledger; a target run replaces them
+// with the same legs driven over HTTP by runPilotTargetLegs.
+const localScenario = async (
+  name: string,
+  work: () => Promise<Record<string, unknown>>,
+) => {
+  if (!target.entry) await scenario(name, work);
+};
 
 const database = createDatabase(
   process.env.DATABASE_URL ??
@@ -149,11 +162,12 @@ async function publishCatalog(
   routes: Record<string, RouteSpec>,
   defaultRoute: string | null,
 ) {
-  // An independent target was published by its own #89 admin flow. Fabricating
-  // fixture traces would turn a real rerun into local evidence.
-  if (target.evidence === "deployment")
+  // A target run consumes the target's own #89 publication through the
+  // product entry (pilotQuoteEntry); fabricating fixture traces would turn a
+  // real rerun into local evidence, so only the fixture path publishes here.
+  if (target.entry)
     throw new Error(
-      "An independent target publishes its own verified routes; the matrix must not fabricate evidence.",
+      "A target run consumes the target's own published routes; the matrix must not fabricate evidence.",
     );
   const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
   const drafted = configure(emptyCatalog, { harnessImage, routes });
@@ -196,19 +210,6 @@ async function chatOp(
   operationId: string,
   prompt: string,
 ) {
-  if (target.entry) {
-    // shortcut: a deployment entry quotes its own default route, so this leg
-    // cannot switch per Bot or conversation; upgrade when the target exposes
-    // model picks over HTTP.
-    const chat = await pilotChatEntry(target, { operationId, prompt });
-    assert(
-      chat.dispatch?.state === "completed",
-      `dispatch: ${chat.dispatch?.state ?? chat.reservation.state}`,
-    );
-    return {
-      result: { text: chat.dispatch.text ?? "", usage: chat.usage },
-    };
-  }
   const pick = await ledger.resolveQuote({
     conversation: { id: routeId, revision },
   });
@@ -279,18 +280,15 @@ async function embedViaEndpoint(body: {
   operationId: string;
   input: string[];
 }) {
-  const response = await fetch(
-    "http://127.0.0.1:25172/api/weknora/embeddings",
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${serviceToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
+  const response = await fetch(weknoraEndpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${serviceToken}`,
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
   return {
     status: response.status,
     body: await response.json().catch(() => null),
@@ -480,7 +478,7 @@ Bun.serve({
 // ── Matrix ──────────────────────────────────────────────────────────────────
 
 let revisions: Record<string, string> = {};
-await scenario("provision-accounts", async () => {
+await localScenario("provision-accounts", async () => {
   for (const [identity, amount] of [
     [identityA, 200_000n],
     [identityB, 50_000n],
@@ -498,7 +496,7 @@ await scenario("provision-accounts", async () => {
   };
 });
 
-await scenario("publish-two-models", async () => {
+await localScenario("publish-two-models", async () => {
   revisions = await publishCatalog(
     {
       "route-a": {
@@ -529,7 +527,7 @@ await scenario("publish-two-models", async () => {
   return { options };
 });
 
-await scenario("model-switch-product-entry", async () => {
+await localScenario("model-switch-product-entry", async () => {
   const botPick = await ledger.resolveQuote({
     bot: { id: "route-b", revision: revisions["route-b"] },
   });
@@ -555,7 +553,7 @@ await scenario("model-switch-product-entry", async () => {
   };
 });
 
-await scenario("chat-both-routes-account-A", async () => {
+await localScenario("chat-both-routes-account-A", async () => {
   const first = await chatOp(
     identityA,
     "route-a",
@@ -584,7 +582,7 @@ await scenario("chat-both-routes-account-A", async () => {
   };
 });
 
-await scenario("isolation-account-B", async () => {
+await localScenario("isolation-account-B", async () => {
   const before = await ledger.balance(identityA);
   const op = await chatOp(
     identityB,
@@ -606,7 +604,7 @@ await scenario("isolation-account-B", async () => {
   };
 });
 
-await scenario("cross-app-balance-race", async () => {
+await localScenario("cross-app-balance-race", async () => {
   const raceQuote = await ledger.quote();
   const attempts = await Promise.all(
     [1, 2, 3, 4].map((n) =>
@@ -628,7 +626,7 @@ await scenario("cross-app-balance-race", async () => {
   return { reserved: reserved.length, denied: denied.length, balance };
 });
 
-await scenario("auxiliary-boundary-fail-closed", async () => {
+await localScenario("auxiliary-boundary-fail-closed", async () => {
   const completer = createAuxiliaryModelCompleter({
     model: { url: new URL("/v1", target.gateway.url), token: "unused" },
     route: "route-a",
@@ -656,7 +654,7 @@ await scenario("auxiliary-boundary-fail-closed", async () => {
   return { refusedNoContext, refusedUnbounded };
 });
 
-await scenario("stale-reservation-cannot-dispatch", async () => {
+await localScenario("stale-reservation-cannot-dispatch", async () => {
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityA, {
@@ -677,7 +675,7 @@ await scenario("stale-reservation-cannot-dispatch", async () => {
   return { dispatchState: dispatch.state, reason: dispatch.reason };
 });
 
-await scenario("gateway-timeout-releases-hold", async () => {
+await localScenario("gateway-timeout-releases-hold", async () => {
   const deadExecutor = createBifrostCreditExecutor({
     endpoint: new URL("http://127.0.0.1:9/v1/chat/completions"),
     gatewayRevision,
@@ -717,7 +715,7 @@ await scenario("gateway-timeout-releases-hold", async () => {
   return { released: true, restored: after?.availableMicrocredits };
 });
 
-await scenario("meter-refusal-blocks-dispatch", async () => {
+await localScenario("meter-refusal-blocks-dispatch", async () => {
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityA, {
@@ -747,7 +745,7 @@ await scenario("meter-refusal-blocks-dispatch", async () => {
   return { refusedNoProviderRequest: true };
 });
 
-await scenario("cutoff-releases-abandoned-hold", async () => {
+await localScenario("cutoff-releases-abandoned-hold", async () => {
   // A dispatched operation whose user never returns: the reconciliation
   // cutoff must release the held credits.
   const quote = await ledger.quote();
@@ -779,7 +777,7 @@ await scenario("cutoff-releases-abandoned-hold", async () => {
   return { swept: applied, restored: after?.availableMicrocredits };
 });
 
-await scenario("wrong-permit-cannot-dispatch", async () => {
+await localScenario("wrong-permit-cannot-dispatch", async () => {
   const denied = await ledger.beginDispatch(identityA, {
     operationId: "matrix-chat-a1",
     permit: "forged-permit",
@@ -808,7 +806,7 @@ await scenario("external-direct-gateway-boundary", async () => {
   };
 });
 
-await scenario("publish-embedding-route", async () => {
+await localScenario("publish-embedding-route", async () => {
   revisions = await publishCatalog(
     {
       "local-bge": {
@@ -833,7 +831,7 @@ await scenario("publish-embedding-route", async () => {
   };
 });
 
-await scenario("weknora-worker-ingestion", async () => {
+await localScenario("weknora-worker-ingestion", async () => {
   await ledger.registerApplication({
     id: WEKNORA_APPLICATION_ID,
     name: "WeKnora",
@@ -855,7 +853,7 @@ await scenario("weknora-worker-ingestion", async () => {
   await Bun.write(
     `${runDir}/worker.env`,
     [
-      "OPENBOT_WEKNORA_EMBEDDINGS_URL=http://127.0.0.1:25172/api/weknora/embeddings",
+      `OPENBOT_WEKNORA_EMBEDDINGS_URL=${weknoraEndpoint}`,
       `OPENBOT_WEKNORA_SERVICE_TOKEN=${serviceToken}`,
       `OPENBOT_WEKNORA_OIDC_ISSUER=${issuer}`,
       `OPENBOT_WEKNORA_LIVE_SUBJECT=${identityA.subject}`,
@@ -895,7 +893,7 @@ await scenario("weknora-worker-ingestion", async () => {
   };
 });
 
-await scenario("signout-then-authorized-embedding", async () => {
+await localScenario("signout-then-authorized-embedding", async () => {
   // The uploader signs out; a new ingestion under the same valid spending
   // authorization still settles (authorizations outlive sessions).
   const result = await embedViaEndpoint({
@@ -917,7 +915,7 @@ await scenario("signout-then-authorized-embedding", async () => {
   };
 });
 
-await scenario("recovery-without-reservation-refused", async () => {
+await localScenario("recovery-without-reservation-refused", async () => {
   // A released operation id replayed by worker recovery must not re-dispatch.
   const selected = await ledger.weknoraQuote("local-bge", "embedding");
   assert(selected, "no embedding quote");
@@ -964,7 +962,7 @@ await scenario("recovery-without-reservation-refused", async () => {
   return { status: replay.status, body: replay.body };
 });
 
-await scenario("revocation-and-isolation-denials", async () => {
+await localScenario("revocation-and-isolation-denials", async () => {
   const stranger = await embedViaEndpoint({
     subject: identityB.subject,
     authorizationId,
@@ -1022,6 +1020,9 @@ await scenario("lago-reconciliation", async () => {
     externalSubscriptionId: subscriptionId,
   });
   const exporter = createLagoUsageExporter(database, client);
+  // A target run proves the deployment's own Lago destination before the
+  // outbox replay; the local fixture already validated it.
+  if (target.entry) await client.verifyDestination();
   const flushed = await exporter.flush();
   assert(
     !flushed.unavailable && flushed.paused === 0,
@@ -1034,20 +1035,72 @@ await scenario("lago-reconciliation", async () => {
   return { flushed, balances };
 });
 
-const receipts = await fetch("http://127.0.0.1:25172/control/receipts").then(
-  (response) => response.json(),
-);
+// A target run replaces every ledger-reaching fixture leg above with the same
+// legs driven through the target's product entries.
+if (target.entry) {
+  const requireEnv = (name: string) => {
+    const value = process.env[name]?.trim();
+    if (!value) throw new Error(`A target run needs ${name}.`);
+    return value;
+  };
+  const weknoraService = process.env.PILOT_WEKNORA_SERVICE_TOKEN?.trim();
+  const weknoraSubject = process.env.PILOT_WEKNORA_SUBJECT?.trim();
+  const weknoraResource = process.env.PILOT_WEKNORA_RESOURCE_ID?.trim();
+  const operatorToken = process.env.PILOT_OPERATOR_TOKEN?.trim();
+  const legResults = await runPilotTargetLegs({
+    target,
+    tokens: {
+      A: requireEnv("PILOT_TOKEN_A"),
+      B: requireEnv("PILOT_TOKEN_B"),
+      C: requireEnv("PILOT_TOKEN_C"),
+    },
+    routes: {
+      A: requireEnv("PILOT_ROUTE_A"),
+      B: requireEnv("PILOT_ROUTE_B"),
+    },
+    weknora:
+      weknoraService && weknoraSubject && weknoraResource
+        ? {
+            serviceToken: weknoraService,
+            subject: weknoraSubject,
+            resourceId: weknoraResource,
+            createGrant: true,
+          }
+        : undefined,
+    suspension:
+      operatorToken && target.accountStatus
+        ? {
+            token: operatorToken,
+            workspaceId: target.accountStatus.workspaceId,
+          }
+        : undefined,
+    clock: () => now().getTime(),
+  });
+  for (const result of legResults) {
+    results.push(result);
+    log(result);
+  }
+}
+
+const receipts = target.entry
+  ? {}
+  : await fetch(`${new URL(weknoraEndpoint).origin}/control/receipts`).then(
+      (response) => response.json(),
+    );
 await Bun.write(
   `${runDir}/matrix.json`,
   JSON.stringify(
     {
       startedAt: new Date(startedAt).toISOString(),
-      accounts: {
-        A: { subject: identityA.subject },
-        B: { subject: identityB.subject },
-        C: { subject: identityC.subject },
-      },
-      authorizationId,
+      // A target run's fixture subjects are unrelated to the deployment.
+      accounts: target.entry
+        ? null
+        : {
+            A: { subject: identityA.subject },
+            B: { subject: identityB.subject },
+            C: { subject: identityC.subject },
+          },
+      authorizationId: target.entry ? null : authorizationId,
       evidence: target.evidence,
       deployment: target.deployment,
       gateway: {
