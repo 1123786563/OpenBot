@@ -1,14 +1,16 @@
 /**
  * Live WeKnora shared-knowledge work harness for #110: mounts the billing
- * `/work` entry and drives the real shared-KB chat and knowledge-search paths,
- * recording receipts and denial codes as evidence.
+ * `/work` entry and serves the two platform WeKnora entry points on top of it,
+ * so one run records each path's route, usage, cost and refusal evidence.
  *
  *   bun scripts/weknora-work-live.ts <run-dir>
  *
- * Reads the same OPENBOT_WEKNORA_* / TEST_CREDIT_* settings as the deployed
- * app, plus WEKNORA_WORK_ISSUER, WEKNORA_WORK_SUBJECT,
- * WEKNORA_WORK_AUTHORIZATION_ID (per path), WEKNORA_WORK_RESOURCE_ID and
- * WEKNORA_WORK_SESSION_ID. DATABASE_URL selects the billing database.
+ * Reads the deployed OPENBOT_WEKNORA_* / TEST_CREDIT_* settings from the
+ * environment, plus WEKNORA_WORK_ISSUER, WEKNORA_WORK_SUBJECT,
+ * WEKNORA_WORK_RESOURCE_ID, WEKNORA_WORK_SESSION_ID, WEKNORA_WORK_QUESTION,
+ * WEKNORA_WORK_QUERY, WEKNORA_WORK_CHAT_AUTHORIZATION_ID and
+ * WEKNORA_WORK_SEARCH_AUTHORIZATION_ID. DATABASE_URL selects the billing
+ * database. Writes <run-dir>/weknora-work-live.json.
  */
 import { randomUUID } from "node:crypto";
 import { createTestCreditLedger } from "../src/billing/test-credit";
@@ -16,21 +18,18 @@ import { loadWeKnoraBilling } from "../src/billing/weknora-config";
 import { createWeKnoraRoutes } from "../src/billing/weknora-routes";
 import { createDatabase, type Database } from "../src/db/client";
 
+type WorkPath = "chat" | "search";
+
 export type WorkLiveEvidence = {
   startedAt: string;
-  resourceId: string;
   issuer: string;
   subject: string;
+  resourceId: string;
   paths: Record<
-    string,
-    {
-      route: string;
-      status: number;
-      response: unknown;
-      receipt?: Record<string, unknown>;
-    }
+    WorkPath,
+    { endpoint: string; status: number; response: unknown }
   >;
-  denials: { path: string; status: number; response: unknown }[];
+  denials: { path: WorkPath; status: number; response: unknown }[];
 };
 
 const text = (value: string | undefined, name: string) => {
@@ -56,99 +55,125 @@ export async function runWeKnoraWorkLive(
     environment.WEKNORA_WORK_SESSION_ID,
     "WEKNORA_WORK_SESSION_ID",
   );
+  const question = text(
+    environment.WEKNORA_WORK_QUESTION,
+    "WEKNORA_WORK_QUESTION",
+  );
+  const query = text(environment.WEKNORA_WORK_QUERY, "WEKNORA_WORK_QUERY");
+  const grants = {
+    chat: text(
+      environment.WEKNORA_WORK_CHAT_AUTHORIZATION_ID,
+      "WEKNORA_WORK_CHAT_AUTHORIZATION_ID",
+    ),
+    search: text(
+      environment.WEKNORA_WORK_SEARCH_AUTHORIZATION_ID,
+      "WEKNORA_WORK_SEARCH_AUTHORIZATION_ID",
+    ),
+  };
   const runtime = loadWeKnoraBilling(environment);
-  if (!runtime || !runtime.work?.chat || !runtime.work?.rerank)
+  if (!runtime?.work?.chat || !runtime.work.rerank)
     throw new Error("WeKnora chat and rerank paths must both be configured.");
   const database = injectedDatabase ?? createDatabase(databaseUrl);
   const ledger = createTestCreditLedger(database);
   const api = createWeKnoraRoutes({ ...runtime, ledger });
-  const evidence: WorkLiveEvidence = {
-    startedAt: new Date().toISOString(),
-    resourceId,
-    issuer,
-    subject,
-    paths: {},
-    denials: [],
-  };
-  const post = async (path: string, body: Record<string, unknown>) => {
-    const response = await api.request("/work", {
+  const startedAt = new Date().toISOString();
+  // The WeKnora server translates its own endpoints into `/work` calls, so the
+  // harness plays that role: each entry call carries the documented
+  // `X-OpenBot-*` headers and becomes one billed dispatch.
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/work") return api.fetch(request);
+      const path: WorkPath | undefined =
+        url.pathname === `/api/v1/knowledge-chat/${sessionId}`
+          ? "chat"
+          : url.pathname === "/api/v1/knowledge-search"
+            ? "search"
+            : undefined;
+      if (!path) return new Response(null, { status: 404 });
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const authorizationId = request.headers.get("x-openbot-authorization-id");
+      const operationId = request.headers.get("x-openbot-operation-id");
+      const body = (await request.json().catch(() => undefined)) as
+        | { messages?: unknown; query?: unknown; documents?: unknown }
+        | undefined;
+      if (!authorizationId || !operationId || !body)
+        return Response.json({ code: "invalid_work_entry" }, { status: 400 });
+      return fetch(new URL("/work", request.url), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${runtime.serviceToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          subject,
+          resourceId,
+          operationId,
+          authorizationId,
+          input:
+            path === "chat"
+              ? { kind: "chat", messages: body.messages }
+              : {
+                  kind: "rerank",
+                  query: body.query,
+                  documents: body.documents,
+                },
+        }),
+      });
+    },
+  });
+  const drive = async (path: WorkPath, authorizationId: string) => {
+    const endpoint =
+      path === "chat"
+        ? `/api/v1/knowledge-chat/${sessionId}`
+        : "/api/v1/knowledge-search";
+    const response = await fetch(new URL(endpoint, server.url), {
       method: "POST",
       headers: {
-        authorization: `Bearer ${runtime.serviceToken}`,
         "content-type": "application/json",
+        "x-openbot-authorization-id": authorizationId,
+        "x-openbot-operation-id": randomUUID(),
       },
-      body: JSON.stringify({
-        subject,
-        resourceId,
-        operationId: randomUUID(),
-        ...body,
-      }),
+      body: JSON.stringify(
+        path === "chat"
+          ? { messages: [{ role: "user", content: question }] }
+          : { query, documents: ["shared knowledge base document"] },
+      ),
     });
     return {
+      endpoint,
       status: response.status,
-      body: (await response.json()) as Record<string, unknown>,
+      response: (await response.json()) as unknown,
     };
   };
   try {
-    for (const [path, endpoint, kind, authorizationId] of [
-      [
-        "chat",
-        `/api/v1/knowledge-chat/${sessionId}`,
-        "chat",
-        text(
-          environment.WEKNORA_WORK_CHAT_AUTHORIZATION_ID,
-          "chat authorization",
-        ),
-      ],
-      [
-        "search",
-        `/api/v1/knowledge-search`,
-        "rerank",
-        text(
-          environment.WEKNORA_WORK_SEARCH_AUTHORIZATION_ID,
-          "search authorization",
-        ),
-      ],
-    ]) {
-      const input =
-        kind === "chat"
-          ? {
-              kind,
-              messages: [
-                {
-                  role: "user",
-                  content: text(
-                    environment.WEKNORA_WORK_QUESTION,
-                    "WEKNORA_WORK_QUESTION",
-                  ),
-                },
-              ],
-            }
-          : {
-              kind,
-              query: text(environment.WEKNORA_WORK_QUERY, "WEKNORA_WORK_QUERY"),
-              documents: ["shared knowledge base document"],
-            };
-      const { status, body } = await post(endpoint, { input, authorizationId });
-      const receipt = body.receipt as Record<string, unknown> | undefined;
-      evidence.paths[path] = {
-        route: runtime.work[kind]?.routeId ?? "",
-        status,
-        response: body,
-        ...(receipt ? { receipt } : {}),
-      };
-      const denied = await post(endpoint, {
-        input,
-        authorizationId: randomUUID(),
-      });
-      evidence.denials.push({
+    const chat = await drive("chat", grants.chat);
+    const search = await drive("search", grants.search);
+    // Each grant only authorizes its own path, so the crossed calls must be
+    // refused before the gateway sees them.
+    const crossed = [
+      { path: "chat" as const, attempt: await drive("chat", grants.search) },
+      {
+        path: "search" as const,
+        attempt: await drive("search", grants.chat),
+      },
+    ];
+    return {
+      startedAt,
+      issuer,
+      subject,
+      resourceId,
+      paths: { chat, search },
+      denials: crossed.map(({ path, attempt }) => ({
         path,
-        status: denied.status,
-        response: denied.body,
-      });
-    }
-    return evidence;
+        status: attempt.status,
+        response: attempt.response,
+      })),
+    };
   } finally {
+    await server.stop(true);
     if (!injectedDatabase) await database.$client.close();
   }
 }

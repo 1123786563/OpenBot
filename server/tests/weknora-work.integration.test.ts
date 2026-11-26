@@ -527,7 +527,11 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     expect(await paid.paidBalance(accountId)).toMatchObject({
       availableMicrocredits: "87",
     });
-    const beforeHarness = requests.length;
+    const dispatchCount = requests.length;
+    // 971 = 1000 granted - 13 charged - 16 held by the reconciling request.
+    const beforeHarness = await ledger.balance(identity);
+    if (!beforeHarness) throw new Error("Missing payer balance.");
+    expect(beforeHarness).toMatchObject({ availableMicrocredits: "971" });
     const live = await runWeKnoraWorkLive(
       {
         ...options,
@@ -541,7 +545,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
         WEKNORA_WORK_RESOURCE_ID: resourceId,
         WEKNORA_WORK_SESSION_ID: "fixture-session",
         WEKNORA_WORK_QUESTION: "Read the fixture.",
-        WEKNORA_WORK_QUERY: "q",
+        WEKNORA_WORK_QUERY: "shared",
         WEKNORA_WORK_CHAT_AUTHORIZATION_ID: await authorization("chat"),
         WEKNORA_WORK_SEARCH_AUTHORIZATION_ID: await authorization("rerank"),
       },
@@ -549,39 +553,51 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
       db,
     );
     expect(live.paths.chat).toMatchObject({
-      route: "text",
+      endpoint: "/api/v1/knowledge-chat/fixture-session",
       status: 200,
-      receipt: {
-        state: "settled",
-        applicationId: "weknora",
-        priceVersion: release.id,
-        reservedMicrocredits: "16",
-        chargedMicrocredits: "5",
-        inputTokens: "3",
-        outputTokens: "2",
+      response: {
+        result: { text: "Fixture answer from OpenBot." },
+        receipt: {
+          state: "settled",
+          applicationId: "weknora",
+          creditType: "test",
+          route: "text",
+          priceVersion: release.id,
+          reservedMicrocredits: "16",
+          chargedMicrocredits: "5",
+          inputTokens: "3",
+          outputTokens: "2",
+        },
       },
     });
     expect(live.paths.search).toMatchObject({
-      route: "rank",
+      endpoint: "/api/v1/knowledge-search",
       status: 200,
-      receipt: {
-        state: "settled",
-        applicationId: "weknora",
-        priceVersion: release.id,
-        reservedMicrocredits: "12",
-        chargedMicrocredits: "3",
-        inputTokens: "3",
-        outputTokens: "0",
+      response: {
+        result: { scores: [{ index: 0, relevance_score: 0.9 }] },
+        receipt: {
+          state: "settled",
+          applicationId: "weknora",
+          creditType: "test",
+          route: "rank",
+          priceVersion: release.id,
+          reservedMicrocredits: "12",
+          chargedMicrocredits: "3",
+          inputTokens: "3",
+          outputTokens: "0",
+        },
       },
     });
-    expect(live.denials).toHaveLength(2);
-    for (const denial of live.denials) {
-      expect(denial).toMatchObject({
-        status: 403,
-        response: { code: "not_authorized" },
-      });
-    }
-    expect(requests).toHaveLength(beforeHarness + 2);
+    expect(live.denials).toEqual([
+      { path: "chat", status: 403, response: { code: "not_authorized" } },
+      { path: "search", status: 403, response: { code: "not_authorized" } },
+    ]);
+    expect(requests).toHaveLength(dispatchCount + 2);
+    expect(await ledger.balance(identity)).toMatchObject({
+      availableMicrocredits: (
+        BigInt(beforeHarness.availableMicrocredits) - 8n
+      ).toString(),
+    });
   } finally {
     await server.stop(true);
     await upstream.stop(true);
