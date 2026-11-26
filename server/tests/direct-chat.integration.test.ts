@@ -3478,6 +3478,9 @@ for (const shared of [false, true] as const) {
           and(
             eq(workItems.kind, HANDOFF_KIND),
             sql`${workItems.payload}->>'fromBotId' = ${middle.id}`,
+            // The middle Bot offers two items with that sender: this hop and its answer coming
+            // home. Who they go to tells them apart, whichever the queue returns first.
+            sql`${workItems.payload}->>'toBotId' = ${last.id}`,
           ),
         );
       if (!second) throw new Error("The second hop was not offered.");
