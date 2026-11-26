@@ -102,6 +102,7 @@ import {
 import { createBackgroundModel } from "./billing/background-model";
 import { budgetedTurn } from "./billing/background-model-turn";
 import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
+import { loadCreditPackLiveChannel } from "./billing/credit-pack-live-channel";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { loadIndependentAppBilling } from "./billing/independent-app-config";
@@ -1951,14 +1952,25 @@ const paidCreditLedger = createPaidCreditLedger(
   undefined,
   pilotDeployment,
 );
-const creditPackTestChannel = loadCreditPackTestChannel(process.env);
-const alipayCreditPackTestChannel = loadCreditPackTestChannel(
+const creditPackLiveChannel = loadCreditPackLiveChannel(process.env);
+const alipayCreditPackLiveChannel = loadCreditPackLiveChannel(
   process.env,
   "alipay",
 );
+// A live provider replaces its fixture on the checkout route only when no
+// fixture is configured. Both remain available to closure reconciliation.
+const creditPackTestChannel =
+  loadCreditPackTestChannel(process.env) ?? creditPackLiveChannel;
+const alipayCreditPackTestChannel =
+  loadCreditPackTestChannel(process.env, "alipay") ??
+  alipayCreditPackLiveChannel;
 const closureChannels = [
-  creditPackTestChannel,
-  alipayCreditPackTestChannel,
+  ...new Set([
+    creditPackTestChannel,
+    alipayCreditPackTestChannel,
+    creditPackLiveChannel,
+    alipayCreditPackLiveChannel,
+  ]),
 ].filter((channel) => channel !== undefined);
 const testCreditCutoffSweep = repeatAfterEach(async () => {
   try {

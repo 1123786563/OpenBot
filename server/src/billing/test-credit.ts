@@ -50,6 +50,7 @@ import {
 import {
   readPilotRoutes as activeRoutes,
   currentRouteLimit,
+  eligibleSignoff,
   type PilotDeployment,
   type PilotResource,
   sharedPilotCostScope,
@@ -531,7 +532,7 @@ export function createTestCreditLedger(
     return row;
   }
 
-  async function externalAccount(
+  async function personalAccount(
     tx: Transaction,
     identity: VerifiedBillingIdentity,
   ) {
@@ -545,7 +546,14 @@ export function createTestCreditLedger(
         ),
       )
       .for("share");
-    return row?.status ?? null;
+    return row;
+  }
+
+  async function externalAccount(
+    tx: Transaction,
+    identity: VerifiedBillingIdentity,
+  ) {
+    return (await personalAccount(tx, identity))?.status ?? null;
   }
 
   async function externalAuthorization(
@@ -1725,9 +1733,11 @@ export function createTestCreditLedger(
       } = {},
     ) {
       const reservation = database.transaction(async (tx) => {
-        const status = request.scope
-          ? await externalAccount(tx, identity)
-          : null;
+        const personal =
+          request.scope || request.authorizationId
+            ? await personalAccount(tx, identity)
+            : undefined;
+        const status = personal?.status ?? null;
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
         const external = request.scope
@@ -1747,7 +1757,10 @@ export function createTestCreditLedger(
           !external &&
           (embedding || weknoraWork) &&
           (request.applicationId !== WEKNORA_APPLICATION_ID ||
-            !request.authorizationId)
+            // #110 平台预算: maintenance may name an execution budget on the
+            // platform Billing Account instead of a person's authorization.
+            (!request.authorizationId &&
+              !(weknoraWork === "maintenance" && request.budgetId)))
         )
           return denied("not_authorized");
         const purpose =
@@ -1948,6 +1961,15 @@ export function createTestCreditLedger(
         if (await pilotReservesStoppedAt(tx, accountId))
           return denied("pilot_closed");
         if (await suspended(tx, accountId)) return denied("not_authorized");
+        // #69: a Casdoor cutoff stops new reservations made under a person's
+        // application grant.
+        if (
+          request.authorizationId &&
+          !external &&
+          personal &&
+          accountDecision(personal.status, now.getTime()).kind !== "active"
+        )
+          return denied("not_authorized");
         // While a restore from backup holds the account, no step is charged
         // (#108 恢复阶段暂停新增收费步骤).
         if (await restoreHolds(tx, accountId)) return denied("unavailable");
@@ -1984,6 +2006,21 @@ export function createTestCreditLedger(
           ? await application(applicationId, tx, true)
           : undefined;
         if (pilotPath?.pausedAt) return denied("route_unavailable");
+        // A signed resource can be paused on its own (#110 每路径暂停).
+        const pilotSignoff = pilot
+          ? await eligibleSignoff(
+              tx,
+              pilot,
+              "application",
+              applicationId,
+              accountId,
+            )
+          : undefined;
+        if (
+          pilotSignoff?.kind === "application" &&
+          pilotSignoff.pausedResources.includes(pilotResource)
+        )
+          return denied("route_unavailable");
         if (
           under?.held.applicationId === WEKNORA_APPLICATION_ID &&
           !embedding &&
@@ -2806,7 +2843,11 @@ export function createTestCreditLedger(
       { executorAvailable = true, embedding = false, rerank = false } = {},
     ) {
       return database.transaction(async (tx) => {
-        const status = input.scope ? await externalAccount(tx, identity) : null;
+        const personal =
+          input.scope || input.authorizationId
+            ? await personalAccount(tx, identity)
+            : undefined;
+        const status = personal?.status ?? null;
         const accountId = await account(identity, tx);
         if (!accountId) return denied("not_authorized");
         await applyCutoff(tx, accountId, await currentTime(tx));
@@ -2839,6 +2880,18 @@ export function createTestCreditLedger(
             ),
           } as const;
         const filter = operationFilter(row.accountId, row.id);
+        // #69: a Casdoor cutoff reaches a reservation made before it; what
+        // already dispatched still settles under its reservation.
+        if (
+          row.authorizationId &&
+          !input.scope &&
+          personal &&
+          accountDecision(personal.status, (await currentTime(tx)).getTime())
+            .kind !== "active"
+        ) {
+          await releaseReservation(tx, row);
+          return denied("not_authorized");
+        }
         if (await pilotReservesStoppedAt(tx, accountId)) {
           await releaseReservation(tx, row);
           return denied("pilot_closed");
@@ -2910,8 +2963,10 @@ export function createTestCreditLedger(
               status,
               row.externalAccountEpoch,
             )
-          )
+          ) {
+            await releaseReservation(tx, row);
             return denied("not_authorized");
+          }
         }
         if (
           !eligible ||

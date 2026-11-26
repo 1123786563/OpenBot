@@ -1,84 +1,16 @@
-import type { VerifiedBillingIdentity } from "./test-credit";
+import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 
 export const WEKNORA_APPLICATION_ID = "weknora" as const;
 
-type Quote = {
-  creditType: "test";
-  priceVersion: string;
-  route: string;
-  provider: string;
-  model: string;
-  price: { inputPerMillion: number; outputPerMillion: number };
-  maxChargeMicrocredits: string;
-  usageDisclosure: string;
-};
-
-type ReservationInput = {
-  operationId: string;
-  route: string;
-  priceVersion: string;
-  maxChargeMicrocredits: string;
-  application: typeof WEKNORA_APPLICATION_ID;
-  resourceId: string;
-};
-
-type Reservation = {
-  state: "reserved" | "existing" | "denied";
-  permit?: string;
-  operation?: { operationId: string; accountId?: string; state: string };
-  reason?: "not_authorized" | "route_unavailable" | "insufficient_credits";
-};
-
-/** The shared ledger seam used by WeKnora. Implement it with createTestCreditLedger at the edge. */
-export type WeKnoraLedger = {
-  quote(): Promise<Quote | undefined>;
-  reserve(
-    identity: VerifiedBillingIdentity,
-    input: ReservationInput,
-  ): Promise<Reservation>;
-  settle?(
-    identity: VerifiedBillingIdentity,
-    operationId: string,
-    usage: { inputTokens: bigint; outputTokens: bigint },
-  ): Promise<unknown>;
-  recordEvidence?(
-    accountId: string,
-    operationId: string,
-    evidence: {
-      evidenceId: string;
-      outcome:
-        | "completed"
-        | "partial"
-        | "cancelled"
-        | "platform_failure"
-        | "zero_cost";
-      inputTokens: bigint;
-      outputTokens: bigint;
-    },
-  ): Promise<unknown>;
-  settleRecorded?(accountId: string, operationId: string): Promise<unknown>;
-};
-
-export type WeKnoraAuthorization = {
-  id: string;
-  applicationId: typeof WEKNORA_APPLICATION_ID;
-  issuer: string;
-  subject: string;
-  resourceIds: string[];
-  expiresAt: Date;
-  maxMicrocredits: bigint;
-  spentMicrocredits: bigint;
-  revokedAt: Date | null;
-};
-
-type Request = {
-  operationId: string;
+type Scope = {
   applicationId: string;
+  authorizationId: string;
   issuer: string;
   subject: string;
   resourceId: string;
-  maxChargeMicrocredits: string;
 };
+
+type Request = Scope & { operationId: string };
 
 export type WeKnoraBillingErrorCode =
   | "not_authorized"
@@ -99,48 +31,26 @@ export class WeKnoraBillingError extends Error {
 }
 
 function identityOf(
-  input: Pick<Request, "issuer" | "subject">,
+  input: Pick<Scope, "issuer" | "subject">,
 ): VerifiedBillingIdentity {
   return { issuer: input.issuer, subject: input.subject };
 }
 
+/**
+ * The WeKnora ingestion entry over the person's durable Spending
+ * Authorization (#111): it reads the grant only through the application it
+ * was made to, and the ledger keeps the cap, the pause and the dispatch
+ * recheck.
+ */
 export function createWeKnoraIngestionBilling(options: {
-  ledger: WeKnoraLedger;
-  now?: () => Date;
+  ledger: TestCreditLedger;
+  routeId: string;
   verifyApplication?: (applicationId: string) => Promise<boolean>;
   verifyUser?: (identity: VerifiedBillingIdentity) => Promise<boolean>;
 }) {
-  const now = options.now ?? (() => new Date());
-  const authorizations = new Map<string, WeKnoraAuthorization>();
-  const operations = new Map<
-    string,
-    {
-      applicationId: string;
-      subject: string;
-      authorizationId: string;
-      reserved: bigint;
-      state: "reserved" | "settled";
-    }
-  >();
-  let lock = Promise.resolve();
+  const ledger = options.ledger;
 
-  async function exclusive<T>(work: () => Promise<T>): Promise<T> {
-    const previous = lock;
-    let release!: () => void;
-    lock = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      return await work();
-    } finally {
-      release();
-    }
-  }
-
-  async function authorizationFor(
-    input: Pick<Request, "applicationId" | "issuer" | "subject" | "resourceId">,
-  ) {
+  async function authorizationFor(input: Scope) {
     if (
       options.verifyApplication &&
       !(await options.verifyApplication(input.applicationId))
@@ -154,181 +64,186 @@ export function createWeKnoraIngestionBilling(options: {
         "not_authorized",
         "The Casdoor user authorization is invalid.",
       );
-    const matches = [...authorizations.values()].filter(
-      (candidate) =>
-        candidate.applicationId === input.applicationId &&
-        candidate.issuer === input.issuer &&
-        candidate.subject === input.subject &&
-        candidate.resourceIds.includes(input.resourceId),
+    const identity = await ledger.authorizationIdentity(
+      input.applicationId,
+      input.authorizationId,
     );
-    const authorization =
-      matches.find(
-        (candidate) =>
-          !candidate.revokedAt &&
-          now().getTime() < candidate.expiresAt.getTime(),
-      ) ?? matches[0];
-    if (!authorization)
+    if (identity?.issuer !== input.issuer || identity.subject !== input.subject)
       throw new WeKnoraBillingError(
         "not_authorized",
         "WeKnora is not authorized for this user or resource.",
       );
-    if (authorization.revokedAt)
+    const grant = await ledger.authorizationSummary(
+      input.applicationId,
+      input.authorizationId,
+    );
+    // Ingestion is the background task the grant names, over the one
+    // knowledge base it was given.
+    if (
+      grant?.kind !== "background" ||
+      grant.resourcePrefix !== input.resourceId
+    )
+      throw new WeKnoraBillingError(
+        "not_authorized",
+        "WeKnora is not authorized for this user or resource.",
+      );
+    if (grant.state === "revoked")
       throw new WeKnoraBillingError(
         "authorization_revoked",
         "The WeKnora spending authorization was revoked.",
       );
-    if (now().getTime() >= authorization.expiresAt.getTime())
+    if (grant.state === "expired")
       throw new WeKnoraBillingError(
         "authorization_expired",
         "The WeKnora spending authorization has expired.",
       );
-    return authorization;
+    return { identity, grant };
   }
 
-  async function quote() {
-    const value = await options.ledger.quote();
-    if (!value)
+  async function selection() {
+    const selected = await ledger.weknoraQuote(options.routeId, "embedding");
+    if (!selected)
       throw new WeKnoraBillingError(
         "route_unavailable",
         "The embedding route is unavailable.",
       );
-    return { ...value, applicationId: WEKNORA_APPLICATION_ID };
+    return selected;
   }
 
-  async function reserve(input: Request, confirmedMaxMicrocredits?: bigint) {
-    return exclusive(async () => {
-      const authorization = await authorizationFor(input);
-      const amount = BigInt(input.maxChargeMicrocredits);
-      if (amount < 0n)
-        throw new WeKnoraBillingError(
-          "execution_limit",
-          "The ingestion amount is invalid.",
-        );
-      const nextLimit =
-        confirmedMaxMicrocredits ?? authorization.maxMicrocredits;
-      if (nextLimit < authorization.maxMicrocredits)
-        throw new WeKnoraBillingError(
-          "execution_limit",
-          "The confirmed ingestion limit cannot be reduced here.",
-        );
-      if (confirmedMaxMicrocredits !== undefined)
-        authorization.maxMicrocredits = nextLimit;
-      const remaining = nextLimit - authorization.spentMicrocredits;
-      if (amount > remaining)
-        throw new WeKnoraBillingError(
-          "execution_limit",
-          "The ingestion authorization limit has been reached.",
-        );
-      const quoteValue = await options.ledger.quote();
-      if (!quoteValue)
-        throw new WeKnoraBillingError(
-          "route_unavailable",
-          "The embedding route is unavailable.",
-        );
-      const result = await options.ledger.reserve(identityOf(input), {
+  async function quote() {
+    const { quote } = await selection();
+    return { ...quote, applicationId: WEKNORA_APPLICATION_ID };
+  }
+
+  async function reserve(input: Request) {
+    const { identity, grant } = await authorizationFor(input);
+    const selected = await selection();
+    const result = await ledger.reserve(
+      identity,
+      {
         operationId: input.operationId,
-        route: quoteValue.route,
-        priceVersion: quoteValue.priceVersion,
-        maxChargeMicrocredits: input.maxChargeMicrocredits,
-        application: WEKNORA_APPLICATION_ID,
+        route: selected.route.id,
+        priceVersion: selected.quote.priceVersion,
+        applicationId: input.applicationId,
+        authorizationId: input.authorizationId,
         resourceId: input.resourceId,
-      });
-      if (result.state === "denied") {
-        // Out of credits is a pause, not a refusal: the ledger keeps the step
-        // as a resume point, and this same request reserves again once the
-        // person has set a budget (#107 安全续做点).
-        const outOfCredits = result.reason === "insufficient_credits";
-        throw new WeKnoraBillingError(
-          outOfCredits
-            ? "insufficient_credits"
-            : (result.reason ?? "not_authorized"),
-          outOfCredits
-            ? "Your Test credits ran out. Set a budget in OpenBot, then try again."
-            : "The shared Test Credit reservation was refused.",
-        );
-      }
-      if (result.state === "reserved") {
-        authorization.spentMicrocredits += amount;
-        operations.set(input.operationId, {
-          applicationId: WEKNORA_APPLICATION_ID,
-          subject: input.subject,
-          authorizationId: authorization.id,
-          reserved: amount,
-          state: "reserved",
-        });
-      }
-      return {
-        ...result,
-        applicationId: WEKNORA_APPLICATION_ID,
-        authorizationId: authorization.id,
-        creditType: "test" as const,
-        maxChargeMicrocredits: input.maxChargeMicrocredits,
-      };
-    });
+        taskId: grant.taskId ?? undefined,
+        creditType: grant.creditType,
+      },
+      { embedding: true },
+    );
+    if (result.state === "denied") {
+      // Out of credits or a reached cap is a pause, not a refusal: the
+      // ledger keeps the step as a resume point (#107 安全续做点).
+      const reason = result.reason;
+      const code: WeKnoraBillingErrorCode =
+        reason === "insufficient_credits" ||
+        reason === "execution_limit" ||
+        reason === "route_unavailable"
+          ? reason
+          : "not_authorized";
+      throw new WeKnoraBillingError(
+        code,
+        code === "insufficient_credits"
+          ? "Your Test credits ran out. Set a budget in OpenBot, then try again."
+          : code === "execution_limit"
+            ? "The ingestion authorization limit has been reached."
+            : code === "route_unavailable"
+              ? "The embedding route is unavailable."
+              : "The shared Test Credit reservation was refused.",
+      );
+    }
+    return {
+      ...result,
+      applicationId: input.applicationId,
+      authorizationId: input.authorizationId,
+      creditType: grant.creditType,
+    };
+  }
+
+  async function resume(
+    input: Request & { budgetId: string; confirmedMaxMicrocredits: bigint },
+  ) {
+    const { identity } = await authorizationFor(input);
+    const confirmed = await ledger.confirmResumePoint(
+      identity,
+      input.operationId,
+      input.budgetId,
+      input.authorizationId,
+      input.confirmedMaxMicrocredits,
+    );
+    if (!confirmed || confirmed.state === "denied")
+      throw new WeKnoraBillingError(
+        "execution_limit",
+        "The confirmed ingestion limit cannot be applied.",
+      );
+    return reserve(input);
   }
 
   return {
-    registerAuthorization(value: WeKnoraAuthorization) {
-      authorizations.set(value.id, {
-        ...value,
-        resourceIds: [...value.resourceIds],
-      });
-    },
-    revokeAuthorization(id: string) {
-      const value = authorizations.get(id);
-      if (value) value.revokedAt = now();
-    },
-    async preflight(
-      input: Omit<Request, "operationId" | "maxChargeMicrocredits">,
-    ) {
+    async preflight(input: Omit<Request, "operationId">) {
       await authorizationFor(input);
       return quote();
     },
     reserve(input: Request) {
       return reserve(input);
     },
-    resume(input: Request & { confirmedMaxMicrocredits: bigint }) {
-      return reserve(input, input.confirmedMaxMicrocredits);
+    resume(
+      input: Request & { budgetId: string; confirmedMaxMicrocredits: bigint },
+    ) {
+      return resume(input);
     },
     async settle(input: {
       operationId: string;
+      authorizationId: string;
       uploaderAccount: VerifiedBillingIdentity;
       inputTokens: bigint;
       outputTokens: bigint;
     }) {
-      const operation = operations.get(input.operationId);
-      if (!operation || operation.subject !== input.uploaderAccount.subject)
+      const owner = await ledger.authorizationIdentity(
+        WEKNORA_APPLICATION_ID,
+        input.authorizationId,
+      );
+      if (
+        owner?.issuer !== input.uploaderAccount.issuer ||
+        owner.subject !== input.uploaderAccount.subject
+      )
         throw new WeKnoraBillingError(
           "not_authorized",
           "The ingestion operation is not owned by this uploader.",
         );
-      const result = options.ledger.settle
-        ? await options.ledger.settle(
-            input.uploaderAccount,
-            input.operationId,
-            {
-              inputTokens: input.inputTokens,
-              outputTokens: input.outputTokens,
-            },
-          )
-        : options.ledger.recordEvidence && options.ledger.settleRecorded
-          ? await options.ledger.settleRecorded(
-              operation.subject,
-              input.operationId,
-            )
-          : undefined;
-      operation.state = "settled";
-      return result;
+      const operation = await ledger.authorizedOperation(
+        WEKNORA_APPLICATION_ID,
+        input.authorizationId,
+        input.operationId,
+      );
+      const accountId = await ledger.accountOf(input.uploaderAccount);
+      if (!operation || !accountId)
+        throw new WeKnoraBillingError(
+          "not_authorized",
+          "The ingestion operation is not owned by this uploader.",
+        );
+      return ledger.settle(accountId, input.operationId, {
+        inputTokens: input.inputTokens,
+        outputTokens: input.outputTokens,
+      });
     },
     async operation(
       applicationId: string,
+      authorizationId: string,
       operationId: string,
       subject: string,
     ) {
-      const operation = operations.get(operationId);
-      return operation?.applicationId === applicationId &&
-        operation.subject === subject
-        ? operation
+      const identity = await ledger.authorizationIdentity(
+        applicationId,
+        authorizationId,
+      );
+      return identity?.subject === subject
+        ? ledger.authorizedOperation(
+            applicationId,
+            authorizationId,
+            operationId,
+          )
         : undefined;
     },
   };

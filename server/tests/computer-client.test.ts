@@ -43,6 +43,38 @@ const ok = (body: unknown) =>
   });
 
 describe("computer client", () => {
+  test("sends both Flash credentials on a worker file request and disables redirects", async () => {
+    const transport = createComputerTransport({
+      fetchImpl: Object.assign(
+        async (url: URL | Request | string, init?: RequestInit) => {
+          expect(String(url)).toBe(
+            "https://4100-fixture.cn-hangzhou.sandbox.aliyuncs.com/files/read",
+          );
+          const headers = new Headers(init?.headers);
+          expect(headers.get("x-openbot-computer-token")).toBe("worker-token");
+          expect(headers.get("e2b-traffic-access-token")).toBe("traffic-token");
+          expect(init?.redirect).toBe("error");
+          return ok({ text: "synthetic file" });
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    });
+    await expect(
+      transport.post(
+        {
+          url: "https://4100-fixture.cn-hangzhou.sandbox.aliyuncs.com",
+          token: "worker-token",
+          trafficAccessToken: "traffic-token",
+        },
+        "bot-1",
+        "/files/read",
+        { path: "file.txt" },
+      ),
+    ).resolves.toEqual({
+      text: "synthetic file",
+    });
+  });
+
   describe("computer file downloads", () => {
     test("returns raw bytes without decoding them as JSON", async () => {
       const payload = Uint8Array.from([0, 255, 1, 2, 3]);

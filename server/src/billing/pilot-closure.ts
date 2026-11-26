@@ -32,7 +32,8 @@ export async function reconcilePilotClosure(
     const channel = channels.find(
       (candidate) =>
         candidate.kind === order.channel &&
-        candidate.merchant === order.testMerchant,
+        candidate.fixture === (order.testMerchant !== null) &&
+        (!candidate.fixture || candidate.merchant === order.testMerchant),
     );
     if (!channel) {
       errors.push({

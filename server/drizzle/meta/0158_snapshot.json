@@ -1,6 +1,6 @@
 {
-  "id": "b7f47103-44e7-40f2-9e25-316ae8b3fff2",
-  "prevId": "0c91a5c2-d296-42ca-9aa6-8c698492c8d0",
+  "id": "a16fdf07-0643-4fdd-9d3b-8e5d5aa6de35",
+  "prevId": "c81daa07-63b8-414e-afd6-a3c26ebbe05b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16174,24 +16174,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "reconciliation_cutoff_at": {
-          "name": "reconciliation_cutoff_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pilot_resource": {
-          "name": "pilot_resource",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_credit_type": {
-          "name": "requested_credit_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16300,34 +16282,6 @@
           ],
           "isUnique": false,
           "where": "\"test_credit_operations\".\"gateway_evidence_check_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "test_credit_operations_paid_cutoff_idx": {
-          "name": "test_credit_operations_paid_cutoff_idx",
-          "columns": [
-            {
-              "expression": "reconciliation_cutoff_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"cutoff_hold\" IS NULL AND \"test_credit_operations\".\"reconciliation_cutoff_at\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -18868,12 +18822,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "credit_type": {
-          "name": "credit_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -19133,102 +19081,120 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.direct_chat_skill_shares": {
-      "name": "direct_chat_skill_shares",
+    "public.personal_workspace_agent_sandboxes": {
+      "name": "personal_workspace_agent_sandboxes",
       "schema": "",
       "columns": {
-        "proposal_id": {
-          "name": "proposal_id",
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "recipient_id": {
-          "name": "recipient_id",
+        "epoch": {
+          "name": "epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phase": {
+          "name": "phase",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "thread_id": {
-          "name": "thread_id",
+        "cutoff": {
+          "name": "cutoff",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "flash_scope": {
+          "name": "flash_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flash_create_requested": {
+          "name": "flash_create_requested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "flash_sandbox_id": {
+          "name": "flash_sandbox_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flash_connection": {
+          "name": "flash_connection",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flash_work_requested": {
+          "name": "flash_work_requested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "flash_worker_exit": {
+          "name": "flash_worker_exit",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flash_destroyed_at": {
+          "name": "flash_destroyed_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         }
       },
-      "indexes": {
-        "direct_chat_skill_shares_recipient_idx": {
-          "name": "direct_chat_skill_shares_recipient_idx",
-          "columns": [
-            {
-              "expression": "recipient_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "direct_chat_skill_shares_proposal_id_direct_chat_proposal_reviews_proposal_id_fk": {
-          "name": "direct_chat_skill_shares_proposal_id_direct_chat_proposal_reviews_proposal_id_fk",
-          "tableFrom": "direct_chat_skill_shares",
-          "tableTo": "direct_chat_proposal_reviews",
+        "personal_workspace_agent_sandboxes_workspace_id_personal_workspaces_id_fk": {
+          "name": "personal_workspace_agent_sandboxes_workspace_id_personal_workspaces_id_fk",
+          "tableFrom": "personal_workspace_agent_sandboxes",
+          "tableTo": "personal_workspaces",
           "columnsFrom": [
-            "proposal_id"
-          ],
-          "columnsTo": [
-            "proposal_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "direct_chat_skill_shares_recipient_id_users_id_fk": {
-          "name": "direct_chat_skill_shares_recipient_id_users_id_fk",
-          "tableFrom": "direct_chat_skill_shares",
-          "tableTo": "users",
-          "columnsFrom": [
-            "recipient_id"
+            "workspace_id"
           ],
           "columnsTo": [
             "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "direct_chat_skill_shares_thread_id_intelligence_channel_mappings_thread_id_fk": {
-          "name": "direct_chat_skill_shares_thread_id_intelligence_channel_mappings_thread_id_fk",
-          "tableFrom": "direct_chat_skill_shares",
-          "tableTo": "intelligence_channel_mappings",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "thread_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "direct_chat_skill_shares_proposal_id_recipient_id_pk": {
-          "name": "direct_chat_skill_shares_proposal_id_recipient_id_pk",
-          "columns": [
-            "proposal_id",
-            "recipient_id"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

@@ -1,5 +1,9 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { createChannelMutationOptions } from "@/lib/channels/mutations";
 import { tryClient } from "@/lib/client";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { newId } from "../new-id";
 
 /**
@@ -12,13 +16,9 @@ import { newId } from "../new-id";
  * Kept per Bot: the chat is bound to one Bot at a time, and two Bots sharing a thread would read
  * each other's conversation.
  *
- * "Tomorrow" is a promise this module cannot keep on its own, though. The id survives in
- * `localStorage` forever, but Intelligence is free to forget the thread behind it — expiry,
- * environment reset, a wiped dev database. Remembering an id nobody upstream recognises does not
- * fail loudly: every send just opens a new, empty thread under the old id, and the chat answers as
- * if nothing had ever been said, with no error on screen to explain why. So before this hook hands
- * out a remembered id, it asks Intelligence whether that id still means something, and only keeps
- * pretending the history is there when the answer says it is.
+ * OpenBot needs a private channel before its runtime can connect to a thread. Intelligence can
+ * start from a deployment-minted ID. Before reusing an ID from localStorage, ask the active
+ * runtime whether the thread is still accessible.
  */
 
 const KEY = "openbot.bot-thread";
@@ -45,12 +45,17 @@ function remember(agentId: string, threadId: string): void {
   }
 }
 
+const threadResponse = z.object({ threadId: z.string() });
+const knownResponse = z.object({ known: z.boolean() });
+
+type CreatedThread = { threadId: string; persisted: boolean };
+
 async function mint(): Promise<string | null> {
   try {
     const response = await tryClient("/api/threads/mint", { method: "POST" });
     if (!response.ok) return null;
-    const body = (await response.json()) as { threadId?: unknown };
-    return typeof body.threadId === "string" ? body.threadId : null;
+    const parsed = threadResponse.safeParse(await response.json());
+    return parsed.success ? parsed.data.threadId : null;
   } catch {
     return null;
   }
@@ -64,13 +69,18 @@ async function mint(): Promise<string | null> {
  * clean answer.
  */
 async function checkKnown(
+  agentId: string,
   threadId: string,
+  local: boolean,
 ): Promise<{ known: boolean | undefined; unavailable: boolean }> {
   try {
+    const encodedThread = encodeURIComponent(threadId);
     const response = await tryClient(
-      `/api/threads/${encodeURIComponent(threadId)}`,
+      local
+        ? `/api/copilotkit/agent/${encodeURIComponent(agentId)}/thread/${encodedThread}`
+        : `/api/threads/${encodedThread}`,
     );
-    if (response.status === 404) {
+    if (!local && response.status === 404) {
       // The route itself is absent, which is what an unconfigured reader looks like server-side.
       // Behave exactly as this hook did before the check existed: nothing was learned, nothing
       // changes.
@@ -82,12 +92,12 @@ async function checkKnown(
       // read is "unknown" rather than "gone" — see threadToUse for why.
       return { known: undefined, unavailable: true };
     }
-    const body = (await response.json()) as { known?: unknown };
-    if (typeof body.known !== "boolean") {
+    const parsed = knownResponse.safeParse(await response.json());
+    if (!parsed.success) {
       // A 200 that does not carry the shape this hook asked for is not an answer either.
       return { known: undefined, unavailable: true };
     }
-    return { known: body.known, unavailable: false };
+    return { known: parsed.data.known, unavailable: false };
   } catch {
     return { known: undefined, unavailable: true };
   }
@@ -139,6 +149,16 @@ export type BotThread = {
  * mount rather than trusted forever — see the module doc for why a remembered id can go stale.
  */
 export function useBotThread(agentId: string): BotThread {
+  const queryClient = useQueryClient();
+  const { mutateAsync: createChannel } = useMutation(
+    createChannelMutationOptions(queryClient),
+  );
+  const localRuntime = useCallback(async () => {
+    const capabilities = await queryClient.fetchQuery(
+      deploymentCapabilitiesQueryOptions(),
+    );
+    return capabilities.mode === "openbot";
+  }, [queryClient]);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
   const [history, setHistory] = useState<BotThread["history"]>("ready");
   const [checkingHistory, setCheckingHistory] = useState(false);
@@ -148,12 +168,57 @@ export function useBotThread(agentId: string): BotThread {
   // from the effect — can tell whether it is still safe to touch state: the agent may have changed
   // or the component may have unmounted while its mint was in flight.
   const mountedRef = useRef(true);
-  // Shared between the effect's own resolution mint and `startNew`'s mint so the two can never
-  // race each other into two POST /mint calls fighting over the same localStorage slot.
-  const mintingRef = useRef(false);
+  // Share an in-flight creation across effect replays and reuse its request ID after a failure.
+  const creationRef = useRef<{
+    agentId: string;
+    requestId: string;
+    pending?: Promise<CreatedThread | null>;
+  }>(undefined);
+  const createThread = useCallback(
+    (allowLegacyFallback = false) => {
+      const creation =
+        creationRef.current?.agentId === agentId
+          ? creationRef.current
+          : { agentId, requestId: newId() };
+      creationRef.current = creation;
+      creation.pending ??= (async () => {
+        const local = await localRuntime();
+        const minted = local
+          ? (
+              await createChannel({
+                agentIds: [agentId],
+                requestId: creation.requestId,
+              })
+            ).threadId
+          : await mint();
+        if (minted) return { threadId: minted, persisted: true };
+        if (!local && allowLegacyFallback)
+          return { threadId: newId(), persisted: false };
+        return null;
+      })()
+        .catch(() => null)
+        .then((next) => {
+          creation.pending = undefined;
+          if (next && creationRef.current === creation)
+            creationRef.current = undefined;
+          return next;
+        });
+      return creation.pending;
+    },
+    [agentId, createChannel, localRuntime],
+  );
+  const checkThread = useCallback(
+    async (id: string) => {
+      try {
+        return await checkKnown(agentId, id, await localRuntime());
+      } catch {
+        return { known: undefined, unavailable: true };
+      }
+    },
+    [agentId, localRuntime],
+  );
   // Set once `startNew` has taken over, so the mount-time check that is still in flight does not
-  // then overwrite the fresh thread with the remembered one. `checkKnown` is a read, not a mint, so
-  // `mintingRef` is clear while it runs and would not have stopped `startNew` starting during it.
+  // then overwrite the fresh thread with the remembered one.
   const startedNewRef = useRef(false);
 
   useEffect(() => {
@@ -163,17 +228,17 @@ export function useBotThread(agentId: string): BotThread {
     startedNewRef.current = false;
     setThreadId(undefined);
     setHistory("ready");
+    setStartFailed(false);
 
     const adoptFresh = (history: BotThread["history"] = "ready") => {
-      mintingRef.current = true;
-      void mint().then((minted) => {
-        mintingRef.current = false;
+      void createThread(true).then((next) => {
         if (!current) return;
-        // Falling back to one made here keeps the chat working when the deployment cannot be
-        // asked; it is simply a thread nothing can later attribute.
-        const next = minted ?? newId();
-        if (minted) remember(agentId, minted);
-        setThreadId(next);
+        if (!next) {
+          setStartFailed(true);
+          return;
+        }
+        if (next.persisted) remember(agentId, next.threadId);
+        setThreadId(next.threadId);
         setHistory(history);
       });
     };
@@ -184,7 +249,7 @@ export function useBotThread(agentId: string): BotThread {
       // faster and exactly as safe as asking Intelligence about an id that was never assigned.
       adoptFresh();
     } else {
-      void checkKnown(existing).then((outcome) => {
+      void checkThread(existing).then((outcome) => {
         // `startedNewRef` as well as `current`: the agent may have changed (which `current` catches),
         // or the person may have pressed New chat while this check was in flight, and a check about
         // the thread they just left must not put it back.
@@ -206,15 +271,13 @@ export function useBotThread(agentId: string): BotThread {
       current = false;
       mountedRef.current = false;
     };
-  }, [agentId]);
+  }, [agentId, checkThread, createThread]);
 
   const startNew = useCallback(() => {
-    if (mintingRef.current) return;
-    mintingRef.current = true;
+    if (creationRef.current?.pending) return;
     setStarting(true);
     setStartFailed(false);
-    void mint().then((minted) => {
-      mintingRef.current = false;
+    void createThread().then((minted) => {
       if (!mountedRef.current) return;
       setStarting(false);
       // Leaving the current thread alone here matters: a person pressing "New chat" should never
@@ -238,17 +301,17 @@ export function useBotThread(agentId: string): BotThread {
        * asked for.
        */
       startedNewRef.current = true;
-      remember(agentId, minted);
-      setThreadId(minted);
+      remember(agentId, minted.threadId);
+      setThreadId(minted.threadId);
       setHistory("ready");
     });
-  }, [agentId]);
+  }, [agentId, createThread]);
 
   const retryHistory = () => {
     if (!threadId || checkingHistory) return;
     const checkedThread = threadId;
     setCheckingHistory(true);
-    void checkKnown(checkedThread).then(({ known, unavailable }) => {
+    void checkThread(checkedThread).then(({ known, unavailable }) => {
       if (!mountedRef.current) return;
       setCheckingHistory(false);
       if (remembered(agentId) !== checkedThread || unavailable) return;

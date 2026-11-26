@@ -1,0 +1,71 @@
+# Provision and verify AgenticFS for Personal SaaS
+
+[Issue #144](https://github.com/1123786563/OpenBot/issues/144) adds durable Computer files to the Flash pilot in [ADR 0013](adr/0013-use-agent-sandbox-and-agenticfs-for-the-personal-saas-computer-pilot.md). Use two newly opened private-trial Workspaces and synthetic files. The [Flash lifecycle runbook](personal-saas-agent-sandbox-lifecycle.md) covers Team setup, artifact builds, and independent checks for lease cutoff and instance destruction.
+
+## Provision the pilot
+
+1. Confirm the Alibaba Cloud account is allowlisted for AgenticFS and that AgenticFS and Flash dynamic AgenticFS mounts are available to the pilot in the target region and zone. Check Hangzhou availability for this account before using the Hangzhou Team from the lifecycle trial. Use an AgenticFS file system in Running state. The NAS API uses `StorageType=Agentic` and `ProtocolType=NFS`. Ensure TLS is enabled for Access Point mounts. [AgenticFS management](https://www.alibabacloud.com/help/en/nas/user-guide/manage-agenticspace) · [Dynamic Flash mounts](https://www.alibabacloud.com/help/en/agent-sandbox/mount-agenticfs-dynamically)
+2. Create one AgenticSpace per OpenBot Workspace ID. With the NAS `CreateAgenticSpace` operation, use the selected `FileSystemId` and `Azone`, first-level `FileSystemPath` `/<workspace-uuid>/`, `Quota.SizeLimit=10737418240` bytes and `Quota.FileCountLimit=10000`. Keep the returned `AgenticSpaceId`. If provisioning is interrupted, recover the existing space for that Workspace path from the NAS console before issuing another create. [CreateAgenticSpace parameters](https://www.alibabacloud.com/help/en/nas/developer-reference/api-nas-2017-06-26-createagenticspace)
+3. Create a dedicated Access Point for that `AgenticSpaceId` with `CreateAccessPoint`. Pass the same `FileSystemId`, the target `VpcId` and `VswId`, and `EnabledRam=true`. In the NAS console, verify the Access Point belongs to the exact AgenticSpace, RAM authentication is enabled, and status is `active`. Record its ID, ARN and DNS name. Mount the Access Point root. AgenticSpace and Access Point identity provide tenant isolation. [CreateAccessPoint parameters](https://www.alibabacloud.com/help/en/nas/developer-reference/api-nas-2017-06-26-createaccesspoint)
+4. Give each Workspace a separate RAM service role whose trust policy allows `fc.aliyuncs.com` to call `sts:AssumeRole`. Grant `nas:ClientMount` and `nas:ClientWrite` with `StringEquals` on `nas:AccessPointArn` set to that one Access Point ARN. Verify there are no broader NAS grants on the role. Confirm the export is writable from the worker's UID and GID 10001. Use a separate provisioning identity for NAS and RAM management. Flash assumes the mount role using STS. Supply the Flash Team API key through the OpenBot server's secret mechanism. [Flash RAM role setup](https://www.alibabacloud.com/help/en/agent-sandbox/create-ram-role) · [AgenticFS RAM policy](https://www.alibabacloud.com/help/en/nas/user-guide/manage-agenticspace)
+5. Use a VPC, vSwitch and security group that can reach the Access Point. From that VPC, use `getent ahostsv4 <access-point-dns-name>` to resolve the owning Access Point and record its private IPv4 targets. OpenBot keeps deny-by-default Flash egress and permits only those exact IPv4 addresses. Check that the security group's storage rules allow the AgenticFS protocol to those targets. Verify DNS and storage connectivity again if the Access Point's addresses change. [Flash network access control](https://www.alibabacloud.com/help/en/agent-sandbox/network-access-control)
+6. Use an AgenticFS-capable Flash template with no preconfigured mounts. For a custom MicroVM template, set `runtimeConfig.sandboxConfig.generation=2` and set `buildConfig.installStorageClients=true` and wait until the template is `ready`. The image needs the Alibaba ALINAS client and NFS client, `findmnt` from util-linux, and the lifecycle runbook's worker prerequisites. Rebuild and deploy the worker archive from the same revision as the server. Drain older Flash generations before rotating the template or Team key. [MicroVM storage client setup](https://www.alibabacloud.com/help/en/agent-sandbox/build-and-manage-custom-templates-with-code#install-storage-clients)
+7. Apply migration `0121_workspace_agentic_spaces`. After verifying the cloud objects, insert one binding per Workspace with the deployment's database administrator connection. The OpenBot runtime only reads these bindings. Keep Workspace, AgenticSpace and Access Point identities stable. Reconcile a repeated enrollment with the existing row and cloud inventory before making changes.
+
+   ```sql
+   INSERT INTO personal_workspace_agentic_spaces (
+     workspace_id, agentic_space_id, file_system_id, access_point_id,
+     access_point_domain, role_arn, storage_egress_ips, vpc_id,
+     vswitch_id, security_group_id
+   ) VALUES (
+     '<workspace-uuid>', '<agentic-space-id>', '<file-system-id>', '<access-point-id>',
+     '<access-point-dns-name>', '<workspace-role-arn>',
+     ARRAY['<private-ipv4>'], '<vpc-id>', '<vswitch-id>', '<security-group-id>'
+   );
+   ```
+
+   Set `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES=10737418240` and `OPENBOT_PERSONAL_QUOTA_STORAGE_BYTES` to the existing attachment allowance plus that reservation, `10804527104` for the 64 MiB default, per ADR 0013. The reservation must equal the space's `Quota.SizeLimit`.
+
+OpenBot reads the binding by the authenticated Workspace ID and mounts one Access Point root at `/mnt/openbot-workspace`. Flash gets the VPC and role in create-time metadata. Before installing the worker, OpenBot requires an NFS v3 mount at that exact path. The lease watchdog supplies that path to the existing file worker. Each stop or failed worker setup destroys only the sandbox instance. The mounted create request has a 20-second deadline within the existing 30-second setup reservation. An ambiguous Flash create result follows the existing generation reconciliation path and can hold the slot until instance disposition is confirmed. A missing binding fails before Flash allocation.
+
+## Enforce the quota and read usage
+
+[#145](https://github.com/1123786563/OpenBot/issues/145) leaves the quota on the AgenticSpace. NAS refuses the bytes beyond `Quota.SizeLimit`, and OpenBot keeps no byte counter of its own. Give the server a long-term RAM access key pair for a NAS identity separate from the Flash Team key and the mount role, allowed to call `GetAgenticSpace`. Set `OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_ID` and `OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_SECRET` together with the Flash settings in the [lifecycle runbook](personal-saas-agent-sandbox-lifecycle.md). The server exits at startup when one group is configured without the other.
+
+1. Before each Flash allocation the server calls `GetAgenticSpace` for the bound space. The answer must carry the binding's own `FileSystemId` and `AgenticSpaceId`, `Status=Running` and a `Quota.SizeLimit` equal to `OPENBOT_PERSONAL_QUOTA_COMPUTER_STORAGE_BYTES`. A smaller space drops writes the account reserved, and a larger one is storage nobody reserved. Any difference, or NAS not answering within four seconds, refuses the start with HTTP 409 before Flash is asked for an instance. The `agent-sandbox-quota-refused` log line states which of the four checks failed, or the NAS HTTP status, error code and RequestId when NAS answered with an error.
+2. A write the mount refuses with `ENOSPC` or `EDQUOT` reaches the Bot file tools as `workspace_storage_quota_exceeded`. Any other write failure keeps its own message. Files written earlier stay readable. A refused overwrite or append can leave its own target truncated or partly written.
+3. `GET /api/workspace` returns `quotas.storage.computerUsed` as the NAS `SpaceUsage` of the bound space. NAS updates that figure after about 15 minutes, so read it as reported usage, not a live count. A Workspace with no AgenticSpace binding reports `0`. A binding whose space NAS cannot confirm, because it is absent, not `Running`, differently sized or unreachable, reports `null` in `used` and `computerUsed`, and the Workspace page shows `Unavailable`.
+4. Admission never reads that figure. An attachment upload is admitted while stored attachments, the full Computer reservation and the new bytes fit the total limit. Computer files therefore never use the attachment allowance, and concurrent uploads from several replicas still admit only what fits.
+
+Whether NAS refuses a write at the quota at once or only after its accounting delay, and which error the mount returns at the byte quota and at the file-count quota, is evidence for #147.
+
+## Record target-cloud acceptance
+
+1. Record both Workspace IDs and their separate space IDs, Access Points, role bindings, 10 GiB quotas, image identity and worker artifact digest. Save the mount evidence for each sandbox with `findmnt --mountpoint /mnt/openbot-workspace --types nfs --options vers=3`. Verify only the expected Access Point is configured and both mounts are writable by their respective file workers.
+2. Submit a Bot run in Workspace A through `POST /api/workspace/bot-runs` with `requiresComputer=true`. Use the existing write, list and read tools with known UTF-8 bytes. Record the file path, byte count and SHA-256 plus OpenBot audit events. Stop A via the Workspace API and record the old sandbox's independent Flash deletion confirmation. Start A, record the new sandbox ID and unchanged space and Access Point, and read back the same bytes through a new Bot run.
+3. Submit a Bot run in B. Verify A's path is missing from B's listing and reads fail. Write B's own file at the same relative path and verify both Workspaces can still read their own bytes. Verify B's dedicated mount role is denied access to A's Access Point in an authorized, disposable Flash control-plane test. Record the provider result without credentials or access tokens.
+4. Exercise a failed setup after allocation on a disposable generation with known sandbox ID. Verify OpenBot releases its slot only after deletion confirmation, and a new start with the correct configuration reads the same file from the same AgenticSpace. Repeat the lifecycle cutoff check with a mounted worker, including loss of storage connectivity while a file operation is in progress. Record confirmed PID exit and provider deletion separately.
+
+Local tests use an HTTP Flash fixture, an offline NAS fixture, real PostgreSQL, and the shared file handlers against separate filesystem roots. They cover mount metadata, missing provisioning, restart, failed setup cleanup, authorization, file tool behavior, the quota check before allocation, the recognizable refusal and the split usage with unknown readings. Target-cloud mount, IAM denial and timing evidence are collected separately under #144. The write refusal at the hard quota and the attachment allowance beside it are collected under #147.
+
+
+## Verify workspace closure
+
+[#146](https://github.com/1123786563/OpenBot/issues/146) uses the server's NAS identity for closure. Grant it `DescribeAccessPoint`, `DeleteAccessPoint` and `DeleteAgenticSpace` in addition to `GetAgenticSpace`. Keep the Workspace binding available until the closure completes. Enroll a reopened Workspace against its new Workspace ID and provision a fresh AgenticSpace and Access Point for that ID.
+
+In the target cloud, write a distinct synthetic file through each Workspace's Bot. Close the first Workspace and record the old Flash instance and process exit evidence, the NAS access point and AgenticSpace readback, and the operation's cleanup status. Read and write through the second Bot after cleanup. Reopen the first account's Workspace, enroll its new storage and verify the new Bot cannot list or read the old file.
+
+
+During closure, OpenBot records watchdog process exit as soon as it verifies
+the evidence. The Workspace Computer stays in `stopping` until Alibaba
+confirms instance deletion. Restart and AgenticFS erasure require that
+confirmation. Teardown retries run on a separate loop from active lease renewals.
+
+Reopening preserves the retired Workspace's file system, AgenticSpace, and
+access point IDs in the closure record before deleting the Workspace row. The
+version 3 closure journal exports those IDs and the instance release evidence.
+Recovery uses the recorded IDs to verify erasure. If the journal predates
+instance release, export it again from the authority after release. If a legacy
+tombstone has lost its storage locator, recover the exact binding from
+authoritative provisioning records before marking cleanup complete. Follow the closure
+restore procedure in the [Personal SaaS trial runbook](personal-saas-trial.md).

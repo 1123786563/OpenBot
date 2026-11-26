@@ -182,3 +182,188 @@ test("admin verification imports trusted evidence and publishes durable Price Ve
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("two verified provider routes publish together and an unverified route cannot join the release", async () => {
+  const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const dir = await mkdtemp(join(tmpdir(), "bifrost-two-routes-"));
+  const rows = or(
+    eq(enterpriseSettings.key, "bifrost_pilot_catalog"),
+    like(enterpriseSettings.key, "bifrost_pilot_release:%"),
+  );
+  const api = createBifrostAdminRoutes(
+    async (context, next) => {
+      context.set("actor", {
+        id: "admin",
+        email: "admin@example.test",
+        role: "admin",
+      });
+      await next();
+    },
+    database,
+    dir,
+  );
+  const request = (path: string, method = "GET", body?: unknown) =>
+    api.request(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const harnessImage = `agent-langgraph-agui@sha256:${"c".repeat(64)}`;
+  const primary = {
+    provider: "openai",
+    model: "fixture-primary",
+    gatewayRevision: "primary-gateway",
+    meteringRevision: "primary-meter",
+    maxInputTokens: 100,
+    maxOutputTokens: 20,
+    tools: true,
+    price: { inputPerMillion: 1_000_001, outputPerMillion: 2_000_000 },
+  };
+  const alternate = {
+    provider: "anthropic",
+    model: "fixture-alternate",
+    gatewayRevision: "alternate-gateway",
+    meteringRevision: "alternate-meter",
+    maxInputTokens: 200,
+    maxOutputTokens: 10,
+    tools: false,
+    price: { inputPerMillion: 250_000, outputPerMillion: 1_000_000 },
+  };
+  try {
+    await database.delete(enterpriseSettings).where(rows);
+    const configured = await request("/configuration", "PUT", {
+      harnessImage,
+      routes: { primary, alternate },
+    });
+    expect(configured.status).toBe(200);
+    const { catalog } = await configured.json();
+    const revisions = {
+      primary: catalog.routes.primary.revision as string,
+      alternate: catalog.routes.alternate.revision as string,
+    };
+    expect(revisions.primary).not.toBe(revisions.alternate);
+
+    // Publishing before any evidence exists is refused and stores no release.
+    expect(
+      (
+        await request("/publication", "POST", {
+          routes: ["primary", "alternate"],
+          defaultRoute: "primary",
+        })
+      ).status,
+    ).toBe(409);
+    expect((await (await request("/")).json()).active.options).toEqual([]);
+
+    const evidence = {
+      primary: fixtureTraceReport(harnessImage, {
+        ...primary,
+        revision: revisions.primary,
+      }),
+      alternate: fixtureTraceReport(harnessImage, {
+        ...alternate,
+        revision: revisions.alternate,
+      }),
+    };
+    for (const id of ["primary", "alternate"] as const) {
+      const report = evidence[id];
+      const terminalRecord = JSON.stringify({
+        requestId: report.cancellation.upstream.requestId,
+        outcome: "cancelled",
+        terminatedAt: report.cancellation.upstream.terminal.terminatedAt,
+      });
+      report.cancellation.upstream.terminal.recordDigest = `sha256:${Bun.CryptoHasher.hash("sha256", terminalRecord, "hex")}`;
+      await Bun.write(
+        join(dir, `${revisions[id]}.json`),
+        JSON.stringify(report),
+      );
+      await Bun.write(
+        join(dir, `${revisions[id]}.cancel.json`),
+        terminalRecord,
+      );
+    }
+    // Evidence for both routes is on disk, but only the primary is verified.
+    const verify = (id: "primary" | "alternate") =>
+      request(`/routes/${id}/verify`, "POST", { revision: revisions[id] });
+    expect((await verify("primary")).status).toBe(200);
+    expect(
+      (
+        await request("/publication", "POST", {
+          routes: ["primary", "alternate"],
+          defaultRoute: "primary",
+        })
+      ).status,
+    ).toBe(409);
+    const partial = await request("/publication", "POST", {
+      routes: ["primary"],
+      defaultRoute: "primary",
+    });
+    expect(partial.status).toBe(201);
+    const { release: partialRelease } = await partial.json();
+    expect(
+      partialRelease.routes.map((route: { id: string }) => route.id),
+    ).toEqual(["primary"]);
+    // The durable Price Version must not carry an unverified route either.
+    expect(
+      (
+        await (await request(`/price-versions/${partialRelease.id}`)).json()
+      ).routes.map((route: { id: string }) => route.id),
+    ).toEqual(["primary"]);
+
+    expect((await verify("alternate")).status).toBe(200);
+    for (const id of ["primary", "alternate"] as const) {
+      const { catalog: snapshot } = await (await request("/")).json();
+      const report = snapshot.routes[id].verification.report;
+      // Streaming, cancellation, creditable usage and tool proof survive verification.
+      expect(report.version).toBe(3);
+      expect(report.stream.gateway.usage).toEqual(report.stream.upstream.usage);
+      expect(report.stream.upstream.usage).toEqual({
+        inputTokens: 1,
+        outputTokens: 2,
+      });
+      expect(report.cancellation.upstream.terminal.outcome).toBe("cancelled");
+      expect(report.cancellation.upstream.terminal.requestId).toBe(
+        report.cancellation.upstream.requestId,
+      );
+      expect(report.stream.meter.inputTokenUpperBound).toBe(
+        (id === "primary" ? primary : alternate).maxInputTokens,
+      );
+      expect(Boolean(report.tool)).toBe(
+        (id === "primary" ? primary : alternate).tools,
+      );
+    }
+
+    const released = await request("/publication", "POST", {
+      routes: ["primary", "alternate"],
+      defaultRoute: "alternate",
+    });
+    expect(released.status).toBe(201);
+    const { release, active } = await released.json();
+    expect(release.routes.map((route: { id: string }) => route.id)).toEqual([
+      "primary",
+      "alternate",
+    ]);
+    expect(release.defaultRoute).toBe("alternate");
+    expect(active.defaultRoute).toBe("alternate");
+    expect(active.priceVersion).toBe(release.id);
+    // Cost bounds are rounded up per route: 140.0001 → 141, 60 exactly → 60.
+    expect(
+      active.options.map(
+        (option: { id: string; maxChargeMicrocredits: string }) => [
+          option.id,
+          option.maxChargeMicrocredits,
+        ],
+      ),
+    ).toEqual([
+      ["primary", "141"],
+      ["alternate", "60"],
+    ]);
+    // The stored Price Version is durable and still readable through the admin API.
+    expect(
+      await (await request(`/price-versions/${release.id}`)).json(),
+    ).toEqual(release);
+  } finally {
+    await database.delete(enterpriseSettings).where(rows);
+    await database.$client.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

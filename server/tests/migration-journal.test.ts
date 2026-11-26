@@ -598,9 +598,13 @@ describe("the migration journal", () => {
       [154, "0141_paid_correction_balance"],
       [155, "0142_billing_pilot_signoffs"],
       [156, "0143_background_tool_results"],
-      [157, "0144_billing_paid_path_policy"],
-      [158, "0112_direct_chat_skill_shares"],
-      [159, "0113_direct_chat_dispatched_skill_versions"],
+      [157, "0119_personal_workspace_agent_sandbox"],
+      [158, "0120_agent_sandbox_flash"],
+      [159, "0121_workspace_agentic_spaces"],
+      [160, "0144_billing_paid_path_policy"],
+      [161, "0112_direct_chat_skill_shares"],
+      [162, "0113_direct_chat_dispatched_skill_versions"],
+      [163, "0160_direct_chat_credit_request"],
     ]);
     const mislabelled = entries
       .filter((entry, index) => {

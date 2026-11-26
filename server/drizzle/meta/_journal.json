@@ -1104,29 +1104,57 @@
     {
       "idx": 157,
       "version": "7",
+      "when": 1795441880621,
+      "tag": "0119_personal_workspace_agent_sandbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1795441880622,
+      "tag": "0120_agent_sandbox_flash",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1795441880623,
+      "tag": "0121_workspace_agentic_spaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
       "when": 1795443105536,
       "tag": "0144_billing_paid_path_policy",
       "breakpoints": true
     },
     {
-      "idx": 158,
+      "idx": 161,
       "version": "7",
       "when": 1795444185213,
       "tag": "0112_direct_chat_skill_shares",
       "breakpoints": true
     },
     {
-      "idx": 159,
+      "idx": 162,
       "version": "7",
       "when": 1795445478392,
       "tag": "0113_direct_chat_dispatched_skill_versions",
       "breakpoints": true
     },
     {
-      "idx": 160,
+      "idx": 163,
       "version": "7",
       "when": 1795511248832,
       "tag": "0160_direct_chat_credit_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1795519286230,
+      "tag": "0164_workspace_closure_storage_recovery",
       "breakpoints": true
     }
   ]

@@ -1255,6 +1255,19 @@ export function createDirectChatRoutes(deps: {
     return context.json({ feedbackId: feedback.data.feedbackId }, 202);
   });
 
+  routes.get("/agent/:agentId/thread/:threadId", async (context) => {
+    const actor = await actorFor(context.req.raw);
+    if (!actor?.id)
+      return context.json(
+        { error: "Sign in to check this conversation." },
+        401,
+      );
+    const { agentId, threadId } = context.req.param();
+    return context.json({
+      known: Boolean(await threadFor(database, actor, threadId, agentId)),
+    });
+  });
+
   routes.post("/agent/:agentId/connect", async (context) => {
     const parsed = joinBody.safeParse(
       await context.req.json().catch(() => null),

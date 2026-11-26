@@ -65,6 +65,9 @@ const signoff = z.discriminatedUnion("kind", [
     pathRef: reference,
     rampRef: reference,
     sharedSupplierCapMicrocredits: microcredits,
+    pausedResources: z
+      .array(z.enum(["chat", "embedding", "rerank", "maintenance"]))
+      .default([]),
     routes: z
       .array(signedRoute)
       .min(1)
@@ -221,9 +224,11 @@ export function signedSupplier(
   bound: bigint,
   resourceType: PilotResource,
 ) {
-  const supplier = record.routes.find(
-    (entry) => entry.id === route.id && entry.resourceType === resourceType,
-  );
+  const supplier = record.pausedResources.includes(resourceType)
+    ? undefined
+    : record.routes.find(
+        (entry) => entry.id === route.id && entry.resourceType === resourceType,
+      );
   const { route: routeLimit, shared } = limits;
   if (
     supplier &&
