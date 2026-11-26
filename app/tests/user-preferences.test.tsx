@@ -104,7 +104,7 @@ test("successful writes update only the current account cache; failures preserve
     messageListEmphasis: "agent",
     selfHostBannerDismissed: false,
     narration: null,
-    skin: "opendots",
+    skin: "openbot",
     proactive: "on",
   });
   const mutation = client
@@ -133,7 +133,7 @@ test("successful writes update only the current account cache; failures preserve
     messageListEmphasis: "agent",
     selfHostBannerDismissed: false,
     narration: null,
-    skin: "opendots",
+    skin: "openbot",
     proactive: "on",
   });
   response = async () =>
