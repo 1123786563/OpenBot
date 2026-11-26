@@ -480,6 +480,7 @@ function IsolatedRow({
           <Switch
             aria-labelledby={`isolated-${agent.id}`}
             checked={agent.isolated}
+            className="after:-inset-y-3.5"
             disabled={saving || !editable}
             onCheckedChange={async (next) => {
               setError(null);

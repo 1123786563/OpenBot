@@ -235,6 +235,7 @@ export function ManageSection({
               <Switch
                 aria-label="Pinned"
                 checked={agent.pinned || assigned}
+                className="after:-inset-y-3.5"
                 disabled={assigned || setPinned.isPending}
                 onCheckedChange={(pinned) =>
                   setPinned.mutate({ agentId: agent.id, pinned })
@@ -261,6 +262,7 @@ export function ManageSection({
               <Switch
                 aria-label="Hidden"
                 checked={agent.hidden}
+                className="after:-inset-y-3.5"
                 disabled={assigned || setHidden.isPending}
                 onCheckedChange={async (hidden) => {
                   await setHidden.mutateAsync({ agentId: agent.id, hidden });

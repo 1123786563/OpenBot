@@ -12,6 +12,7 @@
   "banner.update.ready": "OpenBot {version} 已可安装。安装需要几分钟。",
   "banner.update.restarting": "正在重启…",
   "banner.update.status": "正在下载…",
+  "bots.handoff.loadFailed": "无法加载此 Bot 可以求助的 Bot",
   "frame.cancel": "取消",
   "frame.close": "关闭",
   "frame.closeDetails": "关闭详情",
