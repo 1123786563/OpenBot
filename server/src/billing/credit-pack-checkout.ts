@@ -1,7 +1,7 @@
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import {
-  type CreditPackTestChannel,
+  type CreditPackChannelAdapter,
   testPaymentResult,
   testRefundResult,
 } from "./credit-pack-test-channel";
@@ -17,7 +17,7 @@ export function createCreditPackReconciliation(
     | "testPackRefundDispatch"
     | "applyTestPackRefundResult"
   >,
-  channel: CreditPackTestChannel,
+  channel: CreditPackChannelAdapter,
 ) {
   async function verify(
     result: z.infer<typeof testPaymentResult>,
@@ -36,15 +36,18 @@ export function createCreditPackReconciliation(
         id,
         currency: result.currency,
         amountCents: result.amountCents,
+        fixture: paymentChannel.fixture,
       });
       return;
     }
     const outcome = await paid.verifyOrder({
       ...result,
-      channelOrderRef: `fixture:${paymentChannel.merchant}:${result.channelOrderRef}`,
+      channelOrderRef: paymentChannel.fixture
+        ? `fixture:${paymentChannel.merchant}:${result.channelOrderRef}`
+        : result.channelOrderRef,
       paidAt: new Date(result.paidAt),
       channel: paymentChannel.kind,
-      testChannel: true,
+      ...(paymentChannel.fixture ? { testChannel: true as const } : {}),
     });
     if (outcome.claimed)
       await paid.advanceClosureOrder(outcome.order.accountId, id);
@@ -68,7 +71,10 @@ export function createCreditPackReconciliation(
     await paid.applyTestPackRefundResult({
       ...result,
       channel: paymentChannel.kind,
-      channelOrderRef: `fixture:${paymentChannel.merchant}:${result.channelOrderRef}`,
+      channelOrderRef: paymentChannel.fixture
+        ? `fixture:${paymentChannel.merchant}:${result.channelOrderRef}`
+        : result.channelOrderRef,
+      fixture: paymentChannel.fixture,
     });
   }
 
@@ -82,8 +88,14 @@ export function createCreditPackReconciliation(
       channel: paymentChannel.kind,
       merchant: paymentChannel.merchant,
       orderId,
+      fixture: paymentChannel.fixture,
     });
-    if (!refund?.channelOrderRef.startsWith(fixtureRef)) return false;
+    const observedRef = refund?.channelOrderRef;
+    if (
+      !observedRef ||
+      (paymentChannel.fixture && !observedRef.startsWith(fixtureRef))
+    )
+      return false;
     if (refund.state === "requested") {
       const result = await paymentChannel.startRefund({
         refundId: refund.id,
@@ -91,7 +103,9 @@ export function createCreditPackReconciliation(
         merchantId: paymentChannel.merchant,
         currency: "CNY",
         amountCents: refund.amountCents,
-        channelOrderRef: refund.channelOrderRef.slice(fixtureRef.length),
+        channelOrderRef: paymentChannel.fixture
+          ? observedRef.slice(fixtureRef.length)
+          : observedRef,
       });
       if (result.state !== "unknown")
         await verifyRefund(result, refund, paymentChannel);
@@ -135,16 +149,20 @@ export function createCreditPackCheckout({
   ledger,
   paid,
 }: {
-  channel: CreditPackTestChannel;
-  otherChannel?: CreditPackTestChannel;
+  channel: CreditPackChannelAdapter;
+  otherChannel?: CreditPackChannelAdapter;
   ledger: TestCreditLedger;
   paid: PaidCreditLedger;
 }) {
   const { merchant, kind } = channel;
   const { verify, verifyRefund, refreshRefund, reconcileOrder } =
     createCreditPackReconciliation(paid, channel);
-  const channelScope = { merchant, channel: kind };
-  const sale = { ...channelScope, fixture: true };
+  const channelScope = {
+    merchant,
+    channel: kind,
+    fixture: channel.fixture,
+  };
+  const sale = { ...channelScope, fixture: channel.fixture };
   const suffix = kind === "alipay" ? "/alipay" : "";
   const callbackPath = `/credit-pack-test${suffix}`;
   const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
@@ -164,7 +182,7 @@ export function createCreditPackCheckout({
   });
 
   api.post(`${callbackPath}/callback`, async (context) => {
-    if (!channel.authenticates(context.req.raw))
+    if (!(await channel.authenticates(context.req.raw)))
       return context.json({ error: "Verified channel required." }, 401);
     const result = testPaymentResult.safeParse(
       await context.req.json().catch(() => undefined),
@@ -176,7 +194,7 @@ export function createCreditPackCheckout({
   });
 
   api.post(`${callbackPath}/refund-callback`, async (context) => {
-    if (!channel.authenticates(context.req.raw))
+    if (!(await channel.authenticates(context.req.raw)))
       return context.json({ error: "Verified channel required." }, 401);
     const result = testRefundResult.safeParse(
       await context.req.json().catch(() => undefined),
@@ -277,6 +295,7 @@ export function createCreditPackCheckout({
           version: input.data.version,
           applicationIds: channel.applicationIds,
           kind: productKind,
+          ...(channel.fixture ? {} : { live: true as const }),
         },
       });
       return context.json(

@@ -5,6 +5,7 @@ import {
   gt,
   inArray,
   isNotNull,
+  isNull,
   lte,
   ne,
   or,
@@ -524,9 +525,11 @@ export function createPaidCreditLedger(
       version: number;
       applicationIds: string[];
       kind?: "subscription";
+      live?: true;
     };
   }) {
     const { testPack } = input;
+    const fixture = testPack !== undefined && !testPack.live;
     return database.transaction(async (tx) => {
       const replay = async () => {
         if (!testPack) return undefined;
@@ -537,7 +540,8 @@ export function createPaidCreditLedger(
         if (!existing) return undefined;
         if (
           existing.accountId !== input.accountId ||
-          existing.testMerchant !== testPack.merchant ||
+          existing.testMerchant !==
+            (testPack.live ? null : testPack.merchant) ||
           existing.channel !== input.channel ||
           existing.lockedKind !== (testPack.kind ?? "credit_pack") ||
           existing.productCode !== input.productCode ||
@@ -587,7 +591,7 @@ export function createPaidCreditLedger(
         {
           channel: input.channel,
           merchant: testPack?.merchant ?? channels?.merchants?.[input.channel],
-          fixture: testPack !== undefined,
+          fixture,
         },
         product.priceCents,
       );
@@ -602,7 +606,7 @@ export function createPaidCreditLedger(
           lockedKind: product.kind,
           renewsOrderId,
           lockedMicrocredits: product.creditsMicrocredits,
-          testMerchant: testPack?.merchant,
+          testMerchant: fixture ? testPack?.merchant : null,
           channel: input.channel,
         })
         .onConflictDoNothing({ target: paidOrders.id })
@@ -755,6 +759,7 @@ export function createPaidCreditLedger(
     accountId: string;
     id?: string;
     kind?: "subscription";
+    fixture?: boolean;
   }) {
     const rows = await database
       .select({
@@ -788,7 +793,9 @@ export function createPaidCreditLedger(
       .leftJoin(paidRefunds, eq(paidRefunds.orderId, paidOrders.id))
       .where(
         and(
-          eq(paidOrders.testMerchant, input.merchant),
+          input.fixture === false
+            ? isNull(paidOrders.testMerchant)
+            : eq(paidOrders.testMerchant, input.merchant),
           eq(paidOrders.channel, input.channel),
           eq(paidOrders.lockedKind, input.kind ?? "credit_pack"),
           eq(paidOrders.accountId, input.accountId),
@@ -1144,6 +1151,7 @@ export function createPaidCreditLedger(
     merchant: string;
     currency: string;
     amountCents: number;
+    fixture?: boolean;
   }) {
     // Order terms are immutable. closeOrder only changes pending orders, so a
     // concurrent or earlier successful verification always wins.
@@ -1154,7 +1162,8 @@ export function createPaidCreditLedger(
     if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
     if (
       input.currency !== "CNY" ||
-      order.testMerchant !== input.merchant ||
+      order.testMerchant !==
+        (input.fixture === false ? null : input.merchant) ||
       order.channel !== input.channel ||
       order.priceCents !== input.amountCents
     )
@@ -1162,7 +1171,12 @@ export function createPaidCreditLedger(
         "verification_mismatch",
         "The channel result does not match the placed order.",
       );
-    await closeOrder(order.id, `fixture:${input.merchant}`);
+    await closeOrder(
+      order.id,
+      input.fixture === false
+        ? `${input.channel}:${input.merchant}`
+        : `fixture:${input.merchant}`,
+    );
   }
 
   /** The application paths paid credits can be spent on, and which are paused. */
@@ -1516,13 +1530,15 @@ export function createPaidCreditLedger(
     channel: CreditPackChannel;
     amountCents?: number;
     kind?: "subscription";
+    fixture?: boolean;
   }) {
     return database.transaction(async (tx) => {
       await lockAccount(tx, input.accountId);
       const order = await lockRefundOrder(tx, input.orderId);
       if (
         order.accountId !== input.accountId ||
-        order.testMerchant !== input.merchant ||
+        order.testMerchant !==
+          (input.fixture === false ? null : input.merchant) ||
         order.channel !== input.channel ||
         order.lockedKind !== (input.kind ?? "credit_pack")
       )
@@ -1624,6 +1640,7 @@ export function createPaidCreditLedger(
     orderId: string;
     merchant: string;
     channel: CreditPackChannel;
+    fixture?: boolean;
   }) {
     const [row] = await database
       .select({
@@ -1638,9 +1655,10 @@ export function createPaidCreditLedger(
       .where(
         and(
           eq(paidOrders.id, input.orderId),
-          eq(paidOrders.testMerchant, input.merchant),
+          input.fixture === false
+            ? isNull(paidOrders.testMerchant)
+            : eq(paidOrders.testMerchant, input.merchant),
           eq(paidOrders.channel, input.channel),
-          inArray(paidRefunds.openedBy, fixtureRefundActors),
         ),
       );
     if (row?.channelOrderRef)
@@ -1648,20 +1666,24 @@ export function createPaidCreditLedger(
   }
 
   async function applyTestPackRefundResult(
-    input: CreditPackTestRefundResult & { channel: CreditPackChannel },
+    input: CreditPackTestRefundResult & {
+      channel: CreditPackChannel;
+      fixture?: boolean;
+    },
   ) {
     return database.transaction(async (tx) => {
       const order = await lockRefundOrder(tx, input.orderId);
       const refund = await findRefund(tx, order.id);
       if (
         !refund ||
-        !fixtureRefundActors.includes(refund.openedBy) ||
-        !order.testMerchant
+        (Boolean(order.testMerchant) &&
+          !fixtureRefundActors.includes(refund.openedBy))
       )
         throw new PaidLedgerError("order_unknown", "Unknown test refund.");
       if (
         refund.id !== input.refundId ||
-        order.testMerchant !== input.merchantId ||
+        (order.testMerchant !== null &&
+          order.testMerchant !== input.merchantId) ||
         order.channel !== input.channel ||
         order.channelOrderRef !== input.channelOrderRef ||
         refund.amountCents !== input.amountCents
