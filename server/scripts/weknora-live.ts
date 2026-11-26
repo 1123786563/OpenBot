@@ -22,8 +22,8 @@ import {
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import {
   createWeKnoraIngestionBilling,
+  WEKNORA_APPLICATION_ID,
   WeKnoraBillingError,
-  type WeKnoraLedger,
 } from "../src/billing/weknora-ingestion";
 import { createDatabase } from "../src/db/client";
 import {
@@ -31,7 +31,7 @@ import {
   testCreditAccounts,
   testCreditOperations,
 } from "../src/db/schema";
-import { fixtureTraceReport } from "../tests/support/bifrost-evidence";
+import { fixtureEmbeddingReport } from "../tests/support/bifrost-evidence";
 
 const runDir = process.argv[2];
 if (!runDir) throw new Error("usage: bun scripts/weknora-live.ts <run-dir>");
@@ -43,7 +43,10 @@ const database = createDatabase(
     "postgres://openbot:openbot@127.0.0.1:32835/openbot_93_weknora",
 );
 const startedAt = Date.now();
-const now = () => new Date(startedAt + (Date.now() - startedAt));
+// /control/expire moves the ledger's clock past the grant's expiry: a
+// durable Spending Authorization can only be extended, never shortened.
+let clockOffsetMs = 0;
+const now = () => new Date(Date.now() + clockOffsetMs);
 const issuer = "https://casdoor.example.test";
 const subject = randomUUID();
 const resourceId = "weknora:tenant:1:kb:kb-1";
@@ -54,7 +57,6 @@ const gatewayModel = "openai/BAAI/bge-small-en-v1.5";
 const routeId = "local-bge";
 
 const ledger = createTestCreditLedger(database, now);
-const dispatchAccounts = new Map<string, string>();
 async function accountIdOf(identity: { issuer: string; subject: string }) {
   const [row] = await database
     .select({ id: testCreditAccounts.id })
@@ -67,40 +69,10 @@ async function accountIdOf(identity: { issuer: string; subject: string }) {
     );
   return row?.id;
 }
-const weknoraLedger: WeKnoraLedger = {
-  quote: () => ledger.quote(),
-  reserve: async (identity, input) => {
-    const result = await ledger.reserve(identity, {
-      operationId: input.operationId,
-      route: input.route,
-      priceVersion: input.priceVersion,
-      applicationId: input.application,
-    });
-    // The WeKnora reservation contract has no budget dimension, so refusals
-    // outside its reason set surface as the path being unavailable.
-    if (result.state === "denied") {
-      const reason =
-        result.reason === "insufficient_credits" ||
-        result.reason === "route_unavailable"
-          ? result.reason
-          : "not_authorized";
-      return { state: "denied" as const, reason };
-    }
-    return result;
-  },
-  settle: async (identity, operationId, usage) => {
-    const accountId =
-      dispatchAccounts.get(operationId) ?? (await accountIdOf(identity));
-    if (!accountId) throw new Error("uploader has no Test Credit account");
-    const settled = await ledger.settle(accountId, operationId, usage);
-    dispatchAccounts.set(operationId, accountId);
-    return settled;
-  },
-};
 const billing = createWeKnoraIngestionBilling({
-  ledger: weknoraLedger,
-  now,
-  verifyApplication: async (id) => id === "weknora",
+  ledger,
+  routeId,
+  verifyApplication: async (id) => id === WEKNORA_APPLICATION_ID,
   // Uploader attribution: the identity must be a real enrolled account.
   verifyUser: async (identity) => Boolean(await accountIdOf(identity)),
 });
@@ -111,12 +83,13 @@ const drafted = configure(emptyCatalog, {
   harnessImage: `agent-langgraph-agui@sha256:${"b".repeat(64)}`,
   routes: {
     [routeId]: {
+      purpose: "embedding",
       provider: "openai",
       model: "BAAI/bge-small-en-v1.5",
       gatewayRevision,
       meteringRevision,
       maxInputTokens: 512,
-      maxOutputTokens: 2,
+      maxOutputTokens: 0,
       tools: false,
       price: { inputPerMillion: 500_000, outputPerMillion: 0 },
     },
@@ -127,10 +100,10 @@ if (!proposed) throw new Error("fixture route missing");
 const verified = verify(
   drafted,
   routeId,
-  fixtureTraceReport(drafted.harnessImage ?? "", proposed),
+  fixtureEmbeddingReport(drafted.harnessImage ?? "", proposed),
   "local-fixture",
 );
-const { catalog } = publish(verified, [routeId], routeId, "local-fixture");
+const { catalog } = publish(verified, [routeId], null, "local-fixture");
 await database
   .insert(enterpriseSettings)
   .values({ key: pilotCatalogKey, value: catalog })
@@ -140,20 +113,28 @@ await database
 const batchId = randomUUID();
 await ledger.enroll({ identity: { issuer, subject }, batchId, amount: 8192n });
 await ledger.claim({ issuer, subject }, batchId);
-function registerAuthorization(expiresAt: Date) {
-  billing.registerAuthorization({
-    id: authorizationId,
-    applicationId: "weknora",
-    issuer,
-    subject,
-    resourceIds: [resourceId],
-    expiresAt,
-    maxMicrocredits: 4096n,
-    spentMicrocredits: 0n,
-    revokedAt: null,
-  });
-}
-registerAuthorization(new Date(startedAt + 600_000));
+await ledger.registerApplication({
+  id: WEKNORA_APPLICATION_ID,
+  name: "WeKnora",
+  operator: "platform",
+  resourcePrefix: "weknora:",
+});
+await ledger.approveApplication(WEKNORA_APPLICATION_ID, "local-fixture");
+const granted = await ledger.authorize(
+  { issuer, subject },
+  {
+    authorizationId,
+    applicationId: WEKNORA_APPLICATION_ID,
+    // Ingestion is the one background task the grant names.
+    kind: "background",
+    taskId: authorizationId,
+    resourcePrefix: resourceId,
+    expiresAt: new Date(startedAt + 600_000),
+    limitMicrocredits: 4096n,
+  },
+);
+if (granted?.state !== "authorized")
+  throw new Error("The WeKnora Spending Authorization was refused");
 
 const serviceToken = randomBytes(32).toString("base64url");
 const statusFor = (code: string) =>
@@ -225,6 +206,7 @@ Bun.serve({
       try {
         const preflight = await billing.preflight({
           applicationId: "weknora",
+          authorizationId: body.authorizationId,
           issuer,
           subject: body.subject,
           resourceId: body.resourceId,
@@ -232,20 +214,21 @@ Bun.serve({
         const reserved = await billing.reserve({
           operationId: body.operationId,
           applicationId: "weknora",
+          authorizationId: body.authorizationId,
           issuer,
           subject: body.subject,
           resourceId: body.resourceId,
-          maxChargeMicrocredits: preflight.maxChargeMicrocredits,
         });
-        if (reserved.state === "denied")
-          throw new WeKnoraBillingError("route_unavailable", "denied");
         if (reserved.permit) {
-          const dispatch = await ledger.beginDispatch(
+          await ledger.beginDispatch(
             { issuer, subject: body.subject },
-            { operationId: body.operationId, permit: reserved.permit },
+            {
+              operationId: body.operationId,
+              permit: reserved.permit,
+              authorizationId: body.authorizationId,
+            },
+            { embedding: true },
           );
-          if (dispatch.state === "dispatch")
-            dispatchAccounts.set(body.operationId, dispatch.accountId);
         }
         log({
           event: "reserved",
@@ -253,6 +236,7 @@ Bun.serve({
           resourceId: body.resourceId,
           authorizationId: body.authorizationId,
           state: reserved.state,
+          maxChargeMicrocredits: preflight.maxChargeMicrocredits,
         });
         const result = await embeddings(body.input);
         log({
@@ -263,6 +247,7 @@ Bun.serve({
         });
         const settled = await billing.settle({
           operationId: body.operationId,
+          authorizationId: body.authorizationId,
           uploaderAccount: { issuer, subject: body.subject },
           inputTokens: result.inputTokens,
           outputTokens: 0n,
@@ -294,12 +279,12 @@ Bun.serve({
       }
     }
     if (url.pathname === "/control/revoke" && request.method === "POST") {
-      billing.revokeAuthorization(authorizationId);
+      await ledger.revokeAuthorization({ issuer, subject }, authorizationId);
       log({ event: "control", action: "revoke" });
       return new Response("ok");
     }
     if (url.pathname === "/control/expire" && request.method === "POST") {
-      registerAuthorization(new Date(startedAt - 1_000));
+      clockOffsetMs = 24 * 60 * 60_000;
       log({ event: "control", action: "expire" });
       return new Response("ok");
     }

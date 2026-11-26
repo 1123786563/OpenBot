@@ -33,6 +33,16 @@ task ID and the exact resource with the `:maintenance` suffix. The periodic
 housekeeping pass queues Wiki finalize. The worker keeps the pending finalize
 rows when the paid step cannot proceed.
 
+Instead of a person's grant, the deployment can fund maintenance from a
+platform budget: set `TEST_CREDIT_WEKNORA_MAINTENANCE_BUDGET_ID` to a
+confirmed Test Credit budget on the platform Billing Account with issuer
+`openbot:platform` and subject `weknora-maintenance` (enroll and claim that
+account with the trusted ledger provisioning API, then call `createBudget`),
+leave `OPENBOT_WEKNORA_MAINTENANCE_GRANT` unset, and set
+`OPENBOT_WEKNORA_MAINTENANCE_SUBJECT=weknora-maintenance` so the worker sends
+no `authorizationId`. A missing or exhausted budget pauses the charged step
+with `execution_limit` before any gateway request.
+
 ## Local cross-service test
 
 Build the WeKnora test binary from its checkout:
