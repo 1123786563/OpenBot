@@ -55,7 +55,7 @@ async function exportWith(headers: Record<string, string>, query = "") {
   const input = await view.findByRole("searchbox", { name: "Search events" });
   const user = userEvent.setup({ document });
   if (query) await user.type(input, query);
-  const label = query ? "Export CSV without search" : "Export CSV";
+  const label = query ? "Export CSV with search" : "Export CSV";
   const button = view.getByRole("button", { name: label });
   if (query) {
     const description = (button.getAttribute("aria-describedby") ?? "")
@@ -63,7 +63,9 @@ async function exportWith(headers: Record<string, string>, query = "") {
       .map((id) => document.getElementById(id)?.textContent)
       .join(" ");
     expect(description).toContain("including older events");
-    expect(description).toContain("Text search applies to loaded events.");
+    expect(description).toContain(
+      "Text search checks stored event details across the selected view, including older events.",
+    );
   }
   await user.click(button);
   await view.findByRole("button", { name: label });
@@ -83,12 +85,12 @@ test("a whole export says nothing extra", async () => {
   expect(view.queryByText(/The file has the newest/)).toBeNull();
 });
 
-test("the export action states the broader scope while text search is active", async () => {
+test("the export carries the text search as well as the view and filters", async () => {
   const { requests } = await exportWith(
     {},
     "word missing from the loaded rows",
   );
   expect(requests.filter((url) => url.includes("format=csv"))).toEqual([
-    "/api/admin/audit-events?format=csv",
+    "/api/admin/audit-events?q=word+missing+from+the+loaded+rows&format=csv",
   ]);
 });

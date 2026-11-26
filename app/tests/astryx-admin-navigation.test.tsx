@@ -11,6 +11,7 @@ import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { searchAdminSettings } from "@/components/admin/admin-navigation";
 import { pinLocale } from "./i18n";
+import { Route as OverviewRoute } from "@/routes/_authed/admin/index";
 import { Route as AdminRoute } from "@/routes/_authed/admin/route";
 import { settleReactWork } from "./settle-react-work";
 
@@ -182,4 +183,66 @@ test("the Admin sidebar speaks the interface language", async () => {
     expect(within(nav).getByRole("link", { name })).toBeTruthy();
   }
   expect(admin.view.getByRole("link", { name: "工作区" })).toBeTruthy();
+});
+
+test("overview search offers examples and preserves keyboard focus through navigation", async () => {
+  const root = createRootRoute();
+  const authed = createRoute({ getParentRoute: () => root, id: "_authed" });
+  const admin = createRoute({ getParentRoute: () => authed, path: "admin" });
+  const overview = createRoute({
+    getParentRoute: () => admin,
+    path: "/",
+    component: OverviewRoute.options.component,
+    validateSearch: OverviewRoute.options.validateSearch,
+  });
+  const identity = createRoute({
+    getParentRoute: () => admin,
+    path: "identity-providers",
+    component: () => <h1>Identity providers</h1>,
+  });
+  const history = createMemoryHistory({ initialEntries: ["/admin/"] });
+  const router = createRouter({
+    routeTree: root.addChildren([
+      authed.addChildren([admin.addChildren([overview, identity])]),
+    ]),
+    history,
+  });
+  await router.load();
+  const view = render(<RouterProvider router={router} />);
+  const user = userEvent.setup({ document });
+  const search = within(
+    view.getByRole("region", { name: "Search admin settings" }),
+  );
+  const input = search.getByRole("searchbox", { name: "Find a setting" });
+
+  await user.type(input, "zzzz");
+  expect(
+    (await search.findByText("No matching settings.")).getAttribute("role"),
+  ).toBe("status");
+  expect(
+    search.getByText(
+      "Try “single sign-on”, “revoke an API key”, or “simulate a policy”.",
+    ),
+  ).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(input).toHaveProperty("value", ""));
+  expect(document.activeElement === input).toBe(true);
+
+  await user.type(input, "single sign-on");
+  await waitFor(() =>
+    expect(router.state.location.search).toEqual({ q: "single sign-on" }),
+  );
+  const result = await view.findByRole("link", { name: /Identity providers/ });
+  expect(document.activeElement === input).toBe(true);
+  await user.keyboard("{Enter}");
+  expect(document.activeElement?.getAttribute("href")).toBe(
+    result.getAttribute("href"),
+  );
+  await user.keyboard("{Enter}");
+  await view.findByRole("heading", { name: "Identity providers" });
+  history.back();
+  const returned = await view.findByRole("link", {
+    name: /Identity providers/,
+  });
+  await waitFor(() => expect(document.activeElement === returned).toBe(true));
 });

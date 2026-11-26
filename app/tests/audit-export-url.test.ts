@@ -21,6 +21,15 @@ describe("auditExportUrl", () => {
     );
   });
 
+  test("the text search travels into the download, so the file and the table agree", () => {
+    expect(auditExportUrl("?q=save+deal")).toBe(
+      "/api/admin/audit-events?q=save+deal&format=csv",
+    );
+    expect(auditExportUrl("?eventType=computer.action_allowed&q=needle")).toBe(
+      "/api/admin/audit-events?eventType=computer.action_allowed&q=needle&format=csv",
+    );
+  });
+
   test("paging is dropped and a stray format is replaced, not doubled", () => {
     expect(
       auditExportUrl("?eventType=computer.action_allowed&limit=50&cursor=abc"),

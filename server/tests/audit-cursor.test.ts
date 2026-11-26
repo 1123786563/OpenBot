@@ -202,3 +202,74 @@ describe("audit cursor validation", () => {
     expect(queries).toHaveLength(1);
   });
 });
+
+/**
+ * The text search across the whole trail.
+ *
+ * The Audit page's search box used to filter only the rows already in the browser, so a word on an
+ * older page was never found. `q` is asked of the server, beside the columns already there, and the
+ * page names it in the CSV it downloads. These pin the parse and the cap; the reader's filtering is
+ * `audit-search.integration.test.ts` against a real database.
+ */
+describe("audit text search", () => {
+  test("q is read, trimmed, and a blank q is no search at all", () => {
+    expect(
+      auditQueryFromUrl(new URL("http://openbot.local/audit?q=%20needle%20")).q,
+    ).toBe("needle");
+    expect(auditQueryFromUrl(new URL("http://openbot.local/audit?q=")).q).toBe(
+      undefined,
+    );
+    expect(
+      auditQueryFromUrl(new URL("http://openbot.local/audit?q=%20%20")).q,
+    ).toBe(undefined);
+    expect(auditQueryFromUrl(new URL("http://openbot.local/audit")).q).toBe(
+      undefined,
+    );
+  });
+
+  test("a q of at most 200 characters is kept; 201 is refused with a named message", () => {
+    const twoHundred = "a".repeat(200);
+    expect(
+      auditQueryFromUrl(new URL(`http://openbot.local/audit?q=${twoHundred}`))
+        .q,
+    ).toBe(twoHundred);
+    expect(() =>
+      auditQueryFromUrl(
+        new URL(`http://openbot.local/audit?q=${"a".repeat(201)}`),
+      ),
+    ).toThrow(/Query parameter "q" must be at most 200 characters\./);
+  });
+
+  test("the list route hands q to the reader", async () => {
+    const queries: { q?: string }[] = [];
+    const app = createApp(
+      config,
+      adminAuth,
+      { rolesForUser: async () => ["admin"] },
+      {
+        list: async (query) => {
+          queries.push(query);
+          return { events: [], nextCursor: undefined };
+        },
+      },
+    );
+
+    const response = await app.request(
+      "http://openbot.local/api/admin/audit-events?q=needle",
+    );
+
+    expect(response.status).toBe(200);
+    expect(queries[0]?.q).toBe("needle");
+
+    for (const format of ["json", "csv"]) {
+      const rejected = await app.request(
+        `http://openbot.local/api/admin/audit-events?format=${format}&q=${"a".repeat(201)}`,
+      );
+      expect(rejected.status).toBe(400);
+      await expect(rejected.json()).resolves.toEqual({
+        error: 'Query parameter "q" must be at most 200 characters.',
+      });
+    }
+    expect(queries).toHaveLength(1);
+  });
+});

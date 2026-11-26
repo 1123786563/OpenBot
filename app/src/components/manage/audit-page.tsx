@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { explainable, WhyButton } from "@/components/what-if/why-button";
+import { useTranslation } from "@/i18n";
 import { useBotNames } from "@/lib/agents/bot-names";
 import type { AuditAnswer, AuditFilterLabels } from "@/lib/audit/ask";
 import {
@@ -111,6 +112,19 @@ export function withBot(search: string, bot: string | undefined): string {
     search.startsWith("?") ? search.slice(1) : search,
   );
   params.set("bot", bot);
+  return `?${params.toString()}`;
+}
+
+/**
+ * A view's query with the text search, asked of the server so it reaches older pages the browser
+ * has not loaded — not only the rows already on screen.
+ */
+export function withText(search: string, text: string): string {
+  if (!text) return search;
+  const params = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  );
+  params.set("q", text);
   return `?${params.toString()}`;
 }
 
@@ -194,6 +208,7 @@ export function AuditPage({
   onScopeChange?: (scope: { bot?: string; permissions?: true }) => void;
   permissionsOnly?: boolean;
 } = {}) {
+  const { t } = useTranslation();
   const paths = useManagePaths();
   const [view, setView] = useState<string>(FILTERS[0].search);
   /*
@@ -254,8 +269,18 @@ export function AuditPage({
   // Activity is anybody's page. Its route has the edition loaded before this draws.
   const edition = useQuery(deploymentCapabilitiesQueryOptions()).data?.edition;
   const asked = ask ? withFilters(view, chips) : withBot(view, bot);
-  const search = edition === "personal" ? withoutOpenBotWorking(asked) : asked;
-  const [query, setQuery] = useState("");
+  const [text, setText] = useState("");
+  const searchTerm = text.trim();
+  const [debouncedTerm, setDebouncedTerm] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedTerm(searchTerm), 250);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+  const query = searchTerm ? debouncedTerm : "";
+  const scope = edition === "personal" ? withoutOpenBotWorking(asked) : asked;
+  const search = withText(scope, query);
+  // Export uses the current input even if the list is still waiting for the debounce.
+  const exportSearch = withText(scope, searchTerm);
   const searchInput = useRef<HTMLInputElement>(null);
   const olderEventsButton = useRef<{
     element: HTMLButtonElement;
@@ -271,7 +296,7 @@ export function AuditPage({
     query: string;
   } | null>(null);
   const resultSummary = useRef<HTMLSpanElement>(null);
-  const hasTextSearch = query.trim().length > 0;
+  const hasTextSearch = searchTerm.length > 0;
   const searchScopeId = useId();
   const exportScopeId = useId();
   const showExportScope = hasTextSearch || !ask;
@@ -364,7 +389,7 @@ export function AuditPage({
     setExportError(null);
     setExportCapped(null);
     try {
-      const response = await client(auditExportUrl(search), {
+      const response = await client(auditExportUrl(exportSearch), {
         fallback: "Couldn't export these events. Try again.",
       });
       // A file that stopped early must say so, or it reads as the whole trail.
@@ -480,7 +505,7 @@ export function AuditPage({
             }
             moreToLoad={moreToLoad}
             nameFor={nameFor}
-            query={query}
+            query={searchTerm === query ? "" : searchTerm}
             storedNames={edition !== "personal"}
             {...(ask ? { rowAction: whyFor } : {})}
             toolbar={({ count, filters, hasColumnFilters }) => (
@@ -533,8 +558,7 @@ export function AuditPage({
                   <AuditViewMenu value={view} onChange={setView} />
                 )}
                 <p className="text-muted-foreground text-sm" id={searchScopeId}>
-                  Text search applies to loaded events.
-                  {moreToLoad ? " Show older events to search more." : ""}
+                  {t("audit.search.scope")}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative w-64 max-w-full">
@@ -543,24 +567,25 @@ export function AuditPage({
                       aria-describedby={searchScopeId}
                       aria-label="Search events"
                       className="h-8 pl-8 max-sm:min-h-11"
-                      onChange={(event) => setQuery(event.target.value)}
+                      onChange={(event) => setText(event.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key === "Escape" && query) {
+                        if (event.key === "Escape" && text) {
                           event.preventDefault();
-                          setQuery("");
+                          setText("");
                         }
                       }}
-                      placeholder="Search loaded events…"
+                      maxLength={200}
+                      placeholder={t("audit.search.placeholder")}
                       ref={searchInput}
                       type="search"
-                      value={query}
+                      value={text}
                     />
                   </div>
-                  {query ? (
+                  {text ? (
                     <Button
                       className="max-sm:min-h-11"
                       onClick={() => {
-                        setQuery("");
+                        setText("");
                         searchInput.current?.focus();
                       }}
                       size="sm"
@@ -653,7 +678,7 @@ export function AuditPage({
                         {exporting
                           ? "Exporting…"
                           : hasTextSearch
-                            ? "Export CSV without search"
+                            ? t("audit.export.withSearch")
                             : "Export CSV"}
                       </Button>
                     )}
@@ -682,8 +707,8 @@ export function AuditPage({
                     id={exportScopeId}
                   >
                     {ask
-                      ? "CSV includes events matching the selected view and filters, including older events."
-                      : "CSV includes events in the selected view and Bot scope, including older events. Table filters apply to loaded events."}
+                      ? t("audit.export.adminScope")
+                      : t("audit.export.activityScope")}
                   </p>
                 ) : null}
                 {exportError && !accessDenied ? (
