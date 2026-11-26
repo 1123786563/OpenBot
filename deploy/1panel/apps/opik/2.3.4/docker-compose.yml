@@ -93,6 +93,7 @@ services:
       STATE_DB_USER: ${PANEL_DB_USER:?Enter the database user}
       TOGGLE_ANNOTATION_QUEUE_AUTOMATION_ENABLED: '"true"'
       TOGGLE_CUSTOM_CHARTS_ENABLED: '"false"'
+      TOGGLE_CUSTOM_CHARTS_PUBLIC_ENDPOINTS_ENABLED: '"false"'
       TOGGLE_GUARDRAILS_ENABLED: '"false"'
       TOGGLE_OLLIE_ENABLED: '"false"'
       TOGGLE_OPIK_AI_ENABLED: '"false"'
@@ -111,7 +112,7 @@ services:
       interval: 1s
       retries: 600
       start_period: 1s
-    image: ghcr.io/comet-ml/opik/opik-backend:2.3.0
+    image: ghcr.io/comet-ml/opik/opik-backend:2.3.4
     networks:
       default: null
       1panel-network: {}
@@ -202,7 +203,7 @@ services:
       NGINX_PORT: "5173"
       OPIK_AUTH_PASSWORD: ${OPIK_AUTH_PASSWORD:?Set the Opik login password}
       OPIK_AUTH_USERNAME: ${OPIK_AUTH_USERNAME:-admin}
-      OPIK_VERSION: 2.3.0
+      OPIK_VERSION: 2.3.4
       OTEL_COLLECTOR_HOST: otel-collector
       OTEL_COLLECTOR_PORT: "4317"
       OTEL_TRACE: off
@@ -215,7 +216,7 @@ services:
       interval: 1s
       retries: 10
       start_period: 1s
-    image: ghcr.io/comet-ml/opik/opik-frontend:2.3.0
+    image: ghcr.io/comet-ml/opik/opik-frontend:2.3.4
     networks:
       default: {}
       client:
@@ -303,7 +304,7 @@ services:
       OPIK_OTEL_SDK_ENABLED: "false"
       OPIK_REVERSE_PROXY_URL: http://frontend:5173/api
       OPIK_URL_OVERRIDE: http://backend:8080
-      OPIK_VERSION: 2.3.0
+      OPIK_VERSION: 2.3.4
       OPTSTUDIO_LLM_MAX_TOKENS: "8192"
       OPTSTUDIO_LOG_LEVEL: INFO
       OPTSTUDIO_MAX_CONCURRENT_JOBS: "5"
@@ -317,7 +318,7 @@ services:
       PYTHON_CODE_EXECUTOR_DOCKER_PIDS_LIMIT: "64"
       PYTHON_CODE_EXECUTOR_DOCKER_TMPFS_SIZE: 16m
       PYTHON_CODE_EXECUTOR_EXEC_TIMEOUT_IN_SECS: "3"
-      PYTHON_CODE_EXECUTOR_IMAGE_TAG: 2.3.0
+      PYTHON_CODE_EXECUTOR_IMAGE_TAG: 2.3.4
       PYTHON_CODE_EXECUTOR_MAX_RESULT_SIZE_IN_BYTES: "67108864"
       PYTHON_CODE_EXECUTOR_MEM_LIMIT: 256m
       PYTHON_CODE_EXECUTOR_PROCESS_NETWORK_ISOLATION: "true"
@@ -337,7 +338,7 @@ services:
       interval: 2s
       retries: 30
       start_period: 2s
-    image: ghcr.io/comet-ml/opik/opik-python-backend:2.3.0
+    image: ghcr.io/comet-ml/opik/opik-python-backend:2.3.4
     networks:
       default: null
       1panel-network: {}
