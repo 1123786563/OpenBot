@@ -993,6 +993,42 @@ docker ps -aq --filter "label=openbot.namespace=openbot" | xargs -r docker rm -f
 
 The supervisor recreates each computer with the same named volumes on its next request.
 
+### OpenShell execution pilot
+
+The pilot routes commands, workspace file tools, and the Terminal tab to OpenShell for
+the users listed in `OPENBOT_OPENSHELL_PILOT_USERS`. Enter their OpenBot user IDs as a
+comma-separated list. Keep the computer provider configured for browser routes and
+existing isolated Bots. To switch a user back to the legacy backend, remove their ID
+from the list and from `OPENBOT_CUBE_BROWSER_VOLUMES`, then restart the API. A user
+who still has a CubeSandbox browser binding needs OpenShell for execution.
+
+Build the execution image from the repository root.
+
+```sh
+docker build -f agent-computer/Dockerfile.execution -t openbot-execution:pilot .
+```
+
+Make the image available to the OpenShell Docker driver and set `OPENBOT_OPENSHELL_IMAGE`
+to its reference. Use an authenticated OpenShell gateway with launch-scoped sandbox
+authentication. Set `persist_workspace = true` under `[openshell.drivers.docker]`.
+Each pilot user and Bot pair gets a private `/sandbox` volume. OpenShell reattaches
+the volume on sandbox stop and start. Deleting the sandbox removes its volume.
+[OpenShell Docker driver settings](https://docs.nvidia.com/openshell/latest/how-it-works/sandboxes/runtimes)
+
+Install the OpenShell 0.1.10 CLI where the OpenBot API process runs. If needed, set
+`OPENBOT_OPENSHELL_CLI` to its absolute path. Configure the CLI credentials for a
+dedicated OpenShell workspace that only this deployment manages. Set
+`OPENBOT_OPENSHELL_GATEWAY` to the registered gateway name and
+`OPENBOT_OPENSHELL_WORKSPACE` to that workspace. Use a stable random secret of at least 32
+characters for `OPENBOT_OPENSHELL_TOKEN` across API replicas. The API derives a separate service token
+for each sandbox and reaches it over an authenticated loopback forward.
+
+New execution sandboxes deny outbound connections by default. To allow selected
+destinations, set `OPENBOT_OPENSHELL_NETWORK_POLICIES` to the JSON object for OpenShell's
+`network_policies` field before creating the sandboxes. To change egress on an existing
+sandbox, update its network policy in OpenShell. The terminal uses its own handoff state
+for pilot seats. [OpenShell sandbox policy](https://docs.nvidia.com/openshell/latest/how-it-works/policies/overview)
+
 ### Headed or headless managed Chromium in Docker or Helm
 
 The managed backend uses Playwright's full `chromium` channel in either mode. The Docker image

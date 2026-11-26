@@ -1,0 +1,16 @@
+FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS build
+WORKDIR /src/agent-computer
+COPY agent-computer/package.json agent-computer/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY agent-computer/src ./src
+COPY shared /src/shared
+RUN ln -s /src/agent-computer/node_modules /src/shared/node_modules && bun build src/execution.ts --compile --outfile /openbot-execution
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -g 10001 openbot && useradd -u 10001 -g openbot -M openbot
+COPY --from=build /openbot-execution /usr/local/bin/openbot-execution
+WORKDIR /sandbox
+USER 10001:10001
+CMD ["/usr/local/bin/openbot-execution"]

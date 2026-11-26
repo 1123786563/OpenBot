@@ -458,6 +458,7 @@ export function createComputerRoutes(
         await gateway.control(
           await seatOf(context),
           context.req.query("requestId"),
+          context.req.query("surface") === "terminal",
         ),
       );
     } catch (error) {
@@ -476,6 +477,7 @@ export function createComputerRoutes(
         typeof body?.toolCallId === "string" ? body.toolCallId : undefined,
         // A person taking the wheel themselves says so; anything else is the Bot asking, as it always was.
         body?.source === "manual" ? "manual" : "model",
+        context.req.query("surface") === "terminal",
       ),
     ),
   );
@@ -602,7 +604,12 @@ export function createComputerRoutes(
 
   routes.post("/:botId/control/take", (context) =>
     act(context, gateway.seatFor, (seat, actor, body) =>
-      gateway.takeControl(seat, actor, handoffId(body)),
+      gateway.takeControl(
+        seat,
+        actor,
+        handoffId(body),
+        context.req.query("surface") === "terminal",
+      ),
     ),
   );
 
@@ -613,6 +620,12 @@ export function createComputerRoutes(
    */
   routes.post("/:botId/control/release", (context) =>
     act(context, gateway.seatFor, async (seat, actor, body) => {
+      if (
+        context.req.query("surface") === "terminal" &&
+        gateway.usesExecution?.(seat)
+      ) {
+        return gateway.releaseControl(seat, actor, handoffId(body), true);
+      }
       let state: Awaited<ReturnType<typeof gateway.releaseControl>>;
       try {
         state = await gateway.releaseControl(seat, actor, handoffId(body));
@@ -628,6 +641,12 @@ export function createComputerRoutes(
 
   routes.post("/:botId/control/cancel", (context) =>
     act(context, gateway.seatFor, async (seat, actor, body) => {
+      if (
+        context.req.query("surface") === "terminal" &&
+        gateway.usesExecution?.(seat)
+      ) {
+        return gateway.cancelControl(seat, actor, handoffId(body), true);
+      }
       let state: Awaited<ReturnType<typeof gateway.cancelControl>>;
       try {
         state = await gateway.cancelControl(seat, actor, handoffId(body));

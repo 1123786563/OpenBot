@@ -163,6 +163,7 @@ import {
 } from "./computer/computer-key";
 import { createComputerGateway } from "./computer/gateway";
 import { createHeadlessComputerTools } from "./computer/headless-tools";
+import { createOpenShellExecution } from "./computer/openshell-execution";
 import { createPageFrameStore } from "./computer/page-frames";
 import { startPolicyListener } from "./computer/policy-listener";
 import {
@@ -1165,6 +1166,9 @@ const computerGateway = computerProvider
   ? createComputerGateway({
       provider: computerProvider,
       ...(cubeBrowser ? { browserProvider: cubeBrowser } : {}),
+      ...(config.computerExecution
+        ? { execution: createOpenShellExecution(config.computerExecution) }
+        : {}),
       ...(computerSeats ? { seats: computerSeats } : {}),
       // Who each person's computer belongs to, for the admin list.
       people: async (ids) =>

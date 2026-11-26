@@ -6,8 +6,10 @@ import { personSeat } from "../src/computer/computer-key";
 import {
   type ComputerGateway,
   ComputerStillStartingError,
+  createComputerGateway,
 } from "../src/computer/gateway";
 import type { PolicyStore } from "../src/computer/policy-store";
+import { createSharedComputerProvider } from "../src/computer/provider";
 import { createComputerRoutes } from "../src/computer/routes";
 
 describe("computer routes", () => {
@@ -322,4 +324,97 @@ describe("human input", () => {
     expect(response.status).toBe(400);
     expect(calls).toHaveLength(0);
   });
+});
+
+test("a pilot command uses the execution workspace and fails closed when it is unavailable", async () => {
+  let executionAvailable = true;
+  const executionRequests: string[] = [];
+  const execution = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      executionRequests.push(new URL(request.url).pathname);
+      const body = await request.json();
+      return Response.json({
+        command: body.command,
+        stdout: "from execution workspace",
+        stderr: "",
+        exitCode: 0,
+        elapsedMs: 1,
+        timedOut: false,
+        truncated: false,
+      });
+    },
+  });
+  try {
+    const gatewayFor = (configureExecution: boolean) =>
+      createComputerGateway({
+        provider: createSharedComputerProvider({
+          baseUrl: "http://127.0.0.1:1",
+        }),
+        browserProvider: {
+          serves: (seat) =>
+            seat.key.kind === "person" && seat.key.personId === "pilot",
+          locate: async () => {
+            throw new Error("CubeSandbox is unavailable");
+          },
+          status: async (seat) => ({
+            botId: seat.botId,
+            state: "unreachable",
+            reason: "Fixture outage",
+          }),
+          tokenFor: () => "browser-fixture-token",
+        },
+        auditStore: { insert: async () => {} },
+        policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+        ...(configureExecution
+          ? {
+              execution: {
+                pilotUsers: new Set(["pilot"]),
+                connect: async () => {
+                  if (!executionAvailable)
+                    throw new Error("OpenShell is unavailable");
+                  return { url: execution.url.href };
+                },
+              },
+            }
+          : {}),
+      });
+    const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+      context,
+      next,
+    ) => {
+      context.set("actor", { id: "pilot", role: "user" } as AuthenticatedActor);
+      await next();
+    };
+    const exec = (gateway: ComputerGateway) =>
+      createComputerRoutes(
+        gateway,
+        {} as PolicyStore,
+        requireUser,
+        async () => true,
+      ).request("http://openbot.test/notes/exec", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: "pwd" }),
+      });
+    const gateway = gatewayFor(true);
+    const response = await exec(gateway);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stdout: "from execution workspace",
+    });
+    executionAvailable = false;
+    const failure = await exec(gateway);
+    expect(failure.status).toBe(503);
+    expect(await failure.text()).toContain("OpenShell is unavailable");
+    const missing = await exec(gatewayFor(false));
+    expect(missing.status).toBe(503);
+    expect(await missing.text()).toContain(
+      "OpenShell execution is not configured",
+    );
+    expect(executionRequests).toEqual(["/exec"]);
+  } finally {
+    await execution.stop(true);
+  }
 });

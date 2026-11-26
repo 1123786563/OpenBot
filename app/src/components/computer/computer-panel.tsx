@@ -62,8 +62,11 @@ export function ComputerViewPanel({
     following ??
     "screen";
 
-  // One wheel for the whole computer: whoever holds it holds the screen and the terminal both.
-  const { control, someoneElse } = useComputerControl(agentId);
+  const { control, someoneElse } = useComputerControl(
+    agentId,
+    true,
+    view === "terminal" ? "terminal" : "browser",
+  );
   const youHaveIt =
     control?.holder === "human" && !control.transitioning && !someoneElse;
 

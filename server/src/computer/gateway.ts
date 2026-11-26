@@ -156,6 +156,10 @@ export type ComputerGatewayOptions = {
   connect?: (
     seat: ComputerSeat,
   ) => Promise<ComputerConnection & { token: string }>;
+  execution?: {
+    pilotUsers: ReadonlySet<string>;
+    connect(seat: ComputerSeat): Promise<ComputerConnection>;
+  };
   signal?: AbortSignal;
   auditStore: AuditStore;
   /** Absent denies everything. See evaluateActionPolicy. */
@@ -235,6 +239,8 @@ export interface ComputerGateway {
    */
   tokenFor(seat: ComputerSeat): string | undefined;
   locate(seat: ComputerSeat): Promise<string>;
+  usesExecution?(seat: ComputerSeat): boolean;
+  terminalConnection(seat: ComputerSeat): Promise<ComputerConnection>;
   status(seat: ComputerSeat): Promise<ComputerStatus>;
   browserFor?(
     seat: ComputerSeat,
@@ -304,7 +310,11 @@ export interface ComputerGateway {
     actor: ActionActor,
     input: WriteFileInput,
   ): Promise<WriteFileResult>;
-  control(seat: ComputerSeat, requestId?: string): Promise<ControlState>;
+  control(
+    seat: ComputerSeat,
+    requestId?: string,
+    terminal?: boolean,
+  ): Promise<ControlState>;
   /** `source` is `manual` for a person taking the wheel themselves; the Bot's own requests are `model`. */
   requestHelp(
     seat: ComputerSeat,
@@ -312,21 +322,25 @@ export interface ComputerGateway {
     reason: string,
     toolCallId?: string,
     source?: RequestHelpSource,
+    terminal?: boolean,
   ): Promise<ControlState>;
   takeControl(
     seat: ComputerSeat,
     actor: ActionActor,
     requestId: string,
+    terminal?: boolean,
   ): Promise<ControlState>;
   releaseControl(
     seat: ComputerSeat,
     actor: ActionActor,
     requestId: string,
+    terminal?: boolean,
   ): Promise<ControlState>;
   cancelControl(
     seat: ComputerSeat,
     actor: ActionActor,
     requestId: string,
+    terminal?: boolean,
   ): Promise<ControlState>;
   requestSecret(
     seat: ComputerSeat,
@@ -477,6 +491,39 @@ export function createComputerGateway(
     );
   };
 
+  function usesExecution(seat: ComputerSeat): boolean {
+    return (
+      seat.key.kind === "person" &&
+      (options.execution?.pilotUsers.has(seat.key.personId) === true ||
+        browserProviderFor(seat) !== undefined)
+    );
+  }
+
+  async function executionAt(seat: ComputerSeat): Promise<ComputerConnection> {
+    if (!usesExecution(seat)) return at(seat, undefined, false);
+    if (
+      !options.execution ||
+      seat.key.kind !== "person" ||
+      !options.execution.pilotUsers.has(seat.key.personId)
+    ) {
+      throw new ComputerUnavailableError(
+        "OpenShell execution is not configured for this pilot seat.",
+      );
+    }
+    try {
+      const connection = await options.execution.connect(seat);
+      return {
+        ...connection,
+        url: checkedAddress(connection.url),
+        redirect: "error",
+      };
+    } catch (error) {
+      throw new ComputerUnavailableError(
+        error instanceof Error ? error.message : "OpenShell is unavailable.",
+      );
+    }
+  }
+
   async function at(
     seat: ComputerSeat,
     locatedUrl?: string,
@@ -549,10 +596,13 @@ export function createComputerGateway(
     seat: ComputerSeat,
     path: string,
     signal?: AbortSignal,
+    terminal = false,
   ): Promise<T> {
     return transport.call<T>(
-      await at(seat, undefined, browserPath(path)),
-      requestAddress(seat, path),
+      terminal
+        ? await executionAt(seat)
+        : await at(seat, undefined, browserPath(path)),
+      terminal ? addressOf(seat) : requestAddress(seat, path),
       path,
       undefined,
       signal,
@@ -577,6 +627,23 @@ export function createComputerGateway(
     return transport.post<T>(
       await at(seat, address, browserPath(path)),
       requestAddress(seat, path),
+      path,
+      payload,
+      signal,
+      timeoutMs,
+    );
+  }
+
+  async function executionPost<T>(
+    seat: ComputerSeat,
+    path: string,
+    payload: unknown,
+    signal?: AbortSignal,
+    timeoutMs?: number,
+  ): Promise<T> {
+    return transport.post<T>(
+      await executionAt(seat),
+      addressOf(seat),
       path,
       payload,
       signal,
@@ -1117,6 +1184,8 @@ export function createComputerGateway(
     browserFor,
     tokenFor,
     locate,
+    usesExecution,
+    terminalConnection: executionAt,
     screenshot,
     snapshot,
     read,
@@ -1140,12 +1209,17 @@ export function createComputerGateway(
       reason: string,
       toolCallId?: string,
       source: RequestHelpSource = "model",
+      terminal = false,
     ) {
-      const state = await post<ControlState>(seat, "/control/request", {
-        reason,
-        ...(toolCallId ? { toolCallId } : {}),
-        source,
-      } satisfies RequestHelpInput);
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/request",
+        {
+          reason,
+          ...(toolCallId ? { toolCallId } : {}),
+          source,
+        } satisfies RequestHelpInput,
+      );
       await writeControlEvent(auditStore, "computer.help_requested", {
         seat,
         actor,
@@ -1158,13 +1232,18 @@ export function createComputerGateway(
       seat: ComputerSeat,
       actor: ActionActor,
       requestId: string,
+      terminal = false,
     ) {
       // Who took it, which the computer keeps as `heldBy`: the Bot's browser's bar and Record are that person's alone
       // (shared/bot-browser.ts), so a recording is never filed under someone who was only watching.
-      const state = await post<ControlState>(seat, "/control/take", {
-        requestId,
-        by: actor.id,
-      } satisfies ControlRequestInput);
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/take",
+        {
+          requestId,
+          by: actor.id,
+        } satisfies ControlRequestInput,
+      );
       await writeControlEvent(auditStore, "computer.control_taken", {
         seat,
         actor,
@@ -1179,10 +1258,15 @@ export function createComputerGateway(
       seat: ComputerSeat,
       actor: ActionActor,
       requestId: string,
+      terminal = false,
     ) {
-      const state = await post<ControlState>(seat, "/control/release", {
-        requestId,
-      });
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/release",
+        {
+          requestId,
+        },
+      );
       await writeControlEvent(auditStore, "computer.control_released", {
         seat,
         actor,
@@ -1194,10 +1278,15 @@ export function createComputerGateway(
       seat: ComputerSeat,
       actor: ActionActor,
       requestId: string,
+      terminal = false,
     ) {
-      const state = await post<ControlState>(seat, "/control/cancel", {
-        requestId,
-      });
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/cancel",
+        {
+          requestId,
+        },
+      );
       await writeControlEvent(auditStore, "computer.help_cancelled", {
         seat,
         actor,
@@ -1205,10 +1294,16 @@ export function createComputerGateway(
       return state;
     },
 
-    control(seat: ComputerSeat, requestId?: string): Promise<ControlState> {
+    control(
+      seat: ComputerSeat,
+      requestId?: string,
+      terminal = false,
+    ): Promise<ControlState> {
       return get<ControlState>(
         seat,
         `/control${requestId ? `?requestId=${encodeURIComponent(requestId)}` : ""}`,
+        undefined,
+        terminal,
       );
     },
 
@@ -1660,7 +1755,7 @@ export function createComputerGateway(
         seat,
         actor,
         { filePath: input.path },
-        () => post<ReadFileResult>(seat, "/files/read", input),
+        () => executionPost<ReadFileResult>(seat, "/files/read", input),
       ).then((result) =>
         // A workspace file is whatever the Bot downloaded or was sent, so it is outside content.
         withUntrustedNotice(result, "workspace file", ["text"]),
@@ -1687,7 +1782,7 @@ export function createComputerGateway(
         { filePath: input.path, ...(signal ? { signal } : {}) },
         async () => {
           const download = await transport.download(
-            await at(seat, undefined, false),
+            await executionAt(seat),
             addressOf(seat),
             `/files/download?path=${encodeURIComponent(input.path)}`,
             signal,
@@ -1712,7 +1807,7 @@ export function createComputerGateway(
         seat,
         actor,
         { filePath: input.path ?? "." },
-        () => post<ListFilesResult>(seat, "/files/list", input),
+        () => executionPost<ListFilesResult>(seat, "/files/list", input),
       );
     },
 
@@ -1735,7 +1830,7 @@ export function createComputerGateway(
         actor,
         { command: input.command, ...(caller ? { signal: caller } : {}) },
         () =>
-          post<RunCommandResult>(
+          executionPost<RunCommandResult>(
             seat,
             "/exec",
             input,
@@ -1754,7 +1849,7 @@ export function createComputerGateway(
         seat,
         actor,
         { filePath: input.path },
-        () => post<WriteFileResult>(seat, "/files/write", input),
+        () => executionPost<WriteFileResult>(seat, "/files/write", input),
       );
     },
   };

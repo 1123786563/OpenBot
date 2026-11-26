@@ -368,20 +368,26 @@ export function startHttpServer(deps: {
           const seat = computerGateway
             ? await computerGateway.seatFor(streamBotId, actor.id)
             : undefined;
-          const host =
-            (named.socket === "stream" && seat
-              ? computerGateway?.browserFor?.(seat)
-              : undefined) ?? computerGateway;
-          const streamBase = host && seat ? await host.locate(seat) : undefined;
-          if (!streamBase || !host || !seat) {
+          if (!computerGateway || !seat) {
             return new Response("No computer address is configured.", {
               status: 503,
             });
           }
+          const host =
+            (named.socket === "stream"
+              ? computerGateway.browserFor?.(seat)
+              : undefined) ?? computerGateway;
+          const connection =
+            named.socket === "terminal"
+              ? await computerGateway.terminalConnection(seat)
+              : {
+                  url: await host.locate(seat),
+                  token: host.tokenFor(seat),
+                };
           upstream = toStreamUrl(
-            streamBase,
+            connection.url,
             host.addressOf(seat),
-            host.tokenFor(seat),
+            connection.token,
             named.socket,
           );
         } catch (error) {
