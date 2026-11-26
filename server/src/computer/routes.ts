@@ -2,6 +2,7 @@ import { downloadHeaders } from "@openbot/shared/file-download";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { BROWSER_DOWNLOAD_ID } from "../../../shared/browser-download";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { ApprovalNeedsConversationError } from "../approvals/types";
 import { type AuditReader, type AuditStore, recordAuditEvent } from "../audit";
@@ -393,6 +394,16 @@ export function createComputerRoutes(
    * Each one hands the gateway the Bot, the actor and the input, and does no checking
    * of its own beyond the shape of the request. Where a decision gets made is a single place.
    */
+  routes.post("/:botId/browser-downloads/retry", (context) =>
+    act(context, gateway.seatFor, (seat, actor, body, signal) => {
+      if (typeof body?.id !== "string" || !BROWSER_DOWNLOAD_ID.test(body.id))
+        return { error: "A browser download id is required." };
+      if (!gateway.retryBrowserDownload)
+        throw new WorkspaceNotFoundError("Browser download not found.");
+      return gateway.retryBrowserDownload(seat, actor, body.id, signal);
+    }),
+  );
+
   routes.post("/:botId/click", (context) =>
     act(context, gateway.seatFor, (seat, actor, body, signal) => {
       const ref = asRef(body);

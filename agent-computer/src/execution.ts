@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { receiveBrowserDownload } from "./browser-downloads";
 import { ControlError, ControlRequestError, createControl } from "./control";
 import { handleFileRequest } from "./file-routes";
 import { parseExecTimeout } from "./request-validation";
@@ -20,7 +21,8 @@ function matchesToken(candidate: string | null): boolean {
 
 // The OpenShell sandbox owns exactly one workspace and shell. The requested Bot
 // headers never select a path inside the sandbox.
-const workspace = createWorkspaces("/sandbox", false, {
+const workspaceRoot = "/sandbox";
+const workspace = createWorkspaces(workspaceRoot, false, {
   ...process.env,
   // OpenShell injects these public CA paths for commands using its egress proxy.
   COMPUTER_SHELL_ENV:
@@ -109,6 +111,8 @@ Bun.serve<TerminalSocketData & { botId: string }>({
       }
     }
     if (url.pathname.startsWith("/files/")) {
+      const download = await receiveBrowserDownload(request, workspaceRoot);
+      if (download) return download;
       const result = await handleFileRequest(
         request,
         url,

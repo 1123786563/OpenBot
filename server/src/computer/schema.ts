@@ -2,6 +2,7 @@ import type {
   BrowserChallenge,
   ComputerControlState,
 } from "@openbot/shared/computer-control";
+import type { BrowserDownloadResult } from "../../../shared/browser-download";
 /**
  * The computer-use contract.
  *
@@ -73,6 +74,7 @@ export type ComputerToolName = (typeof COMPUTER_TOOLS)[number];
 
 export type NavigateInput = { url: string; toolCallId?: string };
 export type NavigateResult = {
+  download?: BrowserDownloadResult;
   /** The untrusted-content notice for the page's own fields. See untrusted-content.ts. */
   untrusted?: string;
   challenge?: BrowserChallenge;
@@ -181,6 +183,7 @@ export type ScrollInput = { deltaY?: number };
  * secret into two places that keep it. `characters` is enough to confirm the field was filled.
  */
 export type ActionResult = {
+  download?: BrowserDownloadResult;
   action: "click" | "type" | "key" | "scroll";
   ref?: string;
   /**

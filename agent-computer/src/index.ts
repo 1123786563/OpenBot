@@ -86,6 +86,7 @@ import {
   parseSignInCode,
   parseSignInFill,
 } from "./sign-in";
+import { stageBrowserDownloads } from "./staged-browser-downloads";
 import {
   createTerminalSockets,
   TERMINAL_UNAVAILABLE,
@@ -152,6 +153,10 @@ setDefaultAutoSelectFamily(false);
 const RUNTIME = browserRuntimeFromEnv(process.env);
 /** Whose this computer is, which decides whether a person's browser may run on it. See person-access.ts. */
 const OWNER = computerOwner(process.env);
+const browserDownloads =
+  OWNER.kind === "browser"
+    ? stageBrowserDownloads(process.env.PROFILES_DIR?.trim() || "/profiles")
+    : undefined;
 
 const BROWSER_MODE = RUNTIME.mode;
 /*
@@ -1172,6 +1177,15 @@ serve<StreamData & TerminalSocketData>({
     // housekeeping, and nothing a Bot acts or reads through. See person-access.ts.
     if (isPersonBrowserId(botId) && !personMayUse(url.pathname))
       return json({ error: PERSONS_OWN_BROWSER }, 403);
+    if (
+      browserDownloads &&
+      request.method === "GET" &&
+      url.pathname.startsWith("/browser-downloads/")
+    )
+      return browserDownloads.read(
+        botId,
+        url.pathname.slice("/browser-downloads/".length),
+      );
     if (isBrowserPath(url.pathname))
       return browserHost.handle(request, url.pathname, botId);
     if (isRealBrowserPath(url.pathname))
@@ -1675,12 +1689,33 @@ serve<StreamData & TerminalSocketData>({
           // The person's Stop, landing after the request arrived: nothing has been opened yet.
           if (request.signal.aborted)
             return json({ error: "Stopped.", stopped: true }, 499);
-          const response = await navigateWebPage(
-            target,
-            parsed.url,
-            RUNTIME.backend,
-            NAVIGATION_TIMEOUT_MS,
-          );
+          const run = () =>
+            navigateWebPage(
+              target,
+              parsed.url,
+              RUNTIME.backend,
+              NAVIGATION_TIMEOUT_MS,
+            );
+          const navigation = browserDownloads
+            ? await browserDownloads.capture({
+                botId,
+                page: target,
+                kind: "navigation",
+                signal: request.signal,
+                run,
+              })
+            : { result: await run() };
+          if (!("result" in navigation)) {
+            return json({
+              url: target.url(),
+              title: "",
+              text: "",
+              truncated: false,
+              elapsedMs: Date.now() - startedAt,
+              browserDownload: navigation.browserDownload,
+            });
+          }
+          const response = navigation.result;
           // A new document wipes every stamp, so every ref handed out before now is meaningless.
           // Bumping the generation makes an action carrying one fail with "take a new snapshot" rather
           // than fall through to a selector that matches nothing and read as a missing element.
@@ -1884,16 +1919,32 @@ serve<StreamData & TerminalSocketData>({
           session.control.assertBotMayAct(true);
           watched = target;
           target.on("console", listen);
-          const detail = await performAction(
-            session,
-            target,
-            url.pathname,
-            body,
-            // The caller going away is the stop signal: the surface aborts its request, the server
-            // aborts the one it made to this computer, and Bun aborts this one in turn.
-            request.signal,
-          );
-          return json({ ...detail, elapsedMs: Date.now() - startedAt });
+          const run = () =>
+            performAction(
+              session,
+              target,
+              url.pathname,
+              body,
+              // The caller going away is the stop signal: the surface aborts its request, the server
+              // aborts the one it made to this computer, and Bun aborts this one in turn.
+              request.signal,
+            );
+          const action = browserDownloads
+            ? await browserDownloads.capture({
+                botId,
+                page: target,
+                kind: "gesture",
+                signal: request.signal,
+                run,
+              })
+            : { result: await run() };
+          return json({
+            ...("result" in action ? action.result : {}),
+            ...("browserDownload" in action
+              ? { browserDownload: action.browserDownload }
+              : {}),
+            elapsedMs: Date.now() - startedAt,
+          });
         } catch (error) {
           /*
            * Stopped, not failed. The signal is checked rather than the error text: Playwright words an
@@ -2009,6 +2060,8 @@ function browserOnlyPath(path: string): boolean {
   return (
     personMayUse(path) ||
     isBotBrowserPath(path) ||
+    (browserDownloads !== undefined &&
+      path.startsWith("/browser-downloads/")) ||
     HOLDS_THE_BROWSER.has(path) ||
     WAITS_FOR_THE_BROWSER.has(path) ||
     HUMAN_INPUT.has(path) ||

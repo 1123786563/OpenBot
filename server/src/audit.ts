@@ -388,6 +388,9 @@ export const auditEventTypes = [
   // `action_failed` because a stop is not an outage: a count of failures that folds in every Stop
   // reports a broken computer where somebody simply changed their mind.
   "computer.action_stopped",
+  "computer.browser_download_attempted",
+  "computer.browser_download_failed",
+  "computer.browser_download_delivered",
   // A person taking the wheel and giving it back. Recorded as a period rather than as keystrokes: the
   // useful fact for an investigator is that a human drove this browser between these two times, and
   // logging every click a person made would bury it while telling nobody anything.

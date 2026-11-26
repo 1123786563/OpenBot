@@ -29,6 +29,10 @@ import type {
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import {
+  BROWSER_DOWNLOAD_ID,
+  type BrowserDownloadResult,
+} from "../../../shared/browser-download";
+import {
   ApprovalAlreadyAnsweredError,
   type ApprovalGate,
   ApprovalNeedsConversationError,
@@ -42,6 +46,7 @@ import {
   recordAuditEvent,
 } from "../audit";
 import { withUntrustedNotice } from "../untrusted-content";
+import { createBrowserDownloadHandoff } from "./browser-download";
 import {
   type ComputerConnection,
   ComputerStillStartingError,
@@ -49,6 +54,7 @@ import {
   ComputerUnavailableError,
   createComputerTransport,
   StaleSnapshotError,
+  WorkspaceNotFoundError,
 } from "./client";
 import {
   type ComputerKey,
@@ -250,6 +256,12 @@ export interface ComputerGateway {
   screenshot(seat: ComputerSeat): Promise<ScreenshotResult>;
   snapshot(seat: ComputerSeat): Promise<SnapshotResult>;
   read(seat: ComputerSeat): Promise<ReadResult>;
+  retryBrowserDownload?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserDownloadResult>;
   navigate(
     seat: ComputerSeat,
     actor: ActionActor,
@@ -631,6 +643,62 @@ export function createComputerGateway(
       payload,
       signal,
       timeoutMs,
+    );
+  }
+
+  const browserDownloads = createBrowserDownloadHandoff({
+    transport,
+    auditStore,
+    executionAt,
+  });
+
+  const pilotBot = (seat: ComputerSeat, actor: ActionActor) =>
+    seat.key.kind === "person" &&
+    seat.key.personId === actor.id &&
+    !isPersonBrowserId(seat.botId) &&
+    browserProviderFor(seat) !== undefined;
+
+  async function browserAction<T extends object>(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    path: string,
+    address: string | undefined,
+    run: (
+      connection: ComputerConnection,
+      target: ReturnType<typeof requestAddress>,
+    ) => Promise<T & { browserDownload?: unknown }>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const connection = await at(seat, address);
+    const target = requestAddress(seat, path);
+    const result = await run(connection, target);
+    if (!pilotBot(seat, actor)) return result;
+    return browserDownloads.finish<T>(
+      result,
+      seat,
+      actor,
+      connection,
+      target,
+      signal,
+    );
+  }
+
+  function browserGesture(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    path: string,
+    input: object,
+    signal?: AbortSignal,
+    address?: string,
+  ) {
+    return browserAction<ActionResult>(
+      seat,
+      actor,
+      path,
+      address,
+      (connection, target) =>
+        transport.post(connection, target, path, input, signal),
+      signal,
     );
   }
 
@@ -1584,6 +1652,19 @@ export function createComputerGateway(
       return post<HumanInputResult>(seat, `/human/${kind}`, payload);
     },
 
+    async retryBrowserDownload(seat, actor, id, signal) {
+      if (!pilotBot(seat, actor) || !BROWSER_DOWNLOAD_ID.test(id))
+        throw new WorkspaceNotFoundError("Browser download not found.");
+      return browserDownloads.deliver(
+        seat,
+        actor,
+        id,
+        await at(seat),
+        requestAddress(seat, "/navigate"),
+        signal,
+      );
+    },
+
     /**
      * Opening a page, through the gateway so it lands in the audit trail.
      *
@@ -1596,18 +1677,15 @@ export function createComputerGateway(
       url: string,
       toolCallId?: string,
     ) {
-      return govern(
-        "computer_navigate",
-        seat,
-        actor,
-        { targetUrl: url },
-        async () =>
-          transport.navigate(
-            await at(seat),
-            requestAddress(seat, "/navigate"),
-            url,
-            toolCallId,
-          ),
+      return govern("computer_navigate", seat, actor, { targetUrl: url }, () =>
+        browserAction<NavigateResult>(
+          seat,
+          actor,
+          "/navigate",
+          undefined,
+          (connection, target) =>
+            transport.navigate(connection, target, url, toolCallId),
+        ),
       ).then((result) => withUntrustedNotice(result, "web page", PAGE_FIELDS));
     },
 
@@ -1648,16 +1726,18 @@ export function createComputerGateway(
           // including one pressed while the action waits for approval), and the computer checks the
           // ref against the live page as `/click` does, so a link from a snapshot the browser has
           // since left is refused as stale rather than opened.
-          async (address) =>
-            transport.navigate(
-              await at(seat, address),
-              requestAddress(seat, "/navigate"),
-              follow.url,
-              undefined,
-              {
-                ...(signal ? { signal } : {}),
-                citation: { ref: input.ref, snapshotId: input.snapshotId },
-              },
+          (address) =>
+            browserAction<NavigateResult>(
+              seat,
+              actor,
+              "/navigate",
+              address,
+              (connection, target) =>
+                transport.navigate(connection, target, follow.url, undefined, {
+                  ...(signal ? { signal } : {}),
+                  citation: { ref: input.ref, snapshotId: input.snapshotId },
+                }),
+              signal,
             ),
         );
         return {
@@ -1668,6 +1748,7 @@ export function createComputerGateway(
           url: opened.url,
           elapsedMs: opened.elapsedMs,
           ...(opened.challenge ? { challenge: opened.challenge } : {}),
+          ...(opened.download ? { download: opened.download } : {}),
         };
       }
       return govern(
@@ -1680,7 +1761,7 @@ export function createComputerGateway(
           ...(signal ? { signal } : {}),
         },
         (address) =>
-          post<ActionResult>(seat, "/click", input, signal, undefined, address),
+          browserGesture(seat, actor, "/click", input, signal, address),
       );
     },
 
@@ -1709,7 +1790,7 @@ export function createComputerGateway(
           ...(signal ? { signal } : {}),
         },
         (address) =>
-          post<ActionResult>(seat, "/type", input, signal, undefined, address),
+          browserGesture(seat, actor, "/type", input, signal, address),
       );
     },
 
@@ -1732,13 +1813,13 @@ export function createComputerGateway(
           ...(signal ? { signal } : {}),
         },
         (address) =>
-          post<ActionResult>(seat, "/key", input, signal, undefined, address),
+          browserGesture(seat, actor, "/key", input, signal, address),
       );
     },
 
     scroll(seat: ComputerSeat, actor: ActionActor, input: ScrollInput) {
       return govern("computer_scroll", seat, actor, {}, () =>
-        post<ActionResult>(seat, "/scroll", input),
+        browserGesture(seat, actor, "/scroll", input),
       );
     },
 
