@@ -220,6 +220,8 @@
   "settings.title": "通用",
   "sign.admin.restore": "如果你是此工作区的管理员，并且需要恢复公司登录，请使用此项。",
   "sign.admin.signIn": "管理员登录",
+  "sign.error.cancelled": "登录已取消。请选择一种登录方式重试。",
+  "sign.error.failed": "无法完成登录。请重试；如果问题持续出现，请联系你的 OpenBot 管理员。",
   "sign.heading": "登录 {product}",
   "sign.options.checkAgain": "检查登录选项",
   "sign.options.loadFailed": "无法加载登录选项。",

@@ -75,6 +75,24 @@ describe("signInWith", () => {
     expect(asked).toBe(resume);
   });
 
+  /** The refusal leg: a provider that cancels or refuses returns to this address, not the fallback. */
+  test("carries the errorCallbackURL it was given", async () => {
+    const errorURL = "http://localhost:3010/sign?returnTo=%2Fbots";
+    let asked = "";
+
+    await signInWith(
+      "google",
+      async (input) => {
+        asked = input.errorCallbackURL ?? "";
+        return {};
+      },
+      "http://localhost:3010/api/plugins/arcade/verify?flow_id=h1",
+      errorURL,
+    );
+
+    expect(asked).toBe(errorURL);
+  });
+
   test("throws what the client said when it refuses", async () => {
     const refuse = async () => ({
       error: { message: "That provider is not configured." },
@@ -152,6 +170,24 @@ describe("signInWithEmailDomain", () => {
     );
 
     expect(asked).toBe(resume);
+  });
+
+  /** The refusal leg, for the same reason: the company IdP's cancel returns here too. */
+  test("carries the errorCallbackURL it was given", async () => {
+    const errorURL = "http://localhost:3010/sign?returnTo=%2Fbots";
+    let asked = "";
+
+    await signInWithEmailDomain(
+      "someone@company.com",
+      async (input) => {
+        asked = input.errorCallbackURL ?? "";
+        return {};
+      },
+      "http://localhost:3010/api/plugins/arcade/verify?flow_id=h1",
+      errorURL,
+    );
+
+    expect(asked).toBe(errorURL);
   });
 
   test("throws what the client said when it refuses", async () => {

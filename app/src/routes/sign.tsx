@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth/client";
 import {
   appReturnPath,
+  errorUrlFor,
   openFuseResumePath,
   resumeUrlFor,
   verifierPathFor,
@@ -50,14 +51,29 @@ export const Route = createFileRoute("/sign")({
    * gives for `?connected=`: present-but-undefined makes `search` a required prop on every Link to
    * this route, which is a lot of ripple for a parameter only the verifier sets.
    */
+  /*
+   * `?error=` / `?error_description=` is how a provider that cancels or refuses reports back (the
+   * per-flow `errorCallbackURL` sends the browser here instead of Better Auth's global fallback).
+   * Read as text whatever the router parsed them into, and dropped from the address once read, the
+   * way the connected-accounts screen handles `?connected=`: the notice is for the arrival, not for
+   * every reload after it.
+   */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { flow_id?: string; openfuse_request?: string; returnTo?: string } => {
+  ): {
+    flow_id?: string;
+    openfuse_request?: string;
+    returnTo?: string;
+    error?: string;
+    error_description?: string;
+  } => {
     const returnTo = appReturnPath(search.returnTo);
     return {
       ...searchTextEntry("flow_id", search.flow_id),
       ...searchTextEntry("openfuse_request", search.openfuse_request),
       ...(returnTo ? { returnTo } : {}),
+      ...searchTextEntry("error", search.error),
+      ...searchTextEntry("error_description", search.error_description),
     };
   },
   beforeLoad: async ({ context, search }) => {
@@ -105,12 +121,45 @@ function SignScreen() {
     flow_id: flowId,
     openfuse_request: openFuseRequest,
     returnTo,
+    error: refusalCode,
+    error_description: refusalDescription,
   } = Route.useSearch();
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /*
+   * The refusal a provider returned (a cancel, or SSO refusing another way in) is the one notice
+   * this screen shows, in words this app owns. `sso_required` is the exception: the server's
+   * sentence is already person-words and says what to do next, so it passes through as a value.
+   */
+  const [error, setError] = useState<string | null>(() => {
+    if (refusalCode === undefined) return null;
+    if (refusalCode === "access_denied")
+      return t(
+        "sign.error.cancelled",
+        "Sign-in was cancelled. Choose a way to sign in again.",
+      );
+    if (refusalCode === "sso_required" && refusalDescription)
+      return refusalDescription;
+    return t(
+      "sign.error.failed",
+      "Couldn't finish sign-in. Try again, or ask your OpenBot admin if it keeps happening.",
+    );
+  });
+  // The arrival is handled once: the heading takes focus, and the address loses the refusal so a
+  // reload does not repeat it.
+  const [arrivalNeedsFocus] = useState(() => refusalCode !== undefined);
   const heading = useRef<HTMLHeadingElement>(null);
+  const navigate = Route.useNavigate();
+  useEffect(() => {
+    if (!arrivalNeedsFocus) return;
+    heading.current?.focus();
+    navigate({
+      search: ({ error: _error, error_description: _description, ...rest }) =>
+        rest,
+      replace: true,
+    });
+  }, [arrivalNeedsFocus, navigate]);
   const {
     data: options,
     isError: optionsError,
@@ -140,6 +189,7 @@ function SignScreen() {
         email,
         undefined,
         resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
+        errorUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       /*
@@ -172,6 +222,7 @@ function SignScreen() {
         provider,
         undefined,
         resumeUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
+        errorUrlFor(window.location.origin, flowId, openFuseRequest, returnTo),
       );
     } catch (caughtError) {
       setError(
