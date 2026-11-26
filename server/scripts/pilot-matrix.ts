@@ -33,8 +33,8 @@ import {
 } from "../src/billing/test-credit-bifrost";
 import {
   createWeKnoraIngestionBilling,
+  WEKNORA_APPLICATION_ID,
   WeKnoraBillingError,
-  type WeKnoraLedger,
 } from "../src/billing/weknora-ingestion";
 import { createDatabase } from "../src/db/client";
 import {
@@ -42,7 +42,33 @@ import {
   testCreditAccounts,
   testCreditOperations,
 } from "../src/db/schema";
-import { fixtureTraceReport } from "../tests/support/bifrost-evidence";
+import {
+  fixtureEmbeddingReport,
+  fixtureTraceReport,
+} from "../tests/support/bifrost-evidence";
+import { reconcilePilotMatrixLago } from "./pilot-matrix-lago";
+import {
+  PilotEvidenceFailure,
+  pilotFailureReason,
+  writePilotMatrixManifest,
+} from "./pilot-matrix-manifest";
+import {
+  loadPilotTarget,
+  type PilotLegResult,
+  runPilotTargetLegs,
+} from "./pilot-matrix-target";
+
+const target = loadPilotTarget(process.env);
+const requireEnv = (name: string) => {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`The matrix needs ${name}.`);
+  return value;
+};
+// The fixture server below is the local implementation of this entry; a
+// target run points the same ingest leg at the deployment's own entry.
+const weknoraEndpoint = `${(
+  target.weknora?.url ?? "http://127.0.0.1:25172/api/weknora"
+).replace(/\/+$/, "")}/embeddings`;
 
 const runDir = process.argv[2];
 if (!runDir) throw new Error("usage: bun scripts/pilot-matrix.ts <run-dir>");
@@ -51,55 +77,85 @@ let clockOffsetMs = 0;
 const now = () => new Date(Date.now() + clockOffsetMs);
 const log = (event: Record<string, unknown>) =>
   console.log(JSON.stringify({ t: new Date().toISOString(), ...event }));
-const results: Record<string, unknown>[] = [];
-async function scenario(
-  name: string,
-  work: () => Promise<Record<string, unknown>>,
-) {
+const results: PilotLegResult[] = [];
+type ScenarioWork = (
+  operation: (id: string) => string,
+) => Promise<Record<string, unknown>>;
+async function scenario(name: string, work: ScenarioWork) {
+  const ids = new Set<string>();
+  const operation = (id: string) => {
+    ids.add(id);
+    return id;
+  };
+  let result: PilotLegResult;
   try {
-    const detail = await work();
-    results.push({ scenario: name, outcome: "pass", detail });
-    log({ scenario: name, outcome: "pass", detail });
+    const detail = await work(operation);
+    result = {
+      scenario: name,
+      operationIds: [...ids],
+      outcome: "pass",
+      detail,
+    };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    results.push({ scenario: name, outcome: "fail", error: message });
-    log({ scenario: name, outcome: "fail", error: message });
+    result = {
+      scenario: name,
+      operationIds: [...ids],
+      outcome: "fail",
+      reason: pilotFailureReason(error),
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
+  results.push(result);
+  log(result);
 }
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+// Fixture-only legs reach into the local ledger; a target run replaces them
+// with the same legs driven over HTTP by runPilotTargetLegs.
+const localScenario = async (name: string, work: ScenarioWork) => {
+  if (!target.entry) await scenario(name, work);
+};
 
 const database = createDatabase(
-  process.env.DATABASE_URL ??
-    "postgres://openbot:openbot@127.0.0.1:32835/openbot_98_matrix",
+  target.entry
+    ? requireEnv("PILOT_TARGET_DATABASE_URL")
+    : (process.env.DATABASE_URL ??
+        "postgres://openbot:openbot@127.0.0.1:32835/openbot_98_matrix"),
 );
 const issuer = "https://casdoor.example.test";
 const identityA = { issuer, subject: randomUUID() };
 const identityB = { issuer, subject: randomUUID() };
 const identityC = { issuer, subject: randomUUID() };
 const resourceId = "weknora:tenant:1:kb:kb-1";
-const gatewayRevision = "matrix-fixed6-3skfs9";
-const meteringRevision = "matrix-zhipu-tokenizer";
-const lagoUrl = process.env.LAGO_URL ?? "http://127.0.0.1:32832";
-const lagoKey =
-  process.env.LAGO_API_KEY ??
-  (
-    await Bun.file(
-      "/Users/wuyj/.local/share/openbot/billing-97/lago-api-key.txt",
-    ).text()
-  ).trim();
-const zhipuKey =
-  process.env.ZHIPU_API_KEY ??
-  (
-    await Bun.file(
-      "/Users/wuyj/.local/share/openbot/bifrost-89/provider.env",
-    ).text()
-  )
-    .split("\n")
-    .find((line) => line.startsWith("ZHIPU_API_KEY="))
-    ?.slice("ZHIPU_API_KEY=".length) ??
-  "";
+const gatewayRevision = target.gateway.revision;
+const meteringRevision = target.gateway.meteringRevision;
+const chatTokenizerUrl =
+  process.env.PILOT_CHAT_TOKENIZER_URL ??
+  "https://open.bigmodel.cn/api/paas/v4/tokenizer";
+const lagoUrl = target.entry
+  ? requireEnv("PILOT_LAGO_URL")
+  : (process.env.LAGO_URL ?? target.lago.url);
+const lagoKey = target.entry
+  ? requireEnv("LAGO_API_KEY")
+  : (process.env.LAGO_API_KEY ??
+    (
+      await Bun.file(
+        "/Users/wuyj/.local/share/openbot/billing-97/lago-api-key.txt",
+      ).text()
+    ).trim());
+const zhipuKey = target.entry
+  ? undefined
+  : (process.env.ZHIPU_API_KEY ??
+    (
+      await Bun.file(
+        "/Users/wuyj/.local/share/openbot/bifrost-89/provider.env",
+      ).text()
+    )
+      .split("\n")
+      .find((line) => line.startsWith("ZHIPU_API_KEY="))
+      ?.slice("ZHIPU_API_KEY=".length) ??
+    "");
 
 const ledger = createTestCreditLedger(database, now);
 let tokenizerAvailable = true;
@@ -107,24 +163,22 @@ const countInputTokens: Parameters<
   typeof createBifrostCreditExecutor
 >[0]["countInputTokens"] = async (route, messages) => {
   if (
+    !zhipuKey ||
     !tokenizerAvailable ||
     messages.some(
       (message) => message.role === "tool" || "tool_calls" in message,
     )
   )
     throw new Error("The text-only pilot tokenizer cannot meter this request.");
-  const response = await fetch(
-    "https://open.bigmodel.cn/api/paas/v4/tokenizer",
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${zhipuKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ model: route.model, messages }),
-      signal: AbortSignal.timeout(20_000),
+  const response = await fetch(chatTokenizerUrl, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${zhipuKey}`,
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify({ model: route.model, messages }),
+    signal: AbortSignal.timeout(20_000),
+  });
   if (!response.ok) throw new Error(`tokenizer ${response.status}`);
   const usage = (await response.json()) as {
     usage: { prompt_tokens: number; image_tokens?: number };
@@ -132,7 +186,7 @@ const countInputTokens: Parameters<
   return usage.usage.prompt_tokens + (usage.usage.image_tokens ?? 0) + 2;
 };
 const chatExecutor = createBifrostCreditExecutor({
-  endpoint: new URL("http://127.0.0.1:32790/v1/chat/completions"),
+  endpoint: new URL(target.gateway.url),
   gatewayRevision,
   meteringRevision,
   countInputTokens,
@@ -141,8 +195,15 @@ const chatExecutor = createBifrostCreditExecutor({
 type RouteSpec = Parameters<typeof configure>[1]["routes"][string];
 async function publishCatalog(
   routes: Record<string, RouteSpec>,
-  defaultRoute: string,
+  defaultRoute: string | null,
 ) {
+  // A target run consumes the target's own #89 publication through the
+  // product entry (pilotQuoteEntry); fabricating fixture traces would turn a
+  // real rerun into local evidence, so only the fixture path publishes here.
+  if (target.entry)
+    throw new Error(
+      "A target run consumes the target's own published routes; the matrix must not fabricate evidence.",
+    );
   const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
   const drafted = configure(emptyCatalog, { harnessImage, routes });
   let catalog = drafted;
@@ -152,7 +213,9 @@ async function publishCatalog(
     catalog = verify(
       catalog,
       id,
-      fixtureTraceReport(harnessImage, proposed),
+      proposed.purpose === "embedding"
+        ? fixtureEmbeddingReport(harnessImage, proposed)
+        : fixtureTraceReport(harnessImage, proposed),
       "matrix-fixture",
     );
   }
@@ -214,7 +277,6 @@ async function chatOp(
 }
 
 // WeKnora ingestion billing over the shared ledger (#93 wiring).
-const dispatchAccounts = new Map<string, string>();
 async function accountIdOf(identity: { issuer: string; subject: string }) {
   const [row] = await database
     .select({ id: testCreditAccounts.id })
@@ -227,57 +289,13 @@ async function accountIdOf(identity: { issuer: string; subject: string }) {
     );
   return row?.id;
 }
-const weknoraLedger: WeKnoraLedger = {
-  quote: () => ledger.quote(),
-  reserve: async (identity, input) => {
-    const result = await ledger.reserve(identity, {
-      operationId: input.operationId,
-      route: input.route,
-      priceVersion: input.priceVersion,
-      applicationId: input.application,
-    });
-    // The WeKnora reservation contract has no budget dimension, so refusals
-    // outside its reason set surface as the path being unavailable.
-    if (result.state === "denied") {
-      const reason =
-        result.reason === "insufficient_credits" ||
-        result.reason === "route_unavailable"
-          ? result.reason
-          : "not_authorized";
-      return { state: "denied" as const, reason };
-    }
-    return result;
-  },
-  settle: async (identity, operationId, usage) => {
-    const accountId =
-      dispatchAccounts.get(operationId) ?? (await accountIdOf(identity));
-    if (!accountId) throw new Error("uploader has no Test Credit account");
-    const settled = await ledger.settle(accountId, operationId, usage);
-    dispatchAccounts.set(operationId, accountId);
-    return settled;
-  },
-};
 const billing = createWeKnoraIngestionBilling({
-  ledger: weknoraLedger,
-  now,
+  ledger,
+  routeId: "local-bge",
   verifyApplication: async (id) => id === "weknora",
   verifyUser: async (identity) => Boolean(await accountIdOf(identity)),
 });
 const authorizationId = randomUUID();
-function registerAuthorization(expiresAt: Date) {
-  billing.registerAuthorization({
-    id: authorizationId,
-    applicationId: "weknora",
-    issuer,
-    subject: identityA.subject,
-    resourceIds: [resourceId],
-    expiresAt,
-    maxMicrocredits: 4096n,
-    spentMicrocredits: 0n,
-    revokedAt: null,
-  });
-}
-registerAuthorization(new Date(startedAt + 900_000));
 
 const serviceToken = randomBytes(32).toString("base64url");
 const statusFor = (code: string) =>
@@ -297,204 +315,209 @@ async function embedViaEndpoint(body: {
   operationId: string;
   input: string[];
 }) {
-  const response = await fetch(
-    "http://127.0.0.1:25172/api/weknora/embeddings",
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${serviceToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
+  const response = await fetch(weknoraEndpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${serviceToken}`,
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
   return {
     status: response.status,
     body: await response.json().catch(() => null),
   };
 }
 
-Bun.serve({
-  hostname: "127.0.0.1",
-  port: 25172,
-  async fetch(request) {
-    const url = new URL(request.url);
-    if (url.pathname === "/health") return new Response("ok");
-    if (
-      request.method === "POST" &&
-      url.pathname === "/api/weknora/embeddings"
-    ) {
-      if (request.headers.get("authorization") !== `Bearer ${serviceToken}`) {
-        log({ event: "embedding-refused", reason: "service_token" });
-        return new Response(null, { status: 401 });
-      }
-      const body = (await request.json()) as {
-        subject: string;
-        authorizationId: string;
-        resourceId: string;
-        operationId: string;
-        input: string[];
-      };
-      try {
-        const preflight = await billing.preflight({
-          applicationId: "weknora",
-          issuer,
-          subject: body.subject,
-          resourceId: body.resourceId,
-        });
-        const reserved = await billing.reserve({
-          operationId: body.operationId,
-          applicationId: "weknora",
-          issuer,
-          subject: body.subject,
-          resourceId: body.resourceId,
-          maxChargeMicrocredits: preflight.maxChargeMicrocredits,
-        });
-        if (reserved.state === "denied")
-          throw new WeKnoraBillingError("route_unavailable", "denied");
-        const permit =
-          reserved.state === "reserved" ? reserved.permit : undefined;
-        if (reserved.state === "existing" && !permit) {
-          // Worker recovery must replay a settled operation, not a released one.
-          const receipt = await ledger.receipt(
-            { issuer, subject: body.subject },
-            body.operationId,
-          );
-          if (receipt?.state !== "settled") {
-            log({
-              event: "recovery-refused",
-              operationId: body.operationId,
-              receiptState: receipt?.state ?? "missing",
+const fixtureServer = target.entry
+  ? undefined
+  : Bun.serve({
+      hostname: "127.0.0.1",
+      port: 25172,
+      async fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname === "/health") return new Response("ok");
+        if (
+          request.method === "POST" &&
+          url.pathname === "/api/weknora/embeddings"
+        ) {
+          if (
+            request.headers.get("authorization") !== `Bearer ${serviceToken}`
+          ) {
+            log({ event: "embedding-refused", reason: "service_token" });
+            return new Response(null, { status: 401 });
+          }
+          const body = (await request.json()) as {
+            subject: string;
+            authorizationId: string;
+            resourceId: string;
+            operationId: string;
+            input: string[];
+          };
+          try {
+            const preflight = await billing.preflight({
+              applicationId: "weknora",
+              authorizationId: body.authorizationId,
+              issuer,
+              subject: body.subject,
+              resourceId: body.resourceId,
             });
-            return new Response(
-              JSON.stringify({ code: "not_authorized", recovery: true }),
-              { status: 409 },
+            const reserved = await billing.reserve({
+              operationId: body.operationId,
+              applicationId: "weknora",
+              authorizationId: body.authorizationId,
+              issuer,
+              subject: body.subject,
+              resourceId: body.resourceId,
+            });
+            const permit =
+              reserved.state === "reserved" ? reserved.permit : undefined;
+            if (reserved.state === "existing" && !permit) {
+              // Worker recovery must replay a settled operation, not a released one.
+              const receipt = await ledger.receipt(
+                { issuer, subject: body.subject },
+                body.operationId,
+              );
+              if (receipt?.state !== "settled") {
+                log({
+                  event: "recovery-refused",
+                  operationId: body.operationId,
+                  receiptState: receipt?.state ?? "missing",
+                });
+                return new Response(
+                  JSON.stringify({ code: "not_authorized", recovery: true }),
+                  { status: 409 },
+                );
+              }
+            }
+            if (permit) {
+              await ledger.beginDispatch(
+                { issuer, subject: body.subject },
+                {
+                  operationId: body.operationId,
+                  permit,
+                  authorizationId: body.authorizationId,
+                },
+                { embedding: true },
+              );
+            }
+            log({
+              event: "reserved",
+              operationId: body.operationId,
+              resourceId: body.resourceId,
+              state: reserved.state,
+              maxChargeMicrocredits: preflight.maxChargeMicrocredits,
+            });
+            const tokenizer = await fetch(target.tokenizer.url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                inputs: body.input,
+                add_special_tokens: true,
+              }),
+            });
+            if (!tokenizer.ok) throw new Error("tokenizer unavailable");
+            const exact = (await tokenizer.json()) as unknown[][];
+            const inputTokenUpperBound = exact.reduce(
+              (sum, tokens) => sum + tokens.length,
+              0,
             );
+            const response = await fetch(target.embedding.url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                model: "openai/BAAI/bge-small-en-v1.5",
+                input: body.input,
+              }),
+            });
+            if (!response.ok) throw new Error(`gateway ${response.status}`);
+            const payload = (await response.json()) as {
+              data: { embedding: number[] }[];
+              usage?: { prompt_tokens?: number };
+            };
+            const inputTokens = BigInt(
+              payload.usage?.prompt_tokens ?? inputTokenUpperBound,
+            );
+            log({
+              event: "metered",
+              operationId: body.operationId,
+              inputTokenUpperBound,
+              gatewayInputTokens: inputTokens.toString(),
+            });
+            const settled = await billing.settle({
+              operationId: body.operationId,
+              authorizationId: body.authorizationId,
+              uploaderAccount: { issuer, subject: body.subject },
+              inputTokens,
+              outputTokens: 0n,
+            });
+            log({ event: "settled", operationId: body.operationId });
+            return Response.json({
+              vectors: payload.data.map(({ embedding }) => embedding),
+              receipt: JSON.stringify(
+                settled ?? { operationId: body.operationId, state: "settled" },
+              ),
+            });
+          } catch (error) {
+            if (error instanceof WeKnoraBillingError) {
+              log({
+                event: "embedding-denied",
+                operationId: body.operationId,
+                code: error.code,
+              });
+              return new Response(JSON.stringify({ code: error.code }), {
+                status: statusFor(error.code),
+              });
+            }
+            log({
+              event: "embedding-failed",
+              operationId: body.operationId,
+              error: error instanceof Error ? error.message : "unknown",
+            });
+            return new Response(null, { status: 500 });
           }
         }
-        if (permit) {
-          const dispatch = await ledger.beginDispatch(
-            { issuer, subject: body.subject },
-            { operationId: body.operationId, permit },
-          );
-          if (dispatch.state === "dispatch")
-            dispatchAccounts.set(body.operationId, dispatch.accountId);
+        if (url.pathname === "/control/revoke" && request.method === "POST") {
+          await ledger.revokeAuthorization(identityA, authorizationId);
+          log({ event: "control", action: "revoke" });
+          return new Response("ok");
         }
-        log({
-          event: "reserved",
-          operationId: body.operationId,
-          resourceId: body.resourceId,
-          state: reserved.state,
-        });
-        const tokenizer = await fetch("http://127.0.0.1:25169/tokenize", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            inputs: body.input,
-            add_special_tokens: true,
-          }),
-        });
-        if (!tokenizer.ok) throw new Error("tokenizer unavailable");
-        const exact = (await tokenizer.json()) as unknown[][];
-        const inputTokenUpperBound = exact.reduce(
-          (sum, tokens) => sum + tokens.length,
-          0,
-        );
-        const response = await fetch("http://127.0.0.1:25170/v1/embeddings", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            model: "openai/BAAI/bge-small-en-v1.5",
-            input: body.input,
-          }),
-        });
-        if (!response.ok) throw new Error(`gateway ${response.status}`);
-        const payload = (await response.json()) as {
-          data: { embedding: number[] }[];
-          usage?: { prompt_tokens?: number };
-        };
-        const inputTokens = BigInt(
-          payload.usage?.prompt_tokens ?? inputTokenUpperBound,
-        );
-        log({
-          event: "metered",
-          operationId: body.operationId,
-          inputTokenUpperBound,
-          gatewayInputTokens: inputTokens.toString(),
-        });
-        const settled = await billing.settle({
-          operationId: body.operationId,
-          uploaderAccount: { issuer, subject: body.subject },
-          inputTokens,
-          outputTokens: 0n,
-        });
-        log({ event: "settled", operationId: body.operationId });
-        return Response.json({
-          vectors: payload.data.map(({ embedding }) => embedding),
-          receipt: JSON.stringify(
-            settled ?? { operationId: body.operationId, state: "settled" },
-          ),
-        });
-      } catch (error) {
-        if (error instanceof WeKnoraBillingError) {
-          log({
-            event: "embedding-denied",
-            operationId: body.operationId,
-            code: error.code,
-          });
-          return new Response(JSON.stringify({ code: error.code }), {
-            status: statusFor(error.code),
-          });
+        if (url.pathname === "/control/receipts" && request.method === "GET") {
+          const out: Record<string, unknown> = {};
+          for (const [name, identity] of [
+            ["A", identityA],
+            ["B", identityB],
+            ["C", identityC],
+          ] as const) {
+            const accountId = await accountIdOf(identity);
+            out[name] = accountId
+              ? {
+                  accountId,
+                  balance: await ledger.balance(identity),
+                  operations: (
+                    await database
+                      .select()
+                      .from(testCreditOperations)
+                      .where(eq(testCreditOperations.accountId, accountId))
+                  ).map((row) => ({
+                    operationId: row.id,
+                    state: row.state,
+                    charged: row.charged?.toString() ?? null,
+                  })),
+                }
+              : null;
+          }
+          return Response.json(out);
         }
-        log({
-          event: "embedding-failed",
-          operationId: body.operationId,
-          error: error instanceof Error ? error.message : "unknown",
-        });
-        return new Response(null, { status: 500 });
-      }
-    }
-    if (url.pathname === "/control/revoke" && request.method === "POST") {
-      billing.revokeAuthorization(authorizationId);
-      log({ event: "control", action: "revoke" });
-      return new Response("ok");
-    }
-    if (url.pathname === "/control/receipts" && request.method === "GET") {
-      const out: Record<string, unknown> = {};
-      for (const [name, identity] of [
-        ["A", identityA],
-        ["B", identityB],
-        ["C", identityC],
-      ] as const) {
-        const accountId = await accountIdOf(identity);
-        out[name] = accountId
-          ? {
-              accountId,
-              balance: await ledger.balance(identity),
-              operations: (
-                await database
-                  .select()
-                  .from(testCreditOperations)
-                  .where(eq(testCreditOperations.accountId, accountId))
-              ).map((row) => ({
-                operationId: row.id,
-                state: row.state,
-                charged: row.charged?.toString() ?? null,
-              })),
-            }
-          : null;
-      }
-      return Response.json(out);
-    }
-    return new Response(null, { status: 404 });
-  },
-});
+        return new Response(null, { status: 404 });
+      },
+    });
 
 // ── Matrix ──────────────────────────────────────────────────────────────────
 
 let revisions: Record<string, string> = {};
-await scenario("provision-accounts", async () => {
+await localScenario("provision-accounts", async () => {
   for (const [identity, amount] of [
     [identityA, 200_000n],
     [identityB, 50_000n],
@@ -512,7 +535,7 @@ await scenario("provision-accounts", async () => {
   };
 });
 
-await scenario("publish-two-models", async () => {
+await localScenario("publish-two-models", async () => {
   revisions = await publishCatalog(
     {
       "route-a": {
@@ -543,7 +566,7 @@ await scenario("publish-two-models", async () => {
   return { options };
 });
 
-await scenario("model-switch-product-entry", async () => {
+await localScenario("model-switch-product-entry", async () => {
   const botPick = await ledger.resolveQuote({
     bot: { id: "route-b", revision: revisions["route-b"] },
   });
@@ -569,19 +592,19 @@ await scenario("model-switch-product-entry", async () => {
   };
 });
 
-await scenario("chat-both-routes-account-A", async () => {
+await localScenario("chat-both-routes-account-A", async (operation) => {
   const first = await chatOp(
     identityA,
     "route-a",
     revisions["route-a"],
-    "matrix-chat-a1",
+    operation("matrix-chat-a1"),
     "Reply with exactly: route one ok",
   );
   const second = await chatOp(
     identityA,
     "route-b",
     revisions["route-b"],
-    "matrix-chat-a2",
+    operation("matrix-chat-a2"),
     "Reply with exactly: route two ok",
   );
   assert(
@@ -598,13 +621,13 @@ await scenario("chat-both-routes-account-A", async () => {
   };
 });
 
-await scenario("isolation-account-B", async () => {
+await localScenario("isolation-account-B", async (operation) => {
   const before = await ledger.balance(identityA);
   const op = await chatOp(
     identityB,
     "route-a",
     revisions["route-a"],
-    "matrix-chat-b1",
+    operation("matrix-chat-b1"),
     "Reply with exactly: b one ok",
   );
   const afterA = await ledger.balance(identityA);
@@ -620,12 +643,12 @@ await scenario("isolation-account-B", async () => {
   };
 });
 
-await scenario("cross-app-balance-race", async () => {
+await localScenario("cross-app-balance-race", async (operation) => {
   const raceQuote = await ledger.quote();
   const attempts = await Promise.all(
     [1, 2, 3, 4].map((n) =>
       ledger.reserve(identityC, {
-        operationId: `matrix-race-${n}`,
+        operationId: operation(`matrix-race-${n}`),
         route: "route-a",
         priceVersion: raceQuote?.priceVersion ?? "",
       }),
@@ -642,9 +665,9 @@ await scenario("cross-app-balance-race", async () => {
   return { reserved: reserved.length, denied: denied.length, balance };
 });
 
-await scenario("auxiliary-boundary-fail-closed", async () => {
+await localScenario("auxiliary-boundary-fail-closed", async () => {
   const completer = createAuxiliaryModelCompleter({
-    model: { url: new URL("http://127.0.0.1:32790/v1"), token: "unused" },
+    model: { url: new URL("/v1", target.gateway.url), token: "unused" },
     route: "route-a",
   });
   let refusedNoContext = false;
@@ -670,11 +693,11 @@ await scenario("auxiliary-boundary-fail-closed", async () => {
   return { refusedNoContext, refusedUnbounded };
 });
 
-await scenario("stale-reservation-cannot-dispatch", async () => {
+await localScenario("stale-reservation-cannot-dispatch", async (operation) => {
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-stale",
+    operationId: operation("matrix-stale"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
@@ -683,7 +706,7 @@ await scenario("stale-reservation-cannot-dispatch", async () => {
     reserved.state === "reserved" ? (reserved.permit ?? "") : "";
   clockOffsetMs = 5 * 60_000 + 2_000;
   const dispatch = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-stale",
+    operationId: operation("matrix-stale"),
     permit: stalePermit,
   });
   clockOffsetMs = 0;
@@ -691,7 +714,7 @@ await scenario("stale-reservation-cannot-dispatch", async () => {
   return { dispatchState: dispatch.state, reason: dispatch.reason };
 });
 
-await scenario("gateway-timeout-releases-hold", async () => {
+await localScenario("gateway-timeout-releases-hold", async (operation) => {
   const deadExecutor = createBifrostCreditExecutor({
     endpoint: new URL("http://127.0.0.1:9/v1/chat/completions"),
     gatewayRevision,
@@ -702,12 +725,12 @@ await scenario("gateway-timeout-releases-hold", async () => {
   assert(quote, "no quote");
   const before = await ledger.balance(identityA);
   const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-timeout",
+    operationId: operation("matrix-timeout"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
   const dispatch = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-timeout",
+    operationId: operation("matrix-timeout"),
     permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
@@ -716,7 +739,7 @@ await scenario("gateway-timeout-releases-hold", async () => {
     await deadExecutor({
       route: dispatch.route,
       messages: [{ role: "user", content: "will fail" }],
-      operationId: "matrix-timeout",
+      operationId: operation("matrix-timeout"),
     });
   } catch {
     failed = true;
@@ -731,16 +754,16 @@ await scenario("gateway-timeout-releases-hold", async () => {
   return { released: true, restored: after?.availableMicrocredits };
 });
 
-await scenario("meter-refusal-blocks-dispatch", async () => {
+await localScenario("meter-refusal-blocks-dispatch", async (operation) => {
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-unmetered",
+    operationId: operation("matrix-unmetered"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
   const dispatch = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-unmetered",
+    operationId: operation("matrix-unmetered"),
     permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
@@ -750,7 +773,7 @@ await scenario("meter-refusal-blocks-dispatch", async () => {
     await chatExecutor({
       route: dispatch.route,
       messages: [{ role: "user", content: "must not be sent" }],
-      operationId: "matrix-unmetered",
+      operationId: operation("matrix-unmetered"),
     });
   } catch (error) {
     refused = error instanceof UnsentBifrostRequest ? error.reason : undefined;
@@ -761,18 +784,18 @@ await scenario("meter-refusal-blocks-dispatch", async () => {
   return { refusedNoProviderRequest: true };
 });
 
-await scenario("cutoff-releases-abandoned-hold", async () => {
+await localScenario("cutoff-releases-abandoned-hold", async (operation) => {
   // A dispatched operation whose user never returns: the reconciliation
   // cutoff must release the held credits.
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityB, {
-    operationId: "matrix-abandoned",
+    operationId: operation("matrix-abandoned"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
   const dispatch = await ledger.beginDispatch(identityB, {
-    operationId: "matrix-abandoned",
+    operationId: operation("matrix-abandoned"),
     permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
@@ -793,9 +816,9 @@ await scenario("cutoff-releases-abandoned-hold", async () => {
   return { swept: applied, restored: after?.availableMicrocredits };
 });
 
-await scenario("wrong-permit-cannot-dispatch", async () => {
+await localScenario("wrong-permit-cannot-dispatch", async (operation) => {
   const denied = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-chat-a1",
+    operationId: operation("matrix-chat-a1"),
     permit: "forged-permit",
   });
   assert(denied.state === "denied", `forged permit: ${JSON.stringify(denied)}`);
@@ -806,7 +829,7 @@ await scenario("external-direct-gateway-boundary", async () => {
   // What an external app sees hitting the pinned gateway directly, with no
   // OpenBot billing context. The gateway is loopback-bound in this deployment;
   // provider credentials never leave it. The dispatch gate is OpenBot-side.
-  const response = await fetch("http://127.0.0.1:32790/v1/chat/completions", {
+  const response = await fetch(target.gateway.url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -816,38 +839,65 @@ await scenario("external-direct-gateway-boundary", async () => {
       stream: false,
     }),
   });
+  if (target.entry && response.status !== 401 && response.status !== 403)
+    throw new PilotEvidenceFailure(
+      "gateway_boundary_unverified",
+      `The unauthenticated gateway request returned ${response.status}.`,
+    );
   return {
     directHttpStatus: response.status,
     note: "gateway reached without OpenBot context is a deployment-boundary concern; no permit can be minted outside the ledger (wrong-permit scenario)",
   };
 });
 
-await scenario("publish-embedding-route", async () => {
+await localScenario("publish-embedding-route", async () => {
   revisions = await publishCatalog(
     {
       "local-bge": {
+        purpose: "embedding",
         provider: "openai",
         model: "BAAI/bge-small-en-v1.5",
         gatewayRevision: "local-bifrost-v1.5.8",
         meteringRevision: "local-tei-bge-small-5c38ec7c",
         maxInputTokens: 512,
-        maxOutputTokens: 2,
+        maxOutputTokens: 0,
         tools: false,
         price: { inputPerMillion: 500_000, outputPerMillion: 0 },
       },
     },
-    "local-bge",
+    null,
   );
-  const quote = await ledger.quote();
-  assert(quote?.route === "local-bge", "embedding route not active");
-  return { route: quote.route, maxCharge: quote.maxChargeMicrocredits };
+  const selected = await ledger.weknoraQuote("local-bge", "embedding");
+  assert(selected?.route.id === "local-bge", "embedding route not active");
+  return {
+    route: selected.route.id,
+    maxCharge: selected.quote.maxChargeMicrocredits,
+  };
 });
 
-await scenario("weknora-worker-ingestion", async () => {
+await localScenario("weknora-worker-ingestion", async (operation) => {
+  await ledger.registerApplication({
+    id: WEKNORA_APPLICATION_ID,
+    name: "WeKnora",
+    operator: "platform",
+    resourcePrefix: "weknora:",
+  });
+  await ledger.approveApplication(WEKNORA_APPLICATION_ID, "matrix-fixture");
+  const granted = await ledger.authorize(identityA, {
+    authorizationId,
+    applicationId: WEKNORA_APPLICATION_ID,
+    // Ingestion is the one background task the grant names.
+    kind: "background",
+    taskId: authorizationId,
+    resourcePrefix: resourceId,
+    expiresAt: new Date(startedAt + 900_000),
+    limitMicrocredits: 4096n,
+  });
+  assert(granted?.state === "authorized", "WeKnora grant refused");
   await Bun.write(
     `${runDir}/worker.env`,
     [
-      "OPENBOT_WEKNORA_EMBEDDINGS_URL=http://127.0.0.1:25172/api/weknora/embeddings",
+      `OPENBOT_WEKNORA_EMBEDDINGS_URL=${weknoraEndpoint}`,
       `OPENBOT_WEKNORA_SERVICE_TOKEN=${serviceToken}`,
       `OPENBOT_WEKNORA_OIDC_ISSUER=${issuer}`,
       `OPENBOT_WEKNORA_LIVE_SUBJECT=${identityA.subject}`,
@@ -874,6 +924,7 @@ await scenario("weknora-worker-ingestion", async () => {
       !row.id.startsWith("matrix-") &&
       row.createdAt.getTime() >= workerStartedAt.getTime() - 1_000,
   );
+  for (const row of workerOps) operation(row.id);
   assert(
     workerOps.length >= 1 && workerOps.every((row) => row.state === "settled"),
     `worker ops: ${JSON.stringify(workerOps.map((r) => [r.id, r.state]))}`,
@@ -887,14 +938,14 @@ await scenario("weknora-worker-ingestion", async () => {
   };
 });
 
-await scenario("signout-then-authorized-embedding", async () => {
+await localScenario("signout-then-authorized-embedding", async (operation) => {
   // The uploader signs out; a new ingestion under the same valid spending
   // authorization still settles (authorizations outlive sessions).
   const result = await embedViaEndpoint({
     subject: identityA.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-signout-embed",
+    operationId: operation("matrix-signout-embed"),
     input: ["embedding after sign out"],
   });
   assert(result.status === 200, `status ${result.status}`);
@@ -909,41 +960,62 @@ await scenario("signout-then-authorized-embedding", async () => {
   };
 });
 
-await scenario("recovery-without-reservation-refused", async () => {
-  // A released operation id replayed by worker recovery must not re-dispatch.
-  const quote = await ledger.quote();
-  assert(quote, "no quote");
-  const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-released-recovery",
-    route: quote.route,
-    priceVersion: quote.priceVersion,
-  });
-  assert(reserved.state === "reserved", "reserve failed");
-  clockOffsetMs = 5 * 60_000 + 2_000;
-  // Any later reserve on the account releases expired holds.
-  await ledger.reserve(identityA, {
-    operationId: "matrix-recovery-sibling",
-    route: quote.route,
-    priceVersion: quote.priceVersion,
-  });
-  clockOffsetMs = 0;
-  const replay = await embedViaEndpoint({
-    subject: identityA.subject,
-    authorizationId,
-    resourceId,
-    operationId: "matrix-released-recovery",
-    input: ["recovery replay"],
-  });
-  assert(replay.status === 409, `replay status ${replay.status}`);
-  return { status: replay.status, body: replay.body };
-});
+await localScenario(
+  "recovery-without-reservation-refused",
+  async (operation) => {
+    // A released operation id replayed by worker recovery must not re-dispatch.
+    const selected = await ledger.weknoraQuote("local-bge", "embedding");
+    assert(selected, "no embedding quote");
+    // An embedding reservation only admits the durable grant's background
+    // task, exactly as the worker's own steps run.
+    const under = {
+      applicationId: WEKNORA_APPLICATION_ID,
+      authorizationId,
+      taskId: authorizationId,
+      resourceId,
+    };
+    const reserved = await ledger.reserve(
+      identityA,
+      {
+        operationId: operation("matrix-released-recovery"),
+        route: selected.route.id,
+        priceVersion: selected.quote.priceVersion,
+        ...under,
+      },
+      { embedding: true },
+    );
+    assert(reserved.state === "reserved", "reserve failed");
+    clockOffsetMs = 5 * 60_000 + 2_000;
+    // Any later reserve on the account releases expired holds.
+    await ledger.reserve(
+      identityA,
+      {
+        operationId: operation("matrix-recovery-sibling"),
+        route: selected.route.id,
+        priceVersion: selected.quote.priceVersion,
+        ...under,
+      },
+      { embedding: true },
+    );
+    clockOffsetMs = 0;
+    const replay = await embedViaEndpoint({
+      subject: identityA.subject,
+      authorizationId,
+      resourceId,
+      operationId: operation("matrix-released-recovery"),
+      input: ["recovery replay"],
+    });
+    assert(replay.status === 409, `replay status ${replay.status}`);
+    return { status: replay.status, body: replay.body };
+  },
+);
 
-await scenario("revocation-and-isolation-denials", async () => {
+await localScenario("revocation-and-isolation-denials", async (operation) => {
   const stranger = await embedViaEndpoint({
     subject: identityB.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-stranger",
+    operationId: operation("matrix-stranger"),
     input: ["not my kb"],
   });
   assert(stranger.status === 403, `stranger ${stranger.status}`);
@@ -951,7 +1023,7 @@ await scenario("revocation-and-isolation-denials", async () => {
     subject: identityA.subject,
     authorizationId,
     resourceId: "weknora:tenant:1:kb:kb-other",
-    operationId: "matrix-wrong-resource",
+    operationId: operation("matrix-wrong-resource"),
     input: ["other kb"],
   });
   assert(wrongResource.status === 403, `resource ${wrongResource.status}`);
@@ -959,16 +1031,16 @@ await scenario("revocation-and-isolation-denials", async () => {
     subject: identityA.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-before-revoke",
+    operationId: operation("matrix-before-revoke"),
     input: ["still valid"],
   });
   assert(ok.status === 200, `pre-revoke ${ok.status}`);
-  billing.revokeAuthorization(authorizationId);
+  await ledger.revokeAuthorization(identityA, authorizationId);
   const revoked = await embedViaEndpoint({
     subject: identityA.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-after-revoke",
+    operationId: operation("matrix-after-revoke"),
     input: ["revoked"],
   });
   assert(revoked.status === 410, `revoked ${revoked.status}`);
@@ -979,7 +1051,7 @@ await scenario("revocation-and-isolation-denials", async () => {
   };
 });
 
-await scenario("lago-reconciliation", async () => {
+await localScenario("lago-reconciliation", async () => {
   const accounts = [
     ["A", identityA],
     ["B", identityB],
@@ -1008,26 +1080,104 @@ await scenario("lago-reconciliation", async () => {
   return { flushed, balances };
 });
 
-const receipts = await fetch("http://127.0.0.1:25172/control/receipts").then(
-  (response) => response.json(),
-);
+// A target run replaces every ledger-reaching fixture leg above with the same
+// legs driven through the target's product entries.
+if (target.entry) {
+  const weknoraService = process.env.PILOT_WEKNORA_SERVICE_TOKEN?.trim();
+  const weknoraSubject = process.env.PILOT_WEKNORA_SUBJECT?.trim();
+  const weknoraResource = process.env.PILOT_WEKNORA_RESOURCE_ID?.trim();
+  const operatorToken = process.env.PILOT_OPERATOR_TOKEN?.trim();
+  const legResults = await runPilotTargetLegs({
+    target,
+    tokens: {
+      A: requireEnv("PILOT_TOKEN_A"),
+      B: requireEnv("PILOT_TOKEN_B"),
+      C: requireEnv("PILOT_TOKEN_C"),
+    },
+    sessionCookies: {
+      A: requireEnv("PILOT_SESSION_COOKIE_A"),
+      B: requireEnv("PILOT_SESSION_COOKIE_B"),
+      C: requireEnv("PILOT_SESSION_COOKIE_C"),
+    },
+    routes: {
+      A: requireEnv("PILOT_ROUTE_A"),
+      B: requireEnv("PILOT_ROUTE_B"),
+    },
+    weknora:
+      weknoraService && weknoraSubject && weknoraResource
+        ? {
+            serviceToken: weknoraService,
+            subject: weknoraSubject,
+            resourceId: weknoraResource,
+            createGrant: true,
+          }
+        : undefined,
+    suspension:
+      operatorToken && target.accountStatus
+        ? {
+            token: operatorToken,
+            workspaceId: target.accountStatus.workspaceId,
+          }
+        : undefined,
+    clock: () => now().getTime(),
+  });
+  for (const result of legResults) {
+    results.push(result);
+    log(result);
+  }
+  await scenario("target-lago-reconciliation", async (operation) => {
+    const modelSwitch = legResults.find(
+      (result) => result.scenario === "target-model-switch",
+    );
+    const operationIds =
+      modelSwitch?.outcome === "pass" ? modelSwitch.operationIds : [];
+    for (const id of operationIds) operation(id);
+    const client = createLagoHttpUsageClient({
+      baseUrl: lagoUrl,
+      apiKey: lagoKey,
+      metricCode: "model-usage",
+      externalSubscriptionId: requireEnv("LAGO_USAGE_SUBSCRIPTION_ID"),
+    });
+    const reconciled = await reconcilePilotMatrixLago(
+      database,
+      client,
+      operationIds,
+    );
+    return { reconciled };
+  });
+}
+
+await writePilotMatrixManifest(runDir, target, startedAt, results);
+
+const receipts = target.entry
+  ? {}
+  : await fetch(`${new URL(weknoraEndpoint).origin}/control/receipts`).then(
+      (response) => response.json(),
+    );
 await Bun.write(
   `${runDir}/matrix.json`,
   JSON.stringify(
     {
       startedAt: new Date(startedAt).toISOString(),
-      accounts: {
-        A: { subject: identityA.subject },
-        B: { subject: identityB.subject },
-        C: { subject: identityC.subject },
-      },
-      authorizationId,
+      // A target run's fixture subjects are unrelated to the deployment.
+      accounts: target.entry
+        ? null
+        : {
+            A: { subject: identityA.subject },
+            B: { subject: identityB.subject },
+            C: { subject: identityC.subject },
+          },
+      authorizationId: target.entry ? null : authorizationId,
+      evidence: target.evidence,
+      deployment: target.deployment,
       gateway: {
-        image: "openbot-bifrost89:zhipu-cap-fixed6",
+        image:
+          process.env.PILOT_GATEWAY_IMAGE ??
+          "openbot-bifrost89:zhipu-cap-fixed6",
         revision: gatewayRevision,
-        chatEndpoint: "http://127.0.0.1:32790",
-        embeddingEndpoint: "http://127.0.0.1:25170",
-        tokenizer: "zhipu /api/paas/v4/tokenizer",
+        chatEndpoint: new URL(target.gateway.url).origin,
+        embeddingEndpoint: new URL(target.embedding.url).origin,
+        tokenizer: chatTokenizerUrl,
       },
       lago: { url: lagoUrl, version: "v1.57.0" },
       results,
@@ -1042,4 +1192,6 @@ log({
   passed: results.filter((r) => r.outcome === "pass").length,
   failed: results.filter((r) => r.outcome === "fail").length,
 });
+fixtureServer?.stop(true);
 await database.$client.close();
+if (results.some((result) => result.outcome === "fail")) process.exitCode = 1;

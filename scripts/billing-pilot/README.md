@@ -3,12 +3,14 @@
 Run from a clean checkout with Docker Engine, Buildx, Compose, Bash and `jq`.
 Choose the target platform and a unique local tag. Keep evidence directories
 outside the checkout. The acceptance run also takes a locally available OpenBot
-backend image from a different build to exercise Worker version mismatch.
+backend image from a different build to exercise Worker version mismatch, the
+Docker network of the deployed Bifrost gateway, and the gateway origin OpenBot
+uses.
 
 ```sh
 bash scripts/billing-pilot/test.sh
 bash scripts/billing-pilot/build.sh /tmp/pilot-build openbot-pilot:local linux/arm64
-bash scripts/billing-pilot/accept.sh /tmp/pilot-build /tmp/pilot-accept previous-openbot-image:local
+bash scripts/billing-pilot/accept.sh /tmp/pilot-build /tmp/pilot-accept previous-openbot-image:local openbot-bifrost http://openbot-bifrost:8080
 ```
 
 The build records the source commit, archive hash, build arguments, Buildx
@@ -19,13 +21,19 @@ with a single firing in the verified Worker's structured sweep logs. The
 isolated database contains just the smoke Routine, whose ID is in the smoke
 receipt. It verifies the running image identity before and
 after the smoke and tests rejection of a mismatched Worker and untraceable
-Server. The script removes its Compose project and volume on exit.
+Server. The Server joins only the Bifrost gateway's own network: the gateway
+origin must answer it there and refuse the same direct call from the default
+Docker bridge, and the Server, Worker and fixture must carry no credential
+beyond the four the Compose file needs and no mount beyond the fixture script.
+The script removes its Compose project and volume on exit; the gateway network
+and workload belong to their own deployment.
 
 Keep `inputs.json`, `buildx.json`, `build.log`, `image.json` and
 `platform-manifest.txt` with the acceptance directory. `runtime-after.jsonl`,
-`smoke.jsonl`, `worker-dispatch.jsonl` and the two `rejected-*.log` files record
-the results. These results cover the isolated backend baseline; the Bifrost
-provider and Harness checks are tracked in #89.
+`smoke.jsonl`, `worker-dispatch.jsonl`, `target-provenance.json`,
+`provider-key-isolation.jsonl`, `bifrost-boundary.json` and the two
+`rejected-*.log` files record the results. These results cover the isolated
+backend baseline; the Bifrost provider and Harness checks are tracked in #89.
 
 ## Pinned Bifrost Zhipu adapter
 
