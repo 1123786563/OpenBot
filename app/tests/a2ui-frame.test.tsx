@@ -1114,7 +1114,7 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
           });
         };
         for (const theme of ["light", "dark"] as const)
-          for (const width of [680, 320])
+          for (const width of [680, 320, 1440, 390])
             for (const only of ["budget", "plain", "forms", "controls"]) {
               const page = await open(`?only=${only}`, deadline, theme, width);
               try {
@@ -1138,7 +1138,6 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
                 await page.close();
               }
             }
-        // One Chromium per page, sixteen pages, on a machine that may be busy.
       },
     );
 });
