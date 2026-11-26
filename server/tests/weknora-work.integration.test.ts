@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { runWeKnoraWorkLive } from "../scripts/weknora-work-live";
 import {
   configure,
   emptyCatalog,
@@ -23,6 +24,9 @@ import {
   paidEntitlements,
   paidOrders,
   paidProducts,
+  personalSaasAccounts,
+  personalWorkspaceSuspensions,
+  personalWorkspaces,
   pilotProviderCostHolds,
   pilotProviderCostLimitEvents,
   pilotProviderCostLimits,
@@ -33,12 +37,13 @@ import {
   testCreditEvidence,
   testCreditOperations,
 } from "../src/db/schema";
+import { createAccountAccess } from "../src/personal-saas/account-access";
+import { suspensionRoutes } from "../src/personal-saas/workspace-suspension";
 import {
   fixtureEmbeddingReport,
   fixtureTraceReport,
 } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
-import { runWeKnoraWorkLive } from "../scripts/weknora-work-live";
 
 test("WeKnora resource paths dispatch independently and deny invalid authority before the gateway", async () => {
   const db = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -129,6 +134,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     TEST_CREDIT_INPUT_METER_TOKEN: "fixture-meter",
   };
   let duringMeter: (() => Promise<void>) | undefined;
+  let duringGateway: (() => Promise<void>) | undefined;
   const requests: { model: string; operation: string | null }[] = [];
   const upstream = Bun.serve({
     hostname: "127.0.0.1",
@@ -152,6 +158,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
       expect(request.headers.get("authorization")).toBe(
         "Bearer fixture-gateway",
       );
+      if (body.includes("fixture-account-cutoff")) await duringGateway?.();
       const data = JSON.parse(body);
       requests.push({ model: data.model, operation });
       if (body.includes("fixture-gateway-failure"))
@@ -235,6 +242,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     subject: "weknora-maintenance",
   };
   const platformBatchId = crypto.randomUUID();
+  let personalAccountId: string | undefined;
   try {
     await db
       .insert(enterpriseSettings)
@@ -731,6 +739,134 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
         BigInt(beforeHarness.availableMicrocredits) - 8n
       ).toString(),
     });
+
+    // 与 #69 联验：仅 OpenBot Workspace Suspension 时账户仍活跃，WeKnora 按
+    // 其授权范围照常工作；Casdoor 停用后新预留和新派发被拒，已派发的调用按
+    // 原预留结算。
+    const [personal] = await db
+      .insert(personalSaasAccounts)
+      .values({
+        ...identity,
+        email: "weknora-work@example.test",
+        status: {
+          source: "active",
+          observedAt: clock,
+          confirmedAt: clock,
+          epoch: 0,
+          disablements: [],
+        },
+      })
+      .returning();
+    if (!personal) throw new Error("Missing personal account fixture");
+    personalAccountId = personal.id;
+    const personalWorkspaceId = crypto.randomUUID();
+    await db
+      .insert(personalWorkspaces)
+      .values({ id: personalWorkspaceId, ownerId: personal.id });
+    const operator = { id: "fixture-operator", token: crypto.randomUUID() };
+    const paused = await suspensionRoutes(db, operator, () => clock).request(
+      `/api/operator/workspaces/${personalWorkspaceId}/suspension`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${operator.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ action: "pause", reason: "fixture" }),
+      },
+    );
+    expect(paused.status).toBe(201);
+    const beforeSuspendedWork = requests.length;
+    const duringSuspension = await send({
+      input: { kind: "chat", messages },
+      authorizationId: await authorization("chat"),
+    });
+    expect(duringSuspension.status).toBe(200);
+    expect(await duringSuspension.json()).toMatchObject({
+      receipt: { state: "settled", chargedMicrocredits: "5" },
+    });
+    expect(requests).toHaveLength(beforeSuspendedWork + 1);
+
+    // A reservation made while the account is active, dispatched after the
+    // Casdoor cutoff, gives its hold back and never reaches the gateway.
+    const waitingGrant = await authorization("chat");
+    const waitingOperationId = crypto.randomUUID();
+    const waiting = await ledger.reserve(
+      identity,
+      {
+        operationId: waitingOperationId,
+        route: "text",
+        priceVersion: release.id,
+        applicationId: "weknora",
+        authorizationId: waitingGrant,
+        resourceId: `${resourceId}:chat`,
+        creditType: "test",
+        resumable: false,
+      },
+      { weknoraWork: "chat" },
+    );
+    if (waiting.state !== "reserved")
+      throw new Error("Expected the pre-cutoff reservation");
+
+    let casdoorActive = true;
+    const casdoor = createAccountAccess(
+      db,
+      async () => ({
+        ...identity,
+        observedAt: clock + 1_000,
+        active: casdoorActive,
+        disablements: casdoorActive
+          ? []
+          : [{ id: "casdoor-disablement", effectiveAt: clock + 1_000 }],
+      }),
+      () => clock + 1_000,
+    );
+    duringGateway = async () => {
+      casdoorActive = false;
+      expect(await casdoor.check(identity)).toBe(false);
+    };
+    const alreadyDispatched = await send({
+      input: {
+        kind: "chat",
+        messages: [{ role: "user", content: "fixture-account-cutoff" }],
+      },
+      authorizationId: await authorization("chat"),
+    });
+    duringGateway = undefined;
+    expect(alreadyDispatched.status).toBe(200);
+    expect(await alreadyDispatched.json()).toMatchObject({
+      receipt: { state: "settled", chargedMicrocredits: "5" },
+    });
+
+    const settledGatewayCalls = requests.length;
+    const refusedOperationId = crypto.randomUUID();
+    const refused = await send({
+      input: { kind: "chat", messages },
+      authorizationId: await authorization("chat"),
+      operationId: refusedOperationId,
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: "not_authorized" });
+    expect(requests).toHaveLength(settledGatewayCalls);
+    // The cutoff refuses the reservation itself, so no operation row exists.
+    expect(await ledger.receipt(identity, refusedOperationId)).toBeUndefined();
+    expect(
+      await ledger.beginDispatch(identity, {
+        operationId: waitingOperationId,
+        permit: waiting.permit,
+        authorizationId: waitingGrant,
+      }),
+    ).toEqual({ state: "denied", reason: "not_authorized" });
+    expect(await ledger.receipt(identity, waitingOperationId)).toMatchObject({
+      state: "released",
+      reservedMicrocredits: "16",
+      releasedMicrocredits: "16",
+      chargedMicrocredits: null,
+    });
+    expect(await ledger.balance(identity)).toMatchObject({
+      availableMicrocredits: "953",
+      chargedMicrocredits: "31",
+    });
   } finally {
     await server.stop(true);
     await upstream.stop(true);
@@ -798,6 +934,17 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
       await tx
         .delete(testCreditBatches)
         .where(inArray(testCreditBatches.id, [batchId, platformBatchId]));
+      if (personalAccountId) {
+        await tx
+          .delete(personalWorkspaceSuspensions)
+          .where(eq(personalWorkspaceSuspensions.accountId, personalAccountId));
+        await tx
+          .delete(personalWorkspaces)
+          .where(eq(personalWorkspaces.ownerId, personalAccountId));
+        await tx
+          .delete(personalSaasAccounts)
+          .where(eq(personalSaasAccounts.id, personalAccountId));
+      }
       if (previousApplication) {
         const { id, ...stored } = previousApplication;
         await tx
