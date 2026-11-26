@@ -13,10 +13,11 @@ for (const origin of [FIXTURE_APP_URL, FIXTURE_API_URL]) {
 
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 const mode = process.env.SWEEP_MODE ?? "full";
-assert(["full", "bookmarks", "shells"].includes(mode));
+assert(["full", "bookmarks", "shells", "playground"].includes(mode));
 const views = (await readJson("docs/acceptance/web127-views.json")).flatMap(
   (view, i) => {
     if (mode === "bookmarks") return [];
+    if (mode === "playground" && view.route !== "/admin/playground") return [];
     if (
       mode === "shells" &&
       ![
@@ -33,7 +34,7 @@ const views = (await readJson("docs/acceptance/web127-views.json")).flatMap(
   },
 );
 const bookmarks =
-  mode === "shells"
+  mode === "shells" || mode === "playground"
     ? []
     : await readJson("docs/acceptance/web127-bookmarks.json");
 const build = await readJson(BUILD_MANIFEST);
@@ -156,10 +157,11 @@ async function checkShell(page) {
 
 async function capture(browser, cases, role, width, theme) {
   const height = width === 390 ? 844 : 900;
+  // Playwright's Service Worker blocker reads navigator.serviceWorker in every
+  // frame, which throws in the Playground's opaque sandbox.
   const context = await browser.newContext({
     viewport: { width, height },
     colorScheme: theme,
-    serviceWorkers: "block",
   });
   try {
     await context.addInitScript((value) => {
@@ -240,6 +242,18 @@ async function capture(browser, cases, role, width, theme) {
             { timeout: 1500, waitUntil: "commit" },
           );
         }
+        if (entry.path === "/admin/playground") {
+          const preview = page.locator("iframe[sandbox]");
+          await preview
+            .contentFrame()
+            .getByRole("heading", { name: "A worked example" })
+            .waitFor({ timeout: 5000 });
+          const permissions = (await preview.getAttribute("sandbox")).split(
+            /\s+/,
+          );
+          assert(permissions.includes("allow-scripts"));
+          assert(!permissions.includes("allow-same-origin"));
+        }
         // This is an initial snapshot. Delayed requests can still be pending.
         await page
           .locator("body")
@@ -274,6 +288,7 @@ async function capture(browser, cases, role, width, theme) {
             }
           }
         }
+        assert.equal(context.serviceWorkers().length, 0);
       } catch (error) {
         record.failure = String(error);
       } finally {
@@ -349,3 +364,23 @@ assert(
       record.capture && !record.failure && record.destinationMatches !== false,
   ),
 );
+assert.deepEqual(
+  records
+    .filter((record) => record.path === "/admin/playground")
+    .flatMap((record) => record.errors),
+  [],
+);
+if (mode === "full") {
+  const unimplemented = new Set(
+    records.flatMap((record) =>
+      record.apiFailures
+        .filter(([, status]) => status === 501)
+        .map(([path]) => path),
+    ),
+  );
+  assert.equal(
+    unimplemented.size,
+    0,
+    `Unimplemented fixture endpoints: ${[...unimplemented].sort().join(", ")}`,
+  );
+}
