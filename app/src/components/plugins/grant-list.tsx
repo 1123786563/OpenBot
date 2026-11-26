@@ -13,6 +13,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { failureMessage } from "@/lib/client";
 import { consentCopy } from "@/lib/plugins/enablement-notes";
 import {
   authorizeActionMutationOptions,
@@ -65,7 +66,7 @@ export function GrantList({
   const [notice, setNotice] = useState<string | null>(null);
   const authorize = useMutation({
     ...authorizeActionMutationOptions(returnTo),
-    onError: (thrown: Error) => setNotice(thrown.message),
+    onError: (thrown: Error) => setNotice(failureMessage(thrown)),
     /* A full page navigation: the consent screen is the vendor's own and shown in this browser. */
     onSuccess: (authorizationUrl) => {
       if (authorizationUrl === null) {

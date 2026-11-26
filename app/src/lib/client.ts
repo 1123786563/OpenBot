@@ -23,6 +23,29 @@ export class ClientError extends Error {
   }
 }
 
+/**
+ * What a banner says when a read or a write fails.
+ *
+ * KEEP THE SERVER'S SENTENCE whenever it answered with one it chose: a refusal that names the
+ * field, the permission or the vendor's reason, and the route's own 502/503 when a broker cannot be
+ * reached. `status !== 500` is where that line sits, because a 500 is the one status whose body is
+ * the server's own fault rather than a sentence somebody wrote for a person — the same status the
+ * server's transient retry treats as "the request, not the answer" (`plugins/transient.ts`).
+ * Everything else — that 500, or a connection that never answered and carries the browser's
+ * "Failed to fetch" — becomes `fallback`, which names the next step.
+ */
+export function failureMessage(
+  error: unknown,
+  fallback: string = t(
+    "frame.actionFailed",
+    "Couldn't complete that. Try again.",
+  ),
+): string {
+  return error instanceof ClientError && error.status !== 500
+    ? error.message
+    : fallback;
+}
+
 export function canKeepCachedRead(error: Error | null): boolean {
   return !(error instanceof ClientError) || error.status >= 500;
 }

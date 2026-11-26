@@ -34,6 +34,8 @@
   "banner.update.restarting": "Restarting…",
   "banner.update.status": "Downloading…",
   "bots.handoff.loadFailed": "Couldn’t load the Bots this Bot can ask",
+  "connections.appDirectoryReadFailed": "Couldn't load the app directory.",
+  "frame.actionFailed": "Couldn't complete that. Try again.",
   "frame.cancel": "Cancel",
   "frame.close": "Close",
   "frame.closeDetails": "Close details",

@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import type { QueryClient } from "@tanstack/react-query";
+import { failureMessage } from "../src/lib/client";
 import {
   grantPlugin,
   setPluginGrantMutationOptions,
@@ -131,4 +132,43 @@ test("granting one on its own still carries its refetch", async () => {
 
   expect(seen).toHaveLength(1);
   expect(invalidated).toEqual([{ queryKey: ["plugins"] }]);
+});
+
+/**
+ * WHAT A FAILED WRITE SAYS ON THE SCREEN.
+ *
+ * `grantPlugin` carries whatever the server wrote, and the screens behind it painted
+ * `thrown.message` straight into their banner. A refusal the server wrote on purpose — the sentence
+ * naming the field, the permission or the vendor's reason — is worth keeping. A 500's message is the
+ * server's internals, and a connection that never answered carries the browser's, and neither is
+ * something a person can act on: both become the house sentence with its next step.
+ */
+test("a server fault is replaced by the house sentence", async () => {
+  capturingFetch(500, { error: "Unexpected token '<'" });
+
+  const thrown = await grantPlugin({
+    agentId: "agent-1",
+    kind: "mcp",
+    ref: "notion/search",
+  }).catch((error: unknown) => error);
+
+  expect(failureMessage(thrown)).toBe("Couldn't complete that. Try again.");
+});
+
+test("a refusal the server wrote itself keeps its sentence", async () => {
+  capturingFetch(409, { error: "That specific vendor reason." });
+
+  const thrown = await grantPlugin({
+    agentId: "agent-1",
+    kind: "mcp",
+    ref: "notion/search",
+  }).catch((error: unknown) => error);
+
+  expect(failureMessage(thrown)).toBe("That specific vendor reason.");
+});
+
+test("a connection that never answered is replaced by the house sentence", () => {
+  expect(failureMessage(new TypeError("Failed to fetch"))).toBe(
+    "Couldn't complete that. Try again.",
+  );
 });

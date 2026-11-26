@@ -162,6 +162,10 @@ export function PluginsListPage({
   const inputId = React.useId();
   const rows = React.useRef(new Map<string, HTMLAnchorElement>());
   const entry = useLocation({ select: (location) => location.state.__TSR_key });
+  const returnPlugin = useLocation({
+    select: (location) => location.state.returnPlugin,
+  });
+  const restoredEntry = React.useRef<string>(undefined);
   /*
    * Requests waiting per app, so an administrator sees which app somebody is asking about from the
    * list, without opening each one. Every request is also listed in full above the lists.
@@ -237,18 +241,23 @@ export function PluginsListPage({
       !entry ||
       !plugins.isSuccess ||
       plugins.isFetching ||
-      lastOpenedPlugin?.entry !== entry
+      restoredEntry.current === entry
     )
       return;
-    const target = rows.current.get(lastOpenedPlugin.id);
+    const id =
+      returnPlugin ??
+      (lastOpenedPlugin?.entry === entry ? lastOpenedPlugin.id : undefined);
+    if (!id) return;
+    const target = rows.current.get(id);
+    restoredEntry.current = entry;
     lastOpenedPlugin = undefined;
     if (document.activeElement === document.body)
       (target ?? input.current ?? heading.current)?.focus();
-  }, [entry, plugins.isFetching, plugins.isSuccess]);
+  }, [entry, plugins.isFetching, plugins.isSuccess, returnPlugin]);
 
   function linkProps(id: string) {
     return {
-      ...paths.plugin(id),
+      ...paths.plugin(id, search || undefined),
       onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
         if (
           entry &&
@@ -539,7 +548,11 @@ export function PluginsListPage({
                      which is how this row pointed every Arcade deployment at a screen that
                      redirected it straight back. `brokerDirectory` names only routes the
                      generated route tree has, so a path no route answers does not compile. */
-                  render={<Link {...paths.brokerDirectory(provider)} />}
+                  render={
+                    <Link
+                      {...paths.brokerDirectory(provider, search || undefined)}
+                    />
+                  }
                   size="sm"
                 >
                   <RowMark>

@@ -23,6 +23,7 @@ import {
   type AppAccessRequest,
   appAccessInboxQueryOptions,
 } from "@/lib/app-access/queries";
+import { failureMessage } from "@/lib/client";
 import { useManagePaths } from "@/lib/manage-paths";
 import { relativeTime } from "@/lib/relative-time";
 import { queryClient } from "@/query-client";
@@ -165,7 +166,7 @@ function AccessRequestRow({ request }: { request: AppAccessRequest }) {
       {error ? (
         <ItemFooter>
           <p className="text-destructive text-sm" role="alert">
-            {error.message}
+            {failureMessage(error)}
           </p>
         </ItemFooter>
       ) : null}

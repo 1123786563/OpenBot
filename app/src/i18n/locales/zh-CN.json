@@ -34,6 +34,8 @@
   "banner.update.restarting": "正在重启…",
   "banner.update.status": "正在下载…",
   "bots.handoff.loadFailed": "无法加载此 Bot 可以求助的 Bot",
+  "connections.appDirectoryReadFailed": "无法加载应用目录。",
+  "frame.actionFailed": "无法完成该操作，请重试。",
   "frame.cancel": "取消",
   "frame.close": "关闭",
   "frame.closeDetails": "关闭详情",

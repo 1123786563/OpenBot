@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { failureMessage } from "@/lib/client";
 import { useManagePaths } from "@/lib/manage-paths";
 import {
   type DirectoryAppState,
@@ -85,19 +86,30 @@ import {
 /** Placeholder rows while the directory loads: enough to fill the view, not to suggest a count. */
 const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 
-export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
+export function BrokerDirectory({
+  provider,
+  listQuery,
+  search: routeSearch = "",
+  onSearchChange,
+}: {
+  provider: PluginsProvider;
+  listQuery?: string;
+  search?: string;
+  onSearchChange?: (value: string) => void;
+}) {
   // The provider's client, which is the app's own one; a screen mounted under another is refetched there.
   const queryClient = useQueryClient();
   const paths = useManagePaths();
   const { directoryLabel } = providerVocabulary(provider);
-  const [search, setSearch] = React.useState("");
+  const [localSearch, setLocalSearch] = React.useState("");
+  const search = onSearchChange ? routeSearch : localSearch;
   const searchInput = React.useRef<HTMLInputElement>(null);
   /*
    * Debounced, as on People, and for a stronger reason: every distinct term is a cache key of its
    * own and a request to the vendor, so typing a name un-debounced is a round trip per keystroke
    * against somebody else's rate limit.
    */
-  const [query, setQuery] = React.useState("");
+  const [query, setQuery] = React.useState(search);
   React.useEffect(() => {
     const timer = setTimeout(() => setQuery(search), 250);
     return () => clearTimeout(timer);
@@ -161,7 +173,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
       setEnableError(null);
       setAdding((held) => new Set(held).add(input.slug));
     },
-    onError: (thrown: Error) => setEnableError(thrown.message),
+    onError: (thrown: Error) => setEnableError(failureMessage(thrown)),
     /*
      * SPELLED OUT RATHER THAN INHERITED, because the spread above carries an `onSettled` of its own
      * — `invalidatePlugins` — and a second one here replaces it rather than running beside it. The
@@ -303,11 +315,14 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
   const tabError = signingIn ? tab.error : null;
 
   if (decision === "redirect" && !plugins.isError) {
-    return <Navigate replace {...paths.plugins()} />;
+    return <Navigate replace {...paths.plugins(listQuery)} />;
   }
 
   const frame = {
-    backButton: { label: paths.pluginsLabel, linkProps: paths.plugins() },
+    backButton: {
+      label: paths.pluginsLabel,
+      linkProps: paths.plugins(listQuery),
+    },
     description: directoryDescriptions(paths.edition).page,
     title: directoryLabel,
   };
@@ -358,7 +373,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
           hasClear
           hasSpellCheck={false}
           label="Search apps"
-          onChange={setSearch}
+          onChange={onSearchChange ?? setLocalSearch}
           onEnter={() => setQuery(search)}
           ref={searchInput}
           size="lg"
@@ -408,7 +423,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
         ) : apps.error ? (
           <ReadError
             focusAfterRetry={() => searchInput.current}
-            message={apps.error.message || directoryReadFailure(provider)}
+            message={failureMessage(apps.error, directoryReadFailure(provider))}
             retry={apps.refetch}
             retrying={apps.isFetching}
             retryBelow
@@ -499,7 +514,7 @@ export function BrokerDirectory({ provider }: { provider: PluginsProvider }) {
                                       params: { key: state.serverId },
                                       search: { connect: true },
                                     }
-                                  : paths.plugin(state.serverId)
+                                  : paths.plugin(state.serverId, listQuery)
                                 : null
                             }
                             name={entry.name}

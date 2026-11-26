@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { failureMessage } from "@/lib/client";
 import {
   addCuratedServerMutationOptions,
   connectAccountMutationOptions,
@@ -58,7 +59,7 @@ export function useConnectApp() {
         queryKey: connectionsQueryOptions().queryKey,
       });
     } catch (thrown) {
-      setError((thrown as Error).message);
+      setError(failureMessage(thrown));
     } finally {
       setPending(null);
     }
