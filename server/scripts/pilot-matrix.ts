@@ -899,12 +899,21 @@ await scenario("recovery-without-reservation-refused", async () => {
   // A released operation id replayed by worker recovery must not re-dispatch.
   const selected = await ledger.weknoraQuote("local-bge", "embedding");
   assert(selected, "no embedding quote");
+  // An embedding reservation only admits the durable grant's background
+  // task, exactly as the worker's own steps run.
+  const under = {
+    applicationId: WEKNORA_APPLICATION_ID,
+    authorizationId,
+    taskId: authorizationId,
+    resourceId,
+  };
   const reserved = await ledger.reserve(
     identityA,
     {
       operationId: "matrix-released-recovery",
       route: selected.route.id,
       priceVersion: selected.quote.priceVersion,
+      ...under,
     },
     { embedding: true },
   );
@@ -917,6 +926,7 @@ await scenario("recovery-without-reservation-refused", async () => {
       operationId: "matrix-recovery-sibling",
       route: selected.route.id,
       priceVersion: selected.quote.priceVersion,
+      ...under,
     },
     { embedding: true },
   );
