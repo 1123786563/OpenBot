@@ -2,9 +2,9 @@
 status: accepted
 ---
 
-# Use Agent Sandbox and AgenticFS for the Personal SaaS Computer pilot
+# Use Agent Sandbox and AgenticFS for the Personal SaaS Managed Computer pilot
 
-Use Alibaba Cloud Agent Sandbox Flash Edition to run the Personal SaaS managed Computer and AgenticFS to hold its files. The pilot replaces the Docker supervisor and the dedicated ext4 mount for each participating workspace. It starts with the existing file tools for listing, reading, and writing files. See the [current trial storage setup](../personal-saas-trial.md#provision-computer-storage) and [AgenticFS mounts](https://help.aliyun.com/zh/agent-sandbox/mount-agenticfs-dynamically).
+Use Alibaba Cloud Agent Sandbox Flash Edition to run the Personal SaaS Managed Computer and AgenticFS to hold its files. The pilot replaces the Docker supervisor and the dedicated ext4 mount for each participating workspace. It starts with the existing file tools for listing, reading, and writing files. See the [current trial storage setup](../personal-saas-trial.md#provision-computer-storage) and [AgenticFS mounts](https://help.aliyun.com/zh/agent-sandbox/mount-agenticfs-dynamically).
 
 ## Workspace files and quota
 

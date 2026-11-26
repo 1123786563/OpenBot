@@ -486,8 +486,10 @@ export async function reapplyWorkspaceClosures(
         storageRecovery: sql`${JSON.stringify(recovered)}::text::jsonb`,
         ...(retired && {
           retiredIntelligence: sql`${JSON.stringify(intelligence)}::text::jsonb`,
-          workCutoff: saved?.workCutoff ?? ("confirmed" as const),
-          computerCutoff: saved?.computerCutoff ?? ("confirmed" as const),
+          // The journal carries no cutoff evidence. Leave the outcome to the
+          // startup sweep so a pre-closure backup cannot claim a confirmed exit.
+          workCutoff: saved?.workCutoff ?? null,
+          computerCutoff: saved?.computerCutoff ?? null,
         }),
       };
       const [closure] = await tx

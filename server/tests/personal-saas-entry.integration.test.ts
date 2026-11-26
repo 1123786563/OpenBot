@@ -5429,8 +5429,10 @@ test("a pending Computer teardown leaves healthy lease renewals on schedule", as
     expect((await computer(healthy.session, "/start")).status).toBe(202);
     const healthyOriginal = clockTime + workspaceComputerLeaseMs;
     clockTime += workspaceComputerLeaseMs - 1_000;
+    // The stalled teardown is past its lease deadline with no exit evidence.
     expect(await (await computer(stopping.session)).json()).toEqual({
       status: "stopping",
+      cutoff: "failed",
     });
     reconciling = service.reconcileStoppingWorkspaceComputers?.();
     await entered.promise;
@@ -6427,8 +6429,11 @@ test("Agent Sandbox holds an ambiguous create across restart and records late ex
     if (!allocation) throw new Error("Expected an allocation");
     const replica = newApp(database, config);
     clockTime = allocation.expiresAt + 10;
+    // The deadline passed with no exit evidence, so the cutoff failure is
+    // already recorded while the ambiguous allocation still holds the slot.
     expect(await (await request(replica)).json()).toEqual({
       status: "stopping",
+      cutoff: "failed",
     });
     expect((await request(replica, "/start")).status).toBe(429);
     expect(creates).toBe(1);
@@ -6438,6 +6443,84 @@ test("Agent Sandbox holds an ambiguous create across restart and records late ex
       leaseExpiresAt: allocation.expiresAt,
     };
     expect(await (await request(replica)).json()).toEqual({
+      status: "restart_required",
+      cutoff: "failed",
+    });
+  } finally {
+    clockTime = undefined;
+  }
+});
+
+test("Agent Sandbox records a cutoff failure at the lease deadline while it still holds the slot", async () => {
+  const owner = await isolationOwner();
+  let leaseExpiresAt = 0;
+  let observation: AgentSandboxObservation = { kind: "starting" };
+  let reachable = true;
+  const config: WorkspaceComputerConfig = {
+    agentSandbox: {
+      async start(_binding, lease) {
+        leaseExpiresAt = lease.expiresAt;
+      },
+      async inspect() {
+        if (!reachable) throw new Error("Flash instance is unreachable");
+        return observation;
+      },
+      async destroy() {
+        if (!reachable) throw new Error("Flash instance is unreachable");
+      },
+      async renew() {
+        throw new Error("Unexpected renewal");
+      },
+    },
+  };
+  const service = newApp(database, config);
+  const request = (action = "") =>
+    service.request(`/api/workspace/computer${action}`, {
+      method: action ? "POST" : "GET",
+      headers: { origin, cookie: owner.session },
+    });
+  clockTime = now();
+  try {
+    expect((await request("/start")).status).toBe(202);
+    observation = { kind: "running", leaseExpiresAt };
+    expect(await (await request()).json()).toEqual({ status: "running" });
+
+    // The instance vanishes at the lease deadline, so no exit evidence ever
+    // arrives. The deadline outcome must be recorded, not left pending.
+    reachable = false;
+    clockTime = leaseExpiresAt;
+    expect(await (await request()).json()).toEqual({
+      status: "stopping",
+      cutoff: "failed",
+    });
+    expect((await request("/start")).status).toBe(429);
+    await service.reconcileStoppingWorkspaceComputers?.();
+    expect(await (await request()).json()).toEqual({
+      status: "stopping",
+      cutoff: "failed",
+    });
+    expect((await request("/start")).status).toBe(429);
+    // The owner is told the deadline passed without a confirmed exit.
+    expect(
+      await (
+        await service.request("/workspace", {
+          headers: { cookie: owner.session },
+        })
+      ).text(),
+    ).toContain(
+      "Computer exit could not be confirmed by the authorization deadline.",
+    );
+
+    // Exit confirmed after the deadline still settles the row and releases the
+    // slot, and the late exit keeps the recorded cutoff failure.
+    reachable = true;
+    clockTime = leaseExpiresAt + 10;
+    observation = {
+      kind: "exited",
+      exitedAt: leaseExpiresAt + 1,
+      leaseExpiresAt,
+    };
+    expect(await (await request()).json()).toEqual({
       status: "restart_required",
       cutoff: "failed",
     });
@@ -6557,8 +6640,11 @@ for (const cutoff of [
       if (cutoff !== "renewal_lost")
         session = await restoreAutomation(owner, cutoff);
       clockTime = firstDeadline + 1;
+      // Exit evidence is still withheld here, so the deadline is a recorded
+      // cutoff failure while the slot stays reserved.
       expect(await (await request("computer")).json()).toEqual({
         status: "stopping",
+        cutoff: "failed",
       });
       expect((await request("computer/start", {})).status).toBe(429);
       delayEvidence = false;
@@ -8703,5 +8789,68 @@ test("a pre-closure restore fences sessions, exports and dispatch before worker 
   ).toHaveLength(0);
   expect(await ledger.balance(identity)).toMatchObject({
     grantedMicrocredits: "5",
+  });
+});
+
+test("a restored closure with no cutoff evidence records the deadline outcome instead of claiming success", async () => {
+  const owner = await isolationOwner();
+  const [account] = await database
+    .select({ id: personalSaasAccounts.id })
+    .from(personalSaasAccounts)
+    .where(eq(personalSaasAccounts.subject, owner.account.sub));
+  const operationId = crypto.randomUUID();
+  const retiredOperationId = crypto.randomUUID();
+  const acceptedAt = Date.now() - 120_000;
+  // The backup predates closure, so the journal carries no cutoff evidence for
+  // the retired workspace and nothing in this environment observed its exit.
+  const journal = [
+    ...exportClosureJournal(),
+    ...closureRestoreJournal.parse({
+      version: 3,
+      operations: [
+        {
+          id: operationId,
+          accountId: account.id,
+          workspaceId: owner.workspaceId,
+          acceptedAt: new Date(acceptedAt).toISOString(),
+          storage: { kind: "none" },
+          intelligence: [],
+        },
+        {
+          id: retiredOperationId,
+          accountId: account.id,
+          workspaceId: crypto.randomUUID(),
+          acceptedAt: new Date(acceptedAt + 1_000).toISOString(),
+          storage: { kind: "none" },
+          intelligence: [],
+        },
+      ],
+    }),
+  ];
+  await reapplyWorkspaceClosures(database, journal);
+  const restored = () =>
+    database
+      .select()
+      .from(personalWorkspaceClosures)
+      .where(eq(personalWorkspaceClosures.id, retiredOperationId))
+      .then(([row]) => row);
+  expect(await restored()).toMatchObject({
+    workCutoff: null,
+    computerCutoff: null,
+  });
+
+  const worker = newApp(database, {
+    supervisorUrl: "http://supervisor.example",
+    supervisorToken: "fixture-supervisor-token",
+    async fetch() {
+      return Response.json({ status: "stopping", stopped: false });
+    },
+  });
+  await worker.sweepWorkspaceClosures();
+  // The deadline is long past and exit was never confirmed here, so the honest
+  // outcome is a cutoff failure, not a fabricated confirmation.
+  expect(await restored()).toMatchObject({
+    workCutoff: "confirmed",
+    computerCutoff: "failed",
   });
 });

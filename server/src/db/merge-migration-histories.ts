@@ -483,6 +483,7 @@ export function canMergeMigrationHistories(
       ...skillMarketMigrations,
       ...corsairMigrations,
       ...bifrostMigrations,
+      // Pre-merge sandbox deployments forked before main published 0119_approval.
       ...personalSaasMigrations.filter(
         ([tag]) => tag !== "0119_approval_team_rule_saves",
       ),

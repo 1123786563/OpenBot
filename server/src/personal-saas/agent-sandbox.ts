@@ -137,6 +137,33 @@ export function agentSandboxComputer(
     await provider.destroy(binding(row)).catch(() => undefined);
   }
 
+  // The lease deadline passed with no confirmed exit. Record the cutoff failure
+  // and keep the slot: an unknown outcome is never retried or assumed stopped.
+  async function failCutoff(row: Sandbox) {
+    if (row.cutoff !== null || now() < row.expiresAt) return row.cutoff;
+    const [failed] = await database
+      .update(sandboxes)
+      .set({ cutoff: "failed" })
+      .where(
+        and(
+          sameGeneration(row),
+          ne(sandboxes.phase, "stopped"),
+          isNull(sandboxes.cutoff),
+        ),
+      )
+      .returning({ generation: sandboxes.generation });
+    if (!failed) return row.cutoff;
+    console.error(
+      JSON.stringify({
+        type: "agent-sandbox-cutoff-failed",
+        ...binding(row),
+        leaseExpiresAt: row.expiresAt,
+        observedAt: now(),
+      }),
+    );
+    return "failed" as const;
+  }
+
   async function read(
     workspaceId: string,
     task?: ComputerTask,
@@ -224,8 +251,11 @@ export function agentSandboxComputer(
     if (current.phase === "stopping")
       return {
         status: "stopping",
-        cutoff: current.cutoff ?? undefined,
-        processExited: current.cutoff !== null,
+        cutoff: (await failCutoff(current)) ?? undefined,
+        // A deadline failure is recorded without exit evidence. Only the
+        // provider's durable exit record proves the process stopped.
+        processExited:
+          current.cutoff !== null && current.flashWorkerExit !== null,
       };
     if (
       now() >= current.expiresAt ||
@@ -235,7 +265,10 @@ export function agentSandboxComputer(
           observation.leaseExpiresAt > current.expiresAt))
     ) {
       await seal(current);
-      return { status: "stopping" };
+      return {
+        status: "stopping",
+        cutoff: (await failCutoff(current)) ?? undefined,
+      };
     }
     if (observation.kind === "unconfirmed")
       return { status: current.phase === "starting" ? "starting" : "stopping" };

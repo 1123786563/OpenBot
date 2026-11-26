@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { and, inArray, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { configureBotLifecycle } from "../agents/lifecycle";
 import { createTestCreditLedger } from "../billing/test-credit";
@@ -319,17 +319,31 @@ const app = createPersonalSaasApp(
 
 if (restoredClosures.length) {
   await app.reconcileStoppingWorkspaceComputers?.();
-  await app.sweepWorkspaceClosures();
+  // A restored record carries no cutoff evidence. Sweep until every deadline
+  // has yielded an honest outcome, because cleanup only takes recorded rows.
+  const restoredIds = restoredClosures.map(({ id }) => id);
+  for (;;) {
+    await app.sweepWorkspaceClosures();
+    const unrecorded = await database
+      .select({ id: personalWorkspaceClosures.id })
+      .from(personalWorkspaceClosures)
+      .where(
+        and(
+          inArray(personalWorkspaceClosures.id, restoredIds),
+          or(
+            isNull(personalWorkspaceClosures.workCutoff),
+            isNull(personalWorkspaceClosures.computerCutoff),
+          ),
+        ),
+      );
+    if (!unrecorded.length) break;
+    await Bun.sleep(1_000);
+  }
   await app.sweepWorkspaceCleanup();
   const records = await database
     .select({ cleanup: personalWorkspaceClosures.cleanup })
     .from(personalWorkspaceClosures)
-    .where(
-      inArray(
-        personalWorkspaceClosures.id,
-        restoredClosures.map(({ id }) => id),
-      ),
-    );
+    .where(inArray(personalWorkspaceClosures.id, restoredIds));
   if (
     records.length !== restoredClosures.length ||
     records.some(({ cleanup }) =>
