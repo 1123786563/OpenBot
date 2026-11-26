@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
   type CreditPackChannel,
-  type CreditPackTestChannel,
+  type CreditPackChannelAdapter,
   testPaymentResult,
   testRefundResult,
   type testRefundTerms,
@@ -31,6 +31,7 @@ const liveConfig = z.object({
 });
 
 const unknown = z.object({ state: z.literal("unknown") });
+const payments = z.union([unknown, testPaymentResult]);
 
 const settingsPrefix = {
   wechat: "OPENBOT_CREDIT_PACK_LIVE",
@@ -46,7 +47,7 @@ const settingsPrefix = {
 export function loadCreditPackLiveChannel(
   environment: Record<string, string | undefined>,
   kind: CreditPackChannel = "wechat",
-): CreditPackTestChannel | undefined {
+): CreditPackChannelAdapter | undefined {
   const prefix = settingsPrefix[kind];
   const origin = environment[`${prefix}_ORIGIN`];
   if (!origin) return undefined;
@@ -147,19 +148,13 @@ export function loadCreditPackLiveChannel(
         .parse(await request("refunds", id));
     },
     async close(id: string) {
-      return testPaymentResult.parse(await request("orders/close", id, {}));
+      return payments.parse(await request("orders/close", id, {}));
     },
     async query(id: string) {
-      return z
-        .union([unknown, testPaymentResult])
-        .parse(await request("orders", id));
+      return payments.parse(await request("orders", id));
     },
   };
 }
-
-export type CreditPackLiveChannel = NonNullable<
-  ReturnType<typeof loadCreditPackLiveChannel>
->;
 
 export function liveCallbackSignature(
   token: string,

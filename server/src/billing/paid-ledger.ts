@@ -1666,10 +1666,7 @@ export function createPaidCreditLedger(
   }
 
   async function applyTestPackRefundResult(
-    input: CreditPackTestRefundResult & {
-      channel: CreditPackChannel;
-      fixture?: boolean;
-    },
+    input: CreditPackTestRefundResult & { channel: CreditPackChannel },
   ) {
     return database.transaction(async (tx) => {
       const order = await lockRefundOrder(tx, input.orderId);

@@ -30,6 +30,7 @@ import {
   type CreditPackTestChannel,
   loadCreditPackTestChannel,
 } from "../src/billing/credit-pack-test-channel";
+import { loadCreditPackLiveChannel } from "../src/billing/credit-pack-live-channel";
 import {
   createPaidCreditLedger,
   type PaidCreditLedger,
@@ -253,6 +254,8 @@ if (import.meta.main) {
         ? [
             loadCreditPackTestChannel(process.env),
             loadCreditPackTestChannel(process.env, "alipay"),
+            loadCreditPackLiveChannel(process.env),
+            loadCreditPackLiveChannel(process.env, "alipay"),
           ].filter((channel) => channel !== undefined)
         : [];
     console.log(

@@ -24,7 +24,13 @@ export function createCreditPackReconciliation(
     id: string,
     paymentChannel = channel,
   ) {
-    if (result.orderId !== id || result.merchantId !== paymentChannel.merchant)
+    // A live order carries no test merchant, so the ledger cannot pin its
+    // currency; this checkout only ever sells CNY.
+    if (
+      result.orderId !== id ||
+      result.merchantId !== paymentChannel.merchant ||
+      result.currency !== "CNY"
+    )
       throw new PaidLedgerError(
         "verification_mismatch",
         "The payment does not match this test order.",
@@ -74,7 +80,6 @@ export function createCreditPackReconciliation(
       channelOrderRef: paymentChannel.fixture
         ? `fixture:${paymentChannel.merchant}:${result.channelOrderRef}`
         : result.channelOrderRef,
-      fixture: paymentChannel.fixture,
     });
   }
 
@@ -162,7 +167,6 @@ export function createCreditPackCheckout({
     channel: kind,
     fixture: channel.fixture,
   };
-  const sale = { ...channelScope, fixture: channel.fixture };
   const suffix = kind === "alipay" ? "/alipay" : "";
   const callbackPath = `/credit-pack-test${suffix}`;
   const api = new Hono<{ Variables: { identity: VerifiedBillingIdentity } }>();
@@ -228,7 +232,7 @@ export function createCreditPackCheckout({
         accountId,
         channel.productCode,
         channel.applicationIds,
-        sale,
+        channelScope,
       )),
       canSwitchChannel: Boolean(otherChannel?.allows(accountId)),
     });
@@ -255,7 +259,7 @@ export function createCreditPackCheckout({
         accountId,
         channel.applicationIds,
         eligible,
-        sale,
+        channelScope,
       )),
       canSwitchChannel: Boolean(otherChannel?.allows(accountId)),
     });
@@ -352,7 +356,7 @@ export function createCreditPackCheckout({
       await paid.checkTestCheckout(
         accountId,
         channel.applicationIds,
-        sale,
+        channelScope,
         order.priceCents,
       );
       return context.json({ checkoutUrl: await channel.checkout(order) });
