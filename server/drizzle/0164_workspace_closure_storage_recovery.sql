@@ -1,0 +1,1 @@
+ALTER TABLE "personal_workspace_closures" ADD COLUMN "storage_recovery" jsonb;

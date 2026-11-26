@@ -500,7 +500,11 @@ function BotChat({
           {startFailed && (
             <ConversationReadError
               title="Couldn't start a new conversation."
-              description="Your current conversation is still open."
+              description={
+                threadId
+                  ? "Your current conversation is still open."
+                  : "Try again to start chatting with this Bot."
+              }
               retry={startNew}
               retryBelow
               retrying={starting}
@@ -519,9 +523,9 @@ function BotChat({
                 key={`${agentId}:${threadId}`}
                 threadId={threadId}
               />
-            ) : (
+            ) : !startFailed ? (
               <ConversationLoading label="Opening conversation…" />
-            )}
+            ) : null}
           </Stack>
         </Stack>
       </ConversationSurface>

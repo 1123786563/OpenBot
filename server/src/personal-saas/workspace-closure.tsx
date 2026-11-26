@@ -15,13 +15,17 @@ import {
   personalSaasAccounts,
   personalSaasSessions,
   personalSupportRequests,
+  personalWorkspaceAgenticSpaces,
   personalWorkspaceClosures,
   personalWorkspaceIntegrationGrants,
   personalWorkspaces,
   workItems,
 } from "../db/schema";
 import { accountDecision, type createAccountAccess } from "./account-access";
-import { onlineCleanupSteps } from "./closure-cleanup-contract";
+import {
+  agenticStorageLocator,
+  onlineCleanupSteps,
+} from "./closure-cleanup-contract";
 import { reconcileDecisionHistory } from "./decision-access";
 import { readIntelligenceInventory } from "./intelligence-inventory";
 import { cookieOptions, sessionCookie } from "./session-revocation";
@@ -77,7 +81,7 @@ export function workspaceClosureRoutes({
   accounts: Pick<ReturnType<typeof createAccountAccess>, "check">;
   encryptionKey: string;
   now: () => number;
-  computer?: Pick<ReturnType<typeof workspaceComputer>, "stopped">;
+  computer?: Pick<ReturnType<typeof workspaceComputer>, "processStopped">;
   admissionsPaused: boolean;
 }) {
   const routes = new Hono();
@@ -450,10 +454,26 @@ export function workspaceClosureRoutes({
         .for("update");
       if (!record || !cleanupConfirmed(record)) return "unavailable";
       if (admissionsPaused) return "paused";
+      const [storage] = await tx
+        .select()
+        .from(personalWorkspaceAgenticSpaces)
+        .where(
+          eq(personalWorkspaceAgenticSpaces.workspaceId, record.workspaceId),
+        );
+      const storageRecovery =
+        record.storageRecovery ??
+        (storage
+          ? {
+              kind: "agenticfs",
+              ...agenticStorageLocator.parse(storage),
+              released: true,
+            }
+          : { kind: "none" });
       const inventory = await readIntelligenceInventory(tx, [user.accountId]);
       await tx
         .update(personalWorkspaceClosures)
         .set({
+          storageRecovery: sql`${JSON.stringify(storageRecovery)}::text::jsonb`,
           retiredIntelligence: inventory.map(
             ({ agentId, threadId, runId }) => ({ agentId, threadId, runId }),
           ),
@@ -598,7 +618,9 @@ export function workspaceClosureRoutes({
             const stopped =
               computer &&
               now() < deadline &&
-              (await computer.stopped(closure.workspaceId).catch(() => false));
+              (await computer
+                .processStopped(closure.workspaceId)
+                .catch(() => false));
             const computerCutoff = !computer
               ? "confirmed"
               : now() >= deadline

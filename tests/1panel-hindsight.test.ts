@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 
-const app = join(import.meta.dir, "../deploy/1panel/apps/hindsight/1.2.3");
+import { packageDir } from "./support/1panel-package";
+
+const app = packageDir("hindsight");
 const consoleAccessKey = "HINDSIGHT_CP_ACCESS_KEY";
 
 /** Hindsight only shows its login page when this variable reaches the control plane, so it must not be optional. */
@@ -44,6 +46,8 @@ test("the 1Panel Hindsight package always gives the console an access key", () =
     PANEL_DB_NAME: "hindsight",
     PANEL_DB_USER: "hindsight",
     PANEL_DB_USER_PASSWORD: "hindsight",
+    // The API's own key is required too, so the render stops on the console key alone.
+    HINDSIGHT_API_TENANT_API_KEY: "a-tenant-key",
   };
   const render = (key: string) => {
     const file = join(env, "test.env");

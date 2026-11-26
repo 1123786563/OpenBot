@@ -1990,6 +1990,18 @@ test("Web direct chat persists messages and one run per send, with only its Pers
     conversationIds.push(channel.id);
     const history = `/api/copilotkit/threads/${channel.threadId}/messages?agentId=${bot.id}`;
     const botPath = `/api/copilotkit/agent/${bot.id}`;
+    const threadPath = `${botPath}/thread/${channel.threadId}`;
+    expect(await (await aliceWeb.request(threadPath)).json()).toEqual({
+      known: true,
+    });
+    expect(await (await bobWeb.request(threadPath)).json()).toEqual({
+      known: false,
+    });
+    expect(
+      await (
+        await aliceWeb.request(`${botPath}/thread/${crypto.randomUUID()}`)
+      ).json(),
+    ).toEqual({ known: false });
     const payload = {
       threadId: channel.threadId,
       runId: "run-1",

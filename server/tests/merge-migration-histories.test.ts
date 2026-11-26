@@ -47,7 +47,10 @@ const integrations = [
   ],
   [
     "published main",
-    (entry) => entry.when <= 1795520000000 && !isIntelligenceMigration(entry),
+    (entry) =>
+      entry.when <= 1795443105536 &&
+      !(entry.when >= 1795441880621 && entry.when <= 1795441880623) &&
+      !isIntelligenceMigration(entry),
   ],
 ] satisfies [string, (entry: (typeof folder)[number]) => boolean][];
 

@@ -197,6 +197,10 @@ test("/bot can open a bookmarked Bot when the roster is unavailable", async () =
     .trim();
   const view = renderBot(
     failingRoster({
+      "/api/capabilities": Response.json({ mode: "openbot" }),
+      "/api/channels": Response.json({
+        channel: { threadId: "bookmarked-bot-thread" },
+      }),
       "/api/agents/general-assistant": Response.json({
         agent: { ...GENERAL_ASSISTANT, roleDescription, visibility: "public" },
       }),

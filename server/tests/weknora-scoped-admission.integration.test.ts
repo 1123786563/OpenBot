@@ -238,7 +238,16 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     };
     await expect(
       restarted.beginDispatch(identity, secondDispatch),
-    ).resolves.toEqual({ state: "denied", reason: "not_authorized" });
+    ).resolves.toMatchObject({
+      state: "existing",
+      operation: {
+        operationId: "second",
+        state: "released",
+        reservedMicrocredits: "2",
+        releasedMicrocredits: "2",
+        chargedMicrocredits: null,
+      },
+    });
     await expect(
       restarted.revokeExternalSpending(identity, grant),
     ).resolves.toBe(true);
@@ -309,6 +318,69 @@ test("a durable WeKnora grant gates new credit operations and preserves prior se
     expect((await restarted.beginDispatch(identity, consume)).state).not.toBe(
       "dispatch",
     );
+    const revokedHoldScope = { ...grant, authorizationId: crypto.randomUUID() };
+    await authorizeFresh(revokedHoldScope);
+    const revokedHold = await restarted.reserve(identity, {
+      ...reserve("revoked-hold"),
+      scope: revokedHoldScope,
+    });
+    if (revokedHold.state !== "reserved")
+      throw new Error("Expected revoked-hold fixture reservation");
+    await expect(
+      restarted.revokeExternalSpending(identity, revokedHoldScope),
+    ).resolves.toBe(true);
+    await expect(
+      restarted.beginDispatch(identity, {
+        operationId: "revoked-hold",
+        permit: revokedHold.permit,
+        scope: revokedHoldScope,
+      }),
+    ).resolves.toEqual({ state: "denied", reason: "not_authorized" });
+    await expect(
+      restarted.receipt(identity, "revoked-hold"),
+    ).resolves.toMatchObject({
+      state: "released",
+      reservedMicrocredits: "2",
+      releasedMicrocredits: "2",
+      chargedMicrocredits: null,
+    });
+    await expect(restarted.balance(identity)).resolves.toMatchObject({
+      availableMicrocredits: "17",
+    });
+    const expiredHoldScope = {
+      ...grant,
+      authorizationId: crypto.randomUUID(),
+    };
+    await restarted.authorizeExternalSpending(identity, {
+      ...expiredHoldScope,
+      expiresAt: new Date(now + 1_000),
+      maxMicrocredits: 2n,
+    });
+    const expiredHold = await restarted.reserve(identity, {
+      ...reserve("expired-hold"),
+      scope: expiredHoldScope,
+    });
+    if (expiredHold.state !== "reserved")
+      throw new Error("Expected expired-hold fixture reservation");
+    now += 2_000;
+    await expect(
+      restarted.beginDispatch(identity, {
+        operationId: "expired-hold",
+        permit: expiredHold.permit,
+        scope: expiredHoldScope,
+      }),
+    ).resolves.toEqual({ state: "denied", reason: "not_authorized" });
+    await expect(
+      restarted.receipt(identity, "expired-hold"),
+    ).resolves.toMatchObject({
+      state: "released",
+      reservedMicrocredits: "2",
+      releasedMicrocredits: "2",
+      chargedMicrocredits: null,
+    });
+    await expect(restarted.balance(identity)).resolves.toMatchObject({
+      availableMicrocredits: "17",
+    });
     const httpScope = { ...grant, authorizationId: crypto.randomUUID() };
     await authorizeFresh(httpScope);
     const serviceToken = crypto.randomUUID();

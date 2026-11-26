@@ -8,6 +8,10 @@ A human who uses OpenBot. A person may use Bots, answer approvals, manage their 
 
 The company or workspace that owns the team deployment, its people, Bots, policies, connections, and audit history.
 
+## Workspace
+
+The private area that holds one owner's Bots, files, and settings. A Personal SaaS account owns one workspace at a time, and closing it removes its files and opens an empty one.
+
 ## Bot
 
 An AI coworker that a person can use or administer. A Bot has an identity, instructions, capabilities, a computer context, a work record, and a lifecycle.
@@ -19,6 +23,10 @@ A single-person OpenBot deployment with one local user, one shared computer, and
 ## Team edition
 
 An organization deployment where people, roles, Bot visibility, sharing, governance, and administrative controls are explicit.
+
+## Personal SaaS
+
+The hosted OpenBot service a person signs in to with their own account, where OpenBot runs their workspace instead of the person installing OpenBot themselves.
 
 ## Bot visibility
 

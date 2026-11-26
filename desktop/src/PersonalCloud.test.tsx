@@ -596,3 +596,34 @@ test("a pending poll cannot undo a newer sign-out response", async () => {
     screen.getByRole("button", { name: "Sign in with browser" }),
   ).toBeTruthy();
 });
+
+test("a restored cloud page reauthorizes before showing cached content", async () => {
+  const workspace = {
+    kind: "workspace",
+    id: "workspace-1",
+    personalAssistant: { id: "bot-1", name: "My Assistant" },
+    conversations: [
+      { id: "conversation-1", title: "Private restored title", preview: null },
+    ],
+    accessMs: 60_000,
+  } satisfies CloudView;
+  const pending = Promise.withResolvers<CloudView>();
+  let restored = false;
+  const screen = within(
+    render(
+      <PersonalCloud
+        request={async () => (restored ? pending.promise : workspace)}
+      />,
+    ).container,
+  );
+  await screen.findByText("Private restored title");
+  await act(async () => {
+    restored = true;
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  expect(screen.queryByText("Private restored title")).toBeNull();
+  await act(async () => window.dispatchEvent(new Event("pageshow")));
+  expect(screen.queryByText("Private restored title")).toBeNull();
+  await act(async () => pending.resolve(workspace));
+  await screen.findByText("Private restored title");
+});
