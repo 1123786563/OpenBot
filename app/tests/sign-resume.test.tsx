@@ -681,12 +681,12 @@ test("a cancelled provider return shows why, focuses the heading, and retries to
   );
 });
 
-test("an SSO refusal keeps the server's sentence, offers the company form, and focuses the heading", async () => {
+test("an SSO refusal shows the company sign-in instructions and focuses the heading", async () => {
   const refusal =
     "This deployment requires signing in through your company's identity provider. Enter your work email to continue.";
   const { view } = renderSignScreen(
     { providers: [], sso: true, ssoRequired: true },
-    `/sign?error=sso_required&error_description=${encodeURIComponent(refusal)}`,
+    `/sign?error=sso_required&error_description=${encodeURIComponent("Untrusted sign-in instructions")}`,
   );
   expect((await view.findByRole("alert")).textContent).toBe(refusal);
   expect(view.getByRole("textbox", { name: /Company email/ })).toBeTruthy();

@@ -122,16 +122,11 @@ function SignScreen() {
     openfuse_request: openFuseRequest,
     returnTo,
     error: refusalCode,
-    error_description: refusalDescription,
   } = Route.useSearch();
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
-  /*
-   * The refusal a provider returned (a cancel, or SSO refusing another way in) is the one notice
-   * this screen shows, in words this app owns. `sso_required` is the exception: the server's
-   * sentence is already person-words and says what to do next, so it passes through as a value.
-   */
+  // Refusal codes select app-owned copy. Descriptions come from the URL.
   const [error, setError] = useState<string | null>(() => {
     if (refusalCode === undefined) return null;
     if (refusalCode === "access_denied")
@@ -139,8 +134,11 @@ function SignScreen() {
         "sign.error.cancelled",
         "Sign-in was cancelled. Choose a way to sign in again.",
       );
-    if (refusalCode === "sso_required" && refusalDescription)
-      return refusalDescription;
+    if (refusalCode === "sso_required")
+      return t(
+        "sign.error.ssoRequired",
+        "This deployment requires signing in through your company's identity provider. Enter your work email to continue.",
+      );
     return t(
       "sign.error.failed",
       "Couldn't finish sign-in. Try again, or ask your OpenBot admin if it keeps happening.",

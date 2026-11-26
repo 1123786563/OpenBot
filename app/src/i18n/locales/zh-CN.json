@@ -250,6 +250,7 @@
   "sign.admin.signIn": "管理员登录",
   "sign.error.cancelled": "登录已取消。请选择一种登录方式重试。",
   "sign.error.failed": "无法完成登录。请重试；如果问题持续出现，请联系你的 OpenBot 管理员。",
+  "sign.error.ssoRequired": "此部署要求通过公司的身份提供方登录。请输入工作邮箱以继续。",
   "sign.heading": "登录 {product}",
   "sign.options.checkAgain": "检查登录选项",
   "sign.options.loadFailed": "无法加载登录选项。",
