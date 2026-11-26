@@ -635,6 +635,14 @@ const OWN_TOOLS: Record<string, OwnTool> = {
     running: "Taking a screenshot",
     done: "Took a screenshot",
   },
+  computer_upload_browser_file: {
+    running: "Uploading a workspace file",
+    done: "Attempted a file upload",
+  },
+  computer_retry_browser_download: {
+    running: "Retrying browser download delivery",
+    done: "Retried browser download delivery",
+  },
 
   // The Bot's computer, and folders on yours. The same action reads the same on either.
   computer_list_files: {

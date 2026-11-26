@@ -1029,18 +1029,21 @@ test("workspace upload resumes with one-time authority and requires a fresh deci
     auditStore: { insert: async () => {} },
     policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
     approvalGate: service.gate,
-    fetchImpl: async (url) => {
-      if (new URL(String(url)).pathname === "/files/browser-upload")
-        return Response.json({
-          identity: "file",
-          sha256: createHash("sha256")
-            .update(Buffer.from(content, "base64"))
-            .digest("hex"),
-          content,
-        });
-      uploads++;
-      throw new Error("Lost browser response.");
-    },
+    fetchImpl: Object.assign(
+      async (url: Parameters<typeof fetch>[0]) => {
+        if (new URL(String(url)).pathname === "/files/browser-upload")
+          return Response.json({
+            identity: "file",
+            sha256: createHash("sha256")
+              .update(Buffer.from(content, "base64"))
+              .digest("hex"),
+            content,
+          });
+        uploads++;
+        throw new Error("Lost browser response.");
+      },
+      { preconnect: () => undefined },
+    ),
   });
   const seat = await gateway.seatFor("bot", "owner");
   const input = {

@@ -44,6 +44,9 @@ jobs:
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck
+      # Server terminal tests import agent-computer source, whose dependencies have their own lockfile.
+      - run: bun install --frozen-lockfile
+        working-directory: agent-computer
       # `typecheck` is `bun run --filter '*' typecheck`, and each workspace's `tsc --noEmit` reads
       # its own tsconfig, none of which includes a test tree. The suite is therefore the one part
       # of this repository that no type-checker has ever read: bun erases types rather than

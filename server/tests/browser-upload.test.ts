@@ -49,40 +49,43 @@ test("a pilot upload asks for one attempt with a file and site, and an unknown o
       allowed = false;
       return { approvalId: "fixture-approval", complete: async () => {} };
     },
-    fetchImpl: async (input, init) => {
-      const url = new URL(String(input));
-      if (url.port === "3") {
-        expect(url.pathname).toBe("/files/browser-upload");
-        expect(url.searchParams.get("path")).toBe(inputs.path);
-        const includeContent = url.searchParams.get("content") === "1";
-        if (includeContent) transfers++;
-        return Response.json({
-          identity,
-          sha256: createHash("sha256")
-            .update(Buffer.from(content, "base64"))
-            .digest("hex"),
-          ...(includeContent ? { content } : {}),
-        });
-      }
-      expect(url.port).toBe("2");
-      if (url.pathname === "/human/browser-upload") {
+    fetchImpl: Object.assign(
+      async (...[input, init]: Parameters<typeof fetch>) => {
+        const url = new URL(String(input));
+        if (url.port === "3") {
+          expect(url.pathname).toBe("/files/browser-upload");
+          expect(url.searchParams.get("path")).toBe(inputs.path);
+          const includeContent = url.searchParams.get("content") === "1";
+          if (includeContent) transfers++;
+          return Response.json({
+            identity,
+            sha256: createHash("sha256")
+              .update(Buffer.from(content, "base64"))
+              .digest("hex"),
+            ...(includeContent ? { content } : {}),
+          });
+        }
+        expect(url.port).toBe("2");
+        if (url.pathname === "/human/browser-upload") {
+          expect(JSON.parse(String(init?.body))).toMatchObject({
+            by: "pilot",
+            name: "sales.csv",
+          });
+          humanRequests++;
+          return Response.json({ status: "accepted", httpStatus: 201 });
+        }
+        expect(url.pathname).toBe("/browser-upload");
         expect(JSON.parse(String(init?.body))).toMatchObject({
-          by: "pilot",
+          url: inputs.url,
+          field: inputs.field,
           name: "sales.csv",
+          content,
         });
-        humanRequests++;
-        return Response.json({ status: "accepted", httpStatus: 201 });
-      }
-      expect(url.pathname).toBe("/browser-upload");
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        url: inputs.url,
-        field: inputs.field,
-        name: "sales.csv",
-        content,
-      });
-      dispatches++;
-      throw new Error("Lost response");
-    },
+        dispatches++;
+        throw new Error("Lost response");
+      },
+      { preconnect: () => undefined },
+    ),
   });
   const seat = await gateway.seatFor("notes", "pilot");
   const actor = { id: "pilot", userId: "pilot" };

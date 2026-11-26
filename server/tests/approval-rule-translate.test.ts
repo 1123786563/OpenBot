@@ -18,7 +18,7 @@ import {
 } from "../src/approvals/rule-vocabulary";
 import type { ApprovalRuleInput } from "../src/approvals/types";
 import type { AuditEventInput } from "../src/audit";
-import { intentOf } from "../src/computer/gateway";
+import { approvalEffectOf, intentOf } from "../src/computer/gateway";
 import { COMPUTER_TOOLS } from "../src/computer/policy-translate";
 import { loadConfig } from "../src/config";
 import {
@@ -532,18 +532,13 @@ describe("the rows' check", () => {
 
 describe("the vocabulary the writer is given", () => {
   test("every computer tool reaches the gate with the effect it is listed under", () => {
-    // The gateway's own rule (computer/gateway.ts): activating, typing, saving and running write.
-    const effectOf = (tool: string, key?: string) =>
-      ["activate", "type", "write_file", "run_command"].includes(
-        intentOf(tool, key) ?? "",
-      )
-        ? "write"
-        : "read";
     for (const entry of COMPUTER_TOOLS) {
       const listed = COMPUTER_APPROVAL_TOOLS.find(
         (tool) => tool.ref === entry.tool,
       );
-      expect(listed?.effects).toContain(effectOf(entry.tool, entry.key));
+      expect(listed?.effects).toContain(
+        approvalEffectOf(intentOf(entry.tool, entry.key)),
+      );
     }
     expect(COMPUTER_APPROVAL_TOOLS.map((tool) => tool.ref).sort()).toEqual(
       [...new Set(COMPUTER_TOOLS.map((entry) => entry.tool))].sort(),
