@@ -106,6 +106,7 @@ export function SuggestionsInbox({
   showEmpty?: boolean;
   searchable?: boolean;
 } = {}) {
+  const { t } = useTranslation();
   const suggestions = useQuery(proactiveSuggestionsQueryOptions());
   const readable = canKeepCachedRead(suggestions.error);
   const scoped = (readable ? (suggestions.data ?? []) : []).filter(
@@ -172,8 +173,11 @@ export function SuggestionsInbox({
   return (
     <PageSection
       description={
-        searchable && scoped.length > 0 && suggestions.isSuccess
-          ? "Work on it starts a task. Dismiss tells check-ins to skip similar ideas for 30 days."
+        scoped.length > 0 && suggestions.isSuccess
+          ? t(
+              "ideas.actionConsequences",
+              "Work on it starts a task. Dismiss tells check-ins to skip similar ideas for 30 days.",
+            )
           : undefined
       }
       headingRef={heading}

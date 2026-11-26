@@ -23,7 +23,7 @@ afterEach(async () => {
 
 let fetchMock: ReturnType<typeof spyOn<typeof globalThis, "fetch">> | undefined;
 
-function openBotSuggestions(suggestions: Response) {
+function openBotSuggestions(suggestions: Response, searchable = true) {
   GlobalRegistrator.register({ url: "http://openbot.test" });
   fetchMock = spyOn(globalThis, "fetch").mockResolvedValue(suggestions);
   const client = new QueryClient({
@@ -32,7 +32,7 @@ function openBotSuggestions(suggestions: Response) {
   client.setQueryData(agentListQueryOptions().queryKey, []);
   const view = render(
     <QueryClientProvider client={client}>
-      <SuggestionsInbox agentId="research" searchable showEmpty />
+      <SuggestionsInbox agentId="research" searchable={searchable} showEmpty />
     </QueryClientProvider>,
   );
   return { ...view, client };
@@ -46,8 +46,14 @@ test("a Bot's Ideas can recover a failed suggestion request in place", async () 
     await view.findByText("Couldn’t load suggested next steps"),
   ).toBeTruthy();
   fetchMock?.mockResolvedValue(Response.json({ suggestions: [] }));
-  fireEvent.click(view.getByRole("button", { name: "Retry" }));
-  await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
+  const retry = view.getByRole("button", { name: "Retry" });
+  retry.focus();
+  fireEvent.click(retry);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      view.getByRole("heading", { name: "Suggested next steps" }),
+    ),
+  );
 });
 
 test("suggestions stay readable after a temporary failure and disappear when access is denied", async () => {
@@ -126,4 +132,23 @@ test("dismissing a suggestion requires confirmation and checks that the idea is 
     await view.findByText("This idea is no longer in the list."),
   ).toBeTruthy();
   expect(writes()).toHaveLength(0);
+});
+
+test("Ideas explains what the two actions do in Tasks", async () => {
+  const view = openBotSuggestions(
+    Response.json({
+      suggestions: [
+        {
+          id: "notes",
+          agentId: "research",
+          title: "Review meeting notes",
+          detail: "Calendar has new notes.",
+          createdAt: "2026-11-23T10:00:00Z",
+        },
+      ],
+    }),
+    false,
+  );
+  await view.findByRole("button", { name: "Work on it" });
+  expect(view.getByText(/Work on it starts a task.*30 days/)).toBeTruthy();
 });

@@ -71,6 +71,7 @@ function useWaiting(agentId: string | undefined) {
   const ours = (botId: string) => agentId === undefined || botId === agentId;
   return {
     error: inbox.error,
+    isFetching: inbox.isFetching,
     isPending: inbox.isPending,
     refetch: inbox.refetch,
     questions: (inbox.data?.questions ?? []).filter((question) =>
@@ -594,6 +595,7 @@ export function useWaitingRows(agentId: string | undefined) {
   const botName = useBotNames();
   return {
     error: waiting.error,
+    isFetching: waiting.isFetching,
     isPending: waiting.isPending,
     refetch: waiting.refetch,
     rows: [

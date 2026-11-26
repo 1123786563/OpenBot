@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslation } from "@/i18n";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { TASK_ORDER } from "@/lib/tasks/groups";
 import { TASK_STATUS_LABEL, type TaskStatus } from "@/lib/tasks/queries";
@@ -127,6 +128,7 @@ function ActiveView({
   status: StatusFilter;
   setStatus: (status: StatusFilter) => void;
 }) {
+  const { t } = useTranslation();
   const botName = useBotNames();
   const waiting = useWaitingRows(undefined);
   const taskList = useNeedsYouTasks();
@@ -230,6 +232,7 @@ function ActiveView({
           message="Couldn’t load Bot tasks"
           retry={taskList.refetch}
           retryBelow
+          retryLabel={t("tasks.retryTasks", "Retry loading tasks")}
           retrying={taskList.fetching}
         />
       ) : null}
@@ -238,6 +241,11 @@ function ActiveView({
           message="Couldn’t load approvals and questions"
           retry={waiting.refetch}
           retryBelow
+          retryLabel={t(
+            "tasks.retryApprovals",
+            "Retry loading approvals and questions",
+          )}
+          retrying={waiting.isFetching}
           focusAfterRetry={() =>
             firstTaskHeading.current ?? statusTrigger.current
           }
@@ -268,13 +276,15 @@ function ActiveView({
           />
         </PageSection>
       ))}
-      <BotResponsibilities botName={botName} />
-      <PageSection title="Routines">
-        <Link className="text-sm underline underline-offset-2" to="/routines">
-          Manage Routines
-        </Link>
-        <RoutinesList embedded />
-      </PageSection>
+      <BotResponsibilities botName={botName} embedded />
+      <RoutinesList
+        embedded
+        sectionLink={
+          <Link className="text-sm underline underline-offset-2" to="/routines">
+            Manage Routines
+          </Link>
+        }
+      />
     </VStack>
   );
 }

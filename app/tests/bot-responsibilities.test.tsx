@@ -104,14 +104,16 @@ function serving(goals: ReturnType<typeof goal>[] = twoGoals()) {
   }) as unknown as typeof fetch;
 }
 
-function draw() {
+function draw(embedded = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/"] }),
     routeTree: createRootRoute({
-      component: () => <BotResponsibilities agentId="expenses" />,
+      component: () => (
+        <BotResponsibilities agentId="expenses" embedded={embedded} />
+      ),
     }),
   });
   return render(
@@ -202,4 +204,15 @@ test("the empty section has one New goal action that opens the goal dialog", asy
   expect(view.getByRole("button", { name: "Create goal" })).toBeTruthy();
   // One word for one thing: the route and the API say responsibilities, the person never does.
   expect(document.body.textContent).not.toMatch(/responsibilit/i);
+});
+
+test("embedded empty goals keep one create action in the section heading", async () => {
+  serving([]);
+  const view = draw(true);
+  await view.findByText("No goals yet");
+  expect(view.container.querySelector("[data-slot=empty]")).toBeNull();
+  expect(view.getAllByRole("button", { name: "New goal" })).toHaveLength(1);
+  expect(
+    view.getByRole("heading", { name: "Goals" }).parentElement?.textContent,
+  ).toContain("New goal");
 });

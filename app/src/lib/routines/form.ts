@@ -140,3 +140,16 @@ export function browserTimeZone(): string {
     return "UTC";
   }
 }
+
+export function usesDaylightSaving(timeZone: string): boolean {
+  const year = new Date().getUTCFullYear();
+  const format = new Intl.DateTimeFormat("en", {
+    timeZone,
+    timeZoneName: "longOffset",
+  });
+  const offset = (month: number) =>
+    format
+      .formatToParts(Date.UTC(year, month, 15))
+      .find(({ type }) => type === "timeZoneName")?.value;
+  return offset(0) !== offset(6);
+}
