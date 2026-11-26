@@ -3,19 +3,8 @@ export type MessageListEmphasis = "agent" | "thread";
 export type NarrationPreference = "on" | "off";
 /** Whether this person's Bots check in on their behalf at all. */
 export type ProactivePreference = "on" | "off";
-/**
- * Every skin OpenBot ships. `openbot` is the default and is OpenBot exactly as it is without a
- * skin: no frame of its own, no tokens of its own.
- *
- * Here rather than in the app because the choice is saved on the person's account, so the server
- * has to know which values it may store.
- */
-export const SKIN_IDS = [
-  "openbot",
-  "openduet",
-  "opendots",
-  "openmuse",
-] as const;
+/** The preference API still accepts the default skin for older clients. */
+export const SKIN_IDS = ["openbot"] as const;
 
 export type SkinId = (typeof SKIN_IDS)[number];
 
