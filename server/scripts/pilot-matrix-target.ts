@@ -524,9 +524,10 @@ export async function pilotSuspensionEntry(
   );
 }
 
-export type PilotLegResult =
-  | { scenario: string; outcome: "pass"; detail: Json }
-  | { scenario: string; outcome: "fail"; error: string };
+type PilotLeg = { scenario: string; operationIds: string[] };
+
+export type PilotLegResult = PilotLeg &
+  ({ outcome: "pass"; detail: Json } | { outcome: "fail"; error: string });
 
 /**
  * The routing the matrix script uses against a product entry. Every leg the
@@ -562,21 +563,37 @@ export async function runPilotTargetLegs(
   const fetchImpl = context.fetchImpl ?? fetch;
   const clock = context.clock ?? Date.now;
   const results: PilotLegResult[] = [];
-  const runId = crypto.randomUUID();
-  const operation = (name: string) => `matrix-${runId}-${name}`;
-  const leg = async (scenario: string, work: () => Promise<Json>) => {
+  const leg = async (
+    scenario: string,
+    work: (operation: (name: string) => string) => Promise<Json>,
+  ) => {
+    const ids = new Map<string, string>();
+    const operation = (name: string) => {
+      const existing = ids.get(name);
+      if (existing) return existing;
+      const id = crypto.randomUUID();
+      ids.set(name, id);
+      return id;
+    };
     try {
-      results.push({ scenario, outcome: "pass", detail: await work() });
+      const detail = await work(operation);
+      results.push({
+        scenario,
+        operationIds: [...ids.values()],
+        outcome: "pass",
+        detail,
+      });
     } catch (error) {
       results.push({
         scenario,
+        operationIds: [...ids.values()],
         outcome: "fail",
         error: error instanceof Error ? error.message : String(error),
       });
     }
   };
 
-  await leg("target-model-switch", async () => {
+  await leg("target-model-switch", async (operation) => {
     const quoted = await pilotQuoteEntry(target, fetchImpl);
     const first = await pilotChatEntry(
       target,
@@ -609,14 +626,13 @@ export async function runPilotTargetLegs(
     assertLeg(first.receipt?.route === routes.A, "route A was not recorded");
     assertLeg(second.receipt?.route === routes.B, "route B was not recorded");
     return {
-      operationIds: [operation("switch-a"), operation("switch-b")],
       defaultRoute: quoted.route,
       routeA: first.receipt?.route,
       routeB: second.receipt?.route,
     };
   });
 
-  await leg("target-cross-app-isolation", async () => {
+  await leg("target-cross-app-isolation", async (operation) => {
     const before = await pilotBalanceEntry(target, sessionCookies.A, fetchImpl);
     const b = await pilotChatEntry(
       target,
@@ -663,12 +679,11 @@ export async function runPilotTargetLegs(
     return {
       chargedA: after.chargedMicrocredits,
       chargedB: bBalance.chargedMicrocredits,
-      operationIds: [operation("isolation-b")],
       receiptB: b.receipt,
     };
   });
 
-  await leg("target-concurrent-budgets", async () => {
+  await leg("target-concurrent-budgets", async (operation) => {
     const quoted = await pilotQuoteEntry(target, fetchImpl);
     const attempts = await Promise.all(
       [1, 2, 3, 4].map((n) =>
@@ -700,7 +715,7 @@ export async function runPilotTargetLegs(
     return { reserved: reserved.length, denied: denied.length, balance };
   });
 
-  await leg("target-failures-refusals", async () => {
+  await leg("target-failures-refusals", async (operation) => {
     const quoted = await pilotQuoteEntry(target, fetchImpl);
     const forged = await pilotDispatchEntry(
       target,
@@ -733,7 +748,7 @@ export async function runPilotTargetLegs(
     return { forged: forged.reason, unknownRoute: unknown.reason };
   });
 
-  await leg("target-weknora-ingest-after-signout", async () => {
+  await leg("target-weknora-ingest-after-signout", async (operation) => {
     const weknora = context.weknora;
     if (!weknora)
       throw new Error("The target has no WeKnora credentials configured.");
@@ -766,7 +781,7 @@ export async function runPilotTargetLegs(
         subject: weknora.subject,
         authorizationId,
         resourceId: weknora.resourceId,
-        operationId: crypto.randomUUID(),
+        operationId: operation("ingest"),
         input: ["embedding during sign-in"],
       },
       fetchImpl,
@@ -779,7 +794,7 @@ export async function runPilotTargetLegs(
         subject: weknora.subject,
         authorizationId,
         resourceId: weknora.resourceId,
-        operationId: crypto.randomUUID(),
+        operationId: operation("signed-out-embedding"),
         input: ["embedding after sign out"],
       },
       fetchImpl,
@@ -811,7 +826,7 @@ export async function runPilotTargetLegs(
         subject: weknora.subject,
         authorizationId,
         resourceId: weknora.resourceId,
-        operationId: crypto.randomUUID(),
+        operationId: operation("revoked-embedding"),
         input: ["embedding after revocation"],
       },
       fetchImpl,
@@ -827,7 +842,7 @@ export async function runPilotTargetLegs(
     };
   });
 
-  await leg("target-account-status-suspension", async () => {
+  await leg("target-account-status-suspension", async (operation) => {
     const suspension = context.suspension;
     if (!suspension)
       throw new Error("The target has no account-status entry configured.");

@@ -1224,6 +1224,9 @@ test("the pilot matrix routes execution and account requests through the product
       "target-account-status-suspension",
     ]);
     expect(legs.every(({ outcome }) => outcome === "pass")).toBe(true);
+    expect(legs.map(({ operationIds }) => operationIds.length)).toEqual([
+      2, 1, 4, 2, 3, 2,
+    ]);
     // The model switch reserved a named route per call; the refusals never
     // reached the executor.
     expect(legs[0]).toMatchObject({

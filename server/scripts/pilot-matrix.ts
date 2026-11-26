@@ -1099,7 +1099,7 @@ if (target.entry) {
       (result) => result.scenario === "target-model-switch",
     );
     const operationIds =
-      modelSwitch?.outcome === "pass" ? modelSwitch.detail.operationIds : null;
+      modelSwitch?.outcome === "pass" ? modelSwitch.operationIds : null;
     assert(
       Array.isArray(operationIds) && operationIds.length === 2,
       "The target must settle both model-switch operations before Lago reconciliation.",
