@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 
-const app = join(import.meta.dir, "../deploy/1panel/apps/hindsight/1.2.3");
+import { packageDir } from "./support/1panel-package";
+
+const app = packageDir("hindsight");
 const consoleAccessKey = "HINDSIGHT_CP_ACCESS_KEY";
 
 /** Hindsight only shows its login page when this variable reaches the control plane, so it must not be optional. */
