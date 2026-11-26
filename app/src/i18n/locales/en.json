@@ -39,6 +39,8 @@
   "banner.update.restarting": "Restarting…",
   "banner.update.status": "Downloading…",
   "bots.handoff.loadFailed": "Couldn’t load the Bots this Bot can ask",
+  "bots.retryChoices": "Retry loading Bot choices",
+  "components.preview.heading": "Preview",
   "connections.appDirectoryReadFailed": "Couldn't load the app directory.",
   "frame.actionFailed": "Couldn't complete that. Try again.",
   "frame.cancel": "Cancel",
@@ -62,10 +64,10 @@
   "frame.pageNotFoundDescription": "Check the address below, or open your workspace to find your conversations and Bots.",
   "frame.repeatedFailureStatus": "The page still couldn’t load. You can try again or open your workspace.",
   "frame.requestFailed": "That request failed.",
-  "components.preview.heading": "Preview",
   "frame.retry": "Retry",
   "frame.skipToContent": "Skip to content",
   "frame.tryAgain": "Try again",
+  "ideas.actionConsequences": "Work on it starts a task. Dismiss tells check-ins to skip similar ideas for 30 days.",
   "nav.admin": "Admin",
   "nav.attention.checkIns": "Your check-ins found something",
   "nav.attention.unread": "Unread messages",
@@ -116,6 +118,8 @@
   "nav.working": "Working",
   "nav.workspace": "Workspace",
   "relativeTime.now": "now",
+  "routines.daylightSaving": "This time zone uses daylight saving time, so the routine keeps this clock time all year.",
+  "routines.openBot": "Open Bot",
   "settings.aboutYou": "About you",
   "settings.ai.cancel": "Cancel",
   "settings.ai.change": "Change AI connection",
@@ -249,5 +253,7 @@
   "sign.sso.opening": "Opening…",
   "sign.sso.or": "or",
   "sign.title": "Sign in",
-  "sign.unconfigured": "Sign-in isn’t set up yet."
+  "sign.unconfigured": "Sign-in isn’t set up yet.",
+  "tasks.retryApprovals": "Retry loading approvals and questions",
+  "tasks.retryTasks": "Retry loading tasks"
 }

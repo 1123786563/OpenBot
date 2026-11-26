@@ -39,6 +39,8 @@
   "banner.update.restarting": "正在重启…",
   "banner.update.status": "正在下载…",
   "bots.handoff.loadFailed": "无法加载此 Bot 可以求助的 Bot",
+  "bots.retryChoices": "重新加载可选 Bot",
+  "components.preview.heading": "预览",
   "connections.appDirectoryReadFailed": "无法加载应用目录。",
   "frame.actionFailed": "无法完成该操作，请重试。",
   "frame.cancel": "取消",
@@ -62,10 +64,10 @@
   "frame.pageNotFoundDescription": "请检查下方地址，或打开工作区查找你的对话和 Bot。",
   "frame.repeatedFailureStatus": "此页面仍然无法加载。你可以重试，或打开工作区。",
   "frame.requestFailed": "请求失败。",
-  "components.preview.heading": "预览",
   "frame.retry": "重试",
   "frame.skipToContent": "跳到主要内容",
   "frame.tryAgain": "重试",
+  "ideas.actionConsequences": "选择「开始处理」会启动任务。选择「忽略」后，定期检查将在 30 天内跳过类似的建议。",
   "nav.admin": "管理",
   "nav.attention.checkIns": "你的定期检查有了发现",
   "nav.attention.unread": "未读消息",
@@ -116,6 +118,8 @@
   "nav.working": "处理中",
   "nav.workspace": "工作区",
   "relativeTime.now": "刚刚",
+  "routines.daylightSaving": "此时区实行夏令时，例行任务全年都按这里显示的当地时间运行。",
+  "routines.openBot": "打开 Bot",
   "settings.aboutYou": "关于你",
   "settings.ai.cancel": "取消",
   "settings.ai.change": "更改 AI 连接",
@@ -249,5 +253,7 @@
   "sign.sso.opening": "正在打开…",
   "sign.sso.or": "或",
   "sign.title": "登录",
-  "sign.unconfigured": "登录尚未配置。"
+  "sign.unconfigured": "登录尚未配置。",
+  "tasks.retryApprovals": "重新加载审批和问题",
+  "tasks.retryTasks": "重新加载任务"
 }

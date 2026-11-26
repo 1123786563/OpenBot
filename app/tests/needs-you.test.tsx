@@ -28,6 +28,11 @@ import {
 } from "@/components/astryx-pilot/tasks-screen";
 import { BotRoster } from "@/components/bots/bot-roster";
 import { BotNeedsYou } from "@/components/needs-you/board";
+import { responsibilitiesQueryOptions } from "@/lib/responsibilities";
+import {
+  type RoutinesPage,
+  routinesQueryOptions,
+} from "@/lib/routines/queries";
 import { taskListQueryOptions } from "@/lib/tasks/queries";
 import { queryClient } from "@/query-client";
 import { settleReactWork } from "./settle-react-work";
@@ -555,4 +560,93 @@ test("Tasks shows an empty inbox only after approvals load successfully", async 
   );
   await view.findByText("Couldn’t load approvals and questions");
   expect(view.queryByText("No Bot tasks yet")).toBeNull();
+});
+
+test("Tasks keeps one create action in each embedded empty section", async () => {
+  serving();
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+  client.setQueryData(responsibilitiesQueryOptions().queryKey, []);
+  client.setQueryData<RoutinesPage>(routinesQueryOptions().queryKey, {
+    routines: [],
+    sweep: { lastSweptAt: null, working: false },
+  });
+  const root = createRootRoute({ component: TasksScreen });
+  const router = createRouter({
+    routeTree: root,
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  await view.findByText("No goals yet");
+  await view.findByText("No routines yet");
+  expect(view.container.querySelector("[data-slot=empty]")).toBeNull();
+  expect(view.getAllByRole("link", { name: "New routine" })).toHaveLength(1);
+  expect(view.getAllByRole("button", { name: "New goal" })).toHaveLength(1);
+  expect(
+    view.getAllByRole("heading").map((heading) => heading.tagName),
+  ).toEqual(["H1", "H2", "H2"]);
+  cleanup();
+  client.clear();
+});
+
+test("Tasks names each retry and only reloads the corresponding request", async () => {
+  tasks = [task({ id: "a", title: "Cached task", status: "working" })];
+  serving();
+  const fixtureFetch = global.fetch;
+  const taskPath = "/api/tasks";
+  const approvalsPath = "/api/approvals";
+  const unavailable = new Set([taskPath, approvalsPath]);
+  const reads: string[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === taskPath || path === approvalsPath) reads.push(path);
+      if (unavailable.has(path)) return Response.json({}, { status: 503 });
+      return fixtureFetch(input, init);
+    },
+    { preconnect: fixtureFetch.preconnect },
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  client.setQueryData(taskListQueryOptions().queryKey, tasks);
+  const router = createRouter({
+    routeTree: createRootRoute({ component: TasksScreen }),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  const retryTasks = await view.findByRole("button", {
+    name: "Retry loading tasks",
+  });
+  const retryApprovals = await view.findByRole("button", {
+    name: "Retry loading approvals and questions",
+  });
+  expect(view.getAllByRole("alert")).toHaveLength(2);
+  expect(view.queryByRole("button", { name: "Retry", exact: true })).toBeNull();
+  expect(view.getByRole("link", { name: "Open" }).getAttribute("href")).toBe(
+    "/channel/c-a",
+  );
+  reads.length = 0;
+  unavailable.delete(taskPath);
+  fireEvent.click(retryTasks);
+  await waitFor(() =>
+    expect(view.queryByText("Couldn’t load Bot tasks")).toBeNull(),
+  );
+  expect(reads).toEqual([taskPath]);
+  reads.length = 0;
+  unavailable.delete(approvalsPath);
+  fireEvent.click(retryApprovals);
+  await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
+  expect(reads).toEqual([approvalsPath]);
+  cleanup();
+  client.clear();
 });

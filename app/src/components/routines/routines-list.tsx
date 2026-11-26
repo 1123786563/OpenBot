@@ -12,9 +12,10 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useId, useRef, useState } from "react";
+import { Fragment, type ReactNode, useId, useRef, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { ContinueBudgetedWork } from "@/components/billing/execution-budget-dialog";
+import { InlineEmpty } from "@/components/layout/page-parts";
 import {
   PageEmpty,
   PageRows,
@@ -39,9 +40,9 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { ClientError, canKeepCachedRead } from "@/lib/client";
-import { useTranslation } from "@/i18n";
 import { relativeTime } from "@/lib/relative-time";
 import {
   deleteRoutineMutationOptions,
@@ -181,7 +182,7 @@ function RoutineRuns({
   routine: RoutineRecord;
 }) {
   // Subscribes this history to the interface language, so choosing another one redraws its times in place.
-  useTranslation();
+  const { t } = useTranslation();
   const runs = useQuery(routineRunsQueryOptions(routine.id));
   const history = canKeepCachedRead(runs.error) ? runs.data : undefined;
   if (runs.isPending)
@@ -235,7 +236,15 @@ function RoutineRuns({
                     : "Scheduled"}{" "}
                 · {relativeTime(run.startedAt)}
               </span>
-              {routine.channel.gone ? null : (
+              {routine.channel.gone ? (
+                <Link
+                  className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  params={{ agentId: routine.agentId }}
+                  to="/bots/$agentId"
+                >
+                  {t("routines.openBot", "Open Bot")}
+                </Link>
+              ) : (
                 <Link
                   className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
                   params={{ channelId: routine.channel.id }}
@@ -558,14 +567,18 @@ export function RoutinesList({
   embedded = false,
   hasCreateAction = false,
   searchable = false,
+  headingId,
+  sectionLink,
 }: {
   /** Show only the routines this Bot carries out. Absent shows all of the person's. */
   agentId?: string;
-  /** Where the page section's own top margin is somebody else's spacing. */
+  /** A compact section within a page that shows other kinds of work. */
   embedded?: boolean;
   /** The surrounding page already provides its create action. */
   hasCreateAction?: boolean;
   searchable?: boolean;
+  headingId?: string;
+  sectionLink?: ReactNode;
 } = {}) {
   // Subscribes this list to the interface language, so choosing another one redraws its times in place.
   useTranslation();
@@ -626,9 +639,15 @@ export function RoutinesList({
     return words.every((word) => text.includes(word));
   });
 
+  const Empty = embedded ? InlineEmpty : PageEmpty;
+  const newRoutine =
+    !hasCreateAction && routines.isSuccess ? (
+      <NewRoutineButton agentId={agentId} />
+    ) : undefined;
   return (
     <PageSection
-      className={embedded ? "mt-0" : undefined}
+      action={embedded ? newRoutine : undefined}
+      headingId={headingId}
       description={
         showRunHelp ? (
           <Text as="span" id={runHelpId}>
@@ -636,15 +655,18 @@ export function RoutinesList({
           </Text>
         ) : undefined
       }
-      headingRef={searchable ? heading : undefined}
+      headingRef={searchable || embedded ? heading : undefined}
       title={
-        searchable
-          ? agentId
-            ? "This Bot’s routines"
-            : "Your routines"
-          : undefined
+        embedded
+          ? "Routines"
+          : searchable
+            ? agentId
+              ? "This Bot’s routines"
+              : "Your routines"
+            : undefined
       }
     >
+      {sectionLink}
       {confirmation}
       {/* A fact about the deployment rather than a row to act on, so said as a sentence. */}
       {noWorker ? (
@@ -728,24 +750,20 @@ export function RoutinesList({
         <ReadStatus kind="loading" message="Loading Routines…" />
       ) : rows.length === 0 ? (
         routines.error ? null : (
-          <PageEmpty
-            action={
-              hasCreateAction ? undefined : (
-                <NewRoutineButton agentId={agentId} />
-              )
-            }
+          <Empty
+            action={embedded ? undefined : newRoutine}
             icon={IconClock}
             title={agentId ? "No routines for this Bot yet" : "No routines yet"}
           >
             {agentId
               ? 'Set one up with New routine, or ask it something like "every weekday at 9, send me…".'
               : 'Set one up with New routine, or ask a Bot something like "every weekday at 9, send me…".'}
-          </PageEmpty>
+          </Empty>
         )
       ) : !matches.length ? (
-        <PageEmpty icon={IconListSearch} title="No matching routines">
+        <Empty icon={IconListSearch} title="No matching routines">
           Try a shorter title or search for Enabled or Paused.
-        </PageEmpty>
+        </Empty>
       ) : (
         <PageRows>
           {matches.map((routine, index) => (
