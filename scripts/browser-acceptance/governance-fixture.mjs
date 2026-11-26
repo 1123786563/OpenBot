@@ -1,4 +1,5 @@
 import answers from "../../app/tests/what-if.fixture.json";
+import { firstBatchRead } from "./first-batch-reads.mjs";
 import {
   CAPABILITIES,
   CAPABILITY_LABELS,
@@ -35,6 +36,7 @@ let scenario;
 let policy;
 let rows;
 let teamRules;
+let firstBatchMember;
 const requests = [];
 export const governance = {
   get edition() {
@@ -54,6 +56,7 @@ export const governance = {
       };
       rows = [];
       teamRules = [];
+      firstBatchMember = { ...member };
       requests.length = 0;
       return json({ ready: true });
     }
@@ -69,6 +72,10 @@ export const governance = {
       request.method === "POST"
     ) {
       requests.push({ method: request.method, path });
+    }
+    if (scenario.firstBatch) {
+      const reply = firstBatchRead(request, path, json);
+      if (reply) return reply;
     }
     switch (path) {
       case "/api/agents":
@@ -111,9 +118,26 @@ export const governance = {
         if (scenario.people === "denied")
           return json({ error: "Fixture access denied." }, 403);
         return json({
-          people: scenario.people === "empty" ? [] : [member],
+          people: scenario.people === "empty" ? [] : [firstBatchMember],
           nextCursor: null,
         });
+      case "/api/admin/people/fixture-member/role":
+        if (!scenario.firstBatch || request.method !== "POST") return undefined;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        firstBatchMember.role = (await request.json()).role;
+        return json({ person: firstBatchMember });
+      case "/api/admin/people/fixture-member/access":
+        if (!scenario.firstBatch || request.method !== "POST") return undefined;
+        if (scenario.accessConflict)
+          return json({ error: "Fixture state changed." }, 409);
+        firstBatchMember.revoked = (await request.json()).revoked;
+        return json(
+          { error: "Access was removed. Credential retirement failed." },
+          503,
+        );
+      case "/api/admin/enterprise/people/fixture-member/terminate-computers":
+        if (!scenario.firstBatch || request.method !== "POST") return undefined;
+        return json({ stopped: ["person:fixture-member"], failed: [] });
       case "/api/admin/audit-events":
         return json({ events: [answers.event], nextCursor: null });
       case `/api/admin/what-if/explain/${answers.event.id}`:
