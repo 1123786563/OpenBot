@@ -46,6 +46,8 @@ test("the 1Panel Hindsight package always gives the console an access key", () =
     PANEL_DB_NAME: "hindsight",
     PANEL_DB_USER: "hindsight",
     PANEL_DB_USER_PASSWORD: "hindsight",
+    // The API's own key is required too, so the render stops on the console key alone.
+    HINDSIGHT_API_TENANT_API_KEY: "a-tenant-key",
   };
   const render = (key: string) => {
     const file = join(env, "test.env");
