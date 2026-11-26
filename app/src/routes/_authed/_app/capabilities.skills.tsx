@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconDots, IconListSearch, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -312,7 +313,7 @@ function SkillsPage() {
            * screen through a failed refetch, because `data` is still there.
            */}
           {loading ? (
-            <div
+            <VStack
               aria-busy="true"
               aria-label="Loading skills"
               className="mt-4"
@@ -330,9 +331,9 @@ function SkillsPage() {
                   </StaggerItem>
                 ))}
               </PageRows>
-            </div>
+            </VStack>
           ) : readIssue && mine.length === 0 ? null : mine.length === 0 ? (
-            <Empty className="mt-4 h-[180px] border border-dashed">
+            <Empty className="mt-4 h-45 border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
                   No skills yet. Write one with New skill.

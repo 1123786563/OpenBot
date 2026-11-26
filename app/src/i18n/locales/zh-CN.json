@@ -23,6 +23,7 @@
   "audit.export.activityScope": "CSV 包含所选视图和 Bot 范围内符合搜索条件的事件，包括较早的事件。表格筛选仅适用于已加载的事件。",
   "audit.export.adminScope": "CSV 包含符合所选视图、筛选和搜索条件的事件，包括较早的事件。",
   "audit.export.withSearch": "按搜索条件导出 CSV",
+  "audit.search.pending": "正在搜索事件…",
   "audit.search.placeholder": "搜索事件…",
   "audit.search.scope": "文字搜索会查找所选视图中记录的事件详情，包括较早的事件。",
   "banner.dismiss": "关闭",

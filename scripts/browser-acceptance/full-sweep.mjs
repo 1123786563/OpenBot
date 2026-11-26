@@ -235,13 +235,10 @@ async function capture(browser, cases, role, width, theme) {
           .first()
           .waitFor({ state: "attached", timeout: 5000 });
         if (entry.expected) {
-          await page
-            .waitForFunction(
-              (expected) => window.fixtureHistory.includes(expected),
-              entry.expected,
-              { timeout: 1500 },
-            )
-            .catch(() => {});
+          await page.waitForURL(
+            (url) => url.pathname + url.search + url.hash === entry.expected,
+            { timeout: 1500, waitUntil: "commit" },
+          );
         }
         // This is an initial snapshot. Delayed requests can still be pending.
         await page
@@ -280,13 +277,18 @@ async function capture(browser, cases, role, width, theme) {
       } catch (error) {
         record.failure = String(error);
       } finally {
-        const { pathname, search } = new URL(page.url());
-        record.actual = pathname + search;
+        const { pathname, search, hash } = new URL(page.url());
+        record.actual = pathname + search + hash;
         if (entry.expected) {
-          record.history = await page
-            .evaluate(() => window.fixtureHistory)
-            .catch(() => []);
-          record.destinationMatches = record.history.includes(entry.expected);
+          record.destinationMatches = record.actual === entry.expected;
+          if (entry.transient) {
+            record.history = await page
+              .evaluate(() => window.fixtureHistory)
+              .catch(() => []);
+            record.destinationMatches &&= record.history.includes(
+              entry.transient,
+            );
+          }
         }
         await page.close();
       }
@@ -299,16 +301,20 @@ async function capture(browser, cases, role, width, theme) {
 for (const role of ["teamMember", "signedOut", "personal", "teamAdmin"]) {
   await configure(role);
   const viewCases = views.filter((view) => view.role === role);
-  const bookmarkCases = bookmarks.flatMap(({ source, destinations }, i) =>
-    destinations[role]
-      ? [
-          {
-            path: source,
-            expected: destinations[role],
-            id: `bookmark-${i + 1}`,
-          },
-        ]
-      : [],
+  const bookmarkCases = bookmarks.flatMap(
+    ({ source, destinations, consumedQueryFinalPath }, i) =>
+      destinations[role]
+        ? [
+            {
+              path: source,
+              expected: consumedQueryFinalPath ?? destinations[role],
+              ...(consumedQueryFinalPath
+                ? { transient: destinations[role] }
+                : {}),
+              id: `bookmark-${i + 1}`,
+            },
+          ]
+        : [],
   );
   const configurations = [
     [1440, "light"],
@@ -339,6 +345,7 @@ for (const role of ["teamMember", "signedOut", "personal", "teamAdmin"]) {
 assert.equal(records.length, 4 * views.length + 3 * bookmarks.length);
 assert(
   records.every(
-    (record) => record.capture && record.destinationMatches !== false,
+    (record) =>
+      record.capture && !record.failure && record.destinationMatches !== false,
   ),
 );

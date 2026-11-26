@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import {
   type CSSProperties,
   type ReactNode,
@@ -6,12 +7,13 @@ import {
   useMemo,
   useState,
 } from "react";
-
-import { HStack } from "@astryxdesign/core/HStack";
+import { AstryxNavigationToggle } from "@/components/astryx-pilot/navigation-toggle";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   SidebarProvider,
   SidebarResizeProvider,
 } from "@/components/ui/sidebar";
+import { useTranslation } from "@/i18n";
 import { getStoredValue, setStoredValue } from "@/lib/browser-storage";
 import {
   applySidebarOpen,
@@ -20,9 +22,6 @@ import {
   SIDEBAR_STORAGE_KEY,
   SIDEBAR_WIDTH_STORAGE_PREFIX,
 } from "@/lib/sidebar";
-import { useTranslation } from "@/i18n";
-import { AstryxNavigationToggle } from "@/components/astryx-pilot/navigation-toggle";
-import { astryxScope } from "@/components/astryx-pilot/theme";
 import { cn } from "@/lib/utils";
 
 /**
@@ -144,11 +143,7 @@ export function ShellNavigationHeader({
       gap={2}
       paddingInline={3}
       minHeight="var(--spacing-12)"
-      style={{
-        ...astryxScope.style,
-        flexShrink: 0,
-        borderBlockEnd: "thin solid var(--color-border)",
-      }}
+      className="shrink-0 border-be border-(--color-border)"
     >
       <AstryxNavigationToggle navId={navId} trigger={trigger} />
     </HStack>

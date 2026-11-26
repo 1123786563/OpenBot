@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { useId, useRef } from "react";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import {
   ShellNavigationHeader,
@@ -8,7 +9,6 @@ import { SidebarInset } from "@/components/ui/sidebar";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { personalAdminRedirect } from "@/lib/manage-paths";
 import { currentUserQueryOptions } from "../../../lib/auth/queries";
-import { useId, useRef } from "react";
 
 export const Route = createFileRoute("/_authed/admin")({
   beforeLoad: async ({ context, location }) => {
@@ -42,7 +42,7 @@ function RouteComponent() {
       className="h-svh overflow-hidden"
       name="admin"
       pageToggle={false}
-      width="300px"
+      width="calc(var(--spacing) * 75)"
     >
       <AdminFrame />
     </SidebarShell>

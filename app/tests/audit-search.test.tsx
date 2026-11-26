@@ -14,15 +14,6 @@ import { agentKeys } from "@/lib/agents/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { seedAuditPage } from "./seed-audit-page";
 
-/**
- * The Audit page's search box reaches older pages.
- *
- * The box narrows the rows already loaded, but a word on an older page is not in the browser. So
- * typing asks the server with `q`, and a row from an older page comes back and draws. These hold
- * the client half: that the request carries the word, and that a returned older row is shown.
- * `server/tests/audit-search.integration.test.ts` holds the database half.
- */
-
 beforeAll(() => GlobalRegistrator.register());
 afterEach(() => cleanup());
 afterAll(async () => {
@@ -125,4 +116,20 @@ test("typing a word only an older page holds asks the server and draws that row"
     true,
   );
   expect(view.container.textContent).not.toContain("Save deal");
+});
+
+test("a visible label does not match before the stored search resolves", async () => {
+  globalThis.fetch = Object.assign(async () => Response.json({ events: [] }), {
+    preconnect: realFetch.preconnect,
+  });
+
+  const view = renderAudit();
+  await view.findByText("Save deal");
+  await userEvent
+    .setup({ document })
+    .type(view.getByRole("searchbox", { name: "Search events" }), "Save deal");
+
+  expect(view.getByText("Searching events…")).toBeTruthy();
+  expect(view.queryByText("Save deal")).toBeNull();
+  await view.findByText("No matches");
 });

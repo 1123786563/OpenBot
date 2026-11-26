@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconChevronRight, IconFileText, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -88,7 +89,7 @@ export function SkillsPage() {
       <PageSection>
         {/* A read that failed says so; `isPending` goes false on it too, and it is not "none". */}
         {plugins.isPending ? (
-          <div
+          <VStack
             aria-busy="true"
             aria-label="Loading skills"
             className="mt-4"
@@ -107,9 +108,9 @@ export function SkillsPage() {
                 </React.Fragment>
               ))}
             </PageRows>
-          </div>
+          </VStack>
         ) : !plugins.data ? (
-          <div className="mt-4">
+          <VStack className="mt-4">
             <ReadError
               focusAfterRetry={() => heading.current}
               message="Couldn't load skills."
@@ -117,7 +118,7 @@ export function SkillsPage() {
               retryBelow
               retrying={plugins.isFetching}
             />
-          </div>
+          </VStack>
         ) : skills.length === 0 ? (
           <PageEmpty
             action={newSkill("sm")}

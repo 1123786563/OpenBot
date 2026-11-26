@@ -23,6 +23,7 @@
   "audit.export.activityScope": "CSV includes events in the selected view and Bot scope that match the search, including older events. Table filters apply to loaded events.",
   "audit.export.adminScope": "CSV includes events matching the selected view, filters and search, including older events.",
   "audit.export.withSearch": "Export CSV with search",
+  "audit.search.pending": "Searching events…",
   "audit.search.placeholder": "Search events…",
   "audit.search.scope": "Text search checks stored event details across the selected view, including older events.",
   "banner.dismiss": "Dismiss",

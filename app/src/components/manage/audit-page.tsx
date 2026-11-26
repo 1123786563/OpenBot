@@ -277,6 +277,7 @@ export function AuditPage({
     return () => clearTimeout(timer);
   }, [searchTerm]);
   const query = searchTerm ? debouncedTerm : "";
+  const waitingForSearch = searchTerm !== query;
   const scope = edition === "personal" ? withoutOpenBotWorking(asked) : asked;
   const search = withText(scope, query);
   // Export uses the current input even if the list is still waiting for the debounce.
@@ -318,14 +319,14 @@ export function AuditPage({
     !accessDenied &&
     !events.isPlaceholderData &&
     Boolean(events.data?.pages.length);
-  const moreToLoad =
-    !accessDenied && events.hasNextPage && !events.isPlaceholderData;
+  const moreToLoad = loaded && !waitingForSearch && events.hasNextPage;
   const pagesLoaded = events.data?.pages.length ?? 0;
   useLayoutEffect(() => {
     const opener = olderEventsButton.current;
     if (!opener || events.isFetchingNextPage) return;
     olderEventsButton.current = null;
     if (
+      waitingForSearch ||
       events.isPlaceholderData ||
       accessDenied ||
       pagesLoaded <= opener.pages ||
@@ -356,6 +357,7 @@ export function AuditPage({
     pagesLoaded,
     query,
     search,
+    waitingForSearch,
   ]);
   useEffect(() => {
     if (accessDenied) setAnswer(null);
@@ -367,7 +369,7 @@ export function AuditPage({
   }).data?.skills;
   const rows = withSkillTitles(
     oneRowPerAction(
-      accessDenied || events.isPlaceholderData
+      accessDenied || waitingForSearch || events.isPlaceholderData
         ? []
         : (events.data?.pages.flatMap((page) => page.events) ?? []),
     ),
@@ -505,7 +507,7 @@ export function AuditPage({
             }
             moreToLoad={moreToLoad}
             nameFor={nameFor}
-            query={searchTerm === query ? "" : searchTerm}
+            query=""
             storedNames={edition !== "personal"}
             {...(ask ? { rowAction: whyFor } : {})}
             toolbar={({ count, filters, hasColumnFilters }) => (
@@ -636,7 +638,7 @@ export function AuditPage({
                   ) : ask ? null : (
                     filters
                   )}
-                  {loaded ? (
+                  {loaded && !waitingForSearch ? (
                     <Text
                       as="span"
                       className="ml-1 rounded-sm text-muted-foreground text-xs tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
@@ -685,6 +687,7 @@ export function AuditPage({
                   </div>
                 </div>
                 {loaded &&
+                !waitingForSearch &&
                 unmatchedPage?.search === search &&
                 unmatchedPage.query === query ? (
                   <Text
@@ -728,6 +731,12 @@ export function AuditPage({
                     You don’t have access to these audit events. Select Refresh
                     to check again.
                   </p>
+                ) : waitingForSearch ||
+                  (hasTextSearch &&
+                    (events.isPending || events.isPlaceholderData)) ? (
+                  <Text as="p" color="secondary" role="status">
+                    {t("audit.search.pending", "Searching events…")}
+                  </Text>
                 ) : events.isError && !events.isFetchNextPageError ? (
                   <p className="text-destructive text-sm" role="alert">
                     {rows.length

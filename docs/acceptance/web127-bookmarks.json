@@ -121,6 +121,7 @@
   },
   {
     "source": "/settings/connected-accounts/?connected=ok&linked=1",
+    "consumedQueryFinalPath": "/connections",
     "destinations": {
       "teamAdmin": "/connections?connected=ok&linked=%221%22",
       "teamMember": "/connections?connected=ok&linked=%221%22",
@@ -129,6 +130,7 @@
   },
   {
     "source": "/settings/connected-accounts/parallel?action=search",
+    "consumedQueryFinalPath": "/connections/parallel",
     "destinations": {
       "teamAdmin": "/connections/parallel?action=search",
       "teamMember": "/connections/parallel?action=search",
