@@ -2910,8 +2910,10 @@ export function createTestCreditLedger(
               status,
               row.externalAccountEpoch,
             )
-          )
+          ) {
+            await releaseReservation(tx, row);
             return denied("not_authorized");
+          }
         }
         if (
           !eligible ||
