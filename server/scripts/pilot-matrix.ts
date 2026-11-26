@@ -39,7 +39,6 @@ import {
 import { createDatabase } from "../src/db/client";
 import {
   enterpriseSettings,
-  lagoUsageEvents,
   testCreditAccounts,
   testCreditOperations,
 } from "../src/db/schema";
@@ -47,7 +46,17 @@ import {
   fixtureEmbeddingReport,
   fixtureTraceReport,
 } from "../tests/support/bifrost-evidence";
-import { loadPilotTarget, runPilotTargetLegs } from "./pilot-matrix-target";
+import { reconcilePilotMatrixLago } from "./pilot-matrix-lago";
+import {
+  PilotEvidenceFailure,
+  pilotFailureReason,
+  writePilotMatrixManifest,
+} from "./pilot-matrix-manifest";
+import {
+  loadPilotTarget,
+  type PilotLegResult,
+  runPilotTargetLegs,
+} from "./pilot-matrix-target";
 
 const target = loadPilotTarget(process.env);
 const requireEnv = (name: string) => {
@@ -68,30 +77,43 @@ let clockOffsetMs = 0;
 const now = () => new Date(Date.now() + clockOffsetMs);
 const log = (event: Record<string, unknown>) =>
   console.log(JSON.stringify({ t: new Date().toISOString(), ...event }));
-const results: Record<string, unknown>[] = [];
-async function scenario(
-  name: string,
-  work: () => Promise<Record<string, unknown>>,
-) {
+const results: PilotLegResult[] = [];
+type ScenarioWork = (
+  operation: (id: string) => string,
+) => Promise<Record<string, unknown>>;
+async function scenario(name: string, work: ScenarioWork) {
+  const ids = new Set<string>();
+  const operation = (id: string) => {
+    ids.add(id);
+    return id;
+  };
+  let result: PilotLegResult;
   try {
-    const detail = await work();
-    results.push({ scenario: name, outcome: "pass", detail });
-    log({ scenario: name, outcome: "pass", detail });
+    const detail = await work(operation);
+    result = {
+      scenario: name,
+      operationIds: [...ids],
+      outcome: "pass",
+      detail,
+    };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    results.push({ scenario: name, outcome: "fail", error: message });
-    log({ scenario: name, outcome: "fail", error: message });
+    result = {
+      scenario: name,
+      operationIds: [...ids],
+      outcome: "fail",
+      reason: pilotFailureReason(error),
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
+  results.push(result);
+  log(result);
 }
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 // Fixture-only legs reach into the local ledger; a target run replaces them
 // with the same legs driven over HTTP by runPilotTargetLegs.
-const localScenario = async (
-  name: string,
-  work: () => Promise<Record<string, unknown>>,
-) => {
+const localScenario = async (name: string, work: ScenarioWork) => {
   if (!target.entry) await scenario(name, work);
 };
 
@@ -570,19 +592,19 @@ await localScenario("model-switch-product-entry", async () => {
   };
 });
 
-await localScenario("chat-both-routes-account-A", async () => {
+await localScenario("chat-both-routes-account-A", async (operation) => {
   const first = await chatOp(
     identityA,
     "route-a",
     revisions["route-a"],
-    "matrix-chat-a1",
+    operation("matrix-chat-a1"),
     "Reply with exactly: route one ok",
   );
   const second = await chatOp(
     identityA,
     "route-b",
     revisions["route-b"],
-    "matrix-chat-a2",
+    operation("matrix-chat-a2"),
     "Reply with exactly: route two ok",
   );
   assert(
@@ -599,13 +621,13 @@ await localScenario("chat-both-routes-account-A", async () => {
   };
 });
 
-await localScenario("isolation-account-B", async () => {
+await localScenario("isolation-account-B", async (operation) => {
   const before = await ledger.balance(identityA);
   const op = await chatOp(
     identityB,
     "route-a",
     revisions["route-a"],
-    "matrix-chat-b1",
+    operation("matrix-chat-b1"),
     "Reply with exactly: b one ok",
   );
   const afterA = await ledger.balance(identityA);
@@ -621,12 +643,12 @@ await localScenario("isolation-account-B", async () => {
   };
 });
 
-await localScenario("cross-app-balance-race", async () => {
+await localScenario("cross-app-balance-race", async (operation) => {
   const raceQuote = await ledger.quote();
   const attempts = await Promise.all(
     [1, 2, 3, 4].map((n) =>
       ledger.reserve(identityC, {
-        operationId: `matrix-race-${n}`,
+        operationId: operation(`matrix-race-${n}`),
         route: "route-a",
         priceVersion: raceQuote?.priceVersion ?? "",
       }),
@@ -671,11 +693,11 @@ await localScenario("auxiliary-boundary-fail-closed", async () => {
   return { refusedNoContext, refusedUnbounded };
 });
 
-await localScenario("stale-reservation-cannot-dispatch", async () => {
+await localScenario("stale-reservation-cannot-dispatch", async (operation) => {
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-stale",
+    operationId: operation("matrix-stale"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
@@ -684,7 +706,7 @@ await localScenario("stale-reservation-cannot-dispatch", async () => {
     reserved.state === "reserved" ? (reserved.permit ?? "") : "";
   clockOffsetMs = 5 * 60_000 + 2_000;
   const dispatch = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-stale",
+    operationId: operation("matrix-stale"),
     permit: stalePermit,
   });
   clockOffsetMs = 0;
@@ -692,7 +714,7 @@ await localScenario("stale-reservation-cannot-dispatch", async () => {
   return { dispatchState: dispatch.state, reason: dispatch.reason };
 });
 
-await localScenario("gateway-timeout-releases-hold", async () => {
+await localScenario("gateway-timeout-releases-hold", async (operation) => {
   const deadExecutor = createBifrostCreditExecutor({
     endpoint: new URL("http://127.0.0.1:9/v1/chat/completions"),
     gatewayRevision,
@@ -703,12 +725,12 @@ await localScenario("gateway-timeout-releases-hold", async () => {
   assert(quote, "no quote");
   const before = await ledger.balance(identityA);
   const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-timeout",
+    operationId: operation("matrix-timeout"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
   const dispatch = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-timeout",
+    operationId: operation("matrix-timeout"),
     permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
@@ -717,7 +739,7 @@ await localScenario("gateway-timeout-releases-hold", async () => {
     await deadExecutor({
       route: dispatch.route,
       messages: [{ role: "user", content: "will fail" }],
-      operationId: "matrix-timeout",
+      operationId: operation("matrix-timeout"),
     });
   } catch {
     failed = true;
@@ -732,16 +754,16 @@ await localScenario("gateway-timeout-releases-hold", async () => {
   return { released: true, restored: after?.availableMicrocredits };
 });
 
-await localScenario("meter-refusal-blocks-dispatch", async () => {
+await localScenario("meter-refusal-blocks-dispatch", async (operation) => {
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-unmetered",
+    operationId: operation("matrix-unmetered"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
   const dispatch = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-unmetered",
+    operationId: operation("matrix-unmetered"),
     permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
@@ -751,7 +773,7 @@ await localScenario("meter-refusal-blocks-dispatch", async () => {
     await chatExecutor({
       route: dispatch.route,
       messages: [{ role: "user", content: "must not be sent" }],
-      operationId: "matrix-unmetered",
+      operationId: operation("matrix-unmetered"),
     });
   } catch (error) {
     refused = error instanceof UnsentBifrostRequest ? error.reason : undefined;
@@ -762,18 +784,18 @@ await localScenario("meter-refusal-blocks-dispatch", async () => {
   return { refusedNoProviderRequest: true };
 });
 
-await localScenario("cutoff-releases-abandoned-hold", async () => {
+await localScenario("cutoff-releases-abandoned-hold", async (operation) => {
   // A dispatched operation whose user never returns: the reconciliation
   // cutoff must release the held credits.
   const quote = await ledger.quote();
   assert(quote, "no quote");
   const reserved = await ledger.reserve(identityB, {
-    operationId: "matrix-abandoned",
+    operationId: operation("matrix-abandoned"),
     route: quote.route,
     priceVersion: quote.priceVersion,
   });
   const dispatch = await ledger.beginDispatch(identityB, {
-    operationId: "matrix-abandoned",
+    operationId: operation("matrix-abandoned"),
     permit: reserved.state === "reserved" ? (reserved.permit ?? "") : "",
   });
   assert(dispatch.state === "dispatch", "not dispatched");
@@ -794,9 +816,9 @@ await localScenario("cutoff-releases-abandoned-hold", async () => {
   return { swept: applied, restored: after?.availableMicrocredits };
 });
 
-await localScenario("wrong-permit-cannot-dispatch", async () => {
+await localScenario("wrong-permit-cannot-dispatch", async (operation) => {
   const denied = await ledger.beginDispatch(identityA, {
-    operationId: "matrix-chat-a1",
+    operationId: operation("matrix-chat-a1"),
     permit: "forged-permit",
   });
   assert(denied.state === "denied", `forged permit: ${JSON.stringify(denied)}`);
@@ -817,6 +839,11 @@ await scenario("external-direct-gateway-boundary", async () => {
       stream: false,
     }),
   });
+  if (target.entry && response.status !== 401 && response.status !== 403)
+    throw new PilotEvidenceFailure(
+      "gateway_boundary_unverified",
+      `The unauthenticated gateway request returned ${response.status}.`,
+    );
   return {
     directHttpStatus: response.status,
     note: "gateway reached without OpenBot context is a deployment-boundary concern; no permit can be minted outside the ledger (wrong-permit scenario)",
@@ -848,7 +875,7 @@ await localScenario("publish-embedding-route", async () => {
   };
 });
 
-await localScenario("weknora-worker-ingestion", async () => {
+await localScenario("weknora-worker-ingestion", async (operation) => {
   await ledger.registerApplication({
     id: WEKNORA_APPLICATION_ID,
     name: "WeKnora",
@@ -897,6 +924,7 @@ await localScenario("weknora-worker-ingestion", async () => {
       !row.id.startsWith("matrix-") &&
       row.createdAt.getTime() >= workerStartedAt.getTime() - 1_000,
   );
+  for (const row of workerOps) operation(row.id);
   assert(
     workerOps.length >= 1 && workerOps.every((row) => row.state === "settled"),
     `worker ops: ${JSON.stringify(workerOps.map((r) => [r.id, r.state]))}`,
@@ -910,14 +938,14 @@ await localScenario("weknora-worker-ingestion", async () => {
   };
 });
 
-await localScenario("signout-then-authorized-embedding", async () => {
+await localScenario("signout-then-authorized-embedding", async (operation) => {
   // The uploader signs out; a new ingestion under the same valid spending
   // authorization still settles (authorizations outlive sessions).
   const result = await embedViaEndpoint({
     subject: identityA.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-signout-embed",
+    operationId: operation("matrix-signout-embed"),
     input: ["embedding after sign out"],
   });
   assert(result.status === 200, `status ${result.status}`);
@@ -932,59 +960,62 @@ await localScenario("signout-then-authorized-embedding", async () => {
   };
 });
 
-await localScenario("recovery-without-reservation-refused", async () => {
-  // A released operation id replayed by worker recovery must not re-dispatch.
-  const selected = await ledger.weknoraQuote("local-bge", "embedding");
-  assert(selected, "no embedding quote");
-  // An embedding reservation only admits the durable grant's background
-  // task, exactly as the worker's own steps run.
-  const under = {
-    applicationId: WEKNORA_APPLICATION_ID,
-    authorizationId,
-    taskId: authorizationId,
-    resourceId,
-  };
-  const reserved = await ledger.reserve(
-    identityA,
-    {
-      operationId: "matrix-released-recovery",
-      route: selected.route.id,
-      priceVersion: selected.quote.priceVersion,
-      ...under,
-    },
-    { embedding: true },
-  );
-  assert(reserved.state === "reserved", "reserve failed");
-  clockOffsetMs = 5 * 60_000 + 2_000;
-  // Any later reserve on the account releases expired holds.
-  await ledger.reserve(
-    identityA,
-    {
-      operationId: "matrix-recovery-sibling",
-      route: selected.route.id,
-      priceVersion: selected.quote.priceVersion,
-      ...under,
-    },
-    { embedding: true },
-  );
-  clockOffsetMs = 0;
-  const replay = await embedViaEndpoint({
-    subject: identityA.subject,
-    authorizationId,
-    resourceId,
-    operationId: "matrix-released-recovery",
-    input: ["recovery replay"],
-  });
-  assert(replay.status === 409, `replay status ${replay.status}`);
-  return { status: replay.status, body: replay.body };
-});
+await localScenario(
+  "recovery-without-reservation-refused",
+  async (operation) => {
+    // A released operation id replayed by worker recovery must not re-dispatch.
+    const selected = await ledger.weknoraQuote("local-bge", "embedding");
+    assert(selected, "no embedding quote");
+    // An embedding reservation only admits the durable grant's background
+    // task, exactly as the worker's own steps run.
+    const under = {
+      applicationId: WEKNORA_APPLICATION_ID,
+      authorizationId,
+      taskId: authorizationId,
+      resourceId,
+    };
+    const reserved = await ledger.reserve(
+      identityA,
+      {
+        operationId: operation("matrix-released-recovery"),
+        route: selected.route.id,
+        priceVersion: selected.quote.priceVersion,
+        ...under,
+      },
+      { embedding: true },
+    );
+    assert(reserved.state === "reserved", "reserve failed");
+    clockOffsetMs = 5 * 60_000 + 2_000;
+    // Any later reserve on the account releases expired holds.
+    await ledger.reserve(
+      identityA,
+      {
+        operationId: operation("matrix-recovery-sibling"),
+        route: selected.route.id,
+        priceVersion: selected.quote.priceVersion,
+        ...under,
+      },
+      { embedding: true },
+    );
+    clockOffsetMs = 0;
+    const replay = await embedViaEndpoint({
+      subject: identityA.subject,
+      authorizationId,
+      resourceId,
+      operationId: operation("matrix-released-recovery"),
+      input: ["recovery replay"],
+    });
+    assert(replay.status === 409, `replay status ${replay.status}`);
+    return { status: replay.status, body: replay.body };
+  },
+);
 
-await localScenario("revocation-and-isolation-denials", async () => {
+await localScenario("revocation-and-isolation-denials", async (operation) => {
   const stranger = await embedViaEndpoint({
     subject: identityB.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-stranger",
+    operationId: operation("matrix-stranger"),
     input: ["not my kb"],
   });
   assert(stranger.status === 403, `stranger ${stranger.status}`);
@@ -992,7 +1023,7 @@ await localScenario("revocation-and-isolation-denials", async () => {
     subject: identityA.subject,
     authorizationId,
     resourceId: "weknora:tenant:1:kb:kb-other",
-    operationId: "matrix-wrong-resource",
+    operationId: operation("matrix-wrong-resource"),
     input: ["other kb"],
   });
   assert(wrongResource.status === 403, `resource ${wrongResource.status}`);
@@ -1000,7 +1031,7 @@ await localScenario("revocation-and-isolation-denials", async () => {
     subject: identityA.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-before-revoke",
+    operationId: operation("matrix-before-revoke"),
     input: ["still valid"],
   });
   assert(ok.status === 200, `pre-revoke ${ok.status}`);
@@ -1009,7 +1040,7 @@ await localScenario("revocation-and-isolation-denials", async () => {
     subject: identityA.subject,
     authorizationId,
     resourceId,
-    operationId: "matrix-after-revoke",
+    operationId: operation("matrix-after-revoke"),
     input: ["revoked"],
   });
   assert(revoked.status === 410, `revoked ${revoked.status}`);
@@ -1094,38 +1125,29 @@ if (target.entry) {
     results.push(result);
     log(result);
   }
-  await scenario("target-lago-reconciliation", async () => {
+  await scenario("target-lago-reconciliation", async (operation) => {
     const modelSwitch = legResults.find(
       (result) => result.scenario === "target-model-switch",
     );
     const operationIds =
-      modelSwitch?.outcome === "pass" ? modelSwitch.operationIds : null;
-    assert(
-      Array.isArray(operationIds) && operationIds.length === 2,
-      "The target must settle both model-switch operations before Lago reconciliation.",
-    );
+      modelSwitch?.outcome === "pass" ? modelSwitch.operationIds : [];
+    for (const id of operationIds) operation(id);
     const client = createLagoHttpUsageClient({
       baseUrl: lagoUrl,
       apiKey: lagoKey,
       metricCode: "model-usage",
       externalSubscriptionId: requireEnv("LAGO_USAGE_SUBSCRIPTION_ID"),
     });
-    const exporter = createLagoUsageExporter(database, client);
-    const reconciled = [];
-    for (const operationId of operationIds) {
-      assert(typeof operationId === "string", "Missing target operation ID.");
-      const [row] = await database
-        .select({ eventId: lagoUsageEvents.eventId })
-        .from(lagoUsageEvents)
-        .where(eq(lagoUsageEvents.operationId, operationId));
-      assert(row, `No target Lago event for ${operationId}.`);
-      const result = await exporter.reconcileEvent(row.eventId);
-      assert(result.result === "matched", `Lago did not match ${operationId}.`);
-      reconciled.push({ operationId, eventId: row.eventId });
-    }
+    const reconciled = await reconcilePilotMatrixLago(
+      database,
+      client,
+      operationIds,
+    );
     return { reconciled };
   });
 }
+
+await writePilotMatrixManifest(runDir, target, startedAt, results);
 
 const receipts = target.entry
   ? {}

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { reconcilePilotMatrixLago } from "../scripts/pilot-matrix-lago";
 import {
   loadPilotTarget,
   runPilotTargetLegs,
@@ -1227,6 +1228,26 @@ test("the pilot matrix routes execution and account requests through the product
     expect(legs.map(({ operationIds }) => operationIds.length)).toEqual([
       2, 1, 4, 2, 3, 2,
     ]);
+    const switchIds = legs[0]?.operationIds ?? [];
+    const sent: string[] = [];
+    const matched = await reconcilePilotMatrixLago(
+      db,
+      {
+        send: async (event) => {
+          sent.push(event.operationId);
+          return "matched";
+        },
+      },
+      switchIds,
+    );
+    expect(matched.map(({ operationId }) => operationId)).toEqual(switchIds);
+    expect(sent).toEqual(switchIds);
+    await expect(
+      reconcilePilotMatrixLago(db, { send: async () => "matched" }, [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+      ]),
+    ).rejects.toMatchObject({ reason: "lago_event_missing" });
     // The model switch reserved a named route per call; the refusals never
     // reached the executor.
     expect(legs[0]).toMatchObject({

@@ -18,9 +18,14 @@
  * deployment the old constants assumed.
  */
 import { z } from "zod";
+import {
+  PilotEvidenceFailure,
+  type PilotFailureReason,
+  type PilotProvenance,
+  pilotDeployment,
+  pilotFailureReason,
+} from "./pilot-matrix-manifest";
 
-const required = z.string().trim().min(1);
-const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const url = z.url().transform((value) => new URL(value));
 
 const localDefaults = {
@@ -36,8 +41,7 @@ const localDefaults = {
 
 const loopback = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
 
-export type PilotTarget = {
-  evidence: "fixture" | "deployment";
+export type PilotTarget = PilotProvenance & {
   gateway: { url: string; revision: string; meteringRevision: string };
   embedding: { url: string };
   tokenizer: { url: string };
@@ -47,9 +51,6 @@ export type PilotTarget = {
   weknora: { url: string } | undefined;
   // The target's account-status / Workspace-Suspension entry (#69).
   accountStatus: { url: string; workspaceId: string } | undefined;
-  deployment:
-    | { id: string; buildVersion: string; imageDigest: string }
-    | undefined;
 };
 
 export function loadPilotTarget(
@@ -119,13 +120,12 @@ export function loadPilotTarget(
   )
     throw new Error("A deployment target needs its gateway URL and revision.");
 
-  const deployment = z
-    .object({
-      PILOT_DEPLOYMENT_ID: required,
-      PILOT_BUILD_VERSION: required,
-      PILOT_IMAGE_DIGEST: digest,
-    })
-    .safeParse(environment);
+  const deployment = pilotDeployment.safeParse({
+    id: environment.PILOT_DEPLOYMENT_ID,
+    sourceCommit: environment.PILOT_SOURCE_COMMIT,
+    buildVersion: environment.PILOT_BUILD_VERSION,
+    imageDigest: environment.PILOT_IMAGE_DIGEST,
+  });
   if (!deployment.success)
     throw new Error("A deployment target needs its deployment provenance.");
 
@@ -149,11 +149,7 @@ export function loadPilotTarget(
       accountStatusUrl && workspaceId
         ? { url: accountStatusUrl, workspaceId }
         : undefined,
-    deployment: {
-      id: deployment.data.PILOT_DEPLOYMENT_ID,
-      buildVersion: deployment.data.PILOT_BUILD_VERSION,
-      imageDigest: deployment.data.PILOT_IMAGE_DIGEST,
-    },
+    deployment: deployment.data,
   };
 }
 
@@ -174,7 +170,10 @@ function entryOf(target: PilotTarget) {
 async function json(response: Response, what: string): Promise<Json> {
   const body = (await response.json().catch(() => undefined)) as unknown;
   if (!response.ok || typeof body !== "object" || body === null)
-    throw new Error(`Pilot target ${what} failed: ${response.status}`);
+    throw new PilotEvidenceFailure(
+      "product_request_failed",
+      `Pilot target ${what} failed: ${response.status}`,
+    );
   return body as Json;
 }
 
@@ -377,7 +376,10 @@ async function pilotBillEntry(
     )
     .safeParse(await response.json().catch(() => undefined));
   if (!response.ok || !parsed.success)
-    throw new Error(`Pilot target bill failed: ${response.status}`);
+    throw new PilotEvidenceFailure(
+      "product_request_failed",
+      `Pilot target bill failed: ${response.status}`,
+    );
   return parsed.data;
 }
 
@@ -527,7 +529,10 @@ export async function pilotSuspensionEntry(
 type PilotLeg = { scenario: string; operationIds: string[] };
 
 export type PilotLegResult = PilotLeg &
-  ({ outcome: "pass"; detail: Json } | { outcome: "fail"; error: string });
+  (
+    | { outcome: "pass"; detail: Json }
+    | { outcome: "fail"; error: string; reason: PilotFailureReason }
+  );
 
 /**
  * The routing the matrix script uses against a product entry. Every leg the
@@ -588,6 +593,7 @@ export async function runPilotTargetLegs(
         scenario,
         operationIds: [...ids.values()],
         outcome: "fail",
+        reason: pilotFailureReason(error),
         error: error instanceof Error ? error.message : String(error),
       });
     }
