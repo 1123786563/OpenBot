@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  createBrowserHistory,
   createMemoryHistory,
   createRootRoute,
   createRouter,
@@ -27,7 +28,7 @@ import { settleReactWork } from "./settle-react-work";
 
 /** Settings → Memory: what the person's Bots know about them, and which Bot learned it. */
 
-beforeAll(() => GlobalRegistrator.register());
+beforeAll(() => GlobalRegistrator.register({ url: "http://localhost/" }));
 afterEach(cleanup);
 afterAll(async () => {
   await settleReactWork();
@@ -99,16 +100,19 @@ function serving(extra: MemoryRecord[] = []) {
   }) as unknown as typeof fetch;
 }
 
-function draw(node: ReactNode) {
+function draw(
+  node: ReactNode,
+  history = createMemoryHistory({
+    initialEntries: ["/before", "/"],
+    initialIndex: 1,
+  }),
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   // The draft dialogs read the navigation blocker, so they need a mounted router.
   const router = createRouter({
-    history: createMemoryHistory({
-      initialEntries: ["/before", "/"],
-      initialIndex: 1,
-    }),
+    history,
     routeTree: createRootRoute({ component: () => <>{node}</> }),
   });
   const view = render(
@@ -123,6 +127,32 @@ test("a memory a Bot formed names the Bot that formed it", async () => {
   serving();
   const view = draw(<MemoryList />);
   expect(await view.findByText(/Learned by Expenses/)).toBeTruthy();
+});
+
+test("memory search and status filters narrow the list together", async () => {
+  serving([
+    memory({ id: "m3", content: "I prefer email receipts." }),
+    memory({
+      id: "m4",
+      content: "I work from Lisbon.",
+      reviewState: "unreviewed",
+    }),
+  ]);
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  await user.type(
+    await view.findByRole("searchbox", { name: "Search memories" }),
+    "receipts",
+  );
+  await user.selectOptions(
+    view.getByRole("combobox", { name: "Status" }),
+    "review",
+  );
+
+  expect(view.getByText("1 of 4 memories match")).toBeTruthy();
+  expect(view.getByText("Receipts go to finance@.")).toBeTruthy();
+  expect(view.queryByText("I prefer email receipts.")).toBeNull();
+  expect(view.queryByText("I work from Lisbon.")).toBeNull();
 });
 
 test("a failed memory read can be retried without leaving the page", async () => {
@@ -235,6 +265,42 @@ test("leaving a typed fact for another page asks first, and Keep editing keeps t
   );
   expect(view.router.state.location.pathname).toBe("/");
   expect(field.value).toBe("I work from Lisbon.");
+});
+
+test("browser Back protects an edited memory until the draft is discarded", async () => {
+  serving();
+  window.history.replaceState(null, "", "/before");
+  const history = createBrowserHistory();
+  try {
+    history.push("/");
+    history.flush();
+    const view = draw(<MemoryList />, history);
+    const user = userEvent.setup({ document });
+    await user.click(
+      await view.findByRole("button", {
+        name: /^Edit memory: I prefer mornings/,
+      }),
+    );
+    const field = await view.findByRole("textbox", { name: "Memory" });
+    await user.type(field, " Especially Mondays.");
+
+    await act(async () => window.history.back());
+    const leave = await view.findByRole("alertdialog", {
+      name: "Leave without saving?",
+    });
+    expect(view.router.state.location.pathname).toBe("/");
+    await user.click(
+      within(leave).getByRole("button", { name: "Discard changes" }),
+    );
+
+    await waitFor(() =>
+      expect(view.router.state.location.pathname).toBe("/before"),
+    );
+    expect(writes).toEqual([]);
+  } finally {
+    history.destroy();
+    window.history.replaceState(null, "", "/");
+  }
 });
 
 test("leaving a clean editor for another page does not ask", async () => {

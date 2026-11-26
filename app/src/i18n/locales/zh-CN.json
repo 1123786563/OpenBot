@@ -55,6 +55,7 @@
   "frame.pageNotFoundDescription": "请检查下方地址，或打开工作区查找你的对话和 Bot。",
   "frame.repeatedFailureStatus": "此页面仍然无法加载。你可以重试，或打开工作区。",
   "frame.requestFailed": "请求失败。",
+  "components.preview.heading": "预览",
   "frame.retry": "重试",
   "frame.skipToContent": "跳到主要内容",
   "frame.tryAgain": "重试",

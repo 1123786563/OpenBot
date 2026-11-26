@@ -244,6 +244,44 @@ test("a recovered detail preview returns focus to its heading", async () => {
   }
 });
 
+test("a recovered preview leaves focus where the person moved it during Retry", async () => {
+  fetcher.mockResolvedValue(Response.json({}, { status: 500 }));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  try {
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <h2 id="preview-heading" tabIndex={-1}>
+          Preview
+        </h2>
+        <button type="button">Open settings</button>
+        <AdminComponentPreview
+          focusAfterRetry={() => document.getElementById("preview-heading")}
+          kind="sandboxed"
+          name={PUBLISHED.name}
+        />
+      </QueryClientProvider>,
+    );
+    const retry = await view.findByRole("button", { name: "Retry" });
+    const { promise, resolve: answer } = Promise.withResolvers<Response>();
+    fetcher.mockReturnValueOnce(promise);
+    retry.focus();
+    fireEvent.click(retry);
+    const settings = view.getByRole("button", { name: "Open settings" });
+    settings.focus();
+    answer(Response.json({ components: [PUBLISHED] }));
+
+    await view.findByTestId("sandbox-renderer");
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    expect(document.activeElement).toBe(settings);
+  } finally {
+    queryClient.clear();
+  }
+});
+
 test("a failed tile preview keeps its sentence, hides it from a screen reader, and offers no nested Retry", async () => {
   fetcher.mockResolvedValue(Response.json({}, { status: 500 }));
   const queryClient = new QueryClient({

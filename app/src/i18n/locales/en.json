@@ -55,6 +55,7 @@
   "frame.pageNotFoundDescription": "Check the address below, or open your workspace to find your conversations and Bots.",
   "frame.repeatedFailureStatus": "The page still couldn’t load. You can try again or open your workspace.",
   "frame.requestFailed": "That request failed.",
+  "components.preview.heading": "Preview",
   "frame.retry": "Retry",
   "frame.skipToContent": "Skip to content",
   "frame.tryAgain": "Try again",

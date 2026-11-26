@@ -1,10 +1,10 @@
-import { Button } from "@astryxdesign/core/Button";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Stack } from "@astryxdesign/core/Stack";
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SandboxHost } from "@/components/gallery/sandbox-host";
+import { ReadError } from "@/components/layout/read-status";
 import { galleryComponent } from "@/lib/copilot/gallery-registry";
 import {
   type SandboxedRecord,
@@ -20,7 +20,7 @@ export function AdminComponentPreview({
 }: {
   name: string;
   kind: string;
-  /** Inside a link's tile: no nested action, and nothing for a screen reader to read there. */
+  /** Keep preview artwork out of the tile link’s accessible name and tab order. */
   tile?: boolean;
   focusAfterRetry?: () => HTMLElement | null;
 }) {
@@ -32,27 +32,23 @@ export function AdminComponentPreview({
     kind === "sandboxed" && sandboxed.isPending ? (
       <SandboxHost status={LOADING} {...TILE} />
     ) : kind === "sandboxed" && sandboxed.error ? (
-      <SandboxHost
-        status={{
-          kind: "error",
-          message: "Couldn't load the preview.",
-          action: tile ? undefined : (
-            <Button
-              clickAction={async (event) => {
-                const wasFocused =
-                  document.activeElement === event.currentTarget;
-                await sandboxed.refetch();
-                if (wasFocused) {
-                  requestAnimationFrame(() => focusAfterRetry?.()?.focus());
-                }
-              }}
-              label="Retry"
-              size="sm"
+      tile ? (
+        <SandboxHost
+          status={{ kind: "error", message: "Couldn't load the preview." }}
+          {...TILE}
+        />
+      ) : (
+        <SandboxHost {...TILE}>
+          <Stack padding={3}>
+            <ReadError
+              focusAfterRetry={focusAfterRetry}
+              message="Couldn't load the preview."
+              retry={sandboxed.refetch}
+              retrying={sandboxed.isFetching}
             />
-          ),
-        }}
-        {...TILE}
-      />
+          </Stack>
+        </SandboxHost>
+      )
     ) : (
       <ComponentPreview
         kind={kind}
