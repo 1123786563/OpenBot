@@ -206,10 +206,14 @@ export function agentSandboxComputer(
         observation.leaseExpiresAt > current.startedAt &&
         observation.leaseExpiresAt <= current.expiresAt)
     ) {
+      // Cutoff evidence is confirmation received by the lease deadline, not the
+      // physical exit time, and a recorded failure is never downgraded.
       const cutoff =
-        observation.kind === "never_started" ||
-        observation.exitedAt + (observation.clockUncertaintyMs ?? 0) <=
-          observation.leaseExpiresAt
+        current.cutoff !== "failed" &&
+        observedAt <= current.expiresAt &&
+        (observation.kind === "never_started" ||
+          observation.exitedAt + (observation.clockUncertaintyMs ?? 0) <=
+            observation.leaseExpiresAt)
           ? "confirmed"
           : "failed";
       const released = observation.released !== false;
@@ -220,6 +224,8 @@ export function agentSandboxComputer(
           and(
             sameGeneration(row),
             ne(sandboxes.phase, "stopped"),
+            // A late or reordered reply must not revive a recorded failure.
+            sql`(${cutoff} = 'failed' OR ${sandboxes.cutoff} IS DISTINCT FROM 'failed')`,
             released
               ? undefined
               : sql`${sandboxes.cutoff} IS DISTINCT FROM ${cutoff}`,

@@ -6529,6 +6529,50 @@ test("Agent Sandbox records a cutoff failure at the lease deadline while it stil
   }
 });
 
+test("Agent Sandbox records a cutoff failure when confirmation arrives after the deadline", async () => {
+  const owner = await isolationOwner();
+  let leaseExpiresAt = 0;
+  const config: WorkspaceComputerConfig = {
+    agentSandbox: {
+      async start(_binding, lease) {
+        leaseExpiresAt = lease.expiresAt;
+      },
+      // No process was ever admitted, so the exit itself is not in question.
+      async inspect() {
+        return { kind: "never_started" };
+      },
+      async destroy() {},
+      async renew() {
+        throw new Error("Unexpected renewal");
+      },
+    },
+  };
+  const service = newApp(database, config);
+  const request = (action = "") =>
+    service.request(`/api/workspace/computer${action}`, {
+      method: action ? "POST" : "GET",
+      headers: { origin, cookie: owner.session },
+    });
+  clockTime = now();
+  try {
+    expect((await request("/start")).status).toBe(202);
+    // The first observation of that proof lands after the lease deadline, so
+    // confirmation was not on time.
+    clockTime = leaseExpiresAt + 1;
+    expect(await (await request()).json()).toEqual({
+      status: "restart_required",
+      cutoff: "failed",
+    });
+    // A repeated observation must not upgrade the recorded failure.
+    expect(await (await request()).json()).toEqual({
+      status: "restart_required",
+      cutoff: "failed",
+    });
+  } finally {
+    clockTime = undefined;
+  }
+});
+
 for (const cutoff of [
   "account_disabled",
   "workspace_paused",
@@ -6649,9 +6693,11 @@ for (const cutoff of [
       expect((await request("computer/start", {})).status).toBe(429);
       delayEvidence = false;
       await worker.reconcileStoppingWorkspaceComputers?.();
+      // The evidence arrives at firstDeadline + 1, so confirmation was late and
+      // the recorded cutoff failure stands even though the exit was on time.
       expect(await (await request("computer")).json()).toEqual({
         status: "restart_required",
-        cutoff: "confirmed",
+        cutoff: "failed",
       });
 
       clockTime = undefined;
