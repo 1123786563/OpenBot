@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { Hono } from "hono";
+import { reconcilePilotMatrixLago } from "../scripts/pilot-matrix-lago";
+import {
+  loadPilotTarget,
+  runPilotTargetLegs,
+} from "../scripts/pilot-matrix-target";
 import { runWeKnoraWorkLive } from "../scripts/weknora-work-live";
 import {
   configure,
@@ -12,6 +18,10 @@ import {
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createPilotSignoffs } from "../src/billing/pilot-signoffs";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import {
+  createTestCreditRoutes,
+  type TestCreditExecutor,
+} from "../src/billing/test-credit-routes";
 import { loadWeKnoraBilling } from "../src/billing/weknora-config";
 import { createWeKnoraRoutes } from "../src/billing/weknora-routes";
 import { createDatabase } from "../src/db/client";
@@ -969,3 +979,351 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     await db.$client.close();
   }
 }, 120_000);
+
+test("the pilot matrix routes execution and account requests through the product HTTP entries", async () => {
+  const db = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const run = crypto.randomUUID().slice(0, 8);
+  const issuer = `pilot-target-casdoor-${run}`;
+  const identityA = { issuer, subject: crypto.randomUUID() };
+  const identityB = { issuer, subject: crypto.randomUUID() };
+  const identityC = { issuer, subject: crypto.randomUUID() };
+  const tokens = {
+    A: `fixture-target-a-${run}`,
+    B: `fixture-target-b-${run}`,
+    C: `fixture-target-c-${run}`,
+  };
+  const sessionCookies = {
+    A: `pilot_session=a-${run}`,
+    B: `pilot_session=b-${run}`,
+    C: `pilot_session=c-${run}`,
+  };
+  const serviceToken = `fixture-weknora-service-${run}`;
+  const operatorToken = `fixture-operator-${run}`;
+  const workspaceId = crypto.randomUUID();
+  const resourceId = "weknora:tenant:1:kb:kb-1";
+  const harnessImage = `agent-langgraph-agui@sha256:${"e".repeat(64)}`;
+  const ledger = createTestCreditLedger(db);
+  const paid = createPaidCreditLedger(db);
+  const [original] = await db
+    .select()
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+
+  const route = {
+    provider: "fixture-pilot",
+    model: "pilot-target",
+    gatewayRevision: "pilot-g",
+    meteringRevision: "pilot-m",
+    maxInputTokens: 10,
+    maxOutputTokens: 2,
+    tools: false,
+    price: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
+  };
+  const drafted = configure(emptyCatalog, {
+    harnessImage,
+    routes: {
+      "route-a": { ...route, provider: "fixture-pilot-a" },
+      "route-b": { ...route, provider: "fixture-pilot-b", model: "route-b" },
+      "local-bge": {
+        purpose: "embedding",
+        provider: "openai",
+        model: "BAAI/bge-small-en-v1.5",
+        gatewayRevision: "pilot-g",
+        meteringRevision: "pilot-m",
+        maxInputTokens: 10,
+        maxOutputTokens: 0,
+        tools: false,
+        price: { inputPerMillion: 1_000_000, outputPerMillion: 0 },
+      },
+    },
+  });
+  let catalog = drafted;
+  for (const id of ["route-a", "route-b", "local-bge"]) {
+    const proposed = drafted.routes[id];
+    if (!proposed) throw new Error(`fixture route ${id} missing`);
+    catalog = verify(
+      catalog,
+      id,
+      proposed.purpose === "embedding"
+        ? fixtureEmbeddingReport(harnessImage, proposed)
+        : fixtureTraceReport(harnessImage, proposed),
+      "test",
+    );
+  }
+  const published = publish(
+    catalog,
+    ["route-a", "route-b", "local-bge"],
+    "route-a",
+    "test",
+  ).catalog;
+
+  const batches: string[] = [];
+  let dispatches = 0;
+  let server: ReturnType<typeof Bun.serve> | undefined;
+  try {
+    await db
+      .insert(enterpriseSettings)
+      .values({ key: pilotCatalogKey, value: published })
+      .onConflictDoUpdate({
+        target: enterpriseSettings.key,
+        set: { value: published },
+      });
+    for (const [identity, amount] of [
+      [identityA, 100_000n],
+      [identityB, 100_000n],
+      [identityC, 24n], // exactly two chat reservations
+    ] as const) {
+      const batchId = crypto.randomUUID();
+      batches.push(batchId);
+      await ledger.enroll({ identity, batchId, amount });
+      await ledger.claim(identity, batchId);
+    }
+    await ledger.registerApplication({
+      id: "weknora",
+      name: "WeKnora",
+      operator: "platform",
+      resourcePrefix: "weknora:",
+    });
+    await ledger.approveApplication("weknora", "matrix-fixture");
+
+    const identities = new Map([
+      [tokens.A, identityA],
+      [tokens.B, identityB],
+      [tokens.C, identityC],
+    ]);
+    const sessions = new Map([
+      [sessionCookies.A, identityA],
+      [sessionCookies.B, identityB],
+      [sessionCookies.C, identityC],
+    ]);
+    const execute: TestCreditExecutor = async ({
+      bindGatewayRequest,
+      messages,
+    }) => {
+      dispatches += 1;
+      const bound = await bindGatewayRequest({
+        requestId: crypto.randomUUID(),
+        digest: "a".repeat(64),
+      });
+      if (!bound) throw new Error("gateway request was not bound");
+      const first = messages[0];
+      return {
+        text: `Answer to: ${first && "content" in first ? first.content : "nothing"}`,
+        usage: { inputTokens: 3, outputTokens: 2 },
+      };
+    };
+    const embed: NonNullable<
+      Parameters<typeof createWeKnoraRoutes>[0]["execute"]
+    > = async ({ input, beforeDispatch }) => {
+      if (
+        !(await beforeDispatch({
+          requestId: crypto.randomUUID(),
+          requestSha256: "b".repeat(64),
+          inputTokenUpperBound: 3,
+        }))
+      )
+        throw new Error("embedding was not admitted");
+      return {
+        outcome: "complete",
+        vectors: input.map(() => [0.1, 0.2, 0.3]),
+        usage: { inputTokens: 3, outputTokens: 0 },
+      };
+    };
+    const accountA = await ledger.accountOf(identityA);
+    if (!accountA) throw new Error("missing Billing Account A");
+
+    const root = new Hono();
+    root.route(
+      "/billing",
+      createTestCreditRoutes({
+        ledger,
+        authenticate: async (request, intent) =>
+          intent === "execution"
+            ? identities.get(
+                (request.headers.get("authorization") ?? "").replace(
+                  /^Bearer /,
+                  "",
+                ),
+              )
+            : sessions.get(request.headers.get("cookie") ?? ""),
+        paid: { ledger: paid },
+        execute,
+      }),
+    );
+    root.route(
+      "/weknora",
+      createWeKnoraRoutes({
+        issuer,
+        serviceToken,
+        routeId: "local-bge",
+        execute: embed,
+        ledger,
+      }),
+    );
+    root.post("/operator/workspaces/:id/suspension", async (context) => {
+      if (context.req.header("authorization") !== `Bearer ${operatorToken}`)
+        return context.json({ error: "suspension_permission_required" }, 403);
+      const body = (await context.req.json()) as { action?: string };
+      await paid.suspendAccount(accountA, body.action === "pause");
+      return context.json({ operationId: crypto.randomUUID() }, 201);
+    });
+    server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => root.fetch(request),
+    });
+    const origin = server.url.origin;
+
+    // The default target is the local fixture deployment.
+    expect(loadPilotTarget({}).evidence).toBe("fixture");
+    // A deployment target must name its product entry, credential and
+    // provenance, and must not point back at loopback.
+    expect(() => loadPilotTarget({ PILOT_EVIDENCE: "deployment" })).toThrow();
+    expect(() =>
+      loadPilotTarget({
+        PILOT_EVIDENCE: "deployment",
+        PILOT_TARGET_URL: "http://127.0.0.1:3000/api/billing",
+        PILOT_TARGET_TOKEN: tokens.A,
+        PILOT_DEPLOYMENT_ID: "target-1",
+        PILOT_BUILD_VERSION: "build-1",
+        PILOT_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
+        PILOT_GATEWAY_URL: "https://gateway.example/v1/chat/completions",
+        PILOT_GATEWAY_REVISION: "target-g",
+      }),
+    ).toThrow("loopback");
+    const target = loadPilotTarget({
+      PILOT_EVIDENCE: "fixture",
+      PILOT_TARGET_URL: `${origin}/billing`,
+      PILOT_TARGET_TOKEN: tokens.A,
+      PILOT_WEKNORA_URL: `${origin}/weknora`,
+      PILOT_ACCOUNT_STATUS_URL: `${origin}/operator`,
+      PILOT_WORKSPACE_ID: workspaceId,
+    });
+
+    const legs = await runPilotTargetLegs({
+      target,
+      tokens,
+      sessionCookies,
+      routes: { A: "route-a", B: "route-b" },
+      weknora: {
+        serviceToken,
+        subject: identityA.subject,
+        resourceId,
+        createGrant: true,
+      },
+      suspension: { token: operatorToken, workspaceId },
+    });
+    for (const leg of legs)
+      if (leg.outcome === "fail")
+        throw new Error(`${leg.scenario}: ${leg.error}`);
+    expect(legs.map(({ scenario }) => scenario)).toEqual([
+      "target-model-switch",
+      "target-cross-app-isolation",
+      "target-concurrent-budgets",
+      "target-failures-refusals",
+      "target-weknora-ingest-after-signout",
+      "target-account-status-suspension",
+    ]);
+    expect(legs.every(({ outcome }) => outcome === "pass")).toBe(true);
+    expect(legs.map(({ operationIds }) => operationIds.length)).toEqual([
+      2, 1, 4, 2, 3, 2,
+    ]);
+    const switchIds = legs[0]?.operationIds ?? [];
+    const sent: string[] = [];
+    const matched = await reconcilePilotMatrixLago(
+      db,
+      {
+        send: async (event) => {
+          sent.push(event.operationId);
+          return "matched";
+        },
+      },
+      switchIds,
+    );
+    expect(matched.map(({ operationId }) => operationId)).toEqual(switchIds);
+    expect(sent).toEqual(switchIds);
+    await expect(
+      reconcilePilotMatrixLago(db, { send: async () => "matched" }, [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+      ]),
+    ).rejects.toMatchObject({ reason: "lago_event_missing" });
+    // The model switch reserved a named route per call; the refusals never
+    // reached the executor.
+    expect(legs[0]).toMatchObject({
+      outcome: "pass",
+      detail: { routeA: "route-a", routeB: "route-b" },
+    });
+    expect(legs[3]).toMatchObject({
+      outcome: "pass",
+      detail: { forged: "not_authorized", unknownRoute: "route_unavailable" },
+    });
+    // Cross-app isolation read A's unchanged balance after B's charge.
+    expect(legs[1]).toMatchObject({
+      outcome: "pass",
+      detail: { chargedA: "10", chargedB: "5" },
+    });
+    // The settled receipt and balance survive the target's suspension while
+    // new work is refused.
+    expect(legs[5]).toMatchObject({
+      outcome: "pass",
+      detail: { receipt: "settled" },
+    });
+    expect(dispatches).toBe(4);
+  } finally {
+    await server?.stop(true);
+    await db.transaction(async (tx) => {
+      // Account C's rows are reached by its own subject plus the batch join.
+      const subjectAccounts = tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(
+          inArray(testCreditAccounts.subject, [
+            identityA.subject,
+            identityB.subject,
+            identityC.subject,
+          ]),
+        );
+      await tx
+        .delete(lagoUsageEvents)
+        .where(inArray(lagoUsageEvents.accountId, subjectAccounts));
+      await tx
+        .delete(testCreditEvidence)
+        .where(inArray(testCreditEvidence.accountId, subjectAccounts));
+      await tx
+        .delete(pilotProviderCostHolds)
+        .where(inArray(pilotProviderCostHolds.accountId, subjectAccounts));
+      await tx
+        .delete(testCreditOperations)
+        .where(inArray(testCreditOperations.accountId, subjectAccounts));
+      await tx
+        .delete(testCreditBudgets)
+        .where(inArray(testCreditBudgets.accountId, subjectAccounts));
+      await tx
+        .delete(testCreditEnrollments)
+        .where(inArray(testCreditEnrollments.accountId, subjectAccounts));
+      await tx
+        .delete(testCreditAccounts)
+        .where(
+          inArray(testCreditAccounts.subject, [
+            identityA.subject,
+            identityB.subject,
+            identityC.subject,
+          ]),
+        );
+      await tx
+        .delete(testCreditBatches)
+        .where(inArray(testCreditBatches.id, batches));
+    });
+    if (original)
+      await db
+        .update(enterpriseSettings)
+        .set({ value: original.value })
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    else
+      await db
+        .delete(enterpriseSettings)
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    await db.$client.close();
+  }
+}, 180_000);
