@@ -18,6 +18,8 @@
 
 基线的第一批模拟验收记录覆盖 129 个样本，People 的四种视口和主题组合均跑过确认流程。当前构建的会话、书签、导航和偏好定向测试 129 项通过，隔离 PostgreSQL 的 People、身份提供者、凭据和偏好集成测试另有 34 项通过。正式验收维持 0/88。
 
+Playground 异常来自 Playwright 的 Service Worker 拦截脚本。该脚本在不允许同源访问的 iframe 中读取 `navigator.serviceWorker`，Chromium 因而抛出异常。验收工具现在使用全新浏览器上下文，继续限制预览请求到本地测试站点，并检查未启用 Service Worker。设 `SWEEP_MODE=playground` 可单独复跑四种视口和主题组合，验证 iframe 中的示例实际渲染、沙箱权限和页面异常。对照结果在 `~/.local/state/openbot-spec-127/evidence/playground.pGSThR/`，旧配置四个样本均有异常，修复后四个均通过。
+
 ## 书签与退役
 
 21 条书签 × Team 管理员、Team 成员、Personal 共 **63/63**，覆盖六个旧外观入口、Bot 参数、Personal Memory 回退和两个回调参数。两条 Connections 回调在页面消费参数之前经过带参数的目标地址，浏览器历史保存在 `bookmark-history/run.json`。未知 `/s/*` 进入共享恢复页。组件测试另覆盖模拟登录返回和角色变化。 [书签合同](web127-bookmarks.json)
