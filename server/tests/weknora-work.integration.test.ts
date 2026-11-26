@@ -592,6 +592,49 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     expect(await paid.paidBalance(accountId)).toMatchObject({
       availableMicrocredits: "87",
     });
+
+    // One signed resource can pause without stopping the other two (#110 每路径暂停).
+    await signoffs.record({
+      ...signed,
+      routes: paidPaths,
+      pausedResources: ["rerank"],
+    });
+    const beforePause = requests.length;
+    // The pause holds on both entries: Test Credit and paid.
+    const pausedTestRerank = await send({
+      input: chart.find(({ kind }) => kind === "rerank")?.input,
+      authorizationId: await authorization("rerank"),
+    });
+    expect(pausedTestRerank.status).toBe(503);
+    expect(await pausedTestRerank.json()).toEqual({
+      code: "route_unavailable",
+    });
+    const pausedRerank = await send({
+      input: chart.find(({ kind }) => kind === "rerank")?.input,
+      authorizationId: await authorization("rerank", 100n, "paid"),
+    });
+    expect(pausedRerank.status).toBe(503);
+    expect(await pausedRerank.json()).toEqual({ code: "route_unavailable" });
+    for (const entry of chart.filter(({ kind }) => kind !== "rerank")) {
+      const reply = await send({
+        input: entry.input,
+        authorizationId: await authorization(entry.kind, 100n, "paid"),
+        taskId: entry.kind === "maintenance" ? taskId : undefined,
+      });
+      expect(reply.status).toBe(200);
+      expect(await reply.json()).toMatchObject({
+        receipt: { creditType: "paid", chargedMicrocredits: entry.cost },
+      });
+    }
+    expect(requests).toHaveLength(beforePause + 2);
+    expect(requests.slice(beforePause).map(({ model }) => model)).toEqual([
+      "fixture/text",
+      "fixture/text",
+    ]);
+    expect(await ledger.balance(identity)).toEqual(previousTrialBalance);
+    expect(await paid.paidBalance(accountId)).toMatchObject({
+      availableMicrocredits: "77",
+    });
   } finally {
     await server.stop(true);
     await upstream.stop(true);
