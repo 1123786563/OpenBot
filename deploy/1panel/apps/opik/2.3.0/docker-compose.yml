@@ -118,6 +118,7 @@ services:
     tmpfs:
       - /tmp
     container_name: ${CONTAINER_NAME}-backend
+    restart: unless-stopped
     labels:
       createdBy: Apps
   clickhouse:
@@ -160,6 +161,7 @@ services:
       - ./clickhouse_config/users.d/enable_time_type.xml:/etc/clickhouse-server/users.d/enable_time_type.xml
       - ./clickhouse_config/users.d/distributed_insert_queue.xml:/etc/clickhouse-server/users.d/distributed_insert_queue.xml
     container_name: ${CONTAINER_NAME}-clickhouse
+    restart: unless-stopped
     labels:
       createdBy: Apps
   clickhouse-init:
@@ -187,10 +189,19 @@ services:
       backend:
         condition: service_healthy
         required: true
-    entrypoint: null
+    # shortcut: nginx-readable plaintext password file under /tmp, the only dir uid 1001 can write; upgrade to an apr1 hash if the image ships openssl
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        umask 077
+        printf '%s:{PLAIN}%s\n' "$$OPIK_AUTH_USERNAME" "$$OPIK_AUTH_PASSWORD" > /tmp/opik-htpasswd
+        exec /docker-entrypoint.sh nginx -g 'daemon off;'
     environment:
       NGINX_CONF_SUFFIX: local
       NGINX_PORT: "5173"
+      OPIK_AUTH_PASSWORD: ${OPIK_AUTH_PASSWORD:?Set the Opik login password}
+      OPIK_AUTH_USERNAME: ${OPIK_AUTH_USERNAME:-admin}
       OPIK_VERSION: 2.3.0
       OTEL_COLLECTOR_HOST: otel-collector
       OTEL_COLLECTOR_PORT: "4317"
@@ -215,6 +226,7 @@ services:
     ports:
       - 127.0.0.1:${PANEL_APP_PORT_HTTP:-15173}:5173
     container_name: ${CONTAINER_NAME}
+    restart: unless-stopped
     labels:
       createdBy: Apps
   mc:
@@ -264,6 +276,7 @@ services:
     volumes:
       - minio-data:/data
     container_name: ${CONTAINER_NAME}-minio
+    restart: unless-stopped
     labels:
       createdBy: Apps
   minio-init:
@@ -329,6 +342,7 @@ services:
       default: null
       1panel-network: {}
     container_name: ${CONTAINER_NAME}-python-backend
+    restart: unless-stopped
     labels:
       createdBy: Apps
   zookeeper:
@@ -364,6 +378,7 @@ services:
     volumes:
       - zookeeper:/bitnami/zookeeper
     container_name: ${CONTAINER_NAME}-zookeeper
+    restart: unless-stopped
     labels:
       createdBy: Apps
 volumes:

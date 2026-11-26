@@ -17,6 +17,9 @@ services:
       HINDSIGHT_API_LLM_PROVIDER: none
       HINDSIGHT_API_RERANKER_PROVIDER: local
       HINDSIGHT_CP_ACCESS_KEY: ${HINDSIGHT_CP_ACCESS_KEY:?Enter the console access key}
+      HINDSIGHT_API_TENANT_API_KEY: ${HINDSIGHT_API_TENANT_API_KEY:?Enter the Hindsight API key}
+      HINDSIGHT_API_TENANT_EXTENSION: 'hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension'
+      HINDSIGHT_CP_DATAPLANE_API_KEY: ${HINDSIGHT_API_TENANT_API_KEY}
       HINDSIGHT_API_DATABASE_URL: postgresql://${PANEL_DB_USER:?Enter the database user}:${DB_URI_PASSWORD:-${PANEL_DB_USER_PASSWORD:?Enter the database password}}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${PANEL_DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
     image: ghcr.io/vectorize-io/hindsight:1.2.3
     networks:
