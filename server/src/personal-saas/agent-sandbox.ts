@@ -208,8 +208,7 @@ export function agentSandboxComputer(
     ) {
       // Cutoff evidence is confirmation received by the lease deadline, not the
       // physical exit time, and a recorded failure is never downgraded.
-      const cutoff =
-        current.cutoff !== "failed" &&
+      const observedCutoff =
         observedAt <= current.expiresAt &&
         (observation.kind === "never_started" ||
           observation.exitedAt + (observation.clockUncertaintyMs ?? 0) <=
@@ -217,26 +216,29 @@ export function agentSandboxComputer(
           ? "confirmed"
           : "failed";
       const released = observation.released !== false;
-      const [confirmed] = await database
+      const [updated] = await database
         .update(sandboxes)
-        .set({ phase: released ? "stopped" : "stopping", cutoff })
+        .set({
+          phase: released ? "stopped" : "stopping",
+          cutoff: sql`coalesce(${sandboxes.cutoff}, ${observedCutoff})`,
+        })
         .where(
           and(
             sameGeneration(row),
             ne(sandboxes.phase, "stopped"),
-            // A late or reordered reply must not revive a recorded failure.
-            sql`(${cutoff} = 'failed' OR ${sandboxes.cutoff} IS DISTINCT FROM 'failed')`,
-            released
-              ? undefined
-              : sql`${sandboxes.cutoff} IS DISTINCT FROM ${cutoff}`,
+            released ? undefined : isNull(sandboxes.cutoff),
           ),
         )
-        .returning({ generation: sandboxes.generation });
-      if (
-        confirmed &&
-        current.cutoff === null &&
-        observation.kind === "exited"
-      ) {
+        .returning({
+          generation: sandboxes.generation,
+          phase: sandboxes.phase,
+          cutoff: sandboxes.cutoff,
+        });
+      const persisted = updated ?? (await get(workspaceId));
+      if (!persisted || persisted.generation !== row.generation)
+        return { status: "starting" };
+      const cutoff = persisted.cutoff ?? undefined;
+      if (updated && current.cutoff === null && observation.kind === "exited") {
         console.info(
           JSON.stringify({
             type: "agent-sandbox-exit-confirmed",
@@ -249,7 +251,7 @@ export function agentSandboxComputer(
           }),
         );
       }
-      return released
+      return persisted.phase === "stopped"
         ? { status: "restart_required", cutoff, stopped: true }
         : { status: "stopping", cutoff, processExited: true };
     }

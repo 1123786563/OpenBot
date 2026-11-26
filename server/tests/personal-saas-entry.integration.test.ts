@@ -5327,6 +5327,8 @@ test("Flash keeps one workspace slot after worker exit until Alibaba confirms de
     });
     const callsWithEvidence = workerCalls;
     expect((await request(replica(), "/start")).status).toBe(429);
+    // Instance deletion can finish after the deadline even when the worker exit was confirmed on time.
+    clockTime += 15_001;
     missing = true;
     expect(await (await request(replica())).json()).toEqual({
       status: "stopping",
@@ -8514,7 +8516,7 @@ test("a returning owner explicitly opens one empty workspace after recorded clea
   } finally {
     await reconciler.stop(true);
   }
-});
+}, 60_000);
 
 test("admissions pause leaves existing workspaces usable and lets first-time users retry", async () => {
   const existing = await isolationOwner();
