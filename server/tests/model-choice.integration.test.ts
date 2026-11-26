@@ -239,7 +239,10 @@ describe("a person's model pick for a conversation", () => {
     expect((await narrowed.forRun(userId, threadId)).model).toBe(
       "gpt-6.1-terra",
     );
-    expect(await narrowed.read(userId, channelId)).toEqual(NOTHING);
+    expect(await narrowed.read(userId, channelId)).toEqual({
+      ...NOTHING,
+      unavailableModel: "gpt-4o",
+    });
   });
 
   test("a pick made under another provider is not sent to this one", async () => {
@@ -413,6 +416,10 @@ describe("who decides which models people may pick", () => {
           )) as typeof fetch,
         allowlist: () => ({ enabled: false, models: [] }),
       }),
+    });
+    expect(await withdrawn.read(userId, channelId)).toMatchObject({
+      model: null,
+      unavailableModel: "gpt-6-sol",
     });
     expect((await withdrawn.forRun(userId, threadId)).model).toBe(
       "gpt-6.1-terra",

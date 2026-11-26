@@ -37,13 +37,14 @@ export function useConversationModel(
   const choosable = catalogue?.choosable === true;
   const saved = useQuery({
     ...conversationModelQueryOptions(channelId),
-    enabled: choosable,
+    enabled: catalogue !== undefined && !catalogue.choicesUnavailable,
   });
   const save = useMutation(setConversationModelMutationOptions(queryClient));
   const pendingSave = useRef<Promise<ConversationModel> | null>(null);
   const picked = save.isPending ? save.variables.pick : saved.data;
 
   return {
+    unavailableModel: save.isPending ? undefined : saved.data?.unavailableModel,
     /** What the picker shows. Undefined until both the catalogue and the pick have loaded. */
     value:
       choosable && saved.data === undefined

@@ -93,6 +93,8 @@ export type ModelCatalogue = {
    * listing could not be read.
    */
   choosable: boolean;
+  /** The provider listing could not be loaded and only the configured default is shown. */
+  choicesUnavailable?: true;
 };
 
 /** What an admin picks the model allowlist from: the whole listing, before the allowlist. */
@@ -1026,6 +1028,7 @@ export function createModelCatalogue(options: {
         default: defaultModel,
         models: [configured()],
         choosable: false,
+        choicesUnavailable: true,
       };
     return {
       provider,

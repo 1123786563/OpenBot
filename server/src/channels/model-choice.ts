@@ -64,7 +64,9 @@ export function createModelChoices(deps: {
     enabled() && saved && saved.provider === model.provider ? saved : null;
 
   /** What the pick means today: a model still offered, and an effort that model still takes. */
-  async function shown(saved: Saved | undefined): Promise<ConversationModel> {
+  async function shown(
+    saved: Saved | undefined,
+  ): Promise<ConversationModel & { unavailableModel?: string }> {
     const pick = applicable(saved);
     if (!pick) return { model: null, effort: null };
     const choice = await catalogue.choose(pick);
@@ -77,6 +79,9 @@ export function createModelChoices(deps: {
           ? choice.model
           : null,
       effort: choice.effort ?? null,
+      ...(pick.model && !read.choicesUnavailable && choice.model !== pick.model
+        ? { unavailableModel: pick.model }
+        : {}),
     };
   }
 
@@ -85,7 +90,7 @@ export function createModelChoices(deps: {
      * What one person's conversation runs on, as they picked it: their model and effort when they
      * can be used, null for each that falls back to the default. Null too while picking is off.
      */
-    async read(actorId: string, channelId: string): Promise<ConversationModel> {
+    async read(actorId: string, channelId: string) {
       const [row] = await database
         .select({ saved: intelligenceChannelMappings.modelSelection })
         .from(intelligenceChannelMappings)
@@ -195,7 +200,8 @@ export type ModelChoices = ReturnType<typeof createModelChoices>;
 /**
  * `GET` and `PUT /api/channels/:channelId/model`: one person's pick for one conversation.
  *
- * Answers `{ model, effort }`, null meaning the default for each. A conversation the person is not
+ * Answers `{ model, effort }`, null meaning the default for each. Reads may include the id of an
+ * unavailable saved model. A conversation the person is not
  * in has no mapping row for them, so it is a 404 like any conversation they cannot see.
  */
 export function createModelChoiceRoutes(

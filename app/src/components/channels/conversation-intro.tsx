@@ -2,6 +2,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { useQuery } from "@tanstack/react-query";
 import { BotOrb } from "@/components/agents/bot-orb";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslation } from "@/i18n";
 import { shownSubtitle } from "@/lib/agents/subtitle";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 
@@ -37,6 +38,7 @@ export function ConversationIntro({
 }) {
   const personal =
     useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const { t } = useTranslation();
   const subtitle = agent.title ? shownSubtitle(agent.title).trim() : "";
   const about = [subtitle, agent.roleDescription?.trim()]
     .filter((part, index, parts) => part && parts.indexOf(part) === index)
@@ -68,7 +70,9 @@ export function ConversationIntro({
         {personal ? null : (
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="inline-flex h-6.5 items-center rounded-lg bg-muted px-2.5 font-semibold text-[13px] text-muted-foreground">
-              {agent.visibility === "public" ? "Public" : "Private"}
+              {agent.visibility === "public"
+                ? t("conversation.scope.public")
+                : t("conversation.scope.private")}
             </span>
           </div>
         )}

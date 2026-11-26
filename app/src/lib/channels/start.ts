@@ -3,6 +3,7 @@ import { MutationObserver, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import type { ComposerDraft } from "@/components/channels/composer";
+import { t } from "@/i18n";
 import type { StoredThread } from "@/lib/copilot/thread-messages";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
@@ -320,7 +321,9 @@ export async function resumeDirectFirstMessage({
         ? "Resend message uses the original message so it appears only once."
         : !historyChecked
           ? "The full conversation couldn’t load. Check for message loads it again without sending a copy."
-          : "Your browser has saved a copy. Check for message refreshes the conversation without sending it again.",
+          : start.draft.attachments.length > 0
+            ? t("conversation.delivery.attachments")
+            : t("conversation.delivery.checkOnly"),
     };
   };
 

@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   AttachmentStrip,
   type StagedFile,
@@ -60,6 +61,24 @@ test("the strip is announced once it carries something", () => {
 
   expect(getByRole("list", { name: "Attachments" })).toBeTruthy();
   expect(getAllByRole("listitem")).toHaveLength(1);
+});
+
+test("a keyboard user can focus the full name of a long attachment", async () => {
+  const name = `${"quarterly-report-".repeat(12)}.pdf`;
+  const view = render(
+    <AttachmentStrip
+      files={[{ ...notes, name }]}
+      images={[]}
+      onRemove={() => {}}
+    />,
+  );
+  const user = userEvent.setup({ document });
+  await user.tab();
+  expect(document.activeElement).toBe(view.getByText(name));
+  await user.tab();
+  expect(document.activeElement).toBe(
+    view.getByRole("button", { name: `Remove ${name}` }),
+  );
 });
 
 test("the strip leaves the accessibility tree again when the last one goes", () => {

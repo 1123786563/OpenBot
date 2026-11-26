@@ -351,6 +351,21 @@ test("a group names a queued Bot, a working Bot and a stopped run as every conve
   expect(view.queryByText("Run ended")).toBeNull();
 });
 
+test("an empty group gives the next step as a status", async () => {
+  showQuestion = false;
+  messages = [];
+  const view = conversation();
+
+  await waitFor(() =>
+    expect(
+      view
+        .getAllByRole("status")
+        .some((row) => row.textContent?.includes("Type @ to ask one Bot.")),
+    ).toBe(true),
+  );
+  expect(view.getByRole("textbox", { name: "Message" })).toBeTruthy();
+});
+
 test("a group this person can no longer read hides its old messages and offers the way back", async () => {
   showQuestion = false;
   messages = [

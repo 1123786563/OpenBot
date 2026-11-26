@@ -1275,6 +1275,14 @@ describe("group conversations in PostgreSQL", () => {
     expect(
       (await conversations.list(second.id, channel.id)).messages.at(-1),
     ).toMatchObject({ text: "a" });
+    expect(
+      (await conversations.list(second.id, channel.id)).people.map(
+        ({ userId, creator }) => [userId, creator],
+      ),
+    ).toEqual([
+      [second.id, true],
+      [third.id, false],
+    ]);
     await conversations.removeMember(second.id, channel.id, third.id);
     for (const gone of [owner, third])
       await expect(conversations.list(gone.id, channel.id)).rejects.toThrow(
