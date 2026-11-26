@@ -34,7 +34,7 @@ tar -xzf openbot.tar.gz -C /opt/1panel/resource/apps/local/
 
 1. 准备 HTTPS 域名，反向代理上游默认是 `127.0.0.1:18001`。填写管理员邮箱及 Google OAuth 客户端 ID 和密钥，回调地址为 `https://你的域名/api/auth/callback/google`。OpenBot 管理员通过 Google 登录。
 2. 选择 1Panel PostgreSQL 实例。新装可使用面板预填的库名、用户名和密码。OpenBot 的加密密钥、会话密钥和 Worker 共享密钥留空时首次启动自动生成。保留 `installation-secrets` 数据卷，迁移既有部署时填原密钥。
-3. 先安装 Agents，填写它的 Docker 网络（通常为 `<Agents 容器名>-agents`）。日志采集使用 `openbot-observability`，安装前确保该 Docker 网络已创建。CopilotKit Intelligence 的三个字段一起填写，或全部留空使用内置对话运行时。
+3. 先安装 Agents，填写它的 Docker 网络（通常为 `<Agents 容器名>-agents`）。日志采集使用 `openbot-observability`，该网络由 OpenObserve 应用创建，须先安装 OpenObserve。CopilotKit Intelligence 的三个字段一起填写，或全部留空使用内置对话运行时。
 4. 按所用服务填写下表。所有服务间地址都以容器可访问的地址为准。首次迁移结束后，访问 `/health`，再用实际域名验证登录和对话。
 
 | 中间件 | OpenBot 安装表单 |
@@ -102,25 +102,19 @@ tar -xzf bifrost.tar.gz -C /opt/1panel/resource/apps/local/
 使用相应组件前，在服务器创建各自的专用 Docker 网络。数据库选择器使用 `1panel-network`。如果已有 1Panel 管理的数据库，可以直接选择对应实例。
 
 ```sh
-docker network inspect openbot-observability >/dev/null 2>&1 || docker network create openbot-observability
 docker network inspect openbot-hindsight >/dev/null 2>&1 || docker network create openbot-hindsight
 docker network inspect openbot-opik >/dev/null 2>&1 || docker network create --internal openbot-opik
 docker network inspect openbot-spire >/dev/null 2>&1 || docker network create --internal openbot-spire
 ```
 
-安装观测组之前创建外部网络。
-
-```sh
-docker network inspect openbot-observability >/dev/null 2>&1 \
-  || docker network create --internal openbot-observability
-```
+`openbot-observability` 不需手工创建：安装 OpenObserve 应用时由其 Compose 建立为内部网络，须先于 OpenBot 安装。
 
 配置日志流、保留期和采集授权见[观测运维步骤](../operations.md#openobserve-持续日志采集)。表单中授权头保留 `Basic ` 前缀。主应用通过 `openbot-observability` 向 `http://otel-collector:4318/v1/logs` 投递，主应用需加入该网络。
 
 ### 接入可选服务
 
 - 在主应用的模型地址填 `http://openbot-bifrost:8080/v1`，并填写 Bifrost 虚拟密钥及模型名。该地址通过 1Panel 网络访问 Bifrost 的 registry proxy。
-- Hindsight 的 API 和控制台、Opik 的 API 默认没有登录门禁。应用包保留它们各自的私有 Docker 网络与宿主机回环端口。使用时把 OpenBot API 加入对应的 `openbot-hindsight` 或 `openbot-opik` 网络。Lago 的用量投递需要独立 Worker，连接 `openbot-lago`。配置项见[可选服务接入](../operations.md#hindsightopik-和-lago)。
+- Hindsight 的控制台用安装表单中的「控制台访问密钥」登录；Hindsight 的 API 和 Opik 的 API 默认没有登录门禁。应用包保留它们各自的私有 Docker 网络与宿主机回环端口。使用时把 OpenBot API 加入对应的 `openbot-hindsight` 或 `openbot-opik` 网络。Lago 的用量投递需要独立 Worker，连接 `openbot-lago`。配置项见[可选服务接入](../operations.md#hindsightopik-和-lago)。
 - Infisical 的密钥生成和机器身份配置见 [Infisical 说明](../infisical/README.md)。Lago 的密钥要求和用量订阅见[用量投递说明](../../docs/billing-lago-usage-export.md)。
 - 需要独立 Agent 时，从仓库根目录运行下列构建命令。使用另一台主机构建时，将镜像推到 1Panel 主机可以拉取的镜像仓库，并在表单填写相应镜像地址。
 
@@ -147,7 +141,7 @@ SPIRE Server 健康后，执行 `docker exec <SPIRE主容器名> /opt/spire/bin/
 | Infisical | `infisical.example.com` | `http://127.0.0.1:18082` | 将 `SITE_URL` 设为实际 HTTPS 地址 |
 | Lago 前端 | `lago.example.com` | `http://127.0.0.1:13001` | 将 `LAGO_FRONT_URL` 设为此 HTTPS 地址 |
 | Lago API | `lago-api.example.com` | `http://127.0.0.1:13000` | 将 `LAGO_API_URL` 设为此 HTTPS 地址 |
-| Hindsight 控制台 | `hindsight.example.com` | `http://127.0.0.1:19999` | 控制台默认无登录门禁，仅在站点上启用访问控制后使用 |
+| Hindsight 控制台 | `hindsight.example.com` | `http://127.0.0.1:19999` | 登录时输入安装表单中的「控制台访问密钥」 |
 | Hindsight | 内部访问域名 | `http://127.0.0.1:18888` | API 默认无登录门禁，仅通过受限网络或带访问控制的站点使用 |
 | Opik | 内部访问域名 | `http://127.0.0.1:15173` | 代理前端入口，前端会转发 API。默认无登录门禁，仅通过受限网络或带访问控制的站点使用 |
 

@@ -10,6 +10,7 @@ import {
   SidebarProvider,
   SidebarResizeProvider,
 } from "@/components/ui/sidebar";
+import { getStoredValue, setStoredValue } from "@/lib/browser-storage";
 import {
   applySidebarOpen,
   parseStoredSidebarOpen,
@@ -17,6 +18,7 @@ import {
   SIDEBAR_STORAGE_KEY,
   SIDEBAR_WIDTH_STORAGE_PREFIX,
 } from "@/lib/sidebar";
+import { useTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,22 +58,18 @@ export function SidebarShell({
 }) {
   // Read before the first paint, so a shell somebody left collapsed never flashes open.
   const [open, setOpen] = useState(() =>
-    parseStoredSidebarOpen(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)),
+    parseStoredSidebarOpen(getStoredValue(SIDEBAR_STORAGE_KEY)),
   );
   const widthKey = `${SIDEBAR_WIDTH_STORAGE_PREFIX}${name}`;
   const [width, setWidth] = useState(() =>
-    parseStoredSidebarWidth(
-      window.localStorage.getItem(widthKey),
-      defaultWidth,
-    ),
+    parseStoredSidebarWidth(getStoredValue(widthKey), defaultWidth),
   );
   // While the edge is dragged, the sidebar follows the pointer instead of easing after it.
   const [resizing, setResizing] = useState(false);
   const resize = useMemo(
     () => ({
       setWidth: (pixels: number) => setWidth(`${pixels}px`),
-      commitWidth: (pixels: number) =>
-        window.localStorage.setItem(widthKey, String(pixels)),
+      commitWidth: (pixels: number) => setStoredValue(widthKey, String(pixels)),
       setResizing,
     }),
     [widthKey],
@@ -79,10 +77,11 @@ export function SidebarShell({
 
   useEffect(() => {
     applySidebarOpen(open, {
-      setStoredValue: (key, value) => window.localStorage.setItem(key, value),
+      setStoredValue,
     });
   }, [open]);
 
+  const { t } = useTranslation();
   return (
     <SidebarProvider
       className={cn(SIDEBAR_GUTTER, className)}
@@ -108,7 +107,7 @@ export function SidebarShell({
         className="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:inset-s-4 focus:top-4 focus:rounded-md focus:bg-background focus:p-3 focus:text-foreground focus:outline focus:outline-ring"
         href="#main-content"
       >
-        Skip to content
+        {t("frame.skipToContent", "Skip to content")}
       </a>
       <SidebarResizeProvider value={resize}>{children}</SidebarResizeProvider>
     </SidebarProvider>

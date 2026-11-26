@@ -467,6 +467,33 @@ function web(
       },
     },
   );
+  const routineStore = createRoutineStore(db);
+  const routineRunner = createRoutineRunner({
+    routineStore,
+    channelStore,
+    runTurn: createRoutineTurn(
+      copilot.runBackground ??
+        (() =>
+          Promise.reject(new Error("OpenBot background runs unavailable."))),
+      async () => {
+        if ((await authorized?.()) === false)
+          throw new Error("Account disabled.");
+        return actor;
+      },
+    ),
+  });
+  // Both mounts expose the same handles so callers get one type from `web`.
+  const handles = {
+    copilotHandler: copilot.handler,
+    sweepLearning: copilot.sweepLearning,
+    learningConversations: copilot.learningConversations,
+    learnedSkillVersionsCurrent: copilot.learnedSkillVersionsCurrent,
+    routineRunner,
+    runBackground: copilot.runBackground,
+    backgroundApproval: copilot.backgroundApproval,
+    groupConversations,
+    channelStore,
+  };
   if (managed) {
     const args = new Array(createApp.length) as unknown as Parameters<
       typeof createApp
@@ -485,7 +512,7 @@ function web(
         managed.testCredit.casdoor,
       ),
     };
-    return createApp(...args);
+    return Object.assign(createApp(...args), handles);
   }
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
     context,
@@ -513,38 +540,13 @@ function web(
       requireUser,
     ),
   );
-  const routineStore = createRoutineStore(db);
-  const routineRunner = createRoutineRunner({
-    routineStore,
-    channelStore,
-    runTurn: createRoutineTurn(
-      copilot.runBackground ??
-        (() =>
-          Promise.reject(new Error("OpenBot background runs unavailable."))),
-      async () => {
-        if ((await authorized?.()) === false)
-          throw new Error("Account disabled.");
-        return actor;
-      },
-    ),
-  });
   app.route(
     "/api/routines",
     createRoutineRoutes(routineStore, requireUser, { runner: routineRunner }),
   );
   app.route("/api/groups", createGroupRoutes(groupConversations, requireUser));
   app.route("/", copilot.handler);
-  return Object.assign(app, {
-    copilotHandler: copilot.handler,
-    sweepLearning: copilot.sweepLearning,
-    learningConversations: copilot.learningConversations,
-    learnedSkillVersionsCurrent: copilot.learnedSkillVersionsCurrent,
-    routineRunner,
-    runBackground: copilot.runBackground,
-    backgroundApproval: copilot.backgroundApproval,
-    groupConversations,
-    channelStore,
-  });
+  return Object.assign(app, handles);
 }
 
 test("a shared channel submits one native Run without Intelligence", async () => {

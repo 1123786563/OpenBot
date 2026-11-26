@@ -23,6 +23,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import type { DesktopAiConnection } from "@/lib/desktop/queries";
 import { queryClient } from "@/query-client";
 import { Route as GeneralRoute } from "@/routes/_authed/settings/index";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 let connection: DesktopAiConnection;
@@ -55,8 +56,9 @@ beforeEach(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
   queryClient.clear();
   global.fetch = originalFetch;
   delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -120,6 +122,27 @@ test("a provider's own address shows by name, with the model named in setup", as
   );
 });
 
+// The dialog is the one place the whole address can be read, so it wraps rather than cuts.
+test("a long custom address and model wrap inside the dialog instead of being cut", async () => {
+  const host =
+    "an-internal-openai-compatible-endpoint.with-a-very-long-hostname.company.example.internal";
+  const chosenModel = "an-extremely-long-model-name-chosen-in-setup";
+  connection = {
+    kind: "compatible-endpoint",
+    model: chosenModel,
+    endpointHost: host,
+  };
+  const view = renderGeneral();
+  await userEvent.click(await aiModelRow(view));
+  const dialog = await view.findByRole("dialog");
+  const address = within(dialog).getByText(host);
+  const model = within(dialog).getByText(chosenModel);
+  // Happy DOM does no layout; the real-browser matrix shows the wrapped lines.
+  for (const value of [address, model])
+    expect(value.className).not.toMatch(/\btruncate\b/);
+  expect(address.className).toMatch(/\bbreak-all\b/);
+});
+
 test("Change asks the desktop app to change the AI connection", async () => {
   const view = renderGeneral();
   await userEvent.click(await aiModelRow(view));
@@ -147,4 +170,74 @@ test("outside the desktop app there is no AI model section", async () => {
   await settleReactWork();
   expect(view.queryByRole("heading", { name: "AI model" })).toBeNull();
   expect(calls).toEqual([]);
+});
+
+test("in Chinese the AI row and dialog speak the interface language, providers unchanged", async () => {
+  connection = {
+    kind: "compatible-endpoint",
+    model: "gemini-3.8-flash",
+    endpointHost: "generativelanguage.googleapis.com",
+  };
+  await pinLocale("zh-CN");
+  const view = renderGeneral();
+  const row = await view.findByRole("button", {
+    name: /已使用|使用你的|已连接/,
+  });
+  expect(row.textContent).toBe(
+    "Google Gemini使用你的 Google Gemini API 密钥。模型：gemini-3.8-flash",
+  );
+  await userEvent.click(row);
+  const dialog = await view.findByRole("dialog");
+  expect(within(dialog).getByText("AI 连接")).toBeTruthy();
+  expect(
+    within(dialog).getByText(
+      "你的 Bot 使用 Google Gemini。你的密钥或登录信息只保存在这台电脑上。",
+    ),
+  ).toBeTruthy();
+  expect(within(dialog).getByText("提供方")).toBeTruthy();
+  expect(within(dialog).getByText("登录方式")).toBeTruthy();
+  expect(within(dialog).getByText("API 密钥")).toBeTruthy();
+  expect(within(dialog).getByText("模型")).toBeTruthy();
+  expect(within(dialog).getByText("gemini-3.8-flash")).toBeTruthy();
+  expect(
+    within(dialog).getByText(
+      "更改时，OpenBot 会停止并打开设置窗口。OpenBot 会以你在那里选择的连接重新启动。",
+    ),
+  ).toBeTruthy();
+  expect(within(dialog).getByRole("button", { name: "取消" })).toBeTruthy();
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "更改 AI 连接" }),
+  );
+  await waitFor(() =>
+    expect(calls).toContain("plugin:openbot-desktop|change_ai_connection"),
+  );
+  expect(
+    (
+      within(dialog).getByRole("button", {
+        name: "正在停止 OpenBot…",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+// The house settings row: the title and summary keep their clamps; the dialog is where the whole address is read.
+test("the custom AI row clamps its title and summary, and the dialog holds the whole address", async () => {
+  const host = "a-very-long-private-endpoint.company.example.internal";
+  const model = "a-very-long-model-identifier-for-this-installation";
+  connection = {
+    kind: "compatible-endpoint",
+    endpointHost: host,
+    model,
+  };
+  const view = renderGeneral();
+  const row = await aiModelRow(view);
+  const title = row.querySelector('[data-slot="item-title"]');
+  const summary = row.querySelector('[data-slot="item-description"]');
+  expect(title?.className).toMatch(/\bline-clamp-1\b/);
+  expect(summary?.textContent).toContain(model);
+  expect(summary?.className).toMatch(/\bline-clamp-2\b/);
+  await userEvent.click(row);
+  const dialog = await view.findByRole("dialog");
+  expect(within(dialog).getByText(host)).toBeTruthy();
+  expect(within(dialog).getByText(model)).toBeTruthy();
 });

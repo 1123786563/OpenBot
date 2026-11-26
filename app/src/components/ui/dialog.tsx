@@ -3,6 +3,7 @@ import { IconX } from "@tabler/icons-react";
 import type * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -65,6 +66,7 @@ function DialogContent({
    */
   overlayClassName?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <DialogPortal>
       <DialogOverlay
@@ -97,7 +99,7 @@ function DialogContent({
             }
           >
             <IconX />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t("frame.close", "Close")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>

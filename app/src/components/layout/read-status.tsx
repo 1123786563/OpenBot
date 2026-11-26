@@ -2,6 +2,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Text } from "@astryxdesign/core/Text";
 import { useLayoutEffect, useRef } from "react";
+import { useTranslation } from "@/i18n";
 
 type ReadStatusProps =
   | { kind: "loading"; message: string }
@@ -24,7 +25,7 @@ export function ReadError({
   description,
   retry,
   retrying,
-  retryLabel = "Retry",
+  retryLabel,
   retryBelow = false,
   focusAfterRetry,
 }: {
@@ -36,6 +37,7 @@ export function ReadError({
   retryBelow?: boolean;
   focusAfterRetry?: () => HTMLElement | null;
 }) {
+  const { t } = useTranslation();
   const restoreFocus = useRef<(() => void) | null>(null);
   useLayoutEffect(
     () => () => {
@@ -116,7 +118,7 @@ export function ReadError({
         await retry();
       }}
       isLoading={retrying}
-      label={retryLabel}
+      label={retryLabel ?? t("frame.retry", "Retry")}
       className={retryBelow ? "conversation-recovery-action" : undefined}
       size={retryBelow ? "lg" : "sm"}
       variant="secondary"

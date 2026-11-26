@@ -11,6 +11,7 @@
     "prebuild": "bun run --cwd .. generate:app-config",
     "predev": "bun run --cwd .. generate:app-config",
     "pretypecheck": "bun run --cwd .. generate:app-config",
+    "i18n:extract": "i18next-cli extract --sync-primary",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -40,10 +41,14 @@
     "clsx": "^2.1.1",
     "diff": "9.0.0",
     "embla-carousel-react": "^8.6.0",
+    "i18next": "27.2.6",
+    "i18next-icu": "2.7.1",
+    "intl-messageformat": "12.2.1",
     "motion": "^13.1.0",
     "prompt-area": "^0.6.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-i18next": "18.0.3",
     "react-use-measure": "^2.1.7",
     "rxjs": "7.8.1",
     "shadcn": "^4.17.0",
@@ -66,6 +71,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "fake-indexeddb": "6.2.5",
     "happy-dom": "^20.11.2",
+    "i18next-cli": "1.94.1",
     "tailwindcss": "^4.3.3",
     "vite": "^7.1.12"
   }

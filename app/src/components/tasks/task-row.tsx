@@ -18,6 +18,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { useTranslation } from "@/i18n";
 import { relativeTime } from "@/lib/relative-time";
 import type { ListedTask } from "@/lib/tasks/groups";
 import {
@@ -80,6 +81,8 @@ export function TaskRow({
   botName: string;
   canChange?: boolean;
 }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const { task, status } = listed;
   const resolve = useMutation(resolveTaskMutationOptions(queryClient));
   const again = useMutation(tryTaskAgainMutationOptions(queryClient));
@@ -179,6 +182,8 @@ export function TaskRow({
  * the right. Open leads while there is something to read or answer.
  */
 export function TaskBoardRow({ listed }: { listed: ListedTask }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const { task, status } = listed;
   const resolve = useMutation(resolveTaskMutationOptions(queryClient));
   const again = useMutation(tryTaskAgainMutationOptions(queryClient));

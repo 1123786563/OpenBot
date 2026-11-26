@@ -5,8 +5,11 @@ networks:
     external: true
 services:
   init-secrets:
-    image: infisical/infisical:v0.167.14
+    image: infisical/infisical:v0.167.16
     container_name: ${CONTAINER_NAME}-init-secrets
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
     user: "0:0"
     network_mode: none
     restart: "no"
@@ -29,8 +32,9 @@ services:
       SITE_URL: ${SITE_URL:-http://localhost:18082}
       DB_CONNECTION_URI: postgresql://${PANEL_DB_USER:?Enter the database user}:${DB_URI_PASSWORD:-${PANEL_DB_USER_PASSWORD:?Enter the database password}}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${PANEL_DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
       REDIS_URL: redis://:${REDIS_URI_PASSWORD:-${PANEL_REDIS_ROOT_PASSWORD}}@${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
+      DISABLE_PUBLIC_SECRET_SHARING: "true"
       TELEMETRY_ENABLED: "false"
-    image: infisical/infisical:v0.167.14
+    image: infisical/infisical:v0.167.16
     networks:
       infisical: null
       1panel-network:
@@ -46,8 +50,11 @@ services:
       init-secrets:
         condition: service_completed_successfully
   bootstrap-admin:
-    image: infisical/infisical:v0.167.14
+    image: infisical/infisical:v0.167.16
     container_name: ${CONTAINER_NAME}-bootstrap-admin
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
     restart: "no"
     entrypoint: [node, /bootstrap-admin.mjs]
     volumes:

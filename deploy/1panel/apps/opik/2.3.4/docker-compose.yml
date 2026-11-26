@@ -93,6 +93,7 @@ services:
       STATE_DB_USER: ${PANEL_DB_USER:?Enter the database user}
       TOGGLE_ANNOTATION_QUEUE_AUTOMATION_ENABLED: '"true"'
       TOGGLE_CUSTOM_CHARTS_ENABLED: '"false"'
+      TOGGLE_CUSTOM_CHARTS_PUBLIC_ENDPOINTS_ENABLED: '"false"'
       TOGGLE_GUARDRAILS_ENABLED: '"false"'
       TOGGLE_OLLIE_ENABLED: '"false"'
       TOGGLE_OPIK_AI_ENABLED: '"false"'
@@ -111,13 +112,14 @@ services:
       interval: 1s
       retries: 600
       start_period: 1s
-    image: ghcr.io/comet-ml/opik/opik-backend:2.3.0
+    image: ghcr.io/comet-ml/opik/opik-backend:2.3.4
     networks:
       default: null
       1panel-network: {}
     tmpfs:
       - /tmp
     container_name: ${CONTAINER_NAME}-backend
+    restart: unless-stopped
     labels:
       createdBy: Apps
   clickhouse:
@@ -160,6 +162,7 @@ services:
       - ./clickhouse_config/users.d/enable_time_type.xml:/etc/clickhouse-server/users.d/enable_time_type.xml
       - ./clickhouse_config/users.d/distributed_insert_queue.xml:/etc/clickhouse-server/users.d/distributed_insert_queue.xml
     container_name: ${CONTAINER_NAME}-clickhouse
+    restart: unless-stopped
     labels:
       createdBy: Apps
   clickhouse-init:
@@ -180,17 +183,27 @@ services:
     container_name: ${CONTAINER_NAME}-clickhouse-init
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   frontend:
     command: null
     depends_on:
       backend:
         condition: service_healthy
         required: true
-    entrypoint: null
+    # shortcut: nginx-readable plaintext password file under /tmp, the only dir uid 1001 can write; upgrade to an apr1 hash if the image ships openssl
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        umask 077
+        printf '%s:{PLAIN}%s\n' "$$OPIK_AUTH_USERNAME" "$$OPIK_AUTH_PASSWORD" > /tmp/opik-htpasswd
+        exec /docker-entrypoint.sh nginx -g 'daemon off;'
     environment:
       NGINX_CONF_SUFFIX: local
       NGINX_PORT: "5173"
-      OPIK_VERSION: 2.3.0
+      OPIK_AUTH_PASSWORD: ${OPIK_AUTH_PASSWORD:?Set the Opik login password}
+      OPIK_AUTH_USERNAME: ${OPIK_AUTH_USERNAME:-admin}
+      OPIK_VERSION: 2.3.4
       OTEL_COLLECTOR_HOST: otel-collector
       OTEL_COLLECTOR_PORT: "4317"
       OTEL_TRACE: off
@@ -203,7 +216,7 @@ services:
       interval: 1s
       retries: 10
       start_period: 1s
-    image: ghcr.io/comet-ml/opik/opik-frontend:2.3.0
+    image: ghcr.io/comet-ml/opik/opik-frontend:2.3.4
     networks:
       default: {}
       client:
@@ -214,6 +227,7 @@ services:
     ports:
       - 127.0.0.1:${PANEL_APP_PORT_HTTP:-15173}:5173
     container_name: ${CONTAINER_NAME}
+    restart: unless-stopped
     labels:
       createdBy: Apps
   mc:
@@ -235,6 +249,7 @@ services:
     container_name: ${CONTAINER_NAME}-mc
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   minio:
     command:
       - mkdir -p /data && exec minio server --console-address ':9090' /data
@@ -262,6 +277,7 @@ services:
     volumes:
       - minio-data:/data
     container_name: ${CONTAINER_NAME}-minio
+    restart: unless-stopped
     labels:
       createdBy: Apps
   minio-init:
@@ -280,6 +296,7 @@ services:
     container_name: ${CONTAINER_NAME}-minio-init
     labels:
       createdBy: Apps
+      skipStatusCheck: "true"
   python-backend:
     command: null
     entrypoint: null
@@ -287,7 +304,7 @@ services:
       OPIK_OTEL_SDK_ENABLED: "false"
       OPIK_REVERSE_PROXY_URL: http://frontend:5173/api
       OPIK_URL_OVERRIDE: http://backend:8080
-      OPIK_VERSION: 2.3.0
+      OPIK_VERSION: 2.3.4
       OPTSTUDIO_LLM_MAX_TOKENS: "8192"
       OPTSTUDIO_LOG_LEVEL: INFO
       OPTSTUDIO_MAX_CONCURRENT_JOBS: "5"
@@ -301,7 +318,7 @@ services:
       PYTHON_CODE_EXECUTOR_DOCKER_PIDS_LIMIT: "64"
       PYTHON_CODE_EXECUTOR_DOCKER_TMPFS_SIZE: 16m
       PYTHON_CODE_EXECUTOR_EXEC_TIMEOUT_IN_SECS: "3"
-      PYTHON_CODE_EXECUTOR_IMAGE_TAG: 2.3.0
+      PYTHON_CODE_EXECUTOR_IMAGE_TAG: 2.3.4
       PYTHON_CODE_EXECUTOR_MAX_RESULT_SIZE_IN_BYTES: "67108864"
       PYTHON_CODE_EXECUTOR_MEM_LIMIT: 256m
       PYTHON_CODE_EXECUTOR_PROCESS_NETWORK_ISOLATION: "true"
@@ -321,11 +338,12 @@ services:
       interval: 2s
       retries: 30
       start_period: 2s
-    image: ghcr.io/comet-ml/opik/opik-python-backend:2.3.0
+    image: ghcr.io/comet-ml/opik/opik-python-backend:2.3.4
     networks:
       default: null
       1panel-network: {}
     container_name: ${CONTAINER_NAME}-python-backend
+    restart: unless-stopped
     labels:
       createdBy: Apps
   zookeeper:
@@ -361,6 +379,7 @@ services:
     volumes:
       - zookeeper:/bitnami/zookeeper
     container_name: ${CONTAINER_NAME}-zookeeper
+    restart: unless-stopped
     labels:
       createdBy: Apps
 volumes:

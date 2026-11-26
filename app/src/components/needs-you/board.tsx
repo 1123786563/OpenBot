@@ -7,6 +7,7 @@ import { PageSection } from "@/components/layout/page-shell";
 import { SuggestionRow } from "@/components/suggestions/suggestion-row";
 import { TaskBoardRow } from "@/components/tasks/task-row";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   type ProactiveSetting,
@@ -31,6 +32,8 @@ const FINDS_SHOWN = 3;
  * its check-ins watch. Given a Bot (its own page), there is one group of each.
  */
 export function NeedsYouBoard({ agentId }: { agentId?: string }) {
+  // Subscribes this board to the interface language, so choosing another one redraws its times in place.
+  useTranslation();
   const agents = useQuery(agentListQueryOptions());
   const settings = useQuery(proactiveSettingsQueryOptions());
   const waiting = useWaitingByBot(agentId);

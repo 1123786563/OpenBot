@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
+import { useTranslation } from "@/i18n";
 import {
   changeProactiveSettingMutationOptions,
   type ProactiveSetting,
@@ -57,6 +58,8 @@ export function SuggestionRow({
 }) {
   const { data: capabilities } = useQuery(deploymentCapabilitiesQueryOptions());
   const [budgetOpen, setBudgetOpen] = useState(false);
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const act = useMutation(resolveSuggestionMutationOptions(queryClient));
   const stop = useMutation(changeProactiveSettingMutationOptions(queryClient));
   const pressed = act.isPending ? act.variables.action : null;

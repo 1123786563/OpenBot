@@ -2,20 +2,65 @@ additionalProperties:
   formFields:
     - envKey: PANEL_APP_PORT_HTTP
       type: number
-      default: 18888
+      default: 19999
       required: true
+      edit: true
       rule: paramPort
       label:
-        en: HTTP port (Required)
-        es-es: HTTP port (Obligatorio)
-        ja: HTTP port (必須)
-        ms: HTTP port (Wajib)
-        pt-br: HTTP port (Obrigatório)
-        ru: HTTP port (Обязательно)
-        ko: HTTP port (필수)
-        zh-Hant: HTTP port（必填）
-        zh: HTTP port（必填）
-        tr: HTTP port (Zorunlu)
+        en: Console (UI) port (Required)
+        es-es: Console (UI) port (Obligatorio)
+        ja: Console (UI) port (必須)
+        ms: Console (UI) port (Wajib)
+        pt-br: Console (UI) port (Obrigatório)
+        ru: Console (UI) port (Обязательно)
+        ko: Console (UI) port (필수)
+        zh-Hant: 控制台（UI）埠（必填）
+        zh: 控制台（UI）端口（必填）
+        tr: Console (UI) port (Zorunlu)
+    - envKey: PANEL_APP_PORT_API
+      type: number
+      default: 18888
+      required: true
+      edit: true
+      rule: paramPort
+      label:
+        en: API port (Required)
+        es-es: API port (Obligatorio)
+        ja: API port (必須)
+        ms: API port (Wajib)
+        pt-br: API port (Obrigatório)
+        ru: API port (Обязательно)
+        ko: API port (필수)
+        zh-Hant: API 埠（必填）
+        zh: API 端口（必填）
+        tr: API port (Zorunlu)
+    - envKey: HINDSIGHT_CP_ACCESS_KEY
+      type: password
+      default: ""
+      random: true
+      required: true
+      edit: true
+      label:
+        en: Console access key (Required)
+        es-es: Console access key (Obligatorio)
+        ja: Console access key (必須)
+        ms: Console access key (Wajib)
+        pt-br: Console access key (Obrigatório)
+        ru: Console access key (Обязательно)
+        ko: Console access key (필수)
+        zh-Hant: 控制台存取金鑰（必填）
+        zh: 控制台访问密钥（必填）
+        tr: Console access key (Zorunlu)
+    - envKey: HINDSIGHT_API_TENANT_API_KEY
+      type: password
+      default: ""
+      random: true
+      required: true
+      edit: true
+      label:
+        en: Hindsight API key (Required, callers send it as a bearer token)
+        zh: Hindsight API 密钥（必填，调用方以 Bearer 令牌携带）
+        zh-Hant: Hindsight API 金鑰（必填，呼叫方以 Bearer 權杖攜帶）
     - envKey: PANEL_DB_HOST
       type: service
       default: ""

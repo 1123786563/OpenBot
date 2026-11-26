@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 18080
       required: true
+      edit: true
       rule: paramPort
       label:
         en: HTTP port (Required)
@@ -109,6 +110,7 @@ additionalProperties:
       default: BifrostSetup
       random: true
       required: true
+      edit: true
       label:
         en: Setup token (Required)
         es-es: Setup token (Obligatorio)

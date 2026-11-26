@@ -4,6 +4,7 @@ additionalProperties:
       type: password
       default: ""
       required: false
+      edit: true
       label:
         en: One-time SPIRE join token
         es-es: One-time SPIRE join token

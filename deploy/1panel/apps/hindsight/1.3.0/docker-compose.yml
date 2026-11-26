@@ -10,13 +10,18 @@ services:
     entrypoint: null
     environment:
       HF_HOME: /home/hindsight/.cache/huggingface
+      HF_HUB_OFFLINE: "1"
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: local
       HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: "false"
       HINDSIGHT_API_ENABLE_BANK_CONFIG_API: "false"
       HINDSIGHT_API_LLM_PROVIDER: none
       HINDSIGHT_API_RERANKER_PROVIDER: local
+      HINDSIGHT_CP_ACCESS_KEY: ${HINDSIGHT_CP_ACCESS_KEY:?Enter the console access key}
+      HINDSIGHT_API_TENANT_API_KEY: ${HINDSIGHT_API_TENANT_API_KEY:?Enter the Hindsight API key}
+      HINDSIGHT_API_TENANT_EXTENSION: 'hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension'
+      HINDSIGHT_CP_DATAPLANE_API_KEY: ${HINDSIGHT_API_TENANT_API_KEY}
       HINDSIGHT_API_DATABASE_URL: postgresql://${PANEL_DB_USER:?Enter the database user}:${DB_URI_PASSWORD:-${PANEL_DB_USER_PASSWORD:?Enter the database password}}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${PANEL_DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
-    image: ghcr.io/vectorize-io/hindsight:1.2.3
+    image: ghcr.io/vectorize-io/hindsight:1.3.0
     networks:
       client: {}
       1panel-network: {}
@@ -26,8 +31,8 @@ services:
     volumes:
       - model-cache:/home/hindsight/.cache
     ports:
-      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-18888}:8888
-      - 127.0.0.1:${PANEL_APP_PORT_CP:-19999}:9999
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-19999}:9999
+      - 127.0.0.1:${PANEL_APP_PORT_API:-18888}:8888
     container_name: ${CONTAINER_NAME}
     labels:
       createdBy: Apps

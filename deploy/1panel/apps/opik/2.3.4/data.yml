@@ -4,6 +4,7 @@ additionalProperties:
       type: number
       default: 15173
       required: true
+      edit: true
       rule: paramPort
       label:
         en: HTTP port (Required)
@@ -128,7 +129,24 @@ additionalProperties:
         zh-Hant: URL-encoded Redis password (if needed)
         zh: URL 编码后的 Redis 密码（含特殊字符时填写）
         tr: URL-encoded Redis password (if needed)
-    - envKey: MINIO_ROOT_PASSWORD
+    - envKey: OPIK_AUTH_USERNAME
+      type: text
+      default: admin
+      required: true
+      edit: true
+      label:
+        en: Opik login username (Required)
+        zh: Opik 登录用户名（必填）
+    - envKey: OPIK_AUTH_PASSWORD
+      type: password
+      default: OpikLogin
+      random: true
+      required: true
+      edit: true
+      label:
+        en: Opik login password (Required, at least 8 characters)
+        zh: Opik 登录密码（必填，至少 8 位）
+        zh-Hant: Opik 登入密碼（必填，至少 8 位）
       type: password
       default: OpikStorage
       random: true
