@@ -103,7 +103,11 @@ let currentUserId = "model-tester";
 let directMessageReplay = false;
 let storedMessages: unknown[] = [];
 let historyAvailable = true;
-let saved: ConversationModel = { model: null, effort: null };
+let catalogueAvailable = true;
+let saved: ConversationModel & { unavailableModel?: string } = {
+  model: null,
+  effort: null,
+};
 let originalFetch: typeof fetch;
 let originalIndexedDB: PropertyDescriptor | undefined;
 let loseCreateResponse = false;
@@ -146,7 +150,10 @@ beforeAll(() => {
         }
         return NativeResponse.json({ channel }, { status: 201 });
       }
-      if (url.pathname === "/api/models") return NativeResponse.json(catalogue);
+      if (url.pathname === "/api/models")
+        return catalogueAvailable
+          ? NativeResponse.json(catalogue)
+          : new NativeResponse(null, { status: 503 });
       if (url.pathname === "/api/capabilities")
         return NativeResponse.json({ directMessageReplay });
       if (url.pathname === "/api/me")
@@ -249,6 +256,7 @@ afterEach(() => {
   directMessageReplay = false;
   storedMessages = [];
   historyAvailable = true;
+  catalogueAvailable = true;
   localStorage.clear();
   saved = { model: null, effort: null };
 });
@@ -326,6 +334,27 @@ function renderAt(path: string) {
     { router },
   );
 }
+
+test("a conversation explains when model choices could not load", async () => {
+  catalogueAvailable = false;
+  queryClient.setQueryData(agentKeys.list(false), [bot]);
+  const view = renderAt(`/channel/${channel.id}`);
+  expect(
+    await view.findByText(
+      /Model choices couldn’t load/,
+      {},
+      { timeout: 3_000 },
+    ),
+  ).toBeTruthy();
+  expect(view.getByRole("textbox", { name: "Message" })).toBeTruthy();
+});
+
+test("a conversation names a saved model that is no longer available", async () => {
+  saved = { model: null, effort: null, unavailableModel: "retired-model" };
+  queryClient.setQueryData(agentKeys.list(false), [bot]);
+  const view = renderAt(`/channel/${channel.id}`);
+  expect(await view.findByText(/retired-model is unavailable/)).toBeTruthy();
+});
 
 test("a saved first message from before model selection still sends", async () => {
   const id = crypto.randomUUID();
@@ -459,9 +488,14 @@ for (const scenario of [
       progress: { phase: "submitted", channelId: channel.id },
     });
     const view = renderAt(`/channel/${channel.id}`);
-    const button = await view.findByRole("button", {
-      name: scenario === "check only" ? "Check for message" : "Resend message",
-    });
+    const button = await view.findByRole(
+      "button",
+      {
+        name:
+          scenario === "check only" ? "Check for message" : "Resend message",
+      },
+      { timeout: 3_000 },
+    );
     expect(
       view.getByText(
         scenario === "check only"
@@ -480,7 +514,13 @@ for (const scenario of [
       });
       expect(checkAgain).toBe(button);
       expect(document.activeElement).toBe(checkAgain);
-      expect(view.getByText(/without sending (a copy|it again)/)).toBeTruthy();
+      expect(
+        view.getByText(
+          scenario === "check only"
+            ? /can only check delivery/
+            : /without sending a copy/,
+        ),
+      ).toBeTruthy();
       expect(
         pendingStarts.readPendingStart("model-tester", message.id)?.state,
       ).toBe("pending");

@@ -24,6 +24,7 @@ import {
   MessageHeader,
   Message as MessageRow,
 } from "@/components/ui/message";
+import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   type ApprovalInboxData,
@@ -100,6 +101,7 @@ export function GroupChat({
   historyEntry?: string;
   runId?: string;
 }) {
+  const { t } = useTranslation();
   const [returningFromActivity] = useState(() =>
     activityReturn?.entry === historyEntry ? activityReturn : undefined,
   );
@@ -330,8 +332,16 @@ export function GroupChat({
       />
     );
 
+  const empty = messages.length === 0 && background.length === 0;
+  const replyGuide =
+    bots.length === 0
+      ? t("conversation.group.noBots")
+      : bots.length === 1
+        ? t("conversation.group.oneBot", { name: bots[0]?.name })
+        : t("conversation.group.manyBots");
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <Stack minHeight={0} style={{ flex: 1 }}>
       {group.isError && !awaitingReply && (
         <ConversationReadError
           title="Couldn't update group messages."
@@ -355,12 +365,11 @@ export function GroupChat({
           className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-6"
           data-transcript-column
         >
-          {messages.length === 0 && background.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Say something to {bots.map((bot) => bot.name).join(" and ")}.
-              Every Bot answers in turn; start with @Name to ask just one.
-            </p>
-          ) : null}
+          {empty && (
+            <Text as="p" role="status" type="supporting">
+              {replyGuide}
+            </Text>
+          )}
           {messages.map((message) => (
             <GroupLine
               key={message.id}
@@ -462,18 +471,20 @@ export function GroupChat({
       </section>
       {/* The same column and the same compact composer as a conversation with one Bot. */}
       <div className="mx-auto w-full max-w-2xl shrink-0 pb-4">
-        {send.error ? (
-          <p className="px-4 pb-2 text-sm text-destructive" role="alert">
-            Couldn't confirm your message was sent. Your draft is still here.
-            Send it again to retry.
-          </p>
-        ) : null}
-        {answer.error ? (
-          <p className="px-4 pb-2 text-sm text-destructive" role="alert">
-            Couldn't confirm your answer. Check whether the question is still
-            waiting before replying again.
-          </p>
-        ) : null}
+        {send.error && (
+          <ConversationReadError
+            title={t("conversation.group.sendFailed")}
+            description={t("conversation.group.sendRecovery")}
+            retrying={false}
+          />
+        )}
+        {answer.error && (
+          <ConversationReadError
+            title={t("conversation.group.answerFailed")}
+            description={t("conversation.group.answerRecovery")}
+            retrying={false}
+          />
+        )}
         {askingThreads.map((threadId) => (
           <ConversationApprovals key={threadId} threadId={threadId} />
         ))}
@@ -493,7 +504,7 @@ export function GroupChat({
             />
           </div>
         ) : null}
-        {!question ? (
+        {!question && !empty ? (
           <Stack
             style={{
               paddingInline: "var(--spacing-4)",
@@ -501,11 +512,7 @@ export function GroupChat({
             }}
           >
             <Text as="p" type="supporting">
-              {bots.length === 0
-                ? "No Bots are available to reply."
-                : bots.length === 1
-                  ? `Replies come from ${bots[0]?.name}.`
-                  : "All Bots reply in order. Type @ to ask one Bot."}
+              {replyGuide}
             </Text>
           </Stack>
         ) : null}
@@ -556,7 +563,7 @@ export function GroupChat({
           }}
         />
       </div>
-    </div>
+    </Stack>
   );
 }
 

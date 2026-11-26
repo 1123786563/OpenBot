@@ -1,6 +1,7 @@
 import type { Message } from "@ag-ui/core";
 import { Button as RecoveryButton } from "@astryxdesign/core/Button";
 import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   type Attachment,
   CopilotChatConfigurationProvider,
@@ -47,6 +48,7 @@ import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
+import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
@@ -550,6 +552,7 @@ export function ChannelChat({
   focusRunId?: string;
 }) {
   // The core attaches the frontend tool registry; direct agent runs do not.
+  const { t } = useTranslation();
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
@@ -2071,6 +2074,22 @@ export function ChannelChat({
                * it — and they are independent, so neither is an `else` for the other.
                */
               <>
+                {!deployment?.testCreditConversations &&
+                  botProfile?.runsOnOpenBotModel &&
+                  ((models.isError && !models.data) ||
+                  models.data?.choicesUnavailable ? (
+                    <ConversationReadError
+                      title={t("conversation.models.loadFailed")}
+                      retry={() => void models.refetch()}
+                      retrying={models.isFetching}
+                    />
+                  ) : runModel.unavailableModel ? (
+                    <Text as="p" role="status" type="supporting">
+                      {t("conversation.models.unavailable", {
+                        model: runModel.unavailableModel,
+                      })}
+                    </Text>
+                  ) : null)}
                 {first && firstError ? (
                   <Stack gap={2}>
                     <ConversationReadError

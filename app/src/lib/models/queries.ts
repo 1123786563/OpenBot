@@ -53,6 +53,7 @@ export type ModelCatalogue = {
   models: ModelOption[];
   /** Whether there is anything to pick. False hides the picker. */
   choosable: boolean;
+  choicesUnavailable?: true;
 };
 
 /**
@@ -120,7 +121,9 @@ export function availableModelsQueryOptions() {
 export function conversationModelQueryOptions(channelId: string) {
   return queryOptions({
     queryKey: modelKeys.conversation(channelId),
-    queryFn: async (): Promise<ConversationModel> =>
+    queryFn: async (): Promise<
+      ConversationModel & { unavailableModel?: string }
+    > =>
       (
         await client(`/api/channels/${encodeURIComponent(channelId)}/model`, {
           fallback: "Couldn't load this conversation's model",
