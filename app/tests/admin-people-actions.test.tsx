@@ -152,9 +152,19 @@ async function draw() {
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
-  await view.findByRole("button", { name: `Remove access for ${MEMBER}` });
+  if (people.length > 0) {
+    await view.findByRole("button", { name: `Remove access for ${MEMBER}` });
+  }
   return view;
 }
+
+test("People explains the empty roster before anyone has signed in", async () => {
+  people = [];
+  const view = await draw();
+
+  expect(await view.findByText("Nobody has signed in yet")).toBeTruthy();
+  expect(view.getByText("People show here once they do.")).toBeTruthy();
+});
 
 /** The confirmation the trigger opens, once its title is on screen. */
 async function open(view: Awaited<ReturnType<typeof draw>>, name: string) {

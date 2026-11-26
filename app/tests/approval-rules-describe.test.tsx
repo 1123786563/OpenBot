@@ -131,14 +131,17 @@ function checked(rules: ApprovalRuleInput[]): ApprovalRulesPreview {
   };
 }
 
+let translation: ApprovalRuleTranslation;
+
 beforeEach(() => {
   sent.length = 0;
+  translation = OPPORTUNITIES;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     if (init?.method === "POST") sent.push({ path, body });
     if (path.endsWith("/api/approvals/team/rules/translate"))
-      return Response.json(OPPORTUNITIES);
+      return Response.json(translation);
     if (path.endsWith("/api/approvals/team/rules/backtest"))
       return Response.json(checked(body.rules));
     if (path.endsWith("/api/approvals/team/rules/batch"))
@@ -269,6 +272,35 @@ test("an edit after the rules were written is called out, checked as it stands, 
       (view.getByRole("button", { name: "Save rules" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
+  );
+});
+
+test("rewriting approval rules clears Undo and previews only the new draft", async () => {
+  const { view } = open();
+  await describeRules(view, TEXT);
+  const previousRule = OPPORTUNITIES.rules[0]!;
+  await view.findByDisplayValue(previousRule.toolRef);
+  fireEvent.click(view.getByRole("button", { name: "Remove rule 1" }));
+  expect(view.getByText(/There are no rules to save/)).toBeTruthy();
+  expect(view.getByRole("button", { name: "Undo" })).toBeTruthy();
+
+  const replacement = {
+    ...previousRule,
+    toolRef: "composio-salesforce/SALESFORCE_UPDATE_OPPORTUNITY",
+  };
+  translation = { ...OPPORTUNITIES, rules: [replacement] };
+  fireEvent.change(view.getByLabelText("Describe the rules"), {
+    target: { value: `${TEXT} using the exact tool` },
+  });
+  fireEvent.click(view.getByRole("button", { name: "Write rules" }));
+
+  await view.findByDisplayValue(replacement.toolRef);
+  expect(view.queryByDisplayValue(previousRule.toolRef)).toBeNull();
+  expect(view.queryByRole("button", { name: "Undo" })).toBeNull();
+  await waitFor(() =>
+    expect(
+      sent.filter((call) => call.path.endsWith("/backtest")).at(-1)?.body,
+    ).toMatchObject({ rules: [replacement] }),
   );
 });
 
