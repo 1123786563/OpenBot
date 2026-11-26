@@ -193,7 +193,7 @@ beforeAll(async () => {
     });
 });
 
-afterAll(async () => {
+async function removeFixtures() {
   if (originalCatalog[0])
     await database
       .update(enterpriseSettings)
@@ -241,6 +241,14 @@ afterAll(async () => {
   // The approved "weknora" application is a shared fixture: other billing
   // suites register it too, and a grant they leave behind must not crash this
   // cleanup.
+}
+
+afterAll(async () => {
+  try {
+    await removeFixtures();
+  } finally {
+    await database.$client.close();
+  }
 });
 
 test("ingestion reserves and settles through a durable grant on the uploader's account", async () => {
