@@ -81,6 +81,7 @@ const server = Bun.serve({
         edition: governance.edition,
         role: governance.role,
         salesBot,
+        userId: user.id,
       });
       if (read) return read;
     }

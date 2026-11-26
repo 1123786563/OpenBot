@@ -1,4 +1,5 @@
 import { DEFAULT_CAPABILITIES } from "../../server/src/admin/capabilities.ts";
+import { CONVERSATIONS } from "./conversations.mjs";
 
 const emptyLearningTarget = { containerId: null };
 const emptyConnections = { connections: [], defaultConnectionId: null };
@@ -41,6 +42,7 @@ const reads = {
   },
   "/api/plugins/composio/apps": { apps: [] },
   "/api/corsair/github/connections": emptyConnections,
+  "/api/corsair/github/connections/revocations": { connections: [] },
   "/api/corsair/slack/connections": emptyConnections,
   "/api/corsair/integrations": {
     catalogVersion: "fixture",
@@ -49,6 +51,7 @@ const reads = {
     integrations: [],
   },
   "/api/recorder/connections": { connections: [], extensionIds: [] },
+  "/api/recorder/recordings": { recordings: [], nextCursor: null },
   "/api/delivery": {
     bindings: [],
     devices: [],
@@ -90,15 +93,77 @@ const reads = {
       links: { learning: null, candidates: null, runs: null },
     },
   },
+  "/api/admin/learning/people/proposals": { people: [] },
   "/api/admin/learning/proposals": { ...emptyLearningTarget, proposals: [] },
   "/api/admin/learning/runs": { ...emptyLearningTarget, runs: [] },
   "/api/admin/learning/skills": { ...emptyLearningTarget, skills: [] },
   "/api/admin/learning/sharing-requests": { requests: [] },
 };
 
-export function sweepRead(request, path, json, { edition, role, salesBot }) {
+export function sweepRead(
+  request,
+  path,
+  json,
+  { edition, role, salesBot, userId },
+) {
   if (request.method !== "GET") return undefined;
   if (Object.hasOwn(reads, path)) return json(reads[path]);
+
+  const url = new URL(request.url);
+  const threadLearning = /^\/api\/copilotkit\/threads\/([^/]+)\/learn$/.exec(
+    path,
+  );
+  if (threadLearning) {
+    const [, threadId] = threadLearning;
+    const seed = CONVERSATIONS.find(
+      ({ id, bot }) =>
+        id === threadId && bot === url.searchParams.get("agentId"),
+    );
+    if (seed) {
+      return json({
+        enabled: false,
+        available: false,
+        scope: { personId: userId, threadId, botId: seed.bot },
+        autoApprove: false,
+        latest: null,
+        lastResult: null,
+        schedule: {
+          enabled: false,
+          intervalHours: 24,
+          nextAt: null,
+          lastResult: null,
+        },
+        proposals: [],
+      });
+    }
+  }
+  const evidence =
+    /^\/api\/copilotkit\/conversations\/([^/]+)\/learning-evidence$/.exec(path);
+  if (evidence && CONVERSATIONS.some(({ id }) => id === evidence[1])) {
+    return json({ allowed: false });
+  }
+  const lifecycle = /^\/api\/bots\/([^/]+)\/lifecycle$/.exec(path);
+  if (lifecycle && knownBot(lifecycle[1], salesBot.id)) {
+    return json({
+      lifecycle: {
+        agentId: lifecycle[1],
+        paused: false,
+        pausedAt: null,
+        notify: "all",
+      },
+    });
+  }
+  const control = /^\/api\/computers\/([^/]+)\/control$/.exec(path);
+  if (control && knownBot(control[1], salesBot.id)) {
+    return json({
+      holder: "bot",
+      since: new Date(0).toISOString(),
+      requested: false,
+      transitioning: false,
+      resumeSnapshotRequired: false,
+      recoveryRequired: false,
+    });
+  }
 
   switch (path) {
     case "/api/settings/learning/review":
@@ -108,11 +173,11 @@ export function sweepRead(request, path, json, { edition, role, salesBot }) {
         autoApprove: edition === "personal" ? true : null,
       });
     case "/api/admin/enterprise/models/usage": {
-      const days = Number(new URL(request.url).searchParams.get("days") || 30);
+      const days = Number(url.searchParams.get("days") || 30);
       return json({ days, summary: [], recent: [] });
     }
     case "/api/admin/proactive": {
-      const days = Number(new URL(request.url).searchParams.get("days") || 7);
+      const days = Number(url.searchParams.get("days") || 7);
       return json({
         days,
         dailyRuns: 24,
@@ -138,24 +203,16 @@ export function sweepRead(request, path, json, { edition, role, salesBot }) {
           completed: [],
         },
       });
-    case `/api/bots/${salesBot.id}/lifecycle`:
-      return json({
-        lifecycle: {
-          agentId: salesBot.id,
-          paused: false,
-          pausedAt: null,
-          notify: "all",
-        },
-      });
-    case `/api/computers/${salesBot.id}/control`:
-      return json({
-        holder: "bot",
-        since: new Date(0).toISOString(),
-        requested: false,
-        transitioning: false,
-        resumeSnapshotRequired: false,
-        recoveryRequired: false,
-      });
+    case "/api/voice/sessions":
+      return CONVERSATIONS.some(
+        ({ id }) => id === url.searchParams.get("channelId"),
+      )
+        ? json({ sessions: [], nextCursor: null })
+        : json({ error: "A valid channel is required." }, 400);
+    case "/api/components/for-agent/general":
+      return json({ components: [] });
+    case "/api/plugins/for/general":
+      return json({ catalogue: [], servers: [], skills: [] });
     case `/api/memory/sources/available/${salesBot.id}`:
       return json({ tools: [] });
     case `/api/plugins/for/${salesBot.id}/apps`:
@@ -181,4 +238,8 @@ export function sweepRead(request, path, json, { edition, role, salesBot }) {
     default:
       return undefined;
   }
+}
+
+function knownBot(id, salesBotId) {
+  return id === salesBotId || CONVERSATIONS.some(({ bot }) => bot === id);
 }

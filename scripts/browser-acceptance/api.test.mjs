@@ -41,7 +41,15 @@ test("a fresh direct thread can connect and read empty history", async () => {
   expect(threadId).toMatch(/^[\da-f-]{36}$/i);
   const connect = await request("/api/copilotkit/agent/whatif-sales/connect", {
     method: "POST",
-    body: JSON.stringify({ threadId }),
+    body: JSON.stringify({
+      threadId,
+      runId: crypto.randomUUID(),
+      state: {},
+      messages: [],
+      tools: [],
+      context: [],
+      forwardedProps: {},
+    }),
   });
   expect(connect.status).toBe(200);
   expect(connect.headers.get("content-type")).toBe("text/event-stream");
@@ -90,4 +98,25 @@ test("the onboarding page can save progress without gating other fixture pages",
   expect(save.status).toBe(200);
   const expected = { step: 1, completedAt: null };
   expect(await save.json()).toEqual({ onboarding: expected });
+  const currentUser = await request("/api/me");
+  expect((await currentUser.json()).user.onboarding).toBeNull();
+});
+
+test("a seeded chat can load its saved voice sessions and Learning status", async () => {
+  const voice = await request("/api/voice/sessions?channelId=acceptance-plan");
+  expect(voice.status).toBe(200);
+  expect(await voice.json()).toEqual({ sessions: [], nextCursor: null });
+  const learning = await request(
+    "/api/copilotkit/threads/acceptance-plan/learn?agentId=general",
+  );
+  expect(learning.status).toBe(200);
+  expect(await learning.json()).toMatchObject({
+    enabled: false,
+    proposals: [],
+    scope: {
+      personId: "browser-acceptance",
+      threadId: "acceptance-plan",
+      botId: "general",
+    },
+  });
 });
