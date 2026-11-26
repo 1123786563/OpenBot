@@ -33,8 +33,8 @@ import {
 } from "../src/billing/test-credit-bifrost";
 import {
   createWeKnoraIngestionBilling,
+  WEKNORA_APPLICATION_ID,
   WeKnoraBillingError,
-  type WeKnoraLedger,
 } from "../src/billing/weknora-ingestion";
 import { createDatabase } from "../src/db/client";
 import {
@@ -42,7 +42,10 @@ import {
   testCreditAccounts,
   testCreditOperations,
 } from "../src/db/schema";
-import { fixtureTraceReport } from "../tests/support/bifrost-evidence";
+import {
+  fixtureEmbeddingReport,
+  fixtureTraceReport,
+} from "../tests/support/bifrost-evidence";
 
 const runDir = process.argv[2];
 if (!runDir) throw new Error("usage: bun scripts/pilot-matrix.ts <run-dir>");
@@ -141,7 +144,7 @@ const chatExecutor = createBifrostCreditExecutor({
 type RouteSpec = Parameters<typeof configure>[1]["routes"][string];
 async function publishCatalog(
   routes: Record<string, RouteSpec>,
-  defaultRoute: string,
+  defaultRoute: string | null,
 ) {
   const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
   const drafted = configure(emptyCatalog, { harnessImage, routes });
@@ -152,7 +155,9 @@ async function publishCatalog(
     catalog = verify(
       catalog,
       id,
-      fixtureTraceReport(harnessImage, proposed),
+      proposed.purpose === "embedding"
+        ? fixtureEmbeddingReport(harnessImage, proposed)
+        : fixtureTraceReport(harnessImage, proposed),
       "matrix-fixture",
     );
   }
@@ -214,7 +219,6 @@ async function chatOp(
 }
 
 // WeKnora ingestion billing over the shared ledger (#93 wiring).
-const dispatchAccounts = new Map<string, string>();
 async function accountIdOf(identity: { issuer: string; subject: string }) {
   const [row] = await database
     .select({ id: testCreditAccounts.id })
@@ -227,57 +231,13 @@ async function accountIdOf(identity: { issuer: string; subject: string }) {
     );
   return row?.id;
 }
-const weknoraLedger: WeKnoraLedger = {
-  quote: () => ledger.quote(),
-  reserve: async (identity, input) => {
-    const result = await ledger.reserve(identity, {
-      operationId: input.operationId,
-      route: input.route,
-      priceVersion: input.priceVersion,
-      applicationId: input.application,
-    });
-    // The WeKnora reservation contract has no budget dimension, so refusals
-    // outside its reason set surface as the path being unavailable.
-    if (result.state === "denied") {
-      const reason =
-        result.reason === "insufficient_credits" ||
-        result.reason === "route_unavailable"
-          ? result.reason
-          : "not_authorized";
-      return { state: "denied" as const, reason };
-    }
-    return result;
-  },
-  settle: async (identity, operationId, usage) => {
-    const accountId =
-      dispatchAccounts.get(operationId) ?? (await accountIdOf(identity));
-    if (!accountId) throw new Error("uploader has no Test Credit account");
-    const settled = await ledger.settle(accountId, operationId, usage);
-    dispatchAccounts.set(operationId, accountId);
-    return settled;
-  },
-};
 const billing = createWeKnoraIngestionBilling({
-  ledger: weknoraLedger,
-  now,
+  ledger,
+  routeId: "local-bge",
   verifyApplication: async (id) => id === "weknora",
   verifyUser: async (identity) => Boolean(await accountIdOf(identity)),
 });
 const authorizationId = randomUUID();
-function registerAuthorization(expiresAt: Date) {
-  billing.registerAuthorization({
-    id: authorizationId,
-    applicationId: "weknora",
-    issuer,
-    subject: identityA.subject,
-    resourceIds: [resourceId],
-    expiresAt,
-    maxMicrocredits: 4096n,
-    spentMicrocredits: 0n,
-    revokedAt: null,
-  });
-}
-registerAuthorization(new Date(startedAt + 900_000));
 
 const serviceToken = randomBytes(32).toString("base64url");
 const statusFor = (code: string) =>
@@ -339,6 +299,7 @@ Bun.serve({
       try {
         const preflight = await billing.preflight({
           applicationId: "weknora",
+          authorizationId: body.authorizationId,
           issuer,
           subject: body.subject,
           resourceId: body.resourceId,
@@ -346,13 +307,11 @@ Bun.serve({
         const reserved = await billing.reserve({
           operationId: body.operationId,
           applicationId: "weknora",
+          authorizationId: body.authorizationId,
           issuer,
           subject: body.subject,
           resourceId: body.resourceId,
-          maxChargeMicrocredits: preflight.maxChargeMicrocredits,
         });
-        if (reserved.state === "denied")
-          throw new WeKnoraBillingError("route_unavailable", "denied");
         const permit =
           reserved.state === "reserved" ? reserved.permit : undefined;
         if (reserved.state === "existing" && !permit) {
@@ -374,18 +333,22 @@ Bun.serve({
           }
         }
         if (permit) {
-          const dispatch = await ledger.beginDispatch(
+          await ledger.beginDispatch(
             { issuer, subject: body.subject },
-            { operationId: body.operationId, permit },
+            {
+              operationId: body.operationId,
+              permit,
+              authorizationId: body.authorizationId,
+            },
+            { embedding: true },
           );
-          if (dispatch.state === "dispatch")
-            dispatchAccounts.set(body.operationId, dispatch.accountId);
         }
         log({
           event: "reserved",
           operationId: body.operationId,
           resourceId: body.resourceId,
           state: reserved.state,
+          maxChargeMicrocredits: preflight.maxChargeMicrocredits,
         });
         const tokenizer = await fetch("http://127.0.0.1:25169/tokenize", {
           method: "POST",
@@ -425,6 +388,7 @@ Bun.serve({
         });
         const settled = await billing.settle({
           operationId: body.operationId,
+          authorizationId: body.authorizationId,
           uploaderAccount: { issuer, subject: body.subject },
           inputTokens,
           outputTokens: 0n,
@@ -456,7 +420,7 @@ Bun.serve({
       }
     }
     if (url.pathname === "/control/revoke" && request.method === "POST") {
-      billing.revokeAuthorization(authorizationId);
+      await ledger.revokeAuthorization(identityA, authorizationId);
       log({ event: "control", action: "revoke" });
       return new Response("ok");
     }
@@ -826,24 +790,46 @@ await scenario("publish-embedding-route", async () => {
   revisions = await publishCatalog(
     {
       "local-bge": {
+        purpose: "embedding",
         provider: "openai",
         model: "BAAI/bge-small-en-v1.5",
         gatewayRevision: "local-bifrost-v1.5.8",
         meteringRevision: "local-tei-bge-small-5c38ec7c",
         maxInputTokens: 512,
-        maxOutputTokens: 2,
+        maxOutputTokens: 0,
         tools: false,
         price: { inputPerMillion: 500_000, outputPerMillion: 0 },
       },
     },
-    "local-bge",
+    null,
   );
-  const quote = await ledger.quote();
-  assert(quote?.route === "local-bge", "embedding route not active");
-  return { route: quote.route, maxCharge: quote.maxChargeMicrocredits };
+  const selected = await ledger.weknoraQuote("local-bge", "embedding");
+  assert(selected?.route.id === "local-bge", "embedding route not active");
+  return {
+    route: selected.route.id,
+    maxCharge: selected.quote.maxChargeMicrocredits,
+  };
 });
 
 await scenario("weknora-worker-ingestion", async () => {
+  await ledger.registerApplication({
+    id: WEKNORA_APPLICATION_ID,
+    name: "WeKnora",
+    operator: "platform",
+    resourcePrefix: "weknora:",
+  });
+  await ledger.approveApplication(WEKNORA_APPLICATION_ID, "matrix-fixture");
+  const granted = await ledger.authorize(identityA, {
+    authorizationId,
+    applicationId: WEKNORA_APPLICATION_ID,
+    // Ingestion is the one background task the grant names.
+    kind: "background",
+    taskId: authorizationId,
+    resourcePrefix: resourceId,
+    expiresAt: new Date(startedAt + 900_000),
+    limitMicrocredits: 4096n,
+  });
+  assert(granted?.state === "authorized", "WeKnora grant refused");
   await Bun.write(
     `${runDir}/worker.env`,
     [
@@ -911,21 +897,39 @@ await scenario("signout-then-authorized-embedding", async () => {
 
 await scenario("recovery-without-reservation-refused", async () => {
   // A released operation id replayed by worker recovery must not re-dispatch.
-  const quote = await ledger.quote();
-  assert(quote, "no quote");
-  const reserved = await ledger.reserve(identityA, {
-    operationId: "matrix-released-recovery",
-    route: quote.route,
-    priceVersion: quote.priceVersion,
-  });
+  const selected = await ledger.weknoraQuote("local-bge", "embedding");
+  assert(selected, "no embedding quote");
+  // An embedding reservation only admits the durable grant's background
+  // task, exactly as the worker's own steps run.
+  const under = {
+    applicationId: WEKNORA_APPLICATION_ID,
+    authorizationId,
+    taskId: authorizationId,
+    resourceId,
+  };
+  const reserved = await ledger.reserve(
+    identityA,
+    {
+      operationId: "matrix-released-recovery",
+      route: selected.route.id,
+      priceVersion: selected.quote.priceVersion,
+      ...under,
+    },
+    { embedding: true },
+  );
   assert(reserved.state === "reserved", "reserve failed");
   clockOffsetMs = 5 * 60_000 + 2_000;
   // Any later reserve on the account releases expired holds.
-  await ledger.reserve(identityA, {
-    operationId: "matrix-recovery-sibling",
-    route: quote.route,
-    priceVersion: quote.priceVersion,
-  });
+  await ledger.reserve(
+    identityA,
+    {
+      operationId: "matrix-recovery-sibling",
+      route: selected.route.id,
+      priceVersion: selected.quote.priceVersion,
+      ...under,
+    },
+    { embedding: true },
+  );
   clockOffsetMs = 0;
   const replay = await embedViaEndpoint({
     subject: identityA.subject,
@@ -963,7 +967,7 @@ await scenario("revocation-and-isolation-denials", async () => {
     input: ["still valid"],
   });
   assert(ok.status === 200, `pre-revoke ${ok.status}`);
-  billing.revokeAuthorization(authorizationId);
+  await ledger.revokeAuthorization(identityA, authorizationId);
   const revoked = await embedViaEndpoint({
     subject: identityA.subject,
     authorizationId,
