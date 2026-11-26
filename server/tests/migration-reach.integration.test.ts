@@ -126,6 +126,22 @@ test.each([
   { startingPoint: "Corsair main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "Bifrost main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "current Personal SaaS", mainThrough: 93, trialLength: 0 },
+  { startingPoint: "sandbox pilot", mainThrough: 93, trialLength: 0 },
+  {
+    startingPoint: "sandbox pilot with an altered hash",
+    mainThrough: 93,
+    trialLength: 0,
+  },
+  {
+    startingPoint: "main before sandbox merge",
+    mainThrough: 161,
+    trialLength: 0,
+  },
+  {
+    startingPoint: "previous sandbox integration",
+    mainThrough: 163,
+    trialLength: 0,
+  },
   { startingPoint: "published main", mainThrough: 93, trialLength: 0 },
   { startingPoint: "published Intelligence", mainThrough: 93, trialLength: 0 },
   { startingPoint: "initial billing pilot", mainThrough: 93, trialLength: 0 },
@@ -149,7 +165,14 @@ test.each([
     const bifrost = migrations.filter(({ tag }) =>
       /_(bifrost_market_reviews|skill_market_equivalences)$/.test(tag),
     );
-    const main = migrations.filter((entry) => !isIntelligenceMigration(entry));
+    const sandbox = migrations.filter(({ tag }) =>
+      /^(0119_personal_workspace_agent_sandbox|0120_agent_sandbox_flash|0121_workspace_agentic_spaces)$/.test(
+        tag,
+      ),
+    );
+    const main = migrations.filter(
+      (entry) => !isIntelligenceMigration(entry) && !sandbox.includes(entry),
+    );
     const saas = main
       .slice(93, 117)
       .filter((entry) => !corsair.includes(entry));
@@ -198,6 +221,15 @@ test.each([
         return { ...entry, when };
       }),
     ];
+    const sandboxPilot = startingPoint.startsWith("sandbox pilot");
+    const previousSandboxIntegration =
+      startingPoint === "previous sandbox integration";
+    const candidate = migrations.slice(
+      0,
+      migrations.findIndex(
+        ({ tag }) => tag === "0160_direct_chat_credit_request",
+      ) + 1,
+    );
     const historical =
       startingPoint === "published main"
         ? main.slice(0, 145)
@@ -209,7 +241,13 @@ test.each([
                 corsair.includes(entry) ||
                 bifrost.includes(entry),
             )
-          : historicalSaasOrMain;
+          : sandboxPilot
+            ? [...main.slice(0, 119), ...sandbox]
+            : startingPoint === "main before sandbox merge"
+              ? candidate.filter((entry) => !sandbox.includes(entry))
+              : previousSandboxIntegration
+                ? candidate
+                : historicalSaasOrMain;
     const legacyFolder = await folderOf(
       await Promise.all(
         historical.map(async ({ tag, when }) => ({
@@ -227,13 +265,39 @@ test.each([
       if (historical.length) await applyMigrations(client, legacyFolder);
       const directChat = "direct_chat_runs";
       expect(await exists(client, directChat)).toBe(mainThrough >= 90);
-      if (trialLength || startingPoint === "current Personal SaaS") {
+      if (startingPoint === "sandbox pilot with an altered hash") {
+        await client`update drizzle.__drizzle_migrations set hash = repeat('0', 64)
+          where created_at = 1795441880623`;
+        await expect(applyMigrations(client, folder)).rejects.toBeInstanceOf(
+          MigrationsOutOfReachError,
+        );
+        expect(await exists(client, "approval_team_rule_saves")).toBe(false);
+        return;
+      }
+      if (
+        trialLength ||
+        startingPoint === "current Personal SaaS" ||
+        sandboxPilot
+      ) {
         await client`insert into personal_saas_accounts (issuer, subject, email)
           values ('https://casdoor.example', 'participant', 'participant@example.test')`;
         await client`insert into personal_workspaces (owner_id)
           select id from personal_saas_accounts where subject = 'participant'`;
       }
-      if (billingPilot || mergedBilling || futureBilling) {
+      if (previousSandboxIntegration) {
+        await client`insert into personal_saas_accounts (issuer, subject, email)
+          values ('https://casdoor.example', 'retired', 'retired@example.test')`;
+        await client`insert into personal_workspace_closures
+          (account_id, workspace_id, accepted_at, cutoff_deadline, retired_intelligence)
+          select id, gen_random_uuid(), now(), now(), '[]'::jsonb
+          from personal_saas_accounts where subject = 'retired'`;
+      }
+      if (
+        billingPilot ||
+        mergedBilling ||
+        futureBilling ||
+        previousSandboxIntegration
+      ) {
         await client`insert into test_credit_accounts (issuer, subject)
           values ('https://casdoor.example', 'billing-participant')`;
       }
@@ -268,6 +332,12 @@ test.each([
           await client`select id from corsair_integrations where id = 'merge-fixture'`,
         ).toHaveLength(1);
       }
+      if (previousSandboxIntegration) {
+        expect([
+          ...(await client`select retired_intelligence, storage_recovery
+            from personal_workspace_closures`),
+        ]).toEqual([{ retired_intelligence: [], storage_recovery: null }]);
+      }
       expect(await exists(client, directChat)).toBe(true);
       expect(await exists(client, "personal_intelligence_runs")).toBe(true);
       expect(await exists(client, "opik_runs")).toBe(true);
@@ -279,6 +349,12 @@ test.each([
       expect(await exists(client, "bifrost_market_reviews")).toBe(true);
       expect(await exists(client, "skill_market_equivalences")).toBe(true);
       expect(await exists(client, "approval_team_rule_saves")).toBe(true);
+      expect(await exists(client, "personal_workspace_agent_sandboxes")).toBe(
+        true,
+      );
+      expect(await exists(client, "personal_workspace_agentic_spaces")).toBe(
+        true,
+      );
       expect([
         ...(await client`select hash, created_at::text
         from drizzle.__drizzle_migrations order by created_at::bigint`),
@@ -288,13 +364,22 @@ test.each([
           created_at: String(when),
         })),
       );
-      if (billingPilot || mergedBilling || futureBilling) {
+      if (
+        billingPilot ||
+        mergedBilling ||
+        futureBilling ||
+        previousSandboxIntegration
+      ) {
         expect(
           await client`select subject from test_credit_accounts
             where subject = 'billing-participant'`,
         ).toHaveLength(1);
       }
-      if (trialLength || startingPoint === "current Personal SaaS") {
+      if (
+        trialLength ||
+        startingPoint === "current Personal SaaS" ||
+        sandboxPilot
+      ) {
         expect([
           ...(await client`select email from personal_saas_accounts
           join personal_workspaces on personal_workspaces.owner_id = personal_saas_accounts.id

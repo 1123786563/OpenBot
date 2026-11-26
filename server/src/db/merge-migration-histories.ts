@@ -235,11 +235,6 @@ const personalSaasMigrations = [
     "70e3f715230bc2bdd7adee874dd5c965fe37d498f6e8d74a53738cc0bef0bf8a",
     1795415414732,
   ],
-  [
-    "0160_direct_chat_credit_request",
-    "7798db1d942c0ee3a5426abe4c2a5c50fa02e129ed769ce80d1dceb3878349d8",
-    1795511248832,
-  ],
 ] as const;
 
 const intelligenceSkillMigrations = [
@@ -383,6 +378,37 @@ const billingMigrations = [
   ],
 ] as const;
 
+const sandboxMigrations = [
+  [
+    "0119_personal_workspace_agent_sandbox",
+    "126d1ddb93d2a6d430b32362afcb6943da9414be057b74dd030c16260d21dd45",
+    1795441880621,
+  ],
+  [
+    "0120_agent_sandbox_flash",
+    "8ecc7f717b6e3f669a93f975c0c4031cc7e977a7f711ed7b154fad3617d2eb1a",
+    1795441880622,
+  ],
+  [
+    "0121_workspace_agentic_spaces",
+    "08ab50db2916eb7a2a4262208cddcb4b6051cfe1aae0b434157ecb9f4ab3cd86",
+    1795441880623,
+  ],
+] as const;
+
+const directChatCreditRequest = [
+  "0160_direct_chat_credit_request",
+  "7798db1d942c0ee3a5426abe4c2a5c50fa02e129ed769ce80d1dceb3878349d8",
+  1795511248832,
+] as const;
+
+const sandboxTags: ReadonlySet<string> = new Set(
+  sandboxMigrations.map(([tag]) => tag),
+);
+
+export const isSandboxMigration = ({ tag }: FolderMigration) =>
+  sandboxTags.has(tag);
+
 const intelligenceTags: ReadonlySet<string> = new Set(
   [...intelligenceMigrations, ...intelligenceSkillMigrations].map(
     ([tag]) => tag,
@@ -410,6 +436,8 @@ export function canMergeMigrationHistories(
     ...personalSaasMigrations,
     ...intelligenceSkillMigrations,
     ...billingMigrations,
+    ...sandboxMigrations,
+    directChatCreditRequest,
   ].map(([tag, hash, when]) => ({ tag, hash, when }));
   const byTag = new Map(folder.map((entry) => [entry.tag, entry]));
   if (
@@ -425,6 +453,13 @@ export function canMergeMigrationHistories(
     applied.map(({ hash, createdAt }) => `${createdAt}:${hash}`),
   );
   if (recorded.size !== applied.length) return false;
+  const mainWithBilling = [
+    ...skillMarketMigrations,
+    ...corsairMigrations,
+    ...bifrostMigrations,
+    ...personalSaasMigrations,
+    ...billingMigrations,
+  ];
   const histories = [
     intelligenceMigrations,
     skillMarketMigrations,
@@ -437,12 +472,21 @@ export function canMergeMigrationHistories(
       ...bifrostMigrations,
       ...intelligenceSkillMigrations,
     ],
+    mainWithBilling,
+    [
+      ...mainWithBilling,
+      ...intelligenceMigrations,
+      ...intelligenceSkillMigrations,
+      directChatCreditRequest,
+    ],
     [
       ...skillMarketMigrations,
       ...corsairMigrations,
       ...bifrostMigrations,
-      ...personalSaasMigrations,
-      ...billingMigrations,
+      ...personalSaasMigrations.filter(
+        ([tag]) => tag !== "0119_approval_team_rule_saves",
+      ),
+      ...sandboxMigrations,
     ],
   ];
   const prefixLength = applied.length - base.length;

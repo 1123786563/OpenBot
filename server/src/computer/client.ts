@@ -198,7 +198,12 @@ export type ComputerTransportOptions = {
  * address is sent the transport's own `token`, which is how a caller with one computer (the shared
  * one, a test) still calls it.
  */
-export type ComputerEndpoint = string | { url: string; token?: string };
+export type ComputerConnection = {
+  url: string;
+  token?: string;
+  trafficAccessToken?: string;
+};
+export type ComputerEndpoint = string | ComputerConnection;
 
 /**
  * Which seat on the computer a request is for.
@@ -307,21 +312,25 @@ export function createComputerTransport(
      * this becomes the backstop rather than the limit.
      */
     const timeoutMs = timeoutMsOverride ?? defaultTimeoutMs;
-    const { url, token } =
+    const { url, token, trafficAccessToken } =
       typeof computer === "string"
         ? { url: computer, token: options.token }
         : computer;
     const target = url.replace(/\/$/, "");
+    const redirect = trafficAccessToken ? "error" : options.redirect;
     let response: Response;
     try {
       response = await startMarketRequest(() =>
         doFetch(`${target}${path}`, {
           ...init,
-          ...(options.redirect ? { redirect: options.redirect } : {}),
+          ...(redirect ? { redirect } : {}),
           headers: {
             ...(init?.headers as Record<string, string> | undefined),
             ...seatHeaders(botId),
             ...(token ? { "x-openbot-computer-token": token } : {}),
+            ...(trafficAccessToken && {
+              "e2b-traffic-access-token": trafficAccessToken,
+            }),
           },
           signal: caller
             ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])

@@ -21,6 +21,7 @@ import { reconcileCorsairPilotMigrations } from "./corsair-pilot-migrations";
 import {
   canMergeMigrationHistories,
   isIntelligenceMigration,
+  isSandboxMigration,
 } from "./merge-migration-histories";
 import {
   type AppliedMigration,
@@ -120,7 +121,8 @@ async function reconcileTrialJournal(
   applied: readonly AppliedMigration[],
 ): Promise<boolean> {
   const mark = migratorHighWaterMark(applied);
-  const trialLength = TRIAL_STAMPS.findIndex((when) => when === mark) + 1;
+  if (mark === undefined) return false;
+  const trialLength = TRIAL_STAMPS.indexOf(mark) + 1;
   if (trialLength === 0) return false;
 
   const directChatIndex = folder.findIndex(
@@ -197,8 +199,9 @@ async function reconcileBillingJournal(
     "0111_test_credit_reconciliation",
     "0112_test_credit_cutoff_index",
   ];
-  const billingLength =
-    stamps.findIndex((stamp) => stamp === migratorHighWaterMark(applied)) + 1;
+  const mark = migratorHighWaterMark(applied);
+  if (mark === undefined) return false;
+  const billingLength = stamps.indexOf(mark) + 1;
   if (!billingLength) return false;
 
   const firstBilling = folder.findIndex(({ tag }) => tag === tags[0]);
@@ -341,7 +344,8 @@ export async function applyMigrations(
       tx,
       migrationsFolder,
       folder,
-      mainFolder,
+      // Billing pilot offsets refer to the journal before the sandbox migrations were merged.
+      mainFolder.filter((entry) => !isSandboxMigration(entry)),
       corsair,
       journal,
     );

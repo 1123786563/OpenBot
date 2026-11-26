@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { botSeat, seatText } from "../computer/computer-key";
 import type { Database } from "../db/client";
@@ -23,6 +23,7 @@ import {
   personalSaasAccounts,
   personalSaasSessions,
   personalSupportRequests,
+  personalWorkspaceAgenticSpaces,
   personalWorkspaceClosures,
   personalWorkspaceDefaultBots,
   personalWorkspaceIntegrationGrants,
@@ -32,10 +33,13 @@ import {
   workItems,
 } from "../db/schema";
 import {
+  type AgenticStorageRecovery,
+  agenticStorageLocator,
   backupSchedule,
   type CleanupResult,
   type CleanupStep,
   type ClosureCleanup,
+  type ClosureStorageRecovery,
   type closureRestoreJournal,
   type closureTombstone,
   onlineCleanupSteps,
@@ -141,6 +145,7 @@ export function workspaceCleanup({
   now,
   stopped,
   eraseComputer,
+  agenticStorage = false,
   eraseThread,
 }: {
   database: Database;
@@ -150,7 +155,11 @@ export function workspaceCleanup({
     accountId: string,
     target: { threadId: string; agentId: string },
   ) => Promise<void>;
-  eraseComputer?: (workspaceId: string) => Promise<void>;
+  eraseComputer?: (
+    workspaceId: string,
+    storage?: AgenticStorageRecovery,
+  ) => Promise<void>;
+  agenticStorage?: boolean;
   stopped?: (workspaceId: string) => Promise<boolean>;
 }) {
   const ready = (closure: Closure) =>
@@ -190,11 +199,32 @@ export function workspaceCleanup({
           await purgePostgres(savepoint, target);
           return "confirmed";
         }
-        if (key === "computerVolume") await eraseComputer?.(workspaceId);
+        if (key === "computerVolume") {
+          const [binding] = await savepoint
+            .select()
+            .from(personalWorkspaceAgenticSpaces)
+            .where(eq(personalWorkspaceAgenticSpaces.workspaceId, workspaceId));
+          const recovery = closure.storageRecovery;
+          if (
+            recovery?.kind === "unknown" ||
+            (recovery?.kind === "agenticfs" && !recovery.released)
+          )
+            return "unconfirmed";
+          const storage = recovery?.kind === "agenticfs" ? recovery : binding;
+          if (storage && (!agenticStorage || !eraseComputer))
+            return "unconfirmed";
+          if (!storage && !recovery && closure.retiredIntelligence !== null)
+            return "unconfirmed";
+          const releasedStorage =
+            recovery?.kind === "agenticfs" ? recovery : undefined;
+          if (!releasedStorage && stopped && !(await stopped(workspaceId)))
+            return "unconfirmed";
+          await eraseComputer?.(workspaceId, releasedStorage);
+        }
         if (key === "internalServices") {
-          const inventory = await readIntelligenceInventory(savepoint, [
-            accountId,
-          ]);
+          const inventory =
+            closure.retiredIntelligence ??
+            (await readIntelligenceInventory(savepoint, [accountId]));
           if (eraseThread) {
             const threads = new Map(
               inventory.map(({ threadId, agentId }) => [
@@ -244,18 +274,21 @@ export function workspaceCleanup({
       .select()
       .from(personalWorkspaceClosures)
       .where(
-        or(
-          isNull(personalWorkspaceClosures.backupSchedule),
-          sql`(${personalWorkspaceClosures.cleanup}->'connections'->>'status') IS DISTINCT FROM 'confirmed'`,
+        and(
+          // Cleanup holds the closure row across external calls. Let the cutoff
+          // worker record both deadline outcomes before taking that lock.
+          isNotNull(personalWorkspaceClosures.workCutoff),
+          isNotNull(personalWorkspaceClosures.computerCutoff),
+          or(
+            isNull(personalWorkspaceClosures.backupSchedule),
+            sql`(${personalWorkspaceClosures.cleanup}->'connections'->>'status') IS DISTINCT FROM 'confirmed'`,
+          ),
         ),
       );
     for (const record of records) {
       await withClosure(record.id, (tx, closure) =>
         step(tx, closure, "connections"),
       );
-      // #71 preserves the deadline outcome. Once Bot work has drained,
-      // each store can be reconciled independently of Computer availability.
-      if (!record.workCutoff) continue;
       const [claimed] = await database
         .select({ key: workItems.key })
         .from(workItems)
@@ -275,21 +308,15 @@ export function workspaceCleanup({
         "internalServices",
         "postgres",
       ] satisfies CleanupStep[]) {
-        if (key === "computerVolume") {
-          if (
-            !record.computerCutoff ||
-            record.cleanup.computerVolume?.status === "confirmed"
-          )
-            continue;
-          if (
-            stopped &&
-            !(await stopped(record.workspaceId).catch(() => false))
-          )
-            continue;
-        }
+        if (
+          key === "computerVolume" &&
+          record.cleanup.computerVolume?.status === "confirmed"
+        )
+          continue;
         await withClosure(record.id, async (tx, closure) => {
           if (
             key === "internalServices" &&
+            closure.retiredIntelligence === null &&
             closure.cleanup[key]?.status !== "confirmed"
           )
             await captureLegacyBotRuns(tx, closure.accountId);
@@ -327,15 +354,31 @@ export async function reapplyWorkspaceClosures(
   records: z.output<typeof closureRestoreJournal>,
 ) {
   await database.transaction(async (tx) => {
-    const existing = await tx
-      .select({ id: personalWorkspaceClosures.id })
-      .from(personalWorkspaceClosures);
+    const existing = await tx.select().from(personalWorkspaceClosures);
+    const existingById = new Map(existing.map((record) => [record.id, record]));
     const journalIds = new Set(records.map(({ id }) => id));
+    const journalByWorkspace = new Map(
+      records.map((record) => [record.workspaceId, record]),
+    );
+    if (
+      journalIds.size !== records.length ||
+      journalByWorkspace.size !== records.length
+    )
+      throw new Error(
+        "Closure restore journal repeats an operation or workspace",
+      );
     if (existing.some(({ id }) => !journalIds.has(id)))
       throw new Error(
         "Closure restore journal omits an operation present in the backup",
       );
-    for (const { intelligence, ...record } of records) {
+    const ordered = records.toSorted(
+      (left, right) =>
+        left.acceptedAt.getTime() - right.acceptedAt.getTime() ||
+        left.id.localeCompare(right.id),
+    );
+    const locatedSpaces = new Set<string>();
+    const locatedPoints = new Set<string>();
+    for (const { intelligence, storage, ...record } of ordered) {
       const [owner] = await tx
         .select({ status: personalSaasAccounts.status })
         .from(personalSaasAccounts)
@@ -349,33 +392,114 @@ export async function reapplyWorkspaceClosures(
         .select({ id: personalWorkspaces.id })
         .from(personalWorkspaces)
         .where(eq(personalWorkspaces.ownerId, record.accountId));
-      if (workspace && workspace.id !== record.workspaceId) {
-        const [retired] = await tx
-          .select({ id: personalWorkspaceClosures.id })
-          .from(personalWorkspaceClosures)
-          .where(
-            and(
-              eq(personalWorkspaceClosures.id, record.id),
-              eq(personalWorkspaceClosures.accountId, record.accountId),
-              eq(personalWorkspaceClosures.workspaceId, record.workspaceId),
-              eq(personalWorkspaceClosures.acceptedAt, record.acceptedAt),
-              isNotNull(personalWorkspaceClosures.retiredIntelligence),
-            ),
-          );
-        if (retired) continue;
+      const saved = existingById.get(record.id);
+      const activeOperation = workspace && journalByWorkspace.get(workspace.id);
+      const retired = !workspace || workspace.id !== record.workspaceId;
+      if (
+        retired &&
+        workspace &&
+        saved?.retiredIntelligence == null &&
+        (activeOperation?.accountId !== record.accountId ||
+          activeOperation.acceptedAt >= record.acceptedAt)
+      )
         throw new Error(
           "Closure restore journal does not match the restored workspace",
         );
+      const [restoredTarget] = await tx
+        .select({ ownerId: personalWorkspaces.ownerId })
+        .from(personalWorkspaces)
+        .where(eq(personalWorkspaces.id, record.workspaceId));
+      if (restoredTarget && restoredTarget.ownerId !== record.accountId)
+        throw new Error("Closure restore workspace belongs to another account");
+      const [bound] = await tx
+        .select()
+        .from(personalWorkspaceAgenticSpaces)
+        .where(
+          eq(personalWorkspaceAgenticSpaces.workspaceId, record.workspaceId),
+        );
+      const binding = bound && agenticStorageLocator.parse(bound);
+      const recovered: ClosureStorageRecovery =
+        storage.kind === "unknown" && saved?.storageRecovery
+          ? saved.storageRecovery
+          : storage.kind === "unknown" && binding
+            ? { kind: "agenticfs", ...binding, released: false }
+            : storage;
+      const savedStorage = saved?.storageRecovery;
+      const knownBindings = [
+        binding,
+        savedStorage?.kind === "agenticfs" ? savedStorage : undefined,
+      ];
+      if (
+        knownBindings.some(
+          (known) =>
+            known &&
+            (recovered.kind !== "agenticfs" ||
+              !Bun.deepEquals(
+                agenticStorageLocator.parse(known),
+                agenticStorageLocator.parse(recovered),
+              )),
+        ) ||
+        (savedStorage?.kind === "none" && recovered.kind !== "none")
+      )
+        throw new Error(
+          "Closure restore conflicts with the known storage binding",
+        );
+      if (recovered.kind === "agenticfs") {
+        const [conflict] = await tx
+          .select({ id: personalWorkspaceAgenticSpaces.workspaceId })
+          .from(personalWorkspaceAgenticSpaces)
+          .where(
+            and(
+              ne(
+                personalWorkspaceAgenticSpaces.workspaceId,
+                record.workspaceId,
+              ),
+              or(
+                eq(
+                  personalWorkspaceAgenticSpaces.agenticSpaceId,
+                  recovered.agenticSpaceId,
+                ),
+                eq(
+                  personalWorkspaceAgenticSpaces.accessPointId,
+                  recovered.accessPointId,
+                ),
+              ),
+            ),
+          )
+          .limit(1);
+        if (
+          conflict ||
+          locatedSpaces.has(recovered.agenticSpaceId) ||
+          locatedPoints.has(recovered.accessPointId)
+        )
+          throw new Error(
+            "Closure restore reuses another workspace storage binding",
+          );
+        locatedSpaces.add(recovered.agenticSpaceId);
+        locatedPoints.add(recovered.accessPointId);
       }
+      const replay = {
+        cleanup: retired
+          ? sql`jsonb_build_object('postgres', jsonb_build_object('status', 'confirmed', 'checkedAt', ${record.acceptedAt.toISOString()}::text))`
+          : sql`'{}'::jsonb`,
+        backupSchedule: null,
+        storageRecovery: sql`${JSON.stringify(recovered)}::text::jsonb`,
+        ...(retired && {
+          retiredIntelligence: sql`${JSON.stringify(intelligence)}::text::jsonb`,
+          workCutoff: saved?.workCutoff ?? ("confirmed" as const),
+          computerCutoff: saved?.computerCutoff ?? ("confirmed" as const),
+        }),
+      };
       const [closure] = await tx
         .insert(personalWorkspaceClosures)
         .values({
           ...record,
+          ...replay,
           cutoffDeadline: new Date(record.acceptedAt.getTime() + 60_000),
         })
         .onConflictDoUpdate({
           target: personalWorkspaceClosures.id,
-          set: { cleanup: sql`'{}'::jsonb`, backupSchedule: null },
+          set: replay,
           setWhere: and(
             eq(personalWorkspaceClosures.accountId, record.accountId),
             eq(personalWorkspaceClosures.workspaceId, record.workspaceId),
@@ -385,6 +509,8 @@ export async function reapplyWorkspaceClosures(
         .returning({ id: personalWorkspaceClosures.id });
       if (!closure)
         throw new Error("Closure restore conflicts with the journal");
+      // Other snapshots of this account cannot contain this workspace's rows.
+      if (retired) continue;
       if (
         owner.status &&
         !owner.status.executionCutoffs?.some(

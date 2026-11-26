@@ -1,5 +1,5 @@
 {
-  "id": "0c91a5c2-d296-42ca-9aa6-8c698492c8d0",
+  "id": "c81daa07-63b8-414e-afd6-a3c26ebbe05b",
   "prevId": "430f5a5b-4f02-45f2-a5c9-5a6d38a08300",
   "version": "7",
   "dialect": "postgresql",
@@ -16174,24 +16174,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "reconciliation_cutoff_at": {
-          "name": "reconciliation_cutoff_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pilot_resource": {
-          "name": "pilot_resource",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_credit_type": {
-          "name": "requested_credit_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16300,34 +16282,6 @@
           ],
           "isUnique": false,
           "where": "\"test_credit_operations\".\"gateway_evidence_check_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "test_credit_operations_paid_cutoff_idx": {
-          "name": "test_credit_operations_paid_cutoff_idx",
-          "columns": [
-            {
-              "expression": "reconciliation_cutoff_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"test_credit_operations\".\"state\" = 'pending' AND \"test_credit_operations\".\"cutoff_hold\" IS NULL AND \"test_credit_operations\".\"reconciliation_cutoff_at\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -18868,12 +18822,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "credit_type": {
-          "name": "credit_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -19128,6 +19076,81 @@
           ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.personal_workspace_agent_sandboxes": {
+      "name": "personal_workspace_agent_sandboxes",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phase": {
+          "name": "phase",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cutoff": {
+          "name": "cutoff",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "personal_workspace_agent_sandboxes_workspace_id_personal_workspaces_id_fk": {
+          "name": "personal_workspace_agent_sandboxes_workspace_id_personal_workspaces_id_fk",
+          "tableFrom": "personal_workspace_agent_sandboxes",
+          "tableTo": "personal_workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
