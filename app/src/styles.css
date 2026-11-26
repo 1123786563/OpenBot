@@ -26,6 +26,16 @@
   opacity: 1;
 }
 
+/*
+ * Astryx draws a field's placeholder in `--color-text-secondary`, which reads 3.9:1 light and 4.45:1 dark
+ * against the card — under AA for text. The app's muted foreground passes in both themes, as above.
+ */
+.astryx-text-input input::placeholder,
+.astryx-text-input textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
 .recovery-link {
   display: inline-flex;
   align-items: center;

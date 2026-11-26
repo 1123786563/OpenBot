@@ -791,6 +791,7 @@ function HostFoldersSection({
                 </ItemContent>
                 <ItemActions>
                   <DeviceAction
+                    className="confirmation-action"
                     disabled={!connected || requestingBotId === botId}
                     onClick={() => onGrant(botId)}
                     size="sm"
@@ -814,6 +815,7 @@ function HostFoldersSection({
           </p>
           <div className="flex items-center gap-3">
             <DeviceAction
+              className="confirmation-action"
               disabled={!connected || stopping}
               onClick={onStop}
               size="sm"
@@ -821,7 +823,10 @@ function HostFoldersSection({
             >
               {stopping ? "Stopping…" : "Stop folder access"}
             </DeviceAction>
-            <Link className="underline" {...paths.audit()}>
+            <Link
+              className="inline-flex items-center min-h-11 underline"
+              {...paths.audit()}
+            >
               Open {paths.auditLabel}
             </Link>
           </div>

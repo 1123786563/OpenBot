@@ -90,7 +90,11 @@ export function TeachSteps({ state }: { state: BrowserApiState }) {
       <Slide
         title="Do it once, and your Bots learn it"
         description="Do a task in your browser as you always would. The Recorder follows each step, and your Bots learn to do it for you."
-        action={<Button onClick={() => setStep(2)}>Continue</Button>}
+        action={
+          <Button className="min-h-11" onClick={() => setStep(2)}>
+            Continue
+          </Button>
+        }
       >
         <RecorderIllustration />
       </Slide>
@@ -102,7 +106,12 @@ export function TeachSteps({ state }: { state: BrowserApiState }) {
         description="Say what you're about to do. Your Bots use the name to know when to do it."
         onBack={() => setStep(1)}
         action={
-          <Button disabled={!named} form="teach-a-bot-name" type="submit">
+          <Button
+            className="min-h-11"
+            disabled={!named}
+            form="teach-a-bot-name"
+            type="submit"
+          >
             Continue
           </Button>
         }

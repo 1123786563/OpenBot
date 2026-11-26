@@ -715,6 +715,7 @@ function VersionRow({ status }: { status: DesktopStatus }) {
         <ItemActions>
           {found?.found === "available" ? (
             <Button
+              className="confirmation-action"
               disabled={installing}
               onClick={() => install.mutate()}
               size="sm"
@@ -723,6 +724,7 @@ function VersionRow({ status }: { status: DesktopStatus }) {
             </Button>
           ) : (
             <Button
+              className="confirmation-action"
               disabled={check.isPending}
               onClick={() => check.mutate()}
               size="sm"

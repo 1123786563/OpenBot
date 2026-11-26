@@ -8,6 +8,7 @@ import {
 } from "@copilotkit/shared/generative-ui";
 import type { Browser, Page } from "playwright-core";
 import { compile } from "tailwindcss";
+import { read } from "./browser-read";
 
 /**
  * An interface a Bot draws inside a Card shows one frame in the conversation, not two.
@@ -148,8 +149,14 @@ beforeAll(async () => {
 /** Chromium for one page, closed with the page. Each attempt has its own: Bun runs a retry while the attempt it retries is still running. */
 async function chromiumBrowser(): Promise<Browser> {
   const { chromium } = await import("playwright-core");
-  // The CI job installs full Chromium without the headless shell.
-  const browser = await chromium.launch({ channel: "chromium" });
+  // The CI job installs full Chromium without the headless shell, so it launches that by channel.
+  // A machine where the packaged Chrome for Testing is killed by the OS runs the bundled shell
+  // (OPENBOT_APP_BROWSER_SHELL=1): the same Chromium, laid out the same way.
+  const browser = await chromium.launch(
+    process.env.OPENBOT_APP_BROWSER_SHELL === "1"
+      ? {}
+      : { channel: "chromium" },
+  );
   browsers.add(browser);
   browser.on("disconnected", () => browsers.delete(browser));
   return browser;
@@ -361,128 +368,6 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
       }
     },
   );
-
-  /**
-   * How the controls read in a page: the ink of a field and of its label against the Astryx palette
-   * (`--color-*` resolved at the theme scope), the contrast of every visible word inside an interface
-   * against what is behind it, and the ink of each error node the SDK drew itself. A word inside a
-   * disabled control, and anything hidden, is left out.
-   */
-  async function read(page: Page) {
-    return page.evaluate(() => {
-      const scope = document.querySelector("[data-astryx-theme]");
-      if (!scope) throw new Error("the page has no Astryx theme scope");
-      const probe = document.createElement("span");
-      scope.append(probe);
-      const palette = new Set<string>();
-      for (const name of getComputedStyle(scope)) {
-        if (!name.startsWith("--color-")) continue;
-        probe.style.color = `var(${name})`;
-        palette.add(getComputedStyle(probe).color);
-      }
-      probe.remove();
-
-      const canvas = document.createElement("canvas");
-      canvas.width = 1;
-      canvas.height = 1;
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) throw new Error("no canvas");
-      // A canvas reads any CSS colour as sRGB, but flattens a translucent one against black, so
-      // the alpha is read from the text and the colour measured opaque.
-      const rgba = (colour: string): number[] => {
-        // Computed colours come as rgb(), rgba(r, g, b, a) or as `<space>(... / a)`.
-        const a = colour.startsWith("rgba(")
-          ? Number(/,\s*([\d.]+)\)$/.exec(colour)?.[1])
-          : Number(/\/\s*([\d.]+)\s*\)$/.exec(colour)?.[1] ?? 1);
-        const opaque =
-          a === 1
-            ? colour
-            : colour.startsWith("rgba(")
-              ? colour.replace(/,\s*[\d.]+\)$/, ")").replace("rgba(", "rgb(")
-              : colour.replace(/\/\s*[\d.]+\s*\)$/, ")");
-        context.fillStyle = "#000000";
-        context.fillStyle = opaque;
-        context.fillRect(0, 0, 1, 1);
-        const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-        return [r, g, b, a];
-      };
-      const over = ([tr, tg, tb, ta]: number[], [br, bg, bb]: number[]) => [
-        tr * ta + br * (1 - ta),
-        tg * ta + bg * (1 - ta),
-        tb * ta + bb * (1 - ta),
-        1,
-      ];
-      /** What is behind an element: its own and its ancestors' fills, composited over the page. */
-      const behind = (element: Element): number[] => {
-        const layers: number[][] = [];
-        for (let at: Element | null = element; at; at = at.parentElement) {
-          const fill = rgba(getComputedStyle(at).backgroundColor);
-          if (fill[3] === 0) continue;
-          layers.push(fill);
-          if (fill[3] === 1) break;
-        }
-        return layers
-          .reverse()
-          .reduce((page, layer) => over(layer, page), [255, 255, 255, 1]);
-      };
-      const luminance = ([r, g, b]: number[]) => {
-        const channel = (value: number) => {
-          const s = value / 255;
-          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-        };
-        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-      };
-      const contrast = (a: number[], b: number[]) => {
-        const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-        return (high + 0.05) / (low + 0.05);
-      };
-
-      const words: { text: string; contrast: number }[] = [];
-      for (const element of document.querySelectorAll<HTMLElement>(
-        "[data-generative-ui-chat-surface] *",
-      )) {
-        if (!element.checkVisibility()) continue;
-        if (element.closest('[aria-disabled="true"]')) continue;
-        const text = [...element.childNodes]
-          .filter((node) => node.nodeType === Node.TEXT_NODE)
-          .map((node) => node.textContent?.trim())
-          .join("");
-        if (!text) continue;
-        const style = getComputedStyle(element);
-        words.push({
-          text,
-          contrast: contrast(
-            over(rgba(style.color), behind(element)),
-            behind(element),
-          ),
-        });
-      }
-      const errorInks = [
-        ...document.querySelectorAll<HTMLElement>(
-          "[data-generative-ui-chat-surface] [data-generative-ui-error]",
-        ),
-      ]
-        .filter((node) => node.checkVisibility())
-        .map((node) => getComputedStyle(node).color);
-      const input = document.querySelector<HTMLElement>(
-        "[data-generative-ui-chat-surface] .astryx-text-input input",
-      );
-      const label = document.querySelector<HTMLElement>(
-        "[data-generative-ui-chat-surface] .astryx-field-label",
-      );
-      if (!input || !label)
-        throw new Error("the form has no labelled text field");
-      return {
-        ink: {
-          field: getComputedStyle(input).color,
-          label: getComputedStyle(label).color,
-        },
-        palette: [...palette],
-        words,
-        errorInks,
-      };
-    });
-  }
 
   /** The card CopilotKit draws around one interface, by the id of its surface. */
   const card = (page: Page, surface: string) =>
