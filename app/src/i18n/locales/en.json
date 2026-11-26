@@ -33,6 +33,7 @@
   "banner.update.ready": "OpenBot {version} is ready to install. It takes a few minutes.",
   "banner.update.restarting": "Restarting…",
   "banner.update.status": "Downloading…",
+  "bots.handoff.loadFailed": "Couldn’t load the Bots this Bot can ask",
   "frame.cancel": "Cancel",
   "frame.close": "Close",
   "frame.closeDetails": "Close details",

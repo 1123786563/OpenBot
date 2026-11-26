@@ -7,6 +7,8 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
+import { useTranslation } from "@/i18n";
 import {
   Item,
   ItemActions,
@@ -40,6 +42,7 @@ import { queryClient } from "@/query-client";
  * its own, and nothing at all when there is nothing to say to somebody who cannot change it.
  */
 export function HandoffPanel({ agentId }: { agentId: string }) {
+  const { t } = useTranslation();
   const handoff = useQuery(agentHandoffQueryOptions(agentId));
   const agents = useQuery(agentListQueryOptions());
   /*
@@ -52,6 +55,20 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
   const hiddenAgents = useQuery(agentListQueryOptions(true));
   const setGrant = useMutation(setHandoffGrantMutationOptions(queryClient));
 
+  // A failed read must not make the block vanish silently: it draws the house recovery banner.
+  if (handoff.isError) {
+    return (
+      <ReadError
+        message={t(
+          "bots.handoff.loadFailed",
+          "Couldn’t load the Bots this Bot can ask",
+        )}
+        retry={() => handoff.refetch()}
+        retryBelow
+        retrying={handoff.isFetching}
+      />
+    );
+  }
   if (handoff.isPending || !handoff.data) return null;
   const { enabled, canGrant, reachable, grantable } = handoff.data;
 
