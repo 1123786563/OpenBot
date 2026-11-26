@@ -617,7 +617,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     expect(await paid.paidBalance(accountId)).toMatchObject({
       availableMicrocredits: "87",
     });
-// One signed resource can pause without stopping the other two (#110 每路径暂停).
+    // One signed resource can pause without stopping the other two (#110 每路径暂停).
     await signoffs.record({
       ...signed,
       routes: paidPaths,
