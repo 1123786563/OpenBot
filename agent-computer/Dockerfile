@@ -64,6 +64,7 @@ COPY agent-computer/src ./src
 # erased), and the browser routes import ../../shared/openbot-browser and ../../shared/bot-browser,
 # so the files they need go where those paths resolve from /app/src.
 COPY shared/file-download.ts shared/browser-download.ts shared/browser-upload.ts /shared/
+COPY shared/computer-browser-paths.ts /shared/
 # The OpenBot Browser's contract and a Bot's browser's, which the browser routes check requests
 # against. They import zod, and a module resolves its imports from its own directory upward, which
 # from /shared never reaches /app/node_modules: so /shared is given that tree to resolve from, rather
