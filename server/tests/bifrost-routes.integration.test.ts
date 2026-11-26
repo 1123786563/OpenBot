@@ -272,7 +272,10 @@ test("two verified provider routes publish together and an unverified route cann
         terminatedAt: report.cancellation.upstream.terminal.terminatedAt,
       });
       report.cancellation.upstream.terminal.recordDigest = `sha256:${Bun.CryptoHasher.hash("sha256", terminalRecord, "hex")}`;
-      await Bun.write(join(dir, `${revisions[id]}.json`), JSON.stringify(report));
+      await Bun.write(
+        join(dir, `${revisions[id]}.json`),
+        JSON.stringify(report),
+      );
       await Bun.write(
         join(dir, `${revisions[id]}.cancel.json`),
         terminalRecord,
@@ -296,9 +299,9 @@ test("two verified provider routes publish together and an unverified route cann
     });
     expect(partial.status).toBe(201);
     const { release: partialRelease } = await partial.json();
-    expect(partialRelease.routes.map((route: { id: string }) => route.id)).toEqual([
-      "primary",
-    ]);
+    expect(
+      partialRelease.routes.map((route: { id: string }) => route.id),
+    ).toEqual(["primary"]);
     // The durable Price Version must not carry an unverified route either.
     expect(
       (
@@ -308,9 +311,7 @@ test("two verified provider routes publish together and an unverified route cann
 
     expect((await verify("alternate")).status).toBe(200);
     for (const id of ["primary", "alternate"] as const) {
-      const { catalog: snapshot } = await (
-        await request("/")
-      ).json();
+      const { catalog: snapshot } = await (await request("/")).json();
       const report = snapshot.routes[id].verification.report;
       // Streaming, cancellation, creditable usage and tool proof survive verification.
       expect(report.version).toBe(3);
@@ -326,7 +327,9 @@ test("two verified provider routes publish together and an unverified route cann
       expect(report.stream.meter.inputTokenUpperBound).toBe(
         (id === "primary" ? primary : alternate).maxInputTokens,
       );
-      expect(Boolean(report.tool)).toBe((id === "primary" ? primary : alternate).tools);
+      expect(Boolean(report.tool)).toBe(
+        (id === "primary" ? primary : alternate).tools,
+      );
     }
 
     const released = await request("/publication", "POST", {
