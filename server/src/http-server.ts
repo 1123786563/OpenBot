@@ -188,7 +188,7 @@ export function startHttpServer(deps: {
   resolveRequestActor: (
     request: Request,
   ) => Promise<{ id: string; name: string; role: OpenBotRole }>;
-  agentProfileStore: AgentProfileStore;
+  agentProfileStore: Pick<AgentProfileStore, "get">;
   computerGateway: ComputerGateway | undefined;
   app: {
     fetch: (
@@ -196,7 +196,10 @@ export function startHttpServer(deps: {
       env: FrontDoorBindings,
     ) => Response | Promise<Response>;
   };
-}): { stop(closeActiveConnections?: boolean): Promise<void> } {
+}): {
+  port: number | undefined;
+  stop(closeActiveConnections?: boolean): Promise<void>;
+} {
   const {
     port,
     config,

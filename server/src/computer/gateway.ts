@@ -91,10 +91,11 @@ import {
   type PolicyDecision,
   policyInitiator,
 } from "./policy";
-import type {
-  ComputerProvider,
-  ComputerTarget,
-  ComputerUpdate,
+import {
+  type ComputerProvider,
+  type ComputerTarget,
+  type ComputerUpdate,
+  ProviderError,
 } from "./provider";
 import type {
   ActionResult,
@@ -473,8 +474,14 @@ export function createComputerGateway(
     const browser = browserProviderFor(seat);
     if (!browser) return undefined;
     return {
-      locate: async (target: ComputerSeat) =>
-        checkedAddress(await browser.locate(target)),
+      locate: async (target: ComputerSeat) => {
+        try {
+          return checkedAddress(await browser.locate(target));
+        } catch (error) {
+          if (!(error instanceof ProviderError)) throw error;
+          throw new ComputerUnavailableError(error.message);
+        }
+      },
       status: browser.status,
       tokenFor: browser.tokenFor,
       addressOf: (target: ComputerSeat) => ({ botId: target.botId }),

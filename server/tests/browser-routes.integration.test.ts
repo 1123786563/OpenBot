@@ -36,8 +36,8 @@ import type { AuditEventInput } from "../src/audit";
 import { DEV_ACTOR, initializeDevActorUser } from "../src/auth/dev-actor";
 import { createOrganizationAuth } from "../src/auth/organization";
 import { organizationUserStore } from "../src/auth/organization-store";
-import { cubeSandboxBrowsers } from "../src/browser/cubesandbox";
 import { openbotAddress } from "../src/browser/address";
+import { cubeSandboxBrowsers } from "../src/browser/cubesandbox";
 import { personBrowserEgressPolicy } from "../src/browser/egress";
 import {
   gatewayBrowserComputers,
@@ -56,8 +56,8 @@ import {
 } from "../src/browser/routes";
 import {
   botSeat,
-  personSeat,
   type ComputerSeat,
+  personSeat,
 } from "../src/computer/computer-key";
 import { createComputerGateway } from "../src/computer/gateway";
 import { withPolicyPushOnWake } from "../src/computer/policy-network";
@@ -730,7 +730,7 @@ describe("opening a person's own browser", () => {
           return Response.json({ sandboxID }, { status: 201 });
         }
         const [, sandboxID, ...rest] = url.pathname.split("/");
-        const path = "/" + rest.join("/");
+        const path = `/${rest.join("/")}`;
         const sandbox = sandboxes.get(sandboxID);
         if (!sandbox) return new Response(null, { status: 404 });
         if (path === "/envd/process.Process/Start") {
@@ -783,8 +783,10 @@ describe("opening a person's own browser", () => {
         });
       },
       websocket: {
-        open: (ws) =>
-          ws.send(JSON.stringify({ type: "frame", ...ws.data.frame })),
+        open: (ws) => {
+          ws.send(JSON.stringify({ type: "frame", ...ws.data.frame }));
+        },
+        message() {},
       },
     });
     const pilot = build(
