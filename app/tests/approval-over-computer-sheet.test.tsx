@@ -162,16 +162,16 @@ test("on a narrow window the Computer sheet shows the approval it covers, and an
   expect(
     within(card).getByText("Deleting something asks you first."),
   ).toBeTruthy();
-  expect(
-    within(card)
-      .getAllByRole("radio")
-      .map((radio) => radio.getAttribute("aria-label")),
-  ).toEqual([
+  const answers = [
     "Allow once",
     "Allow for this conversation",
     "Always allow here",
     "Deny",
-  ]);
+  ];
+  expect(within(card).getAllByRole("radio")).toHaveLength(answers.length);
+  for (const answer of answers) {
+    expect(within(card).getByRole("radio", { name: answer })).toBeTruthy();
+  }
   // Only this conversation's: an approval waiting in another one is not drawn here.
   expect(
     within(sheet).getAllByRole("region", { name: "Waiting for your approval" }),

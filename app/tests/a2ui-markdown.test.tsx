@@ -350,7 +350,7 @@ test("no run of backticks in the code, and nothing in the language, can close th
 });
 
 /**
- * CopilotKit's standard stylesheet is in no cascade layer, so in a browser it outranks Tailwind's
+ * The SDK's runtime-injected A2UI stylesheet is in no cascade layer, so in a browser it outranks Tailwind's
  * utilities, which are, whatever their specificity. Every property it sets on a heading or a button
  * that is not exempted for markdown would restyle the reply's markup inside an interface, so
  * styles.css must hand each one back to the layers.

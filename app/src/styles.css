@@ -15,17 +15,6 @@
 /* Its code plugin, which Streamdown's docs say to scan the same way. */
 @source "../node_modules/@streamdown/code/dist/*.js";
 
-textarea.quick-chat-message::placeholder {
-  color: var(--muted-foreground);
-  opacity: 1;
-}
-
-.quick-chat-actions button,
-button.quick-chat-touch-target {
-  min-block-size: var(--spacing-11, 2.75rem);
-  min-inline-size: var(--spacing-11, 2.75rem);
-}
-
 .sign-in-screen .sign-in-email {
   border: var(--spacing-px, 0.0625rem) solid var(--muted-foreground);
   border-radius: var(--radius-md);
@@ -131,16 +120,16 @@ button.quick-chat-touch-target {
  * came back correct and larger is left alone. The reader gets an interface that is present and may
  * be cut off, instead of a turn that looks like the Bot said nothing at all.
  *
- * Selected through the frame rather than through a class of ours because both chat surfaces render
- * this container and only one of them is ours: the packaged chat builds it too, and a rule that
- * needed our wrapper would fix the transcript and leave the other surface broken. `websandbox__frame`
- * is the class the sandbox library puts on the frame it creates.
+ * Selected through the frame: `websandbox__frame` is the class the sandbox library puts on the
+ * frame it creates. Scoped to the host that OpenBot draws around every sandboxed component
+ * (`components/gallery/sandbox-host.tsx`), which the conversation, previews and the Playground all
+ * draw through, so a sandbox mounted anywhere else is not made taller unasked.
  *
  * DELETE THIS WHEN THE SDK IS FIXED. It compensates for someone else's arithmetic, so it should not
  * outlive the bug: once the measurement re-runs on sandbox-ready and after the queue drains, this
  * rule can only make small interfaces taller than they asked to be.
  */
-:where(div:has(> iframe.websandbox__frame)) {
+[data-sandbox-host] :where(div:has(> iframe.websandbox__frame)) {
   min-height: 200px;
 }
 
@@ -273,18 +262,35 @@ button.quick-chat-touch-target {
   border-top-right-radius: var(--radius-sm);
 }
 
-/*
- * An interface a Bot draws inside a Card has one frame, not two. CopilotKit draws a frame of its own
- * around every interface in a chat (a border and 12px of padding), and the catalog's Card draws a
- * border as well, so a Card on top, the shape most interfaces take, came out as a box inside a box.
- * When the top component is a Card that draws a box, the frame gives up its border and padding and
- * the Card, drawn in the app's tokens, is the one card in the conversation. Anything else on top,
- * including a Card drawn as a borderless section or a transparent one, keeps the frame as its box.
- *
- * `data-a2ui-card="top"` is the catalog's mark for a Card that is not inside another one. A
- * component given an accessible name it does not apply itself sits in a `display: contents` span.
- */
-[data-generative-ui-chat-surface]:has(
+/* The SDK renders these wrappers around activity and Markdown surfaces. */
+[data-generative-ui-chat-surface] {
+  width: 100%;
+}
+
+[data-generative-ui-chat-surface]:not([data-a2ui-markdown-surface]) {
+  margin-block: calc(var(--spacing) * 2);
+  border: thin solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: calc(var(--spacing) * 3);
+}
+
+[data-a2ui-markdown-surface] {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  margin-block: calc(var(--spacing) * 4);
+}
+
+[data-generative-ui-chat-surface] > [role="alert"] {
+  margin-top: calc(var(--spacing) * 2);
+  color: var(--destructive);
+  font-size: var(--text-xs);
+}
+
+/* A boxed Card supplies its own border and padding. */
+[data-generative-ui-chat-surface]:not([data-a2ui-markdown-surface]):has(
   > .a2ui-surface
     > [data-a2ui-card="top"]:not(
       [data-a2ui-card-variant="section"],
@@ -301,30 +307,14 @@ button.quick-chat-touch-target {
   padding: 0;
 }
 
-/*
- * Markdown and code in an interface a Bot generates are drawn by a reply's renderer (see
- * lib/copilot/a2ui-markdown.tsx), inside a surface that also carries CopilotKit's own stylesheet.
- * That stylesheet is in no layer, so its heading sizes, and the `color: inherit` it gives every
- * button inside a Card, outrank Tailwind's utilities however specific those are: headings came out
- * smaller than in a reply and the copy buttons lost their muted colour. `revert-layer` hands exactly
- * those properties back to the layered rules, which are the ones a reply is drawn with.
- *
- * The amount boxes of a Breakdown (lib/copilot/a2ui-breakdown.tsx) are the app's own inputs and
- * take back their type size the same way.
- */
+/* The SDK injects unlayered A2UI resets at runtime. Keep OpenBot's type and color tokens. */
 .a2ui-surface
-  :is(.openbot-markdown, .openbot-breakdown)
-  :is(h1, h2, h3, h4, h5, h6, button, input, select, textarea) {
+  :is(.openbot-markdown, [class*="astryx-"])
+  :is(h1, h2, h3, h4, h5, h6, button, input, select, textarea),
+.a2ui-surface
+  :is(button, input, select, textarea, [data-a2ui-input])[class*="astryx-"] {
   font: revert-layer;
   color: revert-layer;
-}
-
-/*
- * The frame CopilotKit draws around an interface in the conversation has a fixed light grey border,
- * which in the dark theme was a bright ring around the card. It takes the app's border colour.
- */
-[data-generative-ui-chat-surface] {
-  border-color: var(--border);
 }
 
 /*

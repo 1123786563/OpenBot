@@ -48,6 +48,7 @@ export function ConversationView({
   restoring = false,
   intro,
   starterSuggestions,
+  draftStorageKey,
   onSubmit,
   onStop,
   voiceCall,
@@ -109,10 +110,8 @@ export function ConversationView({
    * navigates away; a message parked there would go down with the unmount, and a message that
    * silently disappears is a worse answer than a send button that will not go.
    *
-   * The other place somebody talks to a Bot, the direct `/bot` chat, does not get this either, and
-   * not by a decision made here: that screen draws CopilotKit's own chat rather than this composer,
-   * so there is nothing on it for this flag to reach. Giving it the same affordance means either
-   * moving it onto this composer or asking for it upstream, and neither is a queue.
+   * The direct `/bot` chat does not ask for it either: its thread is whatever one tab remembers, so
+   * a message parked there has nowhere to outlive the tab.
    */
   queueWhileBusy?: boolean;
   /** History has been asked for and has not arrived. Drawn as placeholder rows; see `ChatTranscript`. */
@@ -127,6 +126,8 @@ export function ConversationView({
    * the composer, and not drawn while `attached` is out.
    */
   starterSuggestions?: ReactNode;
+  /** Where the composer keeps an unsent draft. See `Composer`. */
+  draftStorageKey?: string;
   onSubmit: (draft: ComposerDraft) => void | Promise<void>;
   /** Stop the Bot mid-answer; forwarded to turn the send button into a stop button. */
   onStop?: () => void;
@@ -537,6 +538,7 @@ export function ConversationView({
           {...(commands ? { commands } : {})}
           className="relative w-full mt-auto"
           compact
+          {...(draftStorageKey ? { draftStorageKey } : {})}
           voiceCall={voiceCall}
           disabled={disabled}
           {...(onSendHeld ? { onSendHeld } : {})}

@@ -101,10 +101,12 @@ const buttons = (scope: HTMLElement) =>
     .map((button) => button.textContent);
 
 /** The answers a card offers, as its rows name them. */
-const names = (scope: HTMLElement) =>
-  within(scope)
-    .getAllByRole("radio")
-    .map((radio) => radio.getAttribute("aria-label"));
+const names = (scope: HTMLElement, answers: string[]) => {
+  expect(within(scope).getAllByRole("radio")).toHaveLength(answers.length);
+  for (const answer of answers) {
+    expect(within(scope).getByRole("radio", { name: answer })).toBeTruthy();
+  }
+};
 
 test("in the conversation, a check-in task's approval offers Allow once and Deny, and no standing rule", async () => {
   serving();
@@ -119,16 +121,13 @@ test("in the conversation, a check-in task's approval offers Allow once and Deny
     </>,
   );
   await view.findAllByRole("region", { name: "Waiting for your approval" });
-  expect(names(view.getByRole("region", { name: "task" }))).toEqual([
-    "Allow once",
-    "Deny",
-  ]);
+  names(view.getByRole("region", { name: "task" }), ["Allow once", "Deny"]);
   expect(
     within(view.getByRole("region", { name: "task" })).getByText(
       "Tasks started from a check-in ask before every change.",
     ),
   ).toBeTruthy();
-  expect(names(view.getByRole("region", { name: "own" }))).toEqual([
+  names(view.getByRole("region", { name: "own" }), [
     "Allow once",
     "Allow for this conversation",
     "Always allow here",

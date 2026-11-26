@@ -8,15 +8,9 @@ import {
   test,
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import {
-  CopilotChatConfigurationProvider,
-  CopilotChatMessageView,
-  CopilotKitProvider,
-} from "@copilotkit/react-core/v2";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { ChatTranscript } from "@/components/channels/chat-transcript";
-import { TelemetryAssistantMessage } from "@/components/channels/telemetry-assistant-message";
 import { settleReactWork } from "./settle-react-work";
 
 /** Typed observer fixture: tests drive browser intersection reports, never fake DOM rendering. */
@@ -137,39 +131,13 @@ function fixture() {
   ];
   return { id, threadId, messages };
 }
-function channel() {
+function channel(initiallyRunning = false) {
   const data = fixture();
-  const element = (busy = false) => (
-    <ChatTranscript
-      busy={busy}
-      messages={data.messages}
-      threadId={data.threadId}
-    />
+  const element = (busy = initiallyRunning, messages = data.messages) => (
+    <ChatTranscript busy={busy} messages={messages} threadId={data.threadId} />
   );
   const view = render(element());
   expect(view.container.textContent).toContain("This is the completed answer.");
-  return { ...data, view, element };
-}
-function bot(initiallyRunning = false) {
-  const data = fixture();
-  const message = data.messages[1];
-  if (message?.role !== "assistant")
-    throw new Error("The fixture must include an assistant reply");
-  const element = (isRunning = initiallyRunning, messages = data.messages) => (
-    <CopilotKitProvider
-      runtimeUrl="http://localhost/api/copilotkit"
-      enableInspector={false}
-    >
-      <CopilotChatConfigurationProvider threadId={data.threadId}>
-        <CopilotChatMessageView
-          messages={messages}
-          assistantMessage={TelemetryAssistantMessage}
-          isRunning={isRunning}
-        />
-      </CopilotChatConfigurationProvider>
-    </CopilotKitProvider>
-  );
-  const view = render(element());
   return { ...data, view, element };
 }
 async function flush() {
@@ -271,69 +239,6 @@ test("a transcript without a thread ID never invents result linkage", async () =
   expect(requests).toHaveLength(0);
 });
 
-test("direct Bot replies use the same real viewport condition", async () => {
-  const { view } = bot();
-  expect(view.container.textContent).toContain("This is the completed answer.");
-  intersect();
-  await flush();
-  expect(requests.map((event) => event.kind)).toEqual(["result_viewed"]);
-});
-
-test("the existing direct Bot copy action records only after clipboard success", async () => {
-  let allowCopy: () => void = () => {
-    throw new Error("No copy pending");
-  };
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: {
-      writeText: () =>
-        new Promise<void>((resolve) => {
-          allowCopy = resolve;
-        }),
-    },
-  });
-  const { view, id, threadId } = bot();
-  fireEvent.click(view.getByTestId("copilot-copy-button"));
-  await flush();
-  expect(requests).toHaveLength(0);
-  allowCopy();
-  await flush();
-  expect(requests).toEqual([
-    { kind: "result_copied", threadId, messageId: id, surface: "web" },
-  ]);
-});
-
-test("a rejected clipboard write records no copy", async () => {
-  const error = spyOn(console, "error").mockImplementation(() => {});
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: {
-      writeText: async () => {
-        throw new Error("Clipboard permission denied");
-      },
-    },
-  });
-  const { view } = bot();
-  fireEvent.click(view.getByTestId("copilot-copy-button"));
-  await flush();
-  expect(requests).toHaveLength(0);
-  expect(error.mock.calls).toHaveLength(1);
-  expect(error.mock.calls[0]?.[0]).toBe("Failed to copy to clipboard:");
-  error.mockRestore();
-});
-
-test("background direct Bot history is not viewed when the person returns after scrolling away", async () => {
-  visibility("hidden");
-  bot();
-  intersect();
-  await flush();
-  expect(requests).toHaveLength(0);
-  intersect(false);
-  visibility("visible");
-  await flush();
-  expect(requests).toHaveLength(0);
-});
-
 test("earlier prose in the current turn waits for the run to finish too", async () => {
   const data = fixture();
   const messages: Message[] = [
@@ -358,8 +263,8 @@ test("earlier prose in the current turn waits for the run to finish too", async 
   expect(requests).toHaveLength(2);
 });
 
-test("direct Bot results wait for completion and then observe the final run rerender", async () => {
-  const { view, element } = bot(true);
+test("results wait for completion and then observe the final run rerender", async () => {
+  const { view, element } = channel(true);
   intersect();
   await flush();
   expect(requests).toHaveLength(0);
@@ -369,8 +274,8 @@ test("direct Bot results wait for completion and then observe the final run rere
   expect(requests).toHaveLength(1);
 });
 
-test("previous direct Bot results remain observable while a new human turn is running", async () => {
-  const { view, element, messages, id } = bot(true);
+test("previous results remain observable while a new human turn is running", async () => {
+  const { view, element, messages, id } = channel(true);
   view.rerender(
     element(true, [
       ...messages,

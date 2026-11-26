@@ -14,6 +14,7 @@ import {
   render,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
 import {
   INTERACTIVE_STARTER,
@@ -238,6 +239,29 @@ test("one user's claimed conversation does not hide tasks for a second user in t
   expect(
     await second.findByRole("region", { name: "Starter tasks" }),
   ).toBeTruthy();
+});
+
+/*
+ * Keyboard only: the first task is reached by Tab from outside it and sent by Enter, the way a
+ * pointer sends it by click.
+ */
+test("a starter task can be reached by Tab and sent with Enter", async () => {
+  server();
+  const sent: string[] = [];
+  const view = draw({
+    agentId: "picked-harness",
+    onSelect: (message) => {
+      sent.push(message);
+    },
+  });
+  const first = await view.findByRole("button", {
+    name: STARTER_SUGGESTIONS[0].title,
+  });
+  const user = userEvent.setup({ document });
+  await user.tab();
+  expect(document.activeElement).toBe(first);
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(sent).toEqual([STARTER_SUGGESTIONS[0].message]));
 });
 
 test("busy and repeated presses do not send another message", async () => {

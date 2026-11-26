@@ -1,3 +1,7 @@
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { HStack, Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import {
   type Attachment,
   type AttachmentsConfig,
@@ -28,6 +32,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import { attachmentModality } from "@/components/channels/chat-messages";
 import { IconWaveform } from "@/components/icons/waveform";
 import { RoutineComposerButton } from "@/components/routines/new-routine-button";
@@ -46,7 +51,6 @@ import {
 } from "@/lib/channels/compose-draft";
 import { newId } from "@/lib/new-id";
 import { cn } from "@/lib/utils";
-import { Button } from "../../ui/button";
 import { AttachmentStrip } from "./attachment-strip";
 import {
   attachmentsConfigFor,
@@ -401,8 +405,9 @@ export function Composer({
     !isSegmentsEmpty(value);
   const showsDraftStatus = draftSaveFailed || showsRestoredDraft;
   const draftStatus = showsDraftStatus ? (
-    <p
-      className="mb-2 text-sm text-foreground/75"
+    <Text
+      as="p"
+      className="mb-2 text-foreground/75 text-sm"
       id={draftStatusId}
       role="status"
     >
@@ -413,7 +418,7 @@ export function Composer({
         ? "Your draft is temporary. Copy your message before closing or refreshing this tab."
         : !restoredDraftMessage &&
           "Draft restored. Your unsent message is saved in this tab."}
-    </p>
+    </Text>
   ) : null;
   const [isSubmitting, setIsSubmitting] = useState(false);
   useLayoutEffect(() => {
@@ -1498,54 +1503,54 @@ export function Composer({
     heldActionLabel || (parking ? "Queue message" : "Send message");
   const callAction =
     draft.isEmpty && draft.attachments.length === 0 ? voiceCall : undefined;
-  const actionClassName = cn(
-    "rounded-full p-0",
-    compact ? "size-8 self-end" : "size-7",
-    draftStorageKey &&
-      "max-md:min-h-11 max-md:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11",
-  );
   const primaryAction = canStop ? (
-    <Button
-      aria-label="Stop the Bot"
-      className={actionClassName}
+    <IconButton
       data-slot="composer-stop"
       data-testid="composer-stop"
+      icon={<IconPlayerStopFilled className="size-3" />}
+      label="Stop the Bot"
       onClick={onStop}
-      size="icon"
+      size="sm"
+      tooltip="Stop the Bot"
       type="button"
-    >
-      <IconPlayerStopFilled className="size-3" />
-    </Button>
+    />
   ) : callAction ? (
-    <Button
-      aria-label={callAction.active ? "Show voice call" : "Start voice call"}
-      title={
+    <IconButton
+      icon={<IconWaveform className="size-4" />}
+      isDisabled={disabled || dictation.busy || !callAction.supported}
+      label={callAction.active ? "Show voice call" : "Start voice call"}
+      onClick={callAction.onStart}
+      size="sm"
+      tooltip={
         callAction.supported
           ? callAction.active
             ? "Show voice call"
             : "Call this Bot"
           : "Voice calls need a microphone and a secure (HTTPS) connection"
       }
-      className={actionClassName}
-      disabled={disabled || dictation.busy || !callAction.supported}
-      onClick={callAction.onStart}
-      size="icon"
       type="button"
-    >
-      <IconWaveform className="size-4" />
-    </Button>
-  ) : (
+      variant="ghost"
+    />
+  ) : heldActionLabel ? (
     <Button
-      aria-label={sendLabel}
-      className={heldActionLabel ? "min-h-11 self-end" : actionClassName}
-      data-slot="composer-send"
-      disabled={!canSend}
-      size={heldActionLabel ? "sm" : "icon"}
+      className="self-end"
+      isDisabled={!canSend}
+      label={heldActionLabel}
+      size="sm"
       type="submit"
-      variant={heldActionLabel ? "secondary" : "default"}
-    >
-      {heldActionLabel || <IconArrowUp className="size-3.5" />}
-    </Button>
+      variant="secondary"
+    />
+  ) : (
+    <IconButton
+      data-slot="composer-send"
+      icon={<IconArrowUp className="size-3.5" />}
+      isDisabled={!canSend}
+      label={sendLabel}
+      size="sm"
+      tooltip={sendLabel}
+      type="submit"
+      variant="primary"
+    />
   );
 
   /**
@@ -1621,9 +1626,9 @@ export function Composer({
    * state is not what an alert is for.
    */
   const tooManyStagedNotice = tooManyStaged ? (
-    <p className="pb-2 text-sm text-muted-foreground" role="status">
+    <Text as="p" className="pb-2 text-muted-foreground text-sm" role="status">
       {tooManyStagedReason(draft.attachments.length)}
-    </p>
+    </Text>
   ) : null;
 
   if (compact) {
@@ -1640,7 +1645,7 @@ export function Composer({
        * that box is already pinned to the bottom of the pane — so the reasons appeared in the gap
        * under it, furthest from the drop that caused them.
        */
-      <div className="flex flex-col" ref={containerRef} {...dropZone}>
+      <Stack {...astryxScope} ref={containerRef} {...dropZone}>
         <RejectedFiles onDismiss={dismissRejections} rejected={rejected} />
         {tooManyStagedNotice}
         <LiveDictationNotice dictation={dictation} />
@@ -1674,7 +1679,7 @@ export function Composer({
              * and the model on the left, the microphone and send on the right, so the controls
              * keep their place however long the message grows.
              */}
-            <div className="min-w-0" data-slot="composer-input">
+            <Stack className="min-w-0" data-slot="composer-input">
               <PromptArea
                 aria-describedby={showsDraftStatus ? draftStatusId : undefined}
                 aria-label="Message"
@@ -1693,47 +1698,46 @@ export function Composer({
                 triggers={triggers}
                 value={value}
               />
-            </div>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-1">
+            </Stack>
+            <HStack align="center" className="mt-2" gap={2} justify="between">
+              <HStack align="center" className="min-w-0" gap={1}>
                 {attachmentsEnabled ? (
-                  <Button
-                    aria-label="Attach a file"
+                  <IconButton
                     data-slot="composer-attach"
-                    // The button stays, and stays labelled: a conversation that cannot take another
-                    // message has not lost the ability to attach, it has lost the message.
-                    disabled={disabled}
+                    icon={<IconPlus className="size-5" />}
+                    isDisabled={disabled}
+                    label="Attach a file"
                     onClick={() => fileInputRef.current?.click()}
-                    size="icon"
+                    size="sm"
+                    tooltip="Attach a file"
                     type="button"
                     variant="ghost"
-                  >
-                    <IconPlus className="size-5" />
-                  </Button>
+                  />
                 ) : null}
                 {routine ? <RoutineComposerButton {...routine} /> : null}
                 {modelPicker}
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
+              </HStack>
+              <HStack align="center" className="shrink-0" gap={1}>
                 <DictationButton
                   dictation={dictation}
                   disabled={disabled || voiceCall?.active === true}
                   onStarted={focusForDictation}
                 />
                 {primaryAction}
-              </div>
-            </div>
+              </HStack>
+            </HStack>
           </DictationSurface>
         </form>
-      </div>
+      </Stack>
     );
   }
 
   return (
     // The same `containerRef`, on the wrapper this branch already had: the paste listener is scoped
     // to whatever holds the ref, so a branch without it can be pasted into and nothing happens.
-    <div
-      className={cn("flex w-xl flex-col", className)}
+    <Stack
+      {...astryxScope}
+      className={cn("w-xl", className)}
       ref={containerRef}
       {...dropZone}
     >
@@ -1762,13 +1766,13 @@ export function Composer({
         >
           {filePicker}
 
-          <div className="grow pb-2">
+          <Stack className="grow pb-2">
             <AttachmentStrip
               files={files}
               images={images}
               onRemove={discardAttachment}
             />
-            <div data-slot="composer-input">
+            <Stack data-slot="composer-input">
               <PromptArea
                 aria-describedby={showsDraftStatus ? draftStatusId : undefined}
                 aria-label="Message"
@@ -1787,27 +1791,27 @@ export function Composer({
                 triggers={triggers}
                 value={value}
               />
-            </div>
-          </div>
+            </Stack>
+          </Stack>
 
-          <div className="flex items-center justify-between">
+          <HStack align="center" justify="between">
             {attachmentsEnabled ? (
-              <Button
-                aria-label="Attach a file"
-                className="size-7 rounded-full p-0"
+              <IconButton
                 data-slot="composer-attach"
-                disabled={disabled}
+                icon={<IconPlus className="size-4" />}
+                isDisabled={disabled}
+                label="Attach a file"
                 onClick={() => fileInputRef.current?.click()}
+                size="sm"
+                tooltip="Attach a file"
                 type="button"
                 variant="ghost"
-              >
-                <IconPlus className="size-4" />
-              </Button>
+              />
             ) : (
-              <div />
+              <Stack />
             )}
 
-            <div className="flex items-center gap-1">
+            <HStack align="center" gap={1}>
               {modelPicker}
               <DictationButton
                 dictation={dictation}
@@ -1815,20 +1819,20 @@ export function Composer({
                 onStarted={focusForDictation}
               />
               {primaryAction}
-            </div>
-          </div>
+            </HStack>
+          </HStack>
         </DictationSurface>
       </form>
       {/* The notice's invisible copy, below the box: see above. Hidden from everyone and inert. */}
-      <div
+      <Stack
         aria-hidden="true"
         className="invisible"
         data-slot="composer-dictate-notice-balance"
         inert
       >
         <LiveDictationNotice dictation={dictation} />
-      </div>
-    </div>
+      </Stack>
+    </Stack>
   );
 }
 

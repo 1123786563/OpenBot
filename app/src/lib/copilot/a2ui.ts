@@ -4,13 +4,15 @@ import {
   type GenerativeUITheme,
   standardUI,
 } from "@copilotkit/react-core/v2/generative-ui";
+import { createElement } from "react";
 import { SERIES_COLOURS } from "@/components/gallery/palette";
 import {
   A2UIBreakdown,
   BREAKDOWN_DESCRIPTION,
   breakdownProps,
 } from "./a2ui-breakdown";
-import { A2UITextField } from "./a2ui-text-field";
+import { astryxA2UIOverrides } from "./a2ui-controls";
+import { A2UINodeError } from "./a2ui-form";
 import { A2UICode, A2UIMarkdown } from "./a2ui-markdown";
 
 /**
@@ -38,10 +40,10 @@ export const OMITTED_STANDARD_COMPONENTS = [
  * override replaces only the React component: the model sees the standard `Code` and `Markdown` with
  * their descriptions and props unchanged, so what a Bot already writes keeps drawing.
  *
- * `TextField` is the standard one, except that a number field writes a number into the data model,
- * so a total a Bot computes from the fields adds rather than joins text; see a2ui-text-field.tsx.
- *
- * `Breakdown` is OpenBot's own: amounts that add up to a total, each editable and in its own colour,
+ * The interactive fields and buttons are drawn by Astryx; only their React renderers change, so the
+ * names, props, value types and events a Bot already uses stay the same. A number TextField writes
+ * a number into the data model, so a total a Bot computes from the fields adds instead of joining
+ * text. `Breakdown` is OpenBot's own: amounts that add up to a total, each editable and in its own colour,
  * with a bar of how the total splits; see a2ui-breakdown.tsx.
  */
 export const OPENBOT_UI = createGenerativeUI({
@@ -50,7 +52,7 @@ export const OPENBOT_UI = createGenerativeUI({
   overrides: {
     Code: { component: A2UICode },
     Markdown: { component: A2UIMarkdown },
-    TextField: { component: A2UITextField },
+    ...astryxA2UIOverrides,
   },
   components: {
     Breakdown: {
@@ -123,6 +125,7 @@ export const OPENBOT_UI_THEME: GenerativeUITheme = {
 const GENERATIVE_UI = {
   ui: OPENBOT_UI,
   theme: OPENBOT_UI_THEME,
+  errorBoundary: { fallback: () => createElement(A2UINodeError) },
 } satisfies NonNullable<CopilotKitProviderProps["generativeUI"]>;
 
 /**
