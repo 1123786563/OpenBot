@@ -226,7 +226,7 @@ describe("GET /api/admin/audit-events?format=csv", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(seen.map(({ q, cursor }) => ({ q, cursor }))).toEqual([
+    expect(seen.map(({ q, cursor }) => ({ q, cursor }))).toStrictEqual([
       { q: "export-needle", cursor: undefined },
       { q: "export-needle", cursor: "older" },
     ]);
