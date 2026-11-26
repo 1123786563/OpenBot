@@ -50,6 +50,7 @@ import {
 import {
   readPilotRoutes as activeRoutes,
   currentRouteLimit,
+  eligibleSignoff,
   type PilotDeployment,
   type PilotResource,
   sharedPilotCostScope,
@@ -1984,6 +1985,21 @@ export function createTestCreditLedger(
           ? await application(applicationId, tx, true)
           : undefined;
         if (pilotPath?.pausedAt) return denied("route_unavailable");
+        // A signed resource can be paused on its own (#110 每路径暂停).
+        const pilotSignoff = pilot
+          ? await eligibleSignoff(
+              tx,
+              pilot,
+              "application",
+              applicationId,
+              accountId,
+            )
+          : undefined;
+        if (
+          pilotSignoff?.kind === "application" &&
+          pilotSignoff.pausedResources.includes(pilotResource)
+        )
+          return denied("route_unavailable");
         if (
           under?.held.applicationId === WEKNORA_APPLICATION_ID &&
           !embedding &&
