@@ -1747,7 +1747,10 @@ export function createTestCreditLedger(
           !external &&
           (embedding || weknoraWork) &&
           (request.applicationId !== WEKNORA_APPLICATION_ID ||
-            !request.authorizationId)
+            // #110 平台预算: maintenance may name an execution budget on the
+            // platform Billing Account instead of a person's authorization.
+            (!request.authorizationId &&
+              !(weknoraWork === "maintenance" && request.budgetId)))
         )
           return denied("not_authorized");
         const purpose =

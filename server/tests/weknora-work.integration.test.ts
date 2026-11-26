@@ -28,6 +28,7 @@ import {
   pilotProviderCostLimits,
   testCreditAccounts,
   testCreditBatches,
+  testCreditBudgets,
   testCreditEnrollments,
   testCreditEvidence,
   testCreditOperations,
@@ -228,6 +229,11 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
     });
   const batchId = crypto.randomUUID();
   const productCode = `work-pack-${batchId}`;
+  const platformIdentity = {
+    issuer: "openbot:platform",
+    subject: "weknora-maintenance",
+  };
+  const platformBatchId = crypto.randomUUID();
   try {
     await db
       .insert(enterpriseSettings)
@@ -358,6 +364,90 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
       "Rejected requests did not reach the gateway: service credential, subject, resource, cap, missing grant, revoked grant, expired grant.",
     );
 
+    // A periodic maintenance run may charge a platform budget instead of a
+    // person's grant (#110 平台预算). A missing or spent budget pauses the
+    // charged step before the gateway, and the charge lands on the platform
+    // account.
+    const platformBudgetId = "issue-110-maintenance";
+    await ledger.enroll({
+      identity: platformIdentity,
+      batchId: platformBatchId,
+      amount: 100n,
+    });
+    await ledger.claim(platformIdentity, platformBatchId);
+    const platformRuntime = loadWeKnoraBilling({
+      ...options,
+      TEST_CREDIT_BIFROST_URL: new URL("/v1/chat/completions", upstream.url)
+        .href,
+      TEST_CREDIT_RERANK_BIFROST_URL: new URL("/v1/rerank", upstream.url).href,
+      TEST_CREDIT_INPUT_METER_URL: new URL("/meter", upstream.url).href,
+      TEST_CREDIT_WEKNORA_MAINTENANCE_BUDGET_ID: platformBudgetId,
+    });
+    if (!platformRuntime) throw new Error("Missing platform WeKnora runtime");
+    const platformApi = createWeKnoraRoutes({ ...platformRuntime, ledger });
+    const sendPlatform = (body: Record<string, unknown>) =>
+      platformApi.request("/work", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${serviceToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          subject: platformIdentity.subject,
+          resourceId,
+          operationId: crypto.randomUUID(),
+          ...body,
+        }),
+      });
+    const gatewayCalls = requests.length;
+    const unfunded = await sendPlatform({ taskId, input: maintenance });
+    expect(unfunded.status).toBe(429);
+    expect(await unfunded.json()).toMatchObject({ code: "execution_limit" });
+    expect(
+      (await sendPlatform({ input: { kind: "chat", messages } })).status,
+    ).toBe(403);
+    await ledger.createBudget(platformIdentity, {
+      budgetId: platformBudgetId,
+      creditType: "test",
+      limitMicrocredits: 16n,
+    });
+    const replayOperationId = crypto.randomUUID();
+    const fundedBody = {
+      taskId,
+      input: maintenance,
+      operationId: replayOperationId,
+    };
+    const funded = await sendPlatform(fundedBody);
+    expect(funded.status).toBe(200);
+    const fundedReply = await funded.json();
+    expect(fundedReply.receipt).toMatchObject({
+      state: "settled",
+      applicationId: "weknora",
+      budgetId: platformBudgetId,
+      route: "text",
+      reservedMicrocredits: "16",
+      chargedMicrocredits: "5",
+      inputTokens: "3",
+      outputTokens: "2",
+    });
+    const replayed = await sendPlatform(fundedBody);
+    expect(replayed.status).toBe(200);
+    expect(await replayed.json()).toEqual(fundedReply);
+    const spent = await sendPlatform({ taskId, input: maintenance });
+    expect(spent.status).toBe(429);
+    expect(await spent.json()).toMatchObject({ code: "execution_limit" });
+    expect(requests).toHaveLength(gatewayCalls + 1);
+    expect(
+      requests.find(({ operation }) => operation === replayOperationId),
+    ).toBeDefined();
+    expect(await ledger.balance(platformIdentity)).toMatchObject({
+      chargedMicrocredits: "5",
+      reservedMicrocredits: "0",
+    });
+    expect(await ledger.balance(identity)).toMatchObject({
+      availableMicrocredits: "987",
+    });
+
     const binary = process.env.WEKNORA_110_TEST_BINARY;
     if (binary) {
       const proc = Bun.spawn(
@@ -382,7 +472,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
         },
       );
       expect(await proc.exited).toBe(0);
-      expect(requests).toHaveLength(6);
+      expect(requests).toHaveLength(7);
       expect(await ledger.balance(identity)).toMatchObject({
         availableMicrocredits: "974",
       });
@@ -509,7 +599,12 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
       const accounts = tx
         .select({ id: testCreditAccounts.id })
         .from(testCreditAccounts)
-        .where(eq(testCreditAccounts.subject, subject));
+        .where(
+          inArray(testCreditAccounts.subject, [
+            subject,
+            platformIdentity.subject,
+          ]),
+        );
       await tx
         .delete(lagoUsageEvents)
         .where(inArray(lagoUsageEvents.accountId, accounts));
@@ -548,14 +643,22 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
         .delete(testCreditOperations)
         .where(inArray(testCreditOperations.accountId, accounts));
       await tx
+        .delete(testCreditBudgets)
+        .where(inArray(testCreditBudgets.accountId, accounts));
+      await tx
         .delete(testCreditEnrollments)
         .where(inArray(testCreditEnrollments.accountId, accounts));
       await tx
         .delete(testCreditAccounts)
-        .where(eq(testCreditAccounts.subject, subject));
+        .where(
+          inArray(testCreditAccounts.subject, [
+            subject,
+            platformIdentity.subject,
+          ]),
+        );
       await tx
         .delete(testCreditBatches)
-        .where(eq(testCreditBatches.id, batchId));
+        .where(inArray(testCreditBatches.id, [batchId, platformBatchId]));
       if (previousApplication) {
         const { id, ...stored } = previousApplication;
         await tx
