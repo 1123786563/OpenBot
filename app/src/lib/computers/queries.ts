@@ -68,6 +68,26 @@ export type ComputerStatus = {
   reason?: string;
 };
 
+export function browserUploadQueryOptions(botId: string) {
+  return queryOptions({
+    queryKey: ["computers", "browser-upload", botId],
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async () => {
+      const response = await client(
+        `/api/computers/${encodeURIComponent(botId)}/browser-upload`,
+      );
+      const body: unknown = await response.json();
+      return (
+        typeof body === "object" &&
+        body !== null &&
+        "available" in body &&
+        body.available === true
+      );
+    },
+  });
+}
+
 export const computerKeys = {
   all: ["computers"] as const,
   fleet: () => ["computers", "fleet"] as const,

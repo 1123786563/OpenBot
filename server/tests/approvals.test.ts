@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
 import { readSubagentResult } from "@openbot/shared/subagent";
@@ -21,6 +22,7 @@ import {
 } from "../src/approvals/types";
 import { botSeat } from "../src/computer/computer-key";
 import { createComputerGateway } from "../src/computer/gateway";
+import { createSharedComputerProvider } from "../src/computer/provider";
 import { createHostAccessBroker } from "../src/host-access/broker";
 import { CatalogueEntryUnknownError } from "../src/plugins/store";
 
@@ -1000,4 +1002,101 @@ test("a request body that is not JSON answers 400, not a 500 with the parser's m
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Supply a valid request." });
   }
+});
+
+test("workspace upload resumes with one-time authority and requires a fresh decision after a lost receipt", async () => {
+  const store = storeFixture();
+  const service = serviceModule.createApprovalService(store);
+  await store.setEnabled("owner", false);
+  let uploads = 0;
+  let content = "YSxiCg==";
+  const gateway = createComputerGateway({
+    provider: createSharedComputerProvider({ baseUrl: "http://127.0.0.1:1" }),
+    browserProvider: {
+      serves: () => true,
+      locate: async () => "http://127.0.0.1:2",
+      status: async (seat) => ({
+        botId: seat.botId,
+        state: "unreachable",
+        reason: "fixture",
+      }),
+      tokenFor: () => "fixture",
+    },
+    execution: {
+      pilotUsers: new Set(["owner"]),
+      connect: async () => ({ url: "http://127.0.0.1:3" }),
+    },
+    auditStore: { insert: async () => {} },
+    policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+    approvalGate: service.gate,
+    fetchImpl: async (url) => {
+      if (new URL(String(url)).pathname === "/files/browser-upload")
+        return Response.json({
+          identity: "file",
+          sha256: createHash("sha256")
+            .update(Buffer.from(content, "base64"))
+            .digest("hex"),
+          content,
+        });
+      uploads++;
+      throw new Error("Lost browser response.");
+    },
+  });
+  const seat = await gateway.seatFor("bot", "owner");
+  const input = {
+    path: "report.csv",
+    url: "https://example.com/upload",
+    field: "file",
+  };
+  const invoke = (toolCallId: string) =>
+    withApprovalContext(
+      {
+        ...context,
+        toolName: "computer_upload_browser_file",
+        args: input,
+        toolCallId,
+      },
+      () => gateway.uploadBrowserFile!(seat, { id: "owner" }, input),
+    );
+  async function ask(call: string) {
+    await expect(invoke(call)).rejects.toBeInstanceOf(HeadlessToolSuspension);
+    const row = (await store.list("owner")).find(
+      (item) => item.action.toolCallId === call,
+    );
+    if (!row) throw new Error("Missing approval");
+    return row;
+  }
+  async function resume(row: ApprovalRecord, beforeExecute?: () => void) {
+    await service.decide("owner", row.id, "allow_once");
+    const run = () => invoke(row.action.toolCallId);
+    await service.resume("owner", row.id, {
+      validate: (action) => service.validateReentry(action, run),
+      execute: () => {
+        beforeExecute?.();
+        return run();
+      },
+      continue: async () => {},
+    });
+    return (await store.get("owner", row.id)).result;
+  }
+  const initial = await ask("initial");
+  expect(initial.action.requireOneTime).toBe(true);
+  expect(uploads).toBe(0);
+  const lost = await resume(initial);
+  expect(JSON.parse(lost?.content ?? "")).toMatchObject({ status: "unknown" });
+  await expect(invoke("initial")).resolves.toMatchObject({ status: "unknown" });
+  expect(uploads).toBe(1);
+
+  const retry = await ask("retry");
+  expect(uploads).toBe(1);
+  const changed = await resume(retry, () => {
+    content = "YyxkCg==";
+  });
+  expect(changed?.error).toContain("approved file or site changed");
+  expect(uploads).toBe(1);
+  const newFile = await ask("new-file");
+  expect(JSON.parse((await resume(newFile))?.content ?? "")).toMatchObject({
+    status: "unknown",
+  });
+  expect(uploads).toBe(2);
 });

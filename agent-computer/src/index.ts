@@ -3,6 +3,8 @@ import { setDefaultAutoSelectFamily } from "node:net";
 import { join } from "node:path";
 import { type ServerWebSocket, serve } from "bun";
 import type { ConsoleMessage, Page } from "playwright";
+import { z } from "zod";
+import { browserUploadDispatch } from "../../shared/browser-upload";
 import {
   isPersonBrowserId,
   RECORDER_DIR_ENV,
@@ -24,6 +26,7 @@ import { createBotBrowserHost, isBotBrowserPath } from "./bot-browser-host";
 import { isPlainBotId, seatIdFor } from "./bot-id";
 import { createBrowserHost, isBrowserPath } from "./browser-host";
 import { browserRuntimeFromEnv } from "./browser-runtime";
+import { uploadFromBrowser } from "./browser-upload";
 import { detectChallenge } from "./challenge";
 import {
   ControlError,
@@ -1497,6 +1500,42 @@ serve<StreamData & TerminalSocketData>({
         return json(changed);
       }
 
+      if (
+        OWNER.kind === "browser" &&
+        ["/browser-upload", "/human/browser-upload"].includes(url.pathname) &&
+        request.method === "POST"
+      ) {
+        const human = url.pathname === "/human/browser-upload";
+        const body: unknown = await request.json().catch(() => null);
+        const input = (
+          human
+            ? browserUploadDispatch.extend({ by: z.string().min(1) })
+            : browserUploadDispatch
+        ).safeParse(body);
+        if (!input.success)
+          return json({ error: "Invalid browser upload." }, 400);
+        const by = "by" in input.data ? input.data.by : undefined;
+        const maySend = () => {
+          if (request.signal.aborted) return false;
+          if (human)
+            return typeof by === "string" && session.control.personHolds(by);
+          session.control.assertBotMayAct(true);
+          return true;
+        };
+        if (!maySend())
+          return json({
+            status: "not_sent",
+            reason: human ? TAKE_CONTROL_FIRST : "Stopped.",
+          });
+        return json(
+          await uploadFromBrowser(
+            await currentPage(botId),
+            input.data,
+            maySend,
+          ),
+        );
+      }
+
       // A person's input, by pixel. The Bot addresses elements by reference because it reads a list; a
       // person addresses them by pointing, because they are looking at a picture. Different problem,
       // different endpoint, and only usable while they hold the wheel.
@@ -2068,6 +2107,8 @@ const ACTIONS = new Set(["/click", "/type", "/key", "/scroll"]);
  */
 const HOLDS_THE_BROWSER = new Set([
   "/navigate",
+  "/browser-upload",
+  "/human/browser-upload",
   ...ACTIONS,
   "/snapshot",
   "/sign-in/fill",

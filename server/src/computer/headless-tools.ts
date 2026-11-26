@@ -4,6 +4,10 @@ import {
 } from "@openbot/toolkit/headless-tools";
 import { z } from "zod";
 import { BROWSER_DOWNLOAD_ID } from "../../../shared/browser-download";
+import {
+  BROWSER_UPLOAD_DESCRIPTION,
+  browserUploadToolInput,
+} from "../../../shared/browser-upload";
 import { currentApprovalContext } from "../approvals/types";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { ComputerSeat } from "./computer-key";
@@ -269,6 +273,22 @@ export function createHeadlessComputerTools(options: {
         ),
     ),
   ];
+  const upload = gateway.uploadBrowserFile;
+  if (
+    upload &&
+    seat.key.kind === "person" &&
+    seat.key.personId === actor.id &&
+    gateway.supportsBrowserUpload?.(seat)
+  ) {
+    tools.push(
+      tool(
+        "computer_upload_browser_file",
+        BROWSER_UPLOAD_DESCRIPTION,
+        browserUploadToolInput,
+        (input, { signal }) => upload(seat, actor, input, signal),
+      ),
+    );
+  }
   const retryDownload = gateway.retryBrowserDownload;
   if (
     retryDownload &&

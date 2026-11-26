@@ -32,6 +32,7 @@ export const COMPUTER_TOOLS = [
   "computer_scroll",
   "computer_read_file",
   "computer_download_file",
+  "computer_upload_browser_file",
   "computer_write_file",
   "computer_list_files",
 ] as const;
@@ -60,6 +61,7 @@ export const COMPUTER_ACTING_TOOLS = [
   "computer_scroll",
   "computer_read_file",
   "computer_download_file",
+  "computer_upload_browser_file",
   "computer_write_file",
   "computer_list_files",
 ] as const;

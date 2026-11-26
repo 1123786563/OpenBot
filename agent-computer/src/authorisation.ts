@@ -74,6 +74,7 @@ const ACTING_PATHS = new Set([
   "/exec",
   "/files/write",
   // Typing a person's login into the page. Refused while they hold the wheel, like any other typing.
+  "/browser-upload",
   "/sign-in/fill",
   "/sign-in/code",
 ]);
@@ -90,5 +91,7 @@ export function actsOnTheComputer(pathname: string): boolean {
  * thing a later conversation does, which is open a page, with an instruction meant for the Bot.
  */
 export function mutatesBrowser(pathname: string): boolean {
-  return ["/click", "/type", "/key", "/scroll"].includes(pathname);
+  return ["/click", "/type", "/key", "/scroll", "/browser-upload"].includes(
+    pathname,
+  );
 }

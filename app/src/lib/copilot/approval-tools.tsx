@@ -33,6 +33,7 @@ const writes = new Set([
   "computer_key",
   "computer_run_command",
   "computer_write_file",
+  "computer_upload_browser_file",
 ]);
 
 /**

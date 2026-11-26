@@ -20,6 +20,7 @@
  * The refs are opaque to the caller precisely so that the server holds the mapping.
  */
 
+import { createHash } from "node:crypto";
 import { DECLINED_BY_PERSON } from "@openbot/shared/approval-outcomes";
 import type {
   ControlRequestInput,
@@ -34,6 +35,17 @@ import {
   type ManualBrowserDownloads,
   manualBrowserDownloads,
 } from "../../../shared/browser-download";
+import {
+  BROWSER_UPLOAD_LIMIT,
+  type BrowserUploadInput,
+  type BrowserUploadResult,
+  browserUploadDispatch,
+  browserUploadFile,
+  browserUploadIdentity,
+  browserUploadInput,
+  browserUploadResult,
+  unknownBrowserUpload,
+} from "../../../shared/browser-upload";
 import {
   ApprovalAlreadyAnsweredError,
   type ApprovalGate,
@@ -56,8 +68,10 @@ import {
   ComputerStoppedError,
   ComputerUnavailableError,
   createComputerTransport,
+  HumanHasControlError,
   StaleSnapshotError,
   WorkspaceNotFoundError,
+  WorkspaceRequestError,
 } from "./client";
 import {
   type ComputerKey,
@@ -68,7 +82,7 @@ import {
   seatText,
 } from "./computer-key";
 import { computerTokenOf } from "./computer-token";
-import { checkComputerAddress } from "./target";
+import { checkComputerAddress, checkNavigationTarget } from "./target";
 
 export {
   ActionUnfinishedError,
@@ -311,6 +325,20 @@ export interface ComputerGateway {
     actor: ActionActor,
     input: ReadFileInput,
   ): Promise<ReadFileResult>;
+  supportsBrowserUpload?(seat: ComputerSeat): boolean;
+  uploadBrowserFile?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    input: BrowserUploadInput,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
+  humanUploadBrowserFile?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    input: BrowserUploadInput,
+    signal?: AbortSignal,
+  ): Promise<BrowserUploadResult>;
+
   downloadFile(
     seat: ComputerSeat,
     actor: ActionActor,
@@ -512,6 +540,7 @@ export function createComputerGateway(
     "/key",
     "/scroll",
     "/control",
+    "/browser-upload",
     "/sign-in/fill",
     "/sign-in/code",
   ]);
@@ -691,6 +720,91 @@ export function createComputerGateway(
       );
     }
     return browser;
+  }
+
+  const supportsBrowserUpload = (seat: ComputerSeat) =>
+    seat.key.kind === "person" &&
+    options.execution?.pilotUsers.has(seat.key.personId) === true &&
+    pilotBot(seat, { id: seat.key.personId });
+
+  function prepareBrowserUpload(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    input: BrowserUploadInput,
+  ) {
+    if (
+      !supportsBrowserUpload(seat) ||
+      seat.key.kind !== "person" ||
+      seat.key.personId !== actor.id
+    )
+      throw new WorkspaceNotFoundError("Pilot workspace not found.");
+    const { path, url, field } = browserUploadInput.parse(input);
+    const target = checkNavigationTarget(url);
+    if (!target.allowed) throw new ActionRefusedError(target.reason, null);
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    return { path, url, field, name };
+  }
+
+  async function workspaceUpload(
+    seat: ComputerSeat,
+    path: string,
+    includeContent: boolean,
+    signal?: AbortSignal,
+  ) {
+    return transport.call<unknown>(
+      await executionAt(seat),
+      seat.botId,
+      `/files/browser-upload?path=${encodeURIComponent(path)}${includeContent ? "&content=1" : ""}`,
+      undefined,
+      signal,
+    );
+  }
+
+  async function readWorkspaceUpload(
+    seat: ComputerSeat,
+    path: string,
+    signal?: AbortSignal,
+  ) {
+    const payload = browserUploadFile.parse(
+      await workspaceUpload(seat, path, true, signal),
+    );
+    const bytes = Buffer.from(payload.content, "base64");
+    if (bytes.length > BROWSER_UPLOAD_LIMIT)
+      throw new ApprovalRefusedError(
+        "The upload exceeds the single-file size limit.",
+      );
+    return {
+      ...payload,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  }
+
+  async function dispatchBrowserUpload(
+    seat: ComputerSeat,
+    path: string,
+    payload: unknown,
+    signal?: AbortSignal,
+    address?: string,
+  ): Promise<BrowserUploadResult> {
+    const connection = await at(seat, address);
+    try {
+      return browserUploadResult.parse(
+        await transport.post<unknown>(
+          connection,
+          requestAddress(seat, path),
+          path,
+          payload,
+          signal,
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof HumanHasControlError ||
+        error instanceof StaleSnapshotError
+      )
+        throw error;
+      return unknownBrowserUpload();
+    }
   }
 
   async function browserAction<T extends object>(
@@ -960,6 +1074,12 @@ export function createComputerGateway(
       command?: string;
       /** The person's Stop, on its way to the browser. See the acting methods below. */
       signal?: AbortSignal;
+      upload?: {
+        fileName: string;
+        fileIdentity: string;
+        sha256: string;
+        field: string;
+      };
     },
     run: (address?: string) => Promise<T>,
   ): Promise<T> {
@@ -1110,19 +1230,27 @@ export function createComputerGateway(
         );
       }
       const continuation = currentApprovalContext();
+      if (subject.upload && !options.approvalGate)
+        throw new ApprovalRefusedError(
+          "Browser upload requires one-time approval.",
+        );
       approval = await options.approvalGate?.({
         actorId: actor.id,
         botId: seat.botId,
         toolRef: toolName,
         effect: approvalEffectOf(intent),
-        scope: approvalScopeOf({
-          filePath,
-          command: subject.command,
-          pageUrl,
-        }),
+        scope: subject.upload
+          ? new URL(pageUrl).origin
+          : approvalScopeOf({
+              filePath,
+              command: subject.command,
+              pageUrl,
+            }),
         args: continuation?.args ?? { ...subject, signal: undefined },
+        ...(subject.upload ? { requireOneTime: true } : {}),
         target: {
           pageUrl,
+          ...subject.upload,
           ...(element ? { element, snapshotId } : {}),
           ...(filePath ? { filePath } : {}),
         },
@@ -1170,6 +1298,10 @@ export function createComputerGateway(
      * allowed action may have partial effects before failing and the trail has to say both that it
      * was sent and that it did not succeed. The audit page shows the pair as the one action it is.
      */
+    if (subject.upload && !approval?.approvalId)
+      throw new ApprovalRefusedError(
+        "Browser upload requires one-time approval.",
+      );
     const attempt = crypto.randomUUID();
     await write(auditStore, { ...subjectOf, attempt });
     let result: T;
@@ -1715,6 +1847,75 @@ export function createComputerGateway(
       );
     },
 
+    supportsBrowserUpload,
+
+    async uploadBrowserFile(seat, actor, input, signal) {
+      const { path, url, field, name } = prepareBrowserUpload(
+        seat,
+        actor,
+        input,
+      );
+      const snapshot = await workspaceUpload(seat, path, false, signal).catch(
+        (error: unknown) => {
+          if (error instanceof WorkspaceRequestError)
+            throw new ApprovalRefusedError(error.message);
+          throw error;
+        },
+      );
+      const { identity, sha256 } = browserUploadIdentity.parse(snapshot);
+      return govern(
+        "computer_upload_browser_file",
+        seat,
+        actor,
+        {
+          filePath: path,
+          targetUrl: url,
+          upload: { fileName: name, fileIdentity: identity, sha256, field },
+        },
+        async (address) => {
+          const file = await readWorkspaceUpload(seat, path, signal);
+          if (file.identity !== identity || file.sha256 !== sha256)
+            throw new ApprovalRefusedError(
+              "The approved file changed. Request a new approval.",
+            );
+          const dispatch = browserUploadDispatch.parse({
+            url,
+            field,
+            name,
+            content: file.content,
+          });
+          return dispatchBrowserUpload(
+            seat,
+            "/browser-upload",
+            dispatch,
+            signal,
+            address,
+          );
+        },
+      );
+    },
+
+    async humanUploadBrowserFile(seat, actor, input, signal) {
+      const { path, url, field, name } = prepareBrowserUpload(
+        seat,
+        actor,
+        input,
+      );
+      const { content } = await readWorkspaceUpload(seat, path, signal);
+      const dispatch = browserUploadDispatch.parse({
+        url,
+        field,
+        name,
+        content,
+      });
+      return dispatchBrowserUpload(
+        seat,
+        "/human/browser-upload",
+        { ...dispatch, by: actor.id },
+        signal,
+      );
+    },
+
     async retryBrowserDownload(seat, actor, id, signal) {
       if (!pilotBot(seat, actor) || !BROWSER_DOWNLOAD_ID.test(id))
         throw new WorkspaceNotFoundError("Browser download not found.");
@@ -2106,6 +2307,8 @@ export function intentOf(
       return "read_file";
     case "computer_download_file":
       return "download_file";
+    case "computer_upload_browser_file":
+      return "upload_file";
     case "computer_write_file":
       return "write_file";
     case "computer_run_command":
@@ -2124,9 +2327,13 @@ export function intentOf(
 export function approvalEffectOf(
   intent: PolicyContext["intent"],
 ): "read" | "write" {
-  return ["activate", "type", "write_file", "run_command"].includes(
-    intent ?? "",
-  )
+  return [
+    "activate",
+    "type",
+    "write_file",
+    "upload_file",
+    "run_command",
+  ].includes(intent ?? "")
     ? "write"
     : "read";
 }

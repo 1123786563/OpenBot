@@ -3,6 +3,7 @@ import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { BROWSER_DOWNLOAD_ID } from "../../../shared/browser-download";
+import { browserUploadInput } from "../../../shared/browser-upload";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { ApprovalNeedsConversationError } from "../approvals/types";
 import { type AuditReader, type AuditStore, recordAuditEvent } from "../audit";
@@ -173,6 +174,13 @@ export function createComputerRoutes(
 
   // After the guard, so everything under it has passed it: a person's own browser id never gets here.
   if (botBrowser) routes.route("/:botId/browser", botBrowser.routes);
+
+  routes.get("/:botId/browser-upload", async (context) =>
+    context.json({
+      available:
+        gateway.supportsBrowserUpload?.(await seatOf(context)) === true,
+    }),
+  );
 
   routes.get("/:botId/status", async (context) => {
     const seat = await seatOf(context);
@@ -758,6 +766,20 @@ export function createComputerRoutes(
    * The takeover is the audited event; what the person typed during it is deliberately unrecorded,
    * because the reason a takeover exists is to let them enter the thing nothing else should keep.
    */
+  routes.post("/:botId/human/browser-upload", (context) =>
+    act(context, gateway.seatFor, (seat, actor, body, signal) => {
+      const input = browserUploadInput.safeParse(body);
+      if (!input.success)
+        return {
+          error:
+            "Specify a workspace file, HTTPS endpoint and multipart field name.",
+        };
+      if (!gateway.humanUploadBrowserFile)
+        throw new WorkspaceNotFoundError("Pilot workspace not found.");
+      return gateway.humanUploadBrowserFile(seat, actor, input.data, signal);
+    }),
+  );
+
   routes.post("/:botId/human/:kind", async (context) => {
     const kind = context.req.param("kind");
     if (

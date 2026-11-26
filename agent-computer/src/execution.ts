@@ -7,6 +7,7 @@ import {
   createTerminalSockets,
   type TerminalSocketData,
 } from "./terminal-socket";
+import { snapshotWorkspaceUpload } from "./workspace-upload";
 import { createWorkspaces } from "./workspaces";
 
 const token = process.env.OPENBOT_EXECUTION_TOKEN;
@@ -107,6 +108,23 @@ Bun.serve<TerminalSocketData & { botId: string }>({
         return Response.json(
           { error: error.message, controlRequestError: true },
           { status: error.status },
+        );
+      }
+    }
+    if (url.pathname === "/files/browser-upload" && request.method === "GET") {
+      try {
+        return Response.json(
+          await snapshotWorkspaceUpload(
+            (await workspace.for(seat)).files,
+            workspaceRoot,
+            url.searchParams.get("path") ?? "",
+            url.searchParams.get("content") === "1",
+          ),
+        );
+      } catch {
+        return Response.json(
+          { error: "The workspace file is unavailable or exceeds 4 MiB." },
+          { status: 400 },
         );
       }
     }
