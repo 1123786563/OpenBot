@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { and, inArray, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { configureBotLifecycle } from "../agents/lifecycle";
 import { createTestCreditLedger } from "../billing/test-credit";
@@ -6,12 +6,14 @@ import { createBifrostEmbeddingExecutor } from "../billing/test-credit-embedding
 import { createDatabase } from "../db/client";
 import { personalWorkspaceClosures } from "../db/schema";
 import { repeatAfterEach } from "../work/loop";
+import { createAgentSandboxProvider } from "./agent-sandbox-provider";
 import { createPersonalSaasApp } from "./app";
 import {
   cleanupSteps,
   closureCleanupClient,
   closureRestoreJournal,
 } from "./closure-cleanup-contract";
+import { createNasClient } from "./nas";
 import { workspaceQuotaConfig } from "./quotas";
 import { loadPersonalTestCreditExecutor } from "./test-credit-config";
 import { reapplyWorkspaceClosures } from "./workspace-cleanup";
@@ -65,6 +67,14 @@ const trial = z.object({
     .trim()
     .min(1)
     .optional(),
+  OPENBOT_AGENT_SANDBOX_FLASH_REGION: z
+    .string()
+    .regex(/^cn-[a-z0-9-]+$/)
+    .optional(),
+  OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE: z.string().trim().min(1).optional(),
+  OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_ID: z.string().trim().min(1).optional(),
+  OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_SECRET: z.string().min(1).optional(),
+  OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_CLEANUP_URL: httpsUrl.optional(),
   OPENBOT_CLOSURE_CLEANUP_TOKEN: z.string().trim().min(1).optional(),
   OPENBOT_CLOSURE_RESTORE_JOURNAL: z.string().trim().min(1).optional(),
@@ -166,12 +176,74 @@ if (Boolean(supervisorUrl) !== Boolean(supervisorToken))
     "Configure the workspace Computer supervisor URL and token together",
   );
 
+const flashRegion = env.OPENBOT_AGENT_SANDBOX_FLASH_REGION;
+const flashTemplate = env.OPENBOT_AGENT_SANDBOX_FLASH_TEMPLATE;
+const flashArtifactPath = env.OPENBOT_AGENT_SANDBOX_FLASH_ARTIFACT;
+const flashKey = process.env.E2B_API_KEY?.trim();
+const nasKey = env.OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_ID;
+const nasSecret = env.OPENBOT_AGENT_SANDBOX_NAS_ACCESS_KEY_SECRET;
+if (
+  (flashRegion || flashTemplate || flashArtifactPath || nasKey || nasSecret) &&
+  !(
+    flashRegion &&
+    flashTemplate &&
+    flashArtifactPath &&
+    flashKey &&
+    nasKey &&
+    nasSecret
+  )
+)
+  throw new Error(
+    "Configure the Flash region, template, worker artifact, E2B API key and NAS access key pair together",
+  );
+if (flashRegion && supervisorUrl)
+  throw new Error("Configure one workspace Computer provider per deployment");
+if (
+  process.env.OPENBOT_AGENT_SANDBOX_AUTHORITY_URL ||
+  process.env.OPENBOT_AGENT_SANDBOX_AUTHORITY_TOKEN
+)
+  throw new Error(
+    "Replace the Agent Sandbox authority settings with the direct Flash settings",
+  );
+
 const cleanupUrl = env.OPENBOT_CLOSURE_CLEANUP_URL;
 const cleanupToken = env.OPENBOT_CLOSURE_CLEANUP_TOKEN;
 if (Boolean(cleanupUrl) !== Boolean(cleanupToken))
   throw new Error("Configure the closure cleanup URL and token together");
 
+async function loadFlashWorkerArtifact(path: string) {
+  const bytes = await Bun.file(path).arrayBuffer();
+  return {
+    archive: new Blob([bytes]),
+    sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+  };
+}
+
 const database = createDatabase(env.DATABASE_URL);
+const sandbox =
+  flashRegion &&
+  flashTemplate &&
+  flashKey &&
+  flashArtifactPath &&
+  nasKey &&
+  nasSecret
+    ? createAgentSandboxProvider(
+        {
+          apiUrl: `https://api.${flashRegion}.sandbox.aliyuncs.com`,
+          domain: `${flashRegion}.sandbox.aliyuncs.com`,
+          template: flashTemplate,
+          apiKey: flashKey,
+          encryptionKey: env.KEY_ENCRYPTION_KEY,
+          artifact: await loadFlashWorkerArtifact(flashArtifactPath),
+          nas: createNasClient({
+            region: flashRegion,
+            accessKeyId: nasKey,
+            accessKeySecret: nasSecret,
+          }),
+        },
+        database,
+      )
+    : undefined;
 const testCreditLedger = createTestCreditLedger(database);
 const restoreJournal = env.OPENBOT_CLOSURE_RESTORE_JOURNAL;
 const restoredClosures = restoreJournal
@@ -212,8 +284,9 @@ const app = createPersonalSaasApp(
         ? { id: operatorId, token: operatorToken }
         : undefined,
     suspensionSupport,
-    computer:
-      supervisorUrl && supervisorToken
+    computer: sandbox
+      ? { agentSandbox: sandbox }
+      : supervisorUrl && supervisorToken
         ? { supervisorUrl, supervisorToken }
         : undefined,
     casdoor: {
@@ -245,16 +318,32 @@ const app = createPersonalSaasApp(
 );
 
 if (restoredClosures.length) {
-  await app.sweepWorkspaceClosures();
+  await app.reconcileStoppingWorkspaceComputers?.();
+  // A restored record carries no cutoff evidence. Sweep until every deadline
+  // has yielded an honest outcome, because cleanup only takes recorded rows.
+  const restoredIds = restoredClosures.map(({ id }) => id);
+  for (;;) {
+    await app.sweepWorkspaceClosures();
+    const unrecorded = await database
+      .select({ id: personalWorkspaceClosures.id })
+      .from(personalWorkspaceClosures)
+      .where(
+        and(
+          inArray(personalWorkspaceClosures.id, restoredIds),
+          or(
+            isNull(personalWorkspaceClosures.workCutoff),
+            isNull(personalWorkspaceClosures.computerCutoff),
+          ),
+        ),
+      );
+    if (!unrecorded.length) break;
+    await Bun.sleep(1_000);
+  }
+  await app.sweepWorkspaceCleanup();
   const records = await database
     .select({ cleanup: personalWorkspaceClosures.cleanup })
     .from(personalWorkspaceClosures)
-    .where(
-      inArray(
-        personalWorkspaceClosures.id,
-        restoredClosures.map(({ id }) => id),
-      ),
-    );
+    .where(inArray(personalWorkspaceClosures.id, restoredIds));
   if (
     records.length !== restoredClosures.length ||
     records.some(({ cleanup }) =>
@@ -282,8 +371,8 @@ const server = Bun.serve({
       request.method === "POST" &&
       pathname === "/api/workspace/computer/start"
     ) {
-      // Storage admission and the supervisor request can outlast the default timeout.
-      server.timeout(request, 30);
+      // Flash stages the artifact before issuing the work lease.
+      server.timeout(request, sandbox ? 40 : 30);
     }
     return app.fetch(request);
   },
@@ -311,24 +400,42 @@ void refreshAccounts();
 
 const renewComputers = app.renewWorkspaceComputers;
 if (renewComputers) {
-  async function maintainComputerLeases() {
+  repeatAfterEach(async () => {
     try {
-      await renewComputers?.();
+      await renewComputers();
     } catch {
       console.warn(
         JSON.stringify({ type: "workspace-computer-lease-renewal-failure" }),
       );
-    } finally {
-      setTimeout(maintainComputerLeases, 1_000);
     }
-  }
-  void maintainComputerLeases();
+  }, 1_000);
+}
+const reconcileStoppingComputers = app.reconcileStoppingWorkspaceComputers;
+if (reconcileStoppingComputers) {
+  repeatAfterEach(async () => {
+    try {
+      await reconcileStoppingComputers();
+    } catch {
+      console.warn(
+        JSON.stringify({ type: "workspace-computer-teardown-failure" }),
+      );
+    }
+  }, 1_000);
 }
 repeatAfterEach(async () => {
   try {
     await app.sweepWorkspaceClosures();
   } catch {
     console.warn(JSON.stringify({ type: "workspace-closure-sweep-failure" }));
+  }
+}, 1_000);
+repeatAfterEach(async () => {
+  try {
+    await app.sweepWorkspaceCleanup();
+  } catch {
+    console.warn(
+      JSON.stringify({ type: "workspace-closure-cleanup-sweep-failure" }),
+    );
   }
 }, 1_000);
 repeatAfterEach(async () => {
