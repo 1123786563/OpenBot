@@ -20,7 +20,7 @@
 
 ## 合入主线后的路由与评分
 
-`e682af31` 合入 Astryx 迁移。生成路由树增至 100 条，新增 `/tasks` 与 `/ideas`，原 `/responsibilities` 跳转改为直接渲染。五个旧外观页面转为兼容跳转，`/s/activity` 继续提供统一的 Activity，Goals 作为 Responsibilities 的独立视图。当前范围为 88 项页面与任务视图。按各页最新生产构建的本地复评，**88/88 暂定通过 99% 门槛**，其中 86 项得 40/40，两项短暂交接得 36/36。正式验收为 **0/88**，真实部署中的角色和服务、实体设备及读屏待验。全局 Routines 在两张表出现，按一个视图计。Team 与 Personal 应用详情分别计分。旧入口和已删除源码路径可在基线提交回查。
+`e682af31` 合入 Astryx 迁移。生成路由树增至 100 条，新增 `/tasks` 与 `/ideas`，原 `/responsibilities` 跳转改为直接渲染。五个旧外观页面转为兼容跳转，`/s/activity` 继续提供统一的 Activity，Goals 作为 Responsibilities 的独立视图。当前范围为 88 项页面与任务视图。历史 Astryx 迁移汇总记录为 **88/88 暂定通过 99% 门槛**，其中 86 项得 40/40，两项短暂交接得 36/36。正式验收为 **0/88**，真实部署中的角色和服务、实体设备及读屏待验。全局 Routines 在两张表出现，按一个视图计。Team 与 Personal 应用详情分别计分。旧入口和已删除源码路径可在基线提交回查。#182 的后续抽查分数见首批整改复评。#194 的当前构建证据、逐项待验状态及检测发现见[最终验收台账](acceptance/web127-final-evidence.md)。
 
 | 当前页面 | 对应旧入口 | H1…H10 | 本次暂定分 | 扣分与复验 |
 |---|---|---|---:|---|
@@ -123,16 +123,16 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 | `/connections/browse/arcade` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
 | `/connections/browse/composio` | 4 4 4 4 4 4 4 4 4 4 | **40/40（暂定）** · [目录布局复评](#目录布局与插件读取复评) | 搜索和行列表已拉平。真实服务授权与辅助技术待验。 |
 
-### 外观专属 Web 页面
+### 已退役的外观专属 Web 页面
 
-| 页面 | 基线十项分 | 基线总分 | 最新可用评分 | 基线扣分证据与复核任务 |
+| 页面 | 基线十项分 | 基线总分 | 迁移状态 | 基线扣分证据与复核任务 |
 |---|---|---:|---|---|
-| `/s/tasks` OpenDuet | 2 3 3 2 3 3 2 2 2 2 | 24/40 | 沿用基线 | 任务按待办状态分组，混合审批、Goals、Routines。Active/Up next 使用 tab 角色和普通按钮点击，组件无方向键或 roving tabindex。 [Tasks](../app/src/skins/openduet/tasks-screen.tsx#L86) |
-| `/s/routines` OpenDots | 2 3 3 2 3 3 2 3 2 3 | 26/40 | 沿用基线 | 主操作清晰，嵌入全局列表和它的静默加载，与默认外观标题层级及返回有差异。 [OpenDots Routines](../app/src/skins/opendots/screens.tsx#L53) |
-| `/s/memories` OpenDots | 2 3 2 2 2 3 2 3 2 2 | 23/40 | 历史复评 26/40 · [第1批](web-impeccable-batch-1.md) | 现为兼容地址。320 像素实测 Team 转到统一记忆页，Personal 转到 Bots。 |
-| `/s/activity` OpenFuse | 2 3 3 2 3 3 2 3 2 2 | 25/40 | 沿用基线 | 继承 Bot 活动反馈和审计入口，空 Bot 有独立态。聚焦当前 Bot 的导航必须在长耗时切换后仍保持明确。 [OpenFuse Activity](../app/src/skins/openmuse/screens/activity.tsx#L11) |
-| `/s/ideas` OpenFuse | 2 2 3 2 3 2 2 3 2 2 | 23/40 | 沿用基线 | Ideas 含 Bot 等待人处理及主动研究设置，标题无法直接提示读取、决策和设置之间的关系。 [OpenFuse Ideas](../app/src/skins/openmuse/screens/ideas.tsx#L16) |
-| `/s/goals` OpenFuse | 2 2 2 2 3 2 2 2 2 2 | 21/40 | 沿用基线 | 一列堆叠 Routines 与 Bot Responsibilities，多个域概念在同一个标签内出现。等待与错误继承列表，需要检查移动视口重复标题、滚动、首个动作。 [OpenFuse Goals](../app/src/skins/openmuse/screens/goals.tsx#L13) |
+| `/s/tasks` OpenDuet | 2 3 3 2 3 3 2 2 2 2 | 24/40 | 已退役 | 任务按待办状态分组，混合审批、Goals、Routines。Active/Up next 使用 tab 角色和普通按钮点击，组件无方向键或 roving tabindex。 |
+| `/s/routines` OpenDots | 2 3 3 2 3 3 2 3 2 3 | 26/40 | 已退役 | 主操作清晰，嵌入全局列表和它的静默加载，与默认外观标题层级及返回有差异。 |
+| `/s/memories` OpenDots | 2 3 2 2 2 3 2 3 2 2 | 23/40 | 已退役 · 历史复评 26/40 | 现为兼容地址。320 像素实测 Team 转到统一记忆页，Personal 转到 Bots。 |
+| `/s/activity` OpenFuse | 2 3 3 2 3 3 2 3 2 2 | 25/40 | 已退役 | 继承 Bot 活动反馈和审计入口，空 Bot 有独立态。聚焦当前 Bot 的导航必须在长耗时切换后仍保持明确。 |
+| `/s/ideas` OpenFuse | 2 2 3 2 3 2 2 3 2 2 | 23/40 | 已退役 | Ideas 含 Bot 等待人处理及主动研究设置，标题无法直接提示读取、决策和设置之间的关系。 |
+| `/s/goals` OpenFuse | 2 2 2 2 3 2 2 2 2 2 | 21/40 | 已退役 | 一列堆叠 Routines 与 Bot Responsibilities，多个域概念在同一个标签内出现。等待与错误继承列表，需要检查移动视口重复标题、滚动、首个动作。 |
 
 ### 兼容地址与路由边界
 
@@ -164,7 +164,7 @@ Bot 选择器复评由独立设计评审和检测评审在同一生产构建上�
 - **P1 · 登录与回调恢复。** 新员工登录时需要知道哪个邮箱该填，以及失败后如何回到原任务。桌面回调结果未知时引导关闭标签页会让用户猜测连接是否成功。审查角色和组织 SSO、第三方取消、协议未安装、网页版继续走查。 [登录](../app/src/routes/sign.tsx#L242) [桌面回调](../app/src/components/desktop/desktop-return.tsx#L49)
 - **P1 · 首条消息准备中。** 首次用户应该从「正在选择哪位 Bot／正在建会话／已发送」理解工作真正开始的时间。现在刷新过渡页会悄然回首页。强制断网和回执晚到时验证是否能恢复草稿、防止重复发送。 [过渡](../app/src/routes/_authed/_app/start.$startId.tsx#L71)
 - **P2 · 权限审查的认知负担。** Personal Access 的 Skills、应用权限、审批规则、Goals、check-ins 是至少五个意图。按检查表有明确的分块与一次一事两项风险，显示状态、就地解释并将低频设置逐层展开，保留 Team 的技术边界。 [Access](../app/src/routes/_authed/_app/bots.$agentId.access.tsx#L34)
-- **P2 · OpenDuet 标签键盘缺口。** 熟练用户和键盘使用者在 Active / Up next 两者之间找切换控制。当前实现用自绘 tabs，缺箭头键和 roving tabindex。保留两项层级，以共享语义组件和真实键盘测试覆盖。 [Tabs](../app/src/skins/openduet/tasks-screen.tsx#L108)
+- **P2 · OpenDuet 标签键盘缺口（历史）。** 原标签实现已随旧外观退役。统一 Tasks 保留相应任务入口。
 
 保留三种已有行为。首页在选 Bot 失败时还原输入，分组会话更换会话时重新挂载以防串历史，新建 Bot 可通过 URL 表达且关闭后保留列表。视觉改动应重视员工看到「我的工作有人接手」的时刻和没有权限／无法启动时的退出方式。对于 IT 管理员，重点是看懂谁授予、用谁的账号以及现在撤销会影响谁。
 

@@ -47,7 +47,8 @@ export function userPreferencesRoutes(
     if (!parsed.success) {
       return context.json(
         {
-          error: `Choose agent or thread for message list emphasis, true or false for the self-host banner, on or off for narration or check-ins, or one of these skins: ${SKIN_IDS.join(", ")}.`,
+          error:
+            "Choose agent or thread for message list emphasis, true or false for the self-host banner, on or off for narration or check-ins, or openbot for skin.",
         },
         400,
       );

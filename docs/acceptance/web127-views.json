@@ -1,0 +1,632 @@
+[
+  {
+    "view": "/sign",
+    "route": "/sign",
+    "path": "/sign",
+    "role": "signedOut",
+    "maximum": 40
+  },
+  {
+    "view": "/onboarding",
+    "route": "/onboarding",
+    "path": "/onboarding",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "/desktop-return",
+    "route": "/desktop-return",
+    "path": "/desktop-return",
+    "role": "personal",
+    "maximum": 36
+  },
+  {
+    "view": "/sign-in/$requestId",
+    "route": "/sign-in/$requestId",
+    "path": "/sign-in/fixture-sign-in",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Home",
+    "route": "/",
+    "path": "/",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "New conversation",
+    "route": "/channel/new",
+    "path": "/channel/new",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Start handoff",
+    "route": "/start/$startId",
+    "path": "/start/fixture-start",
+    "role": "personal",
+    "maximum": 36
+  },
+  {
+    "view": "Single-Bot conversation",
+    "route": "/channel/$channelId",
+    "path": "/channel/acceptance-plan",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Group conversation",
+    "route": "/group/$channelId",
+    "path": "/group/acceptance-plan",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "/bot",
+    "route": "/bot",
+    "path": "/bot",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "/browser",
+    "route": "/browser",
+    "path": "/browser",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Bots list",
+    "route": "/bots",
+    "path": "/bots",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Create Bot",
+    "route": "/bots?new=true",
+    "path": "/bots?new=true",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Bot profile",
+    "route": "/bots/$agentId",
+    "path": "/bots/whatif-sales",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot skills/access",
+    "route": "/bots/$agentId/access",
+    "path": "/bots/whatif-sales/access",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot activity",
+    "route": "/bots/$agentId/activity",
+    "path": "/bots/whatif-sales/activity",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot approval rules",
+    "route": "/bots/$agentId/approvals",
+    "path": "/bots/whatif-sales/approvals",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot memory sources",
+    "route": "/bots/$agentId/memory",
+    "path": "/bots/whatif-sales/memory",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot reach",
+    "route": "/bots/$agentId/reach",
+    "path": "/bots/whatif-sales/reach",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot Goals",
+    "route": "/bots/$agentId/responsibilities",
+    "path": "/bots/whatif-sales/responsibilities",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot Routines",
+    "route": "/bots/$agentId/routines",
+    "path": "/bots/whatif-sales/routines",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot setup",
+    "route": "/bots/$agentId/setup",
+    "path": "/bots/whatif-sales/setup",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Bot sharing",
+    "route": "/bots/$agentId/sharing",
+    "path": "/bots/whatif-sales/sharing",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Skills",
+    "route": "/capabilities/skills",
+    "path": "/capabilities/skills",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Memory",
+    "route": "/capabilities/memory",
+    "path": "/capabilities/memory",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Routines",
+    "route": "/routines",
+    "path": "/routines",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "New routine",
+    "route": "/routines/new",
+    "path": "/routines/new",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Connections",
+    "route": "/connections",
+    "path": "/connections",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Team app + grants",
+    "route": "/connections/$key",
+    "path": "/connections/fixture-app",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Personal app",
+    "route": "/connections/$key (Personal)",
+    "path": "/connections/fixture-app",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "GitHub",
+    "route": "/connections/github",
+    "path": "/connections/github",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Slack",
+    "route": "/connections/slack",
+    "path": "/connections/slack",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Routines connection",
+    "route": "/connections/routines",
+    "path": "/connections/routines",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Arcade directory",
+    "route": "/connections/browse/arcade",
+    "path": "/connections/browse/arcade",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Composio directory",
+    "route": "/connections/browse/composio",
+    "path": "/connections/browse/composio",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "/tasks",
+    "route": "/tasks",
+    "path": "/tasks",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "/ideas",
+    "route": "/ideas",
+    "path": "/ideas",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "/responsibilities",
+    "route": "/responsibilities",
+    "path": "/responsibilities",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Goals view",
+    "route": "/responsibilities?view=goals",
+    "path": "/responsibilities?view=goals",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Activity",
+    "route": "/s/activity",
+    "path": "/s/activity",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Admin home",
+    "route": "/admin/",
+    "path": "/admin/",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin approvals",
+    "route": "/admin/approvals",
+    "path": "/admin/approvals",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin approval describe",
+    "route": "/admin/approvals/describe",
+    "path": "/admin/approvals/describe",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin approval guidance",
+    "route": "/admin/approvals/guidance",
+    "path": "/admin/approvals/guidance",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin audit",
+    "route": "/admin/audit",
+    "path": "/admin/audit",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin boundaries",
+    "route": "/admin/boundaries",
+    "path": "/admin/boundaries",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Boundary detail",
+    "route": "/admin/boundaries/$index",
+    "path": "/admin/boundaries/0",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "New boundary",
+    "route": "/admin/boundaries/new",
+    "path": "/admin/boundaries/new",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin components",
+    "route": "/admin/components/",
+    "path": "/admin/components/",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Component detail",
+    "route": "/admin/components/$name",
+    "path": "/admin/components/chat",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin computers",
+    "route": "/admin/computers",
+    "path": "/admin/computers",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin credentials",
+    "route": "/admin/credentials",
+    "path": "/admin/credentials",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "New credential",
+    "route": "/admin/credentials/new",
+    "path": "/admin/credentials/new",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Identity providers",
+    "route": "/admin/identity-providers",
+    "path": "/admin/identity-providers",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin learning",
+    "route": "/admin/learning",
+    "path": "/admin/learning",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "People",
+    "route": "/admin/people",
+    "path": "/admin/people",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Permissions",
+    "route": "/admin/permissions",
+    "path": "/admin/permissions",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Permissions describe",
+    "route": "/admin/permissions/describe",
+    "path": "/admin/permissions/describe",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Playground",
+    "route": "/admin/playground",
+    "path": "/admin/playground",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin plugins",
+    "route": "/admin/plugins/",
+    "path": "/admin/plugins/",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Plugin detail",
+    "route": "/admin/plugins/$key",
+    "path": "/admin/plugins/fixture-app",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Plugin Bot access",
+    "route": "/admin/plugins/$key/bots/$agentId",
+    "path": "/admin/plugins/fixture-app/bots/whatif-sales",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Plugin tools",
+    "route": "/admin/plugins/$key/tools/$tool",
+    "path": "/admin/plugins/fixture-app/tools/fixture-tool",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Arcade admin",
+    "route": "/admin/plugins/arcade",
+    "path": "/admin/plugins/arcade",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Composio admin",
+    "route": "/admin/plugins/composio",
+    "path": "/admin/plugins/composio",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin proactive",
+    "route": "/admin/proactive",
+    "path": "/admin/proactive",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Providers",
+    "route": "/admin/providers",
+    "path": "/admin/providers",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin skills",
+    "route": "/admin/skills",
+    "path": "/admin/skills",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Admin skill detail",
+    "route": "/admin/skills/$slug",
+    "path": "/admin/skills/fixture-skill",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "New skill",
+    "route": "/admin/skills/new",
+    "path": "/admin/skills/new",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "What if",
+    "route": "/admin/what-if",
+    "path": "/admin/what-if",
+    "role": "teamAdmin",
+    "maximum": 40
+  },
+  {
+    "view": "Settings home",
+    "route": "/settings/",
+    "path": "/settings/",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Settings activity",
+    "route": "/settings/activity",
+    "path": "/settings/activity",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Settings approvals",
+    "route": "/settings/approvals",
+    "path": "/settings/approvals",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Browsers",
+    "route": "/settings/browsers",
+    "path": "/settings/browsers",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Components gallery",
+    "route": "/settings/components-gallery/",
+    "path": "/settings/components-gallery/",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Component preview",
+    "route": "/settings/components-gallery/$name",
+    "path": "/settings/components-gallery/chat",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Settings computer",
+    "route": "/settings/computer",
+    "path": "/settings/computer",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Settings credentials",
+    "route": "/settings/credentials",
+    "path": "/settings/credentials",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "New saved login",
+    "route": "/settings/credentials/new",
+    "path": "/settings/credentials/new",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Settings learning",
+    "route": "/settings/learning",
+    "path": "/settings/learning",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Notifications",
+    "route": "/settings/notifications",
+    "path": "/settings/notifications",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Passwords",
+    "route": "/settings/passwords",
+    "path": "/settings/passwords",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Setup",
+    "route": "/settings/setup",
+    "path": "/settings/setup",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Settings skills",
+    "route": "/settings/skills",
+    "path": "/settings/skills",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Settings skill detail",
+    "route": "/settings/skills/$slug",
+    "path": "/settings/skills/fixture-skill",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "New personal skill",
+    "route": "/settings/skills/new",
+    "path": "/settings/skills/new",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "This computer",
+    "route": "/settings/this-computer",
+    "path": "/settings/this-computer",
+    "role": "personal",
+    "maximum": 40
+  },
+  {
+    "view": "Unknown address",
+    "route": "shared recovery",
+    "path": "/s/fixture-unknown",
+    "role": "personal",
+    "maximum": 36
+  },
+  {
+    "view": "Route load failure",
+    "route": "shared recovery",
+    "path": "/settings/notifications",
+    "role": "personal",
+    "maximum": 36
+  }
+]

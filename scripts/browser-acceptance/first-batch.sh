@@ -22,7 +22,11 @@ for attempt in $(seq 1 30); do
   kill -0 "$api_pid" "$app_pid"
   if curl -fsS -D - -o /dev/null "$FIXTURE_APP_URL/api/capabilities" 2>/dev/null |
     grep -qi '^x-openbot-fixture: isolated'; then
-    bun --no-env-file scripts/browser-acceptance/first-batch.mjs
+    case "${1:-}" in
+      "") bun --no-env-file scripts/browser-acceptance/first-batch.mjs ;;
+      --full-sweep) bun --no-env-file scripts/browser-acceptance/full-sweep.mjs ;;
+      *) echo "Unknown capture option: $1" >&2; exit 2 ;;
+    esac
     exit
   fi
   sleep 1
