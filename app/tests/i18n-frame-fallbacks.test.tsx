@@ -5,6 +5,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
@@ -19,6 +20,7 @@ import { Toaster, toast } from "@/components/ui/toast";
 import { client } from "@/lib/client";
 import { useTranslation } from "@/i18n";
 import { pinLocale } from "./i18n";
+import { Route as ScreenRoute } from "@/routes/_authed/_app/s/$screen";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -143,6 +145,7 @@ function theAppAt(
   address: string,
   broken: () => boolean = () => false,
   initialEntries?: string[],
+  error = "The loader broke.",
 ) {
   const root = createRootRoute({
     notFoundComponent: () => <MissingPage standalone />,
@@ -151,12 +154,17 @@ function theAppAt(
     getParentRoute: () => root,
     path: "/page",
     loader: () => {
-      if (broken()) throw new Error("The loader broke.");
+      if (broken()) throw new Error(error);
     },
     component: () => <p>The page loaded.</p>,
   });
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: "/",
+    component: () => <h1>Workspace</h1>,
+  });
   const router = createRouter({
-    routeTree: root.addChildren([page]),
+    routeTree: root.addChildren([page, home]),
     history: createMemoryHistory({
       initialEntries: initialEntries ?? [address],
     }),
@@ -324,4 +332,59 @@ test("the tab title follows a translated page, and a page still in English stays
   await pinLocale("en");
 
   expect(document.title).toBe("Page not found · OpenBot");
+});
+
+test("an unsupported legacy screen keeps the app shell around the missing page", async () => {
+  const root = createRootRoute({
+    component: () => (
+      <>
+        <header>Workspace header</header>
+        <Outlet />
+      </>
+    ),
+  });
+  // Wire the real route as `routeTree.gen.ts` does, so its own `Route.useParams()` resolves. The
+  // cast is the house pattern for `.update()` on a real route module: the generated module's
+  // options type does not carry `getParentRoute`, but the runtime merge needs it.
+  const screen = (
+    ScreenRoute as unknown as {
+      update: (options: unknown) => never;
+    }
+  ).update({
+    getParentRoute: () => root,
+    id: "/s/$screen",
+    path: "/s/$screen",
+  });
+  const router = createRouter({
+    routeTree: root.addChildren([screen as never]),
+    history: createMemoryHistory({ initialEntries: ["/s/whatever"] }),
+  });
+  await router.load();
+  const view = render(<RouterProvider router={router} />);
+  view.getByText("Workspace header");
+  view.getByText("Page not found");
+  view.getByText("/s/whatever");
+  // Inside the shell it is a section of the page, not the whole document's main landmark.
+  expect(view.queryByRole("main")).toBeNull();
+});
+
+test("the failed-load screen never prints the error it was given", async () => {
+  const view = theAppAt(
+    "/page",
+    () => true,
+    undefined,
+    "postgres://openbot:secret@db/openbot",
+  );
+  await view.findByRole("heading", { name: "This page couldn’t load" });
+  expect(view.queryByText(/postgres/)).toBeNull();
+  expect(view.queryByText(/secret/)).toBeNull();
+});
+
+test("Open workspace moves focus to the page it opens", async () => {
+  const view = theAppAt("/nowhere", () => false, ["/page", "/nowhere"]);
+  const user = userEvent.setup({ document });
+  const open = await view.findByRole("link", { name: "Open workspace" });
+  await user.click(open);
+  const heading = await view.findByRole("heading", { name: "Workspace" });
+  await waitFor(() => expect(document.activeElement).toBe(heading));
 });
