@@ -147,6 +147,7 @@ additionalProperties:
         en: Opik login password (Required, at least 8 characters)
         zh: Opik 登录密码（必填，至少 8 位）
         zh-Hant: Opik 登入密碼（必填，至少 8 位）
+    - envKey: MINIO_ROOT_PASSWORD
       type: password
       default: OpikStorage
       random: true
