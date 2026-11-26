@@ -79,6 +79,28 @@ const configSchema = z.object({
 
 export type CreditPackChannel = "wechat" | "alipay";
 
+/**
+ * What checkout and reconciliation need from a payment channel. Both the
+ * loopback fixture and a signed provider adapter satisfy this shape.
+ */
+export interface CreditPackChannelAdapter {
+  kind: CreditPackChannel;
+  /** A loopback fixture is test-only; a provider channel runs the signoff path. */
+  fixture: boolean;
+  merchant: string;
+  productCode: string;
+  applicationIds: string[];
+  allows(accountId: string): boolean;
+  authenticates(request: Request): boolean | Promise<boolean>;
+  checkout(order: { id: string; priceCents: number }): Promise<string>;
+  startRefund(
+    refund: z.infer<typeof testRefundTerms>,
+  ): Promise<z.infer<typeof refundQueryResult>>;
+  queryRefund(id: string): Promise<z.infer<typeof refundQueryResult>>;
+  close(id: string): Promise<z.infer<typeof channelResult>>;
+  query(id: string): Promise<z.infer<typeof channelResult>>;
+}
+
 const settingsPrefix = {
   wechat: "OPENBOT_CREDIT_PACK_TEST",
   alipay: "OPENBOT_CREDIT_PACK_ALIPAY_TEST",
@@ -92,6 +114,13 @@ export function loadCreditPackTestChannel(
   const prefix = settingsPrefix[kind];
   const origin = environment[`${prefix}_ORIGIN`];
   if (!origin) return undefined;
+  // A real merchant or external endpoint is a live channel, never a fixture.
+  if (
+    new URL(origin).hostname !== "127.0.0.1" ||
+    (environment[`${prefix}_MERCHANT`] !== undefined &&
+      !/^fixture-/.test(environment[`${prefix}_MERCHANT`] ?? ""))
+  )
+    throw new Error("Live payment channels require the live channel adapter.");
   if (
     kind === "alipay" &&
     environment.OPENBOT_CREDIT_PACK_TEST_ORIGIN &&
@@ -138,6 +167,7 @@ export function loadCreditPackTestChannel(
   }
   return {
     kind,
+    fixture: true,
     merchant: config.merchant,
     productCode: config.productCode,
     applicationIds: config.applicationIds,
@@ -190,6 +220,4 @@ export function loadCreditPackTestChannel(
   };
 }
 
-export type CreditPackTestChannel = NonNullable<
-  ReturnType<typeof loadCreditPackTestChannel>
->;
+export type CreditPackTestChannel = CreditPackChannelAdapter;

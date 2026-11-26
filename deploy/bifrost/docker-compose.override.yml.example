@@ -1,0 +1,7 @@
+services:
+  bifrost:
+    networks: [bifrost, postgres]
+networks:
+  postgres:
+    external: true
+    name: ${MIDDLEWARE_POSTGRES_NETWORK:-1panel-network}

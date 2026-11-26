@@ -1,0 +1,28 @@
+name: Opik
+tags:
+  - 实用工具
+title: 对话追踪与评测
+description: 对话追踪与评测
+additionalProperties:
+  key: opik
+  name: Opik
+  tags:
+    - Tool
+  shortDescZh: 使用 1Panel 已有 MySQL 数据库
+  shortDescEn: Use an existing MySQL database in 1Panel
+  description:
+    en: Opik
+    es-es: Opik
+    ja: Opik
+    ms: Opik
+    pt-br: Opik
+    ru: Opik
+    ko: Opik
+    zh-Hant: 对话追踪与评测
+    zh: 对话追踪与评测
+    tr: Opik
+  type: website
+  crossVersionUpdate: false
+  limit: 0
+  architectures:
+    - amd64

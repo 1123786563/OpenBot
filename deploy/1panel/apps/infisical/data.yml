@@ -1,0 +1,28 @@
+name: Infisical
+tags:
+  - 实用工具
+title: 私有配置和密钥管理
+description: 私有配置和密钥管理
+additionalProperties:
+  key: infisical
+  name: Infisical
+  tags:
+    - Tool
+  shortDescZh: 使用 1Panel 已有 PostgreSQL 数据库
+  shortDescEn: Use an existing PostgreSQL database in 1Panel
+  description:
+    en: Infisical
+    es-es: Infisical
+    ja: Infisical
+    ms: Infisical
+    pt-br: Infisical
+    ru: Infisical
+    ko: Infisical
+    zh-Hant: 私有配置和密钥管理
+    zh: 私有配置和密钥管理
+    tr: Infisical
+  type: website
+  crossVersionUpdate: false
+  limit: 0
+  architectures:
+    - amd64

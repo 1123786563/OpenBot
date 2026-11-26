@@ -1,0 +1,28 @@
+name: Hindsight
+tags:
+  - 实用工具
+title: 个人记忆索引与召回
+description: 个人记忆索引与召回
+additionalProperties:
+  key: hindsight
+  name: Hindsight
+  tags:
+    - Tool
+  shortDescZh: 使用 1Panel 已有 PostgreSQL 数据库
+  shortDescEn: Use an existing PostgreSQL database in 1Panel
+  description:
+    en: Hindsight
+    es-es: Hindsight
+    ja: Hindsight
+    ms: Hindsight
+    pt-br: Hindsight
+    ru: Hindsight
+    ko: Hindsight
+    zh-Hant: 个人记忆索引与召回
+    zh: 个人记忆索引与召回
+    tr: Hindsight
+  type: website
+  crossVersionUpdate: false
+  limit: 0
+  architectures:
+    - amd64

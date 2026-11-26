@@ -1,0 +1,274 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 18082
+      required: true
+      edit: true
+      rule: paramPort
+      label:
+        en: HTTP port (Required)
+        es-es: HTTP port (Obligatorio)
+        ja: HTTP port (必須)
+        ms: HTTP port (Wajib)
+        pt-br: HTTP port (Obrigatório)
+        ru: HTTP port (Обязательно)
+        ko: HTTP port (필수)
+        zh-Hant: HTTP port（必填）
+        zh: HTTP port（必填）
+        tr: HTTP port (Zorunlu)
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing PostgreSQL instance (Required)
+        es-es: Existing PostgreSQL instance (Obligatorio)
+        ja: Existing PostgreSQL instance (必須)
+        ms: Existing PostgreSQL instance (Wajib)
+        pt-br: Existing PostgreSQL instance (Obrigatório)
+        ru: Existing PostgreSQL instance (Обязательно)
+        ko: Existing PostgreSQL instance (필수)
+        zh-Hant: 現有 PostgreSQL 執行個體（必填）
+        zh: 已有 PostgreSQL 实例（必填）
+        tr: Existing PostgreSQL instance (Zorunlu)
+      key: postgresql
+    - envKey: PANEL_DB_NAME
+      type: text
+      default: infisical
+      random: true
+      required: true
+      label:
+        en: Database name (Required)
+        es-es: Database name (Obligatorio)
+        ja: Database name (必須)
+        ms: Database name (Wajib)
+        pt-br: Database name (Obrigatório)
+        ru: Database name (Обязательно)
+        ko: Database name (필수)
+        zh-Hant: 資料庫名稱（必填）
+        zh: 数据库名（必填）
+        tr: Database name (Zorunlu)
+      rule: paramCommon
+    - envKey: PANEL_DB_USER
+      type: text
+      default: infisical
+      random: true
+      required: true
+      label:
+        en: Database user (Required)
+        es-es: Database user (Obligatorio)
+        ja: Database user (必須)
+        ms: Database user (Wajib)
+        pt-br: Database user (Obrigatório)
+        ru: Database user (Обязательно)
+        ko: Database user (필수)
+        zh-Hant: 資料庫使用者（必填）
+        zh: 数据库用户（必填）
+        tr: Database user (Zorunlu)
+      rule: paramCommon
+    - envKey: PANEL_DB_USER_PASSWORD
+      type: password
+      default: Infisical
+      random: true
+      required: true
+      label:
+        en: Database password (Required)
+        es-es: Database password (Obligatorio)
+        ja: Database password (必須)
+        ms: Database password (Wajib)
+        pt-br: Database password (Obrigatório)
+        ru: Database password (Обязательно)
+        ko: Database password (필수)
+        zh-Hant: 資料庫密碼（必填）
+        zh: 数据库密码（必填）
+        tr: Database password (Zorunlu)
+    - envKey: DB_URI_PASSWORD
+      type: password
+      default: ""
+      required: false
+      label:
+        en: URL-encoded database password (if needed)
+        es-es: URL-encoded database password (if needed)
+        ja: URL-encoded database password (if needed)
+        ms: URL-encoded database password (if needed)
+        pt-br: URL-encoded database password (if needed)
+        ru: URL-encoded database password (if needed)
+        ko: URL-encoded database password (if needed)
+        zh-Hant: URL 編碼後的資料庫密碼（含特殊字元時填寫）
+        zh: URL 编码后的数据库密码（含特殊字符时填写）
+        tr: URL-encoded database password (if needed)
+    - envKey: DB_SSL_MODE
+      type: select
+      default: disable
+      required: true
+      label:
+        en: PostgreSQL TLS mode (Required)
+        es-es: PostgreSQL TLS mode (Obligatorio)
+        ja: PostgreSQL TLS mode (必須)
+        ms: PostgreSQL TLS mode (Wajib)
+        pt-br: PostgreSQL TLS mode (Obrigatório)
+        ru: PostgreSQL TLS mode (Обязательно)
+        ko: PostgreSQL TLS mode (필수)
+        zh-Hant: PostgreSQL TLS 模式（必填）
+        zh: PostgreSQL TLS 模式（必填）
+        tr: PostgreSQL TLS mode (Zorunlu)
+      values:
+        - label: disable
+          value: disable
+        - label: require
+          value: require
+        - label: verify-full
+          value: verify-full
+    - envKey: PANEL_REDIS_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing Redis instance (Required)
+        es-es: Existing Redis instance (Obligatorio)
+        ja: Existing Redis instance (必須)
+        ms: Existing Redis instance (Wajib)
+        pt-br: Existing Redis instance (Obrigatório)
+        ru: Existing Redis instance (Обязательно)
+        ko: Existing Redis instance (필수)
+        zh-Hant: Existing Redis instance（必填）
+        zh: Existing Redis instance（必填）
+        tr: Existing Redis instance (Zorunlu)
+      key: redis
+    - envKey: PANEL_REDIS_ROOT_PASSWORD
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Redis password
+        es-es: Redis password
+        ja: Redis password
+        ms: Redis password
+        pt-br: Redis password
+        ru: Redis password
+        ko: Redis password
+        zh-Hant: Redis password
+        zh: Redis password
+        tr: Redis password
+    - envKey: REDIS_URI_PASSWORD
+      type: password
+      default: ""
+      required: false
+      label:
+        en: URL-encoded Redis password (if needed)
+        es-es: URL-encoded Redis password (if needed)
+        ja: URL-encoded Redis password (if needed)
+        ms: URL-encoded Redis password (if needed)
+        pt-br: URL-encoded Redis password (if needed)
+        ru: URL-encoded Redis password (if needed)
+        ko: URL-encoded Redis password (if needed)
+        zh-Hant: URL-encoded Redis password (if needed)
+        zh: URL 编码后的 Redis 密码（含特殊字符时填写）
+        tr: URL-encoded Redis password (if needed)
+    - envKey: ENCRYPTION_KEY
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Encryption key
+        es-es: Encryption key
+        ja: Encryption key
+        ms: Encryption key
+        pt-br: Encryption key
+        ru: Encryption key
+        ko: Encryption key
+        zh-Hant: Encryption key
+        zh: Encryption key
+        tr: Encryption key
+    - envKey: AUTH_SECRET
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Authentication secret
+        es-es: Authentication secret
+        ja: Authentication secret
+        ms: Authentication secret
+        pt-br: Authentication secret
+        ru: Authentication secret
+        ko: Authentication secret
+        zh-Hant: Authentication secret
+        zh: Authentication secret
+        tr: Authentication secret
+    - envKey: SITE_URL
+      type: text
+      default: http://localhost:18082
+      required: true
+      edit: true
+      label:
+        en: Infisical public URL (Required)
+        es-es: Infisical public URL (Obligatorio)
+        ja: Infisical public URL (必須)
+        ms: Infisical public URL (Wajib)
+        pt-br: Infisical public URL (Obrigatório)
+        ru: Infisical public URL (Обязательно)
+        ko: Infisical public URL (필수)
+        zh-Hant: Infisical public URL（必填）
+        zh: Infisical public URL（必填）
+        tr: Infisical public URL (Zorunlu)
+    - envKey: INITIAL_ADMIN_EMAIL
+      type: text
+      default: ""
+      required: false
+      label:
+        en: Initial administrator email (Required for a new installation)
+        es-es: Initial administrator email (Required for a new installation)
+        ja: Initial administrator email (Required for a new installation)
+        ms: Initial administrator email (Required for a new installation)
+        pt-br: Initial administrator email (Required for a new installation)
+        ru: Initial administrator email (Required for a new installation)
+        ko: Initial administrator email (Required for a new installation)
+        zh-Hant: 初始管理员邮箱（新裝時必填）
+        zh: 初始管理员邮箱（新装时必填）
+        tr: Initial administrator email (Required for a new installation)
+    - envKey: INITIAL_ADMIN_PASSWORD
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Initial administrator password (at least 14 characters) (Required for a new installation)
+        es-es: Initial administrator password (at least 14 characters) (Required for a new installation)
+        ja: Initial administrator password (at least 14 characters) (Required for a new installation)
+        ms: Initial administrator password (at least 14 characters) (Required for a new installation)
+        pt-br: Initial administrator password (at least 14 characters) (Required for a new installation)
+        ru: Initial administrator password (at least 14 characters) (Required for a new installation)
+        ko: Initial administrator password (at least 14 characters) (Required for a new installation)
+        zh-Hant: 初始管理员密码（至少 14 位）（新裝時必填）
+        zh: 初始管理员密码（至少 14 位）（新装时必填）
+        tr: Initial administrator password (at least 14 characters) (Required for a new installation)
+    - envKey: INITIAL_ADMIN_FIRST_NAME
+      type: text
+      default: ""
+      required: false
+      label:
+        en: Initial administrator first name (Required for a new installation)
+        es-es: Initial administrator first name (Required for a new installation)
+        ja: Initial administrator first name (Required for a new installation)
+        ms: Initial administrator first name (Required for a new installation)
+        pt-br: Initial administrator first name (Required for a new installation)
+        ru: Initial administrator first name (Required for a new installation)
+        ko: Initial administrator first name (Required for a new installation)
+        zh-Hant: 初始管理员名字（新裝時必填）
+        zh: 初始管理员名字（新装时必填）
+        tr: Initial administrator first name (Required for a new installation)
+    - envKey: INITIAL_ORG_NAME
+      type: text
+      default: ""
+      required: false
+      label:
+        en: Initial organization name (Required for a new installation)
+        es-es: Initial organization name (Required for a new installation)
+        ja: Initial organization name (Required for a new installation)
+        ms: Initial organization name (Required for a new installation)
+        pt-br: Initial organization name (Required for a new installation)
+        ru: Initial organization name (Required for a new installation)
+        ko: Initial organization name (Required for a new installation)
+        zh-Hant: 初始组织名称（新裝時必填）
+        zh: 初始组织名称（新装时必填）
+        tr: Initial organization name (Required for a new installation)

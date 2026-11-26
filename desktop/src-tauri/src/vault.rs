@@ -133,26 +133,25 @@ storage is layered on top only for Start and Ask, without authorization UI. Refu
 */
 pub fn already_given_with_policy(
     root: &Path,
-    env_file: &Path,
     keys: &[&str],
     policy: ReadPolicy,
 ) -> Result<BTreeMap<String, String>, Problem> {
-    already_given_with_reader(root, env_file, keys, policy, recall_no_ui)
+    already_given_with_reader(root, keys, policy, recall_no_ui)
 }
 
 fn already_given_with_reader(
     root: &Path,
-    env_file: &Path,
     keys: &[&str],
     policy: ReadPolicy,
     mut read: impl FnMut(&Path, &str) -> Result<Option<String>, Problem>,
 ) -> Result<BTreeMap<String, String>, Problem> {
     let mut found = match policy {
-        ReadPolicy::FileOnly => crate::env::already_set(env_file, keys),
-        ReadPolicy::NoUi => crate::env::read_already_set(env_file, keys).map_err(|error| {
+        ReadPolicy::FileOnly => crate::env::settings(root, keys),
+        ReadPolicy::NoUi => crate::env::read_settings(root, keys).map_err(|error| {
             Problem::with(
                 "OpenBot could not read its settings.",
-                format!("{}: {error}", env_file.display()),
+                // The file is named by the error.
+                error.to_string(),
             )
         })?,
     };
@@ -173,17 +172,16 @@ fn already_given_with_reader(
 }
 
 /// Passive startup hydration. It never asks protected storage for a raw secret.
-pub fn already_given_file_only(env_file: &Path, keys: &[&str]) -> BTreeMap<String, String> {
-    crate::env::already_set(env_file, keys)
+pub fn already_given_file_only(root: &Path, keys: &[&str]) -> BTreeMap<String, String> {
+    crate::env::settings(root, keys)
 }
 
 /// Protected retrieval for a user-triggered action.
 pub fn already_given_no_ui(
     root: &Path,
-    env_file: &Path,
     keys: &[&str],
 ) -> Result<BTreeMap<String, String>, Problem> {
-    already_given_with_policy(root, env_file, keys, ReadPolicy::NoUi)
+    already_given_with_policy(root, keys, ReadPolicy::NoUi)
 }
 
 // Cache only successfully retrieved credentials. Absence and refusal must be rechecked on the next
@@ -1323,7 +1321,6 @@ mod cache_tests {
 
         let problem = super::already_given_with_reader(
             &root,
-            &path,
             &["KEY_ENCRYPTION_KEY"],
             super::ReadPolicy::NoUi,
             |_, _| Err(denied.clone()),
@@ -1346,7 +1343,6 @@ mod cache_tests {
         assert_eq!(
             super::already_given_with_reader(
                 &root,
-                &path,
                 &["KEY_ENCRYPTION_KEY"],
                 super::ReadPolicy::NoUi,
                 |_, _| Err(denied.clone())
@@ -1356,7 +1352,6 @@ mod cache_tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), legacy);
         let missing = super::already_given_with_reader(
             &root,
-            &path,
             &["KEY_ENCRYPTION_KEY"],
             super::ReadPolicy::NoUi,
             |_, _| Ok(None),
@@ -1381,7 +1376,7 @@ mod cache_tests {
         .unwrap();
 
         let found =
-            super::already_given_file_only(&path, &["OPENAI_API_KEY", "INTELLIGENCE_API_URL"]);
+            super::already_given_file_only(&dir, &["OPENAI_API_KEY", "INTELLIGENCE_API_URL"]);
 
         assert_eq!(found.get("OPENAI_API_KEY"), Some(&"file-key".to_string()));
         assert_eq!(
@@ -1394,13 +1389,12 @@ mod cache_tests {
     #[test]
     fn file_only_hydration_keeps_unreadable_env_unknown_but_no_ui_reports_it() {
         let dir = temp_root("vault-strict-read");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(".env");
+        let path = dir.join(crate::env::SETTINGS_FILES[1]);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, b"INTELLIGENCE_API_URL=\xff\n").unwrap();
 
         let file_only = super::already_given_with_policy(
             &dir,
-            &path,
             &["INTELLIGENCE_API_URL"],
             super::ReadPolicy::FileOnly,
         )
@@ -1409,7 +1403,6 @@ mod cache_tests {
 
         let no_ui = super::already_given_with_policy(
             &dir,
-            &path,
             &["INTELLIGENCE_API_URL"],
             super::ReadPolicy::NoUi,
         )

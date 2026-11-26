@@ -30,7 +30,8 @@ async function fixture(
 ) {
   const directory = await mkdtemp(join(tmpdir(), "openbot-composio-setup-"));
   directories.push(directory);
-  const envPath = join(directory, ".env");
+  await mkdir(join(directory, "deploy/openbot"), { recursive: true });
+  const envPath = join(directory, "deploy/openbot/.env.server");
   const identityPath = join(directory, ".env.openbot-installation-id");
   await writeFile(envPath, content);
   const calls: string[][] = [];
@@ -202,7 +203,7 @@ test("a missing environment file never starts provisioning", async () => {
   await rm(f.envPath);
   await expect(
     setupComposio({ ...f.options, runCli: f.provision }),
-  ).rejects.toThrow("copying .env.example");
+  ).rejects.toThrow("copying its .example beside it");
   expect(f.calls).toEqual([]);
 });
 

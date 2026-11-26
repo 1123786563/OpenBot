@@ -1,0 +1,164 @@
+additionalProperties:
+  formFields:
+    - envKey: PANEL_APP_PORT_HTTP
+      type: number
+      default: 15173
+      required: true
+      edit: true
+      rule: paramPort
+      label:
+        en: HTTP port (Required)
+        es-es: HTTP port (Obligatorio)
+        ja: HTTP port (必須)
+        ms: HTTP port (Wajib)
+        pt-br: HTTP port (Obrigatório)
+        ru: HTTP port (Обязательно)
+        ko: HTTP port (필수)
+        zh-Hant: HTTP port（必填）
+        zh: HTTP port（必填）
+        tr: HTTP port (Zorunlu)
+    - envKey: PANEL_DB_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing MySQL instance (Required)
+        es-es: Existing MySQL instance (Obligatorio)
+        ja: Existing MySQL instance (必須)
+        ms: Existing MySQL instance (Wajib)
+        pt-br: Existing MySQL instance (Obrigatório)
+        ru: Existing MySQL instance (Обязательно)
+        ko: Existing MySQL instance (필수)
+        zh-Hant: 現有 MySQL 執行個體（必填）
+        zh: 已有 MySQL 实例（必填）
+        tr: Existing MySQL instance (Zorunlu)
+      key: mysql
+    - envKey: PANEL_DB_NAME
+      type: text
+      default: opik
+      random: true
+      required: true
+      label:
+        en: Database name (Required)
+        es-es: Database name (Obligatorio)
+        ja: Database name (必須)
+        ms: Database name (Wajib)
+        pt-br: Database name (Obrigatório)
+        ru: Database name (Обязательно)
+        ko: Database name (필수)
+        zh-Hant: 資料庫名稱（必填）
+        zh: 数据库名（必填）
+        tr: Database name (Zorunlu)
+      rule: paramCommon
+    - envKey: PANEL_DB_USER
+      type: text
+      default: opik
+      random: true
+      required: true
+      label:
+        en: Database user (Required)
+        es-es: Database user (Obligatorio)
+        ja: Database user (必須)
+        ms: Database user (Wajib)
+        pt-br: Database user (Obrigatório)
+        ru: Database user (Обязательно)
+        ko: Database user (필수)
+        zh-Hant: 資料庫使用者（必填）
+        zh: 数据库用户（必填）
+        tr: Database user (Zorunlu)
+      rule: paramCommon
+    - envKey: PANEL_DB_USER_PASSWORD
+      type: password
+      default: Opik
+      random: true
+      required: true
+      label:
+        en: Database password (Required)
+        es-es: Database password (Obligatorio)
+        ja: Database password (必須)
+        ms: Database password (Wajib)
+        pt-br: Database password (Obrigatório)
+        ru: Database password (Обязательно)
+        ko: Database password (필수)
+        zh-Hant: 資料庫密碼（必填）
+        zh: 数据库密码（必填）
+        tr: Database password (Zorunlu)
+    - envKey: PANEL_REDIS_HOST
+      type: service
+      default: ""
+      required: true
+      label:
+        en: Existing Redis instance (Required)
+        es-es: Existing Redis instance (Obligatorio)
+        ja: Existing Redis instance (必須)
+        ms: Existing Redis instance (Wajib)
+        pt-br: Existing Redis instance (Obrigatório)
+        ru: Existing Redis instance (Обязательно)
+        ko: Existing Redis instance (필수)
+        zh-Hant: Existing Redis instance（必填）
+        zh: Existing Redis instance（必填）
+        tr: Existing Redis instance (Zorunlu)
+      key: redis
+    - envKey: PANEL_REDIS_ROOT_PASSWORD
+      type: password
+      default: ""
+      required: false
+      label:
+        en: Redis password
+        es-es: Redis password
+        ja: Redis password
+        ms: Redis password
+        pt-br: Redis password
+        ru: Redis password
+        ko: Redis password
+        zh-Hant: Redis password
+        zh: Redis password
+        tr: Redis password
+    - envKey: REDIS_URI_PASSWORD
+      type: password
+      default: ""
+      required: false
+      label:
+        en: URL-encoded Redis password (if needed)
+        es-es: URL-encoded Redis password (if needed)
+        ja: URL-encoded Redis password (if needed)
+        ms: URL-encoded Redis password (if needed)
+        pt-br: URL-encoded Redis password (if needed)
+        ru: URL-encoded Redis password (if needed)
+        ko: URL-encoded Redis password (if needed)
+        zh-Hant: URL-encoded Redis password (if needed)
+        zh: URL 编码后的 Redis 密码（含特殊字符时填写）
+        tr: URL-encoded Redis password (if needed)
+    - envKey: OPIK_AUTH_USERNAME
+      type: text
+      default: admin
+      required: true
+      edit: true
+      label:
+        en: Opik login username (Required)
+        zh: Opik 登录用户名（必填）
+    - envKey: OPIK_AUTH_PASSWORD
+      type: password
+      default: OpikLogin
+      random: true
+      required: true
+      edit: true
+      label:
+        en: Opik login password (Required, at least 8 characters)
+        zh: Opik 登录密码（必填，至少 8 位）
+        zh-Hant: Opik 登入密碼（必填，至少 8 位）
+      type: password
+      default: OpikStorage
+      random: true
+      required: true
+      label:
+        en: MinIO root password (Required)
+        es-es: MinIO root password (Obligatorio)
+        ja: MinIO root password (必須)
+        ms: MinIO root password (Wajib)
+        pt-br: MinIO root password (Obrigatório)
+        ru: MinIO root password (Обязательно)
+        ko: MinIO root password (필수)
+        zh-Hant: MinIO root password（必填）
+        zh: MinIO root password（必填）
+        tr: MinIO root password (Zorunlu)

@@ -11,7 +11,9 @@ docs/plans/
 .env
 .env.*
 !.env.example
-!.env.personal.example
+!.env.server.example
+!.env.worker.example
+!.env.server.personal.example
 # Per-Bot egress proxies. Carries credentials in the URL, like .env does.
 egress.env
 # No trailing slash, deliberately. With one, this pattern matches a DIRECTORY only, and a symlink
@@ -57,3 +59,9 @@ venv/
 
 # The Recorder extension's signing key never enters the repository (Decision 9).
 extension/**/*.pem
+
+# Browser acceptance runs write their screenshots and run.json here; the reviewed evidence sits one level up.
+docs/acceptance/*/run/
+
+# macOS Finder drops one of these into every folder it opens; one turned up under deploy/.
+.DS_Store

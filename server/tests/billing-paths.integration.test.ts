@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { writePilotMatrixManifest } from "../scripts/pilot-matrix-manifest";
 import {
   configure,
   emptyCatalog,
@@ -1640,4 +1644,80 @@ test("paid pilot requires matching path and channel signoffs and drains in-fligh
       outputTokens: 0n,
     }),
   ).toMatchObject({ state: "settled", chargedMicrocredits: "7" });
+});
+
+test("an application signoff can cite the matrix deployment and run references", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pilot-signoff-"));
+  const id = `paths-manifest-${run}`;
+  const deployment = {
+    id: "target-1",
+    sourceCommit: "a".repeat(40),
+    buildVersion: "manifest-fixture",
+    imageDigest: `sha256:${"b".repeat(64)}`,
+  };
+  try {
+    const manifest = await writePilotMatrixManifest(
+      directory,
+      { evidence: "deployment", deployment },
+      Date.now(),
+      [
+        {
+          scenario: "target-model-switch",
+          outcome: "pass",
+          operationIds: ["op-a", "op-b"],
+        },
+      ],
+    );
+    const { accountId } = await enrolled("manifest", 1n);
+    await createTestCreditLedger(database).registerApplication({
+      id,
+      name: "Evidence fixture",
+      operator: "platform",
+      resourcePrefix: "fixture-manifest:",
+    });
+    const revision = catalog.routes[routeId]?.revision;
+    if (!revision) throw new Error("Missing fixture route revision.");
+    const stored = await createPilotSignoffs(database).record({
+      evidence: "deployment",
+      deploymentId: deployment.id,
+      buildVersion: deployment.buildVersion,
+      imageDigest: deployment.imageDigest,
+      approvedBy: "fixture-reviewer",
+      pauseOwner: "fixture-ops",
+      accountIds: [accountId],
+      deploymentRef: manifest.deploymentRef,
+      kind: "application",
+      id,
+      pathRef: "fixture:manifest:path",
+      rampRef: manifest.rampRef,
+      sharedSupplierCapMicrocredits: "1000",
+      routes: [
+        {
+          id: routeId,
+          provider: "fixture-paths",
+          revision,
+          resourceType: "chat",
+          pathRef: "fixture:manifest:chat",
+          reconciliationWindowSeconds: 3600,
+          reconciliationRef: "fixture:manifest:window",
+          supplierCapMicrocredits: "1000",
+          maxOperationMicrocredits: "20",
+        },
+      ],
+    });
+    expect(stored?.record).toMatchObject({
+      deploymentRef: manifest.deploymentRef,
+      rampRef: manifest.rampRef,
+    });
+  } finally {
+    await database
+      .delete(billingPilotSignoffs)
+      .where(
+        and(
+          eq(billingPilotSignoffs.kind, "application"),
+          eq(billingPilotSignoffs.id, id),
+        ),
+      );
+    await rm(directory, { recursive: true });
+  }
 });

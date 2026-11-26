@@ -5,11 +5,15 @@
 Install Docker, [Bun](https://bun.sh) 1.4+ (the tests need it), `lsof`, `openssl`, and `curl`.
 
 ```sh
-cp .env.example .env
 bun install
+# One settings file per service, none in the repository root.
+cp deploy/openbot/.env.example deploy/openbot/.env
+cp deploy/openbot/.env.server.example deploy/openbot/.env.server
+cp deploy/openbot/.env.worker.example deploy/openbot/.env.worker
+cp deploy/agents/.env.example deploy/agents/.env
 ```
 
-Set `OPENAI_API_KEY` in `.env`. To provision Composio through the hosted CLI, run
+Set `OPENAI_API_KEY` in `deploy/agents/.env`. To provision Composio through the hosted CLI, run
 `bun run setup:composio` or opt in at startup with `OPENBOT_COMPOSIO_AUTO_SETUP=true`.
 See [Composio setup](plugins/composio.md#automatic-project-setup).
 

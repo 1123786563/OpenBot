@@ -5,19 +5,21 @@ import {
   createMemoryHistory,
   createRootRoute,
   createRouter,
-  RouterProvider,
+  RouterContextProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NameRow } from "@/components/settings/profile";
 import { type AuthenticatedUser, authKeys } from "@/lib/auth/queries";
 import { queryClient } from "@/query-client";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => GlobalRegistrator.register());
 const originalFetch = globalThis.fetch;
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await pinLocale("en");
   queryClient.clear();
   globalThis.fetch = originalFetch;
 });
@@ -42,19 +44,26 @@ function client(needsName = true) {
   return query;
 }
 
-async function draw(query: typeof queryClient) {
+async function draw(
+  query: typeof queryClient,
+  opener: RegExp = /^Name/,
+  field = "Name",
+) {
+  // The dialog's leave guard reads the router, as the layout always gives it one.
   const router = createRouter({
-    history: createMemoryHistory(),
-    routeTree: createRootRoute({ component: NameRow }),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: createRootRoute(),
   });
   const view = render(
     <QueryClientProvider client={query}>
-      <RouterProvider router={router} />
+      <RouterContextProvider router={router as never}>
+        <NameRow />
+      </RouterContextProvider>
     </QueryClientProvider>,
   );
   const user = userEvent.setup({ document });
-  await user.click(await view.findByRole("button", { name: /^Name/ }));
-  const input = await view.findByLabelText("Name");
+  await user.click(view.getByRole("button", { name: opener }));
+  const input = await view.findByLabelText(field);
   return { view, user, input };
 }
 
@@ -110,6 +119,45 @@ function replaceName(name: string) {
   );
 }
 
+test("in Chinese the name row, its dialog and its outcomes read in Chinese", async () => {
+  let patchCalls = 0;
+  globalThis.fetch = Object.assign(
+    async (url: Parameters<typeof fetch>[0]) => {
+      if (String(url) === "/api/me/profile") {
+        patchCalls += 1;
+        // First save: the server breaks without sending a message, so the app's own
+        // sentence is what a person reads; the second save goes through.
+        return patchCalls === 1
+          ? new Response(null, { status: 500 })
+          : Response.json({ profile: { name: "Samuel", needsName: false } });
+      }
+      if (String(url) === "/api/me")
+        return Response.json({
+          user: {
+            id: "existing-user",
+            email: "dev@openbot.local",
+            name: "Sam",
+            needsName: false,
+          },
+        });
+      return Response.json({}, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  await pinLocale("zh-CN");
+  const { view, user, input } = await draw(client(false), /^姓名/, "姓名");
+  expect((input as HTMLInputElement).value).toBe("Sam");
+  // The row only saves a changed name, so the draft has to differ from what is stored.
+  await user.type(input, "uel");
+  await user.click(view.getByRole("button", { name: "保存名字" }));
+  await waitFor(() =>
+    expect(view.getByRole("alert").textContent).toBe("无法保存你的名字"),
+  );
+  await user.click(view.getByRole("button", { name: "保存名字" }));
+  await waitFor(() =>
+    expect(view.getByRole("status").textContent).toBe("你的名字已保存。"),
+  );
+});
 test("an untouched settings form reflects a name saved by the welcome dialog", async () => {
   const { input } = await draw(client());
   await act(async () => replaceName("Sam"));

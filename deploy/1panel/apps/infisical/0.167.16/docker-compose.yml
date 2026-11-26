@@ -1,0 +1,73 @@
+networks:
+  infisical:
+    ipam: {}
+  1panel-network:
+    external: true
+services:
+  init-secrets:
+    image: infisical/infisical:v0.167.16
+    container_name: ${CONTAINER_NAME}-init-secrets
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    entrypoint: [node, /panel-secrets.mjs, init]
+    command: ["ENCRYPTION_KEY:16:hex", "AUTH_SECRET:32:base64"]
+    environment:
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+    volumes:
+      - ./panel-secrets.mjs:/panel-secrets.mjs:ro
+      - installation-secrets:/panel-secrets
+  backend:
+    entrypoint: [node, /panel-secrets.mjs, run]
+    command: [docker-entrypoint.sh, ./standalone-entrypoint.sh]
+    volumes:
+      - ./panel-secrets.mjs:/panel-secrets.mjs:ro
+      - installation-secrets:/panel-secrets:ro
+    environment:
+      NODE_ENV: production
+      SITE_URL: ${SITE_URL:-http://localhost:18082}
+      DB_CONNECTION_URI: postgresql://${PANEL_DB_USER:?Enter the database user}:${DB_URI_PASSWORD:-${PANEL_DB_USER_PASSWORD:?Enter the database password}}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${PANEL_DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+      REDIS_URL: redis://:${REDIS_URI_PASSWORD:-${PANEL_REDIS_ROOT_PASSWORD}}@${PANEL_REDIS_HOST:?Select a Redis instance}:${PANEL_REDIS_PORT:-6379}
+      DISABLE_PUBLIC_SECRET_SHARING: "true"
+      TELEMETRY_ENABLED: "false"
+    image: infisical/infisical:v0.167.16
+    networks:
+      infisical: null
+      1panel-network:
+        aliases:
+          - openbot-infisical
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-18082}:8080
+    container_name: ${CONTAINER_NAME}
+    labels:
+      createdBy: Apps
+    depends_on:
+      init-secrets:
+        condition: service_completed_successfully
+  bootstrap-admin:
+    image: infisical/infisical:v0.167.16
+    container_name: ${CONTAINER_NAME}-bootstrap-admin
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
+    restart: "no"
+    entrypoint: [node, /bootstrap-admin.mjs]
+    volumes:
+      - ./bootstrap-admin.mjs:/bootstrap-admin.mjs:ro
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - infisical
+    environment:
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+      INITIAL_ADMIN_FIRST_NAME: ${INITIAL_ADMIN_FIRST_NAME:-}
+      INITIAL_ORG_NAME: ${INITIAL_ORG_NAME:-}
+volumes:
+  installation-secrets: {}

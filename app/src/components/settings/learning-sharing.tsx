@@ -59,14 +59,15 @@ export const SHARING_CHOICES: {
     mode: "open",
     icon: IconUsersGroup,
     title: "Everyone's Bots",
-    description: "Every Bot on OpenBot draws on all of your skills.",
+    description:
+      "Other people’s Bots can use all the skills approved for sharing.",
   },
   {
     mode: "choose",
     icon: IconListCheck,
     title: "The skills I choose",
     description:
-      "Every Bot draws on the skills you open below; your own Bots use all of them.",
+      "Other people’s Bots can use the skills you open once approved for sharing.",
   },
 ];
 
@@ -76,7 +77,7 @@ export const SHARING_CHOICES: {
  */
 function choiceSentence(data: PersonalLearningSharing): string {
   if (data.sharingAllowed)
-    return "Your own Bots always use every skill learned from your recordings.";
+    return "The Bots you use can already use all your skills. An admin must approve sharing for skills you approved yourself.";
   const off =
     "An admin hasn't turned on sharing skills with every Bot, so only the Bots you use draw on yours.";
   return data.mode === "closed"
@@ -96,15 +97,16 @@ function emptySentence(
   if (data.unavailable === "off")
     return "An admin has turned off automatic learning, so no skills are learned from your recordings.";
   return mode === "choose"
-    ? "No Skills learned from your recordings yet. Once there are, each one you open here reaches every Bot."
+    ? "No skills learned from your recordings yet. When they appear, choose which ones to share here."
     : "No Skills learned from your recordings yet. Once there are, they show up here.";
 }
 
 /** What the Your Skills section says about who draws on them, in the mode chosen. */
 const SKILLS_DESCRIPTION: Record<LearningSharingMode, string> = {
   closed: "Only the Bots you use draw on these skills.",
-  open: "Every Bot on OpenBot draws on these skills.",
-  choose: "Open a skill to let every Bot on OpenBot use it.",
+  open: "Skills awaiting sharing approval stay with the Bots you use.",
+  choose:
+    "Choose which skills other people’s Bots may use. Skills awaiting approval stay with the Bots you use.",
 };
 
 /**

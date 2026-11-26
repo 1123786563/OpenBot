@@ -50,6 +50,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
 import { channelListQueryOptions } from "@/lib/channels/queries";
@@ -659,6 +660,8 @@ function SettingRow({
   botName: string;
   blocked: string | null;
 }) {
+  // Subscribes this row to the interface language, so choosing another one redraws its time in place.
+  useTranslation();
   const [open, setOpen] = useState(false);
   const id = useId();
   const change = useMutation(

@@ -6,11 +6,15 @@ import { createWeKnoraWorkExecutor } from "./weknora-work";
 
 const secret = z.string().trim().min(1);
 const routeId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
+const executionBudgetId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const settings = z.object({
   OPENBOT_WEKNORA_ROUTE: routeId.optional(),
   OPENBOT_WEKNORA_CHAT_ROUTE: routeId.optional(),
   OPENBOT_WEKNORA_RERANK_ROUTE: routeId.optional(),
   OPENBOT_WEKNORA_MAINTENANCE_ROUTE: routeId.optional(),
+  // Funds periodic maintenance from a confirmed Test Credit budget on the
+  // platform Billing Account instead of a person's grant (#110 平台预算).
+  TEST_CREDIT_WEKNORA_MAINTENANCE_BUDGET_ID: executionBudgetId.optional(),
   TEST_CREDIT_BIFROST_URL: z.url().optional(),
   TEST_CREDIT_RERANK_BIFROST_URL: z.url().optional(),
   OPENBOT_WEKNORA_SERVICE_TOKEN: secret.min(32),
@@ -77,6 +81,7 @@ export function loadWeKnoraBilling(
     issuer: casdoor.issuer,
     routeId: value.OPENBOT_WEKNORA_ROUTE,
     serviceToken: value.OPENBOT_WEKNORA_SERVICE_TOKEN,
+    maintenanceBudgetId: value.TEST_CREDIT_WEKNORA_MAINTENANCE_BUDGET_ID,
     work,
     execute:
       value.OPENBOT_WEKNORA_ROUTE && embedding

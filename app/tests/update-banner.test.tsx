@@ -24,6 +24,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { UpdateBanner } from "@/components/layout/update-banner";
 import { type DesktopAppUpdate, desktopKeys } from "@/lib/desktop/queries";
 import { queryClient } from "@/query-client";
+import { pinLocale } from "./i18n";
 
 type Call = { command: string; args: unknown };
 
@@ -85,8 +86,10 @@ beforeEach(() => {
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // The language tests share one translation instance with every other file in the run.
+  await pinLocale("en");
   installRelease?.();
   queryClient.clear();
   delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -121,6 +124,35 @@ test("inside Desktop, a newer version is offered with Update and restart and a w
   expect(fetches).toEqual([]);
 });
 
+test("it speaks the interface language, switches while on screen, and its buttons still work", async () => {
+  inDesktop();
+  const view = show();
+  const bar = await view.findByRole("complementary", banner);
+  expect(bar.textContent).toContain("OpenBot 0.3.2 is available.");
+  const install = view.getByRole("button", { name: "Update and restart" });
+  const dismiss = view.getByRole("button", { name: "Dismiss" });
+  // The whole sentence is on hover, in the language the line is in.
+  expect(view.getByTitle("OpenBot 0.3.2 is available.")).toBeTruthy();
+
+  await pinLocale("zh-CN");
+
+  const shown = view.getByRole("complementary", { name: "OpenBot 更新" });
+  expect(shown.textContent).toContain("OpenBot 0.3.2 现已可用。");
+  expect(view.getByTitle("OpenBot 0.3.2 现已可用。")).toBeTruthy();
+  expect(view.getByRole("button", { name: "更新并重启" })).toBe(install);
+  expect(view.getByRole("button", { name: "关闭" })).toBe(dismiss);
+  expect(
+    view.queryByRole("complementary", { name: "OpenBot update" }),
+  ).toBeNull();
+
+  fireEvent.click(dismiss);
+  await waitFor(() => expect(view.queryByRole("complementary")).toBeNull());
+  expect(calls).toContainEqual({
+    command: "plugin:openbot-desktop|dismiss_update",
+    args: { version: "0.3.2" },
+  });
+});
+
 test("while the new version downloads in the background it says how far, then that it is ready", async () => {
   inDesktop();
   offer = {
@@ -144,6 +176,71 @@ test("while the new version downloads in the background it says how far, then th
     ),
   );
   expect(fetches).toEqual([]);
+});
+
+test("what it says after a switch is in the new language: how ready, then how the install is going", async () => {
+  inDesktop();
+  await pinLocale("zh-CN");
+  offer = {
+    version: "0.3.2",
+    current: "0.3.1",
+    installing: null,
+    ready: { state: "preparing", done: 450, total: 1000 },
+  };
+  const view = show();
+  const bar = await view.findByRole("complementary", { name: "OpenBot 更新" });
+  expect(bar.textContent).toContain("OpenBot 0.3.2 正在后台下载（45%）。");
+  offer = { ...offer, ready: { state: "ready" } };
+  await queryClient.invalidateQueries({ queryKey: desktopKeys.appUpdate });
+  await waitFor(() =>
+    expect(bar.textContent).toContain(
+      "OpenBot 0.3.2 已可安装。安装需要几分钟。",
+    ),
+  );
+
+  fireEvent.click(view.getByRole("button", { name: "更新并重启" }));
+  expect((await view.findByRole("status")).textContent).toBe("正在下载…");
+  offer = {
+    ...offer,
+    installing: { downloaded: 50, total: 200, restarting: false },
+  };
+  await queryClient.refetchQueries();
+  await waitFor(() =>
+    expect(view.getByRole("status").textContent).toBe("正在下载… 25%"),
+  );
+  offer = {
+    ...offer,
+    installing: { downloaded: 200, total: 200, restarting: true },
+  };
+  await queryClient.refetchQueries();
+  await waitFor(() =>
+    expect(view.getByRole("status").textContent).toBe("正在重启…"),
+  );
+
+  // A status already on screen is said again in the new language.
+  const status = view.getByRole("status");
+  await pinLocale("en");
+  expect(status.textContent).toBe("Restarting…");
+});
+
+test("a failed install is said in the interface language, with the app's own reason as it wrote it", async () => {
+  inDesktop();
+  installFailure = "signature verification failed";
+  const view = show();
+  fireEvent.click(
+    await view.findByRole("button", { name: "Update and restart" }),
+  );
+  const said = await view.findByRole("alert");
+  expect(said.textContent).toBe(
+    "Couldn't install the update: signature verification failed",
+  );
+
+  await pinLocale("zh-CN");
+
+  // Said again while on screen; the app's reason stays as the app wrote it.
+  expect(view.getByRole("alert")).toBe(said);
+  expect(said.textContent).toBe("无法安装更新：signature verification failed");
+  expect(view.getByRole("button", { name: "更新并重启" })).toBeTruthy();
 });
 
 test("nothing newer, or a version this person closed, draws nothing", async () => {

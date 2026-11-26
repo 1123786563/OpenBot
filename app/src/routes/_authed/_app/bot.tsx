@@ -385,7 +385,13 @@ function BotChat({
                 </details>
               ) : null}
             </Stack>
-            <Stack align="center" direction="horizontal" gap={2} wrap="wrap">
+            <Stack
+              align="center"
+              className="quick-chat-actions"
+              direction="horizontal"
+              gap={2}
+              wrap="wrap"
+            >
               <ComputerChatControls
                 computerId={agentId}
                 open={watch === true}
@@ -461,7 +467,11 @@ function BotChat({
           {startFailed && (
             <ConversationReadError
               title="Couldn't start a new conversation."
-              description="Your current conversation is still open."
+              description={
+                threadId
+                  ? "Your current conversation is still open."
+                  : "Try again to start chatting with this Bot."
+              }
               retry={startNew}
               retryBelow
               retrying={starting}
@@ -480,9 +490,9 @@ function BotChat({
                 key={`${agentId}:${threadId}`}
                 threadId={threadId}
               />
-            ) : (
+            ) : !startFailed ? (
               <ConversationLoading label="Opening conversation…" />
-            )}
+            ) : null}
           </Stack>
         </Stack>
       </ConversationSurface>

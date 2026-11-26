@@ -48,7 +48,7 @@ test("unset gives no extra ids", () => {
 
 test("the example environment and the changelog name the variable and that a bad value stops boot", () => {
   const example = readFileSync(
-    new URL("../../.env.example", import.meta.url),
+    new URL("../../deploy/openbot/.env.server.example", import.meta.url),
     "utf8",
   );
   expect(example).toContain("# OPENBOT_RECORDER_EXTRA_EXTENSION_IDS=");

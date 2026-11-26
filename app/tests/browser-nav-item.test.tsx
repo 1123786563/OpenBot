@@ -23,7 +23,8 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { i18n, setLocalePreference } from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { BrowserNavItem } from "@/components/browser/browser-nav-item";
@@ -153,6 +154,7 @@ beforeEach(() => {
       server(String(input), init),
     { preconnect: originalFetch.preconnect },
   );
+  return i18n.changeLanguage("en");
 });
 afterEach(() => {
   cleanup();
@@ -337,6 +339,58 @@ test("the red dot shows while a recording starts as well, and its tooltip names 
       expect.stringMatching(/^Recording: Submit the receipt, 1:2\d$/),
     ]),
   );
+});
+
+/*
+ * The dot's name and the link's are what a screen reader says, so they follow the interface language
+ * while it is on screen — without the link being remounted, and while the person's own recording
+ * title stays exactly as they wrote it.
+ */
+test("the recording's name follows the interface language, and the recording's own title does not", async () => {
+  state = recording("starting");
+  const { view } = draw();
+  const dot = await view.findByRole("img", {
+    name: "Recording: Submit the receipt, starting",
+  });
+  expect(
+    view.getByRole("link", {
+      name: /^Teach a Bot Recording: Submit the receipt, starting$/,
+    }),
+  ).toBeTruthy();
+  await act(() => setLocalePreference("zh-CN"));
+  expect(
+    view.getByRole("img", { name: "录制中：Submit the receipt，正在启动" }),
+  ).toBe(dot);
+  expect(
+    view.getByRole("link", {
+      name: /^教 Bot 做事\s录制中：Submit the receipt，正在启动$/,
+    }),
+  ).toBeTruthy();
+
+  // Recording, where the elapsed time ticks: the same element, still carrying the same title.
+  state = recording("recording");
+  expect(
+    await view.findByRole(
+      "img",
+      { name: /^录制中：Submit the receipt，1:2\d$/ },
+      { timeout: 2000 },
+    ),
+  ).toBe(dot);
+
+  // A recording the person never named drops its title from both languages alike.
+  state = {
+    ...recording("recording"),
+    activity: { ...receipt("recording"), title: undefined },
+  };
+  expect(
+    await view.findByRole(
+      "img",
+      { name: /^录制中，1:2\d$/ },
+      { timeout: 2000 },
+    ),
+  ).toBe(dot);
+  await act(() => setLocalePreference("en"));
+  expect(view.getByRole("img", { name: /^Recording, 1:2\d$/ })).toBe(dot);
 });
 
 test("a recording in the person's everyday browser puts the red dot on Teach a Bot with no OpenBot browser open, and Stop there takes it away", async () => {

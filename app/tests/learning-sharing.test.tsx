@@ -150,7 +150,14 @@ test("three choices, each with one plain line saying who sees what", async () =>
     view.getByText("Only the Bots you use draw on your skills."),
   ).toBeTruthy();
   expect(
-    view.getByText("Every Bot on OpenBot draws on all of your skills."),
+    view.getByText(
+      "Other people’s Bots can use all the skills approved for sharing.",
+    ),
+  ).toBeTruthy();
+  expect(
+    view.getByText(
+      /An admin must approve sharing for skills you approved yourself/,
+    ),
   ).toBeTruthy();
 });
 
@@ -255,7 +262,7 @@ test("a space with no skills yet says so plainly", async () => {
   answer = { mode: "choose", sharingAllowed: true, skills: [] };
   const view = draw();
   await view.findByText(
-    "No Skills learned from your recordings yet. Once there are, each one you open here reaches every Bot.",
+    "No skills learned from your recordings yet. When they appear, choose which ones to share here.",
   );
   expect(view.queryByRole("switch")).toBeNull();
 });

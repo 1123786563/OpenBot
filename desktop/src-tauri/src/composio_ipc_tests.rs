@@ -215,14 +215,24 @@ fn main() {
 
     /// An installation a 0.3.0 first run left: local Intelligence recorded, no Composio key
     /// anywhere, and no installation identity yet.
+    /// The file the server reads broker settings from, as a test would have laid it down.
+    fn server_file(root: &std::path::Path) -> PathBuf {
+        let path = root.join(openbot_env::SETTINGS_FILES[1]);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        path
+    }
+
     fn signed_in_installation(label: &str) -> PathBuf {
         for name in BROKER_ENVIRONMENT {
             std::env::remove_var(name);
         }
         let root = crate::test_support::temp_root(label);
         std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join(".env"), "COMPOSIO_API_KEY=\nOPENBOT_ORIGIN=http://127.0.0.1:3010\n")
-            .unwrap();
+        std::fs::write(
+            server_file(&root),
+            "COMPOSIO_API_KEY=\nOPENBOT_ORIGIN=http://127.0.0.1:3010\n",
+        )
+        .unwrap();
         local_eval_state::begin(
             &root,
             &local_eval::StackId::parse("local-abc123").unwrap(),
@@ -301,7 +311,7 @@ fn main() {
             openbot_desktop_lib::vault::recall(&root, "COMPOSIO_PROVISIONED_API_KEY").unwrap(),
             Some(PROJECT_KEY.to_owned())
         );
-        assert!(!std::fs::read_to_string(root.join(".env"))
+        assert!(!std::fs::read_to_string(server_file(&root))
             .unwrap()
             .contains(PROJECT_KEY));
         assert!(!root.join(".openbot-apps").exists());
@@ -426,14 +436,14 @@ fn main() {
 
         let root = signed_in_installation("composio-supplied");
         let env = "COMPOSIO_API_KEY=synthetic-person-key\nOPENBOT_ORIGIN=http://127.0.0.1:3010\n";
-        std::fs::write(root.join(".env"), env).unwrap();
+        std::fs::write(server_file(&root), env).unwrap();
         let secrets = start_environment(&root);
         assert_eq!(
             secrets.get("COMPOSIO_API_KEY").map(String::as_str),
             Some("synthetic-person-key")
         );
         assert_eq!(cli.argv(), None);
-        assert!(std::fs::read_to_string(root.join(".env"))
+        assert!(std::fs::read_to_string(server_file(&root))
             .unwrap()
             .contains("COMPOSIO_API_KEY=synthetic-person-key"));
         std::fs::remove_dir_all(root).unwrap();

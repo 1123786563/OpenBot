@@ -14,7 +14,8 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, within } from "@testing-library/react";
+import { act, cleanup, render, within } from "@testing-library/react";
+import { i18n, setLocalePreference } from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
@@ -57,13 +58,16 @@ beforeAll(() => {
   GlobalRegistrator.register({ url: "http://localhost/" });
   globalThis.WebSocket = OfflineWebSocket as unknown as typeof WebSocket;
 });
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   globalThis.fetch = Object.assign(
     async () => Response.json({ error: "not served" }, { status: 404 }),
     { preconnect: originalFetch.preconnect },
   );
 });
-afterEach(() => {
+afterEach(async () => {
+  // Tests here may end in Chinese; the next file's tests expect English.
+  await i18n.changeLanguage("en");
   cleanup();
   for (const client of clients) client.clear();
   clients.length = 0;
@@ -316,3 +320,131 @@ test("a single-person install has no Sign out, because nobody signed in", async 
   expect(within(menu).queryByRole("menuitem", { name: "Sign out" })).toBeNull();
   expect(within(menu).getAllByRole("menuitem").length).toBeGreaterThan(0);
 });
+
+test("sidebar and the open account menu switch language without remounting", async () => {
+  const { view, user } = renderSidebar("admin");
+  const workspace = await view.findByRole("navigation", { name: "Workspace" });
+  await user.click(view.getByRole("button", { name: /Maya Chen/ }));
+  const menu = await view.findByRole("menu");
+  await act(() => setLocalePreference("zh-CN"));
+  expect(view.getByRole("navigation", { name: "工作区" })).toBe(workspace);
+  expect(
+    links(workspace).map(({ label, to }) => ({
+      label: label.replace(/\d+$/, ""),
+      to,
+    })),
+  ).toEqual([
+    { label: "Bot", to: "/bots" },
+    { label: "例行任务", to: "/routines" },
+    { label: "目标", to: "/responsibilities?view=goals" },
+    { label: "能力", to: "/capabilities" },
+    { label: "连接", to: "/connections" },
+    { label: "积分", to: "/billing" },
+  ]);
+  expect(
+    within(workspace).getByRole("img", { name: "1 件事需要你处理" }),
+  ).toBeTruthy();
+  expect(view.getByRole("menu")).toBe(menu);
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent?.trim()),
+  ).toEqual(["管理", "设置", "退出登录"]);
+  expect(view.getByRole("button", { name: /Maya Chen/ })).toBeTruthy();
+  expect(view.getByText("还没有对话")).toBeTruthy();
+  await act(() => setLocalePreference("en"));
+  expect(view.getByRole("navigation", { name: "Workspace" })).toBe(workspace);
+  expect(within(menu).getByRole("menuitem", { name: "Sign out" })).toBeTruthy();
+});
+
+test("the sidebar rail speaks the language and keeps the pane's state", async () => {
+  const { view, user } = renderSidebar("user");
+  await view.findByRole("navigation", { name: "Workspace" });
+  const rail = view.getByRole("button", { name: "Toggle Sidebar" });
+  expect(rail.getAttribute("title")).toBe("Drag to resize, click to hide");
+  await act(() => setLocalePreference("zh-CN"));
+  const zhRail = view.getByRole("button", { name: "切换侧栏" });
+  expect(zhRail).toBe(rail);
+  expect(zhRail.getAttribute("title")).toBe("拖动调整宽度，点击隐藏侧栏");
+  // Clicking without dragging hides the pane; the language switch must not bring it back.
+  const pane = () =>
+    view.container.querySelector<HTMLDivElement>(
+      '[data-slot="sidebar"]:not([data-mobile="true"])',
+    );
+  await user.click(zhRail);
+  expect(pane()?.getAttribute("data-state")).toBe("collapsed");
+  await act(() => setLocalePreference("en"));
+  expect(pane()?.getAttribute("data-state")).toBe("collapsed");
+  expect(view.getByRole("button", { name: "Toggle Sidebar" })).toBe(rail);
+  await user.click(rail);
+  expect(pane()?.getAttribute("data-state")).toBe("expanded");
+});
+
+/*
+ * The whole matrix in Chinese, written out by hand rather than read back from the list: the words
+ * in Chinese, and the addresses exactly as they are in English. A destination that changed its
+ * address, its order or who may see it when the language changed fails here.
+ */
+const TEAM_PRIMARY = [
+  ["Bot", "/bots"],
+  ["例行任务", "/routines"],
+  ["目标", "/responsibilities?view=goals"],
+  ["能力", "/capabilities"],
+  ["连接", "/connections"],
+  ["积分", "/billing"],
+] as const;
+const PERSONAL_PRIMARY = [
+  ["Bot", "/bots"],
+  ["例行任务", "/routines"],
+  ["目标", "/responsibilities?view=goals"],
+  ["连接", "/connections"],
+  ["积分", "/billing"],
+] as const;
+const BUSINESS_THEN_SETTINGS = [
+  // Not a page: a button that opens the list of team features.
+  ["OpenBot for Business™", null],
+  ["设置", "/settings"],
+] as const;
+
+/** `[label, address]` of the pages in `root`, in document order; the Bots badge's count is left off. */
+function pages(root: HTMLElement) {
+  return links(root).map(({ label, to }) => [label.replace(/\d+$/, ""), to]);
+}
+
+test.each([
+  [
+    "admin",
+    "team",
+    TEAM_PRIMARY,
+    [
+      ["管理", "/admin"],
+      ["设置", "/settings"],
+    ],
+    true,
+  ],
+  ["user", "team", TEAM_PRIMARY, [["设置", "/settings"]], true],
+  ["admin", "personal", PERSONAL_PRIMARY, BUSINESS_THEN_SETTINGS, false],
+  ["user", "personal", PERSONAL_PRIMARY, BUSINESS_THEN_SETTINGS, false],
+] as const)(
+  "a %s on the %s edition reaches the same destinations in Chinese",
+  async (role, edition, primary, account, signOut) => {
+    const { view, user } = renderSidebar(role, edition);
+    await view.findByRole("navigation", { name: "Workspace" });
+    await act(() => setLocalePreference("zh-CN"));
+    const workspace = view.getByRole("navigation", { name: "工作区" });
+    expect(pages(workspace)).toEqual(primary.map(([label, to]) => [label, to]));
+    await user.click(view.getByRole("button", { name: /Maya Chen/ }));
+    const menu = await view.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent?.trim()),
+    ).toEqual([
+      ...account.map(([label]) => label),
+      ...(signOut ? ["退出登录"] : []),
+    ]);
+    expect(pages(menu)).toEqual(
+      account.filter(([, to]) => to).map(([label, to]) => [label, to]),
+    );
+  },
+);

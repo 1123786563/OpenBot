@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useTranslation } from "@/i18n";
 import { EASE_OUT } from "@/lib/motion";
 
 /**
@@ -53,6 +54,7 @@ export function DetailPanel({
   waiting?: ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
   const shouldReduceMotion = useReducedMotion();
   const container = useRef<HTMLDivElement>(null);
@@ -125,7 +127,7 @@ export function DetailPanel({
               </div>
               <div className="flex flex-row gap-1.5">
                 <Button
-                  aria-label="Close details"
+                  aria-label={t("frame.closeDetails", "Close details")}
                   onClick={onClose}
                   variant="ghost"
                   size="icon"

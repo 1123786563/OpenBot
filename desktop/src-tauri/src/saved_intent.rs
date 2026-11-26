@@ -235,7 +235,7 @@ fn persist_configuration_with(
         "OpenBot could not record the saved connections. Your previous settings are kept; try Start again.",
         error.to_string(),
     ))?;
-    crate::env::write(&root.join(".env"), settings, purge)
+    crate::env::write_settings(root, settings, purge)
         .map_err(|error| Problem::with("OpenBot could not write its settings.", error.to_string()))
 }
 
@@ -243,6 +243,15 @@ fn persist_configuration_with(
 mod tests {
     use super::*;
     use crate::test_support::temp_root;
+
+    /// Every settings file, and a `.env` left in the root, as one text.
+    fn everything_written(root: &std::path::Path) -> String {
+        crate::env::SETTINGS_FILES
+            .iter()
+            .chain([".env"].iter())
+            .map(|file| std::fs::read_to_string(root.join(file)).unwrap_or_default())
+            .collect()
+    }
 
     fn fixture(label: &str) -> (std::path::PathBuf, BTreeMap<String, String>, String) {
         let root = temp_root(label);
@@ -350,7 +359,7 @@ mod tests {
                 },
             )
             .unwrap();
-            let written = std::fs::read_to_string(root.join(".env")).unwrap();
+            let written = everything_written(&root);
             assert!(written.contains("CUSTOM=kept"));
             assert!(!written.contains("synthetic"));
             assert_eq!(
@@ -700,15 +709,19 @@ mod tests {
     #[test]
     fn saved_credentials_remain_recorded_if_later_settings_write_fails() {
         let root = temp_root("post-persistence-settings-failure");
-        std::fs::create_dir_all(root.join(".env")).unwrap();
+        // A folder where each settings file belongs: nothing can be written to any of them.
+        for file in crate::env::SETTINGS_FILES {
+            std::fs::create_dir_all(root.join(file)).unwrap();
+        }
         let secrets =
             BTreeMap::from([("CLAUDE_CODE_OAUTH_TOKEN".into(), "synthetic-claude".into())]);
         let credential = ModelCredential::ClaudePlan {
             token: "synthetic-claude".into(),
         };
+        let settings = BTreeMap::from([("SERVER_PORT".to_string(), "3001".to_string())]);
         let problem = persist_configuration_with(
             &root,
-            &BTreeMap::new(),
+            &settings,
             &secrets,
             &secrets,
             &credential,

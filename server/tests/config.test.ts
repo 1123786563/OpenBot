@@ -1016,7 +1016,7 @@ describe("deployment configuration", () => {
   // about directly: a live line here is the regression, whatever the code does afterwards.
   test("the shipped example does not turn private hosts on", () => {
     const example = readFileSync(
-      new URL("../../.env.example", import.meta.url),
+      new URL("../../deploy/openbot/.env.server.example", import.meta.url),
       "utf8",
     );
 

@@ -1,0 +1,138 @@
+services:
+  init-secrets:
+    image: ${OPENBOT_IMAGE:?Enter the source-built server image}
+    container_name: ${CONTAINER_NAME}-init-secrets
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    entrypoint: [bun, /panel-secrets.mjs, init]
+    command: ["WORKER_SHARED_SECRET:32:hex", "KEY_ENCRYPTION_KEY:32:base64", "BETTER_AUTH_SECRET:32:hex"]
+    environment:
+      WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:-}
+      KEY_ENCRYPTION_KEY: ${KEY_ENCRYPTION_KEY:-}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+    volumes:
+      - ./panel-secrets.mjs:/panel-secrets.mjs:ro
+      - installation-secrets:/panel-secrets
+  openbot:
+    entrypoint: [bun, /panel-secrets.mjs, run]
+    command: [bun, --no-env-file, --preload, ./scripts/infisical-env.ts, src/production-entry.ts]
+    volumes:
+      - ./panel-secrets.mjs:/panel-secrets.mjs:ro
+      - installation-secrets:/panel-secrets:ro
+    image: ${OPENBOT_IMAGE:?Enter the source-built server image}
+    container_name: ${CONTAINER_NAME}
+    restart: unless-stopped
+    labels:
+      createdBy: Apps
+    environment:
+      PORT: "3001"
+      BOT_PROVIDER: openai
+      OPENBOT_SINGLE_USER: "false"
+      OPENBOT_PUBLIC_URL: ${OPENBOT_PUBLIC_URL:?Enter the HTTPS site URL}
+      BETTER_AUTH_URL: ${OPENBOT_PUBLIC_URL:?Enter the HTTPS site URL}
+      TRUSTED_ORIGINS: ${OPENBOT_PUBLIC_URL:?Enter the HTTPS site URL}
+      INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:?Enter the admin email}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:?Enter the Google OAuth client ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:?Enter the Google OAuth client secret}
+      INTELLIGENCE_API_URL: ${INTELLIGENCE_API_URL:-}
+      INTELLIGENCE_GATEWAY_WS_URL: ${INTELLIGENCE_GATEWAY_WS_URL:-}
+      CPK_INTELLIGENCE_API_KEY: ${CPK_INTELLIGENCE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Enter the model API key}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      BOT_MODEL: ${BOT_MODEL:-}
+      DEPLOYMENT_ID: ${DEPLOYMENT_ID:-openbot}
+      COPILOTKIT_OPENAI_API: ${COPILOTKIT_OPENAI_API:-chat}
+      MANAGED_AGENT_AG_UI_URL: ${MANAGED_AGENT_AG_UI_URL:-}
+      MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:-}
+      AGENT_COMPUTER_URL: ${AGENT_COMPUTER_URL:-}
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:-}
+      COMPUTER_SUPERVISOR_URL: ${COMPUTER_SUPERVISOR_URL:-}
+      SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:-}
+      AGENT_TOOL_TOKEN: ${AGENT_TOOL_TOKEN:-}
+      OPENBOT_HINDSIGHT_API_URL: ${OPENBOT_HINDSIGHT_API_URL:-}
+      OPENBOT_HINDSIGHT_API_KEY: ${OPENBOT_HINDSIGHT_API_KEY:-}
+      OPENBOT_OPIK_API_URL: ${OPENBOT_OPIK_API_URL:-}
+      OPENBOT_OPIK_API_KEY: ${OPENBOT_OPIK_API_KEY:-}
+      OPENBOT_OPIK_WORKSPACE: ${OPENBOT_OPIK_WORKSPACE:-}
+      OPENBOT_OPIK_PROJECT: ${OPENBOT_OPIK_PROJECT:-openbot-runs}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_LOGS_HEADERS: ${OTEL_EXPORTER_OTLP_LOGS_HEADERS:-}
+      OPENBOT_OPENOBSERVE_URL: ${OPENBOT_OPENOBSERVE_URL:-}
+      INFISICAL_SITE_URL: ${INFISICAL_SITE_URL:-}
+      INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
+      INFISICAL_ENV: ${INFISICAL_ENV:-prod}
+      INFISICAL_CLIENT_ID: ${INFISICAL_CLIENT_ID:-}
+      INFISICAL_CLIENT_SECRET: ${INFISICAL_CLIENT_SECRET:-}
+      DATABASE_URL: &db-url postgresql://${PANEL_DB_USER:?Enter the database user}:${DB_URI_PASSWORD:-${PANEL_DB_USER_PASSWORD:?Enter the database password}}@${PANEL_DB_HOST:?Select a database instance}:${PANEL_DB_PORT:?Missing database instance port}/${PANEL_DB_NAME:?Enter the database name}?sslmode=${DB_SSL_MODE:-disable}
+    ports:
+      - 127.0.0.1:${PANEL_APP_PORT_HTTP:-18001}:3001
+    networks:
+      1panel-network:
+        aliases:
+          - openbot-api
+      agents: {}
+      telemetry: {}
+      default: {}
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r = await fetch('http://127.0.0.1:3001/health'); process.exit(r.ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    depends_on:
+      init-secrets:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+  migrate:
+    image: ${OPENBOT_IMAGE:?Enter the source-built server image}
+    container_name: ${CONTAINER_NAME}-migrate
+    working_dir: /app/server
+    restart: "no"
+    command: ["bun", "--no-env-file", "scripts/migrate.ts"]
+    environment:
+      DATABASE_URL: *db-url
+    labels:
+      createdBy: Apps
+      skipStatusCheck: "true"
+    networks:
+      - 1panel-network
+  worker:
+    entrypoint: [bun, /panel-secrets.mjs, run]
+    command: [bun, --no-env-file, ../worker/src/index.ts]
+    volumes:
+      - ./panel-secrets.mjs:/panel-secrets.mjs:ro
+      - installation-secrets:/panel-secrets:ro
+    image: ${OPENBOT_IMAGE:?Enter the source-built server image}
+    container_name: ${CONTAINER_NAME}-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: *db-url
+      SERVER_INTERNAL_URL: http://openbot:3001
+      LAGO_URL: ${LAGO_URL:-}
+      LAGO_API_KEY: ${LAGO_API_KEY:-}
+      LAGO_USAGE_SUBSCRIPTION_ID: ${LAGO_USAGE_SUBSCRIPTION_ID:-}
+    labels:
+      createdBy: Apps
+    depends_on:
+      init-secrets:
+        condition: service_completed_successfully
+      openbot:
+        condition: service_healthy
+    networks:
+      - default
+      - 1panel-network
+networks:
+  1panel-network:
+    external: true
+  agents:
+    name: ${AGENTS_NETWORK:?Enter the Agents Docker network}
+    external: true
+  telemetry:
+    name: openbot-observability
+    external: true
+volumes:
+  installation-secrets: {}

@@ -327,6 +327,9 @@ export function createPersonalSaasApp(
     reconcile: config.closureCleanup,
     stopped: computer?.stopped,
     eraseComputer: computer?.eraseStorage,
+    agenticStorage: Boolean(
+      config.computer && "agentSandbox" in config.computer,
+    ),
     eraseThread: config.botRuntime?.eraseThread,
   });
   const native = nativeAuth({
@@ -1060,6 +1063,21 @@ export function createPersonalSaasApp(
                       </VStack>
                     }
                   />
+                  {usage.storage.attachmentUsed !== undefined && (
+                    <ListItem
+                      label={
+                        <VStack gap={2}>
+                          Attachments: {usage.storage.attachmentUsed} bytes ·
+                          Computer files:{" "}
+                          {usage.storage.computerUsed === null
+                            ? "Unavailable"
+                            : `${usage.storage.computerUsed} bytes`}{" "}
+                          · Computer reservation:{" "}
+                          {usage.storage.computerReserved} bytes
+                        </VStack>
+                      }
+                    />
+                  )}
                   <ListItem
                     label={
                       <VStack gap={2}>
@@ -2297,10 +2315,9 @@ export function createPersonalSaasApp(
   return Object.assign(app, {
     accessWorkspaceComputerForTask: computer?.accessForTask,
     renewWorkspaceComputers: computer?.renew,
-    async sweepWorkspaceClosures() {
-      await closure.sweep();
-      await sweepCleanup();
-    },
+    reconcileStoppingWorkspaceComputers: computer?.reconcileStopping,
+    sweepWorkspaceClosures: closure.sweep,
+    sweepWorkspaceCleanup: sweepCleanup,
     sweepBotWork: () => botWork.sweep(runPersonalBot, executeManaged),
     sweepBotDecisions: () => config.botRuntime?.sweepDecisions(quotas),
     offerAutomationSchedules: automation.offerSchedules,

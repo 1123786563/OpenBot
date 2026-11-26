@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf '%s\n' 'Usage: deploy/compose.sh [--local] <component> <docker compose args...>' \
+    'Components: postgres bifrost infisical openobserve hindsight opik lago agents openbot' \
+    'Local-only component: spire'
+}
+
+if [[ ${1:-} == --help || $# == 0 ]]; then
+  usage
+  exit 0
+fi
+
+deploy=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+local_mode=false
+if [[ $1 == --local ]]; then
+  local_mode=true
+  shift
+fi
+if (( $# < 2 )); then
+  usage >&2
+  exit 2
+fi
+component=$1
+shift
+local_config="$deploy/.local"
+
+case "$component" in
+  postgres|bifrost|infisical|openobserve|hindsight|opik|lago|agents|openbot)
+    directory="$deploy/$component"
+    ;;
+  spire)
+    if [[ $local_mode != true ]]; then
+      usage >&2
+      exit 2
+    fi
+    exec docker compose --env-file "$local_config/agents.env" --env-file "$local_config/spire.env" \
+      -p openbot-local-spire -f "$deploy/../docker-compose.yml" "$@"
+    ;;
+  *)
+    printf 'Unknown component: %s\n' "$component" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+args=(-f "$directory/docker-compose.yml")
+if [[ $local_mode == true && $component != infisical ]]; then
+  args+=(--env-file "$local_config/$component.env")
+  case "$component" in
+    bifrost) args+=(-f "$directory/docker-compose.override.yml.example" -f "$local_config/bifrost.yml") ;;
+    agents|openbot) args+=(-f "$local_config/$component.yml") ;;
+    opik) export OPIK_SOURCE="$local_config/upstream-opik" ;;
+    lago) export LAGO_SOURCE="$local_config/upstream-lago" ;;
+  esac
+else
+  args+=(--env-file "$directory/.env")
+  if [[ -f "$directory/docker-compose.override.yml" ]]; then
+    args+=(-f "$directory/docker-compose.override.yml")
+  fi
+fi
+exec docker compose "${args[@]}" "$@"
