@@ -317,6 +317,12 @@ describe("a skill's page", () => {
     const grace = await view.findByRole("switch", {
       name: "Grace offers Triage the inbox",
     });
+    // The consequence is stated before any switch is pressed.
+    expect(
+      view.getByText(
+        "These switches update the / menu immediately. The form below saves the skill’s content separately.",
+      ),
+    ).toBeTruthy();
     fireEvent.click(grace);
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes[0]).toEqual({

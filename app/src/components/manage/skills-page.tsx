@@ -8,6 +8,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -54,6 +55,7 @@ export function SkillsPage() {
   const skills = plugins.data?.skills ?? [];
   /** Narrows the list by title. Shown only once the list is long enough to need it. */
   const [search, setSearch] = React.useState("");
+  const heading = React.useRef<HTMLHeadingElement>(null);
   const needle = search.trim().toLowerCase();
   const listed = needle
     ? skills.filter((skill) =>
@@ -79,6 +81,7 @@ export function SkillsPage() {
           ? "Write instructions your Bots follow when you pick a skill from the / menu. A skill only uses what a Bot can already do."
           : "Write instructions a Bot follows when someone picks a skill from the / menu. A skill only uses what a Bot can already do, and you choose which Bots offer it."
       }
+      headingRef={heading}
       title="Skills"
     >
       {/* One section, so no title: the page title already names it. */}
@@ -106,18 +109,14 @@ export function SkillsPage() {
             </PageRows>
           </div>
         ) : !plugins.data ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load skills.
-            </p>
-            <Button
-              disabled={plugins.isFetching}
-              onClick={() => void plugins.refetch()}
-              size="sm"
-              variant="outline"
-            >
-              Retry
-            </Button>
+          <div className="mt-4">
+            <ReadError
+              focusAfterRetry={() => heading.current}
+              message="Couldn't load skills."
+              retry={plugins.refetch}
+              retryBelow
+              retrying={plugins.isFetching}
+            />
           </div>
         ) : skills.length === 0 ? (
           <PageEmpty

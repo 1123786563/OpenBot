@@ -17,12 +17,20 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { queryClient } from "@/query-client";
-import { Route as ComponentRoute } from "@/routes/_authed/admin/components/$name";
 import type { ComponentRecord } from "@/lib/components/queries";
 import * as gallery from "@/lib/copilot/gallery-registry";
+import { queryClient } from "@/query-client";
+import { Route as ComponentRoute } from "@/routes/_authed/admin/components/$name";
+import { Route as ListRoute } from "@/routes/_authed/admin/components/index";
+import { Route as PlaygroundRoute } from "@/routes/_authed/admin/playground";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -107,6 +115,11 @@ beforeEach(() => {
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     if (method !== "GET") writes.push({ path, body });
+    if (path === "/api/sandboxed") {
+      return method === "GET"
+        ? Response.json({ components: [] })
+        : Response.json({ error: "Temporary outage" }, { status: 503 });
+    }
     if (path === "/api/components")
       return Response.json({ components: [component] });
     if (path === "/api/components/functions")
@@ -134,12 +147,12 @@ afterEach(() => {
   queryClient.setDefaultOptions(defaults);
 });
 
-function open() {
+function open(at = `/admin/components/${NAME}`) {
   const root = createRootRoute({ component: Outlet });
   const list = createRoute({
     getParentRoute: () => root,
     path: "/admin/components",
-    component: () => null,
+    component: ListRoute.options.component,
   });
   const one = (
     ComponentRoute as unknown as { update: (options: unknown) => never }
@@ -148,10 +161,15 @@ function open() {
     path: "/admin/components/$name",
     getParentRoute: () => root,
   });
+  const playground = createRoute({
+    getParentRoute: () => root,
+    path: "/admin/playground",
+    component: PlaygroundRoute.options.component,
+  });
   const router = createRouter({
-    routeTree: root.addChildren([list, one]),
+    routeTree: root.addChildren([list, one, playground]),
     history: createMemoryHistory({
-      initialEntries: [`/admin/components/${NAME}`],
+      initialEntries: [at],
     }),
   });
   const view = render(
@@ -382,4 +400,111 @@ describe("Publish description", () => {
     ]);
     expect(view.getByText("Description published.")).toBeTruthy();
   });
+});
+
+describe("the components list", () => {
+  test("a failed read is retried in place, and focus returns to the heading", async () => {
+    const serve = global.fetch;
+    let unavailable = true;
+    global.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (
+          String(input).split("?")[0] === "/api/components" &&
+          (init?.method ?? "GET") === "GET" &&
+          unavailable
+        ) {
+          return Response.json({ error: "Temporary outage" }, { status: 503 });
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    const { view } = open("/admin/components");
+    expect(await view.findByText("Couldn't load components.")).toBeTruthy();
+    unavailable = false;
+    const retry = view.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+
+    expect(await view.findByText("Activity report")).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
+    // The tile is still a link, so the failure keeps its list context.
+    expect(view.getByTestId(`component-${NAME}`).tagName).toBe("A");
+    // The retry button is gone; focus lands on the page it recovered, not on BODY.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        view.getByRole("heading", { name: "UI components" }),
+      ),
+    );
+  });
+});
+
+describe("Bot access", () => {
+  test("Available to says what turning a Bot off does before any switch is pressed", async () => {
+    const { view, user } = open();
+    await user.click(await view.findByTestId(`grants-${NAME}`));
+    const dialog = await view.findByRole("dialog", { name: "Available to" });
+    expect(
+      within(dialog).getByText(
+        "Turn a Bot off to withhold this component from it.",
+      ),
+    ).toBeTruthy();
+    // The switch that follows the sentence is the Bot grant it describes.
+    expect(within(dialog).getByTestId(`grant-${NAME}-bot-ada`)).toBeTruthy();
+  });
+});
+
+test("Playground explains who can use a component before publishing it", async () => {
+  const { view, user } = open("/admin/playground");
+  await user.type(await view.findByLabelText("Name"), "activity_report");
+  await user.type(view.getByLabelText("Title"), "Activity report");
+  await user.click(view.getByRole("button", { name: /^Publish$/ }));
+  const dialog = await view.findByRole("alertdialog", {
+    name: "Publish Activity report?",
+  });
+  const consequence =
+    "Publishing makes it available to every Bot. Turn it off for one Bot on the UI components page.";
+  expect(within(dialog).getByText(consequence)).toBeTruthy();
+  expect(writes).toEqual([]);
+
+  await user.click(within(dialog).getByRole("button", { name: "Publish" }));
+  await within(dialog).findByText(/your edits are still in the editor/i);
+  expect(within(dialog).getByText(consequence)).toBeTruthy();
+  expect(writes.map((write) => write.path)).toEqual(["/api/sandboxed"]);
+});
+
+test("a failed gallery tile still opens its detail and detail Retry focuses Preview", async () => {
+  component = record({ kind: "sandboxed" });
+  const serve = global.fetch;
+  let unavailable = true;
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).split("?")[0] === "/api/sandboxed" && unavailable) {
+        return Response.json({ error: "Temporary outage" }, { status: 503 });
+      }
+      return serve(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const { view, user } = open("/admin/components");
+  const tile = await view.findByTestId(`component-${NAME}`);
+  expect(
+    await within(tile).findByText("Couldn't load the preview."),
+  ).toBeTruthy();
+  expect(tile.querySelector("button")).toBeNull();
+
+  await user.click(tile);
+  const retry = await view.findByRole("button", { name: "Retry" });
+  unavailable = false;
+  retry.focus();
+  await user.keyboard("{Enter}");
+
+  await view.findByText("Published in the playground.");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      view.getByRole("heading", { name: "Preview" }),
+    ),
+  );
 });

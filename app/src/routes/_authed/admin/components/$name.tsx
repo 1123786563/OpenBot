@@ -1,4 +1,5 @@
-import { HStack } from "@astryxdesign/core/Stack";
+import { Heading } from "@astryxdesign/core/Heading";
+import { HStack, Stack } from "@astryxdesign/core/Stack";
 import {
   IconAlertTriangle,
   IconChevronRight,
@@ -58,8 +59,9 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { canKeepCachedRead, ClientError } from "@/lib/client";
+import { ClientError, canKeepCachedRead } from "@/lib/client";
 import {
   saveComponentDraftMutationOptions,
   setComponentFunctionMutationOptions,
@@ -287,6 +289,8 @@ function ComponentDetail({
   components: UseQueryResult<ComponentRecord[]>;
   heading: RefObject<HTMLHeadingElement | null>;
 }) {
+  const { t } = useTranslation();
+  const previewHeading = useRef<HTMLHeadingElement>(null);
   const queryClient = useQueryClient();
   const botsQuery = useQuery(agentListQueryOptions());
   const functionsQuery = useQuery(dataFunctionsQueryOptions());
@@ -422,18 +426,28 @@ function ComponentDetail({
           {notice}
         </p>
       ) : null}
-      {/*
-       * The render at the top of the page. Bordered and rounded rather than bleeding to the edges:
-       * inside a prose column that is what the tiles do, and a page has no dialog edge to reach for.
-       */}
-      <div className="relative mt-8 aspect-[2/1] overflow-hidden rounded-lg border border-border bg-card">
-        <div className="absolute inset-0">
-          <SettingsItemBackground className="h-full w-full" />
-        </div>
-        <div className="absolute inset-0 z-10">
-          <AdminComponentPreview kind={component.kind} name={component.name} />
-        </div>
-      </div>
+      <Stack as="section" aria-labelledby="component-preview-heading" gap={2}>
+        <Heading
+          id="component-preview-heading"
+          level={2}
+          ref={previewHeading}
+          tabIndex={-1}
+        >
+          {t("components.preview.heading", "Preview")}
+        </Heading>
+        <Stack className="relative aspect-[2/1] overflow-hidden rounded-lg border border-border bg-card">
+          <Stack className="absolute inset-0">
+            <SettingsItemBackground className="h-full w-full" />
+          </Stack>
+          <Stack className="absolute inset-0 z-10">
+            <AdminComponentPreview
+              focusAfterRetry={() => previewHeading.current}
+              kind={component.kind}
+              name={component.name}
+            />
+          </Stack>
+        </Stack>
+      </Stack>
 
       <PageSection
         description="Describe this component and choose which Bots can display it."

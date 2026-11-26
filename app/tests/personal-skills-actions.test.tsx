@@ -162,7 +162,7 @@ afterEach(() => {
 });
 
 /** `/capabilities/skills`, at the id its `Route.useSearch()` reads. */
-function renderSkills() {
+function renderSkills(at = "/skills") {
   const rootRoute = createRootRoute({ component: Outlet });
   const authedRoute = createRoute({
     id: "/_authed",
@@ -185,7 +185,7 @@ function renderSkills() {
   ]);
   const router = createRouter({
     routeTree: tree,
-    history: createMemoryHistory({ initialEntries: ["/skills"] }),
+    history: createMemoryHistory({ initialEntries: [at] }),
   });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, retryDelay: 0 } },
@@ -317,4 +317,14 @@ test("a failed delete keeps the confirmation and retries in place", async () => 
     { method: "DELETE", path: "/api/plugins/skills/standup" },
     { method: "DELETE", path: "/api/plugins/skills/standup" },
   ]);
+});
+
+test("the editor says what a Bot grant changes before it is pressed", async () => {
+  const view = renderSkills("/skills?edit=standup");
+  const sentence = await view.findByText(/Selected Bots offer/);
+  expect(sentence.textContent).toBe(
+    "Selected Bots offer /standup in the / menu. Changes take effect immediately.",
+  );
+  // OpenBot says Bot; "agent" is the model's word.
+  expect(sentence.textContent).not.toMatch(/agent/i);
 });

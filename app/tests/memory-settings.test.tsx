@@ -2,6 +2,14 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  createBrowserHistory,
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -20,7 +28,7 @@ import { settleReactWork } from "./settle-react-work";
 
 /** Settings → Memory: what the person's Bots know about them, and which Bot learned it. */
 
-beforeAll(() => GlobalRegistrator.register());
+beforeAll(() => GlobalRegistrator.register({ url: "http://localhost/" }));
 afterEach(cleanup);
 afterAll(async () => {
   await settleReactWork();
@@ -92,19 +100,59 @@ function serving(extra: MemoryRecord[] = []) {
   }) as unknown as typeof fetch;
 }
 
-function draw(node: ReactNode) {
+function draw(
+  node: ReactNode,
+  history = createMemoryHistory({
+    initialEntries: ["/before", "/"],
+    initialIndex: 1,
+  }),
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>{node}</QueryClientProvider>,
+  // The draft dialogs read the navigation blocker, so they need a mounted router.
+  const router = createRouter({
+    history,
+    routeTree: createRootRoute({ component: () => <>{node}</> }),
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router as never} />
+    </QueryClientProvider>,
   );
+  return Object.assign(view, { router });
 }
 
 test("a memory a Bot formed names the Bot that formed it", async () => {
   serving();
   const view = draw(<MemoryList />);
   expect(await view.findByText(/Learned by Expenses/)).toBeTruthy();
+});
+
+test("memory search and status filters narrow the list together", async () => {
+  serving([
+    memory({ id: "m3", content: "I prefer email receipts." }),
+    memory({
+      id: "m4",
+      content: "I work from Lisbon.",
+      reviewState: "unreviewed",
+    }),
+  ]);
+  const view = draw(<MemoryList />);
+  const user = userEvent.setup({ document });
+  await user.type(
+    await view.findByRole("searchbox", { name: "Search memories" }),
+    "receipts",
+  );
+  await user.selectOptions(
+    view.getByRole("combobox", { name: "Status" }),
+    "review",
+  );
+
+  expect(view.getByText("1 of 4 memories match")).toBeTruthy();
+  expect(view.getByText("Receipts go to finance@.")).toBeTruthy();
+  expect(view.queryByText("I prefer email receipts.")).toBeNull();
+  expect(view.queryByText("I work from Lisbon.")).toBeNull();
 });
 
 test("a failed memory read can be retried without leaving the page", async () => {
@@ -176,7 +224,7 @@ test("remembering a fact saves it", async () => {
   const view = draw(<RememberFact />);
   const user = userEvent.setup({ document });
   // The form lives in a dialog behind the page's action, not on the page.
-  fireEvent.click(view.getByRole("button", { name: "Remember a fact" }));
+  fireEvent.click(await view.findByRole("button", { name: "Remember a fact" }));
   await user.type(
     await view.findByRole("textbox", {
       name: "Something you want your Bots to know",
@@ -189,6 +237,87 @@ test("remembering a fact saves it", async () => {
       request: "POST /api/memory",
       body: { content: "I work from Lisbon." },
     }),
+  );
+});
+
+test("leaving a typed fact for another page asks first, and Keep editing keeps the text", async () => {
+  serving();
+  const view = draw(<RememberFact />);
+  const user = userEvent.setup({ document });
+  fireEvent.click(await view.findByRole("button", { name: "Remember a fact" }));
+  const field = (await view.findByRole("textbox", {
+    name: "Something you want your Bots to know",
+  })) as HTMLTextAreaElement;
+  await user.type(field, "I work from Lisbon.");
+
+  // Browser Back reaches the same `history.block` through popstate; the memory history in this
+  // harness only consults blockers on push, so push stands in for leaving the page.
+  await act(async () => view.router.history.push("/before"));
+
+  const leave = await view.findByRole("alertdialog", {
+    name: "Leave without saving?",
+  });
+  await user.click(within(leave).getByRole("button", { name: "Keep editing" }));
+  await waitFor(() =>
+    expect(
+      view.queryByRole("alertdialog", { name: "Leave without saving?" }),
+    ).toBeNull(),
+  );
+  expect(view.router.state.location.pathname).toBe("/");
+  expect(field.value).toBe("I work from Lisbon.");
+});
+
+test("browser Back protects an edited memory until the draft is discarded", async () => {
+  serving();
+  window.history.replaceState(null, "", "/before");
+  const history = createBrowserHistory();
+  try {
+    history.push("/");
+    history.flush();
+    const view = draw(<MemoryList />, history);
+    const user = userEvent.setup({ document });
+    await user.click(
+      await view.findByRole("button", {
+        name: /^Edit memory: I prefer mornings/,
+      }),
+    );
+    const field = await view.findByRole("textbox", { name: "Memory" });
+    await user.type(field, " Especially Mondays.");
+
+    await act(async () => window.history.back());
+    const leave = await view.findByRole("alertdialog", {
+      name: "Leave without saving?",
+    });
+    expect(view.router.state.location.pathname).toBe("/");
+    await user.click(
+      within(leave).getByRole("button", { name: "Discard changes" }),
+    );
+
+    await waitFor(() =>
+      expect(view.router.state.location.pathname).toBe("/before"),
+    );
+    expect(writes).toEqual([]);
+  } finally {
+    history.destroy();
+    window.history.replaceState(null, "", "/");
+  }
+});
+
+test("leaving a clean editor for another page does not ask", async () => {
+  serving();
+  const view = draw(<RememberFact />);
+  fireEvent.click(await view.findByRole("button", { name: "Remember a fact" }));
+  await view.findByRole("textbox", {
+    name: "Something you want your Bots to know",
+  });
+
+  await act(async () => view.router.history.push("/before"));
+
+  expect(
+    view.queryByRole("alertdialog", { name: "Leave without saving?" }),
+  ).toBeNull();
+  await waitFor(() =>
+    expect(view.router.state.location.pathname).toBe("/before"),
   );
 });
 
@@ -353,7 +482,9 @@ test("a failed fact stays in the editor until explicitly discarded", async () =>
   refuseWrite = "Memory is full.";
   const view = draw(<RememberFact />);
   const user = userEvent.setup({ document });
-  await user.click(view.getByRole("button", { name: "Remember a fact" }));
+  await user.click(
+    await view.findByRole("button", { name: "Remember a fact" }),
+  );
   await user.type(
     await view.findByRole("textbox", {
       name: "Something you want your Bots to know",
@@ -378,7 +509,9 @@ test("a failed fact stays in the editor until explicitly discarded", async () =>
     within(discard).getByRole("button", { name: "Discard changes" }),
   );
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
-  await user.click(view.getByRole("button", { name: "Remember a fact" }));
+  await user.click(
+    await view.findByRole("button", { name: "Remember a fact" }),
+  );
   const field = (await view.findByRole("textbox", {
     name: "Something you want your Bots to know",
   })) as HTMLTextAreaElement;
