@@ -14,7 +14,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider, initI18n } from "@/i18n";
 import { authKeys } from "@/lib/auth/queries";
-import { appReturnPath, resumeUrlFor } from "@/lib/auth/resume";
+import { appReturnPath, errorUrlFor, resumeUrlFor } from "@/lib/auth/resume";
 import { pinLocale } from "./i18n";
 
 /*
@@ -25,11 +25,13 @@ type SignInSpy = (
   provider: string,
   start: unknown,
   callbackURL?: string,
+  errorCallbackURL?: string,
 ) => Promise<void>;
 type DomainSignInSpy = (
   email: string,
   start: unknown,
   callbackURL?: string,
+  errorCallbackURL?: string,
 ) => Promise<void>;
 const realAuthClient = { ...(await import("@/lib/auth/client")) };
 let signInSpy: SignInSpy = async () => {};
@@ -105,6 +107,46 @@ test("validateSearch keeps the handle whatever shape the router parsed it into",
   expect(validate({ flow_id: ["a"] })).toEqual({ flow_id: '["a"]' });
   expect(validate({ flow_id: true })).toEqual({ flow_id: "true" });
   expect("flow_id" in validate({})).toBe(false);
+});
+
+test("validateSearch keeps a refusal reason as text and omits it when absent", () => {
+  const validate = Route.options.validateSearch as (s: unknown) => object;
+  expect(
+    validate({ error: "access_denied", error_description: "cancelled" }),
+  ).toEqual({ error: "access_denied", error_description: "cancelled" });
+  // The router JSON-parses values, so a numeric reason still arrives as the text it was.
+  expect(validate({ error: 401 })).toEqual({ error: "401" });
+  expect(validate({})).toEqual({});
+  expect("error" in validate({})).toBe(false);
+});
+
+/**
+ * A refused or cancelled provider return comes back to the sign page carrying the same search it
+ * left with, so the retry lands where the first attempt was headed.
+ */
+test("errorUrlFor returns to /sign with the search the page was opened with", () => {
+  const origin = "https://app.example";
+  const handle = "a".repeat(64);
+  const url = new URL(
+    errorUrlFor(
+      origin,
+      "flow 1",
+      handle,
+      "/settings/notifications?source=invite#updates",
+    ),
+  );
+  expect(url.origin).toBe(origin);
+  expect(url.pathname).toBe("/sign");
+  expect(url.searchParams.get("flow_id")).toBe("flow 1");
+  expect(url.searchParams.get("openfuse_request")).toBe(handle);
+  expect(url.searchParams.get("returnTo")).toBe(
+    "/settings/notifications?source=invite#updates",
+  );
+  // A hostile return address is dropped, exactly as the page drops it.
+  expect(errorUrlFor(origin, undefined, undefined, "https://evil.test/")).toBe(
+    `${origin}/sign`,
+  );
+  expect(errorUrlFor(origin, undefined)).toBe(`${origin}/sign`);
 });
 
 /** The whole return leg: what the verifier put in the URL is what sign-in carries back to it. */
@@ -209,6 +251,7 @@ function renderSignScreen(
   return {
     view,
     user: userEvent.setup({ document: view.container.ownerDocument }),
+    router,
   };
 }
 
@@ -593,6 +636,96 @@ test("a refused provider press passes the server's words through, and says its o
   await user.click(view.getByRole("button", { name: "Continue with Google" }));
   expect((await view.findByRole("alert")).textContent).toBe(
     "Couldn't open Google sign-in. Try again.",
+  );
+});
+
+/*
+ * A provider the person cancelled (or SSO refusing another way in) comes back to `/sign` carrying
+ * `?error=`, not `?flow_id=`. The screen promised a reason and a next step there, and the retry has
+ * to carry the same return address the first attempt left with.
+ */
+test("a cancelled provider return shows why, focuses the heading, and retries to the same place", async () => {
+  const asked: { callbackURL?: string; errorCallbackURL?: string }[] = [];
+  signInSpy = async (_provider, _start, callbackURL, errorCallbackURL) => {
+    asked.push({ callbackURL, errorCallbackURL });
+  };
+  const target = "/settings/notifications?source=invite#updates";
+  const { view, user, router } = renderSignScreen(
+    { providers: ["google"], sso: false, ssoRequired: false },
+    `/sign?error=access_denied&returnTo=${encodeURIComponent(target)}`,
+  );
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Sign-in was cancelled. Choose a way to sign in again.",
+  );
+  expect(document.activeElement).toBe(
+    view.getByRole("heading", { name: "Sign in to OpenBot" }),
+  );
+
+  // The reason is read once and taken out of the address, so a reload does not repeat it.
+  await waitFor(() =>
+    expect(
+      (
+        router as unknown as {
+          state: { location: { search: Record<string, unknown> } };
+        }
+      ).state.location.search.error,
+    ).toBeUndefined(),
+  );
+
+  await user.click(view.getByRole("button", { name: "Continue with Google" }));
+  await waitFor(() => expect(asked).toHaveLength(1));
+  expect(asked[0].callbackURL).toBe(`${window.location.origin}${target}`);
+  // Better Auth returns a refusal to this per-flow address rather than its global fallback.
+  expect(asked[0].errorCallbackURL).toBe(
+    `${window.location.origin}/sign?returnTo=${encodeURIComponent(target)}`,
+  );
+});
+
+test("an SSO refusal keeps the server's sentence, offers the company form, and focuses the heading", async () => {
+  const refusal =
+    "This deployment requires signing in through your company's identity provider. Enter your work email to continue.";
+  const { view } = renderSignScreen(
+    { providers: [], sso: true, ssoRequired: true },
+    `/sign?error=sso_required&error_description=${encodeURIComponent(refusal)}`,
+  );
+  expect((await view.findByRole("alert")).textContent).toBe(refusal);
+  expect(view.getByRole("textbox", { name: /Company email/ })).toBeTruthy();
+  expect(document.activeElement).toBe(
+    view.getByRole("heading", { name: "Sign in to OpenBot" }),
+  );
+});
+
+test("an unrecognised refusal names a next step without echoing the vendor's words", async () => {
+  const { view } = renderSignScreen(
+    { providers: ["google"], sso: false, ssoRequired: false },
+    `/sign?error=server_error&error_description=${encodeURIComponent("Traceback (most recent call last): secret internals")}`,
+  );
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Couldn't finish sign-in. Try again, or ask your OpenBot admin if it keeps happening.",
+  );
+  // A vendor's raw description is somebody else's words, not copy: it is never shown.
+  expect(view.queryByText(/Traceback/)).toBeNull();
+});
+
+test("a cancelled provider return speaks the interface language", async () => {
+  await pinLocale("zh-CN");
+  const { view } = renderSignScreen(
+    { providers: ["google"], sso: false, ssoRequired: false },
+    "/sign?error=access_denied",
+  );
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "登录已取消。请选择一种登录方式重试。",
+  );
+});
+
+test("an unrecognised refusal speaks the interface language", async () => {
+  await pinLocale("zh-CN");
+  const { view } = renderSignScreen(
+    { providers: ["google"], sso: false, ssoRequired: false },
+    "/sign?error=server_error",
+  );
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "无法完成登录。请重试；如果问题持续出现，请联系你的 OpenBot 管理员。",
   );
 });
 

@@ -60,6 +60,30 @@ export function resumeUrlFor(
   return path ? `${origin}${path}` : origin;
 }
 
+/**
+ * Where a provider that cancels or refuses sends the browser back: the sign page, carrying the
+ * search it was opened with so the retry still knows where it was headed.
+ *
+ * NOT the verifier: a cancelled provider has no grant to resume. Every value here is one this code
+ * built (`/sign` on this origin) and every key is omitted when absent, so the arrival is the same
+ * `/sign?flow_id=…&returnTo=…` the person started from.
+ */
+export function errorUrlFor(
+  origin: string,
+  flowId: string | undefined,
+  openFuseRequest?: string,
+  returnTo?: string,
+): string {
+  const search = new URLSearchParams();
+  if (usable(flowId)) search.set("flow_id", flowId);
+  if (openFuseRequest && openFuseResumePath(openFuseRequest))
+    search.set("openfuse_request", openFuseRequest);
+  const target = appReturnPath(returnTo);
+  if (target) search.set("returnTo", target);
+  const query = search.toString();
+  return `${origin}/sign${query ? `?${query}` : ""}`;
+}
+
 /** Only a root-relative Web page can be resumed after sign-in or onboarding. */
 export function appReturnPath(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.startsWith("/")) return;

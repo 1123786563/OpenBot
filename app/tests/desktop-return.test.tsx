@@ -110,6 +110,9 @@ test("a failed confirmation keeps the browser open and can be retried", async ()
   ).toBe("/connections/gmail");
   await userEvent.setup({ document }).click(retry);
   expect(await view.findByText("Gmail is connected.")).toBeTruthy();
+  // The recovery moves focus to where it was headed: the Desktop entry, not the top of the page.
+  const launch = view.getByRole("link", { name: "Open OpenBot Desktop" });
+  await waitFor(() => expect(document.activeElement).toBe(launch));
   await waitFor(() => expect(opened).toEqual([DESKTOP_LINK]));
   expect(asked).toEqual(
     Array(2).fill("POST /api/plugins/servers/gmail/connection/confirm"),

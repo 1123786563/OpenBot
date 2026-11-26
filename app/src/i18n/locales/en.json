@@ -199,6 +199,8 @@
   "settings.title": "General",
   "sign.admin.restore": "Use this if you administer this workspace and need to restore company sign-in.",
   "sign.admin.signIn": "Admin sign-in",
+  "sign.error.cancelled": "Sign-in was cancelled. Choose a way to sign in again.",
+  "sign.error.failed": "Couldn't finish sign-in. Try again, or ask your OpenBot admin if it keeps happening.",
   "sign.heading": "Sign in to {product}",
   "sign.options.checkAgain": "Check sign-in options",
   "sign.options.loadFailed": "Couldn't load sign-in options.",
