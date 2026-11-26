@@ -13,9 +13,14 @@ const RETENTION_MS = 24 * 60 * 60 * 1000;
 const COMPLETION_MS = 12_000;
 const EVENT_GRACE_MS = 250;
 
+export const STAGED_BROWSER_DOWNLOADS_DIRNAME = ".openbot-downloads";
+
 export function stageBrowserDownloads(profileRoot: string) {
   const directoryFor = (botId: string) =>
-    join(profileDirectoryFor(profileRoot, botId), ".openbot-downloads");
+    join(
+      profileDirectoryFor(profileRoot, botId),
+      STAGED_BROWSER_DOWNLOADS_DIRNAME,
+    );
 
   async function stage(
     botId: string,

@@ -101,8 +101,8 @@ import {
 } from "./billing/auxiliary-model";
 import { createBackgroundModel } from "./billing/background-model";
 import { budgetedTurn } from "./billing/background-model-turn";
-import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { loadCreditPackLiveChannel } from "./billing/credit-pack-live-channel";
+import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { loadIndependentAppBilling } from "./billing/independent-app-config";
@@ -113,6 +113,7 @@ import { loadTestCreditRuntimeAuthentication } from "./billing/test-credit-runti
 import { loadWeKnoraBilling } from "./billing/weknora-config";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
+import { cubeSandboxBrowsers } from "./browser/cubesandbox";
 import { personBrowserEgressPolicy } from "./browser/egress";
 import {
   botRecordRefusal,
@@ -121,7 +122,6 @@ import {
   personBrowserPlace,
   withPersonBrowsers,
 } from "./browser/host";
-import { cubeSandboxBrowsers } from "./browser/cubesandbox";
 import { personBrowserId, personBrowserInstallId } from "./browser/person";
 import {
   loadAttachmentForTurn,
@@ -194,6 +194,7 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import {
+  agentProfiles,
   brokeredConnections,
   channelAgents,
   channelMemberships,
@@ -763,6 +764,13 @@ const personBrowserPolicy = personBrowserEgressPolicy({
   openbotUrls: [config.publicUrl, config.appUrl],
   gatewayUrl: legacyIntelligence.gatewayWsUrl,
 });
+const serializeComputerLifecycle = <T>(id: string, run: () => Promise<T>) =>
+  database.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${id}, 0))`,
+    );
+    return run();
+  });
 const cubeBrowser = cubeSandboxBrowsers(process.env, {
   policyForBot: async (botId) =>
     isPersonBrowserId(botId)
@@ -773,13 +781,7 @@ const cubeBrowser = cubeSandboxBrowsers(process.env, {
           gatewayUrl: legacyIntelligence.gatewayWsUrl,
         })
       : enterpriseControls()?.policyForBot(botId),
-  serialize: (id, run) =>
-    database.transaction(async (tx) => {
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${id}, 0))`,
-      );
-      return run();
-    }),
+  serialize: serializeComputerLifecycle,
 });
 if (cubeBrowser && !config.computer)
   throw new Error(
@@ -1167,7 +1169,18 @@ const computerGateway = computerProvider
       provider: computerProvider,
       ...(cubeBrowser ? { browserProvider: cubeBrowser } : {}),
       ...(config.computerExecution
-        ? { execution: createOpenShellExecution(config.computerExecution) }
+        ? {
+            execution: createOpenShellExecution(
+              config.computerExecution,
+              serializeComputerLifecycle,
+              async () =>
+                (
+                  await database
+                    .select({ id: agentProfiles.agentId })
+                    .from(agentProfiles)
+                ).map(({ id }) => id),
+            ),
+          }
         : {}),
       ...(computerSeats ? { seats: computerSeats } : {}),
       // Who each person's computer belongs to, for the admin list.

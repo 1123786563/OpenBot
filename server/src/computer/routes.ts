@@ -10,7 +10,7 @@ import { type AuditReader, type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import type { BotBrowser } from "../browser/bot-browser";
-import { ownsPersonBrowser } from "../browser/person";
+import { ownsPersonBrowser, personBrowserId } from "../browser/person";
 import { stampNarrationArrival } from "../browser/routes";
 import {
   type ComputerSeat,
@@ -106,6 +106,16 @@ export function createComputerRoutes(
   if (botBrowser)
     routes.use("/:botId/browser/narration", stampNarrationArrival);
 
+  // Account capabilities have no Bot in the path.
+  routes.get("/pilot", requireUser, (context) => {
+    const id = context.var.actor.id;
+    const browserId = personBrowserId(id);
+    const capabilities = gateway.pilotLifecycle?.(personSeat(id, browserId));
+    return context.json({
+      lifecycle: capabilities ? { ...capabilities, browserId } : null,
+    });
+  });
+
   /**
    * Every route under a Bot id, in one place.
    *
@@ -147,9 +157,13 @@ export function createComputerRoutes(
       const route = path.slice(
         path.lastIndexOf(`/${botId}/`) + botId.length + 2,
       );
-      return context.req.method === "GET" &&
-        PERSON_BROWSER_READS.has(route) &&
-        ownsPersonBrowser(context.var.actor, botId)
+      const allowed =
+        context.req.method === "GET"
+          ? PERSON_BROWSER_READS.has(route)
+          : context.req.method === "POST" &&
+            (route === "computers/reset-profile" ||
+              route === "computers/stop-personal");
+      return allowed && ownsPersonBrowser(context.var.actor, botId)
         ? next()
         : context.json({ error: "There is no such Bot." }, 404);
     }
@@ -636,17 +650,41 @@ export function createComputerRoutes(
     }
   });
 
+  for (const action of [
+    "stop-execution",
+    "stop-personal",
+    "reset-profile",
+    "clear-workspace",
+  ] as const) {
+    routes.post(`/:botId/computers/${action}`, (context) =>
+      act(context, gateway.seatFor, (seat, actor, body) => {
+        if (
+          (action === "reset-profile" || action === "clear-workspace") &&
+          body?.confirmation !== action
+        )
+          return { error: "Confirm the selected action before proceeding." };
+        if (!gateway.changePilotLifecycle)
+          return { error: "Pilot computer actions are unavailable." };
+        return gateway.changePilotLifecycle(action, seat, actor);
+      }),
+    );
+  }
+
   /** Stop the browser, keep the logins. */
   routes.post("/:botId/computers/stop", (context) =>
     act(context, gateway.seatFor, (seat, actor) =>
-      gateway.stopComputer(seat, actor),
+      gateway.pilotLifecycle?.(seat)?.browser
+        ? { error: "Choose a scoped pilot computer action." }
+        : gateway.stopComputer(seat, actor),
     ),
   );
 
   /** Delete the profile. Every login goes with it, which is the point and also the danger. */
   routes.post("/:botId/computers/reset", (context) =>
     act(context, gateway.seatFor, (seat, actor) =>
-      gateway.resetComputer(seat, actor),
+      gateway.pilotLifecycle?.(seat)?.browser
+        ? { error: "Choose a scoped pilot computer action." }
+        : gateway.resetComputer(seat, actor),
     ),
   );
 

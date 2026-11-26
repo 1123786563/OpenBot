@@ -227,7 +227,16 @@ test.skipIf(process.env.OPENBOT_COMPUTER_BROWSER !== "1")(
       expect((await personal(`/browser-downloads/${newest?.id}`)).status).toBe(
         413,
       );
-      expect((await personal("/browser/close", {})).status).toBe(200);
+      expect(await (await personal("/computers/stop-all", {})).json()).toEqual({
+        wasRunning: true,
+      });
+      expect((await personal("/computers/reset", {})).status).toBe(200);
+      expect((await call("/computers/reset", {})).status).toBe(200);
+      expect(
+        new Uint8Array(
+          await (await call(`/browser-downloads/${id}`)).arrayBuffer(),
+        ),
+      ).toEqual(binary);
       expect(
         new Uint8Array(await (await personal(manualPath)).arrayBuffer()),
       ).toEqual(binary);

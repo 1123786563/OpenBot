@@ -90,7 +90,10 @@ import {
   parseSignInCode,
   parseSignInFill,
 } from "./sign-in";
-import { stageBrowserDownloads } from "./staged-browser-downloads";
+import {
+  STAGED_BROWSER_DOWNLOADS_DIRNAME,
+  stageBrowserDownloads,
+} from "./staged-browser-downloads";
 import {
   createTerminalSockets,
   TERMINAL_UNAVAILABLE,
@@ -390,6 +393,9 @@ const profiles = createProfiles(
   {
     personDisplay: PERSON_DISPLAY,
     onPersonPage: manualDownloads?.watch,
+    retainedProfileEntry: browserDownloads
+      ? STAGED_BROWSER_DOWNLOADS_DIRNAME
+      : undefined,
     // A Bot's browser a person is working in, or has been asked to, is never closed for memory, and
     // none of its tabs are closed for being idle. A person's own browser has no Bot's wheel to hold:
     // it is never closed for memory whoever is at it (`chooseForMemory`), and its tabs are never swept.
@@ -793,6 +799,7 @@ async function notePersonFilled(
 /** What a live-screen socket carries: the Bot whose screen it is showing. */
 type StreamData = {
   botId: string;
+  observe?: boolean;
   /** The person's input so far, applied one message after another. See input-queue.ts. */
   inputs?: InputQueue;
   /** The newest frame not sent yet: the connection or the viewer has enough on its way. */
@@ -999,6 +1006,17 @@ serve<StreamData & TerminalSocketData>({
    */
   websocket: terminalSockets.around({
     async open(ws) {
+      if (ws.data.observe && !profiles.isLive(ws.data.botId)) {
+        ws.send(
+          JSON.stringify({
+            type: "error",
+            error: COMPUTER_STOPPED,
+            fatal: true,
+          }),
+        );
+        ws.close();
+        return;
+      }
       const session = sessions.for(ws.data.botId);
       /*
        * Claimed before anything is awaited, and that order is the fix.
@@ -1135,6 +1153,14 @@ serve<StreamData & TerminalSocketData>({
       return json({ error: "Not authorised." }, 401);
     }
 
+    if (
+      OWNER.kind === "browser" &&
+      url.pathname === "/computers/stop-all" &&
+      request.method === "POST"
+    ) {
+      return json({ wasRunning: await profiles.stopAll() });
+    }
+
     if (OWNER.kind === "browser" && !browserOnlyPath(url.pathname))
       return json(
         { error: "This computer serves browser operations only." },
@@ -1267,7 +1293,16 @@ serve<StreamData & TerminalSocketData>({
         if (streamBotId === undefined) {
           return json({ error: "That is not a usable bot id." }, 400);
         }
-        if (server.upgrade(request, { data: { botId: streamBotId } }))
+        if (
+          server.upgrade(request, {
+            data: {
+              botId: streamBotId,
+              observe:
+                OWNER.kind === "browser" &&
+                url.searchParams.get("observe") === "1",
+            },
+          })
+        )
           return undefined as unknown as Response;
         return json({ error: "Expected a WebSocket upgrade." }, 400);
       }

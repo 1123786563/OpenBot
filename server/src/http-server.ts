@@ -380,9 +380,13 @@ export function startHttpServer(deps: {
             (named.socket === "stream"
               ? computerGateway.browserFor?.(seat)
               : undefined) ?? computerGateway;
+          const observing = url.searchParams.get("observe") === "1";
           const connection =
             named.socket === "terminal"
-              ? await computerGateway.terminalConnection(seat)
+              ? await computerGateway.terminalConnection(
+                  seat,
+                  observing ? "observe" : "wake",
+                )
               : {
                   url: await host.locate(seat),
                   token: host.tokenFor(seat),
@@ -393,6 +397,12 @@ export function startHttpServer(deps: {
             connection.token,
             named.socket,
           );
+          if (
+            observing &&
+            named.socket === "stream" &&
+            host !== computerGateway
+          )
+            upstream += "&observe=1";
         } catch (error) {
           // Said out loud rather than falling back to another Bot's computer, which is the failure this
           // whole path exists to prevent.

@@ -1,6 +1,26 @@
 import { queryOptions } from "@tanstack/react-query";
 import { ClientError, client } from "@/lib/client";
 
+export type PilotComputerLifecycle = {
+  browserId: string;
+  browser: boolean;
+  execution: boolean;
+};
+
+export function pilotComputerQueryOptions() {
+  return queryOptions({
+    queryKey: ["computers", "pilot"],
+    queryFn: () =>
+      client<PilotComputerLifecycle | null>(
+        "/api/computers/pilot",
+        "lifecycle",
+      ).then((lifecycle) =>
+        lifecycle?.browser || lifecycle?.execution ? lifecycle : null,
+      ),
+    retry: false,
+  });
+}
+
 /**
  * One computer as Admin sees it: a person's, or an isolated Bot's.
  *

@@ -100,6 +100,7 @@ export {
 } from "./client";
 
 import type { BrowserProvider } from "../browser/cubesandbox";
+import type { ExecutionConnectionMode } from "./openshell-execution";
 import type { PageFrameStore } from "./page-frames";
 import {
   type ActionPolicy,
@@ -182,7 +183,13 @@ export type ComputerGatewayOptions = {
   ) => Promise<ComputerConnection & { token: string }>;
   execution?: {
     pilotUsers: ReadonlySet<string>;
-    connect(seat: ComputerSeat): Promise<ComputerConnection>;
+    connect(
+      seat: ComputerSeat,
+      mode?: ExecutionConnectionMode,
+    ): Promise<ComputerConnection>;
+    stop?(seat: ComputerSeat): Promise<boolean>;
+    clear?(seat: ComputerSeat): Promise<boolean>;
+    stopPerson?(personId: string): Promise<boolean>;
   };
   signal?: AbortSignal;
   auditStore: AuditStore;
@@ -264,7 +271,10 @@ export interface ComputerGateway {
   tokenFor(seat: ComputerSeat): string | undefined;
   locate(seat: ComputerSeat): Promise<string>;
   usesExecution?(seat: ComputerSeat): boolean;
-  terminalConnection(seat: ComputerSeat): Promise<ComputerConnection>;
+  terminalConnection(
+    seat: ComputerSeat,
+    mode?: ExecutionConnectionMode,
+  ): Promise<ComputerConnection>;
   status(seat: ComputerSeat): Promise<ComputerStatus>;
   browserFor?(
     seat: ComputerSeat,
@@ -436,6 +446,16 @@ export interface ComputerGateway {
   ): Promise<{ cleared: boolean }>;
   /** Move a listed computer onto the current image. An administrator's action. */
   updateTarget(key: ComputerKey, actor: ActionActor): Promise<ComputerUpdate>;
+  pilotLifecycle?(seat: ComputerSeat): { browser: boolean; execution: boolean };
+  changePilotLifecycle?(
+    action:
+      | "stop-execution"
+      | "stop-personal"
+      | "reset-profile"
+      | "clear-workspace",
+    seat: ComputerSeat,
+    actor: ActionActor,
+  ): Promise<{ changed: boolean }>;
   stopComputer(
     seat: ComputerSeat,
     actor: ActionActor,
@@ -561,7 +581,10 @@ export function createComputerGateway(
     );
   }
 
-  async function executionAt(seat: ComputerSeat): Promise<ComputerConnection> {
+  async function executionAt(
+    seat: ComputerSeat,
+    mode?: ExecutionConnectionMode,
+  ): Promise<ComputerConnection> {
     if (!usesExecution(seat)) return at(seat, undefined, false);
     if (
       !options.execution ||
@@ -573,7 +596,7 @@ export function createComputerGateway(
       );
     }
     try {
-      const connection = await options.execution.connect(seat);
+      const connection = await options.execution.connect(seat, mode);
       return {
         ...connection,
         url: checkedAddress(connection.url),
@@ -662,7 +685,7 @@ export function createComputerGateway(
   ): Promise<T> {
     return transport.call<T>(
       terminal
-        ? await executionAt(seat)
+        ? await executionAt(seat, "observe")
         : await at(seat, undefined, browserPath(path)),
       terminal ? addressOf(seat) : requestAddress(seat, path),
       path,
@@ -1605,6 +1628,91 @@ export function createComputerGateway(
           };
         }),
       };
+    },
+
+    pilotLifecycle(seat) {
+      return {
+        browser: browserProviderFor(seat)?.reset !== undefined,
+        execution:
+          seat.key.kind === "person" &&
+          options.execution?.pilotUsers.has(seat.key.personId) === true,
+      };
+    },
+
+    async changePilotLifecycle(action, seat, actor) {
+      const browser = browserProviderFor(seat);
+      const execution =
+        seat.key.kind === "person" &&
+        options.execution?.pilotUsers.has(seat.key.personId)
+          ? options.execution
+          : undefined;
+      let changed: boolean;
+      try {
+        switch (action) {
+          case "reset-profile":
+            if (!browser?.reset)
+              throw new Error(
+                "Browser profile reset is unavailable for this seat.",
+              );
+            await browser.reset(seat);
+            changed = true;
+            break;
+          case "clear-workspace":
+            if (!execution?.clear || isPersonBrowserId(seat.botId))
+              throw new Error("Workspace clear is unavailable for this seat.");
+            changed = await execution.clear(seat);
+            break;
+          case "stop-execution":
+            if (!execution?.stop || isPersonBrowserId(seat.botId))
+              throw new Error("Execution stop is unavailable for this seat.");
+            changed = await execution.stop(seat);
+            break;
+          case "stop-personal": {
+            if (
+              !browser?.stop ||
+              !options.execution?.stopPerson ||
+              !options.execution.pilotUsers.has(actor.id)
+            )
+              throw new Error(
+                "Personal computer stop requires both pilot providers.",
+              );
+            const results = await Promise.allSettled([
+              browser.stop(seat),
+              options.execution.stopPerson(actor.id),
+            ]);
+            if (results.some((result) => result.status === "rejected"))
+              throw new Error(
+                "The personal computer did not fully stop. Retry to stop any remaining sessions.",
+              );
+            changed = results.some(
+              (result) => result.status === "fulfilled" && result.value,
+            );
+            break;
+          }
+        }
+      } catch (error) {
+        throw new ComputerUnavailableError(
+          error instanceof Error
+            ? error.message
+            : "The computer action could not complete.",
+        );
+      }
+      await writeControlEvent(
+        auditStore,
+        action === "reset-profile" || action === "clear-workspace"
+          ? "computer.reset"
+          : "computer.stopped",
+        {
+          seat:
+            action === "stop-personal"
+              ? { key: personSeat(actor.id, seat.botId).key }
+              : seat,
+          actor,
+          reason: action,
+        },
+      );
+      if (action === "reset-profile") await forget(seatText(seat));
+      return { changed };
     },
 
     /**

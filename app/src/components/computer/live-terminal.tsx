@@ -170,10 +170,10 @@ export function LiveTerminal({
     });
 
     const connection = connectScreen({
-      open: () => {
+      open: (reconnecting) => {
         const opened = new WebSocket(
           socketUrl(
-            `/api/computers/${encodeURIComponent(computerId)}/terminal`,
+            `/api/computers/${encodeURIComponent(computerId)}/terminal${reconnecting ? "?observe=1" : ""}`,
           ),
         );
         opened.binaryType = "arraybuffer";

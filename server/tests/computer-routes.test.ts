@@ -7,7 +7,7 @@ import { receiveBrowserDownload } from "../../agent-computer/src/browser-downloa
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { personBrowserId } from "../src/browser/person";
 import type { ComputerSeat } from "../src/computer/computer-key";
-import { personSeat, seatOf } from "../src/computer/computer-key";
+import { botSeat, personSeat, seatOf } from "../src/computer/computer-key";
 import {
   type ComputerGateway,
   ComputerStillStartingError,
@@ -721,4 +721,119 @@ test("manual browser downloads reach only an owned recipient workspace after exp
     await execution.stop(true);
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("pilot lifecycle routes require separate confirmations and scope actions to the signed-in seat", async () => {
+  const calls: string[] = [];
+  const ownId = personBrowserId("pilot");
+  let browserAvailable = true;
+  const gateway = createComputerGateway({
+    provider: createSharedComputerProvider({ baseUrl: "http://127.0.0.1:1" }),
+    seats: {
+      seatFor: async (id, user) =>
+        id === ownId ? botSeat(id) : personSeat(user, id),
+    },
+    browserProvider: {
+      serves: (seat) =>
+        seat.botId === ownId ||
+        (seat.key.kind === "person" && seat.key.personId === "pilot"),
+      locate: async () => "http://127.0.0.1:1",
+      status: async (seat) => ({ botId: seat.botId, state: "ready" }),
+      tokenFor: () => "fixture",
+      stop: async (seat) => {
+        calls.push(`browser:${seat.botId}`);
+        if (!browserAvailable) throw new Error("Fixture outage");
+        return true;
+      },
+      reset: async (seat) => {
+        calls.push(`profile:${seat.botId}`);
+      },
+    },
+    execution: {
+      pilotUsers: new Set(["pilot"]),
+      connect: async (_seat, mode) => {
+        calls.push(mode ?? "wake");
+        throw new Error(
+          "OpenShell execution is stopped. Reopen the terminal to start it.",
+        );
+      },
+      stop: async (seat) => {
+        calls.push(`stop:${seat.botId}`);
+        return true;
+      },
+      clear: async (seat) => {
+        calls.push(`clear:${seat.botId}`);
+        return true;
+      },
+      stopPerson: async (id) => {
+        calls.push(`execution:${id}`);
+        return true;
+      },
+    },
+    auditStore: { insert: async () => {} },
+    policy: () => undefined,
+  });
+  const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+    context,
+    next,
+  ) => {
+    context.set("actor", { id: "pilot", role: "user" } as AuthenticatedActor);
+    await next();
+  };
+  const routes = createComputerRoutes(
+    gateway,
+    {} as PolicyStore,
+    requireUser,
+    async (_actor, botId) => botId === "notes",
+  );
+  const capabilities = await routes.request("http://openbot.test/pilot");
+  expect(await capabilities.json()).toEqual({
+    lifecycle: { browserId: ownId, browser: true, execution: true },
+  });
+  const act = (path: string, confirmation?: string) =>
+    routes.request(`http://openbot.test/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmation }),
+    });
+  expect(
+    (await act("notes/computers/reset-profile", "clear-workspace")).status,
+  ).toBe(400);
+  expect((await act("notes/computers/clear-workspace")).status).toBe(400);
+  expect(
+    (await act("other/computers/clear-workspace", "clear-workspace")).status,
+  ).toBe(404);
+  expect(calls).toEqual([]);
+  const control = await routes.request(
+    "http://openbot.test/notes/control?surface=terminal",
+  );
+  expect(control.status).toBe(503);
+  expect(calls.splice(0)).toEqual(["observe"]);
+  expect((await act("notes/computers/stop-execution")).status).toBe(200);
+  expect(calls).toEqual(["stop:notes"]);
+  expect(
+    (await act("notes/computers/reset-profile", "reset-profile")).status,
+  ).toBe(200);
+  expect(
+    (await act("notes/computers/clear-workspace", "clear-workspace")).status,
+  ).toBe(200);
+  expect(
+    (
+      await act(
+        `${personBrowserId("other")}/computers/reset-profile`,
+        "reset-profile",
+      )
+    ).status,
+  ).toBe(404);
+  expect((await act(`${ownId}/computers/stop-personal`)).status).toBe(200);
+  expect(calls).toEqual([
+    "stop:notes",
+    "profile:notes",
+    "clear:notes",
+    `browser:${ownId}`,
+    "execution:pilot",
+  ]);
+  browserAvailable = false;
+  expect((await act(`${ownId}/computers/stop-personal`)).status).toBe(503);
+  expect(calls.slice(-2)).toEqual([`browser:${ownId}`, "execution:pilot"]);
 });

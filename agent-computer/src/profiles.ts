@@ -408,6 +408,8 @@ const TAB_IDLE_MS = numberFromEnv("COMPUTER_TAB_IDLE_MS", 10 * 60_000, {
 export type BrowserClosed = (botId: string) => void | Promise<void>;
 
 export type ProfilesOptions = {
+  /** A sibling of the browser data holding files that outlive profile resets. */
+  retainedProfileEntry?: string;
   /**
    * How browsers start here. The computer's own, read from its environment, unless a test needs a
    * combination the environment refuses: a person's native browser launched headless, which is how
@@ -625,6 +627,33 @@ export function createProfiles(
   // used to resolve outside the root and `reset` would delete whatever was there.
   const directoryFor = (botId: string): string =>
     profileDirectoryFor(root, botId);
+
+  async function eraseProfile(botId: string) {
+    const directory = directoryFor(botId);
+    const retained = options.retainedProfileEntry;
+    if (retained === undefined) {
+      await rm(directory, { recursive: true, force: true });
+      return;
+    }
+
+    const entries = await readdir(directory).catch((error: unknown) => {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      )
+        return [];
+      throw error;
+    });
+    await Promise.all(
+      entries
+        .filter((entry) => entry !== retained)
+        .map((entry) =>
+          rm(join(directory, entry), { recursive: true, force: true }),
+        ),
+    );
+  }
 
   /**
    * Close one Bot's browser and forget it.
@@ -1070,6 +1099,8 @@ export function createProfiles(
     return record.page;
   };
 
+  let stoppingAll: Promise<boolean> | undefined;
+
   return {
     /**
      * The Bot's page, starting its browser if it is not running.
@@ -1085,6 +1116,7 @@ export function createProfiles(
       // Only when something is closing: an unconditional await would let a stop slip in ahead of the launch.
       const closingNow = closing.get(botId);
       if (closingNow) await closingNow;
+      if (stoppingAll) throw new BrowserNotOpenError();
       /*
        * One launch at a time per Bot. Calls that arrive during a launch wait for that launch instead
        * of starting another browser against the same profile directory.
@@ -1128,6 +1160,7 @@ export function createProfiles(
       const { open } = request;
       if (isPersonBrowserId(botId) && !open) throw new BrowserNotOpenError();
 
+      if (stoppingAll) throw new BrowserNotOpenError();
       const launch = (async () => {
         // Before the launch, which is when memory jumps: a cold Chromium and its first page are the
         // largest single step up a computer takes, and the OOM killer does not wait for the cap.
@@ -1325,6 +1358,22 @@ export function createProfiles(
       }
     },
 
+    /** Close the running and starting profiles on this computer without removing their data. */
+    stopAll(): Promise<boolean> {
+      if (stoppingAll) return stoppingAll;
+      const ids = new Set([...live.keys(), ...starting.keys()]);
+      stoppingAll = Promise.all(
+        [...ids].map((id) =>
+          closeOnRequest(id, "the personal computer stopped"),
+        ),
+      )
+        .then((results) => results.some(Boolean))
+        .finally(() => {
+          stoppingAll = undefined;
+        });
+      return stoppingAll;
+    },
+
     /**
      * Stop this Bot's browser, keeping what it knows.
      *
@@ -1349,7 +1398,7 @@ export function createProfiles(
       // Its own reason rather than borrowing stop's, so the trail says which of the two happened.
       await whileClosing(botId, async () => {
         await closeOnRequest(botId, "it was reset");
-        await rm(directoryFor(botId), { recursive: true, force: true });
+        await eraseProfile(botId);
       });
     },
 
@@ -1407,7 +1456,7 @@ export function createProfiles(
           await closeAndWait(running.context);
         }
         forget();
-        await rm(directoryFor(botId), { recursive: true, force: true });
+        await eraseProfile(botId);
       });
       return wasRunning;
     },

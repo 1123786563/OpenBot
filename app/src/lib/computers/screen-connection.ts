@@ -14,7 +14,7 @@ export type ScreenSocket = {
   close: () => void;
 };
 type Options = {
-  open: () => ScreenSocket;
+  open: (reconnecting: boolean) => ScreenSocket;
   verifyOwnership: () => Promise<boolean>;
   onReady: (ready: boolean) => void;
   onProblem: (problem: string | null) => void;
@@ -48,7 +48,7 @@ export function connectScreen(options: Options) {
     });
   const connect = () => {
     if (stopped) return;
-    const current = options.open();
+    const current = options.open(attempts > 0);
     socket = current;
     let disconnected = false;
     const owns = () => !stopped && socket === current && !disconnected;

@@ -15,6 +15,8 @@ export type BrowserProvider = {
   locate(seat: ComputerSeat): Promise<string>;
   status(seat: ComputerSeat): Promise<ComputerStatus>;
   tokenFor(seat: ComputerSeat): string;
+  stop?(seat: ComputerSeat): Promise<boolean>;
+  reset?(seat: ComputerSeat): Promise<void>;
 };
 
 const sandboxSchema = z.object({
@@ -164,7 +166,49 @@ export function cubeSandboxBrowsers(
     }
   }
 
-  return {
+  async function lifecycle(
+    base: string,
+    path: string,
+    seat: ComputerSeat,
+    token: string,
+  ) {
+    const response = await fetch(base + path, {
+      method: "POST",
+      headers: {
+        "x-openbot-bot-id": seat.botId,
+        "x-openbot-computer-token": token,
+      },
+      redirect: "error",
+      signal: AbortSignal.timeout(50_000),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new ProviderError(
+        `CubeSandbox browser action answered ${response.status}.`,
+      );
+    }
+    return z
+      .object({ wasRunning: z.boolean().optional() })
+      .parse(await response.json());
+  }
+
+  const browser: BrowserProvider = {
+    async stop(seat) {
+      const { logicalId, token } = bindingFor(seat);
+      return options.serialize(logicalId, async () => {
+        const sandbox = await find(logicalId);
+        if (!sandbox) return false;
+        const base = dataAddress(address, sandbox.sandboxID);
+        return (
+          (await lifecycle(base, "/computers/stop-all", seat, token))
+            .wasRunning === true
+        );
+      });
+    },
+    async reset(seat) {
+      const base = await browser.locate(seat);
+      await lifecycle(base, "/computers/reset", seat, bindingFor(seat).token);
+    },
     serves: (seat) => volumes.has(personOf(seat) ?? ""),
     tokenFor: (seat) => bindingFor(seat).token,
     async locate(seat) {
@@ -245,6 +289,7 @@ export function cubeSandboxBrowsers(
       }
     },
   };
+  return browser;
 }
 
 // Cube passes create-time environment variables to envd. Start the browser through
