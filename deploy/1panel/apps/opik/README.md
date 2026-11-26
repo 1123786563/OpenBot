@@ -2,7 +2,7 @@
 
 对话追踪与评测。安装参数与依赖见 OpenBot 的 1Panel 部署说明。
 
-部署配置基于[上游 Compose](https://github.com/comet-ml/opik/tree/2.3.0/deployment/docker-compose)修改。许可证见[上游许可证](LICENSE-upstream)。
+部署配置基于[上游 Compose](https://github.com/comet-ml/opik/tree/2.3.4/deployment/docker-compose)修改。许可证见[上游许可证](LICENSE-upstream)。
 
 ## 数据库
 

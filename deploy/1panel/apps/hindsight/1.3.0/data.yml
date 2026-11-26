@@ -51,6 +51,16 @@ additionalProperties:
         zh-Hant: 控制台存取金鑰（必填）
         zh: 控制台访问密钥（必填）
         tr: Console access key (Zorunlu)
+    - envKey: HINDSIGHT_API_TENANT_API_KEY
+      type: password
+      default: ""
+      random: true
+      required: true
+      edit: true
+      label:
+        en: Hindsight API key (Required, callers send it as a bearer token)
+        zh: Hindsight API 密钥（必填，调用方以 Bearer 令牌携带）
+        zh-Hant: Hindsight API 金鑰（必填，呼叫方以 Bearer 權杖攜帶）
     - envKey: PANEL_DB_HOST
       type: service
       default: ""

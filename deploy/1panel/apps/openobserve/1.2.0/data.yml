@@ -157,16 +157,16 @@ additionalProperties:
       default: ""
       required: true
       label:
-        en: OpenObserve admin password (Required)
-        es-es: OpenObserve admin password (Obligatorio)
-        ja: OpenObserve admin password (必須)
-        ms: OpenObserve admin password (Wajib)
-        pt-br: OpenObserve admin password (Obrigatório)
-        ru: OpenObserve admin password (Обязательно)
-        ko: OpenObserve admin password (필수)
-        zh-Hant: OpenObserve admin password（必填）
-        zh: OpenObserve admin password（必填）
-        tr: OpenObserve admin password (Zorunlu)
+        en: OpenObserve admin password (Required; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
+        es-es: OpenObserve admin password (Obligatorio; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
+        ja: OpenObserve admin password (必須; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
+        ms: OpenObserve admin password (Wajib; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
+        pt-br: OpenObserve admin password (Obrigatório; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
+        ru: OpenObserve admin password (Обязательно; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
+        ko: OpenObserve admin password (필수; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
+        zh-Hant: OpenObserve 管理员密码（必填；8-128 位，须同时含大小写字母、数字和特殊字符，否则容器无法启动）
+        zh: OpenObserve 管理员密码（必填；8-128 位，须同时含大小写字母、数字和特殊字符，否则容器无法启动）
+        tr: OpenObserve admin password (Zorunlu; 8-128 characters with upper and lower case letters, a digit and a special character, or the container cannot start)
     - envKey: OPENBOT_DEPLOYMENT_ID
       type: text
       default: openbot
