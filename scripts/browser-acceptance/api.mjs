@@ -1,5 +1,6 @@
 // Deliberately has no upstream: unknown requests fail locally.
 import { seededConversations } from "./conversations.mjs";
+import { governance } from "./governance-fixture.mjs";
 
 const port = Number(process.env.FIXTURE_API_PORT || 41850);
 const appPort = Number(process.env.FIXTURE_APP_PORT || 41849);
@@ -52,20 +53,26 @@ Bun.serve({
   };`,
         { headers: { "content-type": "text/javascript" } },
       );
+    const governanceReply = await governance.respond(request, path, json);
+    if (governanceReply) return governanceReply;
+    const currentUser = { ...user, role: governance.role };
     if (path === "/api/me")
-      return signedIn ? json({ user }) : json({ error: "Unauthorized" }, 401);
+      return signedIn
+        ? json({ user: currentUser })
+        : json({ error: "Unauthorized" }, 401);
     if (path === "/api/capabilities")
       return json({
         authProviders: ["google", "microsoft", "okta"],
         ssoConfigured: true,
         ssoRequired: false,
         generativeUi: true,
+        edition: governance.edition,
       });
     if (path === "/api/auth/get-session")
       return json(
         signedIn
           ? {
-              user,
+              user: currentUser,
               session: {
                 id: "fixture-session",
                 userId: user.id,
