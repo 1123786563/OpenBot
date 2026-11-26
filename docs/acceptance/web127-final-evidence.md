@@ -10,6 +10,14 @@
 
 浏览器记录 360/360 张逐页截图，0 个文档级横向溢出样本，4 个含页面异常的样本，360 个含控制台警告或错误的样本。356 个样本访问了未实现的模拟接口。组件目录、已发布组件和 CopilotKit 的共用首载接口在 356 个样本中返回 501。任务、Routines、Goals 等页面还有各自的读取缺口。固定 ID 或权限守卫可以导致缺失、空态或回退，表中标注实际采集结果。Admin Playground 的 iframe 异常单独登记。
 
+## 合入主线后复验
+
+对合入主线的 `87e7b5876` 重建 Web。两轮逐页走查共用该产物，入口 HTML 的 SHA-256 为 `0fd07448b67a1806cd7c4f44d444fb04ad6ef8fb174333da0b3e6dcada68cc95`。原始产物在 `~/.local/state/openbot-spec-127/evidence/current-87e7b5876.OLJTNv/`。两轮各自的 `run.json` 位于 `baseline/` 和 `fixed-roster/`。
+
+模拟服务补齐组件目录登记、已发布组件列表及 CopilotKit 的两个启动入口。运行时发现使用 fixture 已有的 Bot。两轮各采集 360 个页面样本，书签目的地均为 63/63，文档级横向溢出均为 0。四个共用启动请求的 501 从 1,424 次降至 0。含任意 501 的页面样本从 356 个降至 216 个。剩余缺口包括 Bot 提醒、Browser、连接及会话历史接口。Playground 沙箱仍有四个 Service Worker 异常。
+
+基线的第一批模拟验收记录覆盖 129 个样本，People 的四种视口和主题组合均跑过确认流程。当前构建的会话、书签、导航和偏好定向测试 129 项通过，隔离 PostgreSQL 的 People、身份提供者、凭据和偏好集成测试另有 34 项通过。正式验收维持 0/88。
+
 ## 书签与退役
 
 21 条书签 × Team 管理员、Team 成员、Personal 共 **63/63**，覆盖六个旧外观入口、Bot 参数、Personal Memory 回退和两个回调参数。两条 Connections 回调在页面消费参数之前经过带参数的目标地址，浏览器历史保存在 `bookmark-history/run.json`。未知 `/s/*` 进入共享恢复页。组件测试另覆盖模拟登录返回和角色变化。 [书签合同](web127-bookmarks.json)
