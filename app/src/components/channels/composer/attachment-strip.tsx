@@ -2,6 +2,7 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { IconFile, IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 
@@ -151,7 +152,6 @@ export function AttachmentStrip({
                   overflowY: "auto",
                 }}
                 tabIndex={0}
-                title={file.name}
               >
                 {file.name}
               </Text>
@@ -160,18 +160,18 @@ export function AttachmentStrip({
                   Uploading…
                 </Text>
               ) : file.size === undefined ? null : (
-                <Text
-                  className="truncate text-muted-foreground text-xs"
-                  display="block"
-                  title={
-                    file.mayTruncate === true
-                      ? "The Bot reads only the first 120,000 characters of this file."
-                      : undefined
-                  }
+                <Tooltip
+                  content="The Bot reads only the first 120,000 characters of this file."
+                  isEnabled={file.mayTruncate === true}
                 >
-                  {formatBytes(file.size)}
-                  {file.mayTruncate === true ? " · may be cut" : null}
-                </Text>
+                  <Text
+                    className="truncate text-muted-foreground text-xs"
+                    display="block"
+                  >
+                    {formatBytes(file.size)}
+                    {file.mayTruncate === true ? " · may be cut" : null}
+                  </Text>
+                </Tooltip>
               )}
             </Stack>
             <RemoveButton name={file.name} onRemove={() => onRemove(file.id)} />

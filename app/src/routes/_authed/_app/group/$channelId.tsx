@@ -57,7 +57,11 @@ function RouteComponent() {
           participantIds={visibleChannel?.agentIds ?? []}
           size={22}
         />
-        <Heading level={1} size="sm" wordBreak="break-word">
+        <Heading
+          level={1}
+          style={{ fontSize: "var(--font-size-base)", minWidth: 0 }}
+          wordBreak="break-word"
+        >
           {visibleChannel?.name ?? t("conversation.group.title")}
         </Heading>
         {canReadGroup && (
