@@ -1029,6 +1029,36 @@ destinations, set `OPENBOT_OPENSHELL_NETWORK_POLICIES` to the JSON object for Op
 sandbox, update its network policy in OpenShell. The terminal uses its own handoff state
 for pilot seats. [OpenShell sandbox policy](https://docs.nvidia.com/openshell/latest/how-it-works/policies/overview)
 
+#### Replace a pilot execution workload
+
+Use OpenShell's stopped-workload image update to replace the Docker container
+while retaining the sandbox ID and its private workspace volume. Enable
+`enable_sandbox_updates = true` under `[openshell.gateway]` after all gateways
+support workload updates. This procedure requires a sandbox created with
+`persist_workspace = true`.
+
+1. Cache both images on the driver's Docker daemon. Give the replacement a
+   distinct image reference. Keep the execution image's numeric `USER 10001:10001`,
+   `/sandbox` working directory, and execution service entry point. Both images
+   must omit image-declared volumes.
+2. Pause requests that could wake the selected user and Bot's execution sandbox.
+   Stop that sandbox in its OpenShell workspace and wait for `Stopped`.
+3. With authenticated operator credentials, call `openshell.v1.OpenShell/GetSandbox`
+   for the sandbox name and explicit workspace. Pass the same name and
+   `workspace_scope`, the returned `sandbox.metadata.resource_version` as
+   `expected_resource_version`, and the target `image` to
+   `openshell.v1.SandboxUpdates/UpdateSandbox`. Supply a unique `request_id`
+   and retain it with the request so you can replay an interrupted update.
+   OpenShell 0.1.10 exposes this operation through gRPC.
+4. After the update succeeds, let OpenBot wake the stopped sandbox and read a
+   known workspace file through the normal execution route.
+
+Direct removal of the Docker workload can leave the OpenShell record and volume
+behind while preventing restart. If that happens before an update has been
+accepted, preserve the sandbox record and volume and inspect them for operator
+recovery. Deleting the sandbox or clearing its workspace removes its owned
+volume. [OpenShell v0.1.10 Docker driver](https://github.com/NVIDIA/OpenShell/blob/v0.1.10/crates/openshell-driver-docker/README.md#stopped-workload-image-updates)
+
 ### Headed or headless managed Chromium in Docker or Helm
 
 The managed backend uses Playwright's full `chromium` channel in either mode. The Docker image

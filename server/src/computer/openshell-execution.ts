@@ -273,7 +273,13 @@ export function createOpenShellExecution(
         },
       );
     } else if (existing.phase === "Stopped" || existing.phase === "Completed") {
-      await cli(["sandbox", "start", name]);
+      await cli(["sandbox", "start", name]).catch((cause: unknown) => {
+        // The record can outlive the workload. Deletion also removes its volume.
+        throw new Error(
+          "OpenShell could not restart the existing execution sandbox. Contact an operator to recover the workspace.",
+          { cause },
+        );
+      });
     } else if (existing.phase !== "Ready") {
       throw new Error(`OpenShell execution workspace is ${existing.phase}.`);
     }
