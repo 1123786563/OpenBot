@@ -152,6 +152,7 @@ setDefaultAutoSelectFamily(false);
 const RUNTIME = browserRuntimeFromEnv(process.env);
 /** Whose this computer is, which decides whether a person's browser may run on it. See person-access.ts. */
 const OWNER = computerOwner(process.env);
+
 const BROWSER_MODE = RUNTIME.mode;
 /*
  * The display this process was started on, kept before the virtual one replaces it. A person's
@@ -248,9 +249,11 @@ function seatOf(
     query?.get("bot")?.trim() ||
     DEFAULT_BOT_ID;
   const person =
-    request.headers.get("x-openbot-person-id")?.trim() ||
-    query?.get("person")?.trim() ||
-    undefined;
+    OWNER.kind === "browser"
+      ? undefined
+      : request.headers.get("x-openbot-person-id")?.trim() ||
+        query?.get("person")?.trim() ||
+        undefined;
   try {
     return { bot, seat: seatIdFor(bot, person) };
   } catch {
@@ -1114,6 +1117,12 @@ serve<StreamData & TerminalSocketData>({
       // directory listing for whoever is knocking.
       return json({ error: "Not authorised." }, 401);
     }
+
+    if (OWNER.kind === "browser" && !browserOnlyPath(url.pathname))
+      return json(
+        { error: "This computer serves browser operations only." },
+        403,
+      );
 
     // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
     // goes through this seat's session, so there is no path where one Bot's call reaches another's,
@@ -1995,6 +2004,24 @@ const HOLDS_THE_BROWSER = new Set([
 
 /** A look at the page: after what was sent before it, beside what is sent after it. */
 const WAITS_FOR_THE_BROWSER = new Set(["/screenshot", "/read"]);
+
+function browserOnlyPath(path: string): boolean {
+  return (
+    personMayUse(path) ||
+    isBotBrowserPath(path) ||
+    HOLDS_THE_BROWSER.has(path) ||
+    WAITS_FOR_THE_BROWSER.has(path) ||
+    HUMAN_INPUT.has(path) ||
+    [
+      "/control/request",
+      "/control/take",
+      "/control/release",
+      "/control/cancel",
+      "/control/secret",
+      "/human/secret",
+    ].includes(path)
+  );
+}
 
 const HUMAN_INPUT = new Set([
   "/human/click",

@@ -121,6 +121,7 @@ import {
   personBrowserPlace,
   withPersonBrowsers,
 } from "./browser/host";
+import { cubeSandboxBrowsers } from "./browser/cubesandbox";
 import { personBrowserId, personBrowserInstallId } from "./browser/person";
 import {
   loadAttachmentForTurn,
@@ -761,6 +762,29 @@ const personBrowserPolicy = personBrowserEgressPolicy({
   openbotUrls: [config.publicUrl, config.appUrl],
   gatewayUrl: legacyIntelligence.gatewayWsUrl,
 });
+const cubeBrowser = cubeSandboxBrowsers(process.env, {
+  policyForBot: async (botId) =>
+    isPersonBrowserId(botId)
+      ? personBrowserEgressPolicy({
+          native: false,
+          allowPrivateHosts: config.computer?.allowPrivateHosts ?? false,
+          openbotUrls: [config.publicUrl, config.appUrl],
+          gatewayUrl: legacyIntelligence.gatewayWsUrl,
+        })
+      : enterpriseControls()?.policyForBot(botId),
+  serialize: (id, run) =>
+    database.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${id}, 0))`,
+      );
+      return run();
+    }),
+});
+if (cubeBrowser && !config.computer)
+  throw new Error(
+    "The CubeSandbox browser pilot requires a configured computer gateway.",
+  );
+
 // Each computer is pushed its network policy on the way to the action that woke it, because a
 // computer refuses every connection until one arrives (see `withPolicyPushOnWake`). A person's own
 // browser is found where it runs (OPENBOT_BROWSER_URL, else the same provider) and pushed theirs.
@@ -1140,6 +1164,7 @@ const computerSeats = computerProvider
 const computerGateway = computerProvider
   ? createComputerGateway({
       provider: computerProvider,
+      ...(cubeBrowser ? { browserProvider: cubeBrowser } : {}),
       ...(computerSeats ? { seats: computerSeats } : {}),
       // Who each person's computer belongs to, for the admin list.
       people: async (ids) =>
@@ -4000,13 +4025,16 @@ const app = createApp(
                 seat.botId,
               );
               if (!policy) return;
-              const token = computerGateway.tokenFor(seat);
+              const host =
+                computerGateway.browserFor?.(seat) ?? computerGateway;
+              const token = host.tokenFor(seat);
               await pushEgressPolicy(
-                await computerGateway.locate(seat),
+                await host.locate(seat),
                 seat.botId,
                 policy,
                 {
                   ...(token ? { token } : {}),
+                  ...(host !== computerGateway ? { redirect: "error" } : {}),
                   ...(config.webBotAuth
                     ? { webBotAuth: config.webBotAuth }
                     : {}),
@@ -4043,6 +4071,15 @@ const app = createApp(
                         : {}),
                     }),
             }),
+            ...(computerGateway && cubeBrowser
+              ? {
+                  pilotComputers: gatewayBrowserComputers(
+                    computerGateway,
+                    undefined,
+                    cubeBrowser,
+                  ),
+                }
+              : {}),
             recorder: recorderExtension,
             openbotUrl: openbotAddress(config),
             // On a single-user OpenBot the person is its admin: a setup failure is theirs to see to.

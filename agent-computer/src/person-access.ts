@@ -14,11 +14,13 @@
  *
  * Free of Playwright, like `authorisation.ts`, so the list is testable without a browser.
  */
+import { createHash } from "node:crypto";
 import type { ComputerControlState } from "../../shared/computer-control";
 import {
   browserComputerPaths,
   isPersonBrowserId,
   PEOPLE_ONLY_ENV,
+  PERSON_BROWSER_PREFIX,
   realBrowserComputerPaths,
 } from "../../shared/openbot-browser";
 
@@ -105,11 +107,22 @@ export type ComputerOwner =
   | { kind: "one"; id: string }
   | { kind: "person"; id: string }
   | { kind: "personal"; id: string }
+  | { kind: "browser"; browserId: string }
   | { kind: "shared" };
 
 export function computerOwner(
   env: Record<string, string | undefined>,
 ): ComputerOwner {
+  if (env.OPENBOT_BROWSER_ONLY === "on") {
+    const person = env.COMPUTER_PERSON_ID;
+    if (!person?.trim())
+      throw new Error("A browser-only computer requires an assigned owner.");
+    const digest = createHash("sha256")
+      .update(person)
+      .digest("hex")
+      .slice(0, 32);
+    return { kind: "browser", browserId: PERSON_BROWSER_PREFIX + digest };
+  }
   if (env[PEOPLE_ONLY_ENV]?.trim().toLowerCase() === "on")
     return { kind: "people" };
   const id = env.COMPUTER_BOT_ID?.trim();
@@ -150,6 +163,10 @@ export function refusedHere(
   const person = isPersonBrowserId(botId);
   // The personal edition's one computer: the person's own browser and their own Bots, side by side.
   if (owner.kind === "personal") return null;
+  if (owner.kind === "browser")
+    return person && botId !== owner.browserId
+      ? { status: 403, error: ONLY_THE_PERSONS }
+      : null;
   if (owner.kind === "people")
     return person ? null : { status: 403, error: ONLY_THE_PERSONS };
   if (owner.kind === "one" && isPersonBrowserId(owner.id))

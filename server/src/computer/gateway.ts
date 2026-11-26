@@ -76,6 +76,7 @@ export {
   WorkspaceTooLargeError,
 } from "./client";
 
+import type { BrowserProvider } from "../browser/cubesandbox";
 import type { PageFrameStore } from "./page-frames";
 import {
   type ActionPolicy,
@@ -150,6 +151,7 @@ export type ActionActor = {
 export type ComputerGatewayOptions = {
   approvalGate?: ApprovalGate;
   provider: ComputerProvider;
+  browserProvider?: BrowserProvider;
   /** Revalidate a caller-scoped connection immediately before a Computer request. */
   connect?: (
     seat: ComputerSeat,
@@ -234,6 +236,11 @@ export interface ComputerGateway {
   tokenFor(seat: ComputerSeat): string | undefined;
   locate(seat: ComputerSeat): Promise<string>;
   status(seat: ComputerSeat): Promise<ComputerStatus>;
+  browserFor?(
+    seat: ComputerSeat,
+  ):
+    | Pick<ComputerGateway, "locate" | "status" | "tokenFor" | "addressOf">
+    | undefined;
   screenshot(seat: ComputerSeat): Promise<ScreenshotResult>;
   snapshot(seat: ComputerSeat): Promise<SnapshotResult>;
   read(seat: ComputerSeat): Promise<ReadResult>;
@@ -430,10 +437,58 @@ export function createComputerGateway(
     return computerTokenOf(provider, seat.key, options.token);
   }
 
+  function browserProviderFor(seat: ComputerSeat) {
+    return options.browserProvider?.serves(seat)
+      ? options.browserProvider
+      : undefined;
+  }
+
+  function browserFor(seat: ComputerSeat) {
+    const browser = browserProviderFor(seat);
+    if (!browser) return undefined;
+    return {
+      locate: async (target: ComputerSeat) =>
+        checkedAddress(await browser.locate(target)),
+      status: browser.status,
+      tokenFor: browser.tokenFor,
+      addressOf: (target: ComputerSeat) => ({ botId: target.botId }),
+    };
+  }
+
+  const browserPaths = new Set([
+    "/navigate",
+    "/screenshot",
+    "/snapshot",
+    "/read",
+    "/click",
+    "/type",
+    "/key",
+    "/scroll",
+    "/control",
+    "/sign-in/fill",
+    "/sign-in/code",
+  ]);
+  const browserPath = (path: string) => {
+    const name = path.split("?")[0];
+    return (
+      browserPaths.has(name) ||
+      name.startsWith("/control/") ||
+      name.startsWith("/human/")
+    );
+  };
+
   async function at(
     seat: ComputerSeat,
     locatedUrl?: string,
+    browser = true,
   ): Promise<ComputerConnection> {
+    const host = browser ? browserFor(seat) : undefined;
+    if (host)
+      return {
+        url: locatedUrl ?? (await host.locate(seat)),
+        token: host.tokenFor(seat),
+        redirect: "error",
+      };
     if (options.connect) {
       const connection = await options.connect(seat);
       const url = checkedAddress(connection.url);
@@ -480,14 +535,24 @@ export function createComputerGateway(
     return verdict.url;
   }
 
+  function requestAddress(seat: ComputerSeat, path: string) {
+    return (
+      (browserPath(path) ? browserFor(seat)?.addressOf(seat) : undefined) ??
+      addressOf(seat)
+    );
+  }
+
+  const locateBrowser = (seat: ComputerSeat) =>
+    (browserFor(seat)?.locate ?? locate)(seat);
+
   async function get<T>(
     seat: ComputerSeat,
     path: string,
     signal?: AbortSignal,
   ): Promise<T> {
     return transport.call<T>(
-      await at(seat),
-      addressOf(seat),
+      await at(seat, undefined, browserPath(path)),
+      requestAddress(seat, path),
       path,
       undefined,
       signal,
@@ -510,8 +575,8 @@ export function createComputerGateway(
     address?: string,
   ): Promise<T> {
     return transport.post<T>(
-      await at(seat, address),
-      addressOf(seat),
+      await at(seat, address, browserPath(path)),
+      requestAddress(seat, path),
       path,
       payload,
       signal,
@@ -537,7 +602,7 @@ export function createComputerGateway(
     seat: ComputerSeat,
   ): Promise<{ address?: string; starting?: ComputerStillStartingError }> {
     try {
-      return { address: await locate(seat) };
+      return { address: await locateBrowser(seat) };
     } catch (error) {
       return error instanceof ComputerStillStartingError
         ? { starting: error }
@@ -578,7 +643,7 @@ export function createComputerGateway(
    * on the store.
    */
   async function snapshot(seat: ComputerSeat): Promise<SnapshotResult> {
-    const base = await locate(seat);
+    const base = await locateBrowser(seat);
     /*
      * Which run this is, asked before the page is drawn rather than after it.
      *
@@ -592,10 +657,10 @@ export function createComputerGateway(
      * Nothing resolves against it and the next snapshot supersedes it, which is the direction this is
      * allowed to fail in.
      */
-    const run = await sessionOf(seat);
+    const run = await sessionOf(seat, base);
     const result = await transport.call<SnapshotResult>(
       await at(seat, base),
-      addressOf(seat),
+      requestAddress(seat, "/snapshot"),
       "/snapshot",
       { method: "POST" },
     );
@@ -618,7 +683,12 @@ export function createComputerGateway(
    * must not stop a snapshot being recorded, because a snapshot nobody stored is a ref that resolves
    * to nothing and a boundary deciding with no element in front of it.
    */
-  async function sessionOf(seat: ComputerSeat): Promise<{ session?: string }> {
+  async function sessionOf(
+    seat: ComputerSeat,
+    address?: string,
+  ): Promise<{ session?: string }> {
+    const browser = browserProviderFor(seat);
+    if (browser) return address ? { session: `cube:${address}` } : {};
     if (!provider.sessionOf) return {};
     try {
       const session = await provider.sessionOf(seat);
@@ -746,7 +816,9 @@ export function createComputerGateway(
      */
     const located = ref ? await locateForAction(seat) : undefined;
     const address = located?.address;
-    const { session } = ref ? await sessionOf(seat) : { session: undefined };
+    const { session } = ref
+      ? await sessionOf(seat, located?.address)
+      : { session: undefined };
     const element = resolve(stored, ref, snapshotId, session);
     // For a navigation the relevant page is the one being opened, not the one already loaded. Using
     // the stored URL would mean `page.host == "..."` could never match the destination, which is the
@@ -1042,6 +1114,7 @@ export function createComputerGateway(
     seatFor: (botId: string, personId: string) =>
       seats.seatFor(botId, personId),
     addressOf,
+    browserFor,
     tokenFor,
     locate,
     screenshot,
@@ -1434,7 +1507,12 @@ export function createComputerGateway(
         actor,
         { targetUrl: url },
         async () =>
-          transport.navigate(await at(seat), addressOf(seat), url, toolCallId),
+          transport.navigate(
+            await at(seat),
+            requestAddress(seat, "/navigate"),
+            url,
+            toolCallId,
+          ),
       ).then((result) => withUntrustedNotice(result, "web page", PAGE_FIELDS));
     },
 
@@ -1478,7 +1556,7 @@ export function createComputerGateway(
           async (address) =>
             transport.navigate(
               await at(seat, address),
-              addressOf(seat),
+              requestAddress(seat, "/navigate"),
               follow.url,
               undefined,
               {
@@ -1609,7 +1687,7 @@ export function createComputerGateway(
         { filePath: input.path, ...(signal ? { signal } : {}) },
         async () => {
           const download = await transport.download(
-            await at(seat),
+            await at(seat, undefined, false),
             addressOf(seat),
             `/files/download?path=${encodeURIComponent(input.path)}`,
             signal,

@@ -168,7 +168,10 @@ export function createComputerRoutes(
   if (botBrowser) routes.route("/:botId/browser", botBrowser.routes);
 
   routes.get("/:botId/status", async (context) => {
-    return context.json(await gateway.status(await seatOf(context)));
+    const seat = await seatOf(context);
+    return context.json(
+      await (gateway.browserFor?.(seat) ?? gateway).status(seat),
+    );
   });
 
   /**
@@ -192,7 +195,7 @@ export function createComputerRoutes(
   routes.get("/:botId/screenshot", async (context) => {
     try {
       const seat = await seatOf(context);
-      const status = await gateway.status(seat);
+      const status = await (gateway.browserFor?.(seat) ?? gateway).status(seat);
       if (status.state !== "ready") {
         return context.json({
           ready: false,
@@ -301,7 +304,7 @@ export function createComputerRoutes(
        * suspended computer, so a convenience picture could wake a machine the culler had just put to
        * sleep and hold a navigation open for the length of a pod schedule while it did.
        */
-      const status = await gateway.status(seat);
+      const status = await (gateway.browserFor?.(seat) ?? gateway).status(seat);
       if (status.state !== "ready") {
         console.warn(
           `[computer] not keeping a frame for ${toolCallId}: the computer is ${status.state}, and photographing it would wake it.`,

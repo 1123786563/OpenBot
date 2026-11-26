@@ -202,6 +202,7 @@ export type ComputerConnection = {
   url: string;
   token?: string;
   trafficAccessToken?: string;
+  redirect?: RequestRedirect;
 };
 export type ComputerEndpoint = string | ComputerConnection;
 
@@ -317,7 +318,10 @@ export function createComputerTransport(
         ? { url: computer, token: options.token }
         : computer;
     const target = url.replace(/\/$/, "");
-    const redirect = trafficAccessToken ? "error" : options.redirect;
+    const redirect = trafficAccessToken
+      ? "error"
+      : ((typeof computer === "string" ? undefined : computer.redirect) ??
+        options.redirect);
     let response: Response;
     try {
       response = await startMarketRequest(() =>
