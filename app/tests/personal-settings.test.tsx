@@ -343,7 +343,68 @@ describe("the Computer page", () => {
     ).toBeTruthy();
   });
 
-  test("an unconfirmed stop shows the reported state and Activity without sending another stop", async () => {
+  describe.each(["personal", "team"] as const)(
+    "an unconfirmed stop in the %s edition",
+    (edition) => {
+      /** Where the dialog sends a person to read what happened: Activity, or Audit. */
+      const audit =
+        edition === "personal"
+          ? { label: "Open Activity", href: "/settings/activity" }
+          : { label: "Open Audit", href: "/admin/audit" };
+      const stop =
+        edition === "personal"
+          ? "Stop browser: Personal Assistant"
+          : "Stop browser: dev@openbot.local · Personal Assistant";
+
+      test("shows the reported state and the audit trail without sending another stop", async () => {
+        const originalFetch = globalThis.fetch;
+        let writes = 0;
+        globalThis.fetch = Object.assign(
+          async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+            if (String(input) !== "/api/computers/fleet")
+              return originalFetch(input, init);
+            if (init?.method === "POST") {
+              writes += 1;
+              return Response.json({ error: "Response lost" }, { status: 503 });
+            }
+            return Response.json({
+              ...fleet,
+              computers: fleet.computers.map((computer) => ({
+                ...computer,
+                running: writes === 0,
+              })),
+            });
+          },
+          { preconnect: originalFetch.preconnect },
+        );
+        try {
+          const view = await renderPage(edition);
+          fireEvent.click(view.getByRole("button", { name: stop }));
+          const dialog = within(await view.findByRole("alertdialog"));
+          fireEvent.click(dialog.getByRole("button", { name: "Stop browser" }));
+          expect(
+            await dialog.findByText(/Latest device status: No browser running/),
+          ).toBeTruthy();
+          expect(
+            dialog
+              .getByRole("link", { name: audit.label })
+              .getAttribute("href"),
+          ).toBe(audit.href);
+          expect(
+            dialog.queryByRole("button", { name: "Try again" }),
+          ).toBeNull();
+          expect(
+            view.queryByText("Browser stopped for Personal Assistant."),
+          ).toBeNull();
+          expect(writes).toBe(1);
+        } finally {
+          globalThis.fetch = originalFetch;
+        }
+      });
+    },
+  );
+
+  test("says the latest status could not be checked when the follow-up read also fails", async () => {
     const originalFetch = globalThis.fetch;
     let writes = 0;
     globalThis.fetch = Object.assign(
@@ -354,35 +415,33 @@ describe("the Computer page", () => {
           writes += 1;
           return Response.json({ error: "Response lost" }, { status: 503 });
         }
-        return Response.json({
-          ...fleet,
-          computers: fleet.computers.map((computer) => ({
-            ...computer,
-            running: writes === 0,
-          })),
-        });
+        // The page's read before the change succeeds; the one after the lost write does not.
+        if (writes > 0)
+          return Response.json({ error: "Read denied" }, { status: 503 });
+        return Response.json(fleet);
       },
       { preconnect: originalFetch.preconnect },
     );
     try {
-      const view = await renderPage("personal");
+      const view = await renderPage("team");
       fireEvent.click(
-        view.getByRole("button", { name: "Stop browser: Personal Assistant" }),
+        view.getByRole("button", {
+          name: "Stop browser: dev@openbot.local · Personal Assistant",
+        }),
       );
       const dialog = within(await view.findByRole("alertdialog"));
       fireEvent.click(dialog.getByRole("button", { name: "Stop browser" }));
       expect(
-        await dialog.findByText(/Latest device status: No browser running/),
+        await dialog.findByText(
+          "Couldn’t check the latest device status.",
+          {},
+          { timeout: 5_000 },
+        ),
       ).toBeTruthy();
       expect(
-        dialog
-          .getByRole("link", { name: "Open Activity" })
-          .getAttribute("href"),
-      ).toBe("/settings/activity");
+        dialog.getByRole("link", { name: "Open Audit" }).getAttribute("href"),
+      ).toBe("/admin/audit");
       expect(dialog.queryByRole("button", { name: "Try again" })).toBeNull();
-      expect(
-        view.queryByText("Browser stopped for Personal Assistant."),
-      ).toBeNull();
       expect(writes).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;

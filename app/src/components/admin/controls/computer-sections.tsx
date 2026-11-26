@@ -265,6 +265,7 @@ function SweepNow() {
   return (
     <div className="mt-4 flex items-center gap-3">
       <DeviceAction
+        className="confirmation-action"
         disabled={sweep.isPending}
         onClick={() => sweep.mutate()}
         size="sm"
