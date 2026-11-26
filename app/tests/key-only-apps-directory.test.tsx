@@ -67,7 +67,7 @@ afterEach(() => {
   Object.assign(ComposioRoute.options, originalOptions);
 });
 
-function renderDirectory() {
+function renderDirectory(url = "/admin/plugins/composio") {
   const rootRoute = createRootRoute({ component: Outlet });
   const authedRoute = createRoute({
     id: "/_authed",
@@ -99,7 +99,7 @@ function renderDirectory() {
   const router = createRouter({
     routeTree: tree,
     history: createMemoryHistory({
-      initialEntries: ["/admin/plugins/composio"],
+      initialEntries: [url],
     }),
   });
   return render(
@@ -176,4 +176,16 @@ test("apps you sign in to are listed ahead of apps that need a key", async () =>
       "directory-posthog",
     ]);
   });
+});
+
+test("a directory bookmark keeps its filter and links back to the plugin search", async () => {
+  stubFetch(directory());
+  const view = renderDirectory("/admin/plugins/composio?q=notion&filter=gmail");
+  expect(await view.findByLabelText("Search apps")).toHaveProperty(
+    "value",
+    "gmail",
+  );
+  expect(view.getByRole("link", { name: "Plugins" }).getAttribute("href")).toBe(
+    "/admin/plugins?q=notion",
+  );
 });

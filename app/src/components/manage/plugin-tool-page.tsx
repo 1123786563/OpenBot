@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
+import { failureMessage } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { useManagePaths } from "@/lib/manage-paths";
 import { setPluginGrantMutationOptions } from "@/lib/plugins/mutations";
@@ -51,9 +52,15 @@ import {
 const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 export function PluginToolPage({
   pluginKey: key,
+  listQuery,
+  filter = "",
+  onFilterChange,
   toolName,
 }: {
   pluginKey: string;
+  listQuery?: string;
+  filter?: string;
+  onFilterChange?: (value: string) => void;
   toolName: string;
 }) {
   // Routines is every Bot's, in every edition: there is no switch to take it from one.
@@ -91,7 +98,9 @@ export function PluginToolPage({
    * Narrows the Bot list by name. Shown only when the roster is long, which is when finding one in
    * it stops being a scan. shortcut: fixed threshold of 8, raise it when a real roster complains.
    */
-  const [botSearch, setBotSearch] = useState("");
+  const [localFilter, setLocalFilter] = useState("");
+  const botSearch = onFilterChange ? filter : localFilter;
+  const setBotSearch = onFilterChange ?? setLocalFilter;
 
   const server = plugins.isSuccess
     ? plugins.data.servers.find((row) => row.id === key)
@@ -101,7 +110,7 @@ export function PluginToolPage({
   const back = {
     // The app's name in every state: a "Plugin" back-trail appears exactly when the read failed.
     label: server?.title ?? appPageTitle(key),
-    linkProps: paths.plugin(key),
+    linkProps: paths.plugin(key, listQuery),
   };
 
   /* Placeholder rows while the fetch is open, so no sentence asserts anything mid-read. */
@@ -339,7 +348,7 @@ function ToolGrantRow({
             className="line-clamp-none text-destructive"
             role="alert"
           >
-            {setGrant.error.message}
+            {failureMessage(setGrant.error)}
           </ItemDescription>
         ) : setGrant.isPending || setGrant.isSuccess ? (
           <ItemDescription className="line-clamp-none" role="status">

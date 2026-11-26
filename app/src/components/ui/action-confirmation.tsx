@@ -206,7 +206,12 @@ export function useActionConfirmation(
   };
 }
 
-function unavailableMessage(status: number): string | undefined {
+/**
+ * What a dialog says when the status itself is the whole answer: the session ended, the permission
+ * went, or the row it was opened for changed underneath it. Exported for the other surfaces that
+ * meet the same three statuses; a banner's own sentence is `failureMessage` in `lib/client.ts`.
+ */
+export function unavailableMessage(status: number): string | undefined {
   if (status === 401)
     return "Your session has ended. Sign in again to continue.";
   if (status === 403)

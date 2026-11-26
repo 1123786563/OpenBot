@@ -59,23 +59,35 @@ export function managePaths(edition: "team" | "personal") {
   }
   return {
     pluginsLabel: "Plugins",
-    plugins: () => linkOptions({ to: "/admin/plugins" }),
-    plugin: (key: string) =>
-      linkOptions({ to: "/admin/plugins/$key", params: { key } }),
-    pluginTool: (key: string, tool: string) =>
+    plugins: (q?: string, returnPlugin?: string) =>
+      linkOptions({
+        to: "/admin/plugins",
+        search: { q },
+        state: { returnPlugin },
+        resetScroll: !returnPlugin,
+      }),
+    plugin: (key: string, q?: string) =>
+      linkOptions({
+        to: "/admin/plugins/$key",
+        params: { key },
+        search: { q },
+      }),
+    pluginTool: (key: string, tool: string, q?: string) =>
       linkOptions({
         to: "/admin/plugins/$key/tools/$tool",
         params: { key, tool },
+        search: { q },
       }),
-    pluginBot: (key: string, agentId: string) =>
+    pluginBot: (key: string, agentId: string, q?: string) =>
       linkOptions({
         to: "/admin/plugins/$key/bots/$agentId",
         params: { key, agentId },
+        search: { q },
       }),
-    brokerDirectory: (directory: BrokerDirectory) =>
+    brokerDirectory: (directory: BrokerDirectory, q?: string) =>
       directory === "composio"
-        ? linkOptions({ to: "/admin/plugins/composio" })
-        : linkOptions({ to: "/admin/plugins/arcade" }),
+        ? linkOptions({ to: "/admin/plugins/composio", search: { q } })
+        : linkOptions({ to: "/admin/plugins/arcade", search: { q } }),
     skills: () => linkOptions({ to: "/admin/skills" }),
     newSkill: () => linkOptions({ to: "/admin/skills/new" }),
     skill: (slug: string) =>

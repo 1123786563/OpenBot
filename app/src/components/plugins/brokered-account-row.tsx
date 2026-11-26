@@ -23,6 +23,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { failureMessage } from "@/lib/client";
 import { desktopShell } from "@/lib/desktop/shell";
 import { schemeNeedsKey } from "@/lib/plugins/enablement-notes";
 import {
@@ -422,7 +423,7 @@ export function useBrokeredAccount(input: {
    */
   const recheck = useMutation({
     ...recheckBrokeredConnectionMutationOptions(queryClient),
-    onError: (thrown: Error) => report(thrown.message),
+    onError: (thrown: Error) => report(failureMessage(thrown)),
   });
   /*
    * The check's answer is thrown away whenever an action changes the account it was about.
@@ -443,7 +444,7 @@ export function useBrokeredAccount(input: {
 
   const connect = useMutation({
     ...connectAccountMutationOptions(returnTo),
-    onError: (thrown: Error) => report(thrown.message),
+    onError: (thrown: Error) => report(failureMessage(thrown)),
     /*
      * A full page navigation, not a fetch. The consent screen is the vendor's own and has to be
      * shown to this person in their own browser; there is deliberately nothing here that could
@@ -527,7 +528,7 @@ export function useBrokeredAccount(input: {
   const disconnect = useMutation({
     ...disconnectBrokeredMutationOptions(queryClient),
     onError: (thrown: Error) => {
-      report(thrown.message);
+      report(failureMessage(thrown));
       forgetAnswers();
     },
     onSuccess: forgetAnswers,
@@ -543,7 +544,7 @@ export function useBrokeredAccount(input: {
    */
   const fieldsRequest = useMutation({
     ...brokeredConnectionFieldsMutationOptions(),
-    onError: (thrown: Error) => report(thrown.message),
+    onError: (thrown: Error) => report(failureMessage(thrown)),
   });
 
   /*
@@ -592,7 +593,7 @@ export function useBrokeredAccount(input: {
   const submission = useMutation({
     ...connectBrokeredWithFieldsMutationOptions(queryClient),
     onError: (thrown: Error) => {
-      report(thrown.message);
+      report(failureMessage(thrown));
       forgetAnswers();
     },
     onSuccess: forgetAnswers,
@@ -636,7 +637,7 @@ export function useBrokeredAccount(input: {
    */
   const connectAnother = useMutation({
     ...connectAnotherAccountMutationOptions(returnTo),
-    onError: (thrown: Error) => report(thrown.message),
+    onError: (thrown: Error) => report(failureMessage(thrown)),
     onSuccess: (start) => {
       forgetConfirmation();
       forgetRecheck();
@@ -656,12 +657,12 @@ export function useBrokeredAccount(input: {
   });
   const makeDefault = useMutation({
     ...setDefaultBrokeredAccountMutationOptions(queryClient),
-    onError: (thrown: Error) => report(thrown.message),
+    onError: (thrown: Error) => report(failureMessage(thrown)),
   });
   const disconnectAccount = useMutation({
     ...disconnectBrokeredAccountMutationOptions(queryClient),
     onError: (thrown: Error) => {
-      report(thrown.message);
+      report(failureMessage(thrown));
       forgetAnswers();
     },
     onSuccess: forgetAnswers,
@@ -770,13 +771,15 @@ export function useBrokeredAccount(input: {
       fieldsRequest.mutate(serverId);
     },
     requestingFields: fieldsRequest.isPending,
-    fieldsError: fieldsRequest.error?.message ?? null,
+    fieldsError: fieldsRequest.error
+      ? failureMessage(fieldsRequest.error)
+      : null,
     submitFields: (values: Record<string, string>) => {
       report(null);
       submission.mutate({ serverId, values });
     },
     submittingFields: submission.isPending,
-    submissionError: submission.error?.message ?? null,
+    submissionError: submission.error ? failureMessage(submission.error) : null,
     serverId,
     fieldsSubmitted: submission.isSuccess,
     connectAnother: () => {

@@ -49,7 +49,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { canKeepCachedRead } from "@/lib/client";
+import { canKeepCachedRead, failureMessage } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { useManagePaths } from "@/lib/manage-paths";
 import {
@@ -110,9 +110,15 @@ const LOADING_ROWS = ["a", "b", "c", "d", "e", "f"];
 
 export function PluginBotPage({
   pluginKey: key,
+  listQuery,
+  filter = "",
+  onFilterChange,
   agentId,
 }: {
   pluginKey: string;
+  listQuery?: string;
+  filter?: string;
+  onFilterChange?: (value: string) => void;
   agentId: string;
 }) {
   // Routines is every Bot's, in every edition: there is no switch to take it from one.
@@ -136,7 +142,9 @@ export function PluginBotPage({
   const { requestConfirmation, confirmation: grantConfirmation } =
     useActionConfirmation();
   /** What the list is narrowed to, over action names. Never over what is switched on. */
-  const [search, setSearch] = useState("");
+  const [localFilter, setLocalFilter] = useState("");
+  const search = onFilterChange ? filter : localFilter;
+  const setSearch = onFilterChange ?? setLocalFilter;
   /**
    * How far through the bulk grant we are, or null when none is running.
    *
@@ -151,7 +159,7 @@ export function PluginBotPage({
 
   const setGrant = useMutation({
     ...setPluginGrantMutationOptions(queryClient),
-    onError: (thrown: Error) => setError(thrown.message),
+    onError: (thrown: Error) => setError(failureMessage(thrown)),
   });
 
   const pluginData = canKeepCachedRead(plugins.error)
@@ -203,7 +211,7 @@ export function PluginBotPage({
 
   const back = {
     label: appTitle,
-    linkProps: paths.plugin(key),
+    linkProps: paths.plugin(key, listQuery),
   };
 
   /*
@@ -225,7 +233,7 @@ export function PluginBotPage({
         setGranting({ done, total: refs.length });
       }
     } catch (thrown) {
-      setError((thrown as Error).message);
+      setError(failureMessage(thrown));
     } finally {
       await invalidatePlugins(queryClient);
       setGranting(null);
@@ -270,7 +278,10 @@ export function PluginBotPage({
   if (pluginData && !server && !accessStale) {
     return (
       <ConnectionPage
-        backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        backButton={{
+          label: paths.pluginsLabel,
+          linkProps: paths.plugins(listQuery, key),
+        }}
         description="No app with that name is turned on."
         title={appTitle}
       >
@@ -291,7 +302,10 @@ export function PluginBotPage({
   if (!server) {
     return (
       <ConnectionPage
-        backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        backButton={{
+          label: paths.pluginsLabel,
+          linkProps: paths.plugins(listQuery, key),
+        }}
         headingRef={heading}
         title={appTitle}
       >
@@ -399,7 +413,7 @@ export function PluginBotPage({
       });
       setPendingGrant(null);
     } catch (thrown) {
-      setError((thrown as Error).message);
+      setError(failureMessage(thrown));
     } finally {
       setGrantingShared(false);
     }

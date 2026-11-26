@@ -54,7 +54,7 @@ import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { grantSummary } from "@/lib/agents/grant-summary";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { ClientError, canKeepCachedRead } from "@/lib/client";
+import { canKeepCachedRead, failureMessage } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { storeMcpToken } from "@/lib/credentials/mutations";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
@@ -276,8 +276,10 @@ function ConnectionStateUnreadable({
 export function PluginPage({
   pluginKey: key,
   startConnect = false,
+  listQuery,
 }: {
   pluginKey: string;
+  listQuery?: string;
   /** Open the key form on arrival, for an app Browse apps just added that takes a key. */
   startConnect?: boolean;
 }) {
@@ -377,7 +379,9 @@ export function PluginPage({
   } | null>(null);
 
   /* Every write reports into one banner rather than each growing its own handler. */
-  const report = { onError: (thrown: Error) => setError(thrown.message) };
+  const report = {
+    onError: (thrown: Error) => setError(failureMessage(thrown)),
+  };
   const addCurated = useMutation({
     ...addCuratedServerMutationOptions(queryClient),
     ...report,
@@ -410,7 +414,7 @@ export function PluginPage({
       const listed = queryClient
         .getQueryData(pluginsPageQueryOptions().queryKey)
         ?.catalogue.some((item) => item.key === serverId);
-      if (!listed) await navigate(paths.plugins());
+      if (!listed) await navigate(paths.plugins(listQuery, key));
     },
   });
   const connectSelf = useMutation({
@@ -479,12 +483,9 @@ export function PluginPage({
 
   const auth = connectionKindFor(server, entry?.auth);
   const title = entry?.title ?? server?.title ?? key;
-  const toolsProblem =
-    refresh.error instanceof ClientError && refresh.error.status === 409
-      ? refresh.error.message
-      : refresh.isError
-        ? "Couldn't refresh tools. Try again."
-        : toolsListError(server?.lastError ?? null, { title, personal });
+  const toolsProblem = refresh.isError
+    ? failureMessage(refresh.error, "Couldn't refresh tools. Try again.")
+    : toolsListError(server?.lastError ?? null, { title, personal });
 
   /* Bound once because the brokered row below is told it twice — once inside the whole
      disconnected sentence and once on its own — and two copies of it would drift. */
@@ -576,7 +577,7 @@ export function PluginPage({
       setDialog(null);
       return true;
     } catch (thrown) {
-      setError((thrown as Error).message);
+      setError(failureMessage(thrown));
       return false;
     }
   };
@@ -625,7 +626,7 @@ export function PluginPage({
       }
       setDialog(null);
     } catch (thrown) {
-      setError((thrown as Error).message);
+      setError(failureMessage(thrown));
     } finally {
       await invalidatePlugins(queryClient);
       setGranting(null);
@@ -641,7 +642,10 @@ export function PluginPage({
   if (loadingApp || checkingAccount) {
     return (
       <ConnectionPage
-        backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        backButton={{
+          label: paths.pluginsLabel,
+          linkProps: paths.plugins(listQuery, key),
+        }}
         description={
           checkingAccount ? (entry?.summary ?? server?.summary) : undefined
         }
@@ -689,7 +693,10 @@ export function PluginPage({
   ) {
     return (
       <ConnectionPage
-        backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        backButton={{
+          label: paths.pluginsLabel,
+          linkProps: paths.plugins(listQuery, key),
+        }}
         headingRef={heading}
         title={appPageTitle(key)}
       >
@@ -708,7 +715,10 @@ export function PluginPage({
   if (!(entry || server)) {
     return (
       <ConnectionPage
-        backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+        backButton={{
+          label: paths.pluginsLabel,
+          linkProps: paths.plugins(listQuery, key),
+        }}
         description={
           personal
             ? "There is no app with that name."
@@ -739,7 +749,10 @@ export function PluginPage({
 
   return (
     <ConnectionPage
-      backButton={{ label: paths.pluginsLabel, linkProps: paths.plugins() }}
+      backButton={{
+        label: paths.pluginsLabel,
+        linkProps: paths.plugins(listQuery, key),
+      }}
       description={entry?.summary ?? server?.summary}
       headingRef={heading}
       title={title}
@@ -1484,7 +1497,9 @@ export function PluginPage({
                   <Item
                     render={
                       personal ? undefined : (
-                        <Link {...paths.pluginTool(key, tool.name)} />
+                        <Link
+                          {...paths.pluginTool(key, tool.name, listQuery)}
+                        />
                       )
                     }
                     size="sm"
@@ -1564,7 +1579,9 @@ export function PluginPage({
                   <React.Fragment key={bot.id}>
                     {/* A real link with no children: children passed to `render` replace the row's own. */}
                     <Item
-                      render={<Link {...paths.pluginBot(key, bot.id)} />}
+                      render={
+                        <Link {...paths.pluginBot(key, bot.id, listQuery)} />
+                      }
                       size="sm"
                     >
                       <ItemContent>

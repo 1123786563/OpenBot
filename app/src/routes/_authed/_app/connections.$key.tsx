@@ -35,7 +35,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { canKeepCachedRead } from "@/lib/client";
+import { canKeepCachedRead, failureMessage } from "@/lib/client";
 import { ALWAYS_ON_APP } from "@/lib/connections/rows";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
@@ -231,7 +231,7 @@ function AppConnectionPage({ startConnect }: { startConnect: boolean }) {
 
   const connect = useMutation({
     ...connectAccountMutationOptions(),
-    onError: (thrown: Error) => setNotice(thrown.message),
+    onError: (thrown: Error) => setNotice(failureMessage(thrown)),
     /*
      * A full page navigation, not a fetch. The consent screen is the vendor's own and has to be shown
      * to you in your own browser; there is deliberately nothing here that could complete it for you.
