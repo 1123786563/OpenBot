@@ -106,8 +106,8 @@ export async function restore(archive: string, target: string) {
 }
 
 /**
- * What the origin serves for the recorded paths of `manifests`: every asset of
- * each build, and the `index.html` of the last one, which is the current build.
+ * Check the active build in full and retain earlier builds’ hashed Vite assets.
+ * Public files outside assets/ use the active build’s bytes at their stable URLs.
  *
  * After a switch the last one is the candidate and the others keep serving
  * chunks to open tabs; after a rollback it is the restored build. Every path is
@@ -126,7 +126,9 @@ export async function verifyServedBuilds(
   );
   const expected = builds.flatMap(({ path, manifest }, index) =>
     [
-      ...Object.entries(manifest.assets),
+      ...Object.entries(manifest.assets).filter(
+        ([asset]) => index === builds.length - 1 || asset.startsWith("assets/"),
+      ),
       ...(index === builds.length - 1
         ? [["index.html", manifest.indexSha256] as [string, string]]
         : []),

@@ -23,6 +23,7 @@ const OLD = {
 const CANDIDATE = {
   "index.html": '<script type="module" src="/assets/app-new33.js"></script>',
   "assets/app-new33.js": "console.log('new')",
+  "corsair-icons/new.svg": "<svg></svg>",
 };
 
 async function writeBuild(dir: string, files: Record<string, string>) {
@@ -206,6 +207,10 @@ test("a switch passes once the old assets are kept beside the candidate", async 
       {
         path: "assets/app-old22.css",
         sha256: sha256(OLD["assets/app-old22.css"]),
+      },
+      {
+        path: "corsair-icons/new.svg",
+        sha256: sha256(CANDIDATE["corsair-icons/new.svg"]),
       },
       { path: "index.html", sha256: sha256(CANDIDATE["index.html"]) },
     ].sort(byPath),

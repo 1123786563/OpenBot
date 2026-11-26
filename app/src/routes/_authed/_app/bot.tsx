@@ -415,7 +415,13 @@ function BotChat({
                 </Collapsible>
               ) : null}
             </Stack>
-            <Stack align="center" direction="horizontal" gap={2} wrap="wrap">
+            <Stack
+              align="center"
+              className="quick-chat-actions"
+              direction="horizontal"
+              gap={2}
+              wrap="wrap"
+            >
               <ComputerChatControls
                 computerId={agentId}
                 open={watch === true}
