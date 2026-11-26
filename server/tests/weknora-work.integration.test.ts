@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
-import { Hono } from "hono";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { Hono } from "hono";
+import {
+  loadPilotTarget,
+  runPilotTargetLegs,
+} from "../scripts/pilot-matrix-target";
 import { runWeKnoraWorkLive } from "../scripts/weknora-work-live";
 import {
   configure,
@@ -49,10 +53,6 @@ import {
   fixtureTraceReport,
 } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
-import {
-  loadPilotTarget,
-  runPilotTargetLegs,
-} from "../scripts/pilot-matrix-target";
 
 test("WeKnora resource paths dispatch independently and deny invalid authority before the gateway", async () => {
   const db = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -979,7 +979,7 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
   }
 }, 120_000);
 
-test("the pilot matrix routing drives every #98 leg through the target's product entries", async () => {
+test("the pilot matrix routes execution and account requests through the product HTTP entries", async () => {
   const db = createDatabase(testDatabaseUrl(), TEST_POOL);
   const run = crypto.randomUUID().slice(0, 8);
   const issuer = `pilot-target-casdoor-${run}`;
@@ -990,6 +990,11 @@ test("the pilot matrix routing drives every #98 leg through the target's product
     A: `fixture-target-a-${run}`,
     B: `fixture-target-b-${run}`,
     C: `fixture-target-c-${run}`,
+  };
+  const sessionCookies = {
+    A: `pilot_session=a-${run}`,
+    B: `pilot_session=b-${run}`,
+    C: `pilot_session=c-${run}`,
   };
   const serviceToken = `fixture-weknora-service-${run}`;
   const operatorToken = `fixture-operator-${run}`;
@@ -1085,6 +1090,11 @@ test("the pilot matrix routing drives every #98 leg through the target's product
       [tokens.B, identityB],
       [tokens.C, identityC],
     ]);
+    const sessions = new Map([
+      [sessionCookies.A, identityA],
+      [sessionCookies.B, identityB],
+      [sessionCookies.C, identityC],
+    ]);
     const execute: TestCreditExecutor = async ({
       bindGatewayRequest,
       messages,
@@ -1126,13 +1136,16 @@ test("the pilot matrix routing drives every #98 leg through the target's product
       "/billing",
       createTestCreditRoutes({
         ledger,
-        authenticate: async (request) =>
-          identities.get(
-            (request.headers.get("authorization") ?? "").replace(
-              /^Bearer /,
-              "",
-            ),
-          ),
+        authenticate: async (request, intent) =>
+          intent === "execution"
+            ? identities.get(
+                (request.headers.get("authorization") ?? "").replace(
+                  /^Bearer /,
+                  "",
+                ),
+              )
+            : sessions.get(request.headers.get("cookie") ?? ""),
+        paid: { ledger: paid },
         execute,
       }),
     );
@@ -1186,11 +1199,10 @@ test("the pilot matrix routing drives every #98 leg through the target's product
       PILOT_WORKSPACE_ID: workspaceId,
     });
 
-    // The same routing the script uses against a target: every enumerated
-    // #98 leg is driven through the product HTTP entries above.
     const legs = await runPilotTargetLegs({
       target,
       tokens,
+      sessionCookies,
       routes: { A: "route-a", B: "route-b" },
       weknora: {
         serviceToken,

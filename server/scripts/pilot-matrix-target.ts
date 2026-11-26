@@ -228,6 +228,8 @@ export async function pilotChatEntry(
         operationId: input.operationId,
         route,
         priceVersion: quoted.priceVersion,
+        creditType: "test",
+        applicationId: "openbot",
       }),
     }),
     "reserve",
@@ -301,6 +303,8 @@ export async function pilotReserveEntry(
         operationId: input.operationId,
         route: input.route,
         priceVersion: input.priceVersion,
+        creditType: "test",
+        applicationId: "openbot",
       }),
     }),
     "reserve",
@@ -335,30 +339,59 @@ export async function pilotDispatchEntry(
   return body as { state: string; reason?: string };
 }
 
+function accountHeaders(sessionCookie: string) {
+  return { cookie: sessionCookie, "content-type": "application/json" };
+}
+
 /** `GET /balance` for the caller's own Billing Account. */
 export async function pilotBalanceEntry(
   target: PilotTarget,
-  token?: string,
+  sessionCookie: string,
   fetchImpl: Fetch = fetch,
 ): Promise<Json> {
-  const { base, headers } = entryOf(target);
+  const { base } = entryOf(target);
   return json(
-    await fetchImpl(`${base}/balance`, { headers: headers(token) }),
+    await fetchImpl(`${base}/balance`, {
+      headers: accountHeaders(sessionCookie),
+    }),
     "balance",
   );
+}
+
+async function pilotBillEntry(
+  target: PilotTarget,
+  sessionCookie: string,
+  fetchImpl: Fetch,
+) {
+  const { base } = entryOf(target);
+  const response = await fetchImpl(`${base}/paid/bill`, {
+    headers: accountHeaders(sessionCookie),
+  });
+  const parsed = z
+    .array(
+      z.object({
+        operationId: z.string().nullish(),
+        applicationId: z.string().nullish(),
+        source: z.string(),
+      }),
+    )
+    .safeParse(await response.json().catch(() => undefined));
+  if (!response.ok || !parsed.success)
+    throw new Error(`Pilot target bill failed: ${response.status}`);
+  return parsed.data;
 }
 
 /** `GET /operations/:id`: the settled receipt the target holds. */
 export async function pilotReceiptEntry(
   target: PilotTarget,
   operationId: string,
-  token?: string,
+  sessionCookie: string,
   fetchImpl: Fetch = fetch,
 ): Promise<Json> {
-  const { base, headers } = entryOf(target);
+  const { base } = entryOf(target);
   return json(
     await fetchImpl(`${base}/operations/${encodeURIComponent(operationId)}`, {
-      headers: headers(token),
+      headers: accountHeaders(sessionCookie),
     }),
     "operation",
   );
@@ -378,17 +411,17 @@ export async function pilotAuthorizeEntry(
     resourcePrefix: string;
     expiresAt: string;
     limitMicrocredits: string;
-    token?: string;
+    sessionCookie: string;
   },
   fetchImpl: Fetch = fetch,
 ): Promise<Json> {
-  const { base, headers } = entryOf(target);
-  const { token, ...body } = grant;
+  const { base } = entryOf(target);
+  const { sessionCookie, ...body } = grant;
   return json(
     await fetchImpl(`${base}/authorizations`, {
       method: "POST",
-      headers: headers(token),
-      body: JSON.stringify(body),
+      headers: accountHeaders(sessionCookie),
+      body: JSON.stringify({ ...body, creditType: "test" }),
     }),
     "authorization",
   );
@@ -398,14 +431,14 @@ export async function pilotAuthorizeEntry(
 export async function pilotRevokeEntry(
   target: PilotTarget,
   authorizationId: string,
-  token?: string,
+  sessionCookie: string,
   fetchImpl: Fetch = fetch,
 ): Promise<Json> {
-  const { base, headers } = entryOf(target);
+  const { base } = entryOf(target);
   return json(
     await fetchImpl(
       `${base}/authorizations/${encodeURIComponent(authorizationId)}/revoke`,
-      { method: "POST", headers: headers(token), body: "{}" },
+      { method: "POST", headers: accountHeaders(sessionCookie), body: "{}" },
     ),
     "revocation",
   );
@@ -504,6 +537,7 @@ export type PilotLegContext = {
   target: PilotTarget;
   fetchImpl?: Fetch;
   tokens: { A: string; B: string; C: string };
+  sessionCookies: { A: string; B: string; C: string };
   routes: { A: string; B: string };
   // Service credential, uploader subject and resource for the WeKnora legs.
   weknora?: {
@@ -524,10 +558,12 @@ function assertLeg(condition: unknown, message: string): asserts condition {
 export async function runPilotTargetLegs(
   context: PilotLegContext,
 ): Promise<PilotLegResult[]> {
-  const { target, routes, tokens } = context;
+  const { target, routes, tokens, sessionCookies } = context;
   const fetchImpl = context.fetchImpl ?? fetch;
   const clock = context.clock ?? Date.now;
   const results: PilotLegResult[] = [];
+  const runId = crypto.randomUUID();
+  const operation = (name: string) => `matrix-${runId}-${name}`;
   const leg = async (scenario: string, work: () => Promise<Json>) => {
     try {
       results.push({ scenario, outcome: "pass", detail: await work() });
@@ -545,7 +581,7 @@ export async function runPilotTargetLegs(
     const first = await pilotChatEntry(
       target,
       {
-        operationId: "matrix-target-switch-a",
+        operationId: operation("switch-a"),
         prompt: "route one",
         route: routes.A,
         token: tokens.A,
@@ -555,7 +591,7 @@ export async function runPilotTargetLegs(
     const second = await pilotChatEntry(
       target,
       {
-        operationId: "matrix-target-switch-b",
+        operationId: operation("switch-b"),
         prompt: "route two",
         route: routes.B,
         token: tokens.A,
@@ -573,6 +609,7 @@ export async function runPilotTargetLegs(
     assertLeg(first.receipt?.route === routes.A, "route A was not recorded");
     assertLeg(second.receipt?.route === routes.B, "route B was not recorded");
     return {
+      operationIds: [operation("switch-a"), operation("switch-b")],
       defaultRoute: quoted.route,
       routeA: first.receipt?.route,
       routeB: second.receipt?.route,
@@ -580,11 +617,11 @@ export async function runPilotTargetLegs(
   });
 
   await leg("target-cross-app-isolation", async () => {
-    const before = await pilotBalanceEntry(target, tokens.A, fetchImpl);
+    const before = await pilotBalanceEntry(target, sessionCookies.A, fetchImpl);
     const b = await pilotChatEntry(
       target,
       {
-        operationId: "matrix-target-isolation-b",
+        operationId: operation("isolation-b"),
         prompt: "b account",
         route: routes.A,
         token: tokens.B,
@@ -595,16 +632,38 @@ export async function runPilotTargetLegs(
       b.dispatch?.state === "completed",
       `B dispatch: ${b.dispatch?.state ?? b.reservation.state}`,
     );
-    const after = await pilotBalanceEntry(target, tokens.A, fetchImpl);
-    const bBalance = await pilotBalanceEntry(target, tokens.B, fetchImpl);
+    const after = await pilotBalanceEntry(target, sessionCookies.A, fetchImpl);
+    const bBalance = await pilotBalanceEntry(
+      target,
+      sessionCookies.B,
+      fetchImpl,
+    );
     assertLeg(
       before.chargedMicrocredits === after.chargedMicrocredits,
       "A was charged for B's operation",
     );
     assertLeg(Number(bBalance.chargedMicrocredits) > 0, "B was not charged");
+    const [billA, billB] = await Promise.all([
+      pilotBillEntry(target, sessionCookies.A, fetchImpl),
+      pilotBillEntry(target, sessionCookies.B, fetchImpl),
+    ]);
+    assertLeg(
+      !billA.some((item) => item.operationId === operation("isolation-b")),
+      "A can see B's operation on the bill",
+    );
+    assertLeg(
+      billB.some(
+        (item) =>
+          item.operationId === operation("isolation-b") &&
+          item.applicationId === "openbot" &&
+          item.source === "test",
+      ),
+      "B's bill is missing the OpenBot Test Credit operation",
+    );
     return {
       chargedA: after.chargedMicrocredits,
       chargedB: bBalance.chargedMicrocredits,
+      operationIds: [operation("isolation-b")],
       receiptB: b.receipt,
     };
   });
@@ -616,7 +675,7 @@ export async function runPilotTargetLegs(
         pilotReserveEntry(
           target,
           {
-            operationId: `matrix-target-race-${n}`,
+            operationId: operation(`race-${n}`),
             route: routes.A,
             priceVersion: quoted.priceVersion,
             token: tokens.C,
@@ -630,7 +689,11 @@ export async function runPilotTargetLegs(
       ({ state, reason }) =>
         state === "denied" && reason === "insufficient_credits",
     );
-    const balance = await pilotBalanceEntry(target, tokens.C, fetchImpl);
+    const balance = await pilotBalanceEntry(
+      target,
+      sessionCookies.C,
+      fetchImpl,
+    );
     assertLeg(reserved.length === 2, `reserved ${reserved.length}`);
     assertLeg(denied.length === 2, "denials were not insufficient_credits");
     assertLeg(balance.availableMicrocredits === "0", "leftover availability");
@@ -642,7 +705,7 @@ export async function runPilotTargetLegs(
     const forged = await pilotDispatchEntry(
       target,
       {
-        operationId: "matrix-target-forged",
+        operationId: operation("forged"),
         permit: crypto.randomUUID(),
         prompt: "must not dispatch",
         token: tokens.A,
@@ -656,7 +719,7 @@ export async function runPilotTargetLegs(
     const unknown = await pilotReserveEntry(
       target,
       {
-        operationId: "matrix-target-unknown-route",
+        operationId: operation("unknown-route"),
         route: "route-that-is-not-published",
         priceVersion: quoted.priceVersion,
         token: tokens.A,
@@ -686,7 +749,7 @@ export async function runPilotTargetLegs(
           resourcePrefix: weknora.resourceId,
           expiresAt: new Date(clock() + 900_000).toISOString(),
           limitMicrocredits: "4096",
-          token: tokens.A,
+          sessionCookie: sessionCookies.A,
         },
         fetchImpl,
       );
@@ -733,7 +796,7 @@ export async function runPilotTargetLegs(
     const revoked = await pilotRevokeEntry(
       target,
       authorizationId,
-      tokens.A,
+      sessionCookies.A,
       fetchImpl,
     );
     assertLeg(
@@ -771,7 +834,7 @@ export async function runPilotTargetLegs(
     const settled = await pilotChatEntry(
       target,
       {
-        operationId: "matrix-target-settled",
+        operationId: operation("settled"),
         prompt: "settle before suspension",
         route: routes.A,
         token: tokens.A,
@@ -782,7 +845,11 @@ export async function runPilotTargetLegs(
       settled.dispatch?.state === "completed",
       `pre-suspension dispatch: ${settled.dispatch?.state ?? settled.reservation.state}`,
     );
-    const balanceBefore = await pilotBalanceEntry(target, tokens.A, fetchImpl);
+    const balanceBefore = await pilotBalanceEntry(
+      target,
+      sessionCookies.A,
+      fetchImpl,
+    );
     const paused = await pilotSuspensionEntry(
       {
         url: target.accountStatus?.url ?? "",
@@ -800,7 +867,7 @@ export async function runPilotTargetLegs(
     const refused = await pilotChatEntry(
       target,
       {
-        operationId: "matrix-target-suspended",
+        operationId: operation("suspended"),
         prompt: "must be refused",
         route: routes.A,
         token: tokens.A,
@@ -815,15 +882,19 @@ export async function runPilotTargetLegs(
     assertLeg(refused.dispatch === undefined, "suspended work was dispatched");
     const receipt = await pilotReceiptEntry(
       target,
-      "matrix-target-settled",
-      tokens.A,
+      operation("settled"),
+      sessionCookies.A,
       fetchImpl,
     );
     assertLeg(
       receipt.state === "settled",
       "settled receipt did not survive suspension",
     );
-    const balanceAfter = await pilotBalanceEntry(target, tokens.A, fetchImpl);
+    const balanceAfter = await pilotBalanceEntry(
+      target,
+      sessionCookies.A,
+      fetchImpl,
+    );
     assertLeg(
       balanceBefore.chargedMicrocredits === balanceAfter.chargedMicrocredits &&
         balanceBefore.availableMicrocredits ===

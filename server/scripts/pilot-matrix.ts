@@ -39,6 +39,7 @@ import {
 import { createDatabase } from "../src/db/client";
 import {
   enterpriseSettings,
+  lagoUsageEvents,
   testCreditAccounts,
   testCreditOperations,
 } from "../src/db/schema";
@@ -49,6 +50,11 @@ import {
 import { loadPilotTarget, runPilotTargetLegs } from "./pilot-matrix-target";
 
 const target = loadPilotTarget(process.env);
+const requireEnv = (name: string) => {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`The matrix needs ${name}.`);
+  return value;
+};
 // The fixture server below is the local implementation of this entry; a
 // target run points the same ingest leg at the deployment's own entry.
 const weknoraEndpoint = `${(
@@ -90,8 +96,10 @@ const localScenario = async (
 };
 
 const database = createDatabase(
-  process.env.DATABASE_URL ??
-    "postgres://openbot:openbot@127.0.0.1:32835/openbot_98_matrix",
+  target.entry
+    ? requireEnv("PILOT_TARGET_DATABASE_URL")
+    : (process.env.DATABASE_URL ??
+        "postgres://openbot:openbot@127.0.0.1:32835/openbot_98_matrix"),
 );
 const issuer = "https://casdoor.example.test";
 const identityA = { issuer, subject: randomUUID() };
@@ -103,25 +111,29 @@ const meteringRevision = target.gateway.meteringRevision;
 const chatTokenizerUrl =
   process.env.PILOT_CHAT_TOKENIZER_URL ??
   "https://open.bigmodel.cn/api/paas/v4/tokenizer";
-const lagoUrl = process.env.LAGO_URL ?? target.lago.url;
-const lagoKey =
-  process.env.LAGO_API_KEY ??
-  (
-    await Bun.file(
-      "/Users/wuyj/.local/share/openbot/billing-97/lago-api-key.txt",
-    ).text()
-  ).trim();
-const zhipuKey =
-  process.env.ZHIPU_API_KEY ??
-  (
-    await Bun.file(
-      "/Users/wuyj/.local/share/openbot/bifrost-89/provider.env",
-    ).text()
-  )
-    .split("\n")
-    .find((line) => line.startsWith("ZHIPU_API_KEY="))
-    ?.slice("ZHIPU_API_KEY=".length) ??
-  "";
+const lagoUrl = target.entry
+  ? requireEnv("PILOT_LAGO_URL")
+  : (process.env.LAGO_URL ?? target.lago.url);
+const lagoKey = target.entry
+  ? requireEnv("LAGO_API_KEY")
+  : (process.env.LAGO_API_KEY ??
+    (
+      await Bun.file(
+        "/Users/wuyj/.local/share/openbot/billing-97/lago-api-key.txt",
+      ).text()
+    ).trim());
+const zhipuKey = target.entry
+  ? undefined
+  : (process.env.ZHIPU_API_KEY ??
+    (
+      await Bun.file(
+        "/Users/wuyj/.local/share/openbot/bifrost-89/provider.env",
+      ).text()
+    )
+      .split("\n")
+      .find((line) => line.startsWith("ZHIPU_API_KEY="))
+      ?.slice("ZHIPU_API_KEY=".length) ??
+    "");
 
 const ledger = createTestCreditLedger(database, now);
 let tokenizerAvailable = true;
@@ -129,6 +141,7 @@ const countInputTokens: Parameters<
   typeof createBifrostCreditExecutor
 >[0]["countInputTokens"] = async (route, messages) => {
   if (
+    !zhipuKey ||
     !tokenizerAvailable ||
     messages.some(
       (message) => message.role === "tool" || "tool_calls" in message,
@@ -295,185 +308,189 @@ async function embedViaEndpoint(body: {
   };
 }
 
-Bun.serve({
-  hostname: "127.0.0.1",
-  port: 25172,
-  async fetch(request) {
-    const url = new URL(request.url);
-    if (url.pathname === "/health") return new Response("ok");
-    if (
-      request.method === "POST" &&
-      url.pathname === "/api/weknora/embeddings"
-    ) {
-      if (request.headers.get("authorization") !== `Bearer ${serviceToken}`) {
-        log({ event: "embedding-refused", reason: "service_token" });
-        return new Response(null, { status: 401 });
-      }
-      const body = (await request.json()) as {
-        subject: string;
-        authorizationId: string;
-        resourceId: string;
-        operationId: string;
-        input: string[];
-      };
-      try {
-        const preflight = await billing.preflight({
-          applicationId: "weknora",
-          authorizationId: body.authorizationId,
-          issuer,
-          subject: body.subject,
-          resourceId: body.resourceId,
-        });
-        const reserved = await billing.reserve({
-          operationId: body.operationId,
-          applicationId: "weknora",
-          authorizationId: body.authorizationId,
-          issuer,
-          subject: body.subject,
-          resourceId: body.resourceId,
-        });
-        const permit =
-          reserved.state === "reserved" ? reserved.permit : undefined;
-        if (reserved.state === "existing" && !permit) {
-          // Worker recovery must replay a settled operation, not a released one.
-          const receipt = await ledger.receipt(
-            { issuer, subject: body.subject },
-            body.operationId,
-          );
-          if (receipt?.state !== "settled") {
-            log({
-              event: "recovery-refused",
-              operationId: body.operationId,
-              receiptState: receipt?.state ?? "missing",
+const fixtureServer = target.entry
+  ? undefined
+  : Bun.serve({
+      hostname: "127.0.0.1",
+      port: 25172,
+      async fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname === "/health") return new Response("ok");
+        if (
+          request.method === "POST" &&
+          url.pathname === "/api/weknora/embeddings"
+        ) {
+          if (
+            request.headers.get("authorization") !== `Bearer ${serviceToken}`
+          ) {
+            log({ event: "embedding-refused", reason: "service_token" });
+            return new Response(null, { status: 401 });
+          }
+          const body = (await request.json()) as {
+            subject: string;
+            authorizationId: string;
+            resourceId: string;
+            operationId: string;
+            input: string[];
+          };
+          try {
+            const preflight = await billing.preflight({
+              applicationId: "weknora",
+              authorizationId: body.authorizationId,
+              issuer,
+              subject: body.subject,
+              resourceId: body.resourceId,
             });
-            return new Response(
-              JSON.stringify({ code: "not_authorized", recovery: true }),
-              { status: 409 },
+            const reserved = await billing.reserve({
+              operationId: body.operationId,
+              applicationId: "weknora",
+              authorizationId: body.authorizationId,
+              issuer,
+              subject: body.subject,
+              resourceId: body.resourceId,
+            });
+            const permit =
+              reserved.state === "reserved" ? reserved.permit : undefined;
+            if (reserved.state === "existing" && !permit) {
+              // Worker recovery must replay a settled operation, not a released one.
+              const receipt = await ledger.receipt(
+                { issuer, subject: body.subject },
+                body.operationId,
+              );
+              if (receipt?.state !== "settled") {
+                log({
+                  event: "recovery-refused",
+                  operationId: body.operationId,
+                  receiptState: receipt?.state ?? "missing",
+                });
+                return new Response(
+                  JSON.stringify({ code: "not_authorized", recovery: true }),
+                  { status: 409 },
+                );
+              }
+            }
+            if (permit) {
+              await ledger.beginDispatch(
+                { issuer, subject: body.subject },
+                {
+                  operationId: body.operationId,
+                  permit,
+                  authorizationId: body.authorizationId,
+                },
+                { embedding: true },
+              );
+            }
+            log({
+              event: "reserved",
+              operationId: body.operationId,
+              resourceId: body.resourceId,
+              state: reserved.state,
+              maxChargeMicrocredits: preflight.maxChargeMicrocredits,
+            });
+            const tokenizer = await fetch(target.tokenizer.url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                inputs: body.input,
+                add_special_tokens: true,
+              }),
+            });
+            if (!tokenizer.ok) throw new Error("tokenizer unavailable");
+            const exact = (await tokenizer.json()) as unknown[][];
+            const inputTokenUpperBound = exact.reduce(
+              (sum, tokens) => sum + tokens.length,
+              0,
             );
+            const response = await fetch(target.embedding.url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                model: "openai/BAAI/bge-small-en-v1.5",
+                input: body.input,
+              }),
+            });
+            if (!response.ok) throw new Error(`gateway ${response.status}`);
+            const payload = (await response.json()) as {
+              data: { embedding: number[] }[];
+              usage?: { prompt_tokens?: number };
+            };
+            const inputTokens = BigInt(
+              payload.usage?.prompt_tokens ?? inputTokenUpperBound,
+            );
+            log({
+              event: "metered",
+              operationId: body.operationId,
+              inputTokenUpperBound,
+              gatewayInputTokens: inputTokens.toString(),
+            });
+            const settled = await billing.settle({
+              operationId: body.operationId,
+              authorizationId: body.authorizationId,
+              uploaderAccount: { issuer, subject: body.subject },
+              inputTokens,
+              outputTokens: 0n,
+            });
+            log({ event: "settled", operationId: body.operationId });
+            return Response.json({
+              vectors: payload.data.map(({ embedding }) => embedding),
+              receipt: JSON.stringify(
+                settled ?? { operationId: body.operationId, state: "settled" },
+              ),
+            });
+          } catch (error) {
+            if (error instanceof WeKnoraBillingError) {
+              log({
+                event: "embedding-denied",
+                operationId: body.operationId,
+                code: error.code,
+              });
+              return new Response(JSON.stringify({ code: error.code }), {
+                status: statusFor(error.code),
+              });
+            }
+            log({
+              event: "embedding-failed",
+              operationId: body.operationId,
+              error: error instanceof Error ? error.message : "unknown",
+            });
+            return new Response(null, { status: 500 });
           }
         }
-        if (permit) {
-          await ledger.beginDispatch(
-            { issuer, subject: body.subject },
-            {
-              operationId: body.operationId,
-              permit,
-              authorizationId: body.authorizationId,
-            },
-            { embedding: true },
-          );
+        if (url.pathname === "/control/revoke" && request.method === "POST") {
+          await ledger.revokeAuthorization(identityA, authorizationId);
+          log({ event: "control", action: "revoke" });
+          return new Response("ok");
         }
-        log({
-          event: "reserved",
-          operationId: body.operationId,
-          resourceId: body.resourceId,
-          state: reserved.state,
-          maxChargeMicrocredits: preflight.maxChargeMicrocredits,
-        });
-        const tokenizer = await fetch(target.tokenizer.url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            inputs: body.input,
-            add_special_tokens: true,
-          }),
-        });
-        if (!tokenizer.ok) throw new Error("tokenizer unavailable");
-        const exact = (await tokenizer.json()) as unknown[][];
-        const inputTokenUpperBound = exact.reduce(
-          (sum, tokens) => sum + tokens.length,
-          0,
-        );
-        const response = await fetch(target.embedding.url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            model: "openai/BAAI/bge-small-en-v1.5",
-            input: body.input,
-          }),
-        });
-        if (!response.ok) throw new Error(`gateway ${response.status}`);
-        const payload = (await response.json()) as {
-          data: { embedding: number[] }[];
-          usage?: { prompt_tokens?: number };
-        };
-        const inputTokens = BigInt(
-          payload.usage?.prompt_tokens ?? inputTokenUpperBound,
-        );
-        log({
-          event: "metered",
-          operationId: body.operationId,
-          inputTokenUpperBound,
-          gatewayInputTokens: inputTokens.toString(),
-        });
-        const settled = await billing.settle({
-          operationId: body.operationId,
-          authorizationId: body.authorizationId,
-          uploaderAccount: { issuer, subject: body.subject },
-          inputTokens,
-          outputTokens: 0n,
-        });
-        log({ event: "settled", operationId: body.operationId });
-        return Response.json({
-          vectors: payload.data.map(({ embedding }) => embedding),
-          receipt: JSON.stringify(
-            settled ?? { operationId: body.operationId, state: "settled" },
-          ),
-        });
-      } catch (error) {
-        if (error instanceof WeKnoraBillingError) {
-          log({
-            event: "embedding-denied",
-            operationId: body.operationId,
-            code: error.code,
-          });
-          return new Response(JSON.stringify({ code: error.code }), {
-            status: statusFor(error.code),
-          });
+        if (url.pathname === "/control/receipts" && request.method === "GET") {
+          const out: Record<string, unknown> = {};
+          for (const [name, identity] of [
+            ["A", identityA],
+            ["B", identityB],
+            ["C", identityC],
+          ] as const) {
+            const accountId = await accountIdOf(identity);
+            out[name] = accountId
+              ? {
+                  accountId,
+                  balance: await ledger.balance(identity),
+                  operations: (
+                    await database
+                      .select()
+                      .from(testCreditOperations)
+                      .where(eq(testCreditOperations.accountId, accountId))
+                  ).map((row) => ({
+                    operationId: row.id,
+                    state: row.state,
+                    charged: row.charged?.toString() ?? null,
+                  })),
+                }
+              : null;
+          }
+          return Response.json(out);
         }
-        log({
-          event: "embedding-failed",
-          operationId: body.operationId,
-          error: error instanceof Error ? error.message : "unknown",
-        });
-        return new Response(null, { status: 500 });
-      }
-    }
-    if (url.pathname === "/control/revoke" && request.method === "POST") {
-      await ledger.revokeAuthorization(identityA, authorizationId);
-      log({ event: "control", action: "revoke" });
-      return new Response("ok");
-    }
-    if (url.pathname === "/control/receipts" && request.method === "GET") {
-      const out: Record<string, unknown> = {};
-      for (const [name, identity] of [
-        ["A", identityA],
-        ["B", identityB],
-        ["C", identityC],
-      ] as const) {
-        const accountId = await accountIdOf(identity);
-        out[name] = accountId
-          ? {
-              accountId,
-              balance: await ledger.balance(identity),
-              operations: (
-                await database
-                  .select()
-                  .from(testCreditOperations)
-                  .where(eq(testCreditOperations.accountId, accountId))
-              ).map((row) => ({
-                operationId: row.id,
-                state: row.state,
-                charged: row.charged?.toString() ?? null,
-              })),
-            }
-          : null;
-      }
-      return Response.json(out);
-    }
-    return new Response(null, { status: 404 });
-  },
-});
+        return new Response(null, { status: 404 });
+      },
+    });
 
 // ── Matrix ──────────────────────────────────────────────────────────────────
 
@@ -1003,7 +1020,7 @@ await localScenario("revocation-and-isolation-denials", async () => {
   };
 });
 
-await scenario("lago-reconciliation", async () => {
+await localScenario("lago-reconciliation", async () => {
   const accounts = [
     ["A", identityA],
     ["B", identityB],
@@ -1020,9 +1037,6 @@ await scenario("lago-reconciliation", async () => {
     externalSubscriptionId: subscriptionId,
   });
   const exporter = createLagoUsageExporter(database, client);
-  // A target run proves the deployment's own Lago destination before the
-  // outbox replay; the local fixture already validated it.
-  if (target.entry) await client.verifyDestination();
   const flushed = await exporter.flush();
   assert(
     !flushed.unavailable && flushed.paused === 0,
@@ -1038,11 +1052,6 @@ await scenario("lago-reconciliation", async () => {
 // A target run replaces every ledger-reaching fixture leg above with the same
 // legs driven through the target's product entries.
 if (target.entry) {
-  const requireEnv = (name: string) => {
-    const value = process.env[name]?.trim();
-    if (!value) throw new Error(`A target run needs ${name}.`);
-    return value;
-  };
   const weknoraService = process.env.PILOT_WEKNORA_SERVICE_TOKEN?.trim();
   const weknoraSubject = process.env.PILOT_WEKNORA_SUBJECT?.trim();
   const weknoraResource = process.env.PILOT_WEKNORA_RESOURCE_ID?.trim();
@@ -1053,6 +1062,11 @@ if (target.entry) {
       A: requireEnv("PILOT_TOKEN_A"),
       B: requireEnv("PILOT_TOKEN_B"),
       C: requireEnv("PILOT_TOKEN_C"),
+    },
+    sessionCookies: {
+      A: requireEnv("PILOT_SESSION_COOKIE_A"),
+      B: requireEnv("PILOT_SESSION_COOKIE_B"),
+      C: requireEnv("PILOT_SESSION_COOKIE_C"),
     },
     routes: {
       A: requireEnv("PILOT_ROUTE_A"),
@@ -1080,6 +1094,37 @@ if (target.entry) {
     results.push(result);
     log(result);
   }
+  await scenario("target-lago-reconciliation", async () => {
+    const modelSwitch = legResults.find(
+      (result) => result.scenario === "target-model-switch",
+    );
+    const operationIds =
+      modelSwitch?.outcome === "pass" ? modelSwitch.detail.operationIds : null;
+    assert(
+      Array.isArray(operationIds) && operationIds.length === 2,
+      "The target must settle both model-switch operations before Lago reconciliation.",
+    );
+    const client = createLagoHttpUsageClient({
+      baseUrl: lagoUrl,
+      apiKey: lagoKey,
+      metricCode: "model-usage",
+      externalSubscriptionId: requireEnv("LAGO_USAGE_SUBSCRIPTION_ID"),
+    });
+    const exporter = createLagoUsageExporter(database, client);
+    const reconciled = [];
+    for (const operationId of operationIds) {
+      assert(typeof operationId === "string", "Missing target operation ID.");
+      const [row] = await database
+        .select({ eventId: lagoUsageEvents.eventId })
+        .from(lagoUsageEvents)
+        .where(eq(lagoUsageEvents.operationId, operationId));
+      assert(row, `No target Lago event for ${operationId}.`);
+      const result = await exporter.reconcileEvent(row.eventId);
+      assert(result.result === "matched", `Lago did not match ${operationId}.`);
+      reconciled.push({ operationId, eventId: row.eventId });
+    }
+    return { reconciled };
+  });
 }
 
 const receipts = target.entry
@@ -1125,4 +1170,6 @@ log({
   passed: results.filter((r) => r.outcome === "pass").length,
   failed: results.filter((r) => r.outcome === "fail").length,
 });
+fixtureServer?.stop(true);
 await database.$client.close();
+if (results.some((result) => result.outcome === "fail")) process.exitCode = 1;
