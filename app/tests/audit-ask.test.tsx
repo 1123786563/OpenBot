@@ -316,3 +316,21 @@ test("a type chip names its rows in the words of the Audit page's views", () => 
     "Rule: Bots may not visit social media sites",
   );
 });
+
+test("Ask stays disabled before a question and the input explains what to ask", async () => {
+  const { view, asked } = renderAsk([]);
+  const input = await view.findByLabelText("Ask about the audit trail");
+  const ask = view.getByRole("button", { name: "Ask" });
+  expect(ask).toHaveProperty("disabled", true);
+  expect(
+    document.getElementById(input.getAttribute("aria-describedby") ?? "")
+      ?.textContent,
+  ).toBe("Try asking about Gmail changes by a routine last week.");
+
+  const user = userEvent.setup({ document });
+  await user.type(input, "   ");
+  expect(ask).toHaveProperty("disabled", true);
+  await user.type(input, "What changed?");
+  expect(ask).toHaveProperty("disabled", false);
+  expect(asked).toEqual([]);
+});

@@ -21,6 +21,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { ReadError } from "@/components/layout/read-status";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -122,6 +123,7 @@ const skipped = (bot: BotCheckInMetrics) =>
  */
 export function CheckInsPage() {
   const overview = useQuery(enterpriseOverviewQueryOptions());
+  const settingsHeading = useRef<HTMLHeadingElement>(null);
   const [days, setDays] = useState<Days>(7);
   /*
    * The previous window's numbers stay up while the other loads, so switching between 7 and 30 days
@@ -136,9 +138,10 @@ export function CheckInsPage() {
     <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageShell
         description="Bots check the apps people connected and tell them when something needs them, at most once an hour. They never act without asking."
+        headingRef={settingsHeading}
         title="Check-ins"
       >
-        {overview.isPending ? (
+        {overview.isPending && !overview.isFetched ? (
           <div
             aria-busy="true"
             aria-label="Loading check-in settings"
@@ -153,21 +156,13 @@ export function CheckInsPage() {
               </Item>
             </PageRows>
           </div>
-        ) : overview.error ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <p className="text-destructive text-sm" role="alert">
-              Couldn't load check-in settings.
-            </p>
-            <Button
-              disabled={overview.isFetching}
-              onClick={() => void overview.refetch()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {overview.isFetching ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
+        ) : overview.error || !overview.data ? (
+          <ReadError
+            focusAfterRetry={() => settingsHeading.current}
+            message="Couldn't load check-in settings."
+            retry={overview.refetch}
+            retrying={overview.isFetching}
+          />
         ) : (
           <CheckInSettings data={overview.data} />
         )}
@@ -305,6 +300,7 @@ function Activity({
   metrics: UseQueryResult<CheckInMetrics>;
   onDays: (days: Days) => void;
 }) {
+  const activityHeading = useRef<HTMLHeadingElement>(null);
   const [openBot, setOpenBot] = useState<string | undefined>();
   const bot = metrics.data?.bots.find((row) => row.agentId === openBot);
 
@@ -327,9 +323,10 @@ function Activity({
         </Select>
       }
       description="Acceptance is how many items people started, out of the ones they started or hid."
+      headingRef={activityHeading}
       title="Activity"
     >
-      {metrics.isPending ? (
+      {metrics.isPending && !metrics.isFetched ? (
         <div
           aria-busy="true"
           aria-label="Loading check-in activity"
@@ -352,21 +349,13 @@ function Activity({
             ))}
           </PageRows>
         </div>
-      ) : metrics.error ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load check-in activity.
-          </p>
-          <Button
-            disabled={metrics.isFetching}
-            onClick={() => void metrics.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {metrics.isFetching ? "Retrying…" : "Retry"}
-          </Button>
-        </div>
+      ) : metrics.error || !metrics.data ? (
+        <ReadError
+          focusAfterRetry={() => activityHeading.current}
+          message="Couldn't load check-in activity."
+          retry={metrics.refetch}
+          retrying={metrics.isFetching}
+        />
       ) : (
         <>
           <PageRows>

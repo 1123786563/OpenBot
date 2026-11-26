@@ -1008,6 +1008,11 @@ export type AuditEventQuery = {
   intent?: string;
   /** Refusals by this boundary rule, its text exactly as recorded. One: a rule can hold commas. */
   rule?: string;
+  /**
+   * Words that must all appear in the row's stored text — its type, target, actor and payload — so
+   * a search reaches rows older than the newest page, not only the ones already loaded.
+   */
+  q?: string;
   from?: string;
   to?: string;
 };
@@ -1347,6 +1352,30 @@ function notRequested(column: PgColumn, values: string[] | undefined) {
   return values && values.length > 0 ? notInArray(column, values) : undefined;
 }
 
+/** So a search for `100%` finds that row and not every row. */
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/**
+ * Every word of `q` must appear in the row's stored text, in any case.
+ *
+ * The columns and the payload are one haystack, so a word finds a tool, a person's id, an element
+ * name or a reason wherever the row records it. AND across the words, like the page's own filter:
+ * `gmail send` narrows to the rows carrying both rather than widening to either. This is what lets
+ * the search reach an older page the browser has not loaded.
+ */
+function textCondition(q: string | undefined) {
+  const words = q?.trim().split(/\s+/).filter(Boolean);
+  if (!words || words.length === 0) return undefined;
+  const haystack = sql`concat_ws(' ', ${auditEvents.eventType}, ${auditEvents.targetType}, ${auditEvents.targetId}, ${auditEvents.actorUserId}, ${auditEvents.initiatorKind}, ${auditEvents.initiatorId}, ${auditEvents.payload}::text)`;
+  return and(
+    ...words.map(
+      (word) => sql`${haystack} ilike ${`%${escapeLike(word)}%`} escape '\\'`,
+    ),
+  );
+}
+
 /**
  * The rows of any of these Bots: what each did (`payload.bot`) and what was done to it. A folder
  * given to a Bot before its row said `bot` named it as `botId`, and a routine is its Bot's,
@@ -1403,6 +1432,7 @@ export function createAuditReader(database: Database): AuditReader {
         effectCondition(query.effect?.trim()),
         intentCondition(requestedValues(query.intent)),
         ruleCondition(query.rule),
+        textCondition(query.q),
         query.from
           ? gt(auditEvents.createdAt, new Date(query.from))
           : undefined,
@@ -1498,6 +1528,14 @@ export function auditQueryFromUrl(url: URL): AuditEventQuery {
     decodeCursor(cursor);
   }
 
+  const rawQ = optional("q");
+  if (rawQ !== undefined && rawQ.length > 200) {
+    throw new AuditQueryError(
+      'Query parameter "q" must be at most 200 characters.',
+    );
+  }
+  const q = rawQ?.trim() || undefined;
+
   return {
     cursor,
     limit,
@@ -1514,6 +1552,7 @@ export function auditQueryFromUrl(url: URL): AuditEventQuery {
     effect: optional("effect"),
     intent: optional("intent"),
     rule: optional("rule"),
+    q,
     from,
     to,
   };

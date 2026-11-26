@@ -1269,7 +1269,7 @@ export function createApp(
       /*
        * The export answers the same filtered query as the list — `eventType`,
        * `actorUserId`, `initiatorKind`, `targetType`, `targetId`, `bot`, `app`, `tool`, `effect`,
-       * `intent`, `rule`, `from`, `to` — so the downloaded file and the table agree. Paging (`cursor`, `limit`) belongs to the
+       * `intent`, `rule`, `q`, `from`, `to` — so the downloaded file and the table agree. Paging (`cursor`, `limit`) belongs to the
        * JSON list and is ignored here; the export walks every matching page up to the
        * cap in `readAuditExportRows` and names the file after the day it was pulled.
        */
@@ -1280,12 +1280,19 @@ export function createApp(
           query,
         );
         if (auditStore) {
-          const { cursor: _cursor, limit: _limit, ...filters } = query;
+          const { cursor: _cursor, limit: _limit, q, ...filters } = query;
           await recordAuditEvent(auditStore, {
             eventType: "audit.exported",
             targetType: "audit_trail",
             actorUserId: context.var.actor.id,
-            payload: { format: "csv", rows: events.length, truncated, filters },
+            payload: {
+              format: "csv",
+              rows: events.length,
+              truncated,
+              filters,
+              // Keep searches from matching export events that repeat the search text.
+              ...(q ? { textSearch: true } : {}),
+            },
           });
         }
         const day = new Date().toISOString().slice(0, 10);
