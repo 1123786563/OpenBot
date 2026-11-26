@@ -5037,6 +5037,9 @@ test.each([true, false])(
     useSavedCompatibleEndpointSetup(undefined, undefined, keyed);
     const view = await renderApp();
     await reachAi(view);
+    // The provider list arrives from its own invoke, so the saved endpoint's form is not there
+    // the moment the heading is.
+    await view.findByLabelText("Base URL");
     expect(view.getByLabelText("Base URL")).toHaveProperty(
       "value",
       "https://models.example/v1",
@@ -5305,6 +5308,7 @@ test("saved compatible endpoint restores the optional container URL", async () =
   const view = await renderApp();
   await reachAi(view);
 
+  await view.findByLabelText("Container Base URL, if different");
   expect(
     view.getByLabelText("Container Base URL, if different"),
   ).toHaveProperty("value", "http://ollama:11434/v1");
