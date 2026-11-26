@@ -44,6 +44,11 @@ services:
       MANAGED_AGENT_AG_UI_URL: http://fixture:4200/ag-ui
       MANAGED_AGENT_TOKEN: pilot-offline-agent
       WORKER_SHARED_SECRET: pilot-offline-worker
+    # The separately deployed Bifrost gateway and its provider keys never join
+    # this project. The Server reaches it only through its own network.
+    networks:
+      default:
+      bifrost:
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -70,6 +75,9 @@ services:
 networks:
   default:
     internal: true
+  bifrost:
+    external: true
+    name: ${PILOT_BIFROST_NETWORK:?Name the Docker network of the deployed Bifrost gateway}
 
 volumes:
   data:
