@@ -30,13 +30,45 @@ function draw() {
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   client.setQueryData(agentListQueryOptions().queryKey, [
-    { id: "desk", name: "Desk" },
+    {
+      id: "desk",
+      name: "Desk",
+      title: "Desk",
+      roleDescription: "Reviews summaries",
+      avatarSeed: "desk",
+      visibility: "private",
+      endpoint: null,
+      builtIn: true,
+      hasAuth: false,
+      hasCallbackToken: false,
+      hidden: false,
+      pinned: false,
+      systemOwned: false,
+      canManage: true,
+      mine: true,
+      isolated: false,
+      isolationActive: false,
+      isolationOffReason: null,
+    },
   ]);
   client.setQueryData(channelListQueryOptions().queryKey, {
     pages: [
       {
         channels: [
-          { id: "room", active: true, agentIds: ["desk"], summary: "Planning" },
+          {
+            id: "room",
+            name: "Desk",
+            threadId: "thread",
+            active: true,
+            agentIds: ["desk"],
+            summary: "Planning",
+            lastMessage: null,
+            lastMessageAt: null,
+            lastMessageAgentId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            pinned: false,
+            lastReadAt: null,
+          },
         ],
         nextCursor: null,
       },
@@ -44,6 +76,10 @@ function draw() {
     pageParams: [undefined],
   });
   client.setQueryData(deploymentCapabilitiesQueryOptions().queryKey, {
+    edition: "team",
+    generativeUi: false,
+    localEvaluation: false,
+    selfHostBanner: false,
     testCreditConversations: true,
   });
   const root = createRootRoute();
@@ -93,15 +129,18 @@ test("submitting twice saves once and returns to the focused Routines heading", 
   const response = Promise.withResolvers<Response>();
   const posts: RequestInit["body"][] = [];
   using fetchMock = spyOn(globalThis, "fetch").mockImplementation(
-    async (input, init) => {
-      if (String(input) === "/api/routines" && init?.method === "POST") {
-        posts.push(init.body);
-        return response.promise;
-      }
-      if (String(input) === "/api/routines")
-        return Response.json({ routines: [], sweep: null });
-      return Response.json({ agents: [] });
-    },
+    Object.assign(
+      async (...[input, init]: Parameters<typeof fetch>) => {
+        if (String(input) === "/api/routines" && init?.method === "POST") {
+          posts.push(init.body);
+          return response.promise;
+        }
+        if (String(input) === "/api/routines")
+          return Response.json({ routines: [], sweep: null });
+        return Response.json({ agents: [] });
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    ),
   );
   const view = draw();
   const user = userEvent.setup({ document });

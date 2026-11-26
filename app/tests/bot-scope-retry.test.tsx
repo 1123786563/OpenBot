@@ -43,17 +43,20 @@ test.each([
     GlobalRegistrator.register({ url: "http://openbot.test" });
     let rosterAvailable = false;
     using fetchMock = spyOn(globalThis, "fetch").mockImplementation(
-      async (input) => {
-        const path = String(input);
-        if (path === "/api/routines")
-          return Response.json({ routines: [], sweep: null });
-        if (path === "/api/responsibilities")
-          return Response.json({ responsibilities: [] });
-        if (path !== "/api/agents") return Response.json({});
-        return rosterAvailable
-          ? Response.json({ agents: [{ id: "desk", name: "Desk" }] })
-          : Response.json({}, { status: 503 });
-      },
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          const path = String(input);
+          if (path === "/api/routines")
+            return Response.json({ routines: [], sweep: null });
+          if (path === "/api/responsibilities")
+            return Response.json({ responsibilities: [] });
+          if (path !== "/api/agents") return Response.json({});
+          return rosterAvailable
+            ? Response.json({ agents: [{ id: "desk", name: "Desk" }] })
+            : Response.json({}, { status: 503 });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
     );
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
