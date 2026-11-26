@@ -12,6 +12,10 @@ import {
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createPilotSignoffs } from "../src/billing/pilot-signoffs";
 import { createTestCreditLedger } from "../src/billing/test-credit";
+import {
+  createTestCreditRoutes,
+  type TestCreditExecutor,
+} from "../src/billing/test-credit-routes";
 import { loadWeKnoraBilling } from "../src/billing/weknora-config";
 import { createWeKnoraRoutes } from "../src/billing/weknora-routes";
 import { createDatabase } from "../src/db/client";
@@ -44,6 +48,10 @@ import {
   fixtureTraceReport,
 } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
+import {
+  loadPilotTarget,
+  pilotChatEntry,
+} from "../scripts/pilot-matrix-target";
 
 test("WeKnora resource paths dispatch independently and deny invalid authority before the gateway", async () => {
   const db = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -956,6 +964,192 @@ test("WeKnora resource paths dispatch independently and deny invalid authority b
           .delete(billingApplications)
           .where(eq(billingApplications.id, "weknora"));
       }
+    });
+    if (original)
+      await db
+        .update(enterpriseSettings)
+        .set({ value: original.value })
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    else
+      await db
+        .delete(enterpriseSettings)
+        .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    await db.$client.close();
+  }
+}, 120_000);
+
+test("the pilot matrix target is parameterized and its product entry refuses new work once the account is suspended", async () => {
+  const db = createDatabase(testDatabaseUrl(), TEST_POOL);
+  const run = crypto.randomUUID().slice(0, 8);
+  const subject = crypto.randomUUID();
+  const identity = { issuer: `pilot-target-casdoor-${run}`, subject };
+  const token = `fixture-target-${run}`;
+  const routeId = `pilot-target-${run}`;
+  const harnessImage = `agent-langgraph-agui@sha256:${"e".repeat(64)}`;
+  const ledger = createTestCreditLedger(db);
+  const [original] = await db
+    .select()
+    .from(enterpriseSettings)
+    .where(eq(enterpriseSettings.key, pilotCatalogKey));
+  const batchId = crypto.randomUUID();
+  const drafted = configure(emptyCatalog, {
+    harnessImage,
+    routes: {
+      [routeId]: {
+        provider: "fixture-pilot",
+        model: "pilot-target",
+        gatewayRevision: "pilot-g",
+        meteringRevision: "pilot-m",
+        maxInputTokens: 10,
+        maxOutputTokens: 2,
+        tools: false,
+        price: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
+      },
+    },
+  });
+  const proposed = drafted.routes[routeId];
+  if (!proposed) throw new Error("fixture route missing");
+  const published = publish(
+    verify(
+      drafted,
+      routeId,
+      fixtureTraceReport(harnessImage, proposed),
+      "test",
+    ),
+    [routeId],
+    routeId,
+    "test",
+  ).catalog;
+  let dispatched = 0;
+  let server: ReturnType<typeof Bun.serve> | undefined;
+  try {
+    await db
+      .insert(enterpriseSettings)
+      .values({ key: pilotCatalogKey, value: published })
+      .onConflictDoUpdate({
+        target: enterpriseSettings.key,
+        set: { value: published },
+      });
+    await ledger.enroll({ identity, batchId, amount: 100n });
+    await ledger.claim(identity, batchId);
+    const execute: TestCreditExecutor = async ({
+      bindGatewayRequest,
+      messages,
+    }) => {
+      dispatched += 1;
+      const bound = await bindGatewayRequest({
+        requestId: crypto.randomUUID(),
+        digest: "a".repeat(64),
+      });
+      if (!bound) throw new Error("gateway request was not bound");
+      const first = messages[0];
+      return {
+        text: `Answer to: ${first && "content" in first ? first.content : "nothing"}`,
+        usage: { inputTokens: 3, outputTokens: 2 },
+      };
+    };
+    const api = createTestCreditRoutes({
+      ledger,
+      authenticate: async (request) =>
+        request.headers.get("authorization") === `Bearer ${token}`
+          ? identity
+          : undefined,
+      execute,
+    });
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: api.fetch });
+
+    // The default target is the local fixture deployment.
+    expect(loadPilotTarget({}).evidence).toBe("fixture");
+    // A deployment target must name its product entry, credential and
+    // provenance, and must not point back at loopback.
+    expect(() => loadPilotTarget({ PILOT_EVIDENCE: "deployment" })).toThrow();
+    expect(() =>
+      loadPilotTarget({
+        PILOT_EVIDENCE: "deployment",
+        PILOT_TARGET_URL: "http://127.0.0.1:3000/api/billing",
+        PILOT_TARGET_TOKEN: token,
+        PILOT_DEPLOYMENT_ID: "target-1",
+        PILOT_BUILD_VERSION: "build-1",
+        PILOT_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
+        PILOT_GATEWAY_URL: "https://gateway.example/v1/chat/completions",
+        PILOT_GATEWAY_REVISION: "target-g",
+      }),
+    ).toThrow("loopback");
+    const target = loadPilotTarget({
+      PILOT_EVIDENCE: "fixture",
+      PILOT_TARGET_URL: server.url.origin,
+      PILOT_TARGET_TOKEN: token,
+    });
+
+    // The chat leg drives the product HTTP entry, not the ledger directly.
+    const first = await pilotChatEntry(target, {
+      operationId: "pilot-entry-settled",
+      prompt: "Hello target",
+    });
+    expect(first.dispatch?.state).toBe("completed");
+    expect(dispatched).toBe(1);
+    expect(first.receipt).toMatchObject({
+      state: "settled",
+      chargedMicrocredits: "5",
+      inputTokens: "3",
+      outputTokens: "2",
+    });
+    const settledBalance = await ledger.balance(identity);
+    expect(settledBalance).toMatchObject({
+      chargedMicrocredits: "5",
+      availableMicrocredits: "95",
+    });
+
+    // #69 joint leg: the identity provider disables the account; the product
+    // entry refuses new work while the settled receipt stands.
+    const accountId = await ledger.accountOf(identity);
+    if (!accountId) throw new Error("missing Billing Account");
+    await createPaidCreditLedger(db).suspendAccount(accountId, true);
+    const refused = await pilotChatEntry(target, {
+      operationId: "pilot-entry-suspended",
+      prompt: "Hello again",
+    });
+    expect(refused.reservation).toEqual({
+      state: "denied",
+      reason: "not_authorized",
+    });
+    expect(refused.dispatch).toBeUndefined();
+    expect(dispatched).toBe(1);
+    expect(await ledger.receipt(identity, "pilot-entry-settled")).toMatchObject(
+      { state: "settled", chargedMicrocredits: "5" },
+    );
+    expect(await ledger.balance(identity)).toEqual(settledBalance);
+  } finally {
+    await server?.stop(true);
+    await db.transaction(async (tx) => {
+      const accounts = tx
+        .select({ id: testCreditAccounts.id })
+        .from(testCreditAccounts)
+        .where(eq(testCreditAccounts.subject, subject));
+      await tx
+        .delete(lagoUsageEvents)
+        .where(inArray(lagoUsageEvents.accountId, accounts));
+      await tx
+        .delete(testCreditEvidence)
+        .where(inArray(testCreditEvidence.accountId, accounts));
+      await tx
+        .delete(pilotProviderCostHolds)
+        .where(inArray(pilotProviderCostHolds.accountId, accounts));
+      await tx
+        .delete(testCreditOperations)
+        .where(inArray(testCreditOperations.accountId, accounts));
+      await tx
+        .delete(testCreditBudgets)
+        .where(inArray(testCreditBudgets.accountId, accounts));
+      await tx
+        .delete(testCreditEnrollments)
+        .where(inArray(testCreditEnrollments.accountId, accounts));
+      await tx
+        .delete(testCreditAccounts)
+        .where(eq(testCreditAccounts.subject, subject));
+      await tx
+        .delete(testCreditBatches)
+        .where(eq(testCreditBatches.id, batchId));
     });
     if (original)
       await db

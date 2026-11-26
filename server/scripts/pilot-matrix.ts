@@ -46,6 +46,9 @@ import {
   fixtureEmbeddingReport,
   fixtureTraceReport,
 } from "../tests/support/bifrost-evidence";
+import { loadPilotTarget, pilotChatEntry } from "./pilot-matrix-target";
+
+const target = loadPilotTarget(process.env);
 
 const runDir = process.argv[2];
 if (!runDir) throw new Error("usage: bun scripts/pilot-matrix.ts <run-dir>");
@@ -82,9 +85,12 @@ const identityA = { issuer, subject: randomUUID() };
 const identityB = { issuer, subject: randomUUID() };
 const identityC = { issuer, subject: randomUUID() };
 const resourceId = "weknora:tenant:1:kb:kb-1";
-const gatewayRevision = "matrix-fixed6-3skfs9";
-const meteringRevision = "matrix-zhipu-tokenizer";
-const lagoUrl = process.env.LAGO_URL ?? "http://127.0.0.1:32832";
+const gatewayRevision = target.gateway.revision;
+const meteringRevision = target.gateway.meteringRevision;
+const chatTokenizerUrl =
+  process.env.PILOT_CHAT_TOKENIZER_URL ??
+  "https://open.bigmodel.cn/api/paas/v4/tokenizer";
+const lagoUrl = process.env.LAGO_URL ?? target.lago.url;
 const lagoKey =
   process.env.LAGO_API_KEY ??
   (
@@ -116,18 +122,15 @@ const countInputTokens: Parameters<
     )
   )
     throw new Error("The text-only pilot tokenizer cannot meter this request.");
-  const response = await fetch(
-    "https://open.bigmodel.cn/api/paas/v4/tokenizer",
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${zhipuKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ model: route.model, messages }),
-      signal: AbortSignal.timeout(20_000),
+  const response = await fetch(chatTokenizerUrl, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${zhipuKey}`,
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify({ model: route.model, messages }),
+    signal: AbortSignal.timeout(20_000),
+  });
   if (!response.ok) throw new Error(`tokenizer ${response.status}`);
   const usage = (await response.json()) as {
     usage: { prompt_tokens: number; image_tokens?: number };
@@ -135,7 +138,7 @@ const countInputTokens: Parameters<
   return usage.usage.prompt_tokens + (usage.usage.image_tokens ?? 0) + 2;
 };
 const chatExecutor = createBifrostCreditExecutor({
-  endpoint: new URL("http://127.0.0.1:32790/v1/chat/completions"),
+  endpoint: new URL(target.gateway.url),
   gatewayRevision,
   meteringRevision,
   countInputTokens,
@@ -146,6 +149,12 @@ async function publishCatalog(
   routes: Record<string, RouteSpec>,
   defaultRoute: string | null,
 ) {
+  // An independent target was published by its own #89 admin flow. Fabricating
+  // fixture traces would turn a real rerun into local evidence.
+  if (target.evidence === "deployment")
+    throw new Error(
+      "An independent target publishes its own verified routes; the matrix must not fabricate evidence.",
+    );
   const harnessImage = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
   const drafted = configure(emptyCatalog, { harnessImage, routes });
   let catalog = drafted;
@@ -187,6 +196,19 @@ async function chatOp(
   operationId: string,
   prompt: string,
 ) {
+  if (target.entry) {
+    // shortcut: a deployment entry quotes its own default route, so this leg
+    // cannot switch per Bot or conversation; upgrade when the target exposes
+    // model picks over HTTP.
+    const chat = await pilotChatEntry(target, { operationId, prompt });
+    assert(
+      chat.dispatch?.state === "completed",
+      `dispatch: ${chat.dispatch?.state ?? chat.reservation.state}`,
+    );
+    return {
+      result: { text: chat.dispatch.text ?? "", usage: chat.usage },
+    };
+  }
   const pick = await ledger.resolveQuote({
     conversation: { id: routeId, revision },
   });
@@ -350,7 +372,7 @@ Bun.serve({
           state: reserved.state,
           maxChargeMicrocredits: preflight.maxChargeMicrocredits,
         });
-        const tokenizer = await fetch("http://127.0.0.1:25169/tokenize", {
+        const tokenizer = await fetch(target.tokenizer.url, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -364,7 +386,7 @@ Bun.serve({
           (sum, tokens) => sum + tokens.length,
           0,
         );
-        const response = await fetch("http://127.0.0.1:25170/v1/embeddings", {
+        const response = await fetch(target.embedding.url, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -608,7 +630,7 @@ await scenario("cross-app-balance-race", async () => {
 
 await scenario("auxiliary-boundary-fail-closed", async () => {
   const completer = createAuxiliaryModelCompleter({
-    model: { url: new URL("http://127.0.0.1:32790/v1"), token: "unused" },
+    model: { url: new URL("/v1", target.gateway.url), token: "unused" },
     route: "route-a",
   });
   let refusedNoContext = false;
@@ -770,7 +792,7 @@ await scenario("external-direct-gateway-boundary", async () => {
   // What an external app sees hitting the pinned gateway directly, with no
   // OpenBot billing context. The gateway is loopback-bound in this deployment;
   // provider credentials never leave it. The dispatch gate is OpenBot-side.
-  const response = await fetch("http://127.0.0.1:32790/v1/chat/completions", {
+  const response = await fetch(target.gateway.url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1026,12 +1048,16 @@ await Bun.write(
         C: { subject: identityC.subject },
       },
       authorizationId,
+      evidence: target.evidence,
+      deployment: target.deployment,
       gateway: {
-        image: "openbot-bifrost89:zhipu-cap-fixed6",
+        image:
+          process.env.PILOT_GATEWAY_IMAGE ??
+          "openbot-bifrost89:zhipu-cap-fixed6",
         revision: gatewayRevision,
-        chatEndpoint: "http://127.0.0.1:32790",
-        embeddingEndpoint: "http://127.0.0.1:25170",
-        tokenizer: "zhipu /api/paas/v4/tokenizer",
+        chatEndpoint: new URL(target.gateway.url).origin,
+        embeddingEndpoint: new URL(target.embedding.url).origin,
+        tokenizer: chatTokenizerUrl,
       },
       lago: { url: lagoUrl, version: "v1.57.0" },
       results,
