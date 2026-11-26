@@ -1445,6 +1445,58 @@ describe("resolving a ref across replicas", () => {
     return { gateway, calls, rows };
   }
 
+  test("Cube snapshots and refs require the current browser run at the same address", async () => {
+    let run: string | undefined = "browser-run-one";
+    let replacedDuringSnapshot = false;
+    const { provider, fetchImpl, calls } = fakeComputer({
+      routes: {
+        "/snapshot": () => {
+          if (replacedDuringSnapshot) run = "browser-run-three";
+          return Response.json(SNAPSHOT);
+        },
+        "/run": (init) => {
+          const headers = new Headers(init?.headers);
+          expect(headers.get("x-openbot-computer-token")).toBe("cube-token");
+          expect(headers.get("x-openbot-bot-id")).toBe("bot-1");
+          return Response.json({ run });
+        },
+      },
+    });
+    const gateway = createComputerGateway({
+      provider,
+      fetchImpl,
+      browserProvider: {
+        serves: () => true,
+        locate: async () => "http://cube-browser:4100",
+        tokenFor: () => "cube-token",
+        status: async (seat) => ({ botId: seat.botId, state: "ready" }),
+      },
+      policy: () => PERMISSIVE,
+      auditStore: fakeAudit().store,
+    });
+    const seat = botSeat("bot-1");
+    const click = () =>
+      gateway.click(seat, ACTOR, { ref: "e9", snapshotId: 7 });
+
+    await expect(click()).rejects.toThrow(StaleSnapshotError);
+    await gateway.snapshot(seat);
+    expect((await click()).element?.name).toBe("Submit order");
+
+    run = "browser-run-two";
+    await expect(click()).rejects.toThrow(StaleSnapshotError);
+    await gateway.snapshot(seat);
+    expect((await click()).element?.name).toBe("Submit order");
+
+    run = undefined;
+    await expect(click()).rejects.toThrow(StaleSnapshotError);
+    await expect(gateway.snapshot(seat)).rejects.toThrow(/browser run/i);
+    run = "browser-run-two";
+    replacedDuringSnapshot = true;
+    await expect(gateway.snapshot(seat)).rejects.toThrow(/run changed/i);
+    await expect(click()).rejects.toThrow(StaleSnapshotError);
+    expect(calls).toEqual(["click", "click"]);
+  });
+
   const DENY_SUBMIT: ActionPolicy = {
     ...PERMISSIVE,
     deny: ['contains(element.name, "submit")'],

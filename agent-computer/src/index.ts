@@ -6,6 +6,13 @@ import type { ConsoleMessage, Page } from "playwright";
 import { z } from "zod";
 import { browserUploadDispatch } from "../../shared/browser-upload";
 import {
+  botBrowserActionPaths,
+  browserControlPaths,
+  browserGesturePaths,
+  browserObservationPaths,
+  humanBrowserInputPaths,
+} from "../../shared/computer-browser-paths";
+import {
   isPersonBrowserId,
   RECORDER_DIR_ENV,
 } from "../../shared/openbot-browser";
@@ -2134,24 +2141,20 @@ type ActionBody = {
   submit?: unknown;
 };
 
-const ACTIONS = new Set(["/click", "/type", "/key", "/scroll"]);
+const ACTIONS = new Set(browserGesturePaths);
 
 /**
  * What the Bot does to its browser, one at a time (browser-turns.ts). A snapshot is here because it stamps the page and
  * moves the snapshot on, so an action must not resolve a ref while one is being taken.
  */
 const HOLDS_THE_BROWSER = new Set([
-  "/navigate",
-  "/browser-upload",
+  ...botBrowserActionPaths,
   "/human/browser-upload",
-  ...ACTIONS,
   "/snapshot",
-  "/sign-in/fill",
-  "/sign-in/code",
 ]);
 
 /** A look at the page: after what was sent before it, beside what is sent after it. */
-const WAITS_FOR_THE_BROWSER = new Set(["/screenshot", "/read"]);
+const WAITS_FOR_THE_BROWSER = new Set(browserObservationPaths);
 
 function browserOnlyPath(path: string): boolean {
   return (
@@ -2163,23 +2166,11 @@ function browserOnlyPath(path: string): boolean {
     HOLDS_THE_BROWSER.has(path) ||
     WAITS_FOR_THE_BROWSER.has(path) ||
     HUMAN_INPUT.has(path) ||
-    [
-      "/control/request",
-      "/control/take",
-      "/control/release",
-      "/control/cancel",
-      "/control/secret",
-      "/human/secret",
-    ].includes(path)
+    browserControlPaths.includes(path)
   );
 }
 
-const HUMAN_INPUT = new Set([
-  "/human/click",
-  "/human/type",
-  "/human/key",
-  "/human/scroll",
-]);
+const HUMAN_INPUT = new Set(humanBrowserInputPaths);
 
 /**
  * Carry out one thing a person did with their mouse or keyboard.

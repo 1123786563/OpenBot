@@ -995,12 +995,14 @@ The supervisor recreates each computer with the same named volumes on its next r
 
 ### OpenShell execution pilot
 
-The pilot routes commands, workspace file tools, and the Terminal tab to OpenShell for
-the users listed in `OPENBOT_OPENSHELL_PILOT_USERS`. Enter their OpenBot user IDs as a
-comma-separated list. Keep the computer provider configured for browser routes and
-existing isolated Bots. To switch a user back to the legacy backend, remove their ID
-from the list and from `OPENBOT_CUBE_BROWSER_VOLUMES`, then restart the API. A user
-who still has a CubeSandbox browser binding needs OpenShell for execution.
+The pilot routes commands, workspace file tools, and the Terminal tab to
+OpenShell for users listed in `OPENBOT_OPENSHELL_PILOT_USERS`. Operators obtain
+each user's consent before adding their OpenBot user ID to the comma-separated
+list. Keep the computer provider configured for legacy browser routes and
+isolated Bots. The API rejects startup if any Cube browser binding lacks
+matching OpenShell enrollment. OpenShell-only enrollment uses the legacy
+browser. To return a user to the legacy browser and execution backend, remove
+their ID from both pilot settings, then restart the API.
 
 Build the execution image from the repository root.
 
@@ -1053,11 +1055,14 @@ support workload updates. This procedure requires a sandbox created with
 4. After the update succeeds, let OpenBot wake the stopped sandbox and read a
    known workspace file through the normal execution route.
 
-Direct removal of the Docker workload can leave the OpenShell record and volume
-behind while preventing restart. If that happens before an update has been
-accepted, preserve the sandbox record and volume and inspect them for operator
-recovery. Deleting the sandbox or clearing its workspace removes its owned
-volume. [OpenShell v0.1.10 Docker driver](https://github.com/NVIDIA/OpenShell/blob/v0.1.10/crates/openshell-driver-docker/README.md#stopped-workload-image-updates)
+A disposable stopped-workload update kept the named sandbox and volume, changed
+the Docker container, and preserved a file read through OpenBot. In a separate
+unplanned workload-loss test, OpenBot returned HTTP 503 and requested operator
+recovery while the workspace bytes remained on disk. If the Docker workload
+disappears and OpenShell cannot restart it, preserve the sandbox record and
+volume for operator recovery. Deleting the sandbox or clearing its workspace
+removes its owned volume. Verify planned replacement on the target deployment
+with the steps above. [OpenShell v0.1.10 Docker driver](https://github.com/NVIDIA/OpenShell/blob/v0.1.10/crates/openshell-driver-docker/README.md#stopped-workload-image-updates)
 
 ### Headed or headless managed Chromium in Docker or Helm
 

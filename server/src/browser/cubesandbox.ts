@@ -29,6 +29,13 @@ const volumesSchema = z.record(z.string().min(1), z.string().trim().min(1));
 const MOUNT = "/profiles";
 const LABEL = "openbotBrowser";
 
+export function cubeBrowserVolumes(env: Record<string, string | undefined>) {
+  const bindings = env.OPENBOT_CUBE_BROWSER_VOLUMES?.trim();
+  return new Map(
+    bindings ? Object.entries(volumesSchema.parse(JSON.parse(bindings))) : [],
+  );
+}
+
 export function cubeSandboxBrowsers(
   env: Record<string, string | undefined>,
   options: {
@@ -36,12 +43,7 @@ export function cubeSandboxBrowsers(
     serialize: <T>(id: string, run: () => Promise<T>) => Promise<T>;
   },
 ): BrowserProvider | undefined {
-  const bindings = env.OPENBOT_CUBE_BROWSER_VOLUMES?.trim();
-  if (!bindings) return undefined;
-
-  const volumes = new Map(
-    Object.entries(volumesSchema.parse(JSON.parse(bindings))),
-  );
+  const volumes = cubeBrowserVolumes(env);
   if (volumes.size === 0) return undefined;
   if (new Set(volumes.values()).size !== volumes.size)
     throw new Error(

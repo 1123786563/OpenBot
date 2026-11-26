@@ -29,8 +29,10 @@ and [volume setup](https://docs.cubesandbox.com/guide/volume).
 
 ## Enroll test users
 
-Set these environment variables on every OpenBot server replica. Keep the
-existing computer gateway configured.
+Obtain consent from each test user before adding their OpenBot user ID to the
+volume map. Enroll each of those users in OpenShell on every API replica.
+Keep the existing computer gateway configured and set the variables below on
+every replica. [OpenShell execution pilot](../../configuration.md#openshell-execution-pilot)
 
 ```dotenv
 OPENBOT_CUBE_API_URL=https://cube-api.pilot.internal
@@ -61,6 +63,26 @@ the legacy browser backend.
    sandbox ID, the OpenBot browser ID stayed the same, and each profile
    retained its own login state.
 
-The OpenBot route tests use a Cube API fixture. The local Chromium test covers
-process replacement with a shared profile directory. Run the steps above on
-a real CubeSandbox cluster to validate volume reattachment and streaming there.
+## Verify the target deployment
+
+Disposable tests used real CubeSandbox, Chromium, and OpenShell to check
+same-node volume reattachment, profile isolation, streaming, and a browser
+download delivered to an OpenShell workspace. A later disposable test verified
+a one-time upload approval over HTTPS. Decline sent zero uploads. Allow once
+sent exactly one upload, with a receipt matching the source bytes. That run
+also checked browser egress after tightening policy on an open seat and checked
+that the tested private management listeners were unreachable. An earlier
+OpenShell test verified default deny, explicit HTTPS allow, and denial of a
+different destination.
+
+On the target deployment, repeat the replacement and streaming checks above
+and verify both Bot file transfers through OpenBot. For upload, record the
+enrolled person's approval outcome and compare the receipt with the disposable source
+file. Validate browser and execution egress against that deployment's network
+and management endpoints. Check that a browser outage leaves an already
+delivered file available to OpenShell, and that an execution outage leaves the
+browser available for viewing and takeover. For rollback, restart the API with
+both pilot enrollments removed and verify that the legacy browser and execution
+routes work. The disposable runs used synthetic identities and disposable
+infrastructure. Deployment acceptance requires evidence from the target
+configuration.

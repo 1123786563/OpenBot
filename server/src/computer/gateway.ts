@@ -29,6 +29,7 @@ import type {
 } from "@openbot/shared/computer-control";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { z } from "zod";
 import {
   BROWSER_DOWNLOAD_ID,
   type BrowserDownloadResult,
@@ -46,6 +47,12 @@ import {
   browserUploadResult,
   unknownBrowserUpload,
 } from "../../../shared/browser-upload";
+import {
+  botBrowserActionPaths,
+  browserControlPaths,
+  browserObservationPaths,
+  humanBrowserInputPaths,
+} from "../../../shared/computer-browser-paths";
 import {
   ApprovalAlreadyAnsweredError,
   type ApprovalGate,
@@ -476,6 +483,8 @@ export interface ComputerGateway {
   ): Promise<ComputerUpdate>;
 }
 
+const browserRun = z.object({ run: z.string().trim().min(1) });
+
 export function createComputerGateway(
   options: ComputerGatewayOptions,
 ): ComputerGateway {
@@ -551,27 +560,15 @@ export function createComputerGateway(
   }
 
   const browserPaths = new Set([
-    "/navigate",
-    "/screenshot",
+    ...botBrowserActionPaths,
+    ...browserObservationPaths,
+    ...humanBrowserInputPaths,
+    ...browserControlPaths,
     "/snapshot",
-    "/read",
-    "/click",
-    "/type",
-    "/key",
-    "/scroll",
-    "/control",
-    "/browser-upload",
-    "/sign-in/fill",
-    "/sign-in/code",
+    "/human/browser-upload",
   ]);
-  const browserPath = (path: string) => {
-    const name = path.split("?")[0];
-    return (
-      browserPaths.has(name) ||
-      name.startsWith("/control/") ||
-      name.startsWith("/human/")
-    );
-  };
+  const browserPath = (path: string) =>
+    browserPaths.has(path.split("?", 1)[0] ?? path);
 
   function usesExecution(seat: ComputerSeat): boolean {
     return (
@@ -964,44 +961,56 @@ export function createComputerGateway(
      * Nothing resolves against it and the next snapshot supersedes it, which is the direction this is
      * allowed to fail in.
      */
-    const run = await sessionOf(seat, base);
+    const cube = browserProviderFor(seat);
+    const session = await sessionOf(seat, base);
+    if (cube && !session)
+      throw new ComputerUnavailableError(
+        "The browser run could not be identified.",
+      );
     const result = await transport.call<SnapshotResult>(
       await at(seat, base),
       requestAddress(seat, "/snapshot"),
       "/snapshot",
       { method: "POST" },
     );
+    if (cube && session !== (await sessionOf(seat, base)))
+      throw new ComputerUnavailableError(
+        "The browser run changed during the snapshot.",
+      );
     await snapshots.save(seatText(seat), {
       snapshotId: result.snapshotId,
       url: result.url,
       elements: new Map(
         result.elements.map((element) => [element.ref, element]),
       ),
-      ...run,
+      ...(session ? { session } : {}),
     });
     // Element names and values are whatever the page says they are, so they are marked too.
     return withUntrustedNotice(result, "web page", SNAPSHOT_FIELDS);
   }
 
-  /**
-   * Which run of the computer this is, shaped to spread into a snapshot.
-   *
-   * Absent for a provider that cannot say, and absent if asking fails: a session that cannot be read
-   * must not stop a snapshot being recorded, because a snapshot nobody stored is a ref that resolves
-   * to nothing and a boundary deciding with no element in front of it.
-   */
+  // Read Cube's seat identity over the same located endpoint and token as the action.
+  // Legacy providers can still omit a run ID.
   async function sessionOf(
     seat: ComputerSeat,
     address?: string,
-  ): Promise<{ session?: string }> {
+  ): Promise<string | undefined> {
     const browser = browserProviderFor(seat);
-    if (browser) return address ? { session: `cube:${address}` } : {};
-    if (!provider.sessionOf) return {};
     try {
-      const session = await provider.sessionOf(seat);
-      return session ? { session } : {};
+      if (browser) {
+        if (!address) return undefined;
+        const identity = browserRun.safeParse(
+          await transport.call<unknown>(
+            await at(seat, address),
+            { botId: seat.botId },
+            "/run",
+          ),
+        );
+        return identity.success ? `cube:${identity.data.run}` : undefined;
+      }
+      return (await provider.sessionOf?.(seat)) || undefined;
     } catch {
-      return {};
+      return undefined;
     }
   }
 
@@ -1035,8 +1044,8 @@ export function createComputerGateway(
     /**
      * The run of the computer the action is reaching, when the provider can say.
      *
-     * Undefined means unknown, not mismatched: a provider that could not be asked leaves the
-     * generation check exactly as it was, rather than refusing every ref it holds.
+     * Legacy providers can omit this value and fall back to the generation check.
+     * Cube citations must have a matching run before reaching this lookup.
      */
     session?: string,
   ): SnapshotElement | undefined {
@@ -1129,10 +1138,13 @@ export function createComputerGateway(
      */
     const located = ref ? await locateForAction(seat) : undefined;
     const address = located?.address;
-    const { session } = ref
-      ? await sessionOf(seat, located?.address)
-      : { session: undefined };
-    const element = resolve(stored, ref, snapshotId, session);
+    const session = ref ? await sessionOf(seat, address) : undefined;
+    const requiresRun =
+      ref !== undefined && browserProviderFor(seat) !== undefined;
+    const element =
+      requiresRun && (!session || stored?.session !== session)
+        ? undefined
+        : resolve(stored, ref, snapshotId, session);
     // For a navigation the relevant page is the one being opened, not the one already loaded. Using
     // the stored URL would mean `page.host == "..."` could never match the destination, which is the
     // only thing a rule about navigation would ever want to say.
@@ -1232,7 +1244,7 @@ export function createComputerGateway(
      * have failed to resolve. A computer this server has no snapshot for at all is a different
      * situation: there is no page here to judge the citation against, the computer is the only
      * party that can, and refusing locally would take its answer away, including the one that says
-     * a person has taken the wheel. What is refused here is a citation this server can see is stale.
+     * a person has taken the wheel. Cube requires a stored snapshot and a matching browser run.
      *
      * Either refusal still leaves a row: an action whose ref resolves to nothing is still an action
      * somebody tried to take, and it is on the trail as one that did not happen.
@@ -1247,7 +1259,7 @@ export function createComputerGateway(
     let approval: Awaited<ReturnType<ApprovalGate>>;
     try {
       if (located?.starting) throw located.starting;
-      if (ref && stored && !element) {
+      if ((requiresRun || (ref && stored)) && !element) {
         throw new StaleSnapshotError(
           `${ref} is not on the page this computer is showing, so nothing can be checked against it before acting. Take a fresh snapshot and use the refs it returns.`,
         );

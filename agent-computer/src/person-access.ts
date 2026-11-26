@@ -15,6 +15,7 @@
  * Free of Playwright, like `authorisation.ts`, so the list is testable without a browser.
  */
 import { createHash } from "node:crypto";
+import { humanBrowserInputPaths } from "../../shared/computer-browser-paths";
 import type { ComputerControlState } from "../../shared/computer-control";
 import {
   browserComputerPaths,
@@ -46,10 +47,7 @@ const PERSON_PATHS = new Set<string>([
   ...Object.values(realBrowserComputerPaths),
   // The live screen, and the person's own input through it.
   "/stream",
-  "/human/click",
-  "/human/type",
-  "/human/key",
-  "/human/scroll",
+  ...humanBrowserInputPaths,
   // Who holds the wheel, which for a person's browser is always the person.
   "/control",
   // The computer's own housekeeping, keyed by id like any other computer's: its network policy,

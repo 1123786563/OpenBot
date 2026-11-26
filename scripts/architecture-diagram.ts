@@ -8,7 +8,7 @@
 import { RoughGenerator } from "roughjs/bin/generator.js";
 
 const W = 1420;
-const H = 852;
+const H = 960;
 
 type Theme = {
   name: string;
@@ -359,7 +359,7 @@ function render(t: Theme): string {
   const cX = 1076;
   const cY = 296;
   const cW = 300;
-  text(cX, cY - 14, "A COMPUTER EACH", {
+  text(cX, cY - 14, "LEGACY ISOLATED COMPUTERS", {
     size: 11.5,
     weight: 700,
     fill: t.faint,
@@ -524,15 +524,30 @@ function render(t: Theme): string {
   });
   label(supX + 166, supY - 22, "creates one each", t.muted, "start");
 
+  box(svX, 834, 1004, 96, t, { stroke: t.gate });
+  text(svX + 22, 866, "PERSONAL COMPUTER PILOT", {
+    size: 14.5,
+    weight: 650,
+    fill: t.gate,
+  });
+  text(svX + 22, 896, "CubeSandbox · Chromium and browser profiles", {
+    size: 13,
+    fill: t.ink,
+  });
+  text(svX + 490, 896, "OpenShell · commands, terminal, and Bot workspace", {
+    size: 13,
+    fill: t.ink,
+  });
+
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">`,
     `<title>OpenBot architecture</title>`,
     `<desc>A turn goes from the app to the server, which sends it to a Bot over AG-UI. Every tool call ` +
       `the Bot makes returns through the gateway, which resolves the target, decides it against the ` +
       `configured policy, records an audit row, and only then acts, or refuses and names the rule. ` +
-      `Allowed actions reach that Bot's own computer, one container each holding its own Chromium, ` +
-      `logins and workspace, created by the supervisor. Every decision lands in PostgreSQL; threads ` +
-      `and memory live in CopilotKit Intelligence.</desc>`,
+      `The supervisor creates legacy isolated computers with Chromium and a workspace. The personal ` +
+      `computer pilot routes browser actions to CubeSandbox and execution to OpenShell. The audit ` +
+      `trail lives in PostgreSQL. CopilotKit Intelligence can store threads and memory.</desc>`,
     ...out,
     `</svg>`,
   ].join("\n");

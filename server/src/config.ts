@@ -14,6 +14,7 @@ import { z } from "zod";
 import { DEV_ACTOR, singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";
+import { cubeBrowserVolumes } from "./browser/cubesandbox";
 import type { OpenShellExecutionConfig } from "./computer/openshell-execution";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
@@ -1986,6 +1987,12 @@ export function loadConfig(
   if (config.computerExecution && !config.computer) {
     throw new Error(
       "The OpenShell pilot requires a configured computer provider.",
+    );
+  }
+  const cubeUsers = [...cubeBrowserVolumes(environment).keys()];
+  if (cubeUsers.some((id) => !config.computerExecution?.pilotUsers.has(id))) {
+    throw new Error(
+      "Every user in OPENBOT_CUBE_BROWSER_VOLUMES must be enrolled in OPENBOT_OPENSHELL_PILOT_USERS.",
     );
   }
   return config;
