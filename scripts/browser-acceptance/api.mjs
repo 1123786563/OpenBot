@@ -1,6 +1,6 @@
 // Deliberately has no upstream: unknown requests fail locally.
-import { seededConversations } from "./conversations.mjs";
-import { governance } from "./governance-fixture.mjs";
+import { CONVERSATIONS, seededConversations } from "./conversations.mjs";
+import { governance, salesBot } from "./governance-fixture.mjs";
 
 const port = Number(process.env.FIXTURE_API_PORT || 41850);
 const appPort = Number(process.env.FIXTURE_APP_PORT || 41849);
@@ -25,7 +25,12 @@ const user = {
 };
 const runtimeInfo = {
   version: "fixture",
-  agents: {},
+  agents: Object.fromEntries(
+    [
+      ...CONVERSATIONS.map(({ bot, name }) => [bot, name]),
+      [salesBot.id, salesBot.name],
+    ].map(([id, description]) => [id, { name: id, description }]),
+  ),
   mode: "sse",
   telemetryDisabled: true,
 };

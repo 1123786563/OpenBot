@@ -1,5 +1,4 @@
 import answers from "../../app/tests/what-if.fixture.json";
-import { firstBatchRead } from "./first-batch-reads.mjs";
 import {
   CAPABILITIES,
   CAPABILITY_LABELS,
@@ -9,9 +8,11 @@ import {
   applyCapabilityChanges,
   previewCapabilityChanges,
 } from "../../server/src/admin/capability-changes.ts";
+import { firstBatchRead } from "./first-batch-reads.mjs";
 
 export const boundary = 'page.host == "blocked.example.test"';
 export const boundaryName = "Blocked fixture host";
+export const salesBot = { id: "whatif-sales", name: "Sales" };
 const member = {
   id: "fixture-member",
   email: "member@example.test",
@@ -28,7 +29,7 @@ const approval = {
   toolRef: "whatif-gmail/send_email",
   scope: "whatif-gmail",
   effect: "write",
-  botId: "whatif-sales",
+  botId: salesBot.id,
   behaviour: "ask",
 };
 
@@ -79,7 +80,7 @@ export const governance = {
     }
     switch (path) {
       case "/api/agents":
-        return json({ agents: [{ id: "whatif-sales", name: "Sales" }] });
+        return json({ agents: [salesBot] });
       case "/api/computers/policy":
         if (request.method === "GET") {
           return scenario.policyReadFailure
