@@ -801,6 +801,11 @@ describe("opening a person's own browser", () => {
           [ada.id]: "ada-browser-volume",
           [ben.id]: "ben-browser-volume",
         }),
+        OPENBOT_OPENSHELL_PILOT_USERS: [ada.id, ben.id].join(","),
+        OPENBOT_OPENSHELL_GATEWAY: "pilot-gateway",
+        OPENBOT_OPENSHELL_WORKSPACE: "pilot-workspace",
+        OPENBOT_OPENSHELL_IMAGE: "execution:pilot",
+        OPENBOT_OPENSHELL_TOKEN: "fixture-execution-token-with-32-characters",
       },
       {
         pilotBots: true,
