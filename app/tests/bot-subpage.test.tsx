@@ -100,10 +100,11 @@ function draw(
       path,
       component: () => <p>{name}</p>,
     });
+  const Area = route.options.component as ComponentType;
   const area = createRoute({
     getParentRoute: () => root,
     path: at,
-    component: route.options.component as ComponentType,
+    component: () => <Area />,
   });
   const router = createRouter({
     context: { queryClient: client },
