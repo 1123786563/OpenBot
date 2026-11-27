@@ -1,0 +1,1 @@
+ALTER TABLE "direct_chat_runs" ADD COLUMN "prompt_attachments" jsonb;

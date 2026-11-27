@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
+import {
+  attachmentUrl,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@openbot/shared/attachments";
 import { OUTCOME_UNKNOWN } from "@openbot/shared/approval-outcomes";
 import {
   adminLearningDecision,
@@ -35,7 +39,17 @@ import {
   turnInput,
   turnMessages,
 } from "@openbot/toolkit/run-turn";
-import { and, eq, exists, isNull, ne, notExists, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  ne,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -78,6 +92,7 @@ import {
   routines,
   userRoles,
   users,
+  attachments,
 } from "../db/schema";
 import { currentEdition } from "../edition";
 import {
@@ -133,11 +148,36 @@ const runBody = z.object({
     })
     .nullish(),
 });
+const attachmentPart = z
+  .object({
+    type: z.enum(["image", "document"]),
+    source: z.object({ type: z.literal("url"), value: z.string() }),
+    metadata: z.object({ attachmentId: z.uuid() }),
+  })
+  .refine(
+    ({ source, metadata }) =>
+      source.value === attachmentUrl(metadata.attachmentId),
+  );
 const promptMessage = z.object({
   id,
   role: z.literal("user"),
-  content: z.string().min(1).max(1_000_000),
+  content: z.union([
+    z.string().min(1).max(1_000_000),
+    z
+      .array(
+        z.union([
+          z.object({
+            type: z.literal("text"),
+            text: z.string().max(1_000_000),
+          }),
+          attachmentPart,
+        ]),
+      )
+      .min(1)
+      .max(MAX_ATTACHMENTS_PER_MESSAGE + 1),
+  ]),
 });
+class DirectChatAttachmentUnavailable extends Error {}
 const joinBody = z.object({ threadId: id });
 const resumeBody = joinBody.extend({
   runId: id,
@@ -1607,68 +1647,154 @@ export function createDirectChatRoutes(deps: {
       body.data.forwardedProps?.testCreditQuote,
     );
     const { id: messageId, content } = prompt.data;
+    const text =
+      typeof content === "string"
+        ? content
+        : content
+            .flatMap((part) => (part.type === "text" ? [part.text] : []))
+            .join("\n");
+    const attachmentIds =
+      typeof content === "string"
+        ? []
+        : [
+            ...new Set(
+              content.flatMap((part) =>
+                part.type === "text" ? [] : [part.metadata.attachmentId],
+              ),
+            ),
+          ];
+    if (
+      text.length > 1_000_000 ||
+      attachmentIds.length > MAX_ATTACHMENTS_PER_MESSAGE ||
+      (!text && attachmentIds.length === 0)
+    )
+      return context.json(
+        { error: "A message with text or attachments is required." },
+        400,
+      );
+    if (attachmentIds.length && (deps.trial || testCredit))
+      return context.json(
+        { error: "The managed model does not accept attachments." },
+        400,
+      );
     const agentId = context.req.param("agentId");
     const actor = await actorFor(context.req.raw);
     if (!actor?.id) return context.json(absent, 404);
 
-    const claim = await database.transaction(async (transaction) => {
-      if (!(await threadFor(transaction, actor, threadId, agentId, true)))
-        return { kind: "absent" } as const;
-      // The mapping row serializes claims from every server process. An expired claim remains
-      // the original request's record, so repeating it can never start the Bot again.
-      await expireDirectChatRuns(transaction, threadId, traceRuns);
-      const previous = await history(transaction, threadId);
-      const same = previous.find((run) => run.userMessageId === messageId);
-      if (same)
-        return same.prompt === content
-          ? ({ kind: "repeat", run: same } as const)
-          : ({ kind: "conflict" } as const);
-      if (previous.some((run) => run.id === runId))
-        return { kind: "conflict" } as const;
-      if (previous.some((run) => run.status === "running"))
-        return { kind: "busy" } as const;
-      if (previous.some((run) => run.externalOutcome === "unknown"))
-        return { kind: "unverified" } as const;
-      if (testCredit && !confirmation.success)
-        return { kind: "confirmation_required" } as const;
-      const original =
-        rerunOfMessageId === undefined
-          ? undefined
-          : previous.find((run) => run.userMessageId === rerunOfMessageId);
-      if (
-        rerunOfMessageId !== undefined &&
-        (!testCredit ||
-          !original?.testCreditOperationId ||
-          original.prompt !== content)
-      )
-        return { kind: "rerun_unavailable" } as const;
-      const [run] = await transaction
-        .insert(directChatRuns)
-        .values({
+    const claim = await database
+      .transaction(async (transaction) => {
+        const thread = await threadFor(
+          transaction,
+          actor,
           threadId,
-          id: runId,
-          userMessageId: messageId,
-          testCreditOperationId: testCredit
-            ? operationId(operationFor({ threadId, runId }, agentId, actor.id))
-            : null,
-          testCreditRequest:
-            testCredit && confirmation.success
-              ? {
-                  confirmation: confirmation.data,
-                  rerunOfOperationId:
-                    original?.testCreditOperationId ?? undefined,
-                }
+          agentId,
+          true,
+        );
+        if (!thread) return { kind: "absent" } as const;
+        // The mapping row serializes claims from every server process. An expired claim remains
+        // the original request's record, so repeating it can never start the Bot again.
+        await expireDirectChatRuns(transaction, threadId, traceRuns);
+        const previous = await history(transaction, threadId);
+        const same = previous.find((run) => run.userMessageId === messageId);
+        if (same)
+          return same.prompt === text &&
+            JSON.stringify(
+              same.promptAttachments?.map(({ id }) => id) ?? [],
+            ) === JSON.stringify(attachmentIds)
+            ? ({ kind: "repeat", run: same } as const)
+            : ({ kind: "conflict" } as const);
+        if (previous.some((run) => run.id === runId))
+          return { kind: "conflict" } as const;
+        if (previous.some((run) => run.status === "running"))
+          return { kind: "busy" } as const;
+        if (previous.some((run) => run.externalOutcome === "unknown"))
+          return { kind: "unverified" } as const;
+        if (testCredit && !confirmation.success)
+          return { kind: "confirmation_required" } as const;
+        const original =
+          rerunOfMessageId === undefined
+            ? undefined
+            : previous.find((run) => run.userMessageId === rerunOfMessageId);
+        if (
+          rerunOfMessageId !== undefined &&
+          (!testCredit ||
+            !original?.testCreditOperationId ||
+            original.prompt !== text)
+        )
+          return { kind: "rerun_unavailable" } as const;
+        const promptAttachments = attachmentIds.length
+          ? await transaction
+              .update(attachments)
+              .set({
+                attachedAt: sql`coalesce(${attachments.attachedAt}, now())`,
+              })
+              .where(
+                and(
+                  inArray(attachments.id, attachmentIds),
+                  eq(attachments.channelId, thread.channelId),
+                  eq(attachments.uploadedBy, actor.id),
+                ),
+              )
+              .returning({
+                id: attachments.id,
+                name: attachments.name,
+                mimeType: attachments.mimeType,
+              })
+          : [];
+        if (promptAttachments.length !== attachmentIds.length) {
+          // Roll back any files stamped before finding a missing or cross-conversation reference.
+          throw new DirectChatAttachmentUnavailable();
+        }
+        const attachmentsById = new Map(
+          promptAttachments.map((file) => [file.id, file]),
+        );
+        const [run] = await transaction
+          .insert(directChatRuns)
+          .values({
+            threadId,
+            id: runId,
+            userMessageId: messageId,
+            testCreditOperationId: testCredit
+              ? operationId(
+                  operationFor({ threadId, runId }, agentId, actor.id),
+                )
               : null,
-          prompt: content,
-          status: "running",
-        })
-        .returning();
-      if (!run) throw new Error("Direct chat run was not created.");
-      return {
-        kind: "start",
-        run,
-      } as const;
-    });
+            testCreditRequest:
+              testCredit && confirmation.success
+                ? {
+                    confirmation: confirmation.data,
+                    rerunOfOperationId:
+                      original?.testCreditOperationId ?? undefined,
+                  }
+                : null,
+            prompt: text,
+            promptAttachments: attachmentIds.length
+              ? sql`${JSON.stringify(
+                  attachmentIds.flatMap((id) => {
+                    const file = attachmentsById.get(id);
+                    return file ? [file] : [];
+                  }),
+                )}::text::jsonb`
+              : null,
+            status: "running",
+          })
+          .returning();
+        if (!run) throw new Error("Direct chat run was not created.");
+        return {
+          kind: "start",
+          run,
+        } as const;
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DirectChatAttachmentUnavailable)
+          return { kind: "missing_attachment" } as const;
+        throw error;
+      });
+    if (claim.kind === "missing_attachment")
+      return context.json(
+        { error: "An attachment is unavailable in this conversation." },
+        409,
+      );
     if (claim.kind === "absent") return context.json(absent, 404);
     if (claim.kind === "confirmation_required")
       return context.json(

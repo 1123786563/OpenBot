@@ -1,6 +1,7 @@
 import type { Attachment } from "@copilotkit/react-core/v2";
 import { z } from "zod";
 import { attachmentUrl } from "./attachments";
+import { deletePendingFile } from "./pending-files";
 
 const startPrefix = "openbot:conversation-start:";
 const uploadedReference = z.object({
@@ -9,6 +10,12 @@ const uploadedReference = z.object({
   mimeType: z.string().optional(),
   type: z.enum(["image", "document"]),
 });
+const pendingAttachment = z.union([
+  uploadedReference,
+  uploadedReference
+    .omit({ attachmentId: true })
+    .extend({ localFileKey: z.string().min(1), uploadRequestId: z.uuid() }),
+]);
 const recipient = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("route"), fallbackId: z.string().optional() }),
   z.object({ kind: z.literal("direct"), agentId: z.string() }),
@@ -26,7 +33,7 @@ const progress = z.discriminatedUnion("phase", [
 const payload = z.object({
   text: z.string(),
   commandIds: z.array(z.string()),
-  attachments: z.array(uploadedReference),
+  attachments: z.array(pendingAttachment),
   recipient,
   model: z
     .object({ model: z.string().nullable(), effort: z.string().nullable() })
@@ -89,7 +96,15 @@ export function finishPendingStart(
 
 /** Remove an abandoned start so its text and attachment refs stop being recoverable. */
 export function discardPendingStart(owner: string, id: string) {
+  const start = readPendingStart(owner, id);
   localStorage.removeItem(ownerPrefix(owner) + id);
+  if (start?.state === "pending") {
+    for (const attachment of start.draft.attachments) {
+      if ("localFileKey" in attachment) {
+        void deletePendingFile(attachment.localFileKey).catch(() => undefined);
+      }
+    }
+  }
 }
 
 export function pendingStartsFor(owner: string) {
@@ -146,14 +161,16 @@ export function pendingAttachmentRefs(
 }
 
 export function restorePendingAttachments(draft: StartDraft): Attachment[] {
-  return draft.attachments.map(({ attachmentId, name, mimeType, type }) => ({
-    id: attachmentId,
-    filename: name,
-    type,
-    status: "ready",
-    source: { type: "url", value: attachmentUrl(attachmentId), mimeType },
-    metadata: { attachmentId, filename: name },
-  }));
+  return draft.attachments
+    .filter((file) => "attachmentId" in file)
+    .map(({ attachmentId, name, mimeType, type }) => ({
+      id: attachmentId,
+      filename: name,
+      type,
+      status: "ready",
+      source: { type: "url", value: attachmentUrl(attachmentId), mimeType },
+      metadata: { attachmentId, filename: name },
+    }));
 }
 
 /** A durable, atomic claim keeps dated or concurrent tabs from starting a second direct run. */

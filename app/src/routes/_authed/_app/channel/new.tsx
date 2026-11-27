@@ -310,7 +310,8 @@ function NewConversation({
       loadError ||
       missingSavedRecipient ||
       !recipient ||
-      !canSend(recipients, draft.text)
+      (!canSend(recipients, draft.text) &&
+        (group || draft.attachments.length === 0))
     )
       return;
     setError(null);
@@ -620,6 +621,7 @@ function NewConversation({
             </Text>
           ) : null}
           <Composer
+            allowFirstMessageAttachments={!group}
             draftStorageKey={messageKey}
             restoredDraftMessage={
               copiedFromStart

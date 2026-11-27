@@ -40,6 +40,7 @@ import {
   attachmentUrl,
   classifyAttachment,
   MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_IMAGE_BYTES,
   mayBeTruncatedForModel,
   mediaTypeOf,
   shouldClaimPaste,
@@ -210,18 +211,10 @@ export type ComposerProps = {
    * caret, because that one they asked for.
    */
   autoFocus?: boolean;
-  /**
-   * The channel a picked file is uploaded to, and the one switch for the whole attachment feature.
-   *
-   * WITH NO `channelId` THIS COMPOSER BEHAVES EXACTLY AS IT DID BEFORE ATTACHMENTS EXISTED, which
-   * is what keeps `/channel/new`, the home screen and the onboarding poster working untouched. No
-   * config reaches `useAttachments`, so it installs no paste listener at all; the form takes no
-   * drag handlers, no file input is rendered, and the `+` button goes on saying it has nothing to
-   * offer. That is the right answer rather than a degraded one for a screen with nowhere to put an
-   * upload: the compose screen creates its channel on send, so a file staged there would belong to
-   * a channel that does not exist yet.
-   */
+  /** The existing conversation that owns uploads from this composer. */
   channelId?: string;
+  /** Stage files in the browser while composing the first message. */
+  allowFirstMessageAttachments?: boolean;
   /**
    * There is a run on the wire for Stop to reach.
    *
@@ -376,6 +369,7 @@ export function Composer({
   pending = false,
   autoFocus = false,
   channelId,
+  allowFirstMessageAttachments = false,
   stoppable,
   initialValue,
   draftStorageKey,
@@ -576,8 +570,27 @@ export function Composer({
             recordRejection,
             recordUpload,
           )
-        : undefined,
-    [channelId, uploadGroup, recordRejection, recordUpload],
+        : allowFirstMessageAttachments
+          ? {
+              enabled: true,
+              accept: "*/*",
+              maxSize: MAX_IMAGE_BYTES,
+              onUpload: async (file: File) => ({
+                type: "url" as const,
+                value: URL.createObjectURL(file),
+                mimeType: file.type,
+                metadata: { firstMessageFile: file },
+              }),
+              onUploadFailed: recordRejection,
+            }
+          : undefined,
+    [
+      channelId,
+      allowFirstMessageAttachments,
+      uploadGroup,
+      recordRejection,
+      recordUpload,
+    ],
   );
 
   /**
@@ -609,7 +622,7 @@ export function Composer({
   }, [droppedAttachments]);
 
   /**
-   * Called unconditionally, with a config only when there is a channel to upload to. The hook
+   * Called unconditionally. Composers opt in to staging when the channel does not exist yet. The hook
    * reads no React context — it is state, refs and one `document` paste listener that it does not
    * install while disabled — so an undefined config is a hook that does nothing, not a hook that
    * throws.
@@ -636,6 +649,29 @@ export function Composer({
    * Every door reads this rather than `attachmentsEnabled`, and `stageFiles` re-asks it besides:
    * `onImagePaste` is PromptArea's call and not ours, so the choke point has to answer for itself.
    */
+  const firstMessagePreviews = useRef(new Set<string>());
+  useEffect(() => {
+    const visible = new Set<string>();
+    for (const attachment of attachments) {
+      if (
+        attachment.source.type === "url" &&
+        attachment.source.value.startsWith("blob:")
+      ) {
+        visible.add(attachment.source.value);
+      }
+    }
+    for (const url of firstMessagePreviews.current) {
+      if (!visible.has(url)) URL.revokeObjectURL(url);
+    }
+    firstMessagePreviews.current = visible;
+  }, [attachments]);
+  useEffect(
+    () => () => {
+      for (const url of firstMessagePreviews.current) URL.revokeObjectURL(url);
+    },
+    [],
+  );
+
   const canAttach = attachmentsEnabled && !disabled;
 
   /**
