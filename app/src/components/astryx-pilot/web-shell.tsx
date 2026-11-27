@@ -22,7 +22,7 @@ export function AstryxWebShell({ children }: { children: ReactNode }) {
       className="astryx-web-shell h-svh overflow-hidden"
       name="astryx-app"
       pageToggle={false}
-      width="280px"
+      width="17rem"
     >
       <AstryxWebFrame>{children}</AstryxWebFrame>
     </SidebarShell>
@@ -33,33 +33,38 @@ function AstryxWebFrame({ children }: { children: ReactNode }) {
   useRememberActiveBot();
   const navId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  const { isMobile, open } = useSidebar();
+  const { isMobile } = useSidebar();
 
   return (
     <>
       <AttentionNotifier />
-      <AppSidebar navId={navId} returnFocus={trigger} variant="sidebar" />
+      <AppSidebar
+        desktopToggle={
+          <AstryxNavigationToggle navId={navId} trigger={trigger} />
+        }
+        navId={navId}
+        returnFocus={trigger}
+        variant="inset"
+      />
       <SidebarInset
-        className="min-h-0 min-w-0 overflow-hidden"
+        className="astryx-workspace-main min-h-0 min-w-0 overflow-hidden"
         id="main-content"
         tabIndex={-1}
       >
-        <HStack
-          {...astryxScope}
-          as="header"
-          align="center"
-          gap={2}
-          paddingInline={3}
-          minHeight="var(--spacing-12)"
-          style={{
-            ...astryxScope.style,
-            flexShrink: 0,
-            borderBlockEnd: "thin solid var(--color-border)",
-          }}
-        >
-          <AstryxNavigationToggle navId={navId} trigger={trigger} />
-          {isMobile || !open ? <AstryxBrand /> : null}
-        </HStack>
+        {isMobile ? (
+          <HStack
+            {...astryxScope}
+            as="header"
+            align="center"
+            gap={2}
+            paddingInline={3}
+            minHeight="var(--spacing-12)"
+            className="shrink-0"
+          >
+            <AstryxNavigationToggle navId={navId} trigger={trigger} />
+            <AstryxBrand />
+          </HStack>
+        ) : null}
         <UpdateBanner />
         <SelfHostBanner />
         {children}

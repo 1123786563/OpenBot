@@ -4,10 +4,34 @@ networks:
   client:
     external: true
     name: openbot-hindsight
+  db:
+    internal: true
 services:
+  # The 1Panel PostgreSQL cluster image ships a pgvector built for AVX-512, and this host's CPU has
+  # none, so a vector write there kills the backend and every connection on the cluster. Hindsight
+  # keeps its own database on the official pgvector image, which picks its code path at run time.
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PANEL_DB_USER:?Enter the database user}
+      POSTGRES_PASSWORD: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
+      POSTGRES_DB: ${PANEL_DB_NAME:?Enter the database name}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${PANEL_DB_USER}", "-d", "${PANEL_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - db
   hindsight:
     command: null
     entrypoint: null
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       HF_HOME: /home/hindsight/.cache/huggingface
       HF_HUB_OFFLINE: "1"
@@ -25,6 +49,7 @@ services:
     networks:
       client: {}
       1panel-network: {}
+      db: {}
     restart: unless-stopped
     shm_size: "1073741824"
     stop_grace_period: 1m15s
@@ -38,3 +63,4 @@ services:
       createdBy: Apps
 volumes:
   model-cache: {}
+  postgres-data: {}

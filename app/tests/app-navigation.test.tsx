@@ -29,13 +29,6 @@ import { isNavigationLink, NAVIGATION, navigationFor } from "@/lib/navigation";
 import { userPreferencesQueryOptions } from "@/lib/settings/message-list";
 import { settleReactWork } from "./settle-react-work";
 
-/*
- * OpenBot's destinations live in one list (`lib/navigation.ts`) that the sidebar and every skin draw
- * from. This holds the sidebar to that list exactly: the same entries, in the same order, at the
- * same addresses, with Admin only for admins. A destination added to the list and not drawn, or
- * drawn here and not added to the list, fails.
- */
-
 class OfflineWebSocket extends EventTarget {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -175,10 +168,10 @@ function links(root: HTMLElement) {
   }));
 }
 
-function expected(role: "admin" | "user", section: "primary" | "account") {
+function expectedAccount(role: "admin" | "user") {
   return navigationFor(role)
     .filter(isNavigationLink)
-    .filter((item) => item.section === section)
+    .filter((item) => item.section === "account")
     .map((item) => ({
       label: item.label,
       to: item.search
@@ -188,7 +181,7 @@ function expected(role: "admin" | "user", section: "primary" | "account") {
 }
 
 test.each(["user", "admin"] as const)(
-  "the sidebar draws exactly the shared list for a %s",
+  "the workspace rail shows the team destinations and account access for a %s",
   async (role) => {
     const { view, user } = renderSidebar(role);
     const workspace = await view.findByRole("navigation", {
@@ -199,7 +192,16 @@ test.each(["user", "admin"] as const)(
         label: label.replace(/\d+$/, ""),
         to,
       })),
-    ).toEqual(expected(role, "primary"));
+    ).toEqual([
+      { label: "Chats", to: "/" },
+      { label: "Bots", to: "/bots" },
+      { label: "Routines", to: "/routines" },
+      { label: "Goals", to: "/responsibilities?view=goals" },
+      { label: "Skills", to: "/capabilities/skills" },
+      { label: "Apps", to: "/connections" },
+      { label: "Credits", to: "/billing" },
+      { label: "Memory", to: "/capabilities/memory" },
+    ]);
     // Scheduled work has its own place beside Bots, where somebody looking for it looks first.
     expect(
       within(workspace)
@@ -218,25 +220,22 @@ test.each(["user", "admin"] as const)(
       .getAllByRole("menuitem")
       .map((item) => item.textContent?.trim());
     expect(items).toEqual([
-      ...expected(role, "account").map((item) => item.label),
+      ...expectedAccount(role).map((item) => item.label),
       "Sign out",
     ]);
-    expect(links(menu)).toEqual(expected(role, "account"));
+    expect(links(menu)).toEqual(expectedAccount(role));
   },
 );
 
-test("the running OpenBot version sits to the right of the person's name, in one row, from /api/me", async () => {
+test("the workspace rail shows the server version below the account control", async () => {
   const { view } = renderSidebar("user", "team", { version: "v0.3.1" });
-  const version = await view.findByText("v0.3.1");
-  const account = view.getByRole("button", { name: /Maya Chen/ });
-  expect(account.contains(version)).toBe(true);
-  // The name, then the version, side by side in one row that splits its width 80/20.
-  const name = within(account).getByText("Maya Chen");
-  expect(name.nextElementSibling).toBe(version);
-  const row = name.parentElement;
-  expect(row).toBe(version.parentElement);
-  expect(row?.className).toContain("grid-cols-[4fr_1fr]");
-  expect(version.className).toContain("text-right");
+  const rail = await view.findByRole("complementary");
+  const account = within(rail).getByRole("button", { name: "Maya Chen" });
+  const version = await within(rail).findByText("v0.3.1");
+  expect(account.contains(version)).toBe(false);
+  expect(
+    account.compareDocumentPosition(version) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 });
 
 test.each([
@@ -333,14 +332,7 @@ test("sidebar and the open account menu switch language without remounting", asy
       label: label.replace(/\d+$/, ""),
       to,
     })),
-  ).toEqual([
-    { label: "Bot", to: "/bots" },
-    { label: "例行任务", to: "/routines" },
-    { label: "目标", to: "/responsibilities?view=goals" },
-    { label: "能力", to: "/capabilities" },
-    { label: "连接", to: "/connections" },
-    { label: "积分", to: "/billing" },
-  ]);
+  ).toEqual(TEAM_PRIMARY.map(([label, to]) => ({ label, to })));
   expect(
     within(workspace).getByRole("img", { name: "1 件事需要你处理" }),
   ).toBeTruthy();
@@ -386,18 +378,21 @@ test("the sidebar rail speaks the language and keeps the pane's state", async ()
  * address, its order or who may see it when the language changed fails here.
  */
 const TEAM_PRIMARY = [
+  ["聊天", "/"],
   ["Bot", "/bots"],
   ["例行任务", "/routines"],
   ["目标", "/responsibilities?view=goals"],
-  ["能力", "/capabilities"],
-  ["连接", "/connections"],
+  ["技能", "/capabilities/skills"],
+  ["应用", "/connections"],
   ["积分", "/billing"],
+  ["记忆", "/capabilities/memory"],
 ] as const;
 const PERSONAL_PRIMARY = [
+  ["聊天", "/"],
   ["Bot", "/bots"],
   ["例行任务", "/routines"],
   ["目标", "/responsibilities?view=goals"],
-  ["连接", "/connections"],
+  ["应用", "/connections"],
   ["积分", "/billing"],
 ] as const;
 const BUSINESS_THEN_SETTINGS = [

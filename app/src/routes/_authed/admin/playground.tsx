@@ -1,8 +1,10 @@
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
 import "@/components/astryx-pilot/capability-surface.css";
 import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { astryxScope } from "@/components/astryx-pilot/theme";
@@ -305,19 +307,23 @@ function PlaygroundPage() {
      * standard prose column and it lands below the fold, so you would be typing at something you
      * cannot see. It takes the header and the controls, and keeps the two panes.
      */
-    <div
+    <VStack
       {...astryxScope}
-      className={cn(
-        "flex min-h-0 flex-1 flex-col",
-        "astryx-capability-surface",
-      )}
+      className="astryx-capability-surface min-h-0 flex-1"
     >
-      <header className="flex flex-wrap items-start justify-between gap-4 border-border border-b px-6 py-4">
+      <HStack
+        as="header"
+        align="start"
+        justify="between"
+        wrap="wrap"
+        gap={4}
+        className="border-b border-border px-4 py-4 sm:px-6"
+      >
         {/* Inline rather than in a band of its own: this screen is an editor beside a live preview
             and every 48px of height is taken from the thing being previewed. */}
-        <div className="flex items-start gap-2">
+        <HStack align="start" gap={2}>
           <SidebarToggle className="-ml-2 shrink-0" />
-          <div>
+          <VStack gap={1}>
             <h1
               className="font-semibold text-2xl tracking-tight"
               id="playground-editor"
@@ -326,13 +332,18 @@ function PlaygroundPage() {
             >
               Playground
             </h1>
-            <p className="mt-1 max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed">
+            <Text
+              as="p"
+              color="secondary"
+              textWrap="pretty"
+              className="max-w-prose leading-relaxed"
+            >
               Edit and preview a component here. Bots show the published version
               in conversations.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+            </Text>
+          </VStack>
+        </HStack>
+        <HStack align="center" wrap="wrap" gap={2}>
           {/* The JSON fields explain their own invalid state inline; these two names are
               the only inputs whose absence disables the buttons without a visible reason. */}
           {!canWrite && !busy && (!draft.slug || !draft.title) ? (
@@ -370,8 +381,8 @@ function PlaygroundPage() {
           >
             Publish
           </Button>
-        </div>
-      </header>
+        </HStack>
+      </HStack>
 
       <section style={{ paddingInline: "var(--spacing-6)" }}>
         {confirmation}
@@ -595,7 +606,7 @@ function PlaygroundPage() {
           </div>
         </div>
       </div>
-    </div>
+    </VStack>
   );
 }
 

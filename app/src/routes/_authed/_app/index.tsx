@@ -1,3 +1,7 @@
+import { Grid } from "@astryxdesign/core/Grid";
+import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import { Button } from "@astryxdesign/core/Button";
 import { LinkProvider } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
@@ -92,35 +96,34 @@ function RouteComponent() {
 
   return (
     <LinkProvider component={Link}>
-      <VStack
-        gap={6}
-        maxWidth="48rem"
-        width="100%"
-        style={{
-          marginInline: "auto",
-          paddingInline: "var(--spacing-4)",
-          paddingBlock: "var(--spacing-6)",
-        }}
-      >
-        <section aria-labelledby="home-compose-heading">
-          <VStack gap={3}>
-            <h1
+      <VStack className="astryx-chat-home min-h-0 flex-1" isScrollable>
+        <VStack
+          className="mx-auto my-auto shrink-0 px-4 py-8"
+          gap={8}
+          maxWidth="44rem"
+          width="100%"
+        >
+          <VStack as="section" aria-labelledby="home-compose-heading" gap={4}>
+            <Heading
               id="home-compose-heading"
-              className="text-2xl font-semibold tracking-tight"
-              style={{ textWrap: "balance", overflowWrap: "anywhere" }}
+              justify="center"
+              level={1}
+              textWrap="balance"
+              weight="semibold"
             >
               {firstConversationGreeting(
                 user,
                 channels.isSuccess && channels.data.length === 0,
               )}
-            </h1>
+            </Heading>
             <Composer
               key={messageKey}
               draftStorageKey={messageKey}
               onDraftChange={trackDraft}
               agents={toAgentOptions(agents)}
               commands={skillCommands}
-              className="w-full min-w-0"
+              className="astryx-home-composer w-full min-w-0"
+              editorClassName="text-base"
               disabled={!fallback}
               {...(asked ? { initialValue: asked, autoFocus: true } : {})}
               onSubmit={(draft) =>
@@ -135,15 +138,15 @@ function RouteComponent() {
               }
             />
             {fallback ? (
-              <VStack gap={1} align="start">
-                <p className="text-sm text-muted-foreground">
-                  OpenBot picks a Bot for you. Type <code>@</code> to choose one
-                  here.
-                </p>
+              <VStack gap={1} align="center">
+                <Text type="supporting" className="text-center">
+                  OpenBot picks a Bot for you. Type <code>@</code> to choose
+                  one.
+                </Text>
                 <Button
                   label="Choose Bots for a new conversation"
                   size="sm"
-                  variant="secondary"
+                  variant="ghost"
                   className="max-md:min-h-11 pointer-coarse:min-h-11"
                   isDisabled={!user}
                   onClick={() => {
@@ -223,59 +226,29 @@ function RouteComponent() {
               }}
             />
           </VStack>
-        </section>
 
-        {savedStarts.length > 0 ? (
-          <section aria-labelledby="saved-starts-heading">
-            <VStack gap={2}>
-              <h2 id="saved-starts-heading" className="text-base font-semibold">
-                Resume a conversation
-              </h2>
-              <List density="balanced" hasDividers>
-                {savedStarts.map(({ id, start }) => (
-                  <ListItem
-                    key={id}
-                    href={`/start/${encodeURIComponent(id)}`}
-                    label={
-                      start.draft.text ||
-                      start.draft.attachments[0]?.name ||
-                      "Attachment"
-                    }
-                    description="Resume sending"
-                    startContent={
-                      <IconFileText aria-hidden="true" size="1.25rem" />
-                    }
-                    endContent={
-                      <IconArrowUpRight aria-hidden="true" size="1rem" />
-                    }
-                  />
-                ))}
-              </List>
-            </VStack>
-          </section>
-        ) : null}
-
-        <WorkingNow channels={channels.data} />
-
-        {explore.length > 0 || (!personal && Boolean(agents?.length)) ? (
-          <section aria-labelledby="explore-agents-heading">
-            <VStack gap={2}>
-              <h2
-                id="explore-agents-heading"
-                className="text-base font-semibold"
-              >
-                Explore Bots
-              </h2>
-              {explore.length ? (
+          {savedStarts.length > 0 ? (
+            <section aria-labelledby="saved-starts-heading">
+              <VStack gap={2}>
+                <h2
+                  id="saved-starts-heading"
+                  className="text-base font-semibold"
+                >
+                  Resume a conversation
+                </h2>
                 <List density="balanced" hasDividers>
-                  {explore.slice(0, EXPLORE_SHOWN).map((agent) => (
+                  {savedStarts.map(({ id, start }) => (
                     <ListItem
-                      key={agent.id}
-                      href={`/channel/new?agent=${encodeURIComponent(agent.id)}`}
-                      label={agent.name}
-                      description={agent.title || undefined}
+                      key={id}
+                      href={`/start/${encodeURIComponent(id)}`}
+                      label={
+                        start.draft.text ||
+                        start.draft.attachments[0]?.name ||
+                        "Attachment"
+                      }
+                      description="Resume sending"
                       startContent={
-                        <ChannelAvatar participantIds={[agent.id]} size={28} />
+                        <IconFileText aria-hidden="true" size="1.25rem" />
                       }
                       endContent={
                         <IconArrowUpRight aria-hidden="true" size="1rem" />
@@ -283,27 +256,72 @@ function RouteComponent() {
                     />
                   ))}
                 </List>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nobody has shared a Bot with you yet.
-                </p>
-              )}
-              {agents?.length ? (
-                <Link
-                  className="text-sm"
-                  style={{
-                    textDecoration: "underline",
-                    textUnderlineOffset: "0.15em",
-                  }}
-                  to="/bots"
+              </VStack>
+            </section>
+          ) : null}
+
+          <WorkingNow channels={channels.data} />
+
+          {explore.length > 0 || (!personal && Boolean(agents?.length)) ? (
+            <section aria-labelledby="explore-agents-heading">
+              <VStack gap={2}>
+                <Heading
+                  id="explore-agents-heading"
+                  level={5}
+                  accessibilityLevel={2}
                 >
-                  All Bots
-                </Link>
-              ) : null}
-            </VStack>
-          </section>
-        ) : null}
-        <BusinessLink />
+                  Explore Bots
+                </Heading>
+                {explore.length ? (
+                  <Grid columns={{ minWidth: 240, max: 2 }} gap={3}>
+                    {explore.slice(0, EXPLORE_SHOWN).map((agent) => (
+                      <Link
+                        className="astryx-home-bot"
+                        key={agent.id}
+                        to="/channel/new"
+                        search={{ agent: agent.id }}
+                      >
+                        <HStack align="center" gap={3}>
+                          <ChannelAvatar
+                            participantIds={[agent.id]}
+                            size={32}
+                          />
+                          <VStack className="min-w-0" gap={0.5}>
+                            <Text type="label" maxLines={1}>
+                              {agent.name}
+                            </Text>
+                            {agent.title ? (
+                              <Text type="supporting" maxLines={1}>
+                                {agent.title}
+                              </Text>
+                            ) : null}
+                          </VStack>
+                        </HStack>
+                      </Link>
+                    ))}
+                  </Grid>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Nobody has shared a Bot with you yet.
+                  </p>
+                )}
+                {agents?.length ? (
+                  <Link
+                    className="text-sm"
+                    style={{
+                      textDecoration: "underline",
+                      textUnderlineOffset: "0.15em",
+                    }}
+                    to="/bots"
+                  >
+                    All Bots
+                  </Link>
+                ) : null}
+              </VStack>
+            </section>
+          ) : null}
+          <BusinessLink />
+        </VStack>
       </VStack>
     </LinkProvider>
   );

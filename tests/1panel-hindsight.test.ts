@@ -1,71 +1,157 @@
 import { expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 
-const app = join(import.meta.dir, "../deploy/1panel/apps/hindsight/1.2.3");
+const packages = join(import.meta.dir, "../deploy/1panel/apps/hindsight");
+// The package directory is named for the release it ships, so a version bump must not break this file.
+const version = readdirSync(packages, { withFileTypes: true }).find((entry) =>
+  entry.isDirectory(),
+)?.name;
+if (!version) throw new Error(`no version directory under ${packages}`);
+const app = join(packages, version);
 const consoleAccessKey = "HINDSIGHT_CP_ACCESS_KEY";
+const tenantApiKey = "HINDSIGHT_API_TENANT_API_KEY";
 
-/** Hindsight only shows its login page when this variable reaches the control plane, so it must not be optional. */
-test("the 1Panel Hindsight package always gives the console an access key", () => {
-  const form = parse(readFileSync(join(app, "data.yml"), "utf8")) as {
-    additionalProperties: { formFields: Array<Record<string, unknown>> };
-  };
-  const field = form.additionalProperties.formFields.find(
-    (candidate) => candidate.envKey === consoleAccessKey,
+type Form = {
+  additionalProperties: { formFields: Array<Record<string, unknown>> };
+};
+const form = () => parse(readFileSync(join(app, "data.yml"), "utf8")) as Form;
+const field = (envKey: string) =>
+  form().additionalProperties.formFields.find(
+    (candidate) => candidate.envKey === envKey,
   );
 
-  expect(field?.type).toBe("password");
-  // Read at every start, so an existing install can gain a key after the fact.
-  expect(field?.edit).toBe(true);
-  expect(field?.required).toBe(true);
+const variables = {
+  CONTAINER_NAME: "hindsight-test",
+  PANEL_APP_PORT_HTTP: "19999",
+  PANEL_APP_PORT_API: "18888",
+  PANEL_DB_HOST: "127.0.0.1",
+  PANEL_DB_PORT: "5432",
+  PANEL_DB_NAME: "hindsight",
+  PANEL_DB_USER: "hindsight",
+  PANEL_DB_USER_PASSWORD: "hindsight",
+};
 
-  const compose = join(app, "docker-compose.yml");
-  const services = (
-    parse(readFileSync(compose, "utf8")) as {
-      services: Record<string, { environment: Record<string, string> }>;
-    }
-  ).services;
-  expect(services.hindsight?.environment[consoleAccessKey]).toBe(
-    `\${${consoleAccessKey}:?Enter the console access key}`,
-  );
-
-  // The form is one thing; what Compose renders is what runs. An empty key must stop the
-  // container instead of starting a console that anyone can open.
+/** What Compose renders is what runs, so every assertion about the running system reads this. */
+function render(overrides: Record<string, string> = {}) {
   const env = mkdtempSync(join(tmpdir(), "openbot-1panel-hindsight-"));
-  const variables = {
-    CONTAINER_NAME: "hindsight-test",
-    PANEL_APP_PORT_HTTP: "19999",
-    PANEL_APP_PORT_API: "18888",
-    PANEL_DB_HOST: "127.0.0.1",
-    PANEL_DB_PORT: "5432",
-    PANEL_DB_NAME: "hindsight",
-    PANEL_DB_USER: "hindsight",
-    PANEL_DB_USER_PASSWORD: "hindsight",
-  };
-  const render = (key: string) => {
+  try {
     const file = join(env, "test.env");
     writeFileSync(
       file,
-      Object.entries({ ...variables, [consoleAccessKey]: key })
+      Object.entries({
+        ...variables,
+        [consoleAccessKey]: "a-test-key",
+        [tenantApiKey]: "a-tenant-key",
+        ...overrides,
+      })
         .map(([name, value]) => `${name}=${value}`)
         .join("\n"),
     );
     return execFileSync(
       "docker",
-      ["compose", "-f", compose, "--env-file", file, "config"],
+      [
+        "compose",
+        "-f",
+        join(app, "docker-compose.yml"),
+        "--env-file",
+        file,
+        "config",
+      ],
       { stdio: ["ignore", "pipe", "pipe"] },
     ).toString();
-  };
-
-  try {
-    expect(render("a-test-key")).toContain(
-      `HINDSIGHT_CP_ACCESS_KEY: a-test-key`,
-    );
-    expect(() => render("")).toThrow();
   } finally {
     rmSync(env, { recursive: true, force: true });
   }
+}
+
+test("the 1Panel Hindsight package ships one version directory", () => {
+  const versions = readdirSync(packages, { withFileTypes: true }).filter(
+    (entry) => entry.isDirectory(),
+  );
+  expect(versions.map((entry) => entry.name)).toEqual([version]);
+});
+
+/** Hindsight only shows its login page when this variable reaches the control plane, so it must not be optional. */
+test("the 1Panel Hindsight package always gives the console an access key", () => {
+  const key = field(consoleAccessKey);
+  // Read at every start, so an existing install can gain a key after the fact.
+  expect(key).toMatchObject({ type: "password", edit: true, required: true });
+
+  // An empty key must stop the container instead of starting a console that anyone can open.
+  expect(render()).toContain(`HINDSIGHT_CP_ACCESS_KEY: a-test-key`);
+  expect(() => render({ [consoleAccessKey]: "" })).toThrow();
+
+  // Same for the API: without a key the API would answer anyone who can reach the port.
+  expect(field(tenantApiKey)).toMatchObject({
+    type: "password",
+    edit: true,
+    required: true,
+  });
+  expect(() => render({ [tenantApiKey]: "" })).toThrow();
+});
+
+type Rendered = {
+  services: Record<
+    string,
+    {
+      image?: string;
+      ports?: unknown[];
+      networks?: Record<string, null>;
+      environment?: Record<string, string>;
+      depends_on?: Record<string, { condition?: string }>;
+    }
+  >;
+  networks: Record<string, { internal?: boolean; external?: boolean }>;
+};
+const rendered = (overrides: Record<string, string> = {}) =>
+  parse(render(overrides)) as Rendered;
+
+/*
+ * The 1Panel PostgreSQL cluster image carries a pgvector built for AVX-512. On a CPU without it a
+ * vector write kills the backend and every connection on the cluster, so the package must keep its
+ * database on an image that chooses its instructions at run time.
+ */
+test("the 1Panel Hindsight package keeps its database to itself", () => {
+  const { services, networks } = rendered();
+
+  expect(field("PANEL_DB_HOST")).toMatchObject({
+    type: "text",
+    default: "postgres",
+    edit: true,
+  });
+  expect(field("PANEL_DB_PORT")).toMatchObject({ default: 5432, edit: true });
+
+  // The database publishes nothing and sits on an internal network, so only Hindsight reaches it.
+  expect(services.postgres?.image).toBe("pgvector/pgvector:pg17");
+  expect(services.postgres?.ports).toBeUndefined();
+  expect(Object.keys(services.postgres?.networks ?? {})).toEqual(["db"]);
+  expect(services.postgres?.environment).toMatchObject({
+    POSTGRES_USER: "hindsight",
+    POSTGRES_DB: "hindsight",
+  });
+  expect(networks.db).toMatchObject({ internal: true });
+
+  expect(services.hindsight?.depends_on?.postgres).toMatchObject({
+    condition: "service_healthy",
+  });
+  // The form decides where Hindsight connects: a named host, or the built-in database.
+  expect(services.hindsight?.environment?.HINDSIGHT_API_DATABASE_URL).toMatch(
+    /^postgresql:\/\/hindsight:[^@]+@127\.0\.0\.1:5432\/hindsight\?sslmode=disable$/,
+  );
+  expect(
+    rendered({ PANEL_DB_HOST: "postgres" }).services.hindsight?.environment
+      ?.HINDSIGHT_API_DATABASE_URL,
+  ).toMatch(
+    /^postgresql:\/\/hindsight:[^@]+@postgres:5432\/hindsight\?sslmode=disable$/,
+  );
 });

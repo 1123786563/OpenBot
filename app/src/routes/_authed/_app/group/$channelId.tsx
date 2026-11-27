@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/Stack";
 import { learningEvidencePermission } from "@openbot/shared/direct-chat-learning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,8 +34,11 @@ function RouteComponent() {
   useMarkOpenChannelRead(channelId);
   return (
     <ConversationSurface>
-      <div
-        className="sticky top-0 flex min-h-12 flex-row items-center gap-1.5 border-b border-border px-3 py-2"
+      <HStack
+        as="header"
+        align="center"
+        gap={1.5}
+        className="sticky top-0 min-h-12 shrink-0 border-b border-border px-3 py-2"
         data-slot="conversation-header"
       >
         <SidebarToggle />
@@ -50,7 +54,7 @@ function RouteComponent() {
           channelId={channelId}
           onLeave={() => void navigate({ to: "/" })}
         />
-      </div>
+      </HStack>
       {(visibleChannel?.agentIds ?? []).map((agentId) => (
         <BotPausedBanner agentId={agentId} key={agentId} />
       ))}

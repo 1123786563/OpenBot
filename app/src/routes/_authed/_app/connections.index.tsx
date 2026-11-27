@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import {
   IconApps,
   IconBrandGoogleDrive,
@@ -497,27 +498,30 @@ function RouteComponent() {
          */}
         {loading ? (
           /*
-           * The grid's own shape as tiles, so the page is not a title over blank space for the
-           * length of the read: the search and the grid arrive with the data, and placeholder tiles
-           * assert nothing on the way.
+           * Placeholder rows reserve the list's space during its initial read.
            */
           <div
             aria-busy="true"
             aria-label="Loading"
-            className="mt-4 grid grid-cols-1 gap-3 @min-[36rem]:grid-cols-2"
+            className="mt-4"
             role="status"
           >
-            {LOADING_ROWS.map((key) => (
-              <Item key={key} size="sm" variant="outline">
-                <RowMark className="size-9">
-                  <Skeleton className="size-5" />
-                </RowMark>
-                <ItemContent className="min-w-0 gap-1">
-                  <Skeleton className="h-3.5 w-28" />
-                  <Skeleton className="h-3 w-44" />
-                </ItemContent>
-              </Item>
-            ))}
+            <PageRows>
+              {LOADING_ROWS.map((key, index) => (
+                <React.Fragment key={key}>
+                  {index > 0 ? <Separator /> : null}
+                  <Item size="sm">
+                    <RowMark className="size-9">
+                      <Skeleton className="size-5" />
+                    </RowMark>
+                    <ItemContent className="min-w-0 gap-1">
+                      <Skeleton className="h-3.5 w-28" />
+                      <Skeleton className="h-3 w-44" />
+                    </ItemContent>
+                  </Item>
+                </React.Fragment>
+              ))}
+            </PageRows>
           </div>
         ) : plugins.error || connections.error ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -542,7 +546,7 @@ function RouteComponent() {
           </PageEmpty>
         ) : (
           <>
-            <div className="flex items-center gap-3">
+            <HStack align="center" gap={3} wrap="wrap">
               <InputGroup className="h-9 flex-1 border-transparent bg-muted/60 shadow-none dark:bg-muted/60">
                 <InputGroupAddon>
                   <IconSearch aria-hidden="true" className="size-4" />
@@ -557,7 +561,7 @@ function RouteComponent() {
               <p className="shrink-0 text-xs text-muted-foreground">
                 {inUse} in use · {rows.length} in all
               </p>
-            </div>
+            </HStack>
             {matching.length === 0 ? (
               builtInMatches ? null : (
                 <p className="mt-4 text-sm text-muted-foreground" role="status">
@@ -565,51 +569,50 @@ function RouteComponent() {
                 </p>
               )
             ) : (
-              /*
-               * A grid of separate cards, where every other list is one `PageRows` card of divided
-               * rows. The accepted exception: connections are apps you pick out by their mark, so
-               * they are laid out as tiles two across rather than read down as a list.
-               */
-              <div className="mt-4 grid grid-cols-1 gap-3 @min-[36rem]:grid-cols-2">
-                {matching.map((row) => (
-                  <ConnectionItem
-                    key={row.key}
-                    onPress={
-                      row.state === "available" &&
-                      (row.action === "connect" || row.action === "add")
-                        ? () =>
-                            void connectApp.run(
-                              row.key,
-                              row.action as "connect" | "add",
-                            )
-                        : undefined
-                    }
-                    pending={connectApp.pending === row.key}
-                    row={row}
-                  />
+              <PageRows>
+                {matching.map((row, index) => (
+                  <React.Fragment key={row.key}>
+                    {index > 0 ? <Separator /> : null}
+                    <ConnectionItem
+                      onPress={
+                        row.state === "available" &&
+                        (row.action === "connect" || row.action === "add")
+                          ? () =>
+                              void connectApp.run(
+                                row.key,
+                                row.action as "connect" | "add",
+                              )
+                          : undefined
+                      }
+                      pending={connectApp.pending === row.key}
+                      row={row}
+                    />
+                  </React.Fragment>
                 ))}
                 {browse ? (
-                  <Item
-                    className="min-h-14 min-w-0 flex-nowrap gap-3 bg-card px-3 py-1.5"
-                    data-testid="account-browse"
-                    render={<Link {...paths.brokerDirectory(provider)} />}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <RowMark className="size-9">
-                      <IconApps className="size-4" />
-                    </RowMark>
-                    <ItemContent className="min-w-0 gap-0.5">
-                      <ItemTitle className="block w-auto truncate">
-                        {browse.title}
-                      </ItemTitle>
-                      <ItemDescription className="line-clamp-2 text-xs">
-                        {browse.description}
-                      </ItemDescription>
-                    </ItemContent>
-                  </Item>
+                  <>
+                    <Separator />
+                    <Item
+                      className="min-h-14 min-w-0 flex-nowrap gap-3 bg-card px-3 py-1.5"
+                      data-testid="account-browse"
+                      render={<Link {...paths.brokerDirectory(provider)} />}
+                      size="sm"
+                    >
+                      <RowMark className="size-9">
+                        <IconApps className="size-4" />
+                      </RowMark>
+                      <ItemContent className="min-w-0 gap-0.5">
+                        <ItemTitle className="block w-auto truncate">
+                          {browse.title}
+                        </ItemTitle>
+                        <ItemDescription className="line-clamp-2 text-xs">
+                          {browse.description}
+                        </ItemDescription>
+                      </ItemContent>
+                    </Item>
+                  </>
                 ) : null}
-              </div>
+              </PageRows>
             )}
             {needingSetup > 0 && !showSetup && query === "" ? (
               <Button
@@ -892,7 +895,6 @@ function ConnectionItem({
         )
       }
       size="sm"
-      variant="outline"
     >
       <RowMark className="size-9">
         <ConnectionMark mark={row.mark} name={row.title} />

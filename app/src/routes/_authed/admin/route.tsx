@@ -34,12 +34,16 @@ export const Route = createFileRoute("/_authed/admin")({
 function RouteComponent() {
   return (
     // The same inset panel as the app's shell; see `_app.tsx`.
-    <SidebarShell className="h-svh overflow-hidden" name="admin" width="300px">
+    <SidebarShell
+      className="astryx-management-shell h-svh overflow-hidden"
+      name="admin"
+      width="22rem"
+    >
       <AdminSidebar />
       <SidebarInset
         id="main-content"
         tabIndex={-1}
-        className="min-h-0 min-w-0 overflow-hidden"
+        className="astryx-management-main min-h-0 min-w-0 overflow-hidden"
       >
         <Outlet />
       </SidebarInset>

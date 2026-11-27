@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import type { Message } from "@ag-ui/core";
 import type { Attachment } from "@copilotkit/react-core/v2";
 import {
@@ -493,8 +494,8 @@ export function ConversationView({
        * the composer, which is layout containment: it would become the containing block for the @
        * menu, which is `position: fixed` at the caret (see `DictationSurface`).
        */}
-      <div
-        className="mx-auto w-full max-w-[calc(var(--container-3xl)+2rem)] shrink-0 px-4 pb-4"
+      <VStack
+        className="astryx-conversation-composer mx-auto w-full max-w-[calc(var(--container-3xl)+2rem)] shrink-0 px-4 pb-4"
         data-slot="composer-column"
       >
         {notice}
@@ -536,6 +537,7 @@ export function ConversationView({
           {...(channelId ? { channelId } : {})}
           {...(commands ? { commands } : {})}
           className="relative w-full mt-auto"
+          editorClassName="text-base"
           compact
           voiceCall={voiceCall}
           disabled={disabled}
@@ -590,7 +592,7 @@ export function ConversationView({
            */
           stoppable={stoppable ?? pending}
         />
-      </div>
+      </VStack>
     </div>
   );
 }

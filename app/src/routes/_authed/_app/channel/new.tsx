@@ -1,4 +1,5 @@
 import { Button } from "@astryxdesign/core/Button";
+import { PageHeader } from "@/components/layout/page-parts";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -315,16 +316,10 @@ function NewConversation({
       gap={4}
       maxWidth="48rem"
       width="100%"
-      style={{
-        marginInline: "auto",
-        paddingInline: "var(--spacing-4)",
-        paddingBlockStart: "var(--spacing-4)",
-        paddingBlockEnd: "var(--spacing-6)",
-      }}
+      isScrollable
+      className="mx-auto min-h-0 px-4 pt-8 pb-6"
     >
-      <h1 className="text-2xl font-semibold tracking-tight">
-        New conversation
-      </h1>
+      <PageHeader title="New conversation" />
       <VStack gap={2} data-slot="conversation-header">
         <HStack align="center" justify="between">
           <label

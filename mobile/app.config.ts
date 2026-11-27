@@ -1,6 +1,8 @@
 import type { ExpoConfig } from "expo/config";
 
 const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
+// The upstream release of this mobile client when built in the fork checkout.
+const openbotRelease = "1.2.1";
 const config: ExpoConfig = {
   name: "OpenBot",
   slug: "openbot",
@@ -12,9 +14,9 @@ const config: ExpoConfig = {
     "expo-router",
     "expo-secure-store",
     ["expo-notifications", { defaultChannel: "openbot" }],
-    "./plugins/with-ios-release-compatibility.cjs",
-    "./plugins/with-ios-scene.cjs",
+    // Back from linking the company account after the process died mid-sign-in: no Custom Tab left below Home.
+    "./plugins/linked-cold-start",
   ],
-  extra: { ...(projectId ? { eas: { projectId } } : {}) },
+  extra: { openbotRelease, ...(projectId ? { eas: { projectId } } : {}) },
 };
 export default config;
