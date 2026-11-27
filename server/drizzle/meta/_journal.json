@@ -1156,6 +1156,13 @@
       "when": 1795519286230,
       "tag": "0164_workspace_closure_storage_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1795785352191,
+      "tag": "0165_direct_chat_prompt_attachments",
+      "breakpoints": true
     }
   ]
 }

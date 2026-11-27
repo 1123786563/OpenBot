@@ -143,6 +143,7 @@ function RouteComponent() {
               )}
             </Heading>
             <Composer
+              allowFirstMessageAttachments
               key={messageKey}
               draftStorageKey={messageKey}
               onDraftChange={trackDraft}
