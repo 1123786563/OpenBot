@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { SETTINGS_SIDEBAR_ITEMS } from "../src/components/settings/settings-sidebar";
+import {
+  SETTINGS_SIDEBAR_ITEMS,
+  settingsSidebarItems,
+} from "../src/components/settings/settings-sidebar";
 
 describe("settings sidebar", () => {
   test("Browsers links to /settings/browsers, right after Approvals", () => {
@@ -16,5 +19,17 @@ describe("settings sidebar", () => {
 
     expect(learning?.linkOptions).toEqual({ to: "/settings/learning" });
     expect(titles.indexOf("Learning")).toBe(titles.indexOf("Browsers") + 1);
+  });
+});
+
+test("Team Settings links to Computer only for enrolled users", () => {
+  expect(
+    settingsSidebarItems("team").some((item) => item.title === "Computer"),
+  ).toBe(false);
+  expect(
+    settingsSidebarItems("team", true).find((item) => item.title === "Computer")
+      ?.linkOptions,
+  ).toEqual({
+    to: "/settings/computer",
   });
 });

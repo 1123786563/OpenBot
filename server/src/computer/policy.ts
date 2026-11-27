@@ -103,6 +103,7 @@ export type PolicyContext = {
     | "read"
     | "read_file"
     | "download_file"
+    | "upload_file"
     | "write_file"
     | "list_files"
     // A tool on somebody else's MCP server. Split by effect for the same reason as the browser

@@ -44,6 +44,7 @@ function RouteComponent() {
         align="center"
         as="header"
         direction="horizontal"
+        className="sticky top-0 shrink-0"
         gap={2}
         data-slot="conversation-header"
         style={{

@@ -1,20 +1,31 @@
-import { Redirect, router, useLocalSearchParams } from "expo-router";
+import { Link, Redirect, router, useLocalSearchParams } from "expo-router";
 import { useCallback } from "react";
 import { Button, Pressable, Switch, Text, View } from "react-native";
+import { everyPage, ORGANIZATION_ID, type Routine } from "../src/api";
 import {
-  api,
-  type Bot,
-  type BotLifecycle,
-  type CheckInItem,
-  type Conversation,
-  type Routine,
-} from "../src/api";
+  getBot,
+  getBotLifecycle,
+  pauseBot,
+  resumeBot,
+} from "../src/api/generated/bots/bots";
+import { listCheckInItems } from "../src/api/generated/check-ins/check-ins";
+import { listConversations } from "../src/api/generated/conversations/conversations";
+import {
+  listRoutines,
+  pauseRoutine,
+  resumeRoutine,
+} from "../src/api/generated/routines/routines";
 import { authClient } from "../src/auth";
 import { hideItem, ItemCard, startItem } from "../src/check-ins";
 import {
+  isLocalMobilePreview,
+  previewBots,
+  previewRoutines,
+} from "../src/home-preview";
+import {
   ADD_ROUTINE_DRAFT,
-  RUN_COLORS,
-  RUN_LABELS,
+  lastRunLine,
+  runColor,
   when,
 } from "../src/routines";
 import {
@@ -34,67 +45,92 @@ import { useLoad } from "../src/use-load";
  * what customizes it.
  */
 export default function BotScreen() {
-  const { botId = "" } = useLocalSearchParams<{ botId: string }>();
+  const { botId = "", preview } = useLocalSearchParams<{
+    botId: string;
+    preview?: string;
+  }>();
+  if (isLocalMobilePreview("/bot", preview)) {
+    const sample = previewBots.find((bot) => bot.id === botId);
+    if (!sample)
+      return (
+        <Redirect href={{ pathname: "/bots", params: { preview: "1" } }} />
+      );
+    return <BotProfile botId={botId} sample={sample} />;
+  }
+  return <ConnectedBot botId={botId} />;
+}
+
+function ConnectedBot({ botId }: { botId: string }) {
   const { data: session, isPending } = authClient.useSession();
+  return <BotProfile botId={botId} session={session} isPending={isPending} />;
+}
+
+function BotProfile({
+  botId,
+  sample,
+  session,
+  isPending = false,
+}: {
+  botId: string;
+  sample?: (typeof previewBots)[number];
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+}) {
   const action = useAction();
-  const loadBot = useCallback(
-    () => api<{ agent: Bot }>(`/api/agents/${encodeURIComponent(botId)}`),
-    [botId],
-  );
+  const loadBot = useCallback(() => getBot(ORGANIZATION_ID, botId), [botId]);
   const bot = useLoad(loadBot, Boolean(session && botId));
   const loadLifecycle = useCallback(
-    () =>
-      api<{ lifecycle: BotLifecycle }>(
-        `/api/bots/${encodeURIComponent(botId)}/lifecycle`,
-      ),
+    () => getBotLifecycle(ORGANIZATION_ID, botId),
     [botId],
   );
   const lifecycle = useLoad(loadLifecycle, Boolean(session && botId));
   const loadRoutines = useCallback(
-    () => api<{ routines: Routine[] }>("/api/routines"),
+    () =>
+      everyPage(
+        (page) => listRoutines(ORGANIZATION_ID, page),
+        (page) => page.routines,
+      ),
     [],
   );
   const routines = useLoad(loadRoutines, Boolean(session));
   const loadItems = useCallback(
-    () => api<{ suggestions: CheckInItem[] }>("/api/proactive/suggestions"),
+    () =>
+      everyPage(
+        (page) => listCheckInItems(ORGANIZATION_ID, page),
+        (page) => page.checkInItems,
+      ),
     [],
   );
   const items = useLoad(loadItems, Boolean(session));
-  if (!session && !isPending) return <Redirect href="/" />;
-  const mine = routines.data?.routines.filter(
-    (routine) => routine.agentId === botId,
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
+  const mine = (sample ? previewRoutines : routines.data)?.filter(
+    (routine) => routine.botId === botId,
   );
-  const found = items.data?.suggestions.filter(
-    (item) => item.agentId === botId,
-  );
-  const paused = lifecycle.data?.lifecycle.paused;
-  const name = bot.data?.agent.name ?? "This Bot";
+  const found = items.data?.filter((item) => item.botId === botId);
+  const paused = sample ? sample.id === "research" : lifecycle.data?.paused;
+  const profile = sample ?? bot.data?.bot;
+  const name = profile?.name ?? "This Bot";
 
   async function setPaused(next: boolean) {
     await action.run("pause", async () => {
-      await api(
-        `/api/bots/${encodeURIComponent(botId)}/${next ? "pause" : "resume"}`,
-        { method: "POST" },
-      );
+      await (next ? pauseBot : resumeBot)(ORGANIZATION_ID, botId);
       await lifecycle.refresh();
     });
   }
   async function setActive(routine: Routine, enabled: boolean) {
     await action.run(routine.id, async () => {
-      await api(`/api/routines/${encodeURIComponent(routine.id)}/enabled`, {
-        method: "PUT",
-        body: { enabled },
-      });
+      await (enabled ? resumeRoutine : pauseRoutine)(
+        ORGANIZATION_ID,
+        routine.id,
+      );
       await routines.refresh();
     });
   }
   async function addRoutine() {
     await action.run("add", async () => {
-      const page = await api<{ conversations: Conversation[] }>(
-        "/api/delivery/conversations",
-      );
+      const page = await listConversations(ORGANIZATION_ID, { limit: 100 });
       const conversation = page.conversations.find(
-        (item) => item.active && item.agentIds.includes(botId),
+        (item) => item.active && item.botIds.includes(botId),
       );
       if (!conversation)
         throw new Error(
@@ -116,17 +152,24 @@ export default function BotScreen() {
       refreshing={
         bot.pending || lifecycle.pending || routines.pending || items.pending
       }
-      onRefresh={() => {
-        void bot.refresh();
-        void lifecycle.refresh();
-        void routines.refresh();
-        void items.refresh();
-      }}
+      onRefresh={
+        sample
+          ? undefined
+          : () => {
+              void bot.refresh();
+              void lifecycle.refresh();
+              void routines.refresh();
+              void items.refresh();
+            }
+      }
     >
+      {sample && (
+        <Link href={{ pathname: "/bots", params: { preview: "1" } }}>
+          Back to preview Bots
+        </Link>
+      )}
       <Text style={heading}>{name}</Text>
-      {bot.data?.agent.title ? (
-        <Text style={muted}>{bot.data.agent.title}</Text>
-      ) : null}
+      {profile?.title ? <Text style={muted}>{profile.title}</Text> : null}
       <Problem
         message={
           action.error ||
@@ -185,7 +228,7 @@ export default function BotScreen() {
           <Switch
             accessibilityLabel={`${name} is active`}
             value={paused === false}
-            disabled={paused === undefined || Boolean(action.busy)}
+            disabled={Boolean(sample || action.busy) || paused === undefined}
             onValueChange={(active) => {
               void setPaused(!active);
             }}
@@ -193,28 +236,12 @@ export default function BotScreen() {
         </View>
       </View>
       <Button
-        title="Start conversation"
-        disabled={Boolean(action.busy) || !bot.data}
-        onPress={() => {
-          void action.run("conversation", async () => {
-            const { channel } = await api<{ channel: Conversation }>(
-              "/api/channels",
-              {
-                method: "POST",
-                body: { agentIds: [botId] },
-              },
-            );
-            router.push({
-              pathname: "/conversation",
-              params: { channelId: channel.id },
-            });
-          });
-        }}
-      />
-      <Button
         title="Open computer"
         onPress={() =>
-          router.push({ pathname: "/computer", params: { botId } })
+          router.push({
+            pathname: "/computer",
+            params: { botId, ...(sample ? { preview: "1" } : {}) },
+          })
         }
       />
       <Section title="Routines">
@@ -226,7 +253,10 @@ export default function BotScreen() {
             onPress={() =>
               router.push({
                 pathname: "/routine",
-                params: { routineId: routine.id },
+                params: {
+                  routineId: routine.id,
+                  ...(sample ? { preview: "1" } : {}),
+                },
               })
             }
             style={card}
@@ -251,16 +281,16 @@ export default function BotScreen() {
                     ? `Next run ${when(routine.nextRunAt)}`
                     : "Paused"}
                 </Text>
-                {routine.lastRun?.status ? (
-                  <Text style={{ color: RUN_COLORS[routine.lastRun.status] }}>
-                    Last run: {RUN_LABELS[routine.lastRun.status]}
+                {routine.lastRun && lastRunLine(routine.lastRun.status) ? (
+                  <Text style={{ color: runColor(routine.lastRun.status) }}>
+                    {lastRunLine(routine.lastRun.status)}
                   </Text>
                 ) : null}
               </View>
               <Switch
                 accessibilityLabel="Active"
                 value={routine.enabled}
-                disabled={Boolean(action.busy)}
+                disabled={Boolean(sample || action.busy)}
                 onValueChange={(enabled) => {
                   void setActive(routine, enabled);
                 }}
@@ -271,7 +301,7 @@ export default function BotScreen() {
         {mine?.length === 0 && <Text style={muted}>No routines yet.</Text>}
         <Button
           title="Add routine"
-          disabled={Boolean(action.busy)}
+          disabled={Boolean(sample || action.busy)}
           onPress={() => {
             void addRoutine();
           }}
@@ -281,12 +311,28 @@ export default function BotScreen() {
         {[
           {
             label: "Plugins",
-            go: () => router.push({ pathname: "/plugins", params: { botId } }),
+            go: () =>
+              router.push({
+                pathname: "/plugins",
+                params: { botId, ...(sample ? { preview: "1" } : {}) },
+              }),
           },
-          { label: "Memory", go: () => router.push("/memory") },
+          {
+            label: "Memory",
+            go: () =>
+              router.push(
+                sample
+                  ? { pathname: "/memory", params: { botId, preview: "1" } }
+                  : "/memory",
+              ),
+          },
           {
             label: "Custom rules",
-            go: () => router.push({ pathname: "/rules", params: { botId } }),
+            go: () =>
+              router.push({
+                pathname: "/rules",
+                params: { botId, ...(sample ? { preview: "1" } : {}) },
+              }),
           },
         ].map((item) => (
           <Pressable

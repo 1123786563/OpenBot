@@ -1,4 +1,4 @@
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Link, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   Alert,
@@ -11,12 +11,20 @@ import {
 } from "react-native";
 import {
   type ApprovalRule,
-  type ApprovalSettings,
-  api,
   BEHAVIOUR_LABELS,
+  loadApprovalSettings,
+  ME,
+  ORGANIZATION_ID,
   type RuleBehaviour,
 } from "../src/api";
+import {
+  createPersonApprovalRule,
+  deletePersonApprovalRule,
+  updateApprovalPreferences,
+  updatePersonApprovalRule,
+} from "../src/api/generated/approvals/approvals";
 import { authClient } from "../src/auth";
+import { isLocalMobilePreview } from "../src/home-preview";
 import {
   card,
   colors,
@@ -75,15 +83,66 @@ const describe = (rule: ApprovalRule) =>
 
 /** Custom rules: what a Bot may do without asking, and the ask-first switches. */
 export default function RulesScreen() {
-  const { botId = "*" } = useLocalSearchParams<{ botId?: string }>();
+  const { botId = "*", preview } = useLocalSearchParams<{
+    botId?: string;
+    preview?: string;
+  }>();
+  if (isLocalMobilePreview("/rules", preview)) {
+    return <RulesDetail botId={botId} sample />;
+  }
+  return <ConnectedRules botId={botId} />;
+}
+
+function ConnectedRules({ botId }: { botId: string }) {
   const { data: session, isPending } = authClient.useSession();
+  return <RulesDetail botId={botId} session={session} isPending={isPending} />;
+}
+
+function RulesDetail({
+  botId,
+  sample = false,
+  session,
+  isPending = false,
+}: {
+  botId: string;
+  sample?: boolean;
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+}) {
   const action = useAction();
   const [toolRef, setToolRef] = useState("");
   const [behaviour, setBehaviour] = useState<RuleBehaviour>("ask");
-  const load = useCallback(() => api<ApprovalSettings>("/api/approvals"), []);
+  const load = useCallback(() => loadApprovalSettings(), []);
   const settings = useLoad(load, Boolean(session));
-  if (!session && !isPending) return <Redirect href="/" />;
-  const data = settings.data;
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
+  const data: Awaited<ReturnType<typeof loadApprovalSettings>> | undefined =
+    sample
+      ? {
+          enabled: true,
+          preferences: { enabled: true, autoReview: false },
+          team: { enforceAutoReview: false, customRulesEnabled: true },
+          rules: [
+            {
+              id: "sample-calendar",
+              botId,
+              toolRef: "calendar/list_events",
+              effect: "*",
+              scope: "*",
+              behaviour: "allow",
+            },
+          ],
+          teamRules: [
+            {
+              id: "sample-email",
+              botId: "*",
+              toolRef: "gmail/send_email",
+              effect: "*",
+              scope: "*",
+              behaviour: "ask",
+            },
+          ],
+        }
+      : settings.data;
   const rules = data?.rules.filter(
     (rule) => rule.botId === botId || rule.botId === "*",
   );
@@ -92,17 +151,16 @@ export default function RulesScreen() {
   );
   const editable = data?.team?.customRulesEnabled !== false;
 
-  const setPreference = (body: Record<string, boolean>) =>
+  const setPreference = (change: { enabled?: boolean; autoReview?: boolean }) =>
     action.run("preferences", async () => {
-      await api("/api/approvals/preferences", { method: "PATCH", body });
+      await updateApprovalPreferences(ORGANIZATION_ID, ME, change);
       await settings.refresh();
     });
   /** A rule's behaviour is edited in place, so it keeps its id and its audit history. */
   const changeRule = (rule: ApprovalRule, next: RuleBehaviour) =>
     action.run(rule.id, async () => {
-      await api(`/api/approvals/rules/${encodeURIComponent(rule.id)}`, {
-        method: "PATCH",
-        body: { behaviour: next },
+      await updatePersonApprovalRule(ORGANIZATION_ID, ME, rule.id, {
+        behaviour: next,
       });
       await settings.refresh();
     });
@@ -110,8 +168,13 @@ export default function RulesScreen() {
   return (
     <Screen
       refreshing={settings.pending}
-      onRefresh={() => void settings.refresh()}
+      onRefresh={sample ? undefined : () => void settings.refresh()}
     >
+      {sample && (
+        <Link href={{ pathname: "/bot", params: { botId, preview: "1" } }}>
+          Back to preview Bot
+        </Link>
+      )}
       <Text style={heading}>Custom rules</Text>
       <Problem message={action.error || settings.error} />
       {data?.preferences && (
@@ -127,7 +190,7 @@ export default function RulesScreen() {
             <Switch
               accessibilityLabel="Ask before acting on my behalf"
               value={data.preferences.enabled}
-              disabled={Boolean(action.busy)}
+              disabled={Boolean(sample || action.busy)}
               onValueChange={(enabled) => {
                 void setPreference({ enabled });
               }}
@@ -148,7 +211,8 @@ export default function RulesScreen() {
               accessibilityLabel="Auto-review low-risk actions"
               value={data.preferences.autoReview}
               disabled={
-                Boolean(action.busy) || Boolean(data.team?.enforceAutoReview)
+                Boolean(sample || action.busy) ||
+                Boolean(data.team?.enforceAutoReview)
               }
               onValueChange={(autoReview) => {
                 void setPreference({ autoReview });
@@ -182,7 +246,7 @@ export default function RulesScreen() {
             {rule.botId === "*" && <Text style={muted}>Every Bot</Text>}
             <BehaviourPicker
               value={rule.behaviour}
-              disabled={!editable || Boolean(action.busy)}
+              disabled={!editable || Boolean(sample || action.busy)}
               onChange={(next) => {
                 if (next !== rule.behaviour) void changeRule(rule, next);
               }}
@@ -190,7 +254,7 @@ export default function RulesScreen() {
             <Button
               title="Remove rule"
               color={colors.error}
-              disabled={Boolean(action.busy)}
+              disabled={Boolean(sample || action.busy)}
               onPress={() =>
                 Alert.alert("Remove this rule?", describe(rule), [
                   { text: "Cancel", style: "cancel" },
@@ -199,9 +263,10 @@ export default function RulesScreen() {
                     style: "destructive",
                     onPress: () => {
                       void action.run(rule.id, async () => {
-                        await api(
-                          `/api/approvals/rules/${encodeURIComponent(rule.id)}`,
-                          { method: "DELETE" },
+                        await deletePersonApprovalRule(
+                          ORGANIZATION_ID,
+                          ME,
+                          rule.id,
                         );
                         await settings.refresh();
                       });
@@ -218,6 +283,7 @@ export default function RulesScreen() {
           <View style={card}>
             <TextInput
               accessibilityLabel="Tool or app"
+              editable={!sample}
               placeholder="Tool or app, such as gmail/send_email or *"
               autoCapitalize="none"
               autoCorrect={false}
@@ -226,15 +292,20 @@ export default function RulesScreen() {
               maxLength={300}
               style={input}
             />
-            <BehaviourPicker value={behaviour} onChange={setBehaviour} />
+            <BehaviourPicker
+              value={behaviour}
+              disabled={sample}
+              onChange={setBehaviour}
+            />
             <Button
               title="Add rule"
-              disabled={Boolean(action.busy) || !toolRef.trim()}
+              disabled={Boolean(sample || action.busy) || !toolRef.trim()}
               onPress={() => {
                 void action.run("add", async () => {
-                  await api("/api/approvals/rules", {
-                    method: "POST",
-                    body: { botId, toolRef: toolRef.trim(), behaviour },
+                  await createPersonApprovalRule(ORGANIZATION_ID, ME, {
+                    botId,
+                    toolRef: toolRef.trim(),
+                    behaviour,
                   });
                   setToolRef("");
                   await settings.refresh();

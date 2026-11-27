@@ -20,6 +20,7 @@ import {
   request as httpRequest,
   type IncomingMessage,
   type Server,
+  type ServerResponse,
 } from "node:http";
 import { BlockList, connect, isIP, type Socket } from "node:net";
 import { isPersonBrowserId } from "../../shared/openbot-browser";
@@ -175,7 +176,7 @@ export function egressLabel(
  *
  * The filter proxy is what enforces it on the computer itself: the browser is pointed at it through
  * `egressFor`, and shell commands through HTTP(S)_PROXY. A policy pushed to a running computer is
- * consulted on the next connection, so it applies without restarting anything.
+ * applied to new connections and rechecked against active proxy traffic without a restart.
  *
  * WHAT THIS CANNOT STOP: a process that ignores proxy variables and opens a raw socket. That is the
  * Kubernetes NetworkPolicy's job, which this narrows rather than replaces.
@@ -572,6 +573,31 @@ let filter: RunningFilter | null = null;
 const policies = new Map<string, EgressPolicy>();
 let policyRequired = true;
 
+type ProxyRoute = {
+  botId: string | undefined;
+  host: string;
+  port: number;
+  addresses: string[];
+};
+type RouteResult = ProxyRoute | { error: string };
+const activeRoutes = new Map<() => void, ProxyRoute>();
+
+function trackRoute(
+  route: ProxyRoute,
+  client: Socket | ServerResponse,
+  cancel: () => void,
+) {
+  const close = () => {
+    cancel();
+    client.destroy();
+  };
+  activeRoutes.set(close, route);
+  client.once("close", () => {
+    activeRoutes.delete(close);
+    cancel();
+  });
+}
+
 type Resolver = (host: string) => Promise<string[]>;
 const systemResolver: Resolver = async (host) =>
   (await lookup(host, { all: true })).map((entry) => entry.address);
@@ -586,6 +612,10 @@ export function setEgressResolver(next: Resolver | null) {
 export function setEgressPolicy(botId: string, policy: EgressPolicy | null) {
   if (policy) policies.set(botId, policy);
   else policies.delete(botId);
+  for (const [close, route] of activeRoutes) {
+    if (route.botId !== undefined && route.botId !== botId) continue;
+    if (routeRefusal(route) !== undefined) close();
+  }
 }
 
 export function egressPolicyFor(botId: string): EgressPolicy | undefined {
@@ -634,54 +664,68 @@ function audienceFor(
   return "anyone";
 }
 
-async function decide(
+async function resolveRoute(
   botId: string | undefined,
   host: string,
   port: number,
   direct: boolean,
-): Promise<EgressDecision & { addresses?: string[] }> {
+): Promise<RouteResult> {
   const judging = policiesFor(botId);
   if (judging === "refuse") {
-    return {
-      allowed: false,
-      reason: REFUSALS.noPolicy[audienceFor(botId, [])],
-    };
+    return { error: REFUSALS.noPolicy[audienceFor(botId, [])] };
+  }
+  let addresses: string[] = [];
+  // Direct connections use the checked addresses. Upstream proxies resolve on their own network,
+  // so lookup here is only needed to evaluate a range rule.
+  if (
+    isIP(normalizeHost(host)) === 0 &&
+    (direct || judging.some(([, policy]) => needsResolution(policy, host)))
+  ) {
+    try {
+      addresses = await resolver(normalizeHost(host));
+    } catch {
+      return {
+        error:
+          REFUSALS.unresolved[
+            audienceFor(
+              botId,
+              judging.map(([owner]) => owner),
+            )
+          ](host),
+      };
+    }
+  }
+  return { botId, host, port, addresses };
+}
+
+// Use the current policy after asynchronous resolution and before starting to forward.
+function authorizeRoute(route: RouteResult): RouteResult {
+  if ("error" in route) return route;
+  const refusal = routeRefusal(route);
+  return refusal === undefined ? route : { error: refusal };
+}
+
+function routeRefusal({
+  botId,
+  host,
+  port,
+  addresses,
+}: ProxyRoute): string | undefined {
+  const judging = policiesFor(botId);
+  if (judging === "refuse") {
+    return REFUSALS.noPolicy[audienceFor(botId, [])];
   }
   const audience = audienceFor(
     botId,
     judging.map(([owner]) => owner),
   );
-  let resolved: string[] = [];
-  /*
-   * Resolved whenever this filter makes the connection itself, so the address checked is the
-   * address connected to and a name cannot reach a metadata endpoint by resolving to one. Through an
-   * upstream proxy, that proxy resolves on its own network, which may be the only one with DNS, so a
-   * name is resolved here only when a range rule needs it.
-   */
-  const named = isIP(normalizeHost(host)) === 0;
-  if (
-    named &&
-    (direct || judging.some(([, policy]) => needsResolution(policy, host)))
-  ) {
-    try {
-      resolved = await resolver(normalizeHost(host));
-    } catch {
-      return { allowed: false, reason: REFUSALS.unresolved[audience](host) };
-    }
-  }
   // Checked even with no policy to judge by, which EGRESS_POLICY_REQUIRED=0 allows.
   for (const policy of judging.length > 0
     ? judging.map(([, policy]) => policy)
     : [{ mode: "allow_all" as const, rules: [] }]) {
-    const decision = egressDecision(policy, host, port, resolved, audience);
-    if (!decision.allowed) return decision;
+    const decision = egressDecision(policy, host, port, addresses, audience);
+    if (!decision.allowed) return decision.reason;
   }
-  // Connect only to the addresses that were checked, so a second lookup cannot answer differently.
-  return {
-    allowed: true,
-    reason: "Allowed.",
-    ...(resolved.length > 0 ? { addresses: resolved } : {}),
-  };
 }
 
 /**
@@ -727,11 +771,12 @@ export function connectInTurn(
   onReady: (socket: Socket) => void,
   onError: (error: Error) => void,
   attemptTimeoutMs = CONNECT_ATTEMPT_TIMEOUT_MS,
-): void {
+): () => void {
   const queue = target.addresses?.length
     ? connectOrder(target.addresses)
     : [target.host];
   let lastError: Error | undefined;
+  let cancel = () => {};
   const attempt = (index: number) => {
     const address = queue[index];
     if (address === undefined) {
@@ -753,6 +798,11 @@ export function connectInTurn(
         moveOn(new Error(`${address}:${target.port} did not answer in time.`)),
       attemptTimeoutMs,
     );
+    cancel = () => {
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+    };
     socket.once("error", moveOn);
     socket.once("connect", () => {
       if (settled) return;
@@ -765,6 +815,7 @@ export function connectInTurn(
     });
   };
   attempt(0);
+  return () => cancel();
 }
 
 /**
@@ -861,8 +912,7 @@ function tunnel(
   onError: (error: Error) => void,
 ) {
   if (!upstream) {
-    connectInTurn(target, onReady, onError);
-    return;
+    return connectInTurn(target, onReady, onError);
   }
   const via = upstreamAddress(upstream);
   const socket = connect(via.port, via.host, () => {
@@ -890,6 +940,7 @@ function tunnel(
   };
   socket.on("data", onData);
   socket.once("error", onError);
+  return () => socket.destroy();
 }
 
 export type EgressFilterOptions = {
@@ -978,7 +1029,7 @@ export async function startEgressFilter(
 
   const handlePlain = async (
     request: IncomingMessage,
-    response: import("node:http").ServerResponse,
+    response: ServerResponse,
     asks: boolean,
   ) => {
     // A plain-HTTP request through a proxy names the absolute URL.
@@ -1007,17 +1058,29 @@ export async function startEgressFilter(
       target.port || (target.protocol === "https:" ? 443 : 80),
     );
     const upstream = upstreamFor(botId ?? "", env);
-    const decision = await decide(botId, target.hostname, port, !upstream);
-    if (!decision.allowed) {
+    const route = authorizeRoute(
+      await resolveRoute(botId, target.hostname, port, !upstream),
+    );
+    if (response.destroyed) return;
+    if ("error" in route) {
       response
         .writeHead(403, {
           "content-type": "text/plain",
           "x-openbot-egress": "refused",
         })
-        .end(decision.reason);
+        .end(route.error);
       return;
     }
-    forwardPlain(request, response, target, upstream, decision.addresses);
+    const outbound = forwardPlain(
+      request,
+      response,
+      target,
+      upstream,
+      route.addresses,
+    );
+    trackRoute(route, response, () => {
+      if (!response.writableFinished) outbound.destroy();
+    });
   };
 
   const handleConnect = async (
@@ -1047,29 +1110,29 @@ export async function startEgressFilter(
       return;
     }
     const upstream = upstreamFor(botId ?? "", env);
-    const decision = await decide(botId, host, port, !upstream);
-    if (!decision.allowed) {
-      refuse(client, decision.reason);
+    const route = authorizeRoute(
+      await resolveRoute(botId, host, port, !upstream),
+    );
+    if (client.destroyed) return;
+    if ("error" in route) {
+      refuse(client, route.error);
       return;
     }
-    tunnel(
-      {
-        host,
-        port,
-        ...(upstream ? {} : { addresses: decision.addresses }),
-      },
+    const cancel = tunnel(
+      { host, port, ...(upstream ? {} : { addresses: route.addresses }) },
       upstream,
       (remote) => {
         client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
         if (head.length > 0) remote.write(head);
         remote.pipe(client);
         client.pipe(remote);
-        remote.on("error", () => client.destroy());
+        remote.once("error", () => client.destroy());
       },
       () => {
         client.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
       },
     );
+    trackRoute(route, client, cancel);
   };
 
   const listen = async (server: Server, port: number): Promise<number> => {
@@ -1099,6 +1162,8 @@ export async function stopEgressFilter(): Promise<void> {
   filter = null;
   shellProxy = null;
   policies.clear();
+  for (const close of activeRoutes.keys()) close();
+  activeRoutes.clear();
   if (running) {
     await Promise.all(
       running.servers.map(
@@ -1127,7 +1192,7 @@ function splitHostPort(value: string): [string, string] {
 
 function forwardPlain(
   request: IncomingMessage,
-  response: import("node:http").ServerResponse,
+  response: ServerResponse,
   target: URL,
   upstream: Egress | null,
   addresses?: readonly string[],
@@ -1160,6 +1225,7 @@ function forwardPlain(
     response.end();
   });
   request.pipe(outbound);
+  return outbound;
 }
 
 /**

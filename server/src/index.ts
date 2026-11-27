@@ -102,8 +102,8 @@ import {
 } from "./billing/auxiliary-model";
 import { createBackgroundModel } from "./billing/background-model";
 import { budgetedTurn } from "./billing/background-model-turn";
-import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { loadCreditPackLiveChannel } from "./billing/credit-pack-live-channel";
+import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
 import { loadIndependentAppBilling } from "./billing/independent-app-config";
@@ -114,6 +114,7 @@ import { loadTestCreditRuntimeAuthentication } from "./billing/test-credit-runti
 import { loadWeKnoraBilling } from "./billing/weknora-config";
 import { openbotAddress } from "./browser/address";
 import { botBrowserNetwork } from "./browser/bot-browser";
+import { cubeSandboxBrowsers } from "./browser/cubesandbox";
 import { personBrowserEgressPolicy } from "./browser/egress";
 import {
   botRecordRefusal,
@@ -163,6 +164,7 @@ import {
 } from "./computer/computer-key";
 import { createComputerGateway } from "./computer/gateway";
 import { createHeadlessComputerTools } from "./computer/headless-tools";
+import { createOpenShellExecution } from "./computer/openshell-execution";
 import { createPageFrameStore } from "./computer/page-frames";
 import { startPolicyListener } from "./computer/policy-listener";
 import {
@@ -193,6 +195,7 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import {
+  agentProfiles,
   brokeredConnections,
   channelAgents,
   channelMemberships,
@@ -768,6 +771,30 @@ const personBrowserPolicy = personBrowserEgressPolicy({
   openbotUrls: [config.publicUrl, config.appUrl],
   gatewayUrl: legacyIntelligence.gatewayWsUrl,
 });
+const serializeComputerLifecycle = <T>(id: string, run: () => Promise<T>) =>
+  database.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${id}, 0))`,
+    );
+    return run();
+  });
+const cubeBrowser = cubeSandboxBrowsers(process.env, {
+  policyForBot: async (botId) =>
+    isPersonBrowserId(botId)
+      ? personBrowserEgressPolicy({
+          native: false,
+          allowPrivateHosts: config.computer?.allowPrivateHosts ?? false,
+          openbotUrls: [config.publicUrl, config.appUrl],
+          gatewayUrl: legacyIntelligence.gatewayWsUrl,
+        })
+      : enterpriseControls()?.policyForBot(botId),
+  serialize: serializeComputerLifecycle,
+});
+if (cubeBrowser && !config.computer)
+  throw new Error(
+    "The CubeSandbox browser pilot requires a configured computer gateway.",
+  );
+
 // Each computer is pushed its network policy on the way to the action that woke it, because a
 // computer refuses every connection until one arrives (see `withPolicyPushOnWake`). A person's own
 // browser is found where it runs (OPENBOT_BROWSER_URL, else the same provider) and pushed theirs.
@@ -1083,12 +1110,11 @@ const routineIntelligence = config.runtime.intelligence
       }),
     )
   : createIntelligenceClient();
-const approvalComputerTools = async (
-  ownerUserId: string,
+const computerToolsForActor = async (
+  actor: Awaited<ReturnType<typeof actorFor>>,
   agentId: string,
   initiator: AuditInitiator,
 ) => {
-  const actor = await actorFor(ownerUserId);
   const profile = await agentProfileStore.get(actor, agentId);
   if (!profile)
     throw new ApprovalRefusedError("That Bot is no longer available to you.");
@@ -1103,6 +1129,12 @@ const approvalComputerTools = async (
       })
     : [];
 };
+
+const approvalComputerTools = async (
+  ownerUserId: string,
+  agentId: string,
+  initiator: AuditInitiator,
+) => computerToolsForActor(await actorFor(ownerUserId), agentId, initiator);
 
 const approvalService = createServerApprovalService({
   storedApprovals,
@@ -1147,6 +1179,21 @@ const computerSeats = computerProvider
 const computerGateway = computerProvider
   ? createComputerGateway({
       provider: computerProvider,
+      ...(cubeBrowser ? { browserProvider: cubeBrowser } : {}),
+      ...(config.computerExecution
+        ? {
+            execution: createOpenShellExecution(
+              config.computerExecution,
+              serializeComputerLifecycle,
+              async () =>
+                (
+                  await database
+                    .select({ id: agentProfiles.agentId })
+                    .from(agentProfiles)
+                ).map(({ id }) => id),
+            ),
+          }
+        : {}),
       ...(computerSeats ? { seats: computerSeats } : {}),
       // Who each person's computer belongs to, for the admin list.
       people: async (ids) =>
@@ -2849,6 +2896,7 @@ const copilotRuntime = mountCopilotRuntime(
   {
     directChat: {
       database,
+      computerTools: computerToolsForActor,
       profiles: agentProfileStore,
       testCredit: directChatTestCredit && {
         ledger: testCreditLedger,
@@ -4009,13 +4057,16 @@ const app = createApp(
                 seat.botId,
               );
               if (!policy) return;
-              const token = computerGateway.tokenFor(seat);
+              const host =
+                computerGateway.browserFor?.(seat) ?? computerGateway;
+              const token = host.tokenFor(seat);
               await pushEgressPolicy(
-                await computerGateway.locate(seat),
+                await host.locate(seat),
                 seat.botId,
                 policy,
                 {
                   ...(token ? { token } : {}),
+                  ...(host !== computerGateway ? { redirect: "error" } : {}),
                   ...(config.webBotAuth
                     ? { webBotAuth: config.webBotAuth }
                     : {}),
@@ -4052,6 +4103,15 @@ const app = createApp(
                         : {}),
                     }),
             }),
+            ...(computerGateway && cubeBrowser
+              ? {
+                  pilotComputers: gatewayBrowserComputers(
+                    computerGateway,
+                    undefined,
+                    cubeBrowser,
+                  ),
+                }
+              : {}),
             recorder: recorderExtension,
             openbotUrl: openbotAddress(config),
             // On a single-user OpenBot the person is its admin: a setup failure is theirs to see to.

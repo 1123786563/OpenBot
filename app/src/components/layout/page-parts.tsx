@@ -1,15 +1,8 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "../ui/empty";
 
 /**
  * `prose` is the default because configuration is mostly reading, and every screen uses it so none is
@@ -53,8 +46,8 @@ export function PageColumn({
        * Separate from the centred column below so the scrollbar rides the pane's edge instead of
        * appearing inside the measure with content either side of it.
        */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div
+      <VStack className="min-h-0 flex-1" isScrollable>
+        <VStack
           className={cn(
             /*
              * The page's rhythm lives here, so a screen gets it by being a child rather than by
@@ -74,8 +67,8 @@ export function PageColumn({
           )}
         >
           {children}
-        </div>
-      </div>
+        </VStack>
+      </VStack>
     </>
   );
 }
@@ -95,31 +88,31 @@ export function PageHeader({
   title: string;
 }) {
   return (
-    <header
-      className="grid items-start gap-x-4 gap-y-2"
-      style={{
-        gridTemplateColumns: action ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
-      }}
-      data-slot="page-header"
-    >
-      {eyebrow ? (
-        <VStack style={{ gridColumn: "1 / -1" }}>{eyebrow}</VStack>
-      ) : null}
-      <h1
-        className="break-words font-heading font-semibold text-2xl tracking-tight"
-        data-slot="page-title"
-        ref={headingRef}
-        tabIndex={headingRef ? -1 : undefined}
-      >
-        {title}
-      </h1>
-      {action}
+    <VStack as="header" gap={2} data-slot="page-header">
+      {eyebrow}
+      <HStack align="center" justify="between" gap={3} wrap="wrap">
+        <VStack
+          as="h1"
+          className="min-w-0 break-words font-heading text-2xl font-semibold tracking-tight"
+          data-slot="page-title"
+          ref={headingRef}
+          tabIndex={headingRef ? -1 : undefined}
+        >
+          {title}
+        </VStack>
+        {action}
+      </HStack>
       {description ? (
-        <p className="col-span-full text-pretty text-muted-foreground text-sm leading-relaxed">
+        <Text
+          as="p"
+          color="secondary"
+          textWrap="pretty"
+          className="leading-relaxed"
+        >
           {description}
-        </p>
+        </Text>
       ) : null}
-    </header>
+    </VStack>
   );
 }
 
@@ -151,35 +144,46 @@ export function PageSection({
   title?: string;
 }) {
   return (
-    <section className={cn("mt-12", className)} id={id}>
+    <VStack as="section" className={cn("mt-12", className)} id={id}>
       {title ? (
-        <div className="flex min-h-8 flex-row items-center justify-between gap-4">
+        <HStack
+          align="center"
+          justify="between"
+          gap={3}
+          wrap="wrap"
+          className="min-h-8"
+        >
           {/*
            * Close to body size and lighter than the page title, so the sections read as parts of
            * the page rather than as a second row of titles competing with it.
            */}
-          <h2
+          <VStack
+            as="h2"
             className={cn(
-              "font-semibold text-base",
+              "text-balance break-words text-base font-semibold",
               (headingRef || headingId) && "scroll-mt-4",
             )}
             id={headingId}
             ref={headingRef}
-            style={{ textWrap: "balance" }}
             tabIndex={headingRef || headingId ? -1 : undefined}
           >
             {title}
-          </h2>
+          </VStack>
           {action}
-        </div>
+        </HStack>
       ) : null}
       {description ? (
-        <p className="mt-1 text-pretty text-muted-foreground text-sm leading-relaxed">
+        <Text
+          as="p"
+          color="secondary"
+          textWrap="pretty"
+          className="mt-1 leading-relaxed"
+        >
           {description}
-        </p>
+        </Text>
       ) : null}
       {children}
-    </section>
+    </VStack>
   );
 }
 
@@ -207,7 +211,7 @@ export function PageRows({
      * line would be 48px and look stunted beside it, so it is held up to the floor. A description
      * that wraps to a second line still grows the row rather than being clipped.
      */
-    <div
+    <VStack
       className={cn(
         "mt-4 overflow-hidden rounded-lg border border-border bg-card dark:border-transparent",
         "[&_[data-slot=item]]:rounded-none [&_[data-slot=item]]:min-h-14",
@@ -218,7 +222,7 @@ export function PageRows({
       )}
     >
       {children}
-    </div>
+    </VStack>
   );
 }
 
@@ -240,7 +244,7 @@ export function PageCard({
   footer?: React.ReactNode;
 }) {
   return (
-    <div
+    <VStack
       className={cn(
         "rounded-lg border border-border bg-card p-4 dark:border-transparent",
         className,
@@ -248,9 +252,11 @@ export function PageCard({
     >
       {children}
       {footer ? (
-        <div className="mt-6 flex justify-end gap-2">{footer}</div>
+        <HStack className="mt-6" gap={2} justify="end" wrap="wrap">
+          {footer}
+        </HStack>
       ) : null}
-    </div>
+    </VStack>
   );
 }
 
@@ -295,20 +301,39 @@ export function PageEmpty({
   title?: string;
 }) {
   return (
-    // `isolate` gives the pattern its own stacking context, so it sits behind the text, not on it.
-    <Empty className="relative isolate mt-4 overflow-hidden rounded-lg border border-border">
-      {/* The pattern is decoration: see `.empty-pattern` in styles.css and its tokens in theme.css. */}
-      <div aria-hidden className="empty-pattern" />
-      <EmptyHeader>
-        {Icon ? (
-          <EmptyMedia variant="icon">
-            <Icon />
-          </EmptyMedia>
-        ) : null}
-        {title ? <EmptyTitle>{title}</EmptyTitle> : null}
-        {children ? <EmptyDescription>{children}</EmptyDescription> : null}
-      </EmptyHeader>
-      {action ? <EmptyContent>{action}</EmptyContent> : null}
-    </Empty>
+    <VStack
+      align="center"
+      gap={3}
+      data-slot="empty"
+      className="relative isolate mt-4 overflow-hidden rounded-xl border border-dashed border-border px-4 py-8 text-center sm:px-8"
+    >
+      <VStack as="span" aria-hidden="true" className="empty-pattern" />
+      {Icon ? (
+        <HStack
+          align="center"
+          justify="center"
+          className="size-8 rounded-lg bg-muted [&_svg]:size-4"
+          aria-hidden="true"
+        >
+          <Icon />
+        </HStack>
+      ) : null}
+      {title ? (
+        <Text as="p" weight="semibold">
+          {title}
+        </Text>
+      ) : null}
+      {children ? (
+        <Text
+          as="div"
+          color="secondary"
+          textWrap="balance"
+          className="max-w-prose leading-relaxed"
+        >
+          {children}
+        </Text>
+      ) : null}
+      {action}
+    </VStack>
   );
 }

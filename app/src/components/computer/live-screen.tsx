@@ -379,9 +379,11 @@ export function LiveScreen({
     };
 
     const connection = connectScreen({
-      open: () => {
+      open: (reconnecting) => {
         const socket = new WebSocket(
-          socketUrl(`/api/computers/${encodeURIComponent(computerId)}/stream`),
+          socketUrl(
+            `/api/computers/${encodeURIComponent(computerId)}/stream${reconnecting ? "?observe=1" : ""}`,
+          ),
         );
         socketRef.current = socket;
         // Event handlers use only data, so adapt the native event surface without changing the protocol.

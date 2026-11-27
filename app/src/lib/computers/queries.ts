@@ -1,6 +1,26 @@
 import { queryOptions } from "@tanstack/react-query";
 import { ClientError, client } from "@/lib/client";
 
+export type PilotComputerLifecycle = {
+  browserId: string;
+  browser: boolean;
+  execution: boolean;
+};
+
+export function pilotComputerQueryOptions() {
+  return queryOptions({
+    queryKey: ["computers", "pilot"],
+    queryFn: () =>
+      client<PilotComputerLifecycle | null>(
+        "/api/computers/pilot",
+        "lifecycle",
+      ).then((lifecycle) =>
+        lifecycle?.browser || lifecycle?.execution ? lifecycle : null,
+      ),
+    retry: false,
+  });
+}
+
 /**
  * One computer as Admin sees it: a person's, or an isolated Bot's.
  *
@@ -67,6 +87,26 @@ export type ComputerStatus = {
   /** Set when `state` is `unreachable`. Written for an admin, so not shown on a screen anybody can open. */
   reason?: string;
 };
+
+export function browserUploadQueryOptions(botId: string) {
+  return queryOptions({
+    queryKey: ["computers", "browser-upload", botId],
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async () => {
+      const response = await client(
+        `/api/computers/${encodeURIComponent(botId)}/browser-upload`,
+      );
+      const body: unknown = await response.json();
+      return (
+        typeof body === "object" &&
+        body !== null &&
+        "available" in body &&
+        body.available === true
+      );
+    },
+  });
+}
 
 export const computerKeys = {
   all: ["computers"] as const,

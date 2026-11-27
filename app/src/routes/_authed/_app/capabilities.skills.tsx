@@ -1,10 +1,17 @@
 import { VStack } from "@astryxdesign/core/VStack";
-import { IconDots, IconListSearch, IconPlus } from "@tabler/icons-react";
+import {
+  IconChalkboardTeacher,
+  IconChevronRight,
+  IconDots,
+  IconListSearch,
+  IconPlus,
+} from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
+import { TEACH_A_BOT } from "@/components/browser/browser-nav-item";
 import { CapabilitiesShell } from "@/components/capabilities/capabilities-shell";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
@@ -13,6 +20,7 @@ import {
   PageSection,
 } from "@/components/layout/page-shell";
 import { ReadError } from "@/components/layout/read-status";
+import { RowMark } from "@/components/layout/row-mark";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
@@ -42,6 +50,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { grantRoster, skillHolderSentence } from "@/lib/agents/grant-roster";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { browserStateQueryOptions } from "@/lib/browser/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   removeSkillMutationOptions,
   saveSkillMutationOptions,
@@ -153,6 +163,8 @@ function SkillsPage() {
   const agents = useQuery(agentListQueryOptions());
   /* The ones this person has hidden, so a Bot of theirs holding the skill is still named. */
   const hiddenAgents = useQuery(agentListQueryOptions(true));
+  const browser = useQuery(browserStateQueryOptions());
+  const canTeach = browser.data?.available && canKeepCachedRead(browser.error);
   const me = profile.data;
   /*
    * Both, because `mine` is the intersection of the two: until the person is known, nothing matches
@@ -223,6 +235,26 @@ function SkillsPage() {
     >
       <CapabilitiesShell>
         {confirmation}
+        {canTeach ? (
+          <PageSection title={TEACH_A_BOT}>
+            <PageRows>
+              <Item size="sm" render={<Link to="/browser" />}>
+                <RowMark>
+                  <IconChalkboardTeacher aria-hidden />
+                </RowMark>
+                <ItemContent>
+                  <ItemTitle>Record a task</ItemTitle>
+                  <ItemDescription>
+                    Show a Bot how you do a task in your browser.
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <IconChevronRight aria-hidden className="size-4" />
+                </ItemActions>
+              </Item>
+            </PageRows>
+          </PageSection>
+        ) : null}
 
         <PageSection
           action={

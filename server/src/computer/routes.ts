@@ -2,13 +2,15 @@ import { downloadHeaders } from "@openbot/shared/file-download";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { BROWSER_DOWNLOAD_ID } from "../../../shared/browser-download";
+import { browserUploadInput } from "../../../shared/browser-upload";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { ApprovalNeedsConversationError } from "../approvals/types";
 import { type AuditReader, type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import type { BotBrowser } from "../browser/bot-browser";
-import { ownsPersonBrowser } from "../browser/person";
+import { ownsPersonBrowser, personBrowserId } from "../browser/person";
 import { stampNarrationArrival } from "../browser/routes";
 import {
   type ComputerSeat,
@@ -61,7 +63,12 @@ import {
  */
 
 /** What a person's own browser answers under this router: the reads its live screen makes. */
-const PERSON_BROWSER_READS = new Set(["control", "status", "screenshot"]);
+const PERSON_BROWSER_READS = new Set([
+  "control",
+  "status",
+  "screenshot",
+  "browser-downloads",
+]);
 
 export function createComputerRoutes(
   gateway: ComputerGateway,
@@ -90,6 +97,7 @@ export function createComputerRoutes(
    * is: a deployment wired without a trail still saves its boundary, and has nowhere to record it.
    */
   auditStore?: AuditStore,
+  ownsDownloadRecipient?: BotAccessCheck,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -97,6 +105,16 @@ export function createComputerRoutes(
   // time: the narration's times are moved onto this server's clock from it (browser/routes.ts).
   if (botBrowser)
     routes.use("/:botId/browser/narration", stampNarrationArrival);
+
+  // Account capabilities have no Bot in the path.
+  routes.get("/pilot", requireUser, (context) => {
+    const id = context.var.actor.id;
+    const browserId = personBrowserId(id);
+    const capabilities = gateway.pilotLifecycle?.(personSeat(id, browserId));
+    return context.json({
+      lifecycle: capabilities ? { ...capabilities, browserId } : null,
+    });
+  });
 
   /**
    * Every route under a Bot id, in one place.
@@ -139,9 +157,13 @@ export function createComputerRoutes(
       const route = path.slice(
         path.lastIndexOf(`/${botId}/`) + botId.length + 2,
       );
-      return context.req.method === "GET" &&
-        PERSON_BROWSER_READS.has(route) &&
-        ownsPersonBrowser(context.var.actor, botId)
+      const allowed =
+        context.req.method === "GET"
+          ? PERSON_BROWSER_READS.has(route)
+          : context.req.method === "POST" &&
+            (route === "computers/reset-profile" ||
+              route === "computers/stop-personal");
+      return allowed && ownsPersonBrowser(context.var.actor, botId)
         ? next()
         : context.json({ error: "There is no such Bot." }, 404);
     }
@@ -167,8 +189,18 @@ export function createComputerRoutes(
   // After the guard, so everything under it has passed it: a person's own browser id never gets here.
   if (botBrowser) routes.route("/:botId/browser", botBrowser.routes);
 
+  routes.get("/:botId/browser-upload", async (context) =>
+    context.json({
+      available:
+        gateway.supportsBrowserUpload?.(await seatOf(context)) === true,
+    }),
+  );
+
   routes.get("/:botId/status", async (context) => {
-    return context.json(await gateway.status(await seatOf(context)));
+    const seat = await seatOf(context);
+    return context.json(
+      await (gateway.browserFor?.(seat) ?? gateway).status(seat),
+    );
   });
 
   /**
@@ -192,7 +224,7 @@ export function createComputerRoutes(
   routes.get("/:botId/screenshot", async (context) => {
     try {
       const seat = await seatOf(context);
-      const status = await gateway.status(seat);
+      const status = await (gateway.browserFor?.(seat) ?? gateway).status(seat);
       if (status.state !== "ready") {
         return context.json({
           ready: false,
@@ -301,7 +333,7 @@ export function createComputerRoutes(
        * suspended computer, so a convenience picture could wake a machine the culler had just put to
        * sleep and hold a navigation open for the length of a pod schedule while it did.
        */
-      const status = await gateway.status(seat);
+      const status = await (gateway.browserFor?.(seat) ?? gateway).status(seat);
       if (status.state !== "ready") {
         console.warn(
           `[computer] not keeping a frame for ${toolCallId}: the computer is ${status.state}, and photographing it would wake it.`,
@@ -390,6 +422,49 @@ export function createComputerRoutes(
    * Each one hands the gateway the Bot, the actor and the input, and does no checking
    * of its own beyond the shape of the request. Where a decision gets made is a single place.
    */
+  routes.get("/:botId/browser-downloads", async (context) => {
+    try {
+      if (!ownsDownloadRecipient || !gateway.listManualBrowserDownloads)
+        throw new WorkspaceNotFoundError(
+          "Personal browser downloads are unavailable.",
+        );
+      const downloads = await gateway.listManualBrowserDownloads(
+        await seatOf(context),
+        actorOf(context.var.actor),
+        context.req.raw.signal,
+      );
+      return context.json(downloads, 200, { "cache-control": "no-store" });
+    } catch (error) {
+      return actionFailure(context, error);
+    }
+  });
+
+  routes.post("/:botId/browser-downloads/deliver", (context) =>
+    act(context, gateway.seatFor, async (seat, actor, body, signal) => {
+      if (typeof body?.id !== "string" || !BROWSER_DOWNLOAD_ID.test(body.id))
+        return { error: "A browser download id is required." };
+      if (
+        !gateway.deliverManualBrowserDownload ||
+        !(await ownsDownloadRecipient?.(context.var.actor, seat.botId))
+      ) {
+        throw new WorkspaceNotFoundError(
+          "Browser download recipient not found.",
+        );
+      }
+      return gateway.deliverManualBrowserDownload(seat, actor, body.id, signal);
+    }),
+  );
+
+  routes.post("/:botId/browser-downloads/retry", (context) =>
+    act(context, gateway.seatFor, (seat, actor, body, signal) => {
+      if (typeof body?.id !== "string" || !BROWSER_DOWNLOAD_ID.test(body.id))
+        return { error: "A browser download id is required." };
+      if (!gateway.retryBrowserDownload)
+        throw new WorkspaceNotFoundError("Browser download not found.");
+      return gateway.retryBrowserDownload(seat, actor, body.id, signal);
+    }),
+  );
+
   routes.post("/:botId/click", (context) =>
     act(context, gateway.seatFor, (seat, actor, body, signal) => {
       const ref = asRef(body);
@@ -455,6 +530,7 @@ export function createComputerRoutes(
         await gateway.control(
           await seatOf(context),
           context.req.query("requestId"),
+          context.req.query("surface") === "terminal",
         ),
       );
     } catch (error) {
@@ -473,6 +549,7 @@ export function createComputerRoutes(
         typeof body?.toolCallId === "string" ? body.toolCallId : undefined,
         // A person taking the wheel themselves says so; anything else is the Bot asking, as it always was.
         body?.source === "manual" ? "manual" : "model",
+        context.req.query("surface") === "terminal",
       ),
     ),
   );
@@ -573,17 +650,41 @@ export function createComputerRoutes(
     }
   });
 
+  for (const action of [
+    "stop-execution",
+    "stop-personal",
+    "reset-profile",
+    "clear-workspace",
+  ] as const) {
+    routes.post(`/:botId/computers/${action}`, (context) =>
+      act(context, gateway.seatFor, (seat, actor, body) => {
+        if (
+          (action === "reset-profile" || action === "clear-workspace") &&
+          body?.confirmation !== action
+        )
+          return { error: "Confirm the selected action before proceeding." };
+        if (!gateway.changePilotLifecycle)
+          return { error: "Pilot computer actions are unavailable." };
+        return gateway.changePilotLifecycle(action, seat, actor);
+      }),
+    );
+  }
+
   /** Stop the browser, keep the logins. */
   routes.post("/:botId/computers/stop", (context) =>
     act(context, gateway.seatFor, (seat, actor) =>
-      gateway.stopComputer(seat, actor),
+      gateway.pilotLifecycle?.(seat)?.browser
+        ? { error: "Choose a scoped pilot computer action." }
+        : gateway.stopComputer(seat, actor),
     ),
   );
 
   /** Delete the profile. Every login goes with it, which is the point and also the danger. */
   routes.post("/:botId/computers/reset", (context) =>
     act(context, gateway.seatFor, (seat, actor) =>
-      gateway.resetComputer(seat, actor),
+      gateway.pilotLifecycle?.(seat)?.browser
+        ? { error: "Choose a scoped pilot computer action." }
+        : gateway.resetComputer(seat, actor),
     ),
   );
 
@@ -599,7 +700,12 @@ export function createComputerRoutes(
 
   routes.post("/:botId/control/take", (context) =>
     act(context, gateway.seatFor, (seat, actor, body) =>
-      gateway.takeControl(seat, actor, handoffId(body)),
+      gateway.takeControl(
+        seat,
+        actor,
+        handoffId(body),
+        context.req.query("surface") === "terminal",
+      ),
     ),
   );
 
@@ -610,6 +716,12 @@ export function createComputerRoutes(
    */
   routes.post("/:botId/control/release", (context) =>
     act(context, gateway.seatFor, async (seat, actor, body) => {
+      if (
+        context.req.query("surface") === "terminal" &&
+        gateway.usesExecution?.(seat)
+      ) {
+        return gateway.releaseControl(seat, actor, handoffId(body), true);
+      }
       let state: Awaited<ReturnType<typeof gateway.releaseControl>>;
       try {
         state = await gateway.releaseControl(seat, actor, handoffId(body));
@@ -625,6 +737,12 @@ export function createComputerRoutes(
 
   routes.post("/:botId/control/cancel", (context) =>
     act(context, gateway.seatFor, async (seat, actor, body) => {
+      if (
+        context.req.query("surface") === "terminal" &&
+        gateway.usesExecution?.(seat)
+      ) {
+        return gateway.cancelControl(seat, actor, handoffId(body), true);
+      }
       let state: Awaited<ReturnType<typeof gateway.cancelControl>>;
       try {
         state = await gateway.cancelControl(seat, actor, handoffId(body));
@@ -686,6 +804,20 @@ export function createComputerRoutes(
    * The takeover is the audited event; what the person typed during it is deliberately unrecorded,
    * because the reason a takeover exists is to let them enter the thing nothing else should keep.
    */
+  routes.post("/:botId/human/browser-upload", (context) =>
+    act(context, gateway.seatFor, (seat, actor, body, signal) => {
+      const input = browserUploadInput.safeParse(body);
+      if (!input.success)
+        return {
+          error:
+            "Specify a workspace file, HTTPS endpoint and multipart field name.",
+        };
+      if (!gateway.humanUploadBrowserFile)
+        throw new WorkspaceNotFoundError("Pilot workspace not found.");
+      return gateway.humanUploadBrowserFile(seat, actor, input.data, signal);
+    }),
+  );
+
   routes.post("/:botId/human/:kind", async (context) => {
     const kind = context.req.param("kind");
     if (

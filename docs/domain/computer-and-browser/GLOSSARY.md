@@ -4,9 +4,13 @@
 
 The Bot's execution environment for browser, terminal, file, and other computer actions. Each Bot has a computer context with its own access boundaries.
 
-## Managed Computer
+## Personal computer
 
-A Computer assigned to a Personal SaaS workspace. The workspace owner can start and stop it, and its files belong to the workspace across starts and stops.
+A durable logical computer owned by one OpenBot user. Its files and browser sign-ins follow the user across runtime replacements and across the Bots they use.
+
+## Bot execution boundary
+
+The access boundary for Bot shell commands, scripts, and their child processes. It limits filesystem access to authorized workspaces and applies network policy, while keeping browser profiles and management credentials outside that access.
 
 ## Browser session
 

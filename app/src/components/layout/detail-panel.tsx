@@ -1,3 +1,5 @@
+import { HStack } from "@astryxdesign/core/HStack";
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
@@ -73,8 +75,8 @@ export function DetailPanel({
   }, [detailWidth]);
 
   return (
-    <div ref={container} className="flex h-full min-h-0">
-      <div className="flex flex-1 min-w-0 flex-col">{children}</div>
+    <HStack ref={container} className="h-full min-h-0">
+      <VStack className="min-w-0 flex-1">{children}</VStack>
       {overlay ? (
         <Sheet
           open={open}
@@ -89,12 +91,12 @@ export function DetailPanel({
             <SheetTitle className="h-12 shrink-0 px-4 pr-12 flex items-center">
               {title ?? "Details"}
             </SheetTitle>
-            <div className="flex-1 min-h-0 overflow-y-auto">
+            <VStack className="min-h-0 flex-1" isScrollable>
               {open && waiting ? (
-                <div className="px-4 pt-4 empty:hidden">{waiting}</div>
+                <VStack className="px-4 pt-4 empty:hidden">{waiting}</VStack>
               ) : null}
               {open ? detail : null}
-            </div>
+            </VStack>
           </SheetContent>
         </Sheet>
       ) : (
@@ -109,33 +111,36 @@ export function DetailPanel({
             ease: EASE_OUT,
           }}
         >
-          <div
-            className="flex h-full flex-col bg-sidebar border-l border-border"
+          <VStack
+            className="h-full border-s border-border bg-background"
             data-slot="detail-pane"
-            style={{ width: detailWidth }}
+            width={detailWidth}
           >
             {/* Rendered for the whole animation, so the way out is available immediately. */}
-            <div
-              className="h-12 shrink-0 sticky top-0 flex flex-row items-center justify-between px-2 gap-2"
+            <HStack
+              align="center"
+              gap={2}
+              justify="between"
+              className="sticky top-0 h-12 shrink-0 border-b border-border px-3"
               data-slot="detail-pane-header"
             >
-              <div
-                className="flex min-w-0 w-full items-center gap-1.5"
+              <HStack
+                align="center"
+                className="w-full min-w-0"
+                gap={1.5}
                 data-slot="detail-pane-title"
               >
                 {title}
-              </div>
-              <div className="flex flex-row gap-1.5">
-                <Button
-                  aria-label={t("frame.closeDetails", "Close details")}
-                  onClick={onClose}
-                  variant="ghost"
-                  size="icon"
-                >
-                  <IconX className="size-4.5" />
-                </Button>
-              </div>
-            </div>
+              </HStack>
+              <Button
+                aria-label={t("frame.closeDetails", "Close details")}
+                onClick={onClose}
+                variant="ghost"
+                size="icon"
+              >
+                <IconX className="size-4.5" />
+              </Button>
+            </HStack>
             {/*
              * Unmount while closed so dismissed form state and detail queries do not remain active.
              */}
@@ -160,9 +165,9 @@ export function DetailPanel({
                 {detail}
               </motion.div>
             ) : null}
-          </div>
+          </VStack>
         </motion.div>
       )}
-    </div>
+    </HStack>
   );
 }

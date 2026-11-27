@@ -1,8 +1,13 @@
+import { Popover } from "@astryxdesign/core/Popover";
+import { Grid } from "@astryxdesign/core/Grid";
+import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import { Button } from "@astryxdesign/core/Button";
 import { LinkProvider } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { VStack } from "@astryxdesign/core/VStack";
-import { IconArrowUpRight, IconFileText } from "@tabler/icons-react";
+import { IconArrowUpRight, IconCpu, IconFileText } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -11,11 +16,12 @@ import {
   segmentsToPlainText,
   text,
 } from "prompt-area/helpers";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { toDraft } from "@/components/channels/composer/draft";
+import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { WorkingNow } from "@/components/channels/working-now";
 import { BusinessLink } from "@/components/edition/business-link";
 import { ReadStatus } from "@/components/layout/read-status";
@@ -34,6 +40,8 @@ import { useSubmitConversationStart } from "@/lib/channels/start";
 import { ClientError } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { editionOf } from "@/lib/edition-guard";
+import { modelCatalogueQueryOptions } from "@/lib/models/queries";
+import { useDraftModel } from "@/lib/models/run-model";
 import { newId } from "@/lib/new-id";
 import { useAnyBotSkillCommands } from "@/lib/plugins/skill-commands";
 
@@ -55,8 +63,10 @@ export const Route = createFileRoute("/_authed/_app/")({
 function RouteComponent() {
   const navigate = Route.useNavigate();
   const currentDraft = useRef<Segment[]>([]);
+  const [mentionedBot, setMentionedBot] = useState<string | null>();
   const trackDraft = useCallback((segments: Segment[]) => {
     currentDraft.current = segments;
+    setMentionedBot(toDraft(segments).agentId);
   }, []);
   const { data: user } = useQuery(currentUserQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
@@ -75,6 +85,26 @@ function RouteComponent() {
     "message",
   );
   const savedStarts = user ? pendingStartsFor(user.id) : [];
+  // An automatically routed request can use a pick only when every candidate accepts it.
+  const canPickModel = (agentId?: string | null) =>
+    agentId
+      ? (agents?.some(
+          (agent) => agent.id === agentId && agent.runsOnOpenBotModel === true,
+        ) ?? false)
+      : Boolean(
+          agents?.length &&
+            agents.every((agent) => agent.runsOnOpenBotModel === true),
+        );
+  const pickable = canPickModel(mentionedBot);
+  const models = useQuery({
+    ...modelCatalogueQueryOptions(),
+    enabled: pickable,
+  });
+  const catalogue = pickable ? models.data : undefined;
+  const draftModel = useDraftModel(catalogue);
+  const defaultModel = catalogue?.models.find(
+    (model) => model.id === catalogue.default,
+  );
 
   /** Default recipient when the composer draft has no mention. */
   /*
@@ -92,35 +122,83 @@ function RouteComponent() {
 
   return (
     <LinkProvider component={Link}>
-      <VStack
-        gap={6}
-        maxWidth="48rem"
-        width="100%"
-        style={{
-          marginInline: "auto",
-          paddingInline: "var(--spacing-4)",
-          paddingBlock: "var(--spacing-6)",
-        }}
-      >
-        <section aria-labelledby="home-compose-heading">
-          <VStack gap={3}>
-            <h1
+      <VStack className="astryx-chat-home min-h-0 flex-1" isScrollable>
+        <VStack
+          className="mx-auto my-auto shrink-0 px-4 py-8"
+          gap={8}
+          maxWidth="44rem"
+          width="100%"
+        >
+          <VStack as="section" aria-labelledby="home-compose-heading" gap={4}>
+            <Heading
               id="home-compose-heading"
-              className="text-2xl font-semibold tracking-tight"
-              style={{ textWrap: "balance", overflowWrap: "anywhere" }}
+              justify="center"
+              level={1}
+              textWrap="balance"
+              weight="semibold"
             >
               {firstConversationGreeting(
                 user,
                 channels.isSuccess && channels.data.length === 0,
               )}
-            </h1>
+            </Heading>
             <Composer
               key={messageKey}
               draftStorageKey={messageKey}
               onDraftChange={trackDraft}
               agents={toAgentOptions(agents)}
               commands={skillCommands}
-              className="w-full min-w-0"
+              className="astryx-home-composer w-full min-w-0"
+              editorClassName="text-base"
+              modelPicker={
+                catalogue?.choosable && draftModel.value ? (
+                  <ModelPicker
+                    catalogue={catalogue}
+                    value={draftModel.value}
+                    onChange={draftModel.choose}
+                  />
+                ) : (
+                  <Popover
+                    label="Conversation model"
+                    placement="above"
+                    content={
+                      <VStack gap={2} maxWidth="16rem">
+                        <Text weight="semibold">
+                          {defaultModel?.label ?? "Automatic model"}
+                        </Text>
+                        <Text type="supporting">
+                          {!pickable
+                            ? "The receiving Bot determines the model. Use @ to choose a Bot that supports model selection."
+                            : models.isPending
+                              ? "Loading models…"
+                              : defaultModel
+                                ? "Only the default model is currently available."
+                                : "The model list is currently unavailable."}
+                        </Text>
+                        {pickable && !models.isPending ? (
+                          <Button
+                            label="Refresh models"
+                            size="sm"
+                            variant="ghost"
+                            type="button"
+                            isLoading={models.isFetching}
+                            onClick={() => void models.refetch()}
+                          />
+                        ) : null}
+                      </VStack>
+                    }
+                  >
+                    <Button
+                      label={`Model: ${defaultModel?.label ?? "Automatic"}`}
+                      icon={<IconCpu aria-hidden />}
+                      isIconOnly
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                    />
+                  </Popover>
+                )
+              }
               disabled={!fallback}
               {...(asked ? { initialValue: asked, autoFocus: true } : {})}
               onSubmit={(draft) =>
@@ -129,21 +207,21 @@ function RouteComponent() {
                   draft.agentId
                     ? { kind: "direct", agentId: draft.agentId }
                     : { kind: "route", fallbackId: fallback?.id },
-                  null,
+                  canPickModel(draft.agentId) ? draftModel.requested : null,
                   () => writeComposeDraft(messageKey),
                 )
               }
             />
             {fallback ? (
-              <VStack gap={1} align="start">
-                <p className="text-sm text-muted-foreground">
-                  OpenBot picks a Bot for you. Type <code>@</code> to choose one
-                  here.
-                </p>
+              <VStack gap={1} align="center">
+                <Text type="supporting" className="text-center">
+                  OpenBot picks a Bot for you. Type <code>@</code> to choose
+                  one.
+                </Text>
                 <Button
                   label="Choose Bots for a new conversation"
                   size="sm"
-                  variant="secondary"
+                  variant="ghost"
                   className="max-md:min-h-11 pointer-coarse:min-h-11"
                   isDisabled={!user}
                   onClick={() => {
@@ -164,6 +242,15 @@ function RouteComponent() {
                     );
                     const message = segmentsToPlainText(draft);
                     writeComposeDraft(destination, [text(message)]);
+                    if (
+                      draftModel.requested &&
+                      addressedBot?.runsOnOpenBotModel
+                    ) {
+                      writeComposeDraft(
+                        composeDraftKey(user?.id, newConversation, "model"),
+                        draftModel.requested,
+                      );
+                    }
                     void navigate({
                       to: "/channel/new",
                       search: addressedBot ? { agent: addressedBot.id } : {},
@@ -219,63 +306,34 @@ function RouteComponent() {
                     isEmpty: false,
                   },
                   { kind: "direct", agentId: fallback.id },
+                  canPickModel(fallback.id) ? draftModel.requested : null,
                 );
               }}
             />
           </VStack>
-        </section>
 
-        {savedStarts.length > 0 ? (
-          <section aria-labelledby="saved-starts-heading">
-            <VStack gap={2}>
-              <h2 id="saved-starts-heading" className="text-base font-semibold">
-                Resume a conversation
-              </h2>
-              <List density="balanced" hasDividers>
-                {savedStarts.map(({ id, start }) => (
-                  <ListItem
-                    key={id}
-                    href={`/start/${encodeURIComponent(id)}`}
-                    label={
-                      start.draft.text ||
-                      start.draft.attachments[0]?.name ||
-                      "Attachment"
-                    }
-                    description="Resume sending"
-                    startContent={
-                      <IconFileText aria-hidden="true" size="1.25rem" />
-                    }
-                    endContent={
-                      <IconArrowUpRight aria-hidden="true" size="1rem" />
-                    }
-                  />
-                ))}
-              </List>
-            </VStack>
-          </section>
-        ) : null}
-
-        <WorkingNow channels={channels.data} />
-
-        {explore.length > 0 || (!personal && Boolean(agents?.length)) ? (
-          <section aria-labelledby="explore-agents-heading">
-            <VStack gap={2}>
-              <h2
-                id="explore-agents-heading"
-                className="text-base font-semibold"
-              >
-                Explore Bots
-              </h2>
-              {explore.length ? (
+          {savedStarts.length > 0 ? (
+            <section aria-labelledby="saved-starts-heading">
+              <VStack gap={2}>
+                <h2
+                  id="saved-starts-heading"
+                  className="text-base font-semibold"
+                >
+                  Resume a conversation
+                </h2>
                 <List density="balanced" hasDividers>
-                  {explore.slice(0, EXPLORE_SHOWN).map((agent) => (
+                  {savedStarts.map(({ id, start }) => (
                     <ListItem
-                      key={agent.id}
-                      href={`/channel/new?agent=${encodeURIComponent(agent.id)}`}
-                      label={agent.name}
-                      description={agent.title || undefined}
+                      key={id}
+                      href={`/start/${encodeURIComponent(id)}`}
+                      label={
+                        start.draft.text ||
+                        start.draft.attachments[0]?.name ||
+                        "Attachment"
+                      }
+                      description="Resume sending"
                       startContent={
-                        <ChannelAvatar participantIds={[agent.id]} size={28} />
+                        <IconFileText aria-hidden="true" size="1.25rem" />
                       }
                       endContent={
                         <IconArrowUpRight aria-hidden="true" size="1rem" />
@@ -283,27 +341,72 @@ function RouteComponent() {
                     />
                   ))}
                 </List>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nobody has shared a Bot with you yet.
-                </p>
-              )}
-              {agents?.length ? (
-                <Link
-                  className="text-sm"
-                  style={{
-                    textDecoration: "underline",
-                    textUnderlineOffset: "0.15em",
-                  }}
-                  to="/bots"
+              </VStack>
+            </section>
+          ) : null}
+
+          <WorkingNow channels={channels.data} />
+
+          {explore.length > 0 || (!personal && Boolean(agents?.length)) ? (
+            <section aria-labelledby="explore-agents-heading">
+              <VStack gap={2}>
+                <Heading
+                  id="explore-agents-heading"
+                  level={5}
+                  accessibilityLevel={2}
                 >
-                  All Bots
-                </Link>
-              ) : null}
-            </VStack>
-          </section>
-        ) : null}
-        <BusinessLink />
+                  Explore Bots
+                </Heading>
+                {explore.length ? (
+                  <Grid columns={{ minWidth: 240, max: 2 }} gap={3}>
+                    {explore.slice(0, EXPLORE_SHOWN).map((agent) => (
+                      <Link
+                        className="astryx-home-bot"
+                        key={agent.id}
+                        to="/channel/new"
+                        search={{ agent: agent.id }}
+                      >
+                        <HStack align="center" gap={3}>
+                          <ChannelAvatar
+                            participantIds={[agent.id]}
+                            size={32}
+                          />
+                          <VStack className="min-w-0" gap={0.5}>
+                            <Text type="label" maxLines={1}>
+                              {agent.name}
+                            </Text>
+                            {agent.title ? (
+                              <Text type="supporting" maxLines={1}>
+                                {agent.title}
+                              </Text>
+                            ) : null}
+                          </VStack>
+                        </HStack>
+                      </Link>
+                    ))}
+                  </Grid>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Nobody has shared a Bot with you yet.
+                  </p>
+                )}
+                {agents?.length ? (
+                  <Link
+                    className="text-sm"
+                    style={{
+                      textDecoration: "underline",
+                      textUnderlineOffset: "0.15em",
+                    }}
+                    to="/bots"
+                  >
+                    All Bots
+                  </Link>
+                ) : null}
+              </VStack>
+            </section>
+          ) : null}
+          <BusinessLink />
+        </VStack>
       </VStack>
     </LinkProvider>
   );

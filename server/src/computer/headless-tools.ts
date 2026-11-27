@@ -3,6 +3,11 @@ import {
   HeadlessToolSuspension,
 } from "@openbot/toolkit/headless-tools";
 import { z } from "zod";
+import { BROWSER_DOWNLOAD_ID } from "../../../shared/browser-download";
+import {
+  BROWSER_UPLOAD_DESCRIPTION,
+  browserUploadToolInput,
+} from "../../../shared/browser-upload";
 import { currentApprovalContext } from "../approvals/types";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { ComputerSeat } from "./computer-key";
@@ -268,6 +273,41 @@ export function createHeadlessComputerTools(options: {
         ),
     ),
   ];
+  const upload = gateway.uploadBrowserFile;
+  if (
+    upload &&
+    seat.key.kind === "person" &&
+    seat.key.personId === actor.id &&
+    gateway.supportsBrowserUpload?.(seat)
+  ) {
+    tools.push(
+      tool(
+        "computer_upload_browser_file",
+        BROWSER_UPLOAD_DESCRIPTION,
+        browserUploadToolInput,
+        (input, { signal }) => upload(seat, actor, input, signal),
+      ),
+    );
+  }
+  const retryDownload = gateway.retryBrowserDownload;
+  if (
+    retryDownload &&
+    seat.key.kind === "person" &&
+    seat.key.personId === actor.id &&
+    gateway.browserFor?.(seat)
+  ) {
+    tools.push(
+      tool(
+        "computer_retry_browser_download",
+        "Retry a failed handoff using the id returned by the browser action. This does not repeat the browser action.",
+        z.strictObject({ id: z.string().regex(BROWSER_DOWNLOAD_ID) }),
+        async ({ id }, { signal }) => ({
+          ok: true,
+          ...(await retryDownload(seat, actor, id, signal)),
+        }),
+      ),
+    );
+  }
   if (signIn)
     tools.push(
       tool(

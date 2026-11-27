@@ -320,7 +320,9 @@ export function* enterpriseChecks(
     } else {
       needed.push("cloudBrowser");
     }
-    if (context.intent === "navigate") needed.push("cloudNetwork");
+    if (context.intent === "upload_file") needed.push("cloudComputer");
+    if (context.intent === "navigate" || context.intent === "upload_file")
+      needed.push("cloudNetwork");
   }
 
   for (const capability of needed) {

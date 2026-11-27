@@ -41,72 +41,26 @@ export const ADMIN_NAVIGATION: {
   }[];
 }[] = [
   {
-    title: "Bot access",
-    ...navigationMessage("admin.sidebar.groups.botAccess", "Bot access"),
-    description: "Control what Bots can access outside OpenBot.",
+    title: "Routines",
+    ...navigationMessage("admin.sidebar.groups.routines", "Routines"),
+    description: "Manage background check-ins.",
     items: [
       {
-        title: "Credentials",
-        ...navigationMessage("admin.sidebar.credentials", "Credentials"),
-        description: "Manage this deployment’s keys and tokens.",
-        icon: IconKey,
-        linkOptions: { to: "/admin/credentials" },
-        tasks: ["revoke an API key", "rotate a secret"],
-      },
-      {
-        title: "Boundaries",
-        ...navigationMessage("admin.sidebar.boundaries", "Boundaries"),
-        description: "Define actions that no Bot may take.",
-        icon: IconShieldCheck,
-        linkOptions: { to: "/admin/boundaries" },
-        tasks: ["block an action", "try a boundary rule"],
-      },
-      {
-        title: "Approvals",
-        ...navigationMessage("admin.sidebar.approvals", "Approvals"),
-        description: "Choose which actions require approval for members’ Bots.",
-        icon: IconChecks,
-        linkOptions: { to: "/admin/approvals" },
-        tasks: ["require human review", "review a shared account request"],
-      },
-      {
-        title: "Computers",
-        ...navigationMessage("admin.sidebar.computers", "Computers"),
+        title: "Check-ins",
+        ...navigationMessage("admin.sidebar.checkIns", "Check-ins"),
         description:
-          "Manage the computers that run Bot tools, when idle ones stop, and where they can connect.",
-        icon: IconDeviceDesktop,
-        linkOptions: { to: "/admin/computers" },
-        tasks: ["stop an idle computer", "reset a Bot computer"],
+          "Turn check-ins on or off, limit them, and see how often people start what Bots raise.",
+        icon: IconRadar,
+        linkOptions: { to: "/admin/proactive" },
+        tasks: ["turn off proactive suggestions", "limit check-ins"],
       },
     ],
   },
   {
-    title: "Bot capabilities",
-    ...navigationMessage(
-      "admin.sidebar.groups.botCapabilities",
-      "Bot capabilities",
-    ),
-    description:
-      "Configure the models, apps, skills, and UI components available to Bots.",
+    title: "Skills",
+    ...navigationMessage("admin.sidebar.groups.skills", "Skills"),
+    description: "Manage reusable instructions and automatic learning.",
     items: [
-      {
-        title: "Plugins",
-        ...navigationMessage("admin.sidebar.plugins", "Plugins"),
-        description:
-          "Connect services, choose which Bots can use them, and approve MCP servers.",
-        icon: IconPuzzle,
-        linkOptions: { to: "/admin/plugins" },
-        tasks: ["connect an app", "approve an MCP server"],
-      },
-      {
-        title: "Providers",
-        ...navigationMessage("admin.sidebar.providers", "Providers"),
-        description:
-          "See which provider serves your Bots' models, and choose which models they may use.",
-        icon: IconBrain,
-        linkOptions: { to: "/admin/providers" },
-        tasks: ["choose an AI model", "configure a model provider"],
-      },
       {
         title: "Skills",
         ...navigationMessage("admin.sidebar.skills", "Skills"),
@@ -127,14 +81,21 @@ export const ADMIN_NAVIGATION: {
         linkOptions: { to: "/admin/learning" },
         tasks: ["review suggested skills", "manage knowledge sharing"],
       },
+    ],
+  },
+  {
+    title: "Apps",
+    ...navigationMessage("admin.sidebar.groups.apps", "Apps"),
+    description: "Connect services and manage the components Bots use.",
+    items: [
       {
-        title: "Check-ins",
-        ...navigationMessage("admin.sidebar.checkIns", "Check-ins"),
+        title: "Plugins",
+        ...navigationMessage("admin.sidebar.plugins", "Plugins"),
         description:
-          "Turn check-ins on or off, limit them, and see how often people start what Bots raise.",
-        icon: IconRadar,
-        linkOptions: { to: "/admin/proactive" },
-        tasks: ["turn off proactive suggestions", "limit check-ins"],
+          "Connect services, choose which Bots can use them, and approve MCP servers.",
+        icon: IconPuzzle,
+        linkOptions: { to: "/admin/plugins" },
+        tasks: ["connect an app", "approve an MCP server"],
       },
       {
         title: "UI components",
@@ -156,11 +117,87 @@ export const ADMIN_NAVIGATION: {
     ],
   },
   {
-    title: "People and sign-in",
-    ...navigationMessage(
-      "admin.sidebar.groups.peopleSignIn",
-      "People and sign-in",
-    ),
+    title: "Computer",
+    ...navigationMessage("admin.sidebar.groups.computer", "Computer"),
+    description: "",
+    items: [
+      {
+        title: "Computers",
+        ...navigationMessage("admin.sidebar.computers", "Computers"),
+        description:
+          "Manage the computers that run Bot tools, when idle ones stop, and where they can connect.",
+        icon: IconDeviceDesktop,
+        linkOptions: { to: "/admin/computers" },
+        tasks: ["stop an idle computer", "reset a Bot computer"],
+      },
+    ],
+  },
+  {
+    title: "Approvals",
+    ...navigationMessage("admin.sidebar.groups.approvals", "Approvals"),
+    description: "Manage approvals and boundaries for Bot actions.",
+    items: [
+      {
+        title: "Approvals",
+        ...navigationMessage("admin.sidebar.approvals", "Approvals"),
+        description: "Choose which actions require approval for members’ Bots.",
+        icon: IconChecks,
+        linkOptions: { to: "/admin/approvals" },
+        tasks: ["require human review", "review a shared account request"],
+      },
+      {
+        title: "Boundaries",
+        ...navigationMessage("admin.sidebar.boundaries", "Boundaries"),
+        description: "Define actions that no Bot may take.",
+        icon: IconShieldCheck,
+        linkOptions: { to: "/admin/boundaries" },
+        tasks: ["block an action", "try a boundary rule"],
+      },
+      {
+        title: "Test a policy",
+        ...navigationMessage("admin.sidebar.testPolicy", "Test a policy"),
+        description:
+          "Ask what OpenBot would do if a Bot took an action, and see which control decides.",
+        icon: IconZoomQuestion,
+        linkOptions: { to: "/admin/what-if" },
+        tasks: ["simulate a policy", "check whether an action is allowed"],
+      },
+    ],
+  },
+  {
+    title: "Activity",
+    ...navigationMessage("admin.sidebar.groups.activity", "Activity"),
+    description: "",
+    items: [
+      {
+        title: "Audit",
+        ...navigationMessage("admin.sidebar.audit", "Audit"),
+        description:
+          "Review actions taken in OpenBot and who took them, and record Bots' commands.",
+        icon: IconListDetails,
+        linkOptions: { to: "/admin/audit" },
+        tasks: ["find an activity log", "see who took an action"],
+      },
+    ],
+  },
+  {
+    title: "Vault",
+    ...navigationMessage("admin.sidebar.groups.vault", "Vault"),
+    description: "",
+    items: [
+      {
+        title: "Credentials",
+        ...navigationMessage("admin.sidebar.credentials", "Credentials"),
+        description: "Manage this deployment’s keys and tokens.",
+        icon: IconKey,
+        linkOptions: { to: "/admin/credentials" },
+        tasks: ["revoke an API key", "rotate a secret"],
+      },
+    ],
+  },
+  {
+    title: "Organization",
+    ...navigationMessage("admin.sidebar.groups.organization", "Organization"),
     description: "",
     items: [
       {
@@ -181,6 +218,15 @@ export const ADMIN_NAVIGATION: {
         tasks: ["change what a role can do", "control member capabilities"],
       },
       {
+        title: "Providers",
+        ...navigationMessage("admin.sidebar.providers", "Providers"),
+        description:
+          "See which provider serves your Bots' models, and choose which models they may use.",
+        icon: IconBrain,
+        linkOptions: { to: "/admin/providers" },
+        tasks: ["choose an AI model", "configure a model provider"],
+      },
+      {
         title: "Identity providers",
         ...navigationMessage(
           "admin.sidebar.identityProviders",
@@ -191,34 +237,6 @@ export const ADMIN_NAVIGATION: {
         icon: IconBuildingBank,
         linkOptions: { to: "/admin/identity-providers" },
         tasks: ["single sign-on", "configure SAML or OpenID Connect"],
-      },
-    ],
-  },
-  {
-    title: "Governance and audit",
-    ...navigationMessage(
-      "admin.sidebar.groups.governanceAudit",
-      "Governance and audit",
-    ),
-    description: "",
-    items: [
-      {
-        title: "Audit",
-        ...navigationMessage("admin.sidebar.audit", "Audit"),
-        description:
-          "Review actions taken in OpenBot and who took them, and record Bots' commands.",
-        icon: IconListDetails,
-        linkOptions: { to: "/admin/audit" },
-        tasks: ["find an activity log", "see who took an action"],
-      },
-      {
-        title: "Test a policy",
-        ...navigationMessage("admin.sidebar.testPolicy", "Test a policy"),
-        description:
-          "Ask what OpenBot would do if a Bot took an action, and see which control decides.",
-        icon: IconZoomQuestion,
-        linkOptions: { to: "/admin/what-if" },
-        tasks: ["simulate a policy", "check whether an action is allowed"],
       },
     ],
   },

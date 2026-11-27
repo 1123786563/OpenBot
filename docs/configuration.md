@@ -993,6 +993,77 @@ docker ps -aq --filter "label=openbot.namespace=openbot" | xargs -r docker rm -f
 
 The supervisor recreates each computer with the same named volumes on its next request.
 
+### OpenShell execution pilot
+
+The pilot routes commands, workspace file tools, and the Terminal tab to
+OpenShell for users listed in `OPENBOT_OPENSHELL_PILOT_USERS`. Operators obtain
+each user's consent before adding their OpenBot user ID to the comma-separated
+list. Keep the computer provider configured for legacy browser routes and
+isolated Bots. The API rejects startup if any Cube browser binding lacks
+matching OpenShell enrollment. OpenShell-only enrollment uses the legacy
+browser. To return a user to the legacy browser and execution backend, remove
+their ID from both pilot settings, then restart the API.
+
+Build the execution image from the repository root.
+
+```sh
+docker build -f agent-computer/Dockerfile.execution -t openbot-execution:pilot .
+```
+
+Make the image available to the OpenShell Docker driver and set `OPENBOT_OPENSHELL_IMAGE`
+to its reference. Use an authenticated OpenShell gateway with launch-scoped sandbox
+authentication. Set `persist_workspace = true` under `[openshell.drivers.docker]`.
+Each pilot user and Bot pair gets a private `/sandbox` volume. OpenShell reattaches
+the volume on sandbox stop and start. Deleting the sandbox removes its volume.
+[OpenShell Docker driver settings](https://docs.nvidia.com/openshell/latest/how-it-works/sandboxes/runtimes)
+
+Install the OpenShell 0.1.10 CLI where the OpenBot API process runs. If needed, set
+`OPENBOT_OPENSHELL_CLI` to its absolute path. Configure the CLI credentials for a
+dedicated OpenShell workspace that only this deployment manages. Set
+`OPENBOT_OPENSHELL_GATEWAY` to the registered gateway name and
+`OPENBOT_OPENSHELL_WORKSPACE` to that workspace. Use a stable random secret of at least 32
+characters for `OPENBOT_OPENSHELL_TOKEN` across API replicas. The API derives a separate service token
+for each sandbox and reaches it over an authenticated loopback forward.
+
+New execution sandboxes deny outbound connections by default. To allow selected
+destinations, set `OPENBOT_OPENSHELL_NETWORK_POLICIES` to the JSON object for OpenShell's
+`network_policies` field before creating the sandboxes. To change egress on an existing
+sandbox, update its network policy in OpenShell. The terminal uses its own handoff state
+for pilot seats. [OpenShell sandbox policy](https://docs.nvidia.com/openshell/latest/how-it-works/policies/overview)
+
+#### Replace a pilot execution workload
+
+Use OpenShell's stopped-workload image update to replace the Docker container
+while retaining the sandbox ID and its private workspace volume. Enable
+`enable_sandbox_updates = true` under `[openshell.gateway]` after all gateways
+support workload updates. This procedure requires a sandbox created with
+`persist_workspace = true`.
+
+1. Cache both images on the driver's Docker daemon. Give the replacement a
+   distinct image reference. Keep the execution image's numeric `USER 10001:10001`,
+   `/sandbox` working directory, and execution service entry point. Both images
+   must omit image-declared volumes.
+2. Pause requests that could wake the selected user and Bot's execution sandbox.
+   Stop that sandbox in its OpenShell workspace and wait for `Stopped`.
+3. With authenticated operator credentials, call `openshell.v1.OpenShell/GetSandbox`
+   for the sandbox name and explicit workspace. Pass the same name and
+   `workspace_scope`, the returned `sandbox.metadata.resource_version` as
+   `expected_resource_version`, and the target `image` to
+   `openshell.v1.SandboxUpdates/UpdateSandbox`. Supply a unique `request_id`
+   and retain it with the request so you can replay an interrupted update.
+   OpenShell 0.1.10 exposes this operation through gRPC.
+4. After the update succeeds, let OpenBot wake the stopped sandbox and read a
+   known workspace file through the normal execution route.
+
+A disposable stopped-workload update kept the named sandbox and volume, changed
+the Docker container, and preserved a file read through OpenBot. In a separate
+unplanned workload-loss test, OpenBot returned HTTP 503 and requested operator
+recovery while the workspace bytes remained on disk. If the Docker workload
+disappears and OpenShell cannot restart it, preserve the sandbox record and
+volume for operator recovery. Deleting the sandbox or clearing its workspace
+removes its owned volume. Verify planned replacement on the target deployment
+with the steps above. [OpenShell v0.1.10 Docker driver](https://github.com/NVIDIA/OpenShell/blob/v0.1.10/crates/openshell-driver-docker/README.md#stopped-workload-image-updates)
+
 ### Headed or headless managed Chromium in Docker or Helm
 
 The managed backend uses Playwright's full `chromium` channel in either mode. The Docker image

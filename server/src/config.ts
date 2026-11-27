@@ -14,6 +14,8 @@ import { z } from "zod";
 import { DEV_ACTOR, singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";
+import { cubeBrowserVolumes } from "./browser/cubesandbox";
+import type { OpenShellExecutionConfig } from "./computer/openshell-execution";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 import {
@@ -479,6 +481,7 @@ export type DeploymentConfig = {
    * mounted and failing: a capability that is not configured should be missing, not broken.
    */
   computer?: ComputerConfig;
+  computerExecution?: OpenShellExecutionConfig;
   /**
    * The computer that runs people's own OpenBot browsers here when it is not the Bots' (`OPENBOT_BROWSER_URL`): a
    * host-side local Chrome computer (`scripts/start-local-chrome-computer.ts`), so a person's browser is a window on
@@ -1490,6 +1493,43 @@ function browserConfig(
   return { browser: { url: address, ...(token ? { token } : {}) } };
 }
 
+function computerExecutionConfig(
+  environment: Environment,
+): OpenShellExecutionConfig | undefined {
+  const pilotUsers = new Set(
+    (optional(environment, "OPENBOT_OPENSHELL_PILOT_USERS") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+  if (!pilotUsers.size) return;
+  const networkPolicies: unknown = JSON.parse(
+    optional(environment, "OPENBOT_OPENSHELL_NETWORK_POLICIES") ?? "{}",
+  );
+  if (
+    !networkPolicies ||
+    typeof networkPolicies !== "object" ||
+    Array.isArray(networkPolicies)
+  ) {
+    throw new Error(
+      "OPENBOT_OPENSHELL_NETWORK_POLICIES must be a JSON object.",
+    );
+  }
+  const token = required(environment, "OPENBOT_OPENSHELL_TOKEN");
+  if (token.length < 32) {
+    throw new Error("OPENBOT_OPENSHELL_TOKEN requires at least 32 characters.");
+  }
+  return {
+    pilotUsers,
+    cli: optional(environment, "OPENBOT_OPENSHELL_CLI") ?? "openshell",
+    gateway: required(environment, "OPENBOT_OPENSHELL_GATEWAY"),
+    workspace: required(environment, "OPENBOT_OPENSHELL_WORKSPACE"),
+    image: required(environment, "OPENBOT_OPENSHELL_IMAGE"),
+    token,
+    networkPolicies: Object.fromEntries(Object.entries(networkPolicies)),
+  };
+}
+
 function computerConfig(environment: Environment): ComputerConfig | undefined {
   const supervisorAddress = optional(environment, "COMPUTER_SUPERVISOR_URL");
   const sharedAddress = optional(environment, "AGENT_COMPUTER_URL");
@@ -1922,6 +1962,7 @@ export function loadConfig(
       ? { appDistDir: optional(environment, "APP_DIST_DIR") as string }
       : {}),
     computer: computerConfig(environment),
+    computerExecution: computerExecutionConfig(environment),
     ...browserConfig(environment),
     handoff: handoffCaps(environment),
     ...(optional(environment, "AGENT_TOOL_TOKEN")
@@ -1943,6 +1984,17 @@ export function loadConfig(
     }),
   };
   if (edition === "personal") personalEditionRequirements(environment, config);
+  if (config.computerExecution && !config.computer) {
+    throw new Error(
+      "The OpenShell pilot requires a configured computer provider.",
+    );
+  }
+  const cubeUsers = [...cubeBrowserVolumes(environment).keys()];
+  if (cubeUsers.some((id) => !config.computerExecution?.pilotUsers.has(id))) {
+    throw new Error(
+      "Every user in OPENBOT_CUBE_BROWSER_VOLUMES must be enrolled in OPENBOT_OPENSHELL_PILOT_USERS.",
+    );
+  }
   return config;
 }
 

@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Link, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   Button,
@@ -9,11 +9,44 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { api, type Conversation, type TranscriptMessage } from "../src/api";
+import { ORGANIZATION_ID } from "../src/api";
+import {
+  getConversation,
+  listConversationMessages,
+  sendConversationMessage,
+} from "../src/api/generated/conversations/conversations";
+import type { ConversationMessage } from "../src/api/generated/model";
 import { authClient } from "../src/auth";
-import { DirectConversationScreen } from "../src/direct-conversation-screen";
+import {
+  isLocalMobilePreview,
+  previewConversations,
+} from "../src/home-preview";
 import { useLoad } from "../src/use-load";
 export default function ConversationScreen() {
+  const { channelId, preview } = useLocalSearchParams();
+  if (isLocalMobilePreview("/conversation", preview)) {
+    const sample = previewConversations.find(({ id }) => id === channelId);
+    if (!sample)
+      return <Redirect href={{ pathname: "/", params: { preview: "1" } }} />;
+    return <Conversation sample={sample} />;
+  }
+  return <ConnectedConversation />;
+}
+
+function ConnectedConversation() {
+  const { data: session, isPending } = authClient.useSession();
+  return <Conversation session={session} isPending={isPending} />;
+}
+
+function Conversation({
+  session,
+  isPending = false,
+  sample,
+}: {
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+  sample?: (typeof previewConversations)[number];
+}) {
   const {
     channelId,
     agentId: requestedAgentId,
@@ -23,116 +56,59 @@ export default function ConversationScreen() {
     agentId?: string;
     draft?: string;
   }>();
-  const { data: session, isPending } = authClient.useSession();
-  if (!session) return isPending ? null : <Redirect href="/" />;
-  return (
-    <SignedInConversation
-      key={JSON.stringify([
-        session.user.id,
-        channelId,
-        requestedAgentId,
-        draft,
-      ])}
-      channelId={channelId}
-      requestedAgentId={requestedAgentId}
-      draft={draft}
-    />
-  );
-}
-
-function SignedInConversation({
-  channelId,
-  requestedAgentId,
-  draft,
-}: {
-  channelId: string;
-  requestedAgentId?: string;
-  draft?: string;
-}) {
-  const load = useCallback(async () => {
-    const [detail, capabilities] = await Promise.all([
-      api<{ channel: Conversation }>(
-        `/api/channels/${encodeURIComponent(channelId)}`,
-      ),
-      api<{ mode?: string }>("/api/capabilities"),
-    ]);
-    return { ...detail, mode: capabilities.mode };
-  }, [channelId]);
-  const { data, error } = useLoad(load);
-  if (!data)
-    return (
-      <Text accessibilityRole={error ? "alert" : undefined}>
-        {error || "Loading conversation…"}
-      </Text>
-    );
-  const { channel, mode } = data;
-  const agentId = channel.agentIds[0];
-  if (mode === "openbot" && channel.direct && agentId) {
-    return (
-      <DirectConversationScreen
-        conversation={channel}
-        agentId={agentId}
-        draft={draft}
-      />
-    );
-  }
-  if (error) return <Text accessibilityRole="alert">{error}</Text>;
-  return (
-    <DeliveryConversation
-      channelId={channelId}
-      conversation={channel}
-      requestedAgentId={requestedAgentId}
-      draft={draft}
-    />
-  );
-}
-
-function DeliveryConversation({
-  channelId,
-  conversation,
-  requestedAgentId,
-  draft,
-}: {
-  channelId: string;
-  conversation: Conversation;
-  requestedAgentId?: string;
-  draft?: string;
-}) {
-  const [agentId, setAgentId] = useState("");
+  const [agentId, setAgentId] = useState(sample?.botId ?? "");
   // A Bot profile's "Add routine" arrives with its sentence started for the person to finish.
   const [text, setText] = useState(draft ?? "");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload for whoever is signed in now, not the previous person
+  const loadChannels = useCallback(
+    () => getConversation(ORGANIZATION_ID, channelId ?? ""),
+    [channelId, session?.user.id],
+  );
+  const channels = useLoad(loadChannels, Boolean(session));
+  const conversation = sample
+    ? { name: sample.name, botIds: [sample.botId], active: false }
+    : channels.data?.conversation;
   useEffect(() => {
     if (conversation && !agentId)
       setAgentId(
-        requestedAgentId && conversation.agentIds.includes(requestedAgentId)
+        requestedAgentId && conversation.botIds.includes(requestedAgentId)
           ? requestedAgentId
-          : (conversation.agentIds[0] ?? ""),
+          : (conversation.botIds[0] ?? ""),
       );
   }, [conversation, agentId, requestedAgentId]);
   const loadHistory = useCallback(
     () =>
-      api<{ history: TranscriptMessage[] | { messages: TranscriptMessage[] } }>(
-        `/api/delivery/conversations/${encodeURIComponent(channelId ?? "")}/history?agentId=${encodeURIComponent(agentId)}`,
-      ),
+      listConversationMessages(ORGANIZATION_ID, channelId ?? "", {
+        botId: agentId,
+        limit: 200,
+      }),
     [channelId, agentId],
   );
-  const history = useLoad(loadHistory, Boolean(agentId));
-  const messages = Array.isArray(history.data?.history)
-    ? history.data.history
-    : history.data?.history.messages;
+  const history = useLoad(loadHistory, Boolean(session && agentId));
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
+  // The API answers newest first. The conversation reads oldest first.
+  const messages:
+    | Pick<ConversationMessage, "id" | "role" | "text" | "toolCalls">[]
+    | undefined = sample
+    ? [
+        { id: "prompt", role: "person", text: sample.prompt },
+        { id: "reply", role: "bot", text: sample.reply },
+      ]
+    : history.data?.messages.slice().reverse();
   async function send() {
-    if (!text.trim() || !agentId || sending) return;
+    if (sample || !text.trim() || !agentId || sending) return;
     setSending(true);
     setError("");
     const pendingText = text;
     const externalId = Crypto.randomUUID();
     try {
-      await api(
-        `/api/delivery/conversations/${encodeURIComponent(channelId)}/messages`,
-        { method: "POST", body: { agentId, text: pendingText, externalId } },
-      );
+      await sendConversationMessage(ORGANIZATION_ID, channelId, {
+        id: externalId,
+        text: pendingText,
+        botId: agentId,
+      });
       setText("");
       await history.refresh();
     } catch (failure) {
@@ -147,11 +123,16 @@ function DeliveryConversation({
   }
   return (
     <View style={{ flex: 1, padding: 16, gap: 12 }}>
+      {sample && (
+        <Link href={{ pathname: "/", params: { preview: "1" } }}>
+          Back to preview home
+        </Link>
+      )}
       <Text style={{ fontSize: 22, fontWeight: "600" }}>
         {conversation?.name ?? "Conversation"}
       </Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {conversation?.agentIds.map((id) => (
+        {conversation?.botIds.map((id) => (
           <Button
             key={id}
             title={id === agentId ? `${id} ✓` : id}
@@ -159,20 +140,22 @@ function DeliveryConversation({
           />
         ))}
       </View>
-      {(error || history.error) && (
+      {(error || channels.error || history.error) && (
         <Text accessibilityRole="alert" style={{ color: "#b42318" }}>
-          {error || history.error}
+          {error || channels.error || history.error}
         </Text>
       )}
       <ScrollView
         style={{ flex: 1 }}
         refreshControl={
-          <RefreshControl
-            refreshing={history.pending}
-            onRefresh={() => {
-              void history.refresh();
-            }}
-          />
+          sample ? undefined : (
+            <RefreshControl
+              refreshing={history.pending}
+              onRefresh={() => {
+                void history.refresh();
+              }}
+            />
+          )
         }
         contentContainerStyle={{ gap: 12 }}
       >
@@ -181,19 +164,17 @@ function DeliveryConversation({
             key={message.id}
             style={{
               padding: 12,
-              backgroundColor: message.role === "user" ? "#eff6ff" : "#f3f4f6",
+              backgroundColor:
+                message.role === "person" ? "#eff6ff" : "#f3f4f6",
               borderRadius: 8,
             }}
           >
             <Text style={{ fontWeight: "600" }}>
-              {message.role === "user" ? "You" : agentId}
+              {message.role === "person" ? "You" : agentId}
             </Text>
             <Text>
-              {typeof message.content === "string"
-                ? message.content
-                : message.toolCalls?.length
-                  ? "The Bot is using a tool."
-                  : ""}
+              {message.text ||
+                (message.toolCalls ? "The Bot is using a tool." : "")}
             </Text>
           </View>
         ))}

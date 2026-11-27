@@ -202,6 +202,7 @@ export type ComputerConnection = {
   url: string;
   token?: string;
   trafficAccessToken?: string;
+  redirect?: RequestRedirect;
 };
 export type ComputerEndpoint = string | ComputerConnection;
 
@@ -317,7 +318,10 @@ export function createComputerTransport(
         ? { url: computer, token: options.token }
         : computer;
     const target = url.replace(/\/$/, "");
-    const redirect = trafficAccessToken ? "error" : options.redirect;
+    const redirect = trafficAccessToken
+      ? "error"
+      : ((typeof computer === "string" ? undefined : computer.redirect) ??
+        options.redirect);
     let response: Response;
     try {
       response = await startMarketRequest(() =>
@@ -518,7 +522,7 @@ function throwMappedError(
   if (status === 413) {
     throw new WorkspaceTooLargeError(detail);
   }
-  if (/waiting for locator|Timeout .* exceeded/i.test(detail)) {
+  if (/waiting for locator/i.test(detail)) {
     const ref = detail.match(/aria-ref=([A-Za-z0-9_-]+)/)?.[1];
     throw new ElementNotFoundError(
       `${ref ? `Element ${ref} is` : "That element is"} not on the page any more. Take a fresh snapshot and use the refs from it.`,

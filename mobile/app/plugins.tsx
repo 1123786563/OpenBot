@@ -1,8 +1,19 @@
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Link, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback } from "react";
 import { Switch, Text, View } from "react-native";
-import { api, type GrantedPlugins, type SkillSummary } from "../src/api";
+import { ApiError, everyPage, ORGANIZATION_ID } from "../src/api";
+import {
+  deleteBotGrant,
+  listBotGrants,
+  replaceBotGrant,
+} from "../src/api/generated/bot-grants/bot-grants";
+import { listSkills } from "../src/api/generated/skills/skills";
 import { authClient } from "../src/auth";
+import {
+  isLocalMobilePreview,
+  previewSkills,
+  previewTools,
+} from "../src/home-preview";
 import {
   card,
   heading,
@@ -16,52 +27,111 @@ import { useLoad } from "../src/use-load";
 
 /** What a Bot can use: skills switched on and off here, connected tools listed. */
 export default function PluginsScreen() {
-  const { botId = "" } = useLocalSearchParams<{ botId: string }>();
+  const { botId = "", preview } = useLocalSearchParams<{
+    botId: string;
+    preview?: string;
+  }>();
+  if (isLocalMobilePreview("/plugins", preview)) {
+    return <PluginsDetail botId={botId} sample />;
+  }
+  return <ConnectedPlugins botId={botId} />;
+}
+
+function ConnectedPlugins({ botId }: { botId: string }) {
   const { data: session, isPending } = authClient.useSession();
-  const action = useAction();
-  const loadGranted = useCallback(
-    () => api<GrantedPlugins>(`/api/plugins/for/${encodeURIComponent(botId)}`),
-    [botId],
+  return (
+    <PluginsDetail botId={botId} session={session} isPending={isPending} />
   );
+}
+
+function PluginsDetail({
+  botId,
+  sample = false,
+  session,
+  isPending = false,
+}: {
+  botId: string;
+  sample?: boolean;
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+}) {
+  const action = useAction();
+  const loadGranted = useCallback(async () => {
+    const grants = await everyPage(
+      (page) => listBotGrants(ORGANIZATION_ID, botId, page),
+      (page) => page.grants,
+    );
+    return {
+      tools: grants.flatMap((grant) =>
+        grant.kind === "action" && grant.action
+          ? [{ ref: grant.ref, description: grant.action.description }]
+          : [],
+      ),
+      skills: grants.flatMap((grant) =>
+        grant.kind === "skill" && grant.skill ? [grant.skill] : [],
+      ),
+    };
+  }, [botId]);
   const granted = useLoad(loadGranted, Boolean(session && botId));
+  // Every skill this person can see, page after page.
   const loadCatalogue = useCallback(
-    () => api<{ skills: SkillSummary[] }>("/api/plugins"),
+    async () => ({
+      skills: await everyPage(
+        (page) => listSkills(ORGANIZATION_ID, page),
+        (page) => page.skills,
+      ),
+    }),
     [],
   );
   const catalogue = useLoad(loadCatalogue, Boolean(session));
-  if (!session && !isPending) return <Redirect href="/" />;
-  const on = new Set(granted.data?.skills.map((skill) => skill.slug));
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
+  const skills = sample ? previewSkills : catalogue.data?.skills;
+  const tools = sample ? previewTools : granted.data?.tools;
+  const on = new Set(
+    sample
+      ? ["weekly-planning"]
+      : granted.data?.skills.map((skill) => skill.slug),
+  );
 
   const setSkill = (slug: string, enabled: boolean) =>
     action.run(slug, async () => {
-      if (enabled)
-        await api("/api/plugins/grants", {
-          method: "POST",
-          body: { kind: "skill", ref: slug, agentId: botId },
-        });
+      const grantId = `skill:${slug}`;
+      if (enabled) await replaceBotGrant(ORGANIZATION_ID, botId, grantId, {});
       else
-        await api(
-          `/api/plugins/grants?kind=skill&ref=${encodeURIComponent(slug)}&agentId=${encodeURIComponent(botId)}`,
-          { method: "DELETE" },
-        );
+        try {
+          await deleteBotGrant(ORGANIZATION_ID, botId, grantId);
+        } catch (error) {
+          // A Bot that doesn't have the skill is already without it.
+          if (
+            !(error instanceof ApiError && error.code === "BOT_GRANT_NOT_FOUND")
+          )
+            throw error;
+        }
       await granted.refresh();
     });
 
   return (
     <Screen
       refreshing={granted.pending || catalogue.pending}
-      onRefresh={() => {
-        void granted.refresh();
-        void catalogue.refresh();
-      }}
+      onRefresh={
+        sample
+          ? undefined
+          : () => {
+              void granted.refresh();
+              void catalogue.refresh();
+            }
+      }
     >
+      {sample && (
+        <Link href={{ pathname: "/bot", params: { botId, preview: "1" } }}>
+          Back to preview Bot
+        </Link>
+      )}
       <Text style={heading}>Plugins</Text>
       <Problem message={action.error || granted.error || catalogue.error} />
       <Section title="Skills">
-        {catalogue.data?.skills.length === 0 && (
-          <Text style={muted}>No skills yet.</Text>
-        )}
-        {catalogue.data?.skills.map((skill) => (
+        {skills?.length === 0 && <Text style={muted}>No skills yet.</Text>}
+        {skills?.map((skill) => (
           <View
             key={skill.slug}
             style={[
@@ -78,7 +148,7 @@ export default function PluginsScreen() {
             <Switch
               accessibilityLabel={`Use ${skill.title}`}
               value={on.has(skill.slug)}
-              disabled={Boolean(action.busy) || !granted.data}
+              disabled={sample || Boolean(action.busy) || !granted.data}
               onValueChange={(enabled) => {
                 void setSkill(skill.slug, enabled);
               }}
@@ -91,10 +161,8 @@ export default function PluginsScreen() {
           Connecting an app needs its sign-in, so add and remove tools in
           OpenBot on your computer.
         </Text>
-        {granted.data?.tools.length === 0 && (
-          <Text style={muted}>No connected tools.</Text>
-        )}
-        {granted.data?.tools.map((tool) => (
+        {tools?.length === 0 && <Text style={muted}>No connected tools.</Text>}
+        {tools?.map((tool) => (
           <View key={tool.ref} style={card}>
             <Text style={{ fontWeight: "600" }}>{tool.ref}</Text>
             {tool.description ? (

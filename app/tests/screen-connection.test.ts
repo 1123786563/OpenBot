@@ -8,10 +8,12 @@ function rig() {
   const sockets: ScreenSocket[] = [];
   const timers: { run: () => void; delay: number; cancelled: boolean }[] = [];
   const statuses: string[] = [];
+  const reconnectAttempts: boolean[] = [];
   let verified = false;
   let stopped = 0;
   const control = connectScreen({
-    open: () => {
+    open: (reconnecting) => {
+      reconnectAttempts.push(reconnecting);
       const socket: ScreenSocket = {
         onopen: null,
         onclose: null,
@@ -43,6 +45,7 @@ function rig() {
     sockets,
     timers,
     statuses,
+    reconnectAttempts,
     control,
     verify: () => {
       verified = true;
@@ -89,6 +92,7 @@ test("reconnect reacquires ownership before input becomes ready", async () => {
   r.sockets[0]?.onclose?.();
   r.timers[0]?.run();
   await r.sockets[1]?.onopen?.();
+  expect(r.reconnectAttempts).toEqual([false, true]);
   expect(r.statuses.at(-1)).toBe("blocked");
   r.control.stop();
 });

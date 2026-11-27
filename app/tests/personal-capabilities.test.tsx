@@ -61,10 +61,13 @@ test("in the personal edition, Skills is its own page that goes back to Bots", a
   expect(view.queryByRole("navigation", { name: "Capabilities" })).toBeNull();
 });
 
-test("the team edition keeps the Capabilities page and its tabs", async () => {
-  const view = draw("team", "/capabilities/skills");
+test.each([
+  ["/capabilities/skills", "Skills"],
+  ["/capabilities/memory", "Memory"],
+])("the team edition opens %s as a dedicated page", async (path, title) => {
+  const view = draw("team", path);
   expect(
-    await view.findByRole("heading", { name: "Capabilities" }),
+    await view.findByRole("heading", { name: title, level: 1 }),
   ).toBeTruthy();
-  expect(view.getByRole("navigation", { name: "Capabilities" })).toBeTruthy();
+  expect(view.queryByRole("navigation", { name: "Capabilities" })).toBeNull();
 });

@@ -17,6 +17,7 @@ import {
   useRef,
 } from "react";
 import { DevicePage } from "@/components/astryx-pilot/device-page";
+import { PageHeader } from "@/components/layout/page-parts";
 import { PageEmpty } from "@/components/layout/page-shell";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { openBrowserMutationOptions } from "@/lib/browser/mutations";
@@ -26,6 +27,7 @@ import { recorderKeys } from "@/lib/recorder/queries";
 import { queryClient } from "@/query-client";
 import { TEACH_A_BOT } from "./browser-nav-item";
 import { OpeningBrowser, ScreenBrowser } from "./browser-screen";
+import { ManualDownloadDelivery } from "./manual-download-delivery";
 import { TeachSteps } from "./teach-steps";
 import { recordingOnItsWay, YourRecordings } from "./your-recordings";
 
@@ -57,16 +59,11 @@ function LearnedLink() {
  */
 function TeachHeading({ headingRef }: { headingRef: Ref<HTMLHeadingElement> }) {
   return (
-    <header className="flex flex-col gap-1">
-      <h1
-        className="font-semibold text-2xl tracking-tight"
-        ref={headingRef}
-        tabIndex={-1}
-      >
-        {TITLE}
-      </h1>
-      <p className="text-pretty text-muted-foreground text-sm">{DESCRIPTION}</p>
-    </header>
+    <PageHeader
+      title={TITLE}
+      description={DESCRIPTION}
+      headingRef={headingRef}
+    />
   );
 }
 
@@ -287,6 +284,10 @@ function OpenedBrowser({
         reopenFailed={reopen.isError}
         reopening={reopen.isPending}
       >
+        <ManualDownloadDelivery
+          key={opened.computerId}
+          computerId={opened.computerId}
+        />
         <YourRecordings
           action={<LearnedLink />}
           variant="pane"

@@ -30,6 +30,7 @@ const ACTIONS: Readonly<Record<string, string>> = {
   computer_write_file: "Save a file",
   computer_run_command: "Run a command",
   computer_download_file: "Download a file",
+  computer_upload_browser_file: "Upload a workspace file",
   computer_handoff: "Hand the computer to a person",
   computer_request_help: "Ask a person for help",
   computer_request_secret: "Ask a person to fill in a field",
@@ -150,6 +151,10 @@ export const AUDIT_EVENT_WORDS: Readonly<Record<string, string>> = {
   "computer.stopped": "Stop the computer",
   "computer.reset": "Reset the computer",
   "computer.browser_cleared": "Clear the browser",
+  "computer.browser_download_attempted":
+    "Attempt to deliver a browser download",
+  "computer.browser_download_failed": "Browser download delivery failed",
+  "computer.browser_download_delivered": "Deliver a browser download",
   "computer.updated": "Update the computer",
   "computer.policy_loaded": "Start the computer",
   "computer.policy_changed": "Change the boundaries",

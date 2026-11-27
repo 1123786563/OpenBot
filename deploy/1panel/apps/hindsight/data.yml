@@ -8,8 +8,8 @@ additionalProperties:
   name: Hindsight
   tags:
     - Tool
-  shortDescZh: 使用 1Panel 已有 PostgreSQL 数据库
-  shortDescEn: Use an existing PostgreSQL database in 1Panel
+  shortDescZh: 自带 pgvector PostgreSQL 数据库
+  shortDescEn: Ships its own pgvector PostgreSQL database
   description:
     en: Hindsight
     es-es: Hindsight

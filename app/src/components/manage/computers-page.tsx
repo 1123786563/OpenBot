@@ -60,9 +60,12 @@ import {
   type ComputerProfile,
   computerFleetQueryOptions,
   fleetAccessDenied,
+  pilotComputerQueryOptions,
 } from "@/lib/computers/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useManagePaths } from "@/lib/manage-paths";
+
+import { PilotComputerActions } from "./pilot-computer-actions";
 
 /** One row's identity: the computer, and on a shared computer the Bot's seat on it. */
 function rowId(computer: ComputerProfile): string {
@@ -209,6 +212,10 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
   const clearOwnBrowser = useMutation(clearBrowserMutationOptions(queryClient));
 
   const fleet = useQuery(computerFleetQueryOptions());
+  const lifecycle = useQuery({
+    ...pilotComputerQueryOptions(),
+    enabled: personal,
+  }).data;
   const hostAccess = useQuery(hostAccessQueryOptions());
   const agents = useQuery(agentListQueryOptions());
   const setState = useMutation(setComputerStateMutationOptions(queryClient));
@@ -422,12 +429,20 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
   return (
     <DevicePage
       description={
-        personal
-          ? "Your Bots share one computer. Each Bot keeps its own browser profile there, which keeps it signed in. A command one Bot runs can still read another Bot's files."
-          : "Each person's computer, and each isolated Bot's. Every Bot keeps its own browser profile, which keeps that Bot signed in. Resetting a browser profile signs out every site in that profile."
+        personal && lifecycle
+          ? "Manage your browser profiles and Bot workspaces."
+          : personal
+            ? "Your Bots share one computer. Each Bot keeps its own browser profile there, which keeps it signed in. A command one Bot runs can still read another Bot's files."
+            : "Each person's computer, and each isolated Bot's. Every Bot keeps its own browser profile, which keeps that Bot signed in. Resetting a browser profile signs out every site in that profile."
       }
       title={personal ? "Computer" : "Computers"}
     >
+      {personal && lifecycle ? (
+        <PilotComputerActions
+          {...lifecycle}
+          bots={(agents.data ?? []).filter((bot) => !bot.isolationActive)}
+        />
+      ) : null}
       <PageSection
         headingRef={fleetHeading}
         title={

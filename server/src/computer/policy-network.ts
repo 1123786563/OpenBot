@@ -206,6 +206,7 @@ export async function pushEgressPolicy(
   policy: EgressPolicy,
   options: {
     token?: string;
+    redirect?: RequestRedirect;
     webBotAuth?: WebBotAuth;
     fetchImpl?: typeof fetch;
   } = {},
@@ -216,6 +217,7 @@ export async function pushEgressPolicy(
       `${url.replace(/\/$/, "")}/egress-policy`,
       {
         method: "PUT",
+        redirect: options.redirect,
         headers: {
           "content-type": "application/json",
           "x-openbot-bot-id": botId,

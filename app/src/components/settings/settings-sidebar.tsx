@@ -30,10 +30,11 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useTranslation } from "@/i18n";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { pilotComputerQueryOptions } from "@/lib/computers/queries";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { desktopShell } from "@/lib/desktop/shell";
-import { useTranslation } from "@/i18n";
 import { managePaths } from "@/lib/manage-paths";
 import { mayOpenSetup, setupChecklistQueryOptions } from "@/lib/setup/queries";
 
@@ -146,6 +147,14 @@ export const SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
   },
 ];
 
+const COMPUTER_SETTINGS_ITEM: SettingsSidebarItem = {
+  title: "Computer",
+  ...navigationMessage("settings.sidebar.computer", "Computer"),
+  group: "Workspace tools",
+  icon: IconDeviceDesktop,
+  linkOptions: { to: "/settings/computer" },
+};
+
 /**
  * What the personal edition keeps of Admin. There is no Admin there, and the one person still stores
  * keys, writes skills, resets the computer and reads the trail. Apps are not here:
@@ -167,13 +176,7 @@ const PERSONAL_SETTINGS_SIDEBAR_ITEMS: SettingsSidebarItem[] = [
     icon: IconBook,
     linkOptions: { to: "/settings/skills" },
   },
-  {
-    title: "Computer",
-    ...navigationMessage("settings.sidebar.computer", "Computer"),
-    group: "Workspace tools",
-    icon: IconDeviceDesktop,
-    linkOptions: { to: "/settings/computer" },
-  },
+  COMPUTER_SETTINGS_ITEM,
   {
     title: managePaths("personal").auditLabel,
     ...navigationMessage("settings.sidebar.activity", "Activity"),
@@ -204,6 +207,7 @@ const GROUP_MESSAGES = {
 
 export function settingsSidebarItems(
   edition: "team" | "personal",
+  enrolledInComputerPilot = false,
 ): SettingsSidebarItem[] {
   // Passwords is called Saved logins there, as on Connections.
   return edition === "personal"
@@ -222,7 +226,9 @@ export function settingsSidebarItems(
         ),
         ...PERSONAL_SETTINGS_SIDEBAR_ITEMS,
       ]
-    : SETTINGS_SIDEBAR_ITEMS;
+    : enrolledInComputerPilot
+      ? [...SETTINGS_SIDEBAR_ITEMS, COMPUTER_SETTINGS_ITEM]
+      : SETTINGS_SIDEBAR_ITEMS;
 }
 
 export function SettingsSidebar({
@@ -239,6 +245,10 @@ export function SettingsSidebar({
   const { t } = useTranslation();
   const user = useQuery(currentUserQueryOptions()).data;
   const capabilities = useQuery(deploymentCapabilitiesQueryOptions()).data;
+  const pilot = useQuery({
+    ...pilotComputerQueryOptions(),
+    enabled: capabilities?.edition === "team",
+  }).data;
   const canSetUp = mayOpenSetup(user, capabilities);
   /*
    * What an admin can act on, counted beside Setup: rows that need setup and say how. Onboarding
@@ -255,7 +265,10 @@ export function SettingsSidebar({
           (row) => row.status === "needs_setup" && row.fix !== null,
         ).length
       : 0;
-  const items = settingsSidebarItems(capabilities?.edition ?? "team").filter(
+  const items = settingsSidebarItems(
+    capabilities?.edition ?? "team",
+    Boolean(pilot),
+  ).filter(
     (option) =>
       (!option.setup || canSetUp) &&
       (!option.desktopOnly || desktopShell() !== null),

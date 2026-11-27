@@ -49,6 +49,7 @@ export const OPENBOT_BROWSER_LABEL = "OpenBot browser";
 
 /** Where people's browsers run here: the computers carry them as they carry Bots' (browser/host.ts). */
 export type BrowserComputers = {
+  serves?(computerId: string): boolean;
   /**
    * Where the browsers these computers run show (`BrowserApiState.shows`), known without asking any of them: the
    * sidebar's Browser button reads it on every load, before the person's browser has ever been opened.
@@ -66,10 +67,20 @@ export type BrowserComputers = {
   running(computerId: string): Promise<boolean>;
 };
 
+function computersFor(
+  deps: Pick<BrowserRouteDeps, "computers" | "pilotComputers">,
+  computerId: string,
+) {
+  return deps.pilotComputers?.serves?.(computerId)
+    ? deps.pilotComputers
+    : deps.computers;
+}
+
 export type BrowserRouteDeps = {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   /** Absent when this OpenBot has no way to run a person's browser: the state says so and the app hides the button. */
   computers?: BrowserComputers;
+  pilotComputers?: BrowserComputers;
   /**
    * What the person is told about where their browser runs (`BrowserApiState.note`), in one plain sentence: why there
    * are no `computers` for it here (its Bots share one computer, browser/host.ts). Absent when there is nothing to
@@ -442,6 +453,7 @@ export function computerCaller(
     computerId: SeatAddress,
     path: string,
     options: {
+      redirect?: RequestRedirect;
       /** The token of the computer at `base`. */
       token?: string;
       body?: unknown;
@@ -470,6 +482,7 @@ export function computerCaller(
     let response: Response;
     try {
       response = await doFetch(`${base.replace(/\/$/, "")}${path}`, {
+        redirect: options.redirect,
         method: options.method ?? (body === undefined ? "GET" : "POST"),
         headers: {
           ...seatHeaders(computerId),
@@ -523,7 +536,10 @@ export function computerCaller(
 
 /** `computerCaller` for a person's own browser, under the token its computer takes. */
 function browserCaller(
-  deps: Pick<BrowserRouteDeps, "computers" | "fetchImpl" | "callTimeoutMs">,
+  deps: Pick<
+    BrowserRouteDeps,
+    "computers" | "pilotComputers" | "fetchImpl" | "callTimeoutMs"
+  >,
 ) {
   const ask = computerCaller(deps);
   return (
@@ -532,10 +548,13 @@ function browserCaller(
     path: string,
     options: Omit<NonNullable<Parameters<typeof ask>[3]>, "token"> = {},
   ) => {
-    const token = deps.computers?.tokenFor(computerId);
+    const token = computersFor(deps, computerId)?.tokenFor(computerId);
     return ask(base, computerId, path, {
       ...options,
       ...(token ? { token } : {}),
+      ...(deps.pilotComputers?.serves?.(computerId)
+        ? { redirect: "error" }
+        : {}),
     });
   };
 }
@@ -680,13 +699,13 @@ function lastHeardFrom<T extends ReportingConnection>(
 export function browserConnectionRevoked(
   deps: Pick<
     BrowserRouteDeps,
-    "computers" | "recorder" | "fetchImpl" | "callTimeoutMs"
+    "computers" | "pilotComputers" | "recorder" | "fetchImpl" | "callTimeoutMs"
   >,
 ): (userId: string, connection: RecorderConnection) => Promise<void> {
   const ask = browserCaller(deps);
   return async (userId, connection) => {
-    const computers = deps.computers;
     const computerId = personBrowserId(userId);
+    const computers = computersFor(deps, computerId);
     if (
       !computers ||
       connection.via !== "openbot-browser" ||
@@ -819,17 +838,19 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
   /** Whether this OpenBot can run the person's browser, where it shows when it can, and why not when that wants
    * saying: the same answer open or closed, decided by where people's browsers run here rather than by asking the
    * browser. */
-  const where = (): Pick<BrowserApiState, "available" | "shows" | "note"> => ({
-    ...(deps.computers
-      ? { available: true, shows: deps.computers.shows }
-      : { available: false }),
-    ...(deps.note ? { note: deps.note } : {}),
-  });
+  const where = (
+    computerId: string,
+  ): Pick<BrowserApiState, "available" | "shows" | "note"> => {
+    const computers = computersFor(deps, computerId);
+    return computers
+      ? { available: true, shows: computers.shows }
+      : { available: false, ...(deps.note ? { note: deps.note } : {}) };
+  };
   /** What a request that needs a browser is told where this OpenBot cannot run one. */
   const unavailable = deps.note ?? SENTENCES.unavailable;
 
   const closed = (computerId: string): BrowserApiState => ({
-    ...where(),
+    ...where(computerId),
     computerId,
     open: false,
     tabs: [],
@@ -862,7 +883,7 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
             recorder: narration ? asNarrated(reported, narration) : reported,
           }
         : {}),
-      ...where(),
+      ...where(personBrowserId(userId)),
       computerId: personBrowserId(userId),
       ...(narration ? { narration } : {}),
     };
@@ -937,7 +958,7 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
     silent: boolean;
     browsers: RealBrowser[];
   }> {
-    const computers = deps.computers;
+    const computers = computersFor(deps, computerId);
     const none = { state: null, silent: false, browsers: [] };
     if (!computers) return none;
     let base: string;
@@ -975,8 +996,9 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
    */
   async function apiState(userId: string): Promise<BrowserApiState> {
     const computerId = personBrowserId(userId);
-    if (!deps.computers) return closed(computerId);
-    const native = deps.computers.shows === "native";
+    const computers = computersFor(deps, computerId);
+    if (!computers) return closed(computerId);
+    const native = computers.shows === "native";
     const [reports, asked] = await Promise.all([
       deps.recorder.connections.reporting(userId),
       askComputer(computerId, native),
@@ -1028,9 +1050,9 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
    *   then the computer is not even asked which browsers are installed.
    */
   async function openReal(userId: string): Promise<Response | null> {
-    const computers = deps.computers;
-    if (!computers) return null;
     const computerId = personBrowserId(userId);
+    const computers = computersFor(deps, computerId);
+    if (!computers) return null;
     const connected = lastHeardFrom(
       (await deps.recorder.connections.reporting(userId)).filter(
         (connection) => connection.via === "desktop",
@@ -1108,7 +1130,7 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
       state ? view(userId, state) : currentState(userId),
   ): Promise<Response> {
     const computerId = personBrowserId(userId);
-    const computers = deps.computers;
+    const computers = computersFor(deps, computerId);
     if (!computers)
       return Response.json({ error: unavailable }, { status: 503 });
     let taken: { status: number; body: unknown };
@@ -1235,7 +1257,7 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
     });
     const { actor } = asker;
     const computerId = personBrowserId(actor.id);
-    const computers = deps.computers;
+    const computers = computersFor(deps, computerId);
     if (!computers) return refuse(unavailable, 503);
     const openbotUrl = deps.openbotUrl(asker.origin);
     if (!openbotUrl) {
@@ -1331,9 +1353,9 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
    * instead. A browser that is not open is left to the computer, which refuses Record for it.
    */
   async function connectedForRecording(asker: Asker): Promise<Response | null> {
-    const computers = deps.computers;
-    if (!computers) return null;
     const computerId = personBrowserId(asker.actor.id);
+    const computers = computersFor(deps, computerId);
+    if (!computers) return null;
     let base: string;
     try {
       base = await inBudget(computers.locate(computerId), "locate");
@@ -1370,11 +1392,11 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
 
   routes.post("/open", openBudget, deps.requireUser, async (context) => {
     // Hosted OpenBot shows the person a cloud browser, and there is no everyday browser of theirs to bring forward.
-    if (deps.computers?.shows === "native") {
+    const computerId = personBrowserId(context.var.actor.id);
+    if (computersFor(deps, computerId)?.shows === "native") {
       const real = await openReal(context.var.actor.id);
       if (real) return real;
     }
-    const computerId = personBrowserId(context.var.actor.id);
     const connected = await connect(askerOf(context));
     if (!connected.ok) return connected.response;
     const state = connected.state;
@@ -1486,7 +1508,7 @@ export function createBrowserRoutes(deps: BrowserRouteDeps) {
   routes.post("/clear", openBudget, deps.requireUser, async (context) => {
     const actor = context.var.actor;
     const computerId = personBrowserId(actor.id);
-    const computers = deps.computers;
+    const computers = computersFor(deps, computerId);
     if (!computers) return context.json({ error: unavailable }, 503);
     let base: string;
     let answer: { status: number; body: unknown };

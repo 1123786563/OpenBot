@@ -3257,6 +3257,7 @@ export function mountCopilotRuntime(
     directChat?: Pick<
       Parameters<typeof createDirectChatRoutes>[0],
       | "database"
+      | "computerTools"
       | "profiles"
       | "reflect"
       | "memoryVersionsCurrent"

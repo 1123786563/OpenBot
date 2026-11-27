@@ -20,6 +20,7 @@
  * The refs are opaque to the caller precisely so that the server holds the mapping.
  */
 
+import { createHash } from "node:crypto";
 import { DECLINED_BY_PERSON } from "@openbot/shared/approval-outcomes";
 import type {
   ControlRequestInput,
@@ -28,6 +29,30 @@ import type {
 } from "@openbot/shared/computer-control";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { z } from "zod";
+import {
+  BROWSER_DOWNLOAD_ID,
+  type BrowserDownloadResult,
+  type ManualBrowserDownloads,
+  manualBrowserDownloads,
+} from "../../../shared/browser-download";
+import {
+  BROWSER_UPLOAD_LIMIT,
+  type BrowserUploadInput,
+  type BrowserUploadResult,
+  browserUploadDispatch,
+  browserUploadFile,
+  browserUploadIdentity,
+  browserUploadInput,
+  browserUploadResult,
+  unknownBrowserUpload,
+} from "../../../shared/browser-upload";
+import {
+  botBrowserActionPaths,
+  browserControlPaths,
+  browserObservationPaths,
+  humanBrowserInputPaths,
+} from "../../../shared/computer-browser-paths";
 import {
   ApprovalAlreadyAnsweredError,
   type ApprovalGate,
@@ -41,14 +66,19 @@ import {
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
+import { ownsPersonBrowser, personBrowserId } from "../browser/person";
 import { withUntrustedNotice } from "../untrusted-content";
+import { createBrowserDownloadHandoff } from "./browser-download";
 import {
   type ComputerConnection,
   ComputerStillStartingError,
   ComputerStoppedError,
   ComputerUnavailableError,
   createComputerTransport,
+  HumanHasControlError,
   StaleSnapshotError,
+  WorkspaceNotFoundError,
+  WorkspaceRequestError,
 } from "./client";
 import {
   type ComputerKey,
@@ -59,7 +89,7 @@ import {
   seatText,
 } from "./computer-key";
 import { computerTokenOf } from "./computer-token";
-import { checkComputerAddress } from "./target";
+import { checkComputerAddress, checkNavigationTarget } from "./target";
 
 export {
   ActionUnfinishedError,
@@ -76,6 +106,8 @@ export {
   WorkspaceTooLargeError,
 } from "./client";
 
+import type { BrowserProvider } from "../browser/cubesandbox";
+import type { ExecutionConnectionMode } from "./openshell-execution";
 import type { PageFrameStore } from "./page-frames";
 import {
   type ActionPolicy,
@@ -84,10 +116,11 @@ import {
   type PolicyDecision,
   policyInitiator,
 } from "./policy";
-import type {
-  ComputerProvider,
-  ComputerTarget,
-  ComputerUpdate,
+import {
+  type ComputerProvider,
+  type ComputerTarget,
+  type ComputerUpdate,
+  ProviderError,
 } from "./provider";
 import type {
   ActionResult,
@@ -150,10 +183,21 @@ export type ActionActor = {
 export type ComputerGatewayOptions = {
   approvalGate?: ApprovalGate;
   provider: ComputerProvider;
+  browserProvider?: BrowserProvider;
   /** Revalidate a caller-scoped connection immediately before a Computer request. */
   connect?: (
     seat: ComputerSeat,
   ) => Promise<ComputerConnection & { token: string }>;
+  execution?: {
+    pilotUsers: ReadonlySet<string>;
+    connect(
+      seat: ComputerSeat,
+      mode?: ExecutionConnectionMode,
+    ): Promise<ComputerConnection>;
+    stop?(seat: ComputerSeat): Promise<boolean>;
+    clear?(seat: ComputerSeat): Promise<boolean>;
+    stopPerson?(personId: string): Promise<boolean>;
+  };
   signal?: AbortSignal;
   auditStore: AuditStore;
   /** Absent denies everything. See evaluateActionPolicy. */
@@ -233,10 +277,37 @@ export interface ComputerGateway {
    */
   tokenFor(seat: ComputerSeat): string | undefined;
   locate(seat: ComputerSeat): Promise<string>;
+  usesExecution?(seat: ComputerSeat): boolean;
+  terminalConnection(
+    seat: ComputerSeat,
+    mode?: ExecutionConnectionMode,
+  ): Promise<ComputerConnection>;
   status(seat: ComputerSeat): Promise<ComputerStatus>;
+  browserFor?(
+    seat: ComputerSeat,
+  ):
+    | Pick<ComputerGateway, "locate" | "status" | "tokenFor" | "addressOf">
+    | undefined;
   screenshot(seat: ComputerSeat): Promise<ScreenshotResult>;
   snapshot(seat: ComputerSeat): Promise<SnapshotResult>;
   read(seat: ComputerSeat): Promise<ReadResult>;
+  listManualBrowserDownloads?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    signal?: AbortSignal,
+  ): Promise<ManualBrowserDownloads>;
+  deliverManualBrowserDownload?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserDownloadResult>;
+  retryBrowserDownload?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserDownloadResult>;
   navigate(
     seat: ComputerSeat,
     actor: ActionActor,
@@ -271,6 +342,20 @@ export interface ComputerGateway {
     actor: ActionActor,
     input: ReadFileInput,
   ): Promise<ReadFileResult>;
+  supportsBrowserUpload?(seat: ComputerSeat): boolean;
+  uploadBrowserFile?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    input: BrowserUploadInput,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
+  humanUploadBrowserFile?(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    input: BrowserUploadInput,
+    signal?: AbortSignal,
+  ): Promise<BrowserUploadResult>;
+
   downloadFile(
     seat: ComputerSeat,
     actor: ActionActor,
@@ -297,7 +382,11 @@ export interface ComputerGateway {
     actor: ActionActor,
     input: WriteFileInput,
   ): Promise<WriteFileResult>;
-  control(seat: ComputerSeat, requestId?: string): Promise<ControlState>;
+  control(
+    seat: ComputerSeat,
+    requestId?: string,
+    terminal?: boolean,
+  ): Promise<ControlState>;
   /** `source` is `manual` for a person taking the wheel themselves; the Bot's own requests are `model`. */
   requestHelp(
     seat: ComputerSeat,
@@ -305,21 +394,25 @@ export interface ComputerGateway {
     reason: string,
     toolCallId?: string,
     source?: RequestHelpSource,
+    terminal?: boolean,
   ): Promise<ControlState>;
   takeControl(
     seat: ComputerSeat,
     actor: ActionActor,
     requestId: string,
+    terminal?: boolean,
   ): Promise<ControlState>;
   releaseControl(
     seat: ComputerSeat,
     actor: ActionActor,
     requestId: string,
+    terminal?: boolean,
   ): Promise<ControlState>;
   cancelControl(
     seat: ComputerSeat,
     actor: ActionActor,
     requestId: string,
+    terminal?: boolean,
   ): Promise<ControlState>;
   requestSecret(
     seat: ComputerSeat,
@@ -360,6 +453,16 @@ export interface ComputerGateway {
   ): Promise<{ cleared: boolean }>;
   /** Move a listed computer onto the current image. An administrator's action. */
   updateTarget(key: ComputerKey, actor: ActionActor): Promise<ComputerUpdate>;
+  pilotLifecycle?(seat: ComputerSeat): { browser: boolean; execution: boolean };
+  changePilotLifecycle?(
+    action:
+      | "stop-execution"
+      | "stop-personal"
+      | "reset-profile"
+      | "clear-workspace",
+    seat: ComputerSeat,
+    actor: ActionActor,
+  ): Promise<{ changed: boolean }>;
   stopComputer(
     seat: ComputerSeat,
     actor: ActionActor,
@@ -379,6 +482,8 @@ export interface ComputerGateway {
     actor: ActionActor,
   ): Promise<ComputerUpdate>;
 }
+
+const browserRun = z.object({ run: z.string().trim().min(1) });
 
 export function createComputerGateway(
   options: ComputerGatewayOptions,
@@ -430,10 +535,89 @@ export function createComputerGateway(
     return computerTokenOf(provider, seat.key, options.token);
   }
 
+  function browserProviderFor(seat: ComputerSeat) {
+    return options.browserProvider?.serves(seat)
+      ? options.browserProvider
+      : undefined;
+  }
+
+  function browserFor(seat: ComputerSeat) {
+    const browser = browserProviderFor(seat);
+    if (!browser) return undefined;
+    return {
+      locate: async (target: ComputerSeat) => {
+        try {
+          return checkedAddress(await browser.locate(target));
+        } catch (error) {
+          if (!(error instanceof ProviderError)) throw error;
+          throw new ComputerUnavailableError(error.message);
+        }
+      },
+      status: browser.status,
+      tokenFor: browser.tokenFor,
+      addressOf: (target: ComputerSeat) => ({ botId: target.botId }),
+    };
+  }
+
+  const browserPaths = new Set([
+    ...botBrowserActionPaths,
+    ...browserObservationPaths,
+    ...humanBrowserInputPaths,
+    ...browserControlPaths,
+    "/snapshot",
+    "/human/browser-upload",
+  ]);
+  const browserPath = (path: string) =>
+    browserPaths.has(path.split("?", 1)[0] ?? path);
+
+  function usesExecution(seat: ComputerSeat): boolean {
+    return (
+      seat.key.kind === "person" &&
+      (options.execution?.pilotUsers.has(seat.key.personId) === true ||
+        browserProviderFor(seat) !== undefined)
+    );
+  }
+
+  async function executionAt(
+    seat: ComputerSeat,
+    mode?: ExecutionConnectionMode,
+  ): Promise<ComputerConnection> {
+    if (!usesExecution(seat)) return at(seat, undefined, false);
+    if (
+      !options.execution ||
+      seat.key.kind !== "person" ||
+      !options.execution.pilotUsers.has(seat.key.personId)
+    ) {
+      throw new ComputerUnavailableError(
+        "OpenShell execution is not configured for this pilot seat.",
+      );
+    }
+    try {
+      const connection = await options.execution.connect(seat, mode);
+      return {
+        ...connection,
+        url: checkedAddress(connection.url),
+        redirect: "error",
+      };
+    } catch (error) {
+      throw new ComputerUnavailableError(
+        error instanceof Error ? error.message : "OpenShell is unavailable.",
+      );
+    }
+  }
+
   async function at(
     seat: ComputerSeat,
     locatedUrl?: string,
+    browser = true,
   ): Promise<ComputerConnection> {
+    const host = browser ? browserFor(seat) : undefined;
+    if (host)
+      return {
+        url: locatedUrl ?? (await host.locate(seat)),
+        token: host.tokenFor(seat),
+        redirect: "error",
+      };
     if (options.connect) {
       const connection = await options.connect(seat);
       const url = checkedAddress(connection.url);
@@ -480,14 +664,27 @@ export function createComputerGateway(
     return verdict.url;
   }
 
+  function requestAddress(seat: ComputerSeat, path: string) {
+    return (
+      (browserPath(path) ? browserFor(seat)?.addressOf(seat) : undefined) ??
+      addressOf(seat)
+    );
+  }
+
+  const locateBrowser = (seat: ComputerSeat) =>
+    (browserFor(seat)?.locate ?? locate)(seat);
+
   async function get<T>(
     seat: ComputerSeat,
     path: string,
     signal?: AbortSignal,
+    terminal = false,
   ): Promise<T> {
     return transport.call<T>(
-      await at(seat),
-      addressOf(seat),
+      terminal
+        ? await executionAt(seat, "observe")
+        : await at(seat, undefined, browserPath(path)),
+      terminal ? addressOf(seat) : requestAddress(seat, path),
       path,
       undefined,
       signal,
@@ -510,7 +707,179 @@ export function createComputerGateway(
     address?: string,
   ): Promise<T> {
     return transport.post<T>(
-      await at(seat, address),
+      await at(seat, address, browserPath(path)),
+      requestAddress(seat, path),
+      path,
+      payload,
+      signal,
+      timeoutMs,
+    );
+  }
+
+  const browserDownloads = createBrowserDownloadHandoff({
+    transport,
+    auditStore,
+    executionAt,
+  });
+
+  const pilotBot = (seat: ComputerSeat, actor: ActionActor) =>
+    seat.key.kind === "person" &&
+    seat.key.personId === actor.id &&
+    !isPersonBrowserId(seat.botId) &&
+    browserProviderFor(seat) !== undefined;
+
+  function personalDownloadSource(seat: ComputerSeat, actor: ActionActor) {
+    const browser = browserFor(seat);
+    if (
+      !ownsPersonBrowser(actor, seat.botId) ||
+      !browser ||
+      !options.execution?.pilotUsers.has(actor.id)
+    ) {
+      throw new WorkspaceNotFoundError(
+        "Personal browser downloads are unavailable.",
+      );
+    }
+    return browser;
+  }
+
+  const supportsBrowserUpload = (seat: ComputerSeat) =>
+    seat.key.kind === "person" &&
+    options.execution?.pilotUsers.has(seat.key.personId) === true &&
+    pilotBot(seat, { id: seat.key.personId });
+
+  function prepareBrowserUpload(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    input: BrowserUploadInput,
+  ) {
+    if (
+      !supportsBrowserUpload(seat) ||
+      seat.key.kind !== "person" ||
+      seat.key.personId !== actor.id
+    )
+      throw new WorkspaceNotFoundError("Pilot workspace not found.");
+    const { path, url, field } = browserUploadInput.parse(input);
+    const target = checkNavigationTarget(url);
+    if (!target.allowed) throw new ActionRefusedError(target.reason, null);
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    return { path, url, field, name };
+  }
+
+  async function workspaceUpload(
+    seat: ComputerSeat,
+    path: string,
+    includeContent: boolean,
+    signal?: AbortSignal,
+  ) {
+    return transport.call<unknown>(
+      await executionAt(seat),
+      seat.botId,
+      `/files/browser-upload?path=${encodeURIComponent(path)}${includeContent ? "&content=1" : ""}`,
+      undefined,
+      signal,
+    );
+  }
+
+  async function readWorkspaceUpload(
+    seat: ComputerSeat,
+    path: string,
+    signal?: AbortSignal,
+  ) {
+    const payload = browserUploadFile.parse(
+      await workspaceUpload(seat, path, true, signal),
+    );
+    const bytes = Buffer.from(payload.content, "base64");
+    if (bytes.length > BROWSER_UPLOAD_LIMIT)
+      throw new ApprovalRefusedError(
+        "The upload exceeds the single-file size limit.",
+      );
+    return {
+      ...payload,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  }
+
+  async function dispatchBrowserUpload(
+    seat: ComputerSeat,
+    path: string,
+    payload: unknown,
+    signal?: AbortSignal,
+    address?: string,
+  ): Promise<BrowserUploadResult> {
+    const connection = await at(seat, address);
+    try {
+      return browserUploadResult.parse(
+        await transport.post<unknown>(
+          connection,
+          requestAddress(seat, path),
+          path,
+          payload,
+          signal,
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof HumanHasControlError ||
+        error instanceof StaleSnapshotError
+      )
+        throw error;
+      return unknownBrowserUpload();
+    }
+  }
+
+  async function browserAction<T extends object>(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    path: string,
+    address: string | undefined,
+    run: (
+      connection: ComputerConnection,
+      target: ReturnType<typeof requestAddress>,
+    ) => Promise<T & { browserDownload?: unknown }>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const connection = await at(seat, address);
+    const target = requestAddress(seat, path);
+    const result = await run(connection, target);
+    if (!pilotBot(seat, actor)) return result;
+    return browserDownloads.finish<T>(
+      result,
+      seat,
+      actor,
+      connection,
+      target,
+      signal,
+    );
+  }
+
+  function browserGesture(
+    seat: ComputerSeat,
+    actor: ActionActor,
+    path: string,
+    input: object,
+    signal?: AbortSignal,
+    address?: string,
+  ) {
+    return browserAction<ActionResult>(
+      seat,
+      actor,
+      path,
+      address,
+      (connection, target) =>
+        transport.post(connection, target, path, input, signal),
+      signal,
+    );
+  }
+
+  async function executionPost<T>(
+    seat: ComputerSeat,
+    path: string,
+    payload: unknown,
+    signal?: AbortSignal,
+    timeoutMs?: number,
+  ): Promise<T> {
+    return transport.post<T>(
+      await executionAt(seat),
       addressOf(seat),
       path,
       payload,
@@ -537,7 +906,7 @@ export function createComputerGateway(
     seat: ComputerSeat,
   ): Promise<{ address?: string; starting?: ComputerStillStartingError }> {
     try {
-      return { address: await locate(seat) };
+      return { address: await locateBrowser(seat) };
     } catch (error) {
       return error instanceof ComputerStillStartingError
         ? { starting: error }
@@ -578,7 +947,7 @@ export function createComputerGateway(
    * on the store.
    */
   async function snapshot(seat: ComputerSeat): Promise<SnapshotResult> {
-    const base = await locate(seat);
+    const base = await locateBrowser(seat);
     /*
      * Which run this is, asked before the page is drawn rather than after it.
      *
@@ -592,39 +961,56 @@ export function createComputerGateway(
      * Nothing resolves against it and the next snapshot supersedes it, which is the direction this is
      * allowed to fail in.
      */
-    const run = await sessionOf(seat);
+    const cube = browserProviderFor(seat);
+    const session = await sessionOf(seat, base);
+    if (cube && !session)
+      throw new ComputerUnavailableError(
+        "The browser run could not be identified.",
+      );
     const result = await transport.call<SnapshotResult>(
       await at(seat, base),
-      addressOf(seat),
+      requestAddress(seat, "/snapshot"),
       "/snapshot",
       { method: "POST" },
     );
+    if (cube && session !== (await sessionOf(seat, base)))
+      throw new ComputerUnavailableError(
+        "The browser run changed during the snapshot.",
+      );
     await snapshots.save(seatText(seat), {
       snapshotId: result.snapshotId,
       url: result.url,
       elements: new Map(
         result.elements.map((element) => [element.ref, element]),
       ),
-      ...run,
+      ...(session ? { session } : {}),
     });
     // Element names and values are whatever the page says they are, so they are marked too.
     return withUntrustedNotice(result, "web page", SNAPSHOT_FIELDS);
   }
 
-  /**
-   * Which run of the computer this is, shaped to spread into a snapshot.
-   *
-   * Absent for a provider that cannot say, and absent if asking fails: a session that cannot be read
-   * must not stop a snapshot being recorded, because a snapshot nobody stored is a ref that resolves
-   * to nothing and a boundary deciding with no element in front of it.
-   */
-  async function sessionOf(seat: ComputerSeat): Promise<{ session?: string }> {
-    if (!provider.sessionOf) return {};
+  // Read Cube's seat identity over the same located endpoint and token as the action.
+  // Legacy providers can still omit a run ID.
+  async function sessionOf(
+    seat: ComputerSeat,
+    address?: string,
+  ): Promise<string | undefined> {
+    const browser = browserProviderFor(seat);
     try {
-      const session = await provider.sessionOf(seat);
-      return session ? { session } : {};
+      if (browser) {
+        if (!address) return undefined;
+        const identity = browserRun.safeParse(
+          await transport.call<unknown>(
+            await at(seat, address),
+            { botId: seat.botId },
+            "/run",
+          ),
+        );
+        return identity.success ? `cube:${identity.data.run}` : undefined;
+      }
+      return (await provider.sessionOf?.(seat)) || undefined;
     } catch {
-      return {};
+      return undefined;
     }
   }
 
@@ -658,8 +1044,8 @@ export function createComputerGateway(
     /**
      * The run of the computer the action is reaching, when the provider can say.
      *
-     * Undefined means unknown, not mismatched: a provider that could not be asked leaves the
-     * generation check exactly as it was, rather than refusing every ref it holds.
+     * Legacy providers can omit this value and fall back to the generation check.
+     * Cube citations must have a matching run before reaching this lookup.
      */
     session?: string,
   ): SnapshotElement | undefined {
@@ -720,6 +1106,12 @@ export function createComputerGateway(
       command?: string;
       /** The person's Stop, on its way to the browser. See the acting methods below. */
       signal?: AbortSignal;
+      upload?: {
+        fileName: string;
+        fileIdentity: string;
+        sha256: string;
+        field: string;
+      };
     },
     run: (address?: string) => Promise<T>,
   ): Promise<T> {
@@ -746,8 +1138,13 @@ export function createComputerGateway(
      */
     const located = ref ? await locateForAction(seat) : undefined;
     const address = located?.address;
-    const { session } = ref ? await sessionOf(seat) : { session: undefined };
-    const element = resolve(stored, ref, snapshotId, session);
+    const session = ref ? await sessionOf(seat, address) : undefined;
+    const requiresRun =
+      ref !== undefined && browserProviderFor(seat) !== undefined;
+    const element =
+      requiresRun && (!session || stored?.session !== session)
+        ? undefined
+        : resolve(stored, ref, snapshotId, session);
     // For a navigation the relevant page is the one being opened, not the one already loaded. Using
     // the stored URL would mean `page.host == "..."` could never match the destination, which is the
     // only thing a rule about navigation would ever want to say.
@@ -847,7 +1244,7 @@ export function createComputerGateway(
      * have failed to resolve. A computer this server has no snapshot for at all is a different
      * situation: there is no page here to judge the citation against, the computer is the only
      * party that can, and refusing locally would take its answer away, including the one that says
-     * a person has taken the wheel. What is refused here is a citation this server can see is stale.
+     * a person has taken the wheel. Cube requires a stored snapshot and a matching browser run.
      *
      * Either refusal still leaves a row: an action whose ref resolves to nothing is still an action
      * somebody tried to take, and it is on the trail as one that did not happen.
@@ -862,25 +1259,33 @@ export function createComputerGateway(
     let approval: Awaited<ReturnType<ApprovalGate>>;
     try {
       if (located?.starting) throw located.starting;
-      if (ref && stored && !element) {
+      if ((requiresRun || (ref && stored)) && !element) {
         throw new StaleSnapshotError(
           `${ref} is not on the page this computer is showing, so nothing can be checked against it before acting. Take a fresh snapshot and use the refs it returns.`,
         );
       }
       const continuation = currentApprovalContext();
+      if (subject.upload && !options.approvalGate)
+        throw new ApprovalRefusedError(
+          "Browser upload requires one-time approval.",
+        );
       approval = await options.approvalGate?.({
         actorId: actor.id,
         botId: seat.botId,
         toolRef: toolName,
         effect: approvalEffectOf(intent),
-        scope: approvalScopeOf({
-          filePath,
-          command: subject.command,
-          pageUrl,
-        }),
+        scope: subject.upload
+          ? new URL(pageUrl).origin
+          : approvalScopeOf({
+              filePath,
+              command: subject.command,
+              pageUrl,
+            }),
         args: continuation?.args ?? { ...subject, signal: undefined },
+        ...(subject.upload ? { requireOneTime: true } : {}),
         target: {
           pageUrl,
+          ...subject.upload,
           ...(element ? { element, snapshotId } : {}),
           ...(filePath ? { filePath } : {}),
         },
@@ -928,6 +1333,10 @@ export function createComputerGateway(
      * allowed action may have partial effects before failing and the trail has to say both that it
      * was sent and that it did not succeed. The audit page shows the pair as the one action it is.
      */
+    if (subject.upload && !approval?.approvalId)
+      throw new ApprovalRefusedError(
+        "Browser upload requires one-time approval.",
+      );
     const attempt = crypto.randomUUID();
     await write(auditStore, { ...subjectOf, attempt });
     let result: T;
@@ -1042,8 +1451,11 @@ export function createComputerGateway(
     seatFor: (botId: string, personId: string) =>
       seats.seatFor(botId, personId),
     addressOf,
+    browserFor,
     tokenFor,
     locate,
+    usesExecution,
+    terminalConnection: executionAt,
     screenshot,
     snapshot,
     read,
@@ -1067,12 +1479,17 @@ export function createComputerGateway(
       reason: string,
       toolCallId?: string,
       source: RequestHelpSource = "model",
+      terminal = false,
     ) {
-      const state = await post<ControlState>(seat, "/control/request", {
-        reason,
-        ...(toolCallId ? { toolCallId } : {}),
-        source,
-      } satisfies RequestHelpInput);
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/request",
+        {
+          reason,
+          ...(toolCallId ? { toolCallId } : {}),
+          source,
+        } satisfies RequestHelpInput,
+      );
       await writeControlEvent(auditStore, "computer.help_requested", {
         seat,
         actor,
@@ -1085,13 +1502,18 @@ export function createComputerGateway(
       seat: ComputerSeat,
       actor: ActionActor,
       requestId: string,
+      terminal = false,
     ) {
       // Who took it, which the computer keeps as `heldBy`: the Bot's browser's bar and Record are that person's alone
       // (shared/bot-browser.ts), so a recording is never filed under someone who was only watching.
-      const state = await post<ControlState>(seat, "/control/take", {
-        requestId,
-        by: actor.id,
-      } satisfies ControlRequestInput);
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/take",
+        {
+          requestId,
+          by: actor.id,
+        } satisfies ControlRequestInput,
+      );
       await writeControlEvent(auditStore, "computer.control_taken", {
         seat,
         actor,
@@ -1106,10 +1528,15 @@ export function createComputerGateway(
       seat: ComputerSeat,
       actor: ActionActor,
       requestId: string,
+      terminal = false,
     ) {
-      const state = await post<ControlState>(seat, "/control/release", {
-        requestId,
-      });
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/release",
+        {
+          requestId,
+        },
+      );
       await writeControlEvent(auditStore, "computer.control_released", {
         seat,
         actor,
@@ -1121,10 +1548,15 @@ export function createComputerGateway(
       seat: ComputerSeat,
       actor: ActionActor,
       requestId: string,
+      terminal = false,
     ) {
-      const state = await post<ControlState>(seat, "/control/cancel", {
-        requestId,
-      });
+      const state = await (terminal ? executionPost : post)<ControlState>(
+        seat,
+        "/control/cancel",
+        {
+          requestId,
+        },
+      );
       await writeControlEvent(auditStore, "computer.help_cancelled", {
         seat,
         actor,
@@ -1132,10 +1564,16 @@ export function createComputerGateway(
       return state;
     },
 
-    control(seat: ComputerSeat, requestId?: string): Promise<ControlState> {
+    control(
+      seat: ComputerSeat,
+      requestId?: string,
+      terminal = false,
+    ): Promise<ControlState> {
       return get<ControlState>(
         seat,
         `/control${requestId ? `?requestId=${encodeURIComponent(requestId)}` : ""}`,
+        undefined,
+        terminal,
       );
     },
 
@@ -1202,6 +1640,91 @@ export function createComputerGateway(
           };
         }),
       };
+    },
+
+    pilotLifecycle(seat) {
+      return {
+        browser: browserProviderFor(seat)?.reset !== undefined,
+        execution:
+          seat.key.kind === "person" &&
+          options.execution?.pilotUsers.has(seat.key.personId) === true,
+      };
+    },
+
+    async changePilotLifecycle(action, seat, actor) {
+      const browser = browserProviderFor(seat);
+      const execution =
+        seat.key.kind === "person" &&
+        options.execution?.pilotUsers.has(seat.key.personId)
+          ? options.execution
+          : undefined;
+      let changed: boolean;
+      try {
+        switch (action) {
+          case "reset-profile":
+            if (!browser?.reset)
+              throw new Error(
+                "Browser profile reset is unavailable for this seat.",
+              );
+            await browser.reset(seat);
+            changed = true;
+            break;
+          case "clear-workspace":
+            if (!execution?.clear || isPersonBrowserId(seat.botId))
+              throw new Error("Workspace clear is unavailable for this seat.");
+            changed = await execution.clear(seat);
+            break;
+          case "stop-execution":
+            if (!execution?.stop || isPersonBrowserId(seat.botId))
+              throw new Error("Execution stop is unavailable for this seat.");
+            changed = await execution.stop(seat);
+            break;
+          case "stop-personal": {
+            if (
+              !browser?.stop ||
+              !options.execution?.stopPerson ||
+              !options.execution.pilotUsers.has(actor.id)
+            )
+              throw new Error(
+                "Personal computer stop requires both pilot providers.",
+              );
+            const results = await Promise.allSettled([
+              browser.stop(seat),
+              options.execution.stopPerson(actor.id),
+            ]);
+            if (results.some((result) => result.status === "rejected"))
+              throw new Error(
+                "The personal computer did not fully stop. Retry to stop any remaining sessions.",
+              );
+            changed = results.some(
+              (result) => result.status === "fulfilled" && result.value,
+            );
+            break;
+          }
+        }
+      } catch (error) {
+        throw new ComputerUnavailableError(
+          error instanceof Error
+            ? error.message
+            : "The computer action could not complete.",
+        );
+      }
+      await writeControlEvent(
+        auditStore,
+        action === "reset-profile" || action === "clear-workspace"
+          ? "computer.reset"
+          : "computer.stopped",
+        {
+          seat:
+            action === "stop-personal"
+              ? { key: personSeat(actor.id, seat.botId).key }
+              : seat,
+          actor,
+          reason: action,
+        },
+      );
+      if (action === "reset-profile") await forget(seatText(seat));
+      return { changed };
     },
 
     /**
@@ -1416,6 +1939,116 @@ export function createComputerGateway(
       return post<HumanInputResult>(seat, `/human/${kind}`, payload);
     },
 
+    async listManualBrowserDownloads(seat, actor, signal) {
+      const browser = personalDownloadSource(seat, actor);
+      return manualBrowserDownloads.parse(
+        await transport.call<unknown>(
+          await at(seat),
+          browser.addressOf(seat),
+          "/browser-downloads",
+          undefined,
+          signal,
+        ),
+      );
+    },
+
+    async deliverManualBrowserDownload(seat, actor, id, signal) {
+      if (!pilotBot(seat, actor) || !BROWSER_DOWNLOAD_ID.test(id))
+        throw new WorkspaceNotFoundError("Browser download not found.");
+      const source = await seats.seatFor(personBrowserId(actor.id), actor.id);
+      const browser = personalDownloadSource(source, actor);
+      return browserDownloads.deliver(
+        seat,
+        actor,
+        id,
+        await at(source),
+        browser.addressOf(source),
+        signal,
+      );
+    },
+
+    supportsBrowserUpload,
+
+    async uploadBrowserFile(seat, actor, input, signal) {
+      const { path, url, field, name } = prepareBrowserUpload(
+        seat,
+        actor,
+        input,
+      );
+      const snapshot = await workspaceUpload(seat, path, false, signal).catch(
+        (error: unknown) => {
+          if (error instanceof WorkspaceRequestError)
+            throw new ApprovalRefusedError(error.message);
+          throw error;
+        },
+      );
+      const { identity, sha256 } = browserUploadIdentity.parse(snapshot);
+      return govern(
+        "computer_upload_browser_file",
+        seat,
+        actor,
+        {
+          filePath: path,
+          targetUrl: url,
+          upload: { fileName: name, fileIdentity: identity, sha256, field },
+        },
+        async (address) => {
+          const file = await readWorkspaceUpload(seat, path, signal);
+          if (file.identity !== identity || file.sha256 !== sha256)
+            throw new ApprovalRefusedError(
+              "The approved file changed. Request a new approval.",
+            );
+          const dispatch = browserUploadDispatch.parse({
+            url,
+            field,
+            name,
+            content: file.content,
+          });
+          return dispatchBrowserUpload(
+            seat,
+            "/browser-upload",
+            dispatch,
+            signal,
+            address,
+          );
+        },
+      );
+    },
+
+    async humanUploadBrowserFile(seat, actor, input, signal) {
+      const { path, url, field, name } = prepareBrowserUpload(
+        seat,
+        actor,
+        input,
+      );
+      const { content } = await readWorkspaceUpload(seat, path, signal);
+      const dispatch = browserUploadDispatch.parse({
+        url,
+        field,
+        name,
+        content,
+      });
+      return dispatchBrowserUpload(
+        seat,
+        "/human/browser-upload",
+        { ...dispatch, by: actor.id },
+        signal,
+      );
+    },
+
+    async retryBrowserDownload(seat, actor, id, signal) {
+      if (!pilotBot(seat, actor) || !BROWSER_DOWNLOAD_ID.test(id))
+        throw new WorkspaceNotFoundError("Browser download not found.");
+      return browserDownloads.deliver(
+        seat,
+        actor,
+        id,
+        await at(seat),
+        requestAddress(seat, "/navigate"),
+        signal,
+      );
+    },
+
     /**
      * Opening a page, through the gateway so it lands in the audit trail.
      *
@@ -1428,13 +2061,15 @@ export function createComputerGateway(
       url: string,
       toolCallId?: string,
     ) {
-      return govern(
-        "computer_navigate",
-        seat,
-        actor,
-        { targetUrl: url },
-        async () =>
-          transport.navigate(await at(seat), addressOf(seat), url, toolCallId),
+      return govern("computer_navigate", seat, actor, { targetUrl: url }, () =>
+        browserAction<NavigateResult>(
+          seat,
+          actor,
+          "/navigate",
+          undefined,
+          (connection, target) =>
+            transport.navigate(connection, target, url, toolCallId),
+        ),
       ).then((result) => withUntrustedNotice(result, "web page", PAGE_FIELDS));
     },
 
@@ -1475,16 +2110,18 @@ export function createComputerGateway(
           // including one pressed while the action waits for approval), and the computer checks the
           // ref against the live page as `/click` does, so a link from a snapshot the browser has
           // since left is refused as stale rather than opened.
-          async (address) =>
-            transport.navigate(
-              await at(seat, address),
-              addressOf(seat),
-              follow.url,
-              undefined,
-              {
-                ...(signal ? { signal } : {}),
-                citation: { ref: input.ref, snapshotId: input.snapshotId },
-              },
+          (address) =>
+            browserAction<NavigateResult>(
+              seat,
+              actor,
+              "/navigate",
+              address,
+              (connection, target) =>
+                transport.navigate(connection, target, follow.url, undefined, {
+                  ...(signal ? { signal } : {}),
+                  citation: { ref: input.ref, snapshotId: input.snapshotId },
+                }),
+              signal,
             ),
         );
         return {
@@ -1495,6 +2132,7 @@ export function createComputerGateway(
           url: opened.url,
           elapsedMs: opened.elapsedMs,
           ...(opened.challenge ? { challenge: opened.challenge } : {}),
+          ...(opened.download ? { download: opened.download } : {}),
         };
       }
       return govern(
@@ -1507,7 +2145,7 @@ export function createComputerGateway(
           ...(signal ? { signal } : {}),
         },
         (address) =>
-          post<ActionResult>(seat, "/click", input, signal, undefined, address),
+          browserGesture(seat, actor, "/click", input, signal, address),
       );
     },
 
@@ -1536,7 +2174,7 @@ export function createComputerGateway(
           ...(signal ? { signal } : {}),
         },
         (address) =>
-          post<ActionResult>(seat, "/type", input, signal, undefined, address),
+          browserGesture(seat, actor, "/type", input, signal, address),
       );
     },
 
@@ -1559,13 +2197,13 @@ export function createComputerGateway(
           ...(signal ? { signal } : {}),
         },
         (address) =>
-          post<ActionResult>(seat, "/key", input, signal, undefined, address),
+          browserGesture(seat, actor, "/key", input, signal, address),
       );
     },
 
     scroll(seat: ComputerSeat, actor: ActionActor, input: ScrollInput) {
       return govern("computer_scroll", seat, actor, {}, () =>
-        post<ActionResult>(seat, "/scroll", input),
+        browserGesture(seat, actor, "/scroll", input),
       );
     },
 
@@ -1582,7 +2220,7 @@ export function createComputerGateway(
         seat,
         actor,
         { filePath: input.path },
-        () => post<ReadFileResult>(seat, "/files/read", input),
+        () => executionPost<ReadFileResult>(seat, "/files/read", input),
       ).then((result) =>
         // A workspace file is whatever the Bot downloaded or was sent, so it is outside content.
         withUntrustedNotice(result, "workspace file", ["text"]),
@@ -1609,7 +2247,7 @@ export function createComputerGateway(
         { filePath: input.path, ...(signal ? { signal } : {}) },
         async () => {
           const download = await transport.download(
-            await at(seat),
+            await executionAt(seat),
             addressOf(seat),
             `/files/download?path=${encodeURIComponent(input.path)}`,
             signal,
@@ -1634,7 +2272,7 @@ export function createComputerGateway(
         seat,
         actor,
         { filePath: input.path ?? "." },
-        () => post<ListFilesResult>(seat, "/files/list", input),
+        () => executionPost<ListFilesResult>(seat, "/files/list", input),
       );
     },
 
@@ -1657,7 +2295,7 @@ export function createComputerGateway(
         actor,
         { command: input.command, ...(caller ? { signal: caller } : {}) },
         () =>
-          post<RunCommandResult>(
+          executionPost<RunCommandResult>(
             seat,
             "/exec",
             input,
@@ -1676,7 +2314,7 @@ export function createComputerGateway(
         seat,
         actor,
         { filePath: input.path },
-        () => post<WriteFileResult>(seat, "/files/write", input),
+        () => executionPost<WriteFileResult>(seat, "/files/write", input),
       );
     },
   };
@@ -1789,6 +2427,8 @@ export function intentOf(
       return "read_file";
     case "computer_download_file":
       return "download_file";
+    case "computer_upload_browser_file":
+      return "upload_file";
     case "computer_write_file":
       return "write_file";
     case "computer_run_command":
@@ -1807,9 +2447,13 @@ export function intentOf(
 export function approvalEffectOf(
   intent: PolicyContext["intent"],
 ): "read" | "write" {
-  return ["activate", "type", "write_file", "run_command"].includes(
-    intent ?? "",
-  )
+  return [
+    "activate",
+    "type",
+    "write_file",
+    "upload_file",
+    "run_command",
+  ].includes(intent ?? "")
     ? "write"
     : "read";
 }

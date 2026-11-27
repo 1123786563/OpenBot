@@ -36,10 +36,8 @@ test("setting names rank ahead of matching descriptions without dropping task or
     searchAdminSettings("réquire sso")?.items.map(({ title }) => title),
   ).toEqual(["Identity providers"]);
   expect(
-    searchAdminSettings("governance and audit")?.items.map(
-      ({ title }) => title,
-    ),
-  ).toEqual(["Audit", "Test a policy"]);
+    searchAdminSettings("organization")?.items.map(({ title }) => title),
+  ).toEqual(["People", "Permissions", "Providers", "Identity providers"]);
   expect(searchAdminSettings("an unknown setting")?.items).toHaveLength(0);
 });
 

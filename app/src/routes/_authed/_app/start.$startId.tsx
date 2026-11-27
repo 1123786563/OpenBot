@@ -195,12 +195,12 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
   return (
     <Stack className="flex-1" minHeight={0}>
       <Stack
-        className="shrink-0"
+        as="header"
+        className="min-h-12 shrink-0 border-b border-border px-3 py-2"
         direction="horizontal"
         align="center"
         justify="between"
         gap={3}
-        style={{ paddingInline: "var(--spacing-4, 1rem)" }}
         data-slot="conversation-header"
       >
         <Stack
@@ -233,9 +233,8 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
             <ChatTranscript messages={[seedMessage(draft.text, startId)]} />
           </Stack>
           <Stack
-            className="mx-auto w-full max-w-3xl shrink-0"
+            className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4"
             gap={2}
-            style={{ padding: "var(--spacing-4, 1rem)" }}
           >
             {quote ? (
               <Banner

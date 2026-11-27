@@ -1,3 +1,5 @@
+import { HStack } from "@astryxdesign/core/HStack";
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconChevronLeft } from "@tabler/icons-react";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import * as React from "react";
@@ -85,7 +87,7 @@ export function PageShell({
   );
 
   const barRow = bar ? (
-    <div className="max-w-7xl w-full h-14 flex items-center gap-1 px-3">
+    <HStack className="h-14 w-full max-w-7xl px-3" align="center" gap={1}>
       {showToggle ? <SidebarToggle /> : null}
       {!!backButton && (
         <Link
@@ -99,7 +101,7 @@ export function PageShell({
           {backButton.label}
         </Link>
       )}
-    </div>
+    </HStack>
   ) : null;
 
   if (width === "full") {
@@ -108,15 +110,15 @@ export function PageShell({
        * Exactly the panel's height, never scrolls. `min-w-0` lets a table wider than the pane scroll
        * inside its own container instead of pushing the page sideways.
        */
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <VStack className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {barRow}
-        <div className={cn("shrink-0 px-4", bar ? "pt-8" : "pt-12")}>
+        <VStack className={cn("shrink-0 px-4", bar ? "pt-8" : "pt-12")}>
           {header}
-        </div>
-        <div className={cn("mt-6 flex min-h-0 flex-1 flex-col", className)}>
+        </VStack>
+        <VStack className={cn("mt-6 min-h-0 flex-1", className)}>
           {children}
-        </div>
-      </div>
+        </VStack>
+      </VStack>
     );
   }
 

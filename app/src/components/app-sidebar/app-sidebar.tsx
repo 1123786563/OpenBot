@@ -1,11 +1,27 @@
-import { IconLogout, IconPlus, IconSearch } from "@tabler/icons-react";
+import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
+import {
+  IconBolt,
+  IconBook,
+  IconBrain,
+  IconLogout,
+  IconMessageCirclePlus,
+  IconMessages,
+  IconPlus,
+  IconSearch,
+} from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Link, type LinkOptions, useParams } from "@tanstack/react-router";
+import { Link, useParams, useRouterState } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useRef, useState } from "react";
 import { useTranslation } from "@/i18n";
 import { astryxScope } from "@/components/astryx-pilot/theme";
+import { OpenBotLogo } from "@/components/edition/openbot-logo";
+import { ChannelAvatar } from "@/components/channels/avatar";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { BrandName } from "@/components/edition/brand-name";
 import {
   DropdownMenu,
@@ -23,15 +39,16 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { useOffersMemory } from "@/lib/deployment/queries";
 import { useSignOutOffered } from "@/lib/auth/sign-out-offered";
 import { untitledLine } from "@/lib/channels/label";
 import {
@@ -51,13 +68,11 @@ import { BotsNavBadge } from "../bot-profile/attention";
 import { BrowserNavItem } from "../browser/browser-nav-item";
 import { navigationRender } from "../edition/team-features-dialog";
 import { OpenBotVersion } from "../layout/openbot-version";
-import { Button } from "../ui/button";
+import { Button, buttonVariants } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
 import { ChannelPagination } from "./channel-pagination";
 import { useSignOut } from "./use-sign-out";
-
-const appLinkOptions = { to: "/" } satisfies LinkOptions;
 
 const userMenuItemClassName = "gap-2 px-2 py-1.5";
 
@@ -72,9 +87,13 @@ function UserAvatar() {
       .join("") ?? currentUser?.email.slice(0, 2).toUpperCase();
 
   return (
-    <div className="size-[28px] shrink-0 bg-muted-foreground/10 text-foreground/70 rounded-full flex items-center justify-center text-xs overflow-hidden">
+    <HStack
+      align="center"
+      justify="center"
+      className="size-8 shrink-0 overflow-hidden rounded-full bg-muted-foreground/10 text-xs"
+    >
       {initials}
-    </div>
+    </HStack>
   );
 }
 
@@ -211,19 +230,33 @@ function ChannelRow({
   );
 }
 
+type WorkspacePane = "chats" | "bots";
+
+function paneFor(pathname: string): WorkspacePane | null {
+  if (pathname.startsWith("/bots/") && pathname !== "/bots/") return "bots";
+  if (
+    pathname === "/" ||
+    pathname === "/bot" ||
+    pathname.startsWith("/channel/") ||
+    pathname.startsWith("/group/") ||
+    pathname.startsWith("/start/")
+  )
+    return "chats";
+  return null;
+}
+
 export function AppSidebar({
   navId,
   returnFocus,
+  desktopToggle,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
+  desktopToggle?: React.ReactNode;
   navId?: string;
   returnFocus?: React.RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useTranslation();
   const emphasis = useMessageListEmphasis();
-  const { data: currentUser } = useQuery(currentUserQueryOptions());
-  const signOut = useSignOut();
-  const signOutOffered = useSignOutOffered();
   const channels = useInfiniteQuery(channelListQueryOptions());
   // One socket for the app, opened where the roster is kept live.
   useChannelEvents();
@@ -239,213 +272,423 @@ export function AppSidebar({
    */
   const animateOrder =
     !searching && (channels.data?.length ?? 0) <= MAX_ANIMATED_ROWS;
-  const navigation = useNavigationItems();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpen } = useSidebar();
+  const pathname = useRouterState({
+    select: ({ location }) => location.pathname,
+  });
+  const [selection, setSelection] = useState<{
+    pathname: string;
+    pane: WorkspacePane;
+  }>();
+  const pane =
+    selection?.pathname === pathname ? selection.pane : paneFor(pathname);
+  const selectPane = (next: WorkspacePane) => {
+    setSelection({ pathname, pane: next });
+    if (!isMobile) setOpen(true);
+  };
 
   return (
-    <Sidebar
-      variant="inset"
-      {...(navId
-        ? {
-            ...astryxScope,
-            className: "astryx-web-nav",
-            id: isMobile ? undefined : navId,
-            mobileNavigation: {
-              title: t("nav.navigation", "Navigation"),
-              popup: {
+    <>
+      {!isMobile ? (
+        <WorkspaceNavigation pane={pane} selectPane={selectPane}>
+          {pane ? desktopToggle : null}
+        </WorkspaceNavigation>
+      ) : null}
+      {isMobile || pane ? (
+        <Sidebar
+          variant="inset"
+          {...(navId
+            ? {
                 ...astryxScope,
                 className: "astryx-web-nav",
-                id: navId,
-                finalFocus: returnFocus,
-              },
-            },
-          }
-        : {})}
-      {...props}
-    >
-      <SidebarHeader
-        className={navId && isMobile ? "h-12 p-2 pe-12" : "h-12 p-2"}
-      >
-        <SidebarMenu>
-          <SidebarMenuItem className="flex flex-row gap-1.5">
-            {/* The same hover as every other row in the sidebar, not the menu button's accent tint. */}
-            <SidebarMenuButton
-              className="font-semibold text-[14px] tracking-tighter h-full leading-tight hover:bg-foreground/5 hover:text-sidebar-foreground active:bg-foreground/5 active:text-sidebar-foreground"
-              render={(props) => (
-                <Link {...appLinkOptions} {...props}>
-                  <BrandName>{appConfig.brand.productName}</BrandName>
-                </Link>
-              )}
-            />
-            {/* Square, as tall as the name beside it, with the sidebar's hover rather than `muted`, which
-                is nearly the sidebar's own colour. */}
-            <Button
-              aria-label={t("nav.newConversation", "New conversation")}
-              className="aspect-square h-full w-auto hover:bg-foreground/5 dark:hover:bg-foreground/5"
-              size="icon"
-              variant="ghost"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/channel/new"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <IconPlus />
-            </Button>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent ref={scrollRoot} className="scroll-fade-b">
-        <nav aria-label={t("nav.workspace", "Workspace")}>
-          <SidebarGroup>
-            <SidebarGroupLabel>
-              {t("nav.workspace", "Workspace")}
-            </SidebarGroupLabel>
-            <SidebarMenu>
-              {navigation
-                .filter(isNavigationLink)
-                .filter((item) => item.section === "primary")
-                .map((item) => (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      className="hover:bg-foreground/5 h-10"
-                      render={(props) => (
-                        <Link
-                          {...props}
-                          to={item.to}
-                          search={item.search}
-                          activeProps={{ "data-active": true }}
+                id: isMobile ? undefined : navId,
+                mobileNavigation: {
+                  title: t("nav.navigation", "Navigation"),
+                  popup: {
+                    ...astryxScope,
+                    className: "astryx-web-nav",
+                    id: navId,
+                    finalFocus: returnFocus,
+                  },
+                },
+              }
+            : {})}
+          {...props}
+        >
+          {isMobile ? (
+            <WorkspaceNavigation pane={pane} selectPane={selectPane} />
+          ) : null}
+          {pane === "bots" ? (
+            <BotRosterPane channels={channels.data ?? []} emphasis={emphasis} />
+          ) : pane === "chats" ? (
+            <>
+              <SidebarHeader className="px-2 pb-1 pt-2">
+                <HStack align="center" justify="between" gap={2}>
+                  <Heading level={5} accessibilityLevel={2}>
+                    {t("nav.conversations", "Conversations")}
+                  </Heading>
+                  <Button
+                    aria-label={t("nav.newConversation", "New conversation")}
+                    size="icon"
+                    variant="ghost"
+                    render={(props) => <Link {...props} to="/channel/new" />}
+                  >
+                    <IconMessageCirclePlus />
+                  </Button>
+                </HStack>
+              </SidebarHeader>
+              <SidebarContent ref={scrollRoot} className="scroll-fade-b">
+                <SidebarGroup className="gap-px">
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <InputGroup className="bg-background text-sm rounded-lg h-9">
+                        <InputGroupInput
+                          aria-label={t(
+                            "nav.searchConversations",
+                            "Search conversations",
+                          )}
+                          onChange={(event) => setSearch(event.target.value)}
+                          placeholder={t("nav.search", "Search…")}
+                          value={search}
                         />
-                      )}
-                    >
-                      <item.icon aria-hidden="true" />
-                      <span className="text-sm">
-                        {t(item.messageId, item.label)}
-                      </span>
-                      {/* What waits on you across every Bot; Bots lists them first. */}
-                      {item.id === "bots" ? <BotsNavBadge /> : null}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              {/* Your own browser, with the Recorder in it. Drawn only where OpenBot can run one for you. */}
-              <BrowserNavItem />
-            </SidebarMenu>
-          </SidebarGroup>
-        </nav>
-        <SidebarGroup className="gap-px">
-          <SidebarGroupLabel>
-            {t("nav.conversations", "Conversations")}
-          </SidebarGroupLabel>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <InputGroup className="bg-background text-sm rounded-lg h-9">
-                <InputGroupInput
-                  aria-label={t(
-                    "nav.searchConversations",
-                    "Search conversations",
+                        <InputGroupAddon>
+                          <IconSearch />
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </SidebarMenuItem>
+                    {/*
+                     * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
+                     * used yet needs telling how to start. A roster that simply does not match what is in
+                     * the box has to say so and quote it back — told "you don't have channels yet" while
+                     * holding a typo, a person reads their conversations as gone.
+                     */}
+                    {searching && visibleChannels.length === 0 ? (
+                      <SidebarMenuItem className="py-4">
+                        <Empty className="min-h-0">
+                          <EmptyHeader>
+                            <EmptyTitle>
+                              {channels.hasNextPage
+                                ? t(
+                                    "nav.empty.loadedSearch",
+                                    "No loaded conversations match your search",
+                                  )
+                                : t(
+                                    "nav.empty.search",
+                                    "No conversations match your search",
+                                  )}
+                            </EmptyTitle>
+                            <EmptyDescription className="text-pretty">
+                              {channels.hasNextPage
+                                ? t(
+                                    "nav.empty.loadOlder",
+                                    "Load older conversations to search more of your history.",
+                                  )
+                                : t(
+                                    "nav.empty.noMatch",
+                                    "No conversation has “{search}” in its name or latest message.",
+                                    { search: search.trim() },
+                                  )}
+                            </EmptyDescription>
+                          </EmptyHeader>
+                        </Empty>
+                      </SidebarMenuItem>
+                    ) : null}
+                    {!searching && channels.data?.length === 0 ? (
+                      <SidebarMenuItem className="py-4">
+                        <Empty className="min-h-0">
+                          <EmptyHeader>
+                            <EmptyTitle>
+                              {t("nav.empty.title", "No conversations yet")}
+                            </EmptyTitle>
+                            <EmptyDescription className="text-pretty">
+                              {t(
+                                "nav.empty.description",
+                                "Start a conversation with a Bot and it shows up here.",
+                              )}
+                            </EmptyDescription>
+                          </EmptyHeader>
+                        </Empty>
+                      </SidebarMenuItem>
+                    ) : null}
+                    <AnimatePresence initial={false}>
+                      {visibleChannels.map((channel) => (
+                        <ChannelRow
+                          emphasis={emphasis}
+                          key={channel.id}
+                          animateOrder={animateOrder}
+                          channel={channel}
+                        />
+                      ))}
+                    </AnimatePresence>
+                    <ChannelPagination
+                      query={channels}
+                      scrollRoot={scrollRoot}
+                      searching={searching}
+                    />
+                  </SidebarMenu>
+                </SidebarGroup>
+              </SidebarContent>
+            </>
+          ) : null}
+          <SidebarRail />
+        </Sidebar>
+      ) : null}
+    </>
+  );
+}
+
+function BotRosterPane({
+  channels,
+  emphasis,
+}: {
+  channels: ChannelSummary[];
+  emphasis: MessageListEmphasis;
+}) {
+  const { t } = useTranslation();
+  const { data: agents } = useQuery(agentListQueryOptions());
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLocaleLowerCase();
+  const conversations = new Map<string, ChannelSummary[]>();
+  for (const channel of pinnedFirst(channels)) {
+    const [agentId] = channel.agentIds;
+    if (!agentId || channel.agentIds.length !== 1) continue;
+    const recent = conversations.get(agentId) ?? [];
+    if (recent.length < 3) {
+      recent.push(channel);
+      conversations.set(agentId, recent);
+    }
+  }
+
+  return (
+    <>
+      <SidebarHeader className="px-2 pb-1 pt-2">
+        <HStack align="center" justify="between" gap={2}>
+          <Heading level={5} accessibilityLevel={2}>
+            {t("nav.bots", "Bots")}
+          </Heading>
+          <Button
+            aria-label={t("nav.newBot", "New Bot")}
+            size="icon"
+            variant="ghost"
+            render={(props) => (
+              <Link {...props} to="/bots" search={{ new: true }} />
+            )}
+          >
+            <IconPlus />
+          </Button>
+        </HStack>
+        <InputGroup className="h-9 rounded-lg bg-background">
+          <InputGroupInput
+            aria-label={t("nav.searchBots", "Search Bots")}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("nav.search", "Search…")}
+            value={search}
+          />
+          <InputGroupAddon>
+            <IconSearch />
+          </InputGroupAddon>
+        </InputGroup>
+      </SidebarHeader>
+      <SidebarContent className="px-2">
+        <SidebarMenu>
+          {agents
+            ?.filter((agent) => agent.name.toLocaleLowerCase().includes(needle))
+            .map((agent) => (
+              <SidebarMenuItem key={agent.id}>
+                <SidebarMenuButton
+                  className="h-10"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/bots/$agentId"
+                      params={{ agentId: agent.id }}
+                      activeProps={{ "data-active": true }}
+                    />
                   )}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={t("nav.search", "Search…")}
-                  value={search}
-                />
-                <InputGroupAddon>
-                  <IconSearch />
-                </InputGroupAddon>
-              </InputGroup>
-            </SidebarMenuItem>
-            {/*
-             * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
-             * used yet needs telling how to start. A roster that simply does not match what is in
-             * the box has to say so and quote it back — told "you don't have channels yet" while
-             * holding a typo, a person reads their conversations as gone.
-             */}
-            {searching && visibleChannels.length === 0 ? (
-              <SidebarMenuItem className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>
-                      {channels.hasNextPage
-                        ? t(
-                            "nav.empty.loadedSearch",
-                            "No loaded conversations match your search",
-                          )
-                        : t(
-                            "nav.empty.search",
-                            "No conversations match your search",
-                          )}
-                    </EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      {channels.hasNextPage
-                        ? t(
-                            "nav.empty.loadOlder",
-                            "Load older conversations to search more of your history.",
-                          )
-                        : t(
-                            "nav.empty.noMatch",
-                            "No conversation has “{search}” in its name or latest message.",
-                            { search: search.trim() },
-                          )}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
+                >
+                  <ChannelAvatar participantIds={[agent.id]} size={22} />
+                  <Text type="label" maxLines={1}>
+                    {agent.name}
+                  </Text>
+                </SidebarMenuButton>
+                <SidebarMenuAction
+                  aria-label={t(
+                    "nav.newConversationWith",
+                    "New conversation with {bot}",
+                    { bot: agent.name },
+                  )}
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/channel/new"
+                      search={{ agent: agent.id }}
+                    />
+                  )}
+                >
+                  <IconMessageCirclePlus />
+                </SidebarMenuAction>
+                {conversations.has(agent.id) ? (
+                  <SidebarMenu className="ps-3">
+                    {conversations.get(agent.id)?.map((channel) => (
+                      <ChannelRow
+                        key={channel.id}
+                        channel={channel}
+                        emphasis={emphasis}
+                        animateOrder={false}
+                      />
+                    ))}
+                  </SidebarMenu>
+                ) : null}
               </SidebarMenuItem>
-            ) : null}
-            {!searching && channels.data?.length === 0 ? (
-              <SidebarMenuItem className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>
-                      {t("nav.empty.title", "No conversations yet")}
-                    </EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      {t(
-                        "nav.empty.description",
-                        "Start a conversation with a Bot and it shows up here.",
-                      )}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </SidebarMenuItem>
-            ) : null}
-            <AnimatePresence initial={false}>
-              {visibleChannels.map((channel) => (
-                <ChannelRow
-                  emphasis={emphasis}
-                  key={channel.id}
-                  animateOrder={animateOrder}
-                  channel={channel}
-                />
-              ))}
-            </AnimatePresence>
-            <ChannelPagination
-              query={channels}
-              scrollRoot={scrollRoot}
-              searching={searching}
-            />
-          </SidebarMenu>
-        </SidebarGroup>
+            ))}
+        </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
+        <Link className={buttonVariants({ variant: "ghost" })} to="/bots">
+          {t("nav.allBots", "All Bots")}
+        </Link>
+      </SidebarFooter>
+    </>
+  );
+}
+
+function WorkspaceNavigation({
+  pane,
+  selectPane,
+  children,
+}: {
+  pane: WorkspacePane | null;
+  selectPane: (pane: WorkspacePane) => void;
+  children?: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
+  const offersMemory = useOffersMemory();
+  const navigation = useNavigationItems();
+  const signOut = useSignOut();
+  const signOutOffered = useSignOutOffered();
+  const { setOpenMobile } = useSidebar();
+  return (
+    <VStack
+      as="aside"
+      className="astryx-workspace-nav px-2 py-3"
+      gap={2}
+      padding={2}
+    >
+      <Link
+        to="/"
+        aria-label={appConfig.brand.productName}
+        className="astryx-workspace-brand"
+      >
+        <OpenBotLogo className="size-8" />
+      </Link>
+      <nav
+        className="astryx-workspace-links"
+        aria-label={t("nav.workspace", "Workspace")}
+      >
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-pressed={pane === "chats"}
+              isActive={pane === "chats"}
+              onClick={() => selectPane("chats")}
+            >
+              <IconMessages aria-hidden />
+              <Text type="label" color="inherit">
+                {t("nav.chats", "Chats")}
+              </Text>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-label={t("nav.bots", "Bots")}
+              aria-pressed={pane === "bots"}
+              isActive={pane === "bots"}
+              onClick={() => selectPane("bots")}
+            >
+              <IconBolt aria-hidden />
+              <Text type="label" color="inherit">
+                {t("nav.bots", "Bots")}
+              </Text>
+              <BotsNavBadge />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {navigation
+            .filter(isNavigationLink)
+            .filter((item) => item.section === "primary" && item.id !== "bots")
+            .map((item) =>
+              item.id === "capabilities"
+                ? {
+                    ...item,
+                    to: "/capabilities/skills" as const,
+                    icon: IconBook,
+                  }
+                : item,
+            )
+            .map((item) => (
+              <SidebarMenuItem key={item.id}>
+                <SidebarMenuButton
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to={item.to}
+                      search={item.search}
+                      activeProps={{ "data-active": true }}
+                    />
+                  )}
+                >
+                  <item.icon aria-hidden="true" />
+                  <Text type="label" color="inherit">
+                    {item.id === "connections"
+                      ? t("nav.apps", "Apps")
+                      : item.id === "capabilities"
+                        ? t("nav.skills", "Skills")
+                        : t(item.messageId, item.label)}
+                  </Text>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          {offersMemory ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                render={(props) => (
+                  <Link
+                    {...props}
+                    to="/capabilities/memory"
+                    activeProps={{ "data-active": true }}
+                  />
+                )}
+              >
+                <IconBrain aria-hidden />
+                <Text type="label" color="inherit">
+                  {t("nav.memory", "Memory")}
+                </Text>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
+          {/* Your own browser, with the Recorder in it. Drawn only where OpenBot can run one for you. */}
+          <BrowserNavItem />
+        </SidebarMenu>
+      </nav>
+      {children}
+      <SidebarFooter className="astryx-account">
         <SidebarMenu className="gap-px">
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger
+                aria-label={
+                  currentUser?.name ||
+                  currentUser?.email ||
+                  t("nav.account", "Account")
+                }
                 render={
                   <SidebarMenuButton className="hover:bg-foreground/5 h-10" />
                 }
               >
                 <UserAvatar />
-                {/* The name and the release the server runs, side by side: 80/20 of the row. */}
-                <span className="grid min-w-0 flex-1 grid-cols-[4fr_1fr] items-center gap-2">
-                  <span className="truncate text-sm trackint-tight">
-                    {currentUser?.name || currentUser?.email}
-                  </span>
-                  <OpenBotVersion className="text-right text-[10px] leading-3 text-muted-foreground" />
-                </span>
+                <Text type="label" className="astryx-account-name" maxLines={1}>
+                  {currentUser?.name || currentUser?.email}
+                </Text>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
@@ -488,8 +731,8 @@ export function AppSidebar({
             </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
+        <OpenBotVersion className="text-center text-xs text-muted-foreground" />
       </SidebarFooter>
-      <SidebarRail />
-    </Sidebar>
+    </VStack>
   );
 }
