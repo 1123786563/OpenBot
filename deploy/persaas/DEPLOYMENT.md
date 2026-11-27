@@ -6,13 +6,13 @@
 
 | 主机 | 配置 | 服务 |
 | --- | --- | --- |
-| 129.28.39.52 | 8 核、16GB、200GB 系统盘 | 1Panel OpenResty、pgvector PostgreSQL 18、Redis 8、ClickHouse 26.11、Casdoor 4.31、Flexprice 专用 Kafka 3.9；Docker Temporal 1.26.2、Flexprice 2.1.52 |
+| 129.28.39.52 | 8 核、16GB、200GB 系统盘 | 1Panel OpenResty、pgvector PostgreSQL 18、Redis 8、ClickHouse 26.11、Casdoor 4.31、Infisical 0.167.16、OpenObserve 1.2.0、Flexprice 专用 Kafka 3.9；Docker Temporal 1.26.2、Flexprice 2.1.52 |
 | 124.221.110.188 | 4 核、4GB、40GB 系统盘 | OpenBot API、Worker、受限 SSH 服务隧道 |
 | 43.136.78.18 | 既有实例 | CubeSandbox；本次不修改该服务器 |
 
 OpenBot 镜像为 `openbot-server:persaas-20261128`，从本次工作区构建为 Linux amd64。Flexprice 从官方 `v2.1.52` 源码构建；运行镜像增加 `internal/config -> config` 链接，修复上游镜像缺少 RBAC 相对路径的问题，见 `Flexprice.Dockerfile`。
 
-主站 `https://www.persaas.cn/`、登录服务 `https://casdoor.persaas.cn/`、沙箱 API `https://sandboxes.persaas.cn/` 均由 129.28.39.52 的 1Panel OpenResty 代理。三个站点使用有效 Let's Encrypt 证书。
+主站 `https://www.persaas.cn/`、登录服务 `https://casdoor.persaas.cn/`、沙箱 API `https://sandboxes.persaas.cn/` 均由 129.28.39.52 的 1Panel OpenResty 代理。另有 `https://infisical.persaas.cn/` 和 `https://openobserve.persaas.cn/`；五个站点均使用有效 Let's Encrypt 证书。
 
 ## 网络与权限
 
@@ -22,7 +22,7 @@ OpenBot 镜像为 `openbot-server:persaas-20261128`，从本次工作区构建�
 - 数据节点的 `127.0.0.1:18001` 经反向隧道访问应用节点回环地址的 18001。
 - 服务专用公钥只允许上述端口转发，不允许执行命令、PTY、代理转发或任意端口转发。它与本次操作员临时部署公钥不同。
 - 应用节点只向 `persaas-apps` 容器子网开放隧道数据库端口，没有把数据库监听到公网。
-- PostgreSQL 分离 OpenBot、Casdoor、Flexprice、Temporal 的账号和数据库；迁移完成后撤销应用角色的超级用户权限。
+- PostgreSQL 分离 OpenBot、Casdoor、Flexprice、Temporal、Infisical 的账号和数据库；迁移完成后撤销应用角色的超级用户权限。
 - Flexprice 使用独立 ClickHouse 账号和 `flexprice` 数据库、Redis database 3，以及 `persaas_` 前缀的 Kafka topic。topic 保留七天，单节点复制因子为 1。
 
 ## Kafka 与 1Panel
@@ -41,9 +41,11 @@ Kafka 3.9 的远程应用包下载返回 426/403，故通过此目录下的 `1pa
 - 已配置的模型 API 最小请求成功。
 - 五个 PostgreSQL 备份逐一恢复到临时数据库成功；临时恢复库已移除。应用迁移在撤销超级用户权限后重复执行成功。
 
+Infisical 的 prod 项目保存 100 项配置/凭据。API、Worker 通过 SDK 在启动时加载；Flexprice、Temporal 通过受限机器身份导出配置。实际登录和聊天验收通过，详见 [TEST-RESULTS.md](TEST-RESULTS.md)。
+
 ## 备份范围
 
-`persaas-postgres-backup.timer` 每天 04:15（主机时区）备份五个 PostgreSQL 数据库、角色及部署私密配置。首份备份已复制到 124.221.110.188；后续每日备份目前仅落在数据节点，需要继续配置自动异机复制及保留策略。
+`persaas-postgres-backup.timer` 每天 04:15（主机时区）备份六个 PostgreSQL 数据库、角色及部署私密配置。首份备份已复制到 124.221.110.188；后续每日备份目前仅落在数据节点，需要继续配置自动异机复制及保留策略。
 
 备份不包含 RustFS 对象、ClickHouse 明细数据、Kafka 日志和 Redis 持久化文件。它不是整个平台的完整灾备方案。
 
@@ -53,5 +55,5 @@ Kafka 3.9 的远程应用包下载返回 426/403，故通过此目录下的 `1pa
 - Redis 当前为单实例。之前提出的 Sentinel 要求仍待决定；两台跨地域机器不能提供三个独立故障节点。
 - Flexprice 服务已运行，但仓库仍使用 Lago 用量投递代码。套餐、用量投递、对账与收款没有完成替换。
 - Casdoor 注册暂未开放，只创建测试管理员。新增用户需由管理员在 Casdoor 中管理。
-- Opik、Hindsight、Bifrost、Infisical 等配套服务没有在本次核心部署中全部启用。
+- Opik、Hindsight、Bifrost 等配套服务没有在本次核心部署中全部启用。
 - 当前不提供全平台高可用，也未验证任一主机故障后业务仍可用。

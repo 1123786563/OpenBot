@@ -4,7 +4,7 @@ services:
     image: temporalio/auto-setup:1.26.2
     restart: unless-stopped
     mem_limit: 1g
-    env_file: temporal.env
+    env_file: runtime/temporal.env
     networks: [panel]
     logging: &logs
       driver: json-file
@@ -13,7 +13,7 @@ services:
     image: flexprice:2.1.52-persaas
     restart: unless-stopped
     mem_limit: 1536m
-    env_file: flexprice.env
+    env_file: runtime/flexprice.env
     environment:
       FLEXPRICE_DEPLOYMENT_MODE: local
       GOMEMLIMIT: 1GiB
@@ -25,7 +25,31 @@ services:
   flexprice-migrate:
     image: flexprice:2.1.52-persaas
     profiles: [tools]
-    env_file: flexprice.env
+    env_file: runtime/flexprice.env
+    networks: [panel]
+    restart: "no"
+  sync-flexprice:
+    image: openbot-server:persaas-cbcdbc175
+    profiles: [tools]
+    user: "0:0"
+    entrypoint: [bun, /app/infisical-runtime.mjs]
+    command: [--export, /runtime-config/flexprice.env]
+    env_file: infisical-flexprice.env
+    volumes:
+      - ./infisical-runtime.mjs:/app/infisical-runtime.mjs:ro
+      - ./runtime:/runtime-config
+    networks: [panel]
+    restart: "no"
+  sync-temporal:
+    image: openbot-server:persaas-cbcdbc175
+    profiles: [tools]
+    user: "0:0"
+    entrypoint: [bun, /app/infisical-runtime.mjs]
+    command: [--export, /runtime-config/temporal.env]
+    env_file: infisical-temporal.env
+    volumes:
+      - ./infisical-runtime.mjs:/app/infisical-runtime.mjs:ro
+      - ./runtime:/runtime-config
     networks: [panel]
     restart: "no"
 networks:

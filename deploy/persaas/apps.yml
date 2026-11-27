@@ -3,15 +3,20 @@ services:
   migrate:
     image: openbot-server:persaas-20261128
     profiles: [tools]
+    entrypoint: [bun, /app/infisical-runtime.mjs]
     command: [bun, --no-env-file, scripts/migrate.ts]
-    env_file: server.env
+    env_file: infisical-server.env
+    volumes: ["./infisical-runtime.mjs:/app/infisical-runtime.mjs:ro"]
     networks: [apps]
     restart: "no"
   openbot:
     image: openbot-server:persaas-20261128
     restart: unless-stopped
     mem_limit: 1536m
-    env_file: server.env
+    entrypoint: [bun, /app/infisical-runtime.mjs]
+    command: [bun, --no-env-file, src/production-entry.ts]
+    env_file: infisical-server.env
+    volumes: ["./infisical-runtime.mjs:/app/infisical-runtime.mjs:ro"]
     environment: {PORT: "3001"}
     ports: ["127.0.0.1:18001:3001"]
     networks: [apps]
@@ -28,7 +33,9 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     command: [bun, --no-env-file, ../worker/src/index.ts]
-    env_file: worker.env
+    entrypoint: [bun, /app/infisical-runtime.mjs]
+    env_file: infisical-worker.env
+    volumes: ["./infisical-runtime.mjs:/app/infisical-runtime.mjs:ro"]
     networks: [apps]
     depends_on:
       openbot: {condition: service_healthy}

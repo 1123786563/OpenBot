@@ -10,6 +10,8 @@ case "$role" in
     curl --fail --silent --show-error https://casdoor.persaas.cn/.well-known/openid-configuration >/dev/null
     curl --fail --silent --show-error https://sandboxes.persaas.cn/health
     curl --fail --silent --show-error https://www.persaas.cn/health
+    curl --fail --silent --show-error https://infisical.persaas.cn/api/v1/admin/config >/dev/null
+    curl --fail --silent --show-error https://openobserve.persaas.cn/healthz >/dev/null
     code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://www.persaas.cn/api/me)
     test "$code" = 401
     ;;

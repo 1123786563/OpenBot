@@ -11,6 +11,31 @@
 
 管理登录服务时，打开 `https://casdoor.persaas.cn/`，使用内置组织 `built-in` 的 `admin` 和文件中的 `casdoorPassword`。两种密码不同。
 
+## 集中配置（Infisical）
+
+打开 `https://infisical.persaas.cn/`，使用服务器凭据文件中的 `adminEmail` 和 `infisicalPassword` 登录。选择 **Persaas Runtime → prod**。
+
+| 目录 | 用途 |
+| --- | --- |
+| `/server` | OpenBot API |
+| `/worker` | 后台 Worker |
+| `/flexprice` | Flexprice |
+| `/temporal` | Temporal |
+| `/openobserve` | 日志服务管理凭据 |
+
+API、Worker 启动时读取配置；在 Infisical 保存修改后，在应用节点执行 `docker compose -f /opt/persaas/apps.yml up -d --force-recreate openbot worker`。读取失败时进程退出，不使用旧配置启动。
+
+Flexprice、Temporal 使用导出的私密配置文件。在数据节点更新它们：
+
+```sh
+bash /opt/persaas/sync-config.sh
+cd /opt/persaas
+bash sync-config.sh
+docker compose -f data.yml up -d --force-recreate flexprice temporal
+```
+
+四个机器身份只有项目读取权限，但可读取该项目内其他目录；不要把无关项目的密钥放入此项目。引导文件 `infisical-*.env` 包含机器身份凭据，仅 root 可读。Infisical 自身的数据库、Redis DB0、加密密钥保存在 1Panel 应用配置中，避免启动循环依赖。旧 `server.env` 等文件仅为恢复快照，修改它们不会更新正在运行的应用。OpenObserve 管理凭据在配置中心留存，其运行配置仍由 1Panel 管理。
+
 ## 检查服务
 
 在 129.28.39.52 执行：
@@ -29,12 +54,13 @@ systemctl status persaas-data-link --no-pager
 
 ## 重启服务
 
-通过 1Panel 的**已安装**页面管理 PostgreSQL、Redis、ClickHouse、Kafka 和 Casdoor。
+通过 1Panel 的**已安装**页面管理 PostgreSQL、Redis、ClickHouse、Kafka、Casdoor、Infisical 和 OpenObserve。
 
-在数据节点重建 Docker 服务：
+在数据节点先同步配置，再重建 Docker 服务：
 
 ```sh
 cd /opt/persaas
+bash sync-config.sh
 docker compose -f data.yml up -d
 docker compose -f data.yml logs --tail 50 flexprice temporal
 ```
@@ -108,3 +134,13 @@ ls -lh /opt/persaas/backups/
 当前浏览器提供者需要 `OPENBOT_CUBE_BROWSER_TEMPLATE`、`OPENBOT_CUBE_BROWSER_URL`、`OPENBOT_CUBE_ENVD_URL`、至少 32 字符的独立签名密钥，以及按用户绑定的 `OPENBOT_CUBE_BROWSER_VOLUMES`。仅有 `/health` 成功不能证明浏览器接入完成。
 
 用户要求不修改 43.136.78.18。若现有 API 没有可用的 OpenBot 浏览器模板，应保留明确的未就绪状态，不能改用共享无鉴权沙箱。
+
+## 运行端到端验收
+
+在数据节点执行：
+
+```sh
+python3 /opt/persaas/acceptance.py
+```
+
+脚本读取 root 私密凭据，验证 HTTPS、匿名权限、Casdoor 授权码登录、管理员权限、真实模型聊天与持久化、退出会话、Flexprice 和 Infisical。它会保留管理员的专用验收 Bot 与对话，输出不含密钥的 `/opt/persaas/acceptance-report.json`。已执行结果及验收边界见 [TEST-RESULTS.md](TEST-RESULTS.md)。
