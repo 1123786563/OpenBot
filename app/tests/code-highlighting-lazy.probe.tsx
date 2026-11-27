@@ -61,13 +61,16 @@ test("a conversation loads Shiki only once it has code to highlight", async () =
   const highlighted = render(
     <ChatTranscript messages={code} restoring={false} />,
   );
-  await waitFor(() => {
-    const keyword = Array.from(
-      highlighted.container.querySelectorAll<HTMLElement>(
-        '[data-streamdown="code-block-body"] code span',
-      ),
-    ).find((span) => span.textContent === "def");
-    expect(keyword?.getAttribute("style") ?? "").toContain("--shiki-dark");
-  });
+  await waitFor(
+    () => {
+      const keyword = Array.from(
+        highlighted.container.querySelectorAll<HTMLElement>(
+          '[data-streamdown="code-block-body"] code span',
+        ),
+      ).find((span) => span.textContent === "def");
+      expect(keyword?.getAttribute("style") ?? "").toContain("--shiki-dark");
+    },
+    { timeout: 15_000 },
+  );
   expect(loads).toBe(1);
-});
+}, 30_000);

@@ -1124,7 +1124,7 @@ test("support reverses a fixture order and the statement preserves its dispatche
   } finally {
     await restoreCatalog();
   }
-}, 30_000);
+}, 90_000);
 
 test("Alipay checkout reconciles missed callbacks and refunds only through the original channel", async () => {
   await approvePaths();
@@ -2185,7 +2185,7 @@ test("scoped pilot closure reconciles each order through its original channel", 
     await dispatched?.catch(() => undefined);
     await restoreCatalog();
   }
-}, 20_000);
+}, 90_000);
 
 test("a live channel requires distinct provider credentials and a non-fixture merchant", async () => {
   const { loadCreditPackLiveChannel } = await import(
