@@ -1,0 +1,25 @@
+services:
+  kafka:
+    container_name: ${CONTAINER_NAME}
+    hostname: ${CONTAINER_NAME}
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    environment:
+      KAFKA_HEAP_OPTS: '-Xmx512m -Xms256m'
+    volumes:
+      - ./conf/server.properties:/opt/bitnami/kafka/config/server.properties:ro
+      - ./data:/bitnami/kafka/data
+    networks:
+      - 1panel-network
+    ports:
+      - "${PANEL_APP_PORT_HTTP}:9092"
+    image: bitnamilegacy/kafka:3.9.0
+    labels:
+      createdBy: "Apps"
+networks:
+  1panel-network:
+    external: true

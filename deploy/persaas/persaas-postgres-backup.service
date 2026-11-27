@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up Persaas PostgreSQL databases and private deployment configuration
+After=docker.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/persaas/backup-postgres.sh

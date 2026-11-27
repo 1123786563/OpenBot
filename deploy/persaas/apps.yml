@@ -1,0 +1,39 @@
+name: persaas-apps
+services:
+  migrate:
+    image: openbot-server:persaas-20261128
+    profiles: [tools]
+    command: [bun, --no-env-file, scripts/migrate.ts]
+    env_file: server.env
+    networks: [apps]
+    restart: "no"
+  openbot:
+    image: openbot-server:persaas-20261128
+    restart: unless-stopped
+    mem_limit: 1536m
+    env_file: server.env
+    environment: {PORT: "3001"}
+    ports: ["127.0.0.1:18001:3001"]
+    networks: [apps]
+    healthcheck:
+      test: [CMD, bun, -e, "const r=await fetch('http://127.0.0.1:3001/health');process.exit(r.ok?0:1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging: &logs
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  worker:
+    image: openbot-server:persaas-20261128
+    restart: unless-stopped
+    mem_limit: 512m
+    command: [bun, --no-env-file, ../worker/src/index.ts]
+    env_file: worker.env
+    networks: [apps]
+    depends_on:
+      openbot: {condition: service_healthy}
+    logging: *logs
+networks:
+  apps:
+    external: true
+    name: persaas-apps

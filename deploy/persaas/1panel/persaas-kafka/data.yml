@@ -1,0 +1,16 @@
+name: Persaas Kafka
+tags: [中间件]
+title: Flexprice 专用兼容 Kafka
+additionalProperties:
+  key: persaas-kafka
+  name: Persaas Kafka
+  tags: [Middleware]
+  shortDescZh: Kafka 3.9 单节点 KRaft，供 Flexprice 使用
+  shortDescEn: Kafka 3.9 single-node KRaft for Flexprice
+  type: tool
+  crossVersionUpdate: false
+  limit: 0
+  website: https://kafka.apache.org/
+  github: https://github.com/apache/kafka
+  document: https://kafka.apache.org/documentation/
+  architectures: [amd64, arm64]

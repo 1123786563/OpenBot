@@ -1,0 +1,8 @@
+[Unit]
+Description=Check Persaas certificates twice daily
+[Timer]
+OnCalendar=*-*-* 03,15:25:00
+RandomizedDelaySec=600
+Persistent=true
+[Install]
+WantedBy=timers.target

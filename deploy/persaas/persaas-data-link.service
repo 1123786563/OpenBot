@@ -1,0 +1,11 @@
+[Unit]
+Description=Restricted encrypted Persaas data and reverse-proxy link
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+[Service]
+ExecStart=/usr/bin/ssh -NT -i /root/.ssh/persaas-data-link -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/persaas-data-known-hosts -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -L 172.30.96.1:15432:127.0.0.1:5432 -R 127.0.0.1:18001:127.0.0.1:18001 root@129.28.39.52
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
