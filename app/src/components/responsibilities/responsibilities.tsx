@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 
+import { InlineEmpty } from "@/components/layout/page-parts";
 import {
   PageEmpty,
   PageRows,
@@ -60,12 +61,14 @@ import {
 export function BotResponsibilities({
   agentId,
   botName,
+  embedded = false,
   pageHeading,
   sectionTitle = "Goals",
   searchable = false,
 }: {
   agentId?: string;
   botName?: (id: string) => string;
+  embedded?: boolean;
   pageHeading?: RefObject<HTMLHeadingElement | null>;
   sectionTitle?: string;
   searchable?: boolean;
@@ -110,6 +113,7 @@ export function BotResponsibilities({
   // Looked up from the query rather than held, so the dialog follows every refetch.
   const open = shown.find((goal) => goal.id === openId);
   const focusHeading = () => (pageHeading ?? heading).current;
+  const Empty = embedded ? InlineEmpty : PageEmpty;
   const newGoal = goals.isSuccess ? (
     <AstryxButton
       className="min-h-11"
@@ -202,15 +206,15 @@ export function BotResponsibilities({
         </Field>
       ) : null}
       {!shown.length && goals.isSuccess ? (
-        <PageEmpty icon={IconChecklist} title="No goals yet">
+        <Empty icon={IconChecklist} title="No goals yet">
           {agentId
             ? "Work you give this Bot to keep doing shows up here."
             : "Work you give your Bots to keep doing shows up here."}
-        </PageEmpty>
+        </Empty>
       ) : shown.length && !matching.length ? (
-        <PageEmpty icon={IconListSearch} title="No matching goals">
+        <Empty icon={IconListSearch} title="No matching goals">
           Try a shorter title or search for Active, Paused, or Completed.
-        </PageEmpty>
+        </Empty>
       ) : matching.length ? (
         <PageRows>
           {matching.map((goal, index) => (

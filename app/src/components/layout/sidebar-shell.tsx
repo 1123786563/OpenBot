@@ -1,15 +1,19 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import {
   type CSSProperties,
   type ReactNode,
+  type RefObject,
   useEffect,
   useMemo,
   useState,
 } from "react";
-
+import { AstryxNavigationToggle } from "@/components/astryx-pilot/navigation-toggle";
+import { astryxScope } from "@/components/astryx-pilot/theme";
 import {
   SidebarProvider,
   SidebarResizeProvider,
 } from "@/components/ui/sidebar";
+import { useTranslation } from "@/i18n";
 import { getStoredValue, setStoredValue } from "@/lib/browser-storage";
 import {
   applySidebarOpen,
@@ -18,7 +22,6 @@ import {
   SIDEBAR_STORAGE_KEY,
   SIDEBAR_WIDTH_STORAGE_PREFIX,
 } from "@/lib/sidebar";
-import { useTranslation } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -111,5 +114,38 @@ export function SidebarShell({
       </a>
       <SidebarResizeProvider value={resize}>{children}</SidebarResizeProvider>
     </SidebarProvider>
+  );
+}
+
+/**
+ * The shell's one navigation opener, in a header row above the content.
+ *
+ * Below 768px the sidebar is a sheet that starts closed, and the shadcn `SidebarToggle` only draws
+ * through `PageShell`'s bar. This header is the workspace shell's own header row, minus the brand:
+ * one opener per shell, in the same place, whatever page is open.
+ *
+ * `astryxScope` is required: the Astryx Button renders unstyled outside `[data-astryx-pilot]`.
+ */
+export function ShellNavigationHeader({
+  navId,
+  trigger,
+}: {
+  /** Passed to the shell's sidebar so its mobile sheet answers this header's `aria-controls`. */
+  navId: string;
+  /** The toggle's own button, so the sidebar can hand focus back to it when it closes. */
+  trigger: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <HStack
+      {...astryxScope}
+      as="header"
+      align="center"
+      gap={2}
+      paddingInline={3}
+      minHeight="var(--spacing-12)"
+      className="shrink-0 border-be border-(--color-border)"
+    >
+      <AstryxNavigationToggle navId={navId} trigger={trigger} />
+    </HStack>
   );
 }

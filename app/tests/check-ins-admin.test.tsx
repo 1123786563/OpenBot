@@ -38,8 +38,10 @@ afterAll(async () => {
 });
 
 const originalFetch = global.fetch;
+const queryDefaults = queryClient.getDefaultOptions();
 afterEach(() => {
   global.fetch = originalFetch;
+  queryClient.setDefaultOptions(queryDefaults);
 });
 
 const skipped = (counts: Partial<BotCheckInMetrics["runs"]["skipped"]>) => ({
@@ -242,3 +244,65 @@ test("the switch turns check-ins off for the organization, and the limit saves o
   );
   await view.findByText("Up to 12 check-ins a day per Bot for each person");
 });
+
+test.each([
+  {
+    path: "/api/admin/enterprise",
+    error: "Couldn't load check-in settings.",
+    heading: "Check-ins",
+    recovered: { role: "switch", name: "Check-ins" },
+    sibling: { role: "button", name: /Inbox Bot/ },
+  },
+  {
+    path: "/api/admin/proactive?days=7",
+    error: "Couldn't load check-in activity.",
+    heading: "Activity",
+    recovered: { role: "button", name: /Inbox Bot/ },
+    sibling: { role: "switch", name: "Check-ins" },
+  },
+])(
+  "retries $path in place while the other section stays available",
+  async ({ path, error, heading, recovered, sibling }) => {
+    queryClient.setDefaultOptions({
+      ...queryDefaults,
+      queries: { ...queryDefaults.queries, retry: false },
+    });
+    const respond = global.fetch;
+    let fail = true;
+    const response = Promise.withResolvers<void>();
+    let retryStarted = false;
+    global.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === path) {
+          if (fail) return Response.json({}, { status: 503 });
+          retryStarted = true;
+          await response.promise;
+        }
+        return respond(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    const view = await draw();
+    expect((await view.findByRole("alert")).textContent).toContain(error);
+    await view.findByRole(sibling.role, { name: sibling.name });
+    const retry = view.getByRole("button", { name: "Retry" });
+    fail = false;
+    retry.focus();
+    await userEvent.setup({ document }).keyboard("{Enter}");
+    try {
+      await waitFor(() => expect(retryStarted).toBe(true));
+      await waitFor(() =>
+        expect(retry.getAttribute("aria-disabled")).toBe("true"),
+      );
+      expect(view.getByRole("alert").textContent).toContain(error);
+      expect(document.activeElement === retry).toBe(true);
+    } finally {
+      response.resolve();
+    }
+    await view.findByRole(recovered.role, { name: recovered.name });
+    expect(view.queryByText(error)).toBeNull();
+    const restored = view.getByRole("heading", { name: heading });
+    await waitFor(() => expect(document.activeElement === restored).toBe(true));
+  },
+);

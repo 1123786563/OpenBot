@@ -1,7 +1,18 @@
 import { IconBuildingBank, IconTrash } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import {
+  Fragment,
+  type FormEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { SignInSection } from "@/components/admin/controls/sign-in-section";
 import {
   PageEmpty,
@@ -41,15 +52,19 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { canKeepCachedRead } from "@/lib/client";
+import { canKeepCachedRead, ClientError } from "@/lib/client";
 import {
   deleteIdentityProviderMutationOptions,
   type IdentityProviderInput,
   registerIdentityProviderMutationOptions,
 } from "@/lib/identity-providers/mutations";
 import {
+  type IdentityProvider,
+  type IdentityProviderImpact,
+  identityProviderImpactQueryOptions,
   identityProviderListQueryOptions,
   identityProvidersAccessDenied,
+  IMPACT_FALLBACK,
 } from "@/lib/identity-providers/queries";
 import { queryClient } from "@/query-client";
 
@@ -77,6 +92,108 @@ const EMPTY: {
   clientSecret: "",
 };
 
+const count = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+const KEEPING_REASON = {
+  "another-sign-in": "Another sign-in method",
+  "emergency-admin": "Emergency admin",
+} as const;
+
+/**
+ * Who can still sign in once the provider is removed, inside the confirmation that removes it.
+ *
+ * Read while the dialog is open, by the rule the sign-in path applies rather than from the
+ * provider's email domain: a failed read offers its own retry in place, and the Remove button stays
+ * disabled until the answer is in, so nobody removes the last way in for somebody without seeing
+ * that first.
+ */
+function ProviderImpact({
+  impact,
+}: {
+  impact: UseQueryResult<IdentityProviderImpact>;
+}) {
+  if (impact.error)
+    return (
+      <ReadError
+        // The server's own sentence when it sent one: it knows whether the provider is gone.
+        message={
+          impact.error instanceof ClientError
+            ? impact.error.message
+            : IMPACT_FALLBACK
+        }
+        retry={() => impact.refetch()}
+        retryLabel="Retry preview"
+        retrying={impact.isFetching}
+      />
+    );
+  if (!impact.isSuccess || impact.fetchStatus !== "idle")
+    return (
+      <ReadStatus kind="loading" message="Checking who can still sign in…" />
+    );
+
+  const { losing, keeping, includesYou } = impact.data;
+  const capped =
+    losing.total > losing.emails.length ||
+    keeping.total > keeping.accounts.length;
+  return (
+    <Field aria-labelledby="provider-impact" aria-live="polite">
+      <FieldLabel id="provider-impact">Who it affects</FieldLabel>
+      {losing.total === 0 && keeping.total === 0 ? (
+        <p>Nobody has signed in through this provider yet.</p>
+      ) : null}
+      {losing.total > 0 ? (
+        <>
+          <p className="font-medium text-sm">
+            {count(losing.total, "person loses", "people lose")} their only way
+            in{includesYou ? ", including you" : ""}.
+          </p>
+          <PageRows>
+            {losing.emails.map((email, index) => (
+              <Fragment key={email}>
+                {index > 0 ? <Separator /> : null}
+                <Item className="px-0" size="sm">
+                  <ItemContent>
+                    <ItemTitle className="wrap-anywhere">{email}</ItemTitle>
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </>
+      ) : null}
+      {keeping.total > 0 ? (
+        <>
+          <p className="font-medium text-sm">
+            {count(keeping.total, "person keeps", "people keep")} another way
+            in.
+          </p>
+          <PageRows>
+            {keeping.accounts.map(({ email, reason }, index) => (
+              <Fragment key={email}>
+                {index > 0 ? <Separator /> : null}
+                <Item className="px-0" size="sm">
+                  <ItemContent>
+                    <ItemTitle className="wrap-anywhere">{email}</ItemTitle>
+                    <ItemDescription>{KEEPING_REASON[reason]}</ItemDescription>
+                  </ItemContent>
+                </Item>
+              </Fragment>
+            ))}
+          </PageRows>
+        </>
+      ) : null}
+      {capped ? (
+        <p className="text-muted-foreground text-xs">
+          Showing the first{" "}
+          {Math.max(losing.emails.length, keeping.accounts.length)} in each
+          list.
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+
 function IdentityProvidersPage() {
   const providers = useQuery(identityProviderListQueryOptions());
   const registered = canKeepCachedRead(providers.error)
@@ -92,7 +209,19 @@ function IdentityProvidersPage() {
   const searchInput = useRef<HTMLInputElement>(null);
   const firstMatch = useRef<HTMLDivElement>(null);
   const registeredRow = useRef<HTMLDivElement>(null);
-  const { requestConfirmation, confirmation } = useActionConfirmation();
+  // The provider being removed. Its impact is read while the confirmation is open, and the
+  // confirmation cannot be submitted until that read has answered.
+  const [removing, setRemoving] = useState<IdentityProvider | null>(null);
+  const impact = useQuery({
+    ...identityProviderImpactQueryOptions(removing?.providerId ?? ""),
+    enabled: removing !== null,
+  });
+  const { requestConfirmation, confirmation } = useActionConfirmation({
+    content: removing ? <ProviderImpact impact={impact} /> : null,
+    ready:
+      removing !== null && impact.isSuccess && impact.fetchStatus === "idle",
+    onClose: () => setRemoving(null),
+  });
   const register = useMutation(
     registerIdentityProviderMutationOptions(queryClient),
   );
@@ -320,10 +449,12 @@ function IdentityProvidersPage() {
                       <Button
                         aria-label={`Remove identity provider ${provider.providerId}`}
                         className="min-h-11"
-                        onClick={(event) =>
+                        onClick={(event) => {
+                          setRemoving(provider);
                           requestConfirmation({
                             title: `Remove ${provider.providerId}?`,
-                            description: `People with email addresses at ${provider.domain} will lose this ${provider.protocol.toUpperCase()} sign-in option. If they rely on it, they may be unable to sign in. To restore it, register the provider again.`,
+                            // The scope and the recovery. Who loses their only way in is the list's to say, read from the accounts.
+                            description: `This removes ${provider.protocol.toUpperCase()} sign-in through ${provider.providerId} for the whole deployment. To restore it, register the provider again.`,
                             confirmLabel: "Remove provider",
                             pendingLabel: "Removing provider…",
                             failureMessage:
@@ -357,8 +488,8 @@ function IdentityProvidersPage() {
                               await remove.mutateAsync(provider.providerId);
                               setNotice(`${provider.providerId} was removed.`);
                             },
-                          })
-                        }
+                          });
+                        }}
                         size="sm"
                         variant="destructive"
                       >

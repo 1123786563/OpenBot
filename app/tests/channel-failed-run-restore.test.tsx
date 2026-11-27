@@ -121,6 +121,22 @@ let recorded = new Map<string, unknown[]>();
 /** The thread's stored messages: what was said, and nothing about how a run ended. */
 let stored = new Map<string, Message[]>();
 let stopRequests: string[] = [];
+/** Each stop this browser asked the server for, for a run by its id. */
+let serverStops: { threadId: string; runId: string }[] = [];
+let stopRefused = false;
+type RunRow = {
+  id: string;
+  status: "running" | "completed" | "failed";
+  userMessageId?: string;
+  assistantMessageId: null;
+  stopReason?: "stopped";
+};
+/**
+ * The thread's stored runs, as the messages read names them. Set, and every run is recorded there
+ * as the server stores it and every read carries the list, so a Stop asks the server for the run.
+ * Left undefined, the read names no run and a Stop aborts only this browser's copy of the run.
+ */
+let threadRuns: Map<string, RunRow[]> | undefined;
 /** The open stream of a stalled run, for the stop that ends it. */
 let stalled: {
   input: RunAgentInput;
@@ -147,6 +163,36 @@ function remember(threadId: string, messages: Message[]) {
     ...messages.filter((message) => !ids.has(message.id)),
   ]);
 }
+/** How the run ended, as the server records it: a RUN_ERROR fails it, and a stopped run says why. */
+function ended(row: RunRow, events: unknown[]) {
+  const last = events.at(-1) as { type?: string; code?: string } | undefined;
+  row.status = last?.type === "RUN_ERROR" ? "failed" : "completed";
+  if (last?.type === "RUN_ERROR" && last.code === "stopped")
+    row.stopReason = "stopped";
+}
+/**
+ * The server stopping the run that is open, as `stopDirectChatRun` does and as the stream then
+ * carries it (`stoppedRunEvent`): the run is stored as failed, with its reason, and the stream ends
+ * with the RUN_ERROR the server wrote for it. From a Stop this browser asked for, or from a Stop
+ * made in another tab. Whether a run was open to stop.
+ */
+function stopOnServer(): boolean {
+  const open = stalled;
+  stalled = null;
+  if (!open) return false;
+  const row = threadRuns
+    ?.get(open.input.threadId)
+    ?.find((run) => run.id === open.input.runId);
+  if (row) {
+    row.status = "failed";
+    row.stopReason = "stopped";
+  }
+  open.finish([
+    { type: "TEXT_MESSAGE_END", messageId: open.messageId },
+    { type: "RUN_ERROR", message: "The Bot run was stopped.", code: "stopped" },
+  ]);
+  return true;
+}
 
 /** One run, as the runtime streams it and records it. */
 function run(input: RunAgentInput): Response {
@@ -163,6 +209,18 @@ function run(input: RunAgentInput): Response {
     input.threadId,
     input.messages.filter((message) => message.role === "user"),
   );
+  // And the run is stored as going, until `ended` says how it ended.
+  const row: RunRow = {
+    id: input.runId,
+    status: "running",
+    userMessageId: input.messages.at(-1)?.id,
+    assistantMessageId: null,
+  };
+  if (threadRuns)
+    threadRuns.set(input.threadId, [
+      ...(threadRuns.get(input.threadId) ?? []),
+      row,
+    ]);
   if (plan.kind === "calls") {
     // A step the browser carries out, as a Bot's run ends on one: the call, then RUN_FINISHED.
     const toolCallId = `call-${input.runId}`;
@@ -179,6 +237,7 @@ function run(input: RunAgentInput): Response {
       { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId },
     ];
     record(input.threadId, events);
+    ended(row, events);
     return sse(events);
   }
   if (plan.kind === "fails") {
@@ -237,6 +296,7 @@ function run(input: RunAgentInput): Response {
       { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId },
     ];
     record(input.threadId, events);
+    ended(row, events);
     remember(input.threadId, [
       { id: messageId, role: "assistant", content: plan.text },
     ]);
@@ -262,6 +322,7 @@ function run(input: RunAgentInput): Response {
     messageId,
     finish: (events) => {
       record(input.threadId, [...opening, ...events]);
+      ended(row, events);
       remember(input.threadId, [
         { id: messageId, role: "assistant", content: plan.text },
       ]);
@@ -374,15 +435,37 @@ beforeAll(() => {
         ]);
         return NativeResponse.json({ stopped: true });
       }
+      /*
+       * The server's own stop, as `stopDirectChatRun` carries it out on a thread's stored run: only
+       * a run still going is stopped, and only that is confirmed.
+       */
+      const serverStop = url.pathname.match(
+        /\/threads\/([^/]+)\/runs\/([^/]+)\/stop$/,
+      );
+      if (serverStop) {
+        serverStops.push({
+          threadId: decodeURIComponent(serverStop[1] ?? ""),
+          runId: decodeURIComponent(serverStop[2] ?? ""),
+        });
+        if (stopRefused)
+          return NativeResponse.json(
+            { error: "The run could not be stopped." },
+            { status: 500 },
+          );
+        return NativeResponse.json({ stopped: stopOnServer() });
+      }
       if (/\/api\/channels\/[^/]+\/(activity|busy)$/.test(url.pathname))
         return new NativeResponse(null, { status: 204 });
       if (url.pathname === "/api/voice/sessions")
         return NativeResponse.json({ sessions: [], nextCursor: null });
       const thread = url.pathname.match(/\/threads\/([^/]+)\/messages$/);
-      if (thread)
+      if (thread) {
+        const threadId = decodeURIComponent(thread[1] ?? "");
         return NativeResponse.json({
-          messages: stored.get(decodeURIComponent(thread[1] ?? "")) ?? [],
+          messages: stored.get(threadId) ?? [],
+          ...(threadRuns ? { runs: threadRuns.get(threadId) ?? [] } : {}),
         });
+      }
       throw new Error(`Unexpected fixture request: ${url.pathname}`);
     },
     {
@@ -405,6 +488,9 @@ afterEach(() => {
   recorded = new Map();
   stored = new Map();
   stopRequests = [];
+  serverStops = [];
+  stopRefused = false;
+  threadRuns = undefined;
   stalled = null;
   stepsRun = 0;
 });
@@ -548,6 +634,127 @@ test("a run the person stopped is not shown as a failure, live or after a reload
   await settled(back, "Summarise my inbox");
   await back.findByText("Reading your inbox");
   expect(back.queryByTestId("transcript-stopped")).toBeNull();
+});
+
+/*
+ * The replay also carries a run the server stopped at the person's request, as a RUN_ERROR with its
+ * reason (`stoppedRunEvent` in direct-chat-replay.ts). Read as a failure, it drew "The Bot run was
+ * stopped." in red after every reload, under the plain notice that says the run was stopped.
+ */
+test("a run the server stopped at the person's request is not shown as a failure, live or after a reload", async () => {
+  plans = [
+    { kind: "fails", message: "The Bot run was stopped.", code: "stopped" },
+  ];
+  const live = open();
+  await send(live, "Summarise my inbox");
+  await settled(live, "Summarise my inbox");
+  expect(live.queryByTestId("transcript-stopped")).toBeNull();
+
+  live.unmount();
+  const back = open();
+  await settled(back, "Summarise my inbox");
+  expect(back.queryByTestId("transcript-stopped")).toBeNull();
+  expect(back.queryByText("The Bot run was stopped.")).toBeNull();
+});
+
+/*
+ * THE PERSON'S OWN STOP IS NOT A FAILURE. The server ends a run it stopped with a RUN_ERROR, and
+ * the live handler read every RUN_ERROR as one: "The Bot run was stopped." in red under the
+ * conversation, the message put back in the box, and the plain "The run was stopped." beside them.
+ * As on `/bot`, the words stay sent and only the notice says what happened, from the read that
+ * follows the turn.
+ */
+test("a Stop pressed in the conversation is not shown as a failure, and the notice says the run was stopped", async () => {
+  threadRuns = new Map();
+  plans = [{ kind: "stalls", text: "Reading your inbox" }];
+  const live = open();
+  const user = await send(live, "Summarise my inbox");
+  await live.findByText("Reading your inbox");
+  await user.click(await live.findByRole("button", { name: "Stop the Bot" }));
+
+  // The run this tab started, stopped on the server.
+  await waitFor(() => expect(serverStops).toHaveLength(1));
+  const [stop] = serverStops;
+  const recorded = threadRuns?.get(channel.threadId)?.[0];
+  if (!stop || !recorded) throw new Error("No stop, or no run to stop");
+  expect(stop.threadId).toBe(channel.threadId);
+  expect(stop.runId).toBe(recorded.id);
+  await waitFor(() =>
+    expect(live.queryByRole("button", { name: "Stop the Bot" })).toBeNull(),
+  );
+  expect(live.queryByTestId("transcript-stopped")).toBeNull();
+  // The words stay sent: the box is empty, and the message is on screen once.
+  expect(live.getByRole("textbox", { name: "Message" }).textContent).toBe("");
+  expect(live.getAllByText("Summarise my inbox")).toHaveLength(1);
+  expect(
+    await live.findByText("The run was stopped.", {
+      selector: "[role=status]",
+    }),
+  ).toBeTruthy();
+});
+
+test("a run stopped in another tab while this one watches its turn is not shown as a failure either", async () => {
+  threadRuns = new Map();
+  plans = [{ kind: "stalls", text: "Reading your inbox" }];
+  const live = open();
+  await send(live, "Summarise my inbox");
+  await live.findByText("Reading your inbox");
+  // The same person presses Stop in another tab: the server stops the run, and this stream ends.
+  expect(stopOnServer()).toBe(true);
+
+  await waitFor(() =>
+    expect(live.queryByRole("button", { name: "Stop the Bot" })).toBeNull(),
+  );
+  expect(live.queryByTestId("transcript-stopped")).toBeNull();
+  expect(live.getByRole("textbox", { name: "Message" }).textContent).toBe("");
+  // Nothing is said at the moment. The thread is read again when the turn ends, and that read
+  // brings the notice: nothing else here asks for it.
+  expect(
+    await live.findByText("The run was stopped.", {
+      selector: "[role=status]",
+    }),
+  ).toBeTruthy();
+});
+
+/*
+ * A STOP THE SERVER REFUSES is said under the notice. Keyed on the Stop's own result, it stayed
+ * until the next Stop, through turns that had nothing to do with it. It goes when a turn starts.
+ */
+test("a Stop the server refuses is said until the next turn starts", async () => {
+  threadRuns = new Map();
+  stopRefused = true;
+  plans = [
+    { kind: "stalls", text: "Reading your inbox" },
+    { kind: "answers", text: "Tomorrow is free." },
+  ];
+  const refused = "The Bot couldn't be stopped. Try again.";
+  const live = open();
+  const user = await send(live, "Summarise my inbox");
+  await live.findByText("Reading your inbox");
+  await user.click(await live.findByRole("button", { name: "Stop the Bot" }));
+  await waitFor(() => expect(serverStops).toHaveLength(1));
+  expect(await live.findByText(refused)).toBeTruthy();
+
+  // The Bot finishes its answer. The refusal stays until the next turn starts.
+  const held = stalled;
+  stalled = null;
+  held?.finish([
+    { type: "TEXT_MESSAGE_END", messageId: held.messageId },
+    {
+      type: "RUN_FINISHED",
+      threadId: held.input.threadId,
+      runId: held.input.runId,
+    },
+  ]);
+  await settled(live, "Reading your inbox");
+  expect(live.getByText(refused)).toBeTruthy();
+
+  await send(live, "And the day after");
+  await live.findByText("Tomorrow is free.");
+  await waitFor(() =>
+    expect(live.queryByRole("button", { name: "Stop the Bot" })).toBeNull(),
+  );
+  expect(live.queryByText(refused)).toBeNull();
 });
 
 test("a turn that fails in a run after its browser steps says so, as one that fails at once does", async () => {

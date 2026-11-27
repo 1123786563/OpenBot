@@ -13,22 +13,24 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { z } from "zod";
+import { ConversationApprovals } from "@/components/approvals/inline-approval";
 import {
   QuestionNotice,
   type WaitingQuestion,
 } from "@/components/approvals/question-notice";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Button } from "@/components/ui/button";
 import {
   MessageContent,
   MessageHeader,
   Message as MessageRow,
 } from "@/components/ui/message";
+import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   type ApprovalInboxData,
   answerPersonQuestionMutationOptions,
   approvalInboxOptions,
+  carryingOnAfterApproval,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
@@ -36,10 +38,9 @@ import {
   readComposeDraft,
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
-import { canKeepCachedRead, client } from "@/lib/client";
+import { canKeepCachedRead } from "@/lib/client";
 import {
   awaitingFirstReply,
-  type GroupBackgroundRun,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
@@ -56,7 +57,9 @@ import { Composer, toAgentOptions } from "./composer";
 import {
   ConversationLoading,
   ConversationReadError,
+  ConversationUnavailable,
 } from "./conversation-status";
+import { RUN_STAGE, runOutcomeWords } from "./run-stage";
 import { TeamBotConsentCard } from "./team-bot-consent";
 
 const groupSubmission = z.discriminatedUnion("kind", [
@@ -98,6 +101,7 @@ export function GroupChat({
   historyEntry?: string;
   runId?: string;
 }) {
+  const { t } = useTranslation();
   const [returningFromActivity] = useState(() =>
     activityReturn?.entry === historyEntry ? activityReturn : undefined,
   );
@@ -123,16 +127,23 @@ export function GroupChat({
   );
   const messages = group.data?.messages ?? [];
   const background = group.data?.backgroundRuns ?? [];
-  const stopRun = useMutation({
-    mutationFn: async (run: GroupBackgroundRun) => {
-      await client(
-        `/api/copilotkit/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}/stop?agentId=${encodeURIComponent(run.agentId)}`,
-        { method: "POST", fallback: "The Bot run could not be stopped." },
-      );
-    },
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
-  });
+  /*
+   * A Bot waiting on an approval asks in this conversation, as it does in a conversation of its own:
+   * the same card, from the same inbox. The wait shows on the Bot's line, or on the run the server
+   * holds for it, and one thread asks once.
+   */
+  const askingThreads = [
+    ...new Set([
+      ...messages.flatMap((message) =>
+        message.status === "waiting" && message.threadId
+          ? [message.threadId]
+          : [],
+      ),
+      ...background.flatMap((run) =>
+        run.waitingForApproval && run.threadId ? [run.threadId] : [],
+      ),
+    ]),
+  ];
   const working =
     background.some(({ status }) => status === "running") ||
     messages.some(
@@ -140,6 +151,32 @@ export function GroupChat({
     );
 
   const inbox = useQuery(approvalInboxOptions());
+  /*
+   * THE REPLY AFTER A DECISION. A Bot's line that waits on an approval stays "waiting" until the
+   * server has carried the turn on and written the reply into it (`continueWaiting` in group.ts), so
+   * nothing marks it as working, and the transcript is read slowly meanwhile (`groupPollInterval`).
+   * The approvals are read every 10 s and at once after a decision. When they say the server has
+   * started, or stopped, carrying a waiting line on, the transcript is read again.
+   */
+  const carriedOn = new Set(
+    messages.flatMap((message) =>
+      message.status === "waiting" &&
+      message.threadId &&
+      carryingOnAfterApproval(inbox.data, message.threadId)
+        ? [message.id]
+        : [],
+    ),
+  );
+  const seenCarriedOn = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    const before = seenCarriedOn.current;
+    const now = carriedOn.size > 0;
+    seenCarriedOn.current = now;
+    if (before !== undefined && before !== now)
+      void queryClient.invalidateQueries({
+        queryKey: groupKeys.detail(channelId),
+      });
+  }, [carriedOn, channelId, queryClient]);
   const question = groupQuestion(inbox.data, channelId);
   // The Bot whose conversation it is: for a hand-off, the one that handed the work on.
   const askerId = question?.conversationBotId ?? question?.botId;
@@ -283,26 +320,28 @@ export function GroupChat({
 
   if (group.isPending && group.errorUpdateCount === 0)
     return <ConversationLoading label="Opening group conversation…" />;
-  if (!group.data || !canKeepCachedRead(group.error)) {
+  if (!group.data || !canKeepCachedRead(group.error))
     return (
-      <Stack padding={5}>
-        <ConversationReadError
-          title={
-            canKeepCachedRead(group.error)
-              ? "Couldn't open this group conversation."
-              : "You can't access this group conversation."
-          }
-          description="The messages and participant list are unavailable."
-          retry={() => void group.refetch()}
-          retryBelow
-          retrying={group.isFetching}
-        />
-      </Stack>
+      <ConversationUnavailable
+        denied="You can't access this group conversation."
+        description="The messages and participant list are unavailable."
+        error={group.error}
+        retry={() => void group.refetch()}
+        retrying={group.isFetching}
+        title="Couldn't open this group conversation."
+      />
     );
-  }
+
+  const empty = messages.length === 0 && background.length === 0;
+  const replyGuide =
+    bots.length === 0
+      ? t("conversation.group.noBots")
+      : bots.length === 1
+        ? t("conversation.group.oneBot", { name: bots[0]?.name })
+        : t("conversation.group.manyBots");
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <Stack minHeight={0} style={{ flex: 1 }}>
       {group.isError && !awaitingReply && (
         <ConversationReadError
           title="Couldn't update group messages."
@@ -326,12 +365,11 @@ export function GroupChat({
           className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-6"
           data-transcript-column
         >
-          {messages.length === 0 && background.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Say something to {bots.map((bot) => bot.name).join(" and ")}.
-              Every Bot answers in turn; start with @Name to ask just one.
-            </p>
-          ) : null}
+          {empty && (
+            <Text as="p" role="status" type="supporting">
+              {replyGuide}
+            </Text>
+          )}
           {messages.map((message) => (
             <GroupLine
               key={message.id}
@@ -351,6 +389,7 @@ export function GroupChat({
               }
               mine={message.ownerUserId === me?.id}
               available={message.agentId !== null && names.has(message.agentId)}
+              carryingOn={carriedOn.has(message.id)}
               rememberActivityLink={(event) => {
                 if (
                   historyEntry &&
@@ -375,39 +414,34 @@ export function GroupChat({
               ref={run.id === runId ? focus : undefined}
               className="items-center"
             >
+              <ChannelAvatar
+                participantIds={[run.agentId]}
+                size={24}
+                typing={run.status === "running"}
+              />
               <MessageContent>
                 <strong>{names.get(run.agentId)}</strong>
                 {run.partialReply && (
                   <p className="whitespace-pre-wrap">{run.partialReply}</p>
                 )}
-                <p>
+                <Text as="p" role="status" type="supporting">
                   {run.reason ??
-                    (run.waitingForApproval
-                      ? "Waiting for your approval."
+                    runOutcomeWords(run) ??
+                    (run.status === "failed"
+                      ? RUN_STAGE.ended
                       : run.status === "running"
-                        ? "Running"
-                        : run.status === "completed"
-                          ? "Run completed"
-                          : run.externalOutcome !== "unknown"
-                            ? "Run ended"
-                            : null)}
-                  {run.externalOutcome === "unknown" &&
-                    " The external outcome needs verification."}
-                </p>
+                        ? RUN_STAGE.running
+                        : RUN_STAGE.completed)}
+                </Text>
               </MessageContent>
-              {run.waitingForApproval && (
-                <Button
-                  disabled={stopRun.isPending}
-                  onClick={() => stopRun.mutate(run)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  Stop run
-                </Button>
-              )}
+              {/*
+                NO STOP ON A GROUP'S RUN, ON PURPOSE. A Bot's turn here is a run the server owns,
+                and a stop leaves its outcome "unknown" (`direct-chat-replay.ts`). Nothing in a
+                group can then vouch for it, so the Bot answers "busy" to every later turn of its
+                own, for good (`store.start` in `group.ts`). A wait on an approval ends with Deny.
+              */}
             </MessageRow>
           ))}
-          {stopRun.error && <p role="alert">{stopRun.error.message}</p>}
           {awaitingReply && (
             <Stack align="start" gap={1}>
               <Text
@@ -437,18 +471,23 @@ export function GroupChat({
       </section>
       {/* The same column and the same compact composer as a conversation with one Bot. */}
       <div className="mx-auto w-full max-w-2xl shrink-0 pb-4">
-        {send.error ? (
-          <p className="px-4 pb-2 text-sm text-destructive" role="alert">
-            Couldn't confirm your message was sent. Your draft is still here.
-            Send it again to retry.
-          </p>
-        ) : null}
-        {answer.error ? (
-          <p className="px-4 pb-2 text-sm text-destructive" role="alert">
-            Couldn't confirm your answer. Check whether the question is still
-            waiting before replying again.
-          </p>
-        ) : null}
+        {send.error && (
+          <ConversationReadError
+            title={t("conversation.group.sendFailed")}
+            description={t("conversation.group.sendRecovery")}
+            retrying={false}
+          />
+        )}
+        {answer.error && (
+          <ConversationReadError
+            title={t("conversation.group.answerFailed")}
+            description={t("conversation.group.answerRecovery")}
+            retrying={false}
+          />
+        )}
+        {askingThreads.map((threadId) => (
+          <ConversationApprovals key={threadId} threadId={threadId} />
+        ))}
         {/* The same drawer a conversation with one Bot draws its question in. */}
         {question ? (
           <div
@@ -465,7 +504,7 @@ export function GroupChat({
             />
           </div>
         ) : null}
-        {!question ? (
+        {!question && !empty ? (
           <Stack
             style={{
               paddingInline: "var(--spacing-4)",
@@ -473,11 +512,7 @@ export function GroupChat({
             }}
           >
             <Text as="p" type="supporting">
-              {bots.length === 0
-                ? "No Bots are available to reply."
-                : bots.length === 1
-                  ? `Replies come from ${bots[0]?.name}.`
-                  : "All Bots reply in order. Type @ to ask one Bot."}
+              {replyGuide}
             </Text>
           </Stack>
         ) : null}
@@ -528,7 +563,7 @@ export function GroupChat({
           }}
         />
       </div>
-    </div>
+    </Stack>
   );
 }
 
@@ -551,6 +586,7 @@ function GroupLine({
   mine,
   rowRef,
   available,
+  carryingOn,
   rememberActivityLink,
 }: {
   message: GroupMessage;
@@ -559,6 +595,8 @@ function GroupLine({
   mine: boolean;
   rowRef?: Ref<HTMLDivElement>;
   available: boolean;
+  /** The line waits on an approval the server is carrying on from: the Bot's turn again. */
+  carryingOn: boolean;
   rememberActivityLink: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   if (message.agentId === null)
@@ -587,22 +625,28 @@ function GroupLine({
       tabIndex={-1}
     >
       <div className="shrink-0 pt-0.5">
-        <ChannelAvatar participantIds={[message.agentId]} size={24} />
+        <ChannelAvatar
+          participantIds={[message.agentId]}
+          size={24}
+          typing={message.status === "running" || carryingOn}
+        />
       </div>
       <MessageContent>
         <MessageHeader className="text-xs font-medium text-muted-foreground">
           {name}
           {answeredBy ? ` · answer from ${answeredBy}` : null}
         </MessageHeader>
-        {(message.status === "running" || message.status === "queued") &&
+        {(message.status === "running" ||
+          message.status === "queued" ||
+          carryingOn) &&
         !message.text ? (
           <p
             className="tool-line-running text-sm text-muted-foreground"
             role="status"
           >
-            {message.status === "queued" ? "Waiting to reply" : "Thinking"}
+            {message.status === "queued" ? RUN_STAGE.queued : RUN_STAGE.running}
           </p>
-        ) : message.status === "waiting" ? (
+        ) : message.status === "waiting" && !carryingOn ? (
           <p className="text-sm text-muted-foreground">
             {message.reason ?? "Waiting for your response."}{" "}
             <Link

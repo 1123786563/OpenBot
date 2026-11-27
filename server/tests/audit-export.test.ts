@@ -214,6 +214,27 @@ describe("GET /api/admin/audit-events?format=csv", () => {
     expect(seen[0]?.eventType).toBe("computer.action_allowed");
   });
 
+  test("passes the search to each export page without adding its text to the trail", async () => {
+    const { reader, seen } = readerOf([
+      { events: [event()], nextCursor: "older" },
+      { events: [event({ id: "older" })] },
+    ]);
+    const { store, recorded } = storeOf();
+
+    const response = await appWith(reader, store).request(
+      "http://openbot.local/api/admin/audit-events?format=csv&q=export-needle",
+    );
+
+    expect(response.status).toBe(200);
+    expect(seen.map(({ q, cursor }) => ({ q, cursor }))).toStrictEqual([
+      { q: "export-needle", cursor: undefined },
+      { q: "export-needle", cursor: "older" },
+    ]);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.payload).toHaveProperty("textSearch", true);
+    expect(JSON.stringify(recorded[0]?.payload)).not.toContain("export-needle");
+  });
+
   test("a truncated export names it in a header instead of looking complete", async () => {
     const page = (start: number, next?: string) => ({
       events: Array.from({ length: 500 }, (_, index) =>

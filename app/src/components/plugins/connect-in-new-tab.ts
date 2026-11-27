@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { failureMessage } from "@/lib/client";
 import { connectAccountMutationOptions } from "@/lib/plugins/mutations";
 import { pluginKeys } from "@/lib/plugins/queries";
 
@@ -201,9 +202,7 @@ export function useConnectInNewTab() {
     pending: connect.isPending,
     /** The connect route's own sentence, when it refused. */
     error: connect.isError
-      ? connect.error instanceof Error
-        ? connect.error.message
-        : "Couldn't connect that account."
+      ? failureMessage(connect.error, "Couldn't connect that account.")
       : null,
   };
 }

@@ -1,4 +1,11 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import {
+  type AuditTransaction,
+  createAuditStore,
+  recordAuditEvent,
+  type TransactionAuditStore,
+  withAuditTransaction,
+} from "../audit";
 import { isConfiguredAdmin, type OpenBotRole, setRole } from "../auth/roles";
 import type { Database } from "../db/client";
 import {
@@ -70,10 +77,15 @@ export type PeopleStore = {
    * joined to their roles, accounts and sessions, on every render of the admin screen.
    */
   list: (query?: PeopleQuery) => Promise<PeoplePage>;
-  setRole: (userId: string, role: OpenBotRole) => Promise<void>;
+  /**
+   * A role, a removal and a restoration are each written with their row on the trail, in one
+   * transaction: a trail that refuses the row takes the change back too. `by` is the administrator
+   * who made it, and the actor on the row.
+   */
+  setRole: (userId: string, role: OpenBotRole, by: string) => Promise<void>;
   revoke: (userId: string, revokedBy: string) => Promise<void>;
   retireOwned: (userId: string, revokedBy: string) => Promise<void>;
-  restore: (userId: string) => Promise<void>;
+  restore: (userId: string, by: string) => Promise<void>;
   find: (userId: string) => Promise<Person | undefined>;
   isRevoked: (email: string) => Promise<boolean>;
 };
@@ -165,10 +177,52 @@ export type OwnedCredentialRetirer = (
   by: string,
 ) => Promise<{ retired: number }>;
 
+/**
+ * One change to a person and its row on the trail, in one transaction.
+ *
+ * A row filed after the change committed left the person changed when the trail refused it, and the
+ * next attempt found them already changed. Through the change's own transaction, a refused row takes
+ * the change back too, so asking again is the same request and records the change once.
+ */
+async function changePerson(
+  database: Database,
+  auditFor: TransactionAuditStore,
+  userId: string,
+  by: string,
+  eventType:
+    | "person.role_changed"
+    | "person.access_revoked"
+    | "person.access_restored",
+  write: (
+    tx: AuditTransaction,
+    email: string,
+  ) => Promise<Record<string, unknown>>,
+) {
+  await withAuditTransaction(database, async (tx, deferTap) => {
+    const [person] = await tx
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!person) return;
+    const payload = await write(tx, person.email);
+    await recordAuditEvent(auditFor(tx, deferTap), {
+      eventType,
+      targetType: "person",
+      targetId: userId,
+      actorUserId: by,
+      // The address, because `person:<id>` means nothing to whoever reads the trail later.
+      payload: { email: person.email, ...payload },
+    });
+  });
+}
+
 export function createPeopleStore(
   database: Database,
   initialAdminEmails: readonly string[],
   retireOwnedCredentials?: OwnedCredentialRetirer,
+  /** The trail, handed the transaction a change is made in. A test passes its own. */
+  auditFor: TransactionAuditStore = createAuditStore,
 ): PeopleStore {
   async function list(query: PeopleQuery = {}): Promise<PeoplePage> {
     const limit = Math.min(Math.max(query.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
@@ -291,8 +345,27 @@ export function createPeopleStore(
     list,
     find,
 
-    async setRole(userId, role) {
-      await setRole(database, userId, role);
+    async setRole(userId, role, by) {
+      await changePerson(
+        database,
+        auditFor,
+        userId,
+        by,
+        "person.role_changed",
+        async (tx) => {
+          // Read in the transaction, so the row says what the role was when it changed.
+          const stored = await tx
+            .select({ role: userRoles.role })
+            .from(userRoles)
+            .where(eq(userRoles.userId, userId));
+          await setRole(tx, userId, role);
+          return {
+            // `admin` wins, as `find` reads it.
+            from: stored.some((row) => row.role === "admin") ? "admin" : "user",
+            to: role,
+          };
+        },
+      );
     },
 
     /**
@@ -303,20 +376,21 @@ export function createPeopleStore(
      * expire, which can be days.
      */
     async revoke(userId, revokedBy) {
-      const [user] = await database
-        .select({ email: users.email })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      if (!user) return;
-
-      await database.transaction(async (tx) => {
-        await tx
-          .insert(revokedAccess)
-          .values({ email: normalize(user.email), revokedBy })
-          .onConflictDoNothing();
-        await tx.delete(sessions).where(eq(sessions.userId, userId));
-      });
+      await changePerson(
+        database,
+        auditFor,
+        userId,
+        revokedBy,
+        "person.access_revoked",
+        async (tx, email) => {
+          await tx
+            .insert(revokedAccess)
+            .values({ email: normalize(email), revokedBy })
+            .onConflictDoNothing();
+          await tx.delete(sessions).where(eq(sessions.userId, userId));
+          return {};
+        },
+      );
     },
 
     /*
@@ -336,17 +410,20 @@ export function createPeopleStore(
       await retireOwnedCredentials?.(userId, revokedBy);
     },
 
-    async restore(userId) {
-      const [user] = await database
-        .select({ email: users.email })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      if (!user) return;
-
-      await database
-        .delete(revokedAccess)
-        .where(eq(revokedAccess.email, normalize(user.email)));
+    async restore(userId, by) {
+      await changePerson(
+        database,
+        auditFor,
+        userId,
+        by,
+        "person.access_restored",
+        async (tx, email) => {
+          await tx
+            .delete(revokedAccess)
+            .where(eq(revokedAccess.email, normalize(email)));
+          return {};
+        },
+      );
     },
 
     async isRevoked(email) {

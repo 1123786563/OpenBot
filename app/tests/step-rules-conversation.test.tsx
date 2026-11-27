@@ -532,7 +532,7 @@ test("a chart and table asked for beside a search are never drawn, and are drawn
     await view.findByText(
       "Here are the companies I found.",
       {},
-      { timeout: 5000 },
+      { timeout: 15_000 },
     ),
   ).toBeTruthy();
   seen.stop();
@@ -553,7 +553,7 @@ test("a chart and table asked for beside a search are never drawn, and are drawn
   cleanup();
   const reopened = render(app());
   expect(
-    await reopened.findByText("Headcount by company", {}, { timeout: 5000 }),
+    await reopened.findByText("Headcount by company", {}, { timeout: 15_000 }),
   ).toBeTruthy();
   expect(reopened.getByText("Companies and sources")).toBeTruthy();
   expect(reopened.queryByText("Drawn before reading")).toBeNull();

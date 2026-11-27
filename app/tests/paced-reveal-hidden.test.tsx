@@ -12,13 +12,16 @@ import { settleReactWork } from "./settle-react-work";
  * or a glance at the window all read the cut-off text. Here no frame ever comes.
  */
 
-const real = {
-  raf: globalThis.requestAnimationFrame,
-  caf: globalThis.cancelAnimationFrame,
-};
+let restoreFrameClock: () => void;
 
 beforeAll(() => {
   GlobalRegistrator.register({ url: "http://localhost/" });
+  const raf = window.requestAnimationFrame;
+  const caf = window.cancelAnimationFrame;
+  restoreFrameClock = () => {
+    window.requestAnimationFrame = raf;
+    window.cancelAnimationFrame = caf;
+  };
   window.requestAnimationFrame = () => 1;
   window.cancelAnimationFrame = () => {};
 });
@@ -28,8 +31,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  window.requestAnimationFrame = real.raf;
-  window.cancelAnimationFrame = real.caf;
+  restoreFrameClock();
   await settleReactWork();
   GlobalRegistrator.unregister();
 });

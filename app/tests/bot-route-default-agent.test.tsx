@@ -192,10 +192,17 @@ test("/bot reports an explicit agent detail load failure", async () => {
 });
 
 test("/bot can open a bookmarked Bot when the roster is unavailable", async () => {
+  const roleDescription = "Helps organize work across departments. "
+    .repeat(16)
+    .trim();
   const view = renderBot(
     failingRoster({
+      "/api/capabilities": Response.json({ mode: "openbot" }),
+      "/api/channels": Response.json({
+        channel: { threadId: "bookmarked-bot-thread" },
+      }),
       "/api/agents/general-assistant": Response.json({
-        agent: GENERAL_ASSISTANT,
+        agent: { ...GENERAL_ASSISTANT, roleDescription, visibility: "public" },
       }),
     }),
     "/bot?agent=general-assistant",
@@ -203,7 +210,17 @@ test("/bot can open a bookmarked Bot when the roster is unavailable", async () =
   expect(
     await view.findByRole("heading", { name: "General Assistant" }),
   ).toBeTruthy();
-  expect(view.getByText(GENERAL_ASSISTANT.roleDescription)).toBeTruthy();
+  expect(view.getByText("Public")).toBeTruthy();
+  const disclosure = view.getByRole("button", { name: "About this Bot" });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  disclosure.focus();
+  const user = userEvent.setup({ document });
+  await user.keyboard("{Enter}");
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(view.getByText(roleDescription)).toBeTruthy();
+  await user.keyboard(" ");
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(await composer(view)).toBeTruthy();
   expect(view.queryByText("Couldn't load your Bots.")).toBeNull();
 });
 

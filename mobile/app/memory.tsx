@@ -1,4 +1,4 @@
-import { Redirect } from "expo-router";
+import { Link, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, Button, Switch, Text, TextInput, View } from "react-native";
 import { everyPage, ME, type Memory, ORGANIZATION_ID } from "../src/api";
@@ -10,6 +10,7 @@ import {
 } from "../src/api/generated/memory/memory";
 import type { UpdateMemoryRequest } from "../src/api/generated/model";
 import { authClient } from "../src/auth";
+import { isLocalMobilePreview, previewMemories } from "../src/home-preview";
 import {
   card,
   heading,
@@ -33,7 +34,30 @@ const ORIGIN: Record<Memory["formedBy"], string> = {
  * which the API client's mutator adds.
  */
 export default function MemoryScreen() {
+  const { botId, preview } = useLocalSearchParams();
+  if (isLocalMobilePreview("/memory", preview)) {
+    return (
+      <MemoryDetail previewBotId={typeof botId === "string" ? botId : ""} />
+    );
+  }
+  return <ConnectedMemory />;
+}
+
+function ConnectedMemory() {
   const { data: session, isPending } = authClient.useSession();
+  return <MemoryDetail session={session} isPending={isPending} />;
+}
+
+function MemoryDetail({
+  previewBotId,
+  session,
+  isPending = false,
+}: {
+  previewBotId?: string;
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+}) {
+  const sample = previewBotId !== undefined;
   const action = useAction();
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<{ id: string; content: string }>();
@@ -47,7 +71,9 @@ export default function MemoryScreen() {
     [],
   );
   const memories = useLoad(load, Boolean(session));
-  if (!session && !isPending) return <Redirect href="/" />;
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
+
+  const entries = sample ? previewMemories : memories.data?.memories;
 
   const change = (id: string, body: UpdateMemoryRequest) =>
     action.run(id, async () => {
@@ -58,8 +84,22 @@ export default function MemoryScreen() {
   return (
     <Screen
       refreshing={memories.pending}
-      onRefresh={() => void memories.refresh()}
+      onRefresh={sample ? undefined : () => void memories.refresh()}
     >
+      {sample && (
+        <Link
+          href={
+            previewBotId
+              ? {
+                  pathname: "/bot",
+                  params: { botId: previewBotId, preview: "1" },
+                }
+              : { pathname: "/", params: { preview: "1" } }
+          }
+        >
+          {previewBotId ? "Back to preview Bot" : "Back to preview home"}
+        </Link>
+      )}
       <Text style={heading}>Memory</Text>
       <Text style={muted}>
         Your Bots use these facts when they work for you. Switch one off to stop
@@ -69,6 +109,7 @@ export default function MemoryScreen() {
       <View style={card}>
         <TextInput
           accessibilityLabel="New memory"
+          editable={!sample}
           multiline
           placeholder="Something your Bots should remember"
           value={draft}
@@ -78,7 +119,7 @@ export default function MemoryScreen() {
         />
         <Button
           title="Remember this"
-          disabled={Boolean(action.busy) || !draft.trim()}
+          disabled={Boolean(sample || action.busy) || !draft.trim()}
           onPress={() => {
             void action.run("add", async () => {
               await createMemory(ORGANIZATION_ID, ME, {
@@ -90,10 +131,10 @@ export default function MemoryScreen() {
           }}
         />
       </View>
-      {memories.data?.memories.length === 0 && (
+      {entries?.length === 0 && (
         <Text style={muted}>Nothing remembered yet.</Text>
       )}
-      {memories.data?.memories.map((memory) => (
+      {entries?.map((memory) => (
         <View key={memory.id} style={card}>
           {editing?.id === memory.id ? (
             <>
@@ -110,7 +151,9 @@ export default function MemoryScreen() {
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <Button
                   title="Save"
-                  disabled={Boolean(action.busy) || !editing.content.trim()}
+                  disabled={
+                    Boolean(sample || action.busy) || !editing.content.trim()
+                  }
                   onPress={() => {
                     void change(memory.id, {
                       content: editing.content.trim(),
@@ -144,7 +187,7 @@ export default function MemoryScreen() {
               <Switch
                 accessibilityLabel="Use this memory"
                 value={memory.enabled}
-                disabled={Boolean(action.busy)}
+                disabled={Boolean(sample || action.busy)}
                 onValueChange={(enabled) => {
                   void change(memory.id, { enabled });
                 }}
@@ -155,7 +198,7 @@ export default function MemoryScreen() {
               {memory.reviewState === "unreviewed" && (
                 <Button
                   title="Confirm"
-                  disabled={Boolean(action.busy)}
+                  disabled={Boolean(sample || action.busy)}
                   onPress={() => {
                     void change(memory.id, { reviewState: "confirmed" });
                   }}
@@ -163,14 +206,14 @@ export default function MemoryScreen() {
               )}
               <Button
                 title="Edit"
-                disabled={Boolean(action.busy)}
+                disabled={Boolean(sample || action.busy)}
                 onPress={() =>
                   setEditing({ id: memory.id, content: memory.content })
                 }
               />
               <Button
                 title="Delete"
-                disabled={Boolean(action.busy)}
+                disabled={Boolean(sample || action.busy)}
                 onPress={() =>
                   Alert.alert("Delete this memory?", memory.content, [
                     { text: "Cancel", style: "cancel" },

@@ -33,12 +33,12 @@ afterAll(async () => {
 
 function appFor(retire: () => Promise<{ retired: number }>) {
   const events: string[] = [];
-  const store = createPeopleStore(database, [], retire);
-  const auditStore = {
+  // The removal's row is the store's, written in the removal's own transaction.
+  const store = createPeopleStore(database, [], retire, () => ({
     insert: async (event: { eventType: string }) => {
       events.push(event.eventType);
     },
-  };
+  }));
 
   const app = createApp(
     loadConfig(testEnvironment()),
@@ -47,9 +47,8 @@ function appFor(retire: () => Promise<{ retired: number }>) {
       api: { getSession: async () => ({ user: ADMIN }) },
     } as never,
     { rolesForUser: async () => ["admin"] },
-    ...(Array.from({ length: 9 }) as never[]),
-    auditStore as never,
-    ...(Array.from({ length: 4 }) as never[]),
+    // Fourteen fillers: positions 4-16 are other stores, and `store` is 17, peopleStore.
+    ...(Array.from({ length: 14 }) as never[]),
     store as never,
   );
 
@@ -98,7 +97,12 @@ test("a broker that will not answer still leaves the removal on the trail, and a
     return { retired: 0 };
   });
 
-  expect((await remove()).status).toBe(500);
+  const failed = await remove();
+  expect(failed.status).toBe(503);
+  // Half a job, said as half a job: the removal is done and the retirement is what is left.
+  expect((await failed.json()).error).toBe(
+    "Access is removed for this person, but some of their credentials or Recorders could not be retired yet. Try again to finish.",
+  );
 
   const denied = await database
     .select({ email: revokedAccess.email })

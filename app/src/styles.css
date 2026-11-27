@@ -26,6 +26,16 @@
   opacity: 1;
 }
 
+/*
+ * Astryx draws a field's placeholder in `--color-text-secondary`, which reads 3.9:1 light and 4.45:1 dark
+ * against the card — under AA for text. The app's muted foreground passes in both themes, as above.
+ */
+.astryx-text-input input::placeholder,
+.astryx-text-input textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
 .recovery-link {
   display: inline-flex;
   align-items: center;
@@ -37,6 +47,10 @@
 .sign-in-admin-summary {
   min-block-size: var(--spacing-11, 2.75rem);
   align-content: center;
+}
+
+.astryx-management-shell [data-slot="sidebar-header"] {
+  padding-inline: --spacing(4);
 }
 
 /*
@@ -287,6 +301,60 @@
   margin-top: calc(var(--spacing) * 2);
   color: var(--destructive);
   font-size: var(--text-xs);
+}
+
+/*
+ * An error node the SDK draws itself: for a part it refused outside a Form, or for a whole
+ * interface that threw. The SDK writes one fixed light scheme inline, which stays light in a dark
+ * conversation, so each rule here has to win. It takes the palette's error ink on its error tint,
+ * as the Astryx Banner does; anywhere outside the Astryx scope, the app's own error colour.
+ */
+/* biome-ignore-start lint/complexity/noImportantStyles: the SDK writes its colours inline, and only !important wins over an inline style. */
+.a2ui-surface [data-generative-ui-error] {
+  padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem) !important;
+  border: thin solid var(--color-border-error, var(--destructive)) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(
+    --color-error-muted,
+    color-mix(in oklch, var(--destructive) 10%, var(--background))
+  ) !important;
+  color: var(--color-on-error-muted, var(--destructive)) !important;
+  font-size: var(--text-sm) !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: the SDK's inline colours. */
+
+/* A part the SDK refused to draw inside a Form: the Form shows an Astryx error in its place. */
+.a2ui-surface form [data-generative-ui-error] {
+  display: none;
+}
+
+/*
+ * The time half of a date and time field. Astryx gives that input none of the field's own props,
+ * so the ring the SDK draws on every control marked `data-a2ui-input` cannot reach it. The same
+ * ring, in the same colour.
+ */
+.a2ui-surface .astryx-date-time-input-time-segment input:focus-visible {
+  outline: calc(var(--spacing) / 2) solid var(--ring);
+  outline-offset: calc(var(--spacing) / 4);
+}
+
+/*
+ * A generated interface is Astryx's to draw. Tailwind's preflight sits in `@layer base`, which
+ * OpenBot loads after Astryx's layers, so inside an interface it outranked what Astryx writes
+ * there. Every part lost the margin and padding Astryx gives it: the text of a field touched its
+ * border, and the options of an open list touched each other. A button lost more: its fill and ink
+ * (a destructive button was not red, a picked chip had no fill), its corners and its inset. Undone
+ * inside that same layer, Astryx's own rules are the last word again, in each theme.
+ */
+@layer base {
+  .a2ui-surface :is(*, *::before, *::after) {
+    margin: revert-layer;
+    padding: revert-layer;
+  }
+
+  .a2ui-surface button {
+    all: revert-layer;
+  }
 }
 
 /* A boxed Card supplies its own border and padding. */
@@ -604,12 +672,6 @@
   margin-block-start: auto;
 }
 
-.astryx-web-nav[data-mobile] .astryx-workspace-nav {
-  max-block-size: 52%;
-  padding-inline-end: --spacing(10);
-  border-block-end: thin solid var(--sidebar-border);
-}
-
 .astryx-chat-home {
   background:
     radial-gradient(
@@ -743,14 +805,18 @@
   gap: --spacing(1);
 }
 
-@media (width >= 48rem) and (height >= 42rem) {
-  .astryx-workspace-main .astryx-conversation-composer [data-slot="composer-input"] {
-    min-block-size: --spacing(13);
-  }
+.astryx-web-nav[data-mobile] .astryx-workspace-nav {
+  max-block-size: 52%;
+  padding-inline-end: --spacing(10);
+  border-block-end: thin solid var(--sidebar-border);
 }
 
-.astryx-management-shell [data-slot="sidebar-header"] {
-  padding-inline: --spacing(4);
+@media (width >= 48rem) and (height >= 42rem) {
+  .astryx-workspace-main
+    .astryx-conversation-composer
+    [data-slot="composer-input"] {
+    min-block-size: --spacing(13);
+  }
 }
 
 .astryx-management-shell [data-slot="sidebar-group"] {

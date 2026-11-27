@@ -87,6 +87,11 @@ export function finishPendingStart(
   savePendingStart(owner, id, { state: "finished", channelId, group });
 }
 
+/** Remove an abandoned start so its text and attachment refs stop being recoverable. */
+export function discardPendingStart(owner: string, id: string) {
+  localStorage.removeItem(ownerPrefix(owner) + id);
+}
+
 export function pendingStartsFor(owner: string) {
   const pending: { id: string; start: PendingStart }[] = [];
   try {

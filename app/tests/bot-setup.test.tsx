@@ -340,6 +340,8 @@ test("the Isolated row gives a Bot a computer of its own through the real route"
   const view = draw();
   const toggle = await isolatedSwitch(view);
   expect(toggle.getAttribute("aria-checked")).toBe("false");
+  // The control is 18.4px tall; the pseudo-element below it is the 44px touch target.
+  expect(toggle.className).toContain("after:-inset-y-3.5");
   expect(
     view.getByText("Runs on your computer, alongside your other Bots."),
   ).toBeTruthy();

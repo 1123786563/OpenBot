@@ -88,7 +88,7 @@ try {
         undefined,
         200,
       );
-      if (!retired) assert.equal(preferences.skin, "openmuse");
+      assert.equal(preferences.skin, retired ? "openbot" : "openmuse");
       report.push({ restoredSkin: preferences.skin });
     }
     assert.equal(identity.user.role, "admin");
@@ -550,7 +550,7 @@ try {
       "PATCH",
       "/api/settings/preferences",
       { skin: "openmuse" },
-      200,
+      retired ? 400 : 200,
     );
     report.push({
       bot: bot.id,

@@ -171,7 +171,7 @@ jobs:
       # generated app config, which `bun test` alone doesn't write (the test script's pretest does).
       - run: |
           bun run generate:app-config
-          bun test app/tests/tool-line-reduced-motion.test.tsx app/tests/onboarding-window-buttons.test.tsx app/tests/onboarding-orb-room.test.tsx app/tests/transcript-rail-clearance.test.tsx app/tests/a2ui-frame.test.tsx app/tests/update-banner-layout.test.tsx app/tests/composer-dictation-notice-layout.test.tsx app/tests/conversation-intro-halo.test.tsx
+          bun test app/tests/tool-line-reduced-motion.test.tsx app/tests/onboarding-window-buttons.test.tsx app/tests/onboarding-orb-room.test.tsx app/tests/transcript-rail-clearance.test.tsx app/tests/a2ui-frame.test.tsx app/tests/device-pages-frame.test.tsx app/tests/update-banner-layout.test.tsx app/tests/composer-dictation-notice-layout.test.tsx app/tests/conversation-intro-halo.test.tsx
         env:
           OPENBOT_APP_BROWSER: '1'
       # The desktop setup window's, for the same reason: the AI step's form holding still while the
@@ -416,6 +416,9 @@ jobs:
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
         working-directory: desktop
+      # Root test discovery runs the mobile suites as well. Install their native dependencies
+      # from the separate lockfile so Bun can load the real signature verifier.
+      - run: npm ci --prefix mobile --ignore-scripts
       # The same migrator a deployment runs, rather than `drizzle-kit migrate`: it is the one that
       # refuses a database holding a stamp newer than the migrations it is about to walk past
       # (server/src/db/migration-reach.ts), and a CI database that is ever reused rather than

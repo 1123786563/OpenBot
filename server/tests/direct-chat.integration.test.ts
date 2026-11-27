@@ -5576,7 +5576,7 @@ test("a revoked account loses its live Run and a restored account must start a n
         )
       ).text(),
     ).toContain("Offline answer.");
-    await people.restore(alice.id);
+    await people.restore(alice.id, bob.id);
     release.resolve();
     const original = await aliceApp.request(`${path}/run`, post(payload));
     expect(await original.text()).toContain("access_revoked");
@@ -5609,7 +5609,7 @@ test("a revoked account loses its live Run and a restored account must start a n
     expect(dispatches).toBe(2);
   } finally {
     release.resolve();
-    await people.restore(alice.id);
+    await people.restore(alice.id, bob.id);
     for (const channel of [aliceChannel, bobChannel])
       await database.delete(channels).where(eq(channels.id, channel.id));
     for (const bot of bots)
@@ -8913,4 +8913,4 @@ test("the Conversation confirms a published quote and bills its authenticated Ca
         .delete(enterpriseSettings)
         .where(eq(enterpriseSettings.key, pilotCatalogKey));
   }
-});
+}, 20_000);

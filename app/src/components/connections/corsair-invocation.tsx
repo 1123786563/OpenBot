@@ -8,7 +8,7 @@ import { useState } from "react";
 import { z } from "zod";
 import { ConnectionAction } from "@/components/connections/connection-surface";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { client } from "@/lib/client";
+import { client, failureMessage } from "@/lib/client";
 import {
   type CorsairAccount,
   type CorsairProvider,
@@ -123,7 +123,7 @@ export function CorsairInvocation({
         return "sent";
       } catch (error) {
         throw new Error(
-          `${error instanceof Error ? error.message : "The write could not be confirmed."} Check the destination before requesting another approval.`,
+          `${failureMessage(error, "The write could not be confirmed.")} Check the destination before requesting another approval.`,
         );
       }
     },
@@ -310,7 +310,9 @@ export function CorsairInvocation({
       />
       {loadError || requestApproval.error ? (
         <p className="text-destructive text-sm" role="alert">
-          {(loadError ?? requestApproval.error)?.message}
+          {(loadError ?? requestApproval.error)
+            ? failureMessage(loadError ?? requestApproval.error)
+            : null}
         </p>
       ) : null}
       <HStack gap={2} wrap="wrap">

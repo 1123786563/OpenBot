@@ -66,14 +66,23 @@ const member = {
 };
 const bot = `ent-bot-${suite}`;
 const stopped: string[] = [];
+/** Computers already stopped. Stopping one again stops nothing, as a real provider answers. */
+const down = new Set<string>();
+/** The one computer the provider cannot reach, for a stop that only half finishes. */
+let unreachable: string | null = null;
 const provider: ComputerProvider = {
   name: "fake",
   isolation: "per-person",
   locate: async () => "http://unused",
   status: async (seat) => ({ botId: seat.botId, state: "ready" }),
   stop: async (target) => {
-    stopped.push(computerKeyText(target.key));
-    return { wasRunning: true };
+    const computer = computerKeyText(target.key);
+    if (computer === unreachable)
+      throw new Error("computer service unreachable");
+    stopped.push(computer);
+    const wasRunning = !down.has(computer);
+    down.add(computer);
+    return { wasRunning };
   },
   reset: async () => ({ cleared: false }),
   list: async () => [
@@ -784,20 +793,14 @@ describe("network policy", () => {
 });
 
 describe("offboarding", () => {
-  test("terminating a member's computers stops their Bots and is audited", async () => {
-    stopped.length = 0;
-    const response = await asAdmin.request(
+  const stop = () =>
+    asAdmin.request(
       `/api/admin/enterprise/people/${member.id}/terminate-computers`,
       { method: "POST" },
     );
-    // Their own computer, which every Bot they used runs on, and the computer of the Bot they own,
-    // which would be its own were it isolated.
-    expect((await response.json()).stopped).toEqual([
-      `person:${member.id}`,
-      `bot:${bot}`,
-    ]);
-    expect(stopped).toEqual([`person:${member.id}`, `bot:${bot}`]);
-    const [row] = await database
+  // Oldest first. Without an order the planner's choice decides: an index scan answers newest first.
+  const stopRows = () =>
+    database
       .select()
       .from(auditEvents)
       .where(
@@ -805,11 +808,74 @@ describe("offboarding", () => {
           eq(auditEvents.eventType, "computer.terminated"),
           eq(auditEvents.targetId, member.id),
         ),
-      );
+      )
+      .orderBy(auditEvents.createdAt);
+
+  test("terminating a member's computers stops their Bots and is audited", async () => {
+    stopped.length = 0;
+    const response = await stop();
+    // Their own computer, which every Bot they used runs on, and the computer of the Bot they own,
+    // which would be its own were it isolated.
+    expect((await response.json()).stopped).toEqual([
+      `person:${member.id}`,
+      `bot:${bot}`,
+    ]);
+    expect(stopped).toEqual([`person:${member.id}`, `bot:${bot}`]);
+    const [row] = await stopRows();
     expect(row?.actorUserId).toBe(admin.id);
+    // The administrator reads the row a year later, when `person:ent-member-…` means nothing.
+    expect(row?.payload).toMatchObject({ email: member.email });
+  });
+
+  test("a stop that only half finishes says what is left, and stopping again finishes it", async () => {
+    // A later session: both computers are running again.
+    down.clear();
+    stopped.length = 0;
+    unreachable = `bot:${bot}`;
+    const before = (await stopRows()).length;
+
+    const partial = await (await stop()).json();
+    expect(partial.stopped).toEqual([`person:${member.id}`]);
+    expect(partial.failed).toEqual([
+      { computer: `bot:${bot}`, reason: "computer service unreachable" },
+    ]);
+    const [row] = (await stopRows()).slice(before);
+    expect(row?.payload).toMatchObject({
+      email: member.email,
+      stopped: [`person:${member.id}`],
+      failed: [
+        { computer: `bot:${bot}`, reason: "computer service unreachable" },
+      ],
+    });
+
+    unreachable = null;
+    const retried = await (await stop()).json();
+    expect(retried).toEqual({ stopped: [`bot:${bot}`], failed: [] });
+    expect((await stopRows()).length).toBe(before + 2);
+  });
+
+  /*
+   * The response was lost, so the administrator asks again. Nothing is running: the trail must not
+   * grow a second "Shut down a computer" row for a stop that shut nothing down.
+   */
+  test("asking again after a stop that worked records no second shutdown", async () => {
+    unreachable = null;
+    down.clear();
+    stopped.length = 0;
+    const before = (await stopRows()).length;
+
+    expect((await (await stop()).json()).stopped).toEqual([
+      `person:${member.id}`,
+      `bot:${bot}`,
+    ]);
+    expect((await stopRows()).length).toBe(before + 1);
+
+    expect(await (await stop()).json()).toEqual({ stopped: [], failed: [] });
+    expect((await stopRows()).length).toBe(before + 1);
   });
 
   test("the inactive sweep stops a computer idle past the window", async () => {
+    unreachable = null;
     stopped.length = 0;
     const result = await controls.terminateInactiveComputers();
     expect(result?.stopped).toEqual([`bot:${bot}`]);

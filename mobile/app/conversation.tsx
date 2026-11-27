@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Link, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   Button,
@@ -15,9 +15,38 @@ import {
   listConversationMessages,
   sendConversationMessage,
 } from "../src/api/generated/conversations/conversations";
+import type { ConversationMessage } from "../src/api/generated/model";
 import { authClient } from "../src/auth";
+import {
+  isLocalMobilePreview,
+  previewConversations,
+} from "../src/home-preview";
 import { useLoad } from "../src/use-load";
 export default function ConversationScreen() {
+  const { channelId, preview } = useLocalSearchParams();
+  if (isLocalMobilePreview("/conversation", preview)) {
+    const sample = previewConversations.find(({ id }) => id === channelId);
+    if (!sample)
+      return <Redirect href={{ pathname: "/", params: { preview: "1" } }} />;
+    return <Conversation sample={sample} />;
+  }
+  return <ConnectedConversation />;
+}
+
+function ConnectedConversation() {
+  const { data: session, isPending } = authClient.useSession();
+  return <Conversation session={session} isPending={isPending} />;
+}
+
+function Conversation({
+  session,
+  isPending = false,
+  sample,
+}: {
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+  sample?: (typeof previewConversations)[number];
+}) {
   const {
     channelId,
     agentId: requestedAgentId,
@@ -27,8 +56,7 @@ export default function ConversationScreen() {
     agentId?: string;
     draft?: string;
   }>();
-  const { data: session, isPending } = authClient.useSession();
-  const [agentId, setAgentId] = useState("");
+  const [agentId, setAgentId] = useState(sample?.botId ?? "");
   // A Bot profile's "Add routine" arrives with its sentence started for the person to finish.
   const [text, setText] = useState(draft ?? "");
   const [error, setError] = useState("");
@@ -39,7 +67,9 @@ export default function ConversationScreen() {
     [channelId, session?.user.id],
   );
   const channels = useLoad(loadChannels, Boolean(session));
-  const conversation = channels.data?.conversation;
+  const conversation = sample
+    ? { name: sample.name, botIds: [sample.botId], active: false }
+    : channels.data?.conversation;
   useEffect(() => {
     if (conversation && !agentId)
       setAgentId(
@@ -57,11 +87,18 @@ export default function ConversationScreen() {
     [channelId, agentId],
   );
   const history = useLoad(loadHistory, Boolean(session && agentId));
-  if (!session && !isPending) return <Redirect href="/" />;
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
   // The API answers newest first. The conversation reads oldest first.
-  const messages = history.data?.messages.slice().reverse();
+  const messages:
+    | Pick<ConversationMessage, "id" | "role" | "text" | "toolCalls">[]
+    | undefined = sample
+    ? [
+        { id: "prompt", role: "person", text: sample.prompt },
+        { id: "reply", role: "bot", text: sample.reply },
+      ]
+    : history.data?.messages.slice().reverse();
   async function send() {
-    if (!text.trim() || !agentId || sending) return;
+    if (sample || !text.trim() || !agentId || sending) return;
     setSending(true);
     setError("");
     const pendingText = text;
@@ -86,6 +123,11 @@ export default function ConversationScreen() {
   }
   return (
     <View style={{ flex: 1, padding: 16, gap: 12 }}>
+      {sample && (
+        <Link href={{ pathname: "/", params: { preview: "1" } }}>
+          Back to preview home
+        </Link>
+      )}
       <Text style={{ fontSize: 22, fontWeight: "600" }}>
         {conversation?.name ?? "Conversation"}
       </Text>
@@ -106,12 +148,14 @@ export default function ConversationScreen() {
       <ScrollView
         style={{ flex: 1 }}
         refreshControl={
-          <RefreshControl
-            refreshing={history.pending}
-            onRefresh={() => {
-              void history.refresh();
-            }}
-          />
+          sample ? undefined : (
+            <RefreshControl
+              refreshing={history.pending}
+              onRefresh={() => {
+                void history.refresh();
+              }}
+            />
+          )
         }
         contentContainerStyle={{ gap: 12 }}
       >

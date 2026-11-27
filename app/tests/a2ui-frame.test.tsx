@@ -1,8 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import {
+  BACKGROUNDS,
+  BORDER_COLORS,
+  RADII,
+} from "@copilotkit/shared/generative-ui";
 import type { Browser, Page } from "playwright-core";
 import { compile } from "tailwindcss";
+import { read } from "./browser-read";
 
 /**
  * An interface a Bot draws inside a Card shows one frame in the conversation, not two.
@@ -21,8 +27,9 @@ import { compile } from "tailwindcss";
  *
  *   OPENBOT_APP_BROWSER=1 bun test app/tests/a2ui-frame.test.tsx
  *
- * With OPENBOT_APP_SHOTS=<dir> it also saves the trip budget and the bare interface at a chat's
- * width, light and dark, as budget-light.png and so on.
+ * With OPENBOT_APP_SHOTS=<dir> it also saves each page, light and dark, at a chat's width and at a
+ * phone's: the trip budget as budget-light.png, the controls at 320px as controls-light-320.png,
+ * and the controls with the list and the calendar open as controls-light-320-list.png and so on.
  */
 const asked = process.env.OPENBOT_APP_BROWSER === "1";
 const shots = process.env.OPENBOT_APP_SHOTS;
@@ -142,8 +149,14 @@ beforeAll(async () => {
 /** Chromium for one page, closed with the page. Each attempt has its own: Bun runs a retry while the attempt it retries is still running. */
 async function chromiumBrowser(): Promise<Browser> {
   const { chromium } = await import("playwright-core");
-  // The CI job installs full Chromium without the headless shell.
-  const browser = await chromium.launch({ channel: "chromium" });
+  // The CI job installs full Chromium without the headless shell, so it launches that by channel.
+  // A machine where the packaged Chrome for Testing is killed by the OS runs the bundled shell
+  // (OPENBOT_APP_BROWSER_SHELL=1): the same Chromium, laid out the same way.
+  const browser = await chromium.launch(
+    process.env.OPENBOT_APP_BROWSER_SHELL === "1"
+      ? {}
+      : { channel: "chromium" },
+  );
   browsers.add(browser);
   browser.on("disconnected", () => browsers.delete(browser));
   return browser;
@@ -160,8 +173,9 @@ async function open(
   query: string,
   deadline: number,
   theme: "light" | "dark" = "light",
+  width = 680,
 ): Promise<Page> {
-  return within(deadline, () => openPage(query, theme));
+  return within(deadline, () => openPage(query, theme, width));
 }
 
 /**
@@ -198,14 +212,33 @@ function browserTest(
   );
 }
 
+/**
+ * Runs the page's animations to their end. A turn fades in when it first draws, and what is read is
+ * what stays.
+ */
+async function settle(page: Page) {
+  await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      try {
+        if (animation.effect?.getComputedTiming().endTime === Infinity)
+          animation.cancel();
+        else animation.finish();
+      } catch {
+        // One that cannot run to an end is not what anybody is waiting for.
+      }
+    }
+  });
+}
+
 /** The conversation at a chat's width, styled once its interfaces have drawn. */
 async function openPage(
   query = "",
   theme: "light" | "dark" = "light",
+  width = 680,
 ): Promise<Page> {
   const browser = await chromiumBrowser();
   const page = await browser.newPage({
-    viewport: { width: 680, height: 900 },
+    viewport: { width, height: 900 },
     deviceScaleFactor: 2,
   });
   page.on("close", () => void browser.close());
@@ -229,8 +262,9 @@ async function openPage(
   // The root's colour scheme as index.html sets it before paint: Astryx's palette resolves its
   // light and dark values from it, the app's tokens from the `dark` class.
   await page.goto(`${ORIGIN}/${query}`);
+  // The first interface's surface, drawn: a page of Astryx controls alone has no catalog markup.
   await page
-    .locator("[data-generative-ui-chat-surface] .a2ui-surface [data-a2ui-std]")
+    .locator("[data-generative-ui-chat-surface] .a2ui-surface")
     .first()
     .waitFor({ timeout: 8000 });
   const classes = await page.evaluate(() => [
@@ -253,6 +287,7 @@ async function openPage(
   await page.addStyleTag({ content: styles });
   await page.addStyleTag({ content: await stylesheet(classes) });
   await page.evaluate(() => document.fonts.ready);
+  await settle(page);
   return page;
 }
 
@@ -334,120 +369,12 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
     },
   );
 
-  /**
-   * How the controls read in a page: the ink of a field and of its label against the Astryx palette
-   * (`--color-*` resolved at the theme scope), and the contrast of every word inside the forms
-   * against what is behind it. A word inside a disabled control is left out.
-   */
-  async function read(page: Page) {
-    return page.evaluate(() => {
-      const scope = document.querySelector("[data-astryx-theme]");
-      if (!scope) throw new Error("the page has no Astryx theme scope");
-      const probe = document.createElement("span");
-      scope.append(probe);
-      const palette = new Set<string>();
-      for (const name of getComputedStyle(scope)) {
-        if (!name.startsWith("--color-")) continue;
-        probe.style.color = `var(${name})`;
-        palette.add(getComputedStyle(probe).color);
-      }
-      probe.remove();
-
-      const canvas = document.createElement("canvas");
-      canvas.width = 1;
-      canvas.height = 1;
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) throw new Error("no canvas");
-      // A canvas reads any CSS colour as sRGB, but flattens a translucent one against black, so
-      // the alpha is read from the text and the colour measured opaque.
-      const rgba = (colour: string): number[] => {
-        // Computed colours come as rgb(), rgba(r, g, b, a) or as `<space>(... / a)`.
-        const a = colour.startsWith("rgba(")
-          ? Number(/,\s*([\d.]+)\)$/.exec(colour)?.[1])
-          : Number(/\/\s*([\d.]+)\s*\)$/.exec(colour)?.[1] ?? 1);
-        const opaque =
-          a === 1
-            ? colour
-            : colour.startsWith("rgba(")
-              ? colour.replace(/,\s*[\d.]+\)$/, ")").replace("rgba(", "rgb(")
-              : colour.replace(/\/\s*[\d.]+\s*\)$/, ")");
-        context.fillStyle = "#000000";
-        context.fillStyle = opaque;
-        context.fillRect(0, 0, 1, 1);
-        const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-        return [r, g, b, a];
-      };
-      const over = ([tr, tg, tb, ta]: number[], [br, bg, bb]: number[]) => [
-        tr * ta + br * (1 - ta),
-        tg * ta + bg * (1 - ta),
-        tb * ta + bb * (1 - ta),
-        1,
-      ];
-      /** What is behind an element: its own and its ancestors' fills, composited over the page. */
-      const behind = (element: Element): number[] => {
-        const layers: number[][] = [];
-        for (let at: Element | null = element; at; at = at.parentElement) {
-          const fill = rgba(getComputedStyle(at).backgroundColor);
-          if (fill[3] === 0) continue;
-          layers.push(fill);
-          if (fill[3] === 1) break;
-        }
-        return layers
-          .reverse()
-          .reduce((page, layer) => over(layer, page), [255, 255, 255, 1]);
-      };
-      const luminance = ([r, g, b]: number[]) => {
-        const channel = (value: number) => {
-          const s = value / 255;
-          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-        };
-        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-      };
-      const contrast = (a: number[], b: number[]) => {
-        const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-        return (high + 0.05) / (low + 0.05);
-      };
-
-      const forms = document.querySelectorAll<HTMLElement>(
-        "[data-generative-ui-chat-surface] form",
-      );
-      const words: { text: string; contrast: number }[] = [];
-      for (const form of forms) {
-        for (const element of form.querySelectorAll<HTMLElement>("*")) {
-          if (element.closest('[aria-disabled="true"]')) continue;
-          const text = [...element.childNodes]
-            .filter((node) => node.nodeType === Node.TEXT_NODE)
-            .map((node) => node.textContent?.trim())
-            .join("");
-          if (!text) continue;
-          const style = getComputedStyle(element);
-          words.push({
-            text,
-            contrast: contrast(
-              over(rgba(style.color), behind(element)),
-              behind(element),
-            ),
-          });
-        }
-      }
-      const input = document.querySelector<HTMLElement>(
-        "[data-generative-ui-chat-surface] .astryx-text-input input",
-      );
-      const label = document.querySelector<HTMLElement>(
-        "[data-generative-ui-chat-surface] .astryx-field-label",
-      );
-      if (!input || !label)
-        throw new Error("the form has no labelled text field");
-      return {
-        ink: {
-          field: getComputedStyle(input).color,
-          label: getComputedStyle(label).color,
-        },
-        palette: [...palette],
-        words,
-      };
-    });
-  }
+  /** The card CopilotKit draws around one interface, by the id of its surface. */
+  const card = (page: Page, surface: string) =>
+    page.locator(`[data-generative-ui-chat-surface="${surface}"]`);
+  /** The line the card draws for an update that could not be shown. */
+  const line = (surface: ReturnType<typeof card>) =>
+    surface.locator(':scope > [role="alert"]');
 
   browserTest(
     "a form with a part that cannot be drawn shows an Astryx error and sends nothing; the form beside it works",
@@ -532,77 +459,685 @@ describe.skipIf(!asked)("the frame around an interface a Bot draws", () => {
   );
 
   browserTest(
+    "a form stored before the A2UI version upgrade draws and submits in the browser",
+    60_000,
+    async (deadline) => {
+      const page = await open("?only=legacy", deadline);
+      try {
+        // The fixture stores the version CopilotKit 1.83 wrote and reads it the way the app does
+        // on reopening: withCurrentA2uiVersions, as /bot and Conversation both do.
+        const destination = page.getByLabel("Destination");
+        await destination.waitFor({ timeout: 8000 });
+        expect(await destination.inputValue()).toBe("Paris");
+        expect(
+          await destination.evaluate(
+            (node) => node.closest(".astryx-text-input") !== null,
+          ),
+        ).toBe(true);
+
+        await destination.fill("Rome");
+        await destination.press("Enter");
+        await page.waitForFunction(() => window.__sent.length === 1);
+        expect(await page.evaluate(() => window.__sent)).toEqual([
+          "Destination\n\ndestination: Rome",
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  browserTest(
+    "a part the SDK could not draw is an Astryx error and sends nothing, in a form or beside one",
+    90_000,
+    async (deadline) => {
+      const page = await open("?only=refused", deadline);
+      const sent = () => page.evaluate(() => window.__sent);
+      try {
+        // In a form: the SDK's own node is hidden, an Astryx error stands in the form, and the form
+        // sends nothing, by its button or by Enter in a field.
+        const bound = card(page, "bound");
+        await bound.locator(".astryx-banner").waitFor({ timeout: 8000 });
+        expect(
+          await bound.locator('.astryx-banner [role="alert"]').innerText(),
+        ).toContain("Couldn't show this part of the reply.");
+        expect(
+          await bound.locator('[data-generative-ui-error="named"]').isVisible(),
+        ).toBe(false);
+        await bound.getByText("This line is still readable.").waitFor();
+        await page
+          .getByText("Build an interactive weekend trip budget")
+          .waitFor();
+        const who = page.getByLabel("Who");
+        await who.fill("Ada");
+        const sendBad = page.getByRole("button", { name: "Send bad" });
+        expect(await sendBad.getAttribute("aria-disabled")).toBe("true");
+        await sendBad.click({ force: true });
+        await who.press("Enter");
+        await page.waitForTimeout(500);
+        expect(await sent()).toEqual([]);
+        // The form beside it, in the same interface, sends.
+        await page.getByLabel("What").fill("Tea");
+        await page.getByLabel("What").press("Enter");
+        await page.waitForFunction(() => window.__sent.length === 1);
+        expect(await sent()).toEqual(["What\n\nwhat: Tea"]);
+
+        // Outside a form the SDK's node stays, and says what happened.
+        expect(
+          await bound.locator('[data-generative-ui-error="stray"]').innerText(),
+        ).toContain("Couldn’t display this part: invalid props");
+
+        // An update the runtime refused: the card says so, and the form that is missing a field
+        // shows the same error and sends nothing.
+        const refused = card(page, "refused");
+        expect(await line(refused).innerText()).toBe(
+          "Part of this UI couldn't be shown.",
+        );
+        expect(
+          await refused.locator('.astryx-banner [role="alert"]').innerText(),
+        ).toContain("Couldn't show this part of the reply.");
+        const sendRefused = page.getByRole("button", { name: "Send refused" });
+        expect(await sendRefused.getAttribute("aria-disabled")).toBe("true");
+        const name = page.getByLabel("Name");
+        await name.fill("Ada");
+        await name.press("Enter");
+        await page.waitForTimeout(500);
+        expect(await sent()).toHaveLength(1);
+
+        // A surface that could not be built is an empty frame that says so: nothing there to send.
+        const unbuilt = card(page, "unbuilt");
+        expect(await line(unbuilt).innerText()).toBe(
+          "Part of this UI couldn't be shown.",
+        );
+        expect(await unbuilt.locator("form").count()).toBe(0);
+
+        // A surface that threw is the SDK's error node alone, still an alert.
+        const thrown = card(page, "thrown");
+        const node = thrown.locator('[data-generative-ui-error="surface"]');
+        expect(await node.getAttribute("role")).toBe("alert");
+        expect(await node.isVisible()).toBe(true);
+        expect(await thrown.locator("form").count()).toBe(0);
+
+        // A form the SDK refuses as a whole is the SDK's error node alone, in the app's error
+        // colours: no Astryx error stands in for a form that is not there to hold one. Its button
+        // went with it, so nothing is left to send.
+        const mistyped = card(page, "mistyped");
+        const whole = mistyped.locator('[data-generative-ui-error="root"]');
+        expect(await whole.getAttribute("role")).toBe("alert");
+        expect(await whole.innerText()).toContain(
+          "Couldn’t display this part: invalid props",
+        );
+        expect(await mistyped.locator(".astryx-banner").count()).toBe(0);
+        expect(await mistyped.locator("form").count()).toBe(0);
+        expect(await mistyped.getByRole("button").count()).toBe(0);
+        expect(await sent()).toHaveLength(1);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  browserTest(
     "the controls read Astryx theme colours and stay legible, in light and in dark",
     180_000,
     async (deadline) => {
       // One page at a time, as each has its own Chromium.
-      const readIn = async (theme: "light" | "dark") => {
-        const page = await open("?only=forms", deadline, theme);
+      const readIn = async (only: string, theme: "light" | "dark") => {
+        const page = await open(`?only=${only}`, deadline, theme);
         try {
           return await read(page);
         } finally {
           await page.close();
         }
       };
-      const light = await readIn("light");
-      const dark = await readIn("dark");
-      // The ink of a field and of its label is a colour of the Astryx theme, and it changes with it.
-      for (const [mode, of] of [
-        ["light", light],
-        ["dark", dark],
-      ] as const) {
-        expect(of.palette.includes(of.ink.field), `${mode} field ink`).toBe(
-          true,
-        );
-        expect(of.palette.includes(of.ink.label), `${mode} label ink`).toBe(
-          true,
-        );
+      for (const only of ["forms", "refused"]) {
+        const light = await readIn(only, "light");
+        const dark = await readIn(only, "dark");
+        // The ink of a field, of its label and of an error node is a colour of the Astryx theme,
+        // and it changes with it.
+        for (const [mode, of] of [
+          ["light", light],
+          ["dark", dark],
+        ] as const) {
+          expect(
+            of.palette.includes(of.ink.field),
+            `${only} ${mode} field ink`,
+          ).toBe(true);
+          expect(
+            of.palette.includes(of.ink.label),
+            `${only} ${mode} label ink`,
+          ).toBe(true);
+          for (const ink of of.errorInks)
+            expect(of.palette.includes(ink), `${only} ${mode} error ink`).toBe(
+              true,
+            );
+        }
+        expect(dark.ink).not.toEqual(light.ink);
+        // Every visible word in an interface is readable against what is behind it (WCAG AA for
+        // text).
+        for (const [mode, of] of [
+          ["light", light],
+          ["dark", dark],
+        ] as const)
+          expect(
+            of.words.filter((word) => word.contrast < 4.5),
+            `${only} ${mode}`,
+          ).toEqual([]);
       }
-      expect(dark.ink).not.toEqual(light.ink);
-      // Every word in the forms is readable against what is behind it (WCAG AA for text).
-      for (const [mode, of] of [
-        ["light", light],
-        ["dark", dark],
-      ] as const)
-        expect(
-          of.words.filter((word) => word.contrast < 4.5),
-          mode,
-        ).toEqual([]);
     },
   );
 
-  if (shots)
-    browserTest("screenshots at a chat's width", 300_000, async (deadline) => {
-      mkdirSync(shots, { recursive: true });
-      for (const theme of ["light", "dark"] as const) {
-        for (const only of ["budget", "plain", "forms"]) {
-          const page = await open(`?only=${only}`, deadline, theme);
+  /**
+   * What the browser paints around the parts of the `tokens` interface: the form and the pressable
+   * with known values, then every part of one kind, in the order the SDK's list names them.
+   */
+  function paintOf(page: Page) {
+    return card(page, "tokens").evaluate((frame) => {
+      const part = (selector: string) => {
+        const element = frame.querySelector(selector);
+        if (!element) throw new Error(`no part for ${selector}`);
+        return element;
+      };
+      const computed = (element: Element) => getComputedStyle(element);
+      const paint = (element: Element) => {
+        const style = computed(element);
+        return {
+          border: [
+            style.borderTopWidth,
+            style.borderTopStyle,
+            style.borderTopColor,
+          ],
+          background: style.backgroundColor,
+          corner: style.borderTopLeftRadius,
+        };
+      };
+      const outlined = [...frame.querySelectorAll('[role="button"]')].find(
+        (node) => node.textContent?.trim() === "Outlined",
+      );
+      if (!outlined) throw new Error("no outlined pressable");
+      // The theme's default border colour, resolved where the pressable is.
+      const probe = document.createElement("span");
+      outlined.append(probe);
+      probe.style.color = "var(--a2ui-color-border-default)";
+      const themeBorder = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        tinted: paint(part('form[aria-label="Tinted"]')),
+        framed: paint(part('[role="button"]')),
+        outlined: { border: paint(outlined).border, themeBorder },
+        backgrounds: [
+          ...frame.querySelectorAll('form[aria-label^="Background "]'),
+        ].map((form) => computed(form).backgroundColor),
+        borders: [...frame.querySelectorAll('[role="button"]')]
+          .filter((node) => node.textContent?.startsWith("Border "))
+          .map((node) => computed(node).borderTopWidth),
+        corners: [...frame.querySelectorAll('form[aria-label^="Radius "]')].map(
+          (form) => computed(form).borderTopLeftRadius,
+        ),
+      };
+    });
+  }
+
+  browserTest(
+    "every colour and corner radius the catalog allows draws, with the SDK's values where the theme names none, in light and in dark",
+    180_000,
+    async (deadline) => {
+      // The SDK's values for the two named parts: its light ones are the literals behind the
+      // variables, and its dark ones are the variables it sets under the `dark` class.
+      for (const [theme, border, background] of [
+        ["light", "rgb(156, 196, 234)", "rgba(0, 128, 93, 0.08)"],
+        ["dark", "rgb(47, 95, 143)", "rgba(60, 200, 150, 0.14)"],
+      ] as const) {
+        const page = await open("?only=tokens", deadline, theme);
+        try {
+          const paint = await paintOf(page);
+          // A border in a colour the theme does not name is a border, one pixel wide.
+          expect(paint.framed.border, theme).toEqual(["1px", "solid", border]);
+          expect(paint.tinted.background, theme).toBe(background);
+          // The catalog's two smallest corners, as the SDK names them in pixels.
+          expect(paint.tinted.corner, theme).toBe("2px");
+          expect(paint.framed.corner, theme).toBe("4px");
+          // A border with no colour named is a border, in the theme's own colour.
+          expect(paint.outlined.border, theme).toEqual([
+            "1px",
+            "solid",
+            paint.outlined.themeBorder,
+          ]);
+
+          // No value in the SDK's lists is dropped: each background is painted, each border is a
+          // pixel wide, and each corner is round.
+          expect(paint.backgrounds, `${theme}: backgrounds`).toHaveLength(
+            BACKGROUNDS.length,
+          );
+          for (const [index, token] of BACKGROUNDS.entries())
+            expect(
+              paint.backgrounds[index],
+              `${theme}: background ${token}`,
+            ).not.toBe("rgba(0, 0, 0, 0)");
+          expect(paint.borders, `${theme}: borders`).toHaveLength(
+            BORDER_COLORS.length,
+          );
+          for (const [index, token] of BORDER_COLORS.entries())
+            expect(paint.borders[index], `${theme}: border ${token}`).toBe(
+              "1px",
+            );
+          expect(paint.corners, `${theme}: corners`).toHaveLength(RADII.length);
+          for (const [index, token] of RADII.entries())
+            expect(paint.corners[index], `${theme}: radius ${token}`).not.toBe(
+              "0px",
+            );
+        } finally {
+          await page.close();
+        }
+      }
+    },
+  );
+
+  browserTest(
+    "a form and a pressable that scroll are Tab stops, and the keyboard scrolls them",
+    90_000,
+    async (deadline) => {
+      const page = await open("?only=scrolls", deadline);
+      try {
+        /** The focused element inside the interface, by its label, else by what it is, and its ring. */
+        const focused = () =>
+          page.evaluate(() => {
+            const element = document.activeElement as HTMLElement | null;
+            if (!element?.closest("[data-generative-ui-chat-surface]"))
+              return null;
+            const labels = [...((element as HTMLInputElement).labels ?? [])]
+              .map((label) => label.textContent)
+              .join("");
+            return {
+              name: (
+                element.getAttribute("aria-label") ??
+                (labels || element.getAttribute("role")) ??
+                element.tagName
+              ).trim(),
+              outline: getComputedStyle(element).outlineStyle,
+            };
+          });
+        /** The box is where it was; the arrow key scrolls it. */
+        const scrollsByKey = async (selector: string) => {
+          const top = () =>
+            page.evaluate(
+              (selector) =>
+                (document.querySelector(selector) as HTMLElement | null)
+                  ?.scrollTop,
+              selector,
+            );
+          expect(await top()).toBe(0);
+          await page.keyboard.press("ArrowDown");
+          await page.waitForFunction(
+            (selector) =>
+              (document.querySelector(selector) as HTMLElement | null)
+                ?.scrollTop !== 0,
+            selector,
+            { timeout: 4000 },
+          );
+        };
+        // Tab into the interface: the first stop is the scrolling form itself. Without that stop,
+        // Tab goes straight to the field inside it, and no key can scroll the form.
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "Scrolls" });
+        expect((await focused())?.outline).not.toBe("none");
+        await scrollsByKey('form[aria-label="Scrolls"]');
+        // Then the field inside it, then the pressable, which scrolls the same way.
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "Note" });
+        await page.keyboard.press("Tab");
+        expect(await focused()).toMatchObject({ name: "button" });
+        expect((await focused())?.outline).not.toBe("none");
+        await scrollsByKey('[role="button"]');
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  /**
+   * One form with every control the catalog has, as a chat shows them: a field with typed text, a
+   * list and a calendar open, buttons in each state. In each theme, at a chat's width and at a
+   * phone's: the inks are the theme's, every visible word reads against what is behind it, each Tab
+   * stop shows a focus ring, a disabled button says so, the form sends what every control holds,
+   * and nothing runs past the page.
+   */
+  browserTest(
+    "every control reads, shows a focus ring and fits a phone's width, in light and in dark",
+    300_000,
+    async (deadline) => {
+      const inks: Record<string, { field: string; label: string }> = {};
+      const fills: Record<string, string[]> = {};
+      // One page at a time, as each has its own Chromium.
+      for (const theme of ["light", "dark"] as const)
+        for (const width of [680, 320]) {
+          const page = await open("?only=controls", deadline, theme, width);
+          const at = `${theme}, ${width}px`;
+          const readNow = async (state: string) => {
+            // A list or a calendar animates open in the same way.
+            await settle(page);
+            const of = await read(page);
+            inks[theme] = of.ink;
+            expect(of.palette.includes(of.ink.field), `${at}: field ink`).toBe(
+              true,
+            );
+            expect(of.palette.includes(of.ink.label), `${at}: label ink`).toBe(
+              true,
+            );
+            // WCAG AA for text.
+            expect(
+              of.words.filter((word) => word.contrast < 4.5),
+              `${at}, ${state}`,
+            ).toEqual([]);
+          };
+          const surface = card(page, "controls");
           try {
-            // Once the turns have faded in.
-            await page.evaluate(() =>
-              Promise.all(
-                document
-                  .getAnimations()
-                  .map((animation) =>
-                    animation.effect?.getComputedTiming().endTime === Infinity
-                      ? animation.cancel()
-                      : animation.finish(),
-                  ),
-              ),
-            );
-            const bottom = await page.$eval(
-              "[data-generative-ui-chat-surface]",
-              (frame) => frame.getBoundingClientRect().bottom,
-            );
-            await page.screenshot({
-              path: join(shots, `${only}-${theme}.png`),
-              clip: { x: 0, y: 0, width: 680, height: Math.ceil(bottom) + 32 },
+            await readNow("closed");
+
+            // Every button is drawn as Astryx writes it, from the theme's colours, with its corners
+            // and with room around its label. Tailwind's preflight is in a later cascade layer, and
+            // left them all bare text with no inset: the picked chip without a fill, the
+            // destructive button not red, square corners, and two chips touching.
+            const painted = await surface.evaluate((root) => {
+              const probe = document.createElement("span");
+              /** A theme colour, resolved where the button is. */
+              const colour = (at: Element, name: string) => {
+                probe.style.color = `var(${name})`;
+                at.append(probe);
+                return getComputedStyle(probe).color;
+              };
+              return [...root.querySelectorAll("button[data-variant]")].map(
+                (button) => {
+                  const style = getComputedStyle(button);
+                  const read = (name: string) => colour(button, name);
+                  // The radius Astryx's rule gives a button, resolved from the theme.
+                  probe.style.borderRadius =
+                    "var(--_button-radius, var(--radius-element))";
+                  button.append(probe);
+                  const cornerOfTheme =
+                    getComputedStyle(probe).borderTopLeftRadius;
+                  return {
+                    label: button.textContent?.trim(),
+                    variant: button.getAttribute("data-variant"),
+                    fill: style.backgroundColor,
+                    ink: style.color,
+                    corner: [
+                      style.borderTopLeftRadius,
+                      style.borderTopRightRadius,
+                      style.borderBottomLeftRadius,
+                      style.borderBottomRightRadius,
+                    ],
+                    cornerOfTheme,
+                    // Inset on each side, so a label never touches the edge of its button.
+                    inset: [
+                      style.paddingTop,
+                      style.paddingRight,
+                      style.paddingBottom,
+                      style.paddingLeft,
+                    ].map(Number.parseFloat),
+                    accent: read("--color-accent"),
+                    onAccent: read("--color-on-accent"),
+                    neutral: read("--color-neutral"),
+                    errorMuted: read("--color-error-muted"),
+                    onErrorMuted: read("--color-on-error-muted"),
+                    inkOfTheme: read("--color-text-primary"),
+                  };
+                },
+              );
             });
+            // All four variants are on the page, so the comparison below is not an empty one.
+            expect(new Set(painted.map((button) => button.variant))).toEqual(
+              new Set(["secondary", "primary", "destructive", "ghost"]),
+            );
+            /** A variant's fill and ink, by the names the theme gives them. The neutral theme
+             * draws a destructive button as a tint, not as a red block. */
+            const paintOf = (
+              button: (typeof painted)[number],
+            ): [string, string] => {
+              switch (button.variant) {
+                case "primary":
+                  return [button.accent, button.onAccent];
+                case "destructive":
+                  return [button.errorMuted, button.onErrorMuted];
+                case "ghost":
+                  return ["rgba(0, 0, 0, 0)", button.inkOfTheme];
+                // `secondary`, the one variant left: the set above is checked.
+                default:
+                  return [button.neutral, button.inkOfTheme];
+              }
+            };
+            for (const button of painted) {
+              const [fill, ink] = paintOf(button);
+              const which = `${at}: ${button.variant} "${button.label}"`;
+              expect([button.fill, button.ink], which).toEqual([fill, ink]);
+              // Rounded on all four corners, as the theme rounds a button.
+              expect(button.cornerOfTheme, `${which} corner of theme`).not.toBe(
+                "0px",
+              );
+              expect(button.corner, `${which} corners`).toEqual(
+                Array<string>(4).fill(button.cornerOfTheme),
+              );
+              for (const side of button.inset)
+                expect(
+                  side,
+                  `${at}: ${button.variant} "${button.label}"`,
+                ).toBeGreaterThan(0);
+            }
+            // A field's box has room around its text, as Astryx draws it.
+            const inset = (at: ReturnType<typeof card>) =>
+              at.evaluate((box) => {
+                const style = getComputedStyle(box);
+                return [
+                  style.paddingTop,
+                  style.paddingRight,
+                  style.paddingBottom,
+                  style.paddingLeft,
+                ].map(Number.parseFloat);
+              });
+            const field = inset(surface.locator(".astryx-text-input").first());
+            for (const side of await field)
+              expect(side, `${at}: the text field's inset`).toBeGreaterThan(0);
+
+            fills[theme] = painted.map((button) => button.fill);
+
+            // The list and the calendar are drawn inside the interface, and read the same way.
+            await surface.locator('[aria-haspopup="listbox"]').click();
+            await page.getByRole("option", { name: "upper" }).waitFor();
+            await readNow("the list open");
+            // So does each option of the open list.
+            const option = await inset(
+              page.getByRole("option", { name: "upper" }),
+            );
+            for (const side of option)
+              expect(side, `${at}: an option's inset`).toBeGreaterThan(0);
+            await page.keyboard.press("Escape");
+            const calendars = surface.getByRole("button", {
+              name: "Open calendar",
+            });
+            // The date field, then the date and time field. A time alone has no calendar.
+            for (const calendar of await calendars.all()) {
+              await calendar.click();
+              await page.getByRole("dialog").waitFor();
+              await readNow("the calendar open");
+              // The selected day is the theme's accent, as Astryx paints it.
+              const day = page
+                .getByRole("dialog")
+                .locator('[role="gridcell"][aria-selected="true"] button');
+              const selected = await day.evaluate((button) => {
+                const probe = document.createElement("span");
+                button.append(probe);
+                const colour = (name: string) => {
+                  probe.style.color = `var(${name})`;
+                  return getComputedStyle(probe).color;
+                };
+                const style = getComputedStyle(button);
+                return {
+                  paint: [style.backgroundColor, style.color],
+                  theme: [
+                    colour("--color-accent"),
+                    colour("--color-on-accent"),
+                  ],
+                };
+              });
+              expect(selected.paint, `${at}: the selected day`).toEqual(
+                selected.theme,
+              );
+              await page.keyboard.press("Escape");
+              await page.getByRole("dialog").waitFor({ state: "hidden" });
+            }
+
+            // By keyboard: every Tab stop in the interface shows a focus ring.
+            await page.getByLabel("Name").focus();
+            const stops: string[] = [];
+            for (let step = 0; step < 60; step++) {
+              await page.keyboard.press("Tab");
+              const stop = await page.evaluate(() => {
+                const element = document.activeElement as HTMLElement | null;
+                if (!element?.closest("[data-generative-ui-chat-surface]"))
+                  return null;
+                // What the stop is called, by its label or by its text.
+                const label = [...((element as HTMLInputElement).labels ?? [])]
+                  .map((item) => item.textContent)
+                  .join("");
+                const labelledBy = (
+                  element.getAttribute("aria-labelledby") ?? ""
+                )
+                  .split(/\s+/)
+                  .map((id) => document.getElementById(id)?.textContent ?? "")
+                  .join("");
+                const name =
+                  element.getAttribute("aria-label") ??
+                  (label ||
+                    labelledBy ||
+                    element.textContent ||
+                    element.tagName.toLowerCase());
+                return {
+                  name: name.trim(),
+                  outline: getComputedStyle(element).outlineStyle,
+                };
+              });
+              // Tab has left the interface.
+              if (!stop) break;
+              stops.push(stop.name);
+              expect(stop.outline, `${at}: ${stop.name}`).not.toBe("none");
+            }
+            // The walk reached the end of the form.
+            expect(stops.at(-1), `${at}: last Tab stop`).toBe("Send");
+            // Astryx keeps a disabled button a Tab stop, so it can say why it is disabled.
+            expect(
+              await surface
+                .getByRole("button", { name: "Still here" })
+                .getAttribute("aria-disabled"),
+              `${at}: disabled button`,
+            ).toBe("true");
+
+            // The form sends what every control holds.
+            await surface
+              .getByRole("button", { name: "Send", exact: true })
+              .press("Enter");
+            await page.waitForFunction(() => window.__sent.length === 1);
+            expect(
+              await page.evaluate(() => window.__sent),
+              `${at}: sent`,
+            ).toEqual([
+              [
+                "Name",
+                "",
+                "name: Ada",
+                "note: Window seat, please",
+                'extras: ["bag"]',
+                'seat: ["window"]',
+                "alone: []",
+                "trip: economy",
+                "agree: false",
+                "day: 2026-10-23",
+                "at: 09:30",
+                "slot: 2026-10-23T09:30",
+                "rating: 10",
+                "deck: lower",
+                'split: [{"label":"Transport","amount":100},{"label":"Lodging","amount":250}]',
+              ].join("\n"),
+            ]);
+            // Nothing runs past the page.
+            const [scroll, client] = await page.evaluate(() => [
+              document.documentElement.scrollWidth,
+              document.documentElement.clientWidth,
+            ]);
+            expect(scroll, `${at}: page width`).toBe(client);
           } finally {
             await page.close();
           }
         }
-      }
-      // One Chromium per page, six pages, on a machine that may be busy.
-    });
+      // The ink of a field and of its label, and the fill of a button, change with the theme.
+      expect(inks.dark).not.toEqual(inks.light);
+      expect(fills.dark).not.toEqual(fills.light);
+    },
+  );
+
+  if (shots)
+    browserTest(
+      "screenshots at a chat's width and at a phone's",
+      600_000,
+      async (deadline) => {
+        mkdirSync(shots, { recursive: true });
+        /** The conversation from its top to the end of its last interface. */
+        const shot = async (
+          page: Page,
+          only: string,
+          theme: string,
+          width: number,
+          state = "",
+        ) => {
+          // A form taller than the window is cut off by the transcript's scroll area, so the window
+          // is made as tall as the conversation first.
+          const tall = await page.evaluate(() => {
+            const frame = document.querySelector(
+              "[data-generative-ui-chat-surface]",
+            );
+            for (let at = frame?.parentElement; at; at = at.parentElement)
+              if (at.scrollHeight > at.clientHeight + 1)
+                return at.scrollHeight + 48;
+            return 0;
+          });
+          if (tall) await page.setViewportSize({ width, height: tall });
+          const bottom = await page.$eval(
+            "[data-generative-ui-chat-surface]",
+            (frame) => frame.getBoundingClientRect().bottom,
+          );
+          await page.screenshot({
+            path: join(
+              shots,
+              `${only}-${theme}${width === 680 ? "" : `-${width}`}${state}.png`,
+            ),
+            fullPage: true,
+            clip: { x: 0, y: 0, width, height: Math.ceil(bottom) + 32 },
+          });
+        };
+        for (const theme of ["light", "dark"] as const)
+          for (const width of [680, 320, 1440, 390])
+            for (const only of ["budget", "plain", "forms", "controls"]) {
+              const page = await open(`?only=${only}`, deadline, theme, width);
+              try {
+                await shot(page, only, theme, width);
+                if (only !== "controls") continue;
+                // Every control, with the list and the calendar open.
+                const surface = card(page, only);
+                await surface.locator('[aria-haspopup="listbox"]').click();
+                await page.getByRole("option", { name: "upper" }).waitFor();
+                await settle(page);
+                await shot(page, only, theme, width, "-list");
+                await page.keyboard.press("Escape");
+                await surface
+                  .getByRole("button", { name: "Open calendar" })
+                  .first()
+                  .click();
+                await page.getByRole("dialog").waitFor();
+                await settle(page);
+                await shot(page, only, theme, width, "-calendar");
+              } finally {
+                await page.close();
+              }
+            }
+      },
+    );
 });

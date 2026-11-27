@@ -17,23 +17,37 @@ import {
 } from "@tabler/icons-react";
 import type { LinkOptions } from "@tanstack/react-router";
 
+/** Marks a message for extraction without translating it at module scope. `title` stays English: it is the search control data and the overview's own words. */
+function navigationMessage(messageId: string, label: string) {
+  return { messageId, label };
+}
+
 export const ADMIN_NAVIGATION: {
   title: string;
+  /** The group heading's words, in the language in force (from `label` through `messageId`). */
+  label: string;
+  messageId: string;
   description: string;
   items: {
     description: string;
     icon: React.ComponentType<{ className?: string }>;
     linkOptions: LinkOptions;
     tasks: string[];
+    /** Control data: the overview rows and the search control match on it. The sidebar row shows `label`. */
     title: string;
+    /** The row's words, in the language in force (from `label` through `messageId`). */
+    label: string;
+    messageId: string;
   }[];
 }[] = [
   {
     title: "Routines",
+    ...navigationMessage("admin.sidebar.groups.routines", "Routines"),
     description: "Manage background check-ins.",
     items: [
       {
         title: "Check-ins",
+        ...navigationMessage("admin.sidebar.checkIns", "Check-ins"),
         description:
           "Turn check-ins on or off, limit them, and see how often people start what Bots raise.",
         icon: IconRadar,
@@ -44,10 +58,12 @@ export const ADMIN_NAVIGATION: {
   },
   {
     title: "Skills",
+    ...navigationMessage("admin.sidebar.groups.skills", "Skills"),
     description: "Manage reusable instructions and automatic learning.",
     items: [
       {
         title: "Skills",
+        ...navigationMessage("admin.sidebar.skills", "Skills"),
         description: "Create reusable instructions people can run with /.",
         icon: IconFileText,
         linkOptions: { to: "/admin/skills" },
@@ -55,6 +71,10 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "Automatic learning",
+        ...navigationMessage(
+          "admin.sidebar.automaticLearning",
+          "Automatic learning",
+        ),
         description:
           "Learn from finished conversations, review the skills it proposes, and choose whether people may share theirs.",
         icon: IconFileText,
@@ -65,10 +85,12 @@ export const ADMIN_NAVIGATION: {
   },
   {
     title: "Apps",
+    ...navigationMessage("admin.sidebar.groups.apps", "Apps"),
     description: "Connect services and manage the components Bots use.",
     items: [
       {
         title: "Plugins",
+        ...navigationMessage("admin.sidebar.plugins", "Plugins"),
         description:
           "Connect services, choose which Bots can use them, and approve MCP servers.",
         icon: IconPuzzle,
@@ -77,6 +99,7 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "UI components",
+        ...navigationMessage("admin.sidebar.uiComponents", "UI components"),
         description:
           "Manage custom components that Bots can display in conversations.",
         icon: IconLayoutGrid,
@@ -85,6 +108,7 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "Playground",
+        ...navigationMessage("admin.sidebar.playground", "Playground"),
         description: "Write a component and watch it render as you type.",
         icon: IconCode,
         linkOptions: { to: "/admin/playground" },
@@ -94,10 +118,12 @@ export const ADMIN_NAVIGATION: {
   },
   {
     title: "Computer",
+    ...navigationMessage("admin.sidebar.groups.computer", "Computer"),
     description: "",
     items: [
       {
         title: "Computers",
+        ...navigationMessage("admin.sidebar.computers", "Computers"),
         description:
           "Manage the computers that run Bot tools, when idle ones stop, and where they can connect.",
         icon: IconDeviceDesktop,
@@ -108,10 +134,12 @@ export const ADMIN_NAVIGATION: {
   },
   {
     title: "Approvals",
+    ...navigationMessage("admin.sidebar.groups.approvals", "Approvals"),
     description: "Manage approvals and boundaries for Bot actions.",
     items: [
       {
         title: "Approvals",
+        ...navigationMessage("admin.sidebar.approvals", "Approvals"),
         description: "Choose which actions require approval for members’ Bots.",
         icon: IconChecks,
         linkOptions: { to: "/admin/approvals" },
@@ -119,6 +147,7 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "Boundaries",
+        ...navigationMessage("admin.sidebar.boundaries", "Boundaries"),
         description: "Define actions that no Bot may take.",
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/boundaries" },
@@ -126,6 +155,7 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "Test a policy",
+        ...navigationMessage("admin.sidebar.testPolicy", "Test a policy"),
         description:
           "Ask what OpenBot would do if a Bot took an action, and see which control decides.",
         icon: IconZoomQuestion,
@@ -136,10 +166,12 @@ export const ADMIN_NAVIGATION: {
   },
   {
     title: "Activity",
+    ...navigationMessage("admin.sidebar.groups.activity", "Activity"),
     description: "",
     items: [
       {
         title: "Audit",
+        ...navigationMessage("admin.sidebar.audit", "Audit"),
         description:
           "Review actions taken in OpenBot and who took them, and record Bots' commands.",
         icon: IconListDetails,
@@ -150,10 +182,12 @@ export const ADMIN_NAVIGATION: {
   },
   {
     title: "Vault",
+    ...navigationMessage("admin.sidebar.groups.vault", "Vault"),
     description: "",
     items: [
       {
         title: "Credentials",
+        ...navigationMessage("admin.sidebar.credentials", "Credentials"),
         description: "Manage this deployment’s keys and tokens.",
         icon: IconKey,
         linkOptions: { to: "/admin/credentials" },
@@ -163,10 +197,12 @@ export const ADMIN_NAVIGATION: {
   },
   {
     title: "Organization",
+    ...navigationMessage("admin.sidebar.groups.organization", "Organization"),
     description: "",
     items: [
       {
         title: "People",
+        ...navigationMessage("admin.sidebar.people", "People"),
         description: "Review members, manage admin roles, and remove access.",
         icon: IconUsers,
         linkOptions: { to: "/admin/people" },
@@ -174,6 +210,7 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "Permissions",
+        ...navigationMessage("admin.sidebar.permissions", "Permissions"),
         description:
           "Choose what people may do with Bots, for everybody and per role or group.",
         icon: IconLockAccess,
@@ -182,6 +219,7 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "Providers",
+        ...navigationMessage("admin.sidebar.providers", "Providers"),
         description:
           "See which provider serves your Bots' models, and choose which models they may use.",
         icon: IconBrain,
@@ -190,6 +228,10 @@ export const ADMIN_NAVIGATION: {
       },
       {
         title: "Identity providers",
+        ...navigationMessage(
+          "admin.sidebar.identityProviders",
+          "Identity providers",
+        ),
         description:
           "Configure your company’s sign-in provider for each email domain, and require SSO.",
         icon: IconBuildingBank,

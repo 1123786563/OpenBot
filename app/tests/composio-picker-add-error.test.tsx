@@ -218,3 +218,51 @@ test("an add that fails while a second one is pressed still says what went wrong
     expect(within(slackRow).getByRole("button", { name: "Add" })).toBeTruthy();
   });
 });
+
+/**
+ * AND WHAT IT SAYS WHEN THE SERVER ITSELF BROKE.
+ *
+ * The banner used to print `thrown.message`, so a 500 whose body was the server's own parse error
+ * printed that error at a person. A refusal keeps its sentence (the 409 above); a 500 does not.
+ */
+test("a server fault says the house sentence, not the server's internals", async () => {
+  global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input).split("?")[0] ?? "";
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    if (path === "/api/plugins/composio/apps" && init?.method === "POST")
+      return json({ error: "Unexpected token '<'" }, 500);
+    if (path === "/api/plugins/composio/apps")
+      return json({
+        apps: [
+          {
+            slug: "slack",
+            name: "Slack",
+            description: "Messages, channels and files.",
+            logo: null,
+            categories: [],
+            actionCount: 167,
+            connection: { kind: "consent" },
+            enabled: false,
+          },
+        ],
+      });
+    return json({ servers: [], catalogue: [], composioConfigured: true });
+  }) as unknown as typeof fetch;
+
+  const view = renderPicker();
+  const slackRow = await view.findByTestId("directory-slack");
+  await userEvent.click(
+    await within(slackRow).findByRole("button", { name: "Add" }),
+  );
+
+  await waitFor(() =>
+    expect(view.getByRole("alert").textContent).toBe(
+      "Couldn't complete that. Try again.",
+    ),
+  );
+  expect(view.queryByText(/Unexpected token/)).toBeNull();
+});

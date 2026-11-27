@@ -1,6 +1,10 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { useId, useRef } from "react";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
-import { SidebarShell } from "@/components/layout/sidebar-shell";
+import {
+  ShellNavigationHeader,
+  SidebarShell,
+} from "@/components/layout/sidebar-shell";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { personalAdminRedirect } from "@/lib/manage-paths";
@@ -37,16 +41,32 @@ function RouteComponent() {
     <SidebarShell
       className="astryx-management-shell h-svh overflow-hidden"
       name="admin"
+      pageToggle={false}
       width="22rem"
     >
-      <AdminSidebar />
+      <AdminFrame />
+    </SidebarShell>
+  );
+}
+
+/**
+ * The frame inside the sidebar provider: it reads sidebar state (`ShellNavigationHeader` uses
+ * `useSidebar`), so it must be `SidebarShell`'s child, not the shell itself.
+ */
+function AdminFrame() {
+  const navId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <AdminSidebar navId={navId} returnFocus={trigger} />
       <SidebarInset
         id="main-content"
         tabIndex={-1}
         className="astryx-management-main min-h-0 min-w-0 overflow-hidden"
       >
+        <ShellNavigationHeader navId={navId} trigger={trigger} />
         <Outlet />
       </SidebarInset>
-    </SidebarShell>
+    </>
   );
 }

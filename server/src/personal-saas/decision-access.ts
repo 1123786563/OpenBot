@@ -1,3 +1,4 @@
+import { decisionInvalidated } from "@openbot/shared/approval-outcomes";
 import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/client";
@@ -8,9 +9,6 @@ import { readExecutionAccess } from "./account-access";
 import { PERSONAL_BOT_WORK } from "./bot-work";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
-
-export const decisionInvalidated =
-  "This decision was invalidated when workspace execution stopped.";
 
 export async function readDecisionAccess(
   tx: Transaction,

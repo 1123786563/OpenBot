@@ -7,6 +7,12 @@
  * that applies on one replica out of N reads as working while it does not.
  */
 import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import {
+  createAuditStore,
+  recordAuditEvent,
+  type TransactionAuditStore,
+  withAuditTransaction,
+} from "../audit";
 import type { Database } from "../db/client";
 import {
   actionRecords,
@@ -19,7 +25,12 @@ import {
   users,
 } from "../db/schema";
 import { currentEdition, PERSONAL_ENTERPRISE_SETTINGS } from "../edition";
-import type { CapabilityRow, Member } from "./capabilities";
+import {
+  CAPABILITY_LABELS,
+  type CapabilityRow,
+  isCapability,
+  type Member,
+} from "./capabilities";
 
 export const ENTERPRISE_TOPIC = "enterprise_settings_changed";
 
@@ -167,6 +178,26 @@ async function lockCapabilityWrites(tx: Pick<Database, "execute">) {
   );
 }
 
+/** The same switches set the same way, whatever order they were read in. */
+function sameCapabilities(
+  stored: readonly CapabilityRow[],
+  expected: readonly CapabilityRow[],
+) {
+  const byScope = (rows: readonly CapabilityRow[]) =>
+    new Map(
+      rows.map((row) => [
+        JSON.stringify([row.scopeKind, row.scopeId, row.capability]),
+        row.allowed,
+      ]),
+    );
+  const now = byScope(stored);
+  const read = byScope(expected);
+  return (
+    now.size === read.size &&
+    [...read].every(([scope, allowed]) => now.get(scope) === allowed)
+  );
+}
+
 async function writeCapability(
   tx: Pick<Database, "insert" | "delete">,
   row: CapabilitySwitch,
@@ -214,7 +245,14 @@ export async function readSkillSharingAllowed(
   return unwrap("skillSharing", row?.value);
 }
 
-export function createEnterpriseStore(database: Database) {
+export function createEnterpriseStore(
+  database: Database,
+  /**
+   * The trail for a switch's row, handed the transaction the switch is written in, so the two commit
+   * together or not at all.
+   */
+  auditFor: TransactionAuditStore = createAuditStore,
+) {
   return {
     async settings(): Promise<EnterpriseSettings> {
       // Fixed for the personal edition: a value a team deployment left behind is not read.
@@ -288,18 +326,68 @@ export function createEnterpriseStore(database: Database) {
     },
 
     /**
-     * Several switches in one transaction, with one NOTIFY. A change written from a description is
-     * often "off for everybody, on for these groups", and half of it saved takes the permission from
-     * everybody.
+     * Several switches in one transaction, with one NOTIFY and, when `audit` is given, one
+     * `capability.changed` row each. A change written from a description is often "off for everybody,
+     * on for these groups", and half of it saved takes the permission from everybody. The rows go
+     * through the same transaction, so a trail that refuses one leaves every switch as it was.
+     *
+     * `expected` is the reading the caller worked from, compared under the same lock as the write:
+     * two admins who previewed one state cannot both save over each other. False means nothing was
+     * written. Absent writes whatever is there now, which is what a caller with no reading asks for.
      */
     async setCapabilities(
       rows: readonly CapabilitySwitch[],
       by: string,
-    ): Promise<void> {
-      await database.transaction(async (tx) => {
+      expected?: readonly CapabilityRow[],
+      audit?: {
+        actorId: string;
+        /** The sentence the switches were written from, when a description wrote them. */
+        authoring?: { source: "english"; text: string };
+      },
+    ): Promise<boolean> {
+      return withAuditTransaction(database, async (tx, deferTap) => {
         await lockCapabilityWrites(tx);
+        // Read under the lock: what `expected` is compared with, and what each switch was before.
+        const stored = await tx
+          .select({
+            scopeKind: capabilitySettings.scopeKind,
+            scopeId: capabilitySettings.scopeId,
+            capability: capabilitySettings.capability,
+            allowed: capabilitySettings.allowed,
+          })
+          .from(capabilitySettings);
+        if (expected && !sameCapabilities(stored, expected)) return false;
         for (const row of rows) await writeCapability(tx, row, by);
         await announce(tx);
+        if (audit) {
+          // One id for the switches saved together, so the trail can put them back together.
+          const batch = crypto.randomUUID();
+          const trail = auditFor(tx, deferTap);
+          for (const row of rows)
+            await recordAuditEvent(trail, {
+              eventType: "capability.changed",
+              targetType: "capability",
+              targetId: row.capability,
+              actorUserId: audit.actorId,
+              payload: {
+                ...row,
+                title: isCapability(row.capability)
+                  ? CAPABILITY_LABELS[row.capability].title
+                  : row.capability,
+                by,
+                before:
+                  stored.find(
+                    (before) =>
+                      before.scopeKind === row.scopeKind &&
+                      before.scopeId === row.scopeId &&
+                      before.capability === row.capability,
+                  )?.allowed ?? null,
+                batch,
+                ...(audit.authoring ? { authoring: audit.authoring } : {}),
+              },
+            });
+        }
+        return true;
       });
     },
 

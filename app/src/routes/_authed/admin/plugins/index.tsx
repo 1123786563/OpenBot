@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { z } from "zod";
 import { McpAllowlistSection } from "@/components/admin/controls/mcp-allowlist-section";
 import { PluginsListPage } from "@/components/manage/plugins-list-page";
 
+import { pluginSearch } from "@/lib/plugin-search";
+
 export const Route = createFileRoute("/_authed/admin/plugins/")({
   component: AdminPluginsPage,
-  validateSearch: z.object({
-    q: z.string().max(200).optional().catch(undefined),
-  }),
+  validateSearch: pluginSearch,
 });
 
 /** The apps and servers, then the allowlist of MCP servers Bots may call. */
@@ -19,9 +18,10 @@ function AdminPluginsPage() {
       search={q}
       onSearchChange={(value) =>
         void navigate({
-          search: { q: value || undefined },
+          search: { q: value.slice(0, 200) || undefined },
           replace: true,
           resetScroll: false,
+          state: { returnPlugin: undefined },
         })
       }
     >

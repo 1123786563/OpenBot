@@ -1,0 +1,172 @@
+[
+  {
+    "source": "/s/tasks",
+    "destinations": {
+      "teamAdmin": "/tasks",
+      "teamMember": "/tasks",
+      "personal": "/tasks"
+    }
+  },
+  {
+    "source": "/s/routines",
+    "destinations": {
+      "teamAdmin": "/routines",
+      "teamMember": "/routines",
+      "personal": "/routines"
+    }
+  },
+  {
+    "source": "/s/memories",
+    "destinations": {
+      "teamAdmin": "/capabilities/memory",
+      "teamMember": "/capabilities/memory",
+      "personal": "/bots"
+    }
+  },
+  {
+    "source": "/s/activity?agent=expenses",
+    "destinations": {
+      "teamAdmin": "/s/activity?agent=expenses",
+      "teamMember": "/s/activity?agent=expenses",
+      "personal": "/s/activity?agent=expenses"
+    }
+  },
+  {
+    "source": "/s/ideas?agent=expenses",
+    "destinations": {
+      "teamAdmin": "/ideas?agent=expenses",
+      "teamMember": "/ideas?agent=expenses",
+      "personal": "/ideas?agent=expenses"
+    }
+  },
+  {
+    "source": "/s/goals?agent=expenses",
+    "destinations": {
+      "teamAdmin": "/responsibilities?agent=expenses&view=goals",
+      "teamMember": "/responsibilities?agent=expenses&view=goals",
+      "personal": "/responsibilities?agent=expenses&view=goals"
+    }
+  },
+  {
+    "source": "/group/new",
+    "destinations": {
+      "teamAdmin": "/channel/new",
+      "teamMember": "/channel/new",
+      "personal": "/channel/new"
+    }
+  },
+  {
+    "source": "/agents",
+    "destinations": {
+      "teamAdmin": "/bots",
+      "teamMember": "/bots",
+      "personal": "/bots"
+    }
+  },
+  {
+    "source": "/team-bots",
+    "destinations": {
+      "teamAdmin": "/bots",
+      "teamMember": "/bots",
+      "personal": "/bots"
+    }
+  },
+  {
+    "source": "/skills?new=true&edit=expenses",
+    "destinations": {
+      "teamAdmin": "/capabilities/skills?new=true&edit=expenses",
+      "teamMember": "/capabilities/skills?new=true&edit=expenses",
+      "personal": "/capabilities/skills?new=true&edit=expenses"
+    }
+  },
+  {
+    "source": "/capabilities",
+    "destinations": {
+      "teamAdmin": "/capabilities/skills",
+      "teamMember": "/capabilities/skills",
+      "personal": "/capabilities/skills"
+    }
+  },
+  {
+    "source": "/memory",
+    "destinations": {
+      "teamAdmin": "/capabilities/memory",
+      "teamMember": "/capabilities/memory",
+      "personal": "/bots"
+    }
+  },
+  {
+    "source": "/settings/memory",
+    "destinations": {
+      "teamAdmin": "/capabilities/memory",
+      "teamMember": "/capabilities/memory",
+      "personal": "/bots"
+    }
+  },
+  {
+    "source": "/approvals",
+    "destinations": {
+      "teamAdmin": "/settings/approvals",
+      "teamMember": "/settings/approvals",
+      "personal": "/settings/approvals"
+    }
+  },
+  {
+    "source": "/reachability",
+    "destinations": {
+      "teamAdmin": "/settings/notifications",
+      "teamMember": "/settings/notifications",
+      "personal": "/settings/notifications"
+    }
+  },
+  {
+    "source": "/settings/connected-accounts/?connected=ok&linked=1",
+    "consumedQueryFinalPath": "/connections",
+    "destinations": {
+      "teamAdmin": "/connections?connected=ok&linked=%221%22",
+      "teamMember": "/connections?connected=ok&linked=%221%22",
+      "personal": "/connections?connected=ok&linked=%221%22"
+    }
+  },
+  {
+    "source": "/settings/connected-accounts/parallel?action=search",
+    "consumedQueryFinalPath": "/connections/parallel",
+    "destinations": {
+      "teamAdmin": "/connections/parallel?action=search",
+      "teamMember": "/connections/parallel?action=search",
+      "personal": "/connections/parallel?action=search"
+    }
+  },
+  {
+    "source": "/connections/parallel/bots/expenses",
+    "destinations": {
+      "teamAdmin": "/connections/parallel",
+      "teamMember": "/connections/parallel",
+      "personal": "/connections/parallel"
+    }
+  },
+  {
+    "source": "/connections/parallel/tools/search",
+    "destinations": {
+      "teamAdmin": "/connections/parallel",
+      "teamMember": "/connections/parallel",
+      "personal": "/connections/parallel"
+    }
+  },
+  {
+    "source": "/settings/plugins/parallel",
+    "destinations": {
+      "teamAdmin": "/settings",
+      "teamMember": "/settings",
+      "personal": "/connections/parallel"
+    }
+  },
+  {
+    "source": "/admin/plugins/parallel",
+    "destinations": {
+      "teamAdmin": "/admin/plugins/parallel",
+      "teamMember": "/",
+      "personal": "/connections/parallel"
+    }
+  }
+]

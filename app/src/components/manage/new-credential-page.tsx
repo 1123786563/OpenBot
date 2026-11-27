@@ -2,7 +2,12 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   type ComponentProps,
@@ -46,9 +51,10 @@ import {
 import { saveCredentialMutationOptions } from "@/lib/credentials/mutations";
 import {
   type CredentialStatus,
+  credentialKindLabel,
   credentialListQueryOptions,
 } from "@/lib/credentials/queries";
-import { useManagePaths } from "@/lib/manage-paths";
+import { type ManagePaths, useManagePaths } from "@/lib/manage-paths";
 
 /** Without `items` the trigger draws the raw value, so the type read "model" in lower case. */
 const KIND_LABEL = { model: "Model", connector: "Connector" } as const;
@@ -121,11 +127,50 @@ function ReplaceCredentialPage({ id }: { id: string }) {
   );
   if (target) return <CredentialForm replacement={target} />;
   return (
+    <UnavailableReplacement
+      credentials={credentials}
+      entry={entry}
+      id={id}
+      paths={paths}
+    />
+  );
+}
+
+/**
+ * The replacement screen when the credential it names is no longer live.
+ *
+ * Usually it was replaced a moment ago: by this screen, whose answer was lost, or by another
+ * administrator while the confirmation was open. Saying so, and that the live one is in the list, is
+ * the next step. The heading takes focus because the form that held the dialog has just gone and
+ * focus must not fall to the page body.
+ */
+function UnavailableReplacement({
+  credentials,
+  entry,
+  id,
+  paths,
+}: {
+  credentials: UseQueryResult<CredentialStatus[]>;
+  entry: string;
+  id: string;
+  paths: ManagePaths;
+}) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  const read = credentials.isSuccess && !credentials.isFetching;
+  useEffect(() => {
+    if (read) heading.current?.focus();
+  }, [read]);
+  const named = credentials.data?.find((item) => item.id === id);
+  const successor = named
+    ? liveCredentialFor(credentials.data, named)
+    : undefined;
+  return (
     <DevicePage
       backButton={{
         label: paths.credentialsLabel,
         linkProps: paths.credentials(),
       }}
+      headingRef={heading}
       title={`Replace ${entry}`}
     >
       {credentials.isPending ? (
@@ -137,6 +182,11 @@ function ReplaceCredentialPage({ id }: { id: string }) {
           retryBelow
           retrying={credentials.isFetching}
         />
+      ) : successor ? (
+        <Text as="p">
+          {successor.provider} · {successor.keyId} was already replaced. The
+          active {entry} is in the list.
+        </Text>
       ) : (
         <Text as="p">
           This {entry} is unavailable. Return to the list to choose another one.
@@ -175,8 +225,13 @@ function CredentialForm({ replacement }: { replacement?: CredentialStatus }) {
     }
   }, [saveError]);
   const canCheckReplacement = credentials.isSuccess && !credentials.isFetching;
+  // This form replaces the two kinds it can create; a target of any other kind never reaches it.
+  const defaultKind =
+    replacement?.kind === "model" || replacement?.kind === "connector"
+      ? replacement.kind
+      : "model";
   const defaultValues: CredentialFormValues = {
-    kind: replacement?.kind ?? "model",
+    kind: defaultKind,
     provider: replacement?.provider ?? "",
     keyId: replacement?.keyId ?? "",
     plaintext: "",
@@ -334,8 +389,8 @@ function CredentialForm({ replacement }: { replacement?: CredentialStatus }) {
             <FieldGroup>
               {replacement ? (
                 <Text as="p" style={{ overflowWrap: "anywhere" }}>
-                  {KIND_LABEL[replacement.kind]} · {replacement.provider} ·{" "}
-                  {replacement.keyId}
+                  {credentialKindLabel(replacement.kind)} ·{" "}
+                  {replacement.provider} · {replacement.keyId}
                 </Text>
               ) : (
                 <>
@@ -564,7 +619,7 @@ function liveCredentialFor(
     kind,
     provider,
     keyId,
-  }: Pick<CredentialFormValues, "kind" | "provider" | "keyId">,
+  }: Pick<CredentialStatus, "kind" | "provider" | "keyId">,
 ): CredentialStatus | undefined {
   const providerKey = provider.trim();
   const credentialKey = keyId.trim();

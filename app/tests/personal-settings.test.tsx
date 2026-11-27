@@ -11,16 +11,25 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
   isRedirect,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ComputersPage } from "@/components/manage/computers-page";
 import { PluginToolPage } from "@/components/manage/plugin-tool-page";
 import { SkillsPage } from "@/components/manage/skills-page";
 import { settingsSidebarItems } from "@/components/settings/settings-sidebar";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { authKeys } from "@/lib/auth/queries";
 import {
   type HostAccessStatus,
   hostAccessKeys,
@@ -39,10 +48,16 @@ import {
 import type { PluginsPage } from "@/lib/plugins/queries";
 import { Route as PersonalSettingsRoute } from "@/routes/_authed/settings/_personal";
 import { Route as LearningRoute } from "@/routes/_authed/settings/learning";
+import { Route as SettingsRoute } from "@/routes/_authed/settings/route";
+import { setupKeys } from "@/lib/setup/queries";
+import { pinLocale } from "./i18n";
 import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => GlobalRegistrator.register());
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await pinLocale("en");
+});
 afterAll(async () => {
   await settleReactWork();
   GlobalRegistrator.unregister();
@@ -351,7 +366,68 @@ describe("the Computer page", () => {
     ).toBeTruthy();
   });
 
-  test("an unconfirmed stop shows the reported state and Activity without sending another stop", async () => {
+  describe.each(["personal", "team"] as const)(
+    "an unconfirmed stop in the %s edition",
+    (edition) => {
+      /** Where the dialog sends a person to read what happened: Activity, or Audit. */
+      const audit =
+        edition === "personal"
+          ? { label: "Open Activity", href: "/settings/activity" }
+          : { label: "Open Audit", href: "/admin/audit" };
+      const stop =
+        edition === "personal"
+          ? "Stop browser: Personal Assistant"
+          : "Stop browser: dev@openbot.local · Personal Assistant";
+
+      test("shows the reported state and the audit trail without sending another stop", async () => {
+        const originalFetch = globalThis.fetch;
+        let writes = 0;
+        globalThis.fetch = Object.assign(
+          async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+            if (String(input) !== "/api/computers/fleet")
+              return originalFetch(input, init);
+            if (init?.method === "POST") {
+              writes += 1;
+              return Response.json({ error: "Response lost" }, { status: 503 });
+            }
+            return Response.json({
+              ...fleet,
+              computers: fleet.computers.map((computer) => ({
+                ...computer,
+                running: writes === 0,
+              })),
+            });
+          },
+          { preconnect: originalFetch.preconnect },
+        );
+        try {
+          const view = await renderPage(edition);
+          fireEvent.click(view.getByRole("button", { name: stop }));
+          const dialog = within(await view.findByRole("alertdialog"));
+          fireEvent.click(dialog.getByRole("button", { name: "Stop browser" }));
+          expect(
+            await dialog.findByText(/Latest device status: No browser running/),
+          ).toBeTruthy();
+          expect(
+            dialog
+              .getByRole("link", { name: audit.label })
+              .getAttribute("href"),
+          ).toBe(audit.href);
+          expect(
+            dialog.queryByRole("button", { name: "Try again" }),
+          ).toBeNull();
+          expect(
+            view.queryByText("Browser stopped for Personal Assistant."),
+          ).toBeNull();
+          expect(writes).toBe(1);
+        } finally {
+          globalThis.fetch = originalFetch;
+        }
+      });
+    },
+  );
+
+  test("says the latest status could not be checked when the follow-up read also fails", async () => {
     const originalFetch = globalThis.fetch;
     let writes = 0;
     globalThis.fetch = Object.assign(
@@ -362,35 +438,33 @@ describe("the Computer page", () => {
           writes += 1;
           return Response.json({ error: "Response lost" }, { status: 503 });
         }
-        return Response.json({
-          ...fleet,
-          computers: fleet.computers.map((computer) => ({
-            ...computer,
-            running: writes === 0,
-          })),
-        });
+        // The page's read before the change succeeds; the one after the lost write does not.
+        if (writes > 0)
+          return Response.json({ error: "Read denied" }, { status: 503 });
+        return Response.json(fleet);
       },
       { preconnect: originalFetch.preconnect },
     );
     try {
-      const view = await renderPage("personal");
+      const view = await renderPage("team");
       fireEvent.click(
-        view.getByRole("button", { name: "Stop browser: Personal Assistant" }),
+        view.getByRole("button", {
+          name: "Stop browser: dev@openbot.local · Personal Assistant",
+        }),
       );
       const dialog = within(await view.findByRole("alertdialog"));
       fireEvent.click(dialog.getByRole("button", { name: "Stop browser" }));
       expect(
-        await dialog.findByText(/Latest device status: No browser running/),
+        await dialog.findByText(
+          "Couldn’t check the latest device status.",
+          {},
+          { timeout: 5_000 },
+        ),
       ).toBeTruthy();
       expect(
-        dialog
-          .getByRole("link", { name: "Open Activity" })
-          .getAttribute("href"),
-      ).toBe("/settings/activity");
+        dialog.getByRole("link", { name: "Open Audit" }).getAttribute("href"),
+      ).toBe("/admin/audit");
       expect(dialog.queryByRole("button", { name: "Try again" })).toBeNull();
-      expect(
-        view.queryByText("Browser stopped for Personal Assistant."),
-      ).toBeNull();
       expect(writes).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;
@@ -676,5 +750,119 @@ describe("the Computer page", () => {
     expect(text).toContain("Computers in this deployment");
     expect(text).toContain("dev@openbot.local · Personal Assistant");
     expect(text).toContain("Leaves through network policy filter");
+  });
+});
+
+/*
+ * The Settings shell at a narrow width is the last of the three that had no visible way to open its
+ * navigation: the sidebar is a sheet below 768px, and nothing on screen said so. The opener lives in
+ * the shell's own header, so it is there whatever page is open; the sheet returns focus to it.
+ */
+describe("the Settings shell on a narrow screen", () => {
+  async function renderSettingsAt(
+    path: string,
+    edition: "team" | "personal",
+    width = 390,
+  ) {
+    const client = clientFor(edition);
+    client.setDefaultOptions({
+      queries: { retry: false, staleTime: Infinity },
+    });
+    client.setQueryData(authKeys.currentUser(), {
+      id: "dana",
+      name: "Dana Fresh",
+      email: "dana@example.com",
+      role: "admin",
+      onboarding: null,
+    });
+    client.setQueryData(setupKeys.checklist(), { audience: "admin", rows: [] });
+    const initial = window.innerWidth;
+    window.innerWidth = width;
+    try {
+      const root = createRootRoute();
+      const settings = createRoute({
+        path: "/settings",
+        getParentRoute: () => root,
+        component: SettingsRoute.options.component,
+      });
+      const children = ["/general", "/notifications", "/credentials/new"].map(
+        (child) =>
+          createRoute({
+            path: child,
+            getParentRoute: () => settings,
+            component: () => <h1>{child}</h1>,
+          }),
+      );
+      const router = createRouter({
+        routeTree: root.addChildren([settings.addChildren(children)]),
+        history: createMemoryHistory({ initialEntries: [path] }),
+      });
+      await router.load();
+      const view = render(
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>,
+      );
+      return { router, view };
+    } finally {
+      window.innerWidth = initial;
+    }
+  }
+
+  test("opens, dismisses and follows navigation with the keyboard, returning focus", async () => {
+    const settings = await renderSettingsAt("/settings/general", "team");
+    const user = userEvent.setup({ document });
+    const toggle = await settings.view.findByRole("button", {
+      name: "Open navigation",
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    toggle.focus();
+    await user.keyboard("{Enter}");
+    await settings.view.findByRole("dialog", { name: "Settings" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(toggle));
+
+    await user.keyboard("{Enter}");
+    const sheet = within(
+      await settings.view.findByRole("navigation", { name: "Settings" }),
+    );
+    sheet.getByRole("link", { name: "Notifications" }).focus();
+    await user.keyboard("{Enter}");
+    await settings.view.findByRole("heading", { name: "/notifications" });
+    await waitFor(() => {
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(toggle);
+    });
+  });
+
+  test("in the personal edition opens the entries Admin gave up", async () => {
+    const settings = await renderSettingsAt("/settings/general", "personal");
+    const user = userEvent.setup({ document });
+    const toggle = await settings.view.findByRole("button", {
+      name: "Open navigation",
+    });
+    toggle.focus();
+    await user.keyboard("{Enter}");
+    const sheet = within(
+      await settings.view.findByRole("dialog", { name: "Settings" }),
+    );
+    for (const name of ["Keys", "Skills", "Computer", "Activity"]) {
+      expect(sheet.getByRole("link", { name })).toBeTruthy();
+    }
+  });
+
+  test("lights Keys on the new-credential page under the personal edition", async () => {
+    const settings = await renderSettingsAt(
+      "/settings/credentials/new",
+      "personal",
+      1280,
+    );
+    const nav = settings.view.getByRole("navigation", { name: "Settings" });
+    expect(
+      within(nav)
+        .getByRole("link", { name: "Keys" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
   });
 });

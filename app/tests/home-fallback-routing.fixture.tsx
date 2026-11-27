@@ -1,4 +1,3 @@
-import { mock } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -18,11 +17,6 @@ import { channelKeys } from "@/lib/channels/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { Route as HomeRoute } from "@/routes/_authed/_app/index";
 import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
-
-mock.module("@/components/layout/sidebar-toggle", () => ({
-  SidebarToggle: () => null,
-  SidebarToggleBar: () => null,
-}));
 
 export function agent(
   overrides: Partial<AgentProfile> & { id: string },

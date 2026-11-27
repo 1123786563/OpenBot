@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useRef } from "react";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotActivitySections } from "@/components/bot-profile/activity";
 import { BotScopeSelect } from "@/components/bots/bot-scope-select";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
-import { ReadStatus } from "@/components/layout/read-status";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { MissingPage } from "@/components/layout/route-recovery";
 import { BotNeedsYou } from "@/components/needs-you/board";
+import { useTranslation } from "@/i18n";
 import {
   chooseBot,
   resolveChosenBot,
@@ -47,6 +49,8 @@ function RouteComponent() {
 }
 
 function ActivityOverview() {
+  const { t } = useTranslation();
+  const selector = useRef<HTMLSelectElement>(null);
   const { agent } = Route.useSearch();
   const navigate = Route.useNavigate();
   const roster = useQuery(agentListQueryOptions());
@@ -66,10 +70,13 @@ function ActivityOverview() {
         {roster.isPending || user.isPending ? (
           <ReadStatus kind="loading" message="Loading Activity…" />
         ) : roster.isError || user.isError ? (
-          <ReadStatus
-            kind="error"
+          <ReadError
+            focusAfterRetry={() => selector.current}
             message="Couldn’t load Activity"
             retry={() => Promise.all([roster.refetch(), user.refetch()])}
+            retryBelow
+            retryLabel={t("bots.retryChoices", "Retry loading Bot choices")}
+            retrying={roster.isFetching || user.isFetching}
           />
         ) : available.length > 0 ? (
           <>
@@ -79,6 +86,7 @@ function ActivityOverview() {
                 if (user.data) chooseBot(user.data.id, id);
                 void navigate({ search: { agent: id }, replace: true });
               }}
+              selectRef={selector}
               value={bot?.id ?? ""}
             />
             {bot ? (

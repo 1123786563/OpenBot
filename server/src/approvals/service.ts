@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   ALREADY_WAITING,
   DECLINED_BY_PERSON,
+  decisionInvalidated,
   HANDLED_BY_PERSON,
   NOT_DONE,
   notCarriedOut,
@@ -15,7 +16,6 @@ import {
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { RunContextRevokedError } from "@openbot/toolkit/run-context";
 import { PERSON_INITIATOR } from "../audit";
-import { decisionInvalidated } from "../personal-saas/decision-access";
 import { GithubEventAccessRetry } from "../plugins/corsair/event-run-access";
 import {
   isMarketVersionPause,

@@ -1,7 +1,8 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { savePendingStart } from "@/lib/channels/pending-start";
 import {
   agent,
   createdChannel,
@@ -173,6 +174,178 @@ test("reloading an interrupted creation keeps the first message and reuses its r
     "/channel/channel-recovered",
   );
   expect(requests).toEqual([originalId, originalId]);
+});
+
+for (const failure of [
+  {
+    name: "refused",
+    recipient: { kind: "route" } as const,
+    route: () =>
+      Response.json(
+        {
+          error: "More than one coworker matches that name.",
+          names: ["Data Analyst", "Risk Analyst"],
+        },
+        { status: 409 },
+      ),
+  },
+  {
+    name: "creating",
+    recipient: { kind: "direct", agentId: knowledge.id } as const,
+    route: () => Response.json({ agentId: knowledge.id }),
+  },
+]) {
+  test(`discarding a ${failure.name} start clears its saved message and leaves Home's resume list`, async () => {
+    answerRequests(async (url, init) => {
+      if (url === "/api/route") return failure.route();
+      if (url === "/api/channels" && init?.method === "POST")
+        return Response.json(
+          { error: "Creation unavailable." },
+          { status: 503 },
+        );
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const startId = crypto.randomUUID();
+    const message = "Discard this interrupted first message";
+    savePendingStart("person", startId, {
+      state: "pending",
+      progress: { phase: "creating" },
+      draft: {
+        text: message,
+        commandIds: [],
+        attachments: [
+          { attachmentId: "file-1", name: "notes.txt", type: "document" },
+        ],
+        recipient: failure.recipient,
+        model: null,
+      },
+    });
+    const homeBefore = renderAt("/");
+    await homeBefore.findByRole("link", { name: new RegExp(message) });
+    homeBefore.unmount();
+
+    const view = renderAt(`/start/${startId}`);
+    await view.findByText(message);
+    await view.findByRole("button", { name: "Discard saved message" });
+    if (failure.name === "creating")
+      expect(
+        view.getByText("Couldn't continue the conversation."),
+      ).toBeTruthy();
+    expect(localStorage.getItem(pendingStartKey("person", startId))).toContain(
+      "notes.txt",
+    );
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(
+      view.getByRole("button", { name: "Discard saved message" }),
+    );
+    const confirmation = await view.findByRole("alertdialog");
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "Discard saved message",
+      }),
+    );
+    await view.findByRole("textbox", { name: "Message" });
+    expect(view.router.state.location.pathname).toBe("/");
+    expect(localStorage.getItem(pendingStartKey("person", startId))).toBeNull();
+
+    const homeAfter = renderAt("/");
+    await homeAfter.findByRole("textbox", { name: "Message" });
+    expect(homeAfter.queryByText(message)).toBeNull();
+    expect(
+      homeAfter.queryByRole("link", { name: /Resume sending/ }),
+    ).toBeNull();
+  });
+}
+
+function pendingStartKey(owner: string, id: string) {
+  return `openbot:conversation-start:${encodeURIComponent(owner)}:${id}`;
+}
+
+test("two open handoff views for one start create its Conversation once", async () => {
+  const creating = Promise.withResolvers<Response>();
+  const requests: string[] = [];
+  answerRequests(async (url, init) => {
+    if (url === "/api/channels" && init?.method === "POST") {
+      const { requestId, agentIds } = readChannelRequest(init);
+      requests.push(requestId);
+      return creating.promise.then(() =>
+        createdChannel("channel-shared", agentIds),
+      );
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+  const startId = crypto.randomUUID();
+  savePendingStart("person", startId, {
+    state: "pending",
+    progress: { phase: "creating" },
+    draft: {
+      text: "Create this conversation once",
+      commandIds: [],
+      attachments: [],
+      recipient: { kind: "direct", agentId: knowledge.id },
+      model: null,
+    },
+  });
+  const first = renderAt(`/start/${startId}`);
+  const second = renderAt(`/start/${startId}`);
+  await within(first.container).findByText("Create this conversation once");
+  await within(second.container).findByText("Create this conversation once");
+  await act(async () => {
+    creating.resolve(createdChannel("channel-shared", [knowledge.id]));
+  });
+  await within(first.container).findByText("The conversation");
+  await within(second.container).findByText("The conversation");
+  expect(requests).toEqual([startId]);
+});
+
+test("a refused clipboard leaves the saved message readable and nothing is sent", async () => {
+  const posts: string[] = [];
+  answerRequests(async (url, init) => {
+    if (url === "/api/route")
+      return Response.json(
+        {
+          error: "More than one coworker matches that name.",
+          names: ["Data Analyst", "Risk Analyst"],
+        },
+        { status: 409 },
+      );
+    posts.push(`${init?.method ?? "GET"} ${url}`);
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+  const startId = crypto.randomUUID();
+  const message = "Copy this saved first message";
+  savePendingStart("person", startId, {
+    state: "pending",
+    progress: { phase: "creating" },
+    draft: {
+      text: message,
+      commandIds: [],
+      attachments: [],
+      recipient: { kind: "route" },
+      model: null,
+    },
+  });
+  const view = renderAt(`/start/${startId}`);
+  await view.findByText("Choose a Bot for this message.");
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const writeText = spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+    new DOMException("Clipboard is denied.", "NotAllowedError"),
+  );
+  try {
+    await user.click(view.getByRole("button", { name: "Copy message text" }));
+    const field = await view.findByRole("textbox", {
+      name: "Saved message text",
+    });
+    expect(field).toHaveProperty("value", message);
+    expect(field).toHaveProperty("readOnly", true);
+    expect(document.activeElement).toBe(field);
+    expect(field).toHaveProperty("selectionStart", 0);
+    expect(field).toHaveProperty("selectionEnd", message.length);
+    expect(view.queryByText("Message text copied.")).toBeNull();
+    expect(posts).toEqual([]);
+  } finally {
+    writeText.mockRestore();
+  }
 });
 
 test("a handoff link with no saved start explains how to open a new Conversation", async () => {

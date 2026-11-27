@@ -45,7 +45,7 @@ const OPEN_FAILURE = "Couldn’t open your browser. Try again to reconnect.";
 function LearnedLink() {
   return (
     <Link
-      className="text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline"
+      className="inline-flex min-h-11 items-center text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline"
       to="/settings/learning"
     >
       See what your Bots learned

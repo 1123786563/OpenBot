@@ -2,9 +2,15 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Stack } from "@astryxdesign/core/Stack";
 import {
   type GenerativeUIComponentProps,
+  type GenerativeUIInvokeResult,
   type standardUI,
   useGenerativeUIAccessibility,
 } from "@copilotkit/react-core/v2/generative-ui";
+import {
+  backgroundColor,
+  borderColor,
+  radius,
+} from "@copilotkit/shared/generative-ui";
 import {
   type CSSProperties,
   createContext,
@@ -25,7 +31,35 @@ type Control<Name extends keyof (typeof standardUI)["definitions"] & string> =
 export const FormFailures = createContext({
   failed: false,
   count: (_change: number) => {},
+  /**
+   * Sends an event of this form. The notice that nothing was sent goes first, and comes back only
+   * if the SDK drops this event because the Bot is still replying.
+   */
+  send: (_event: Promise<GenerativeUIInvokeResult> | undefined) => {},
 });
+
+/**
+ * Whether the SDK dropped an event because the Bot was still replying. It reports that on the
+ * result of the event and nowhere else, so the control that sent it is the one that can say so.
+ */
+function droppedWhileRunning(result: GenerativeUIInvokeResult) {
+  return !result.ok && result.error.code === "agent_busy";
+}
+
+/**
+ * The error state for a part of a reply that could not be drawn. It says what is missing and the
+ * one next step.
+ */
+function A2UIPartError() {
+  return (
+    <Banner
+      role="alert"
+      status="error"
+      title="Couldn't show this part of the reply."
+      description="The rest of the conversation still works. Ask the Bot to send this part again."
+    />
+  );
+}
 
 /**
  * What CopilotKit draws in place of a generated component that threw (the `errorBoundary.fallback`
@@ -38,38 +72,93 @@ export function A2UINodeError() {
     count(1);
     return () => count(-1);
   }, [count]);
-  return (
-    <Banner
-      role="alert"
-      status="error"
-      title="Couldn't show this part of the reply."
-      description="The rest of the conversation still works. Ask the Bot to send this part again."
-    />
-  );
+  return <A2UIPartError />;
 }
 
 export function A2UIForm(props: Control<"Form">) {
   const aria = useGenerativeUIAccessibility();
+  const element = useRef<HTMLFormElement>(null);
   const [failed, setFailed] = useState(0);
+  const [undrawn, setUndrawn] = useState(0);
+  const [unsent, setUnsent] = useState(false);
+  // Only the latest send's result counts. A send dropped while an earlier one is still on its way
+  // keeps its notice when the earlier one is answered.
+  const latest = useRef(0);
+  const send = useRef(
+    (event: Promise<GenerativeUIInvokeResult> | undefined) => {
+      const serial = ++latest.current;
+      setUnsent(false);
+      void event?.then((result) => {
+        if (serial === latest.current) setUnsent(droppedWhileRunning(result));
+      });
+    },
+  ).current;
   const count = useRef((_change: number) =>
     setFailed((total) => total + _change),
   ).current;
+  // A control bound to a value of the wrong type is swapped by the SDK for its own error node, and
+  // an update the SDK refused leaves a line in the card around the interface while the form keeps
+  // whatever drew before it. No boundary catches either, so nothing counts it in the context: the
+  // form reads both from the DOM. The stylesheet hides the SDK's node and this error stands in its
+  // place. Both can also go away again when a later update repairs the interface.
+  //
+  // The gate is conservative on purpose. One refused update keeps every form in the interface from
+  // being sent, a form that looks whole among them: a form may hold values that were drawn before
+  // the refusal, and it cannot tell which update was refused.
+  useEffect(() => {
+    const form = element.current;
+    if (!form) return;
+    const card = form.closest("[data-generative-ui-chat-surface]");
+    const countUndrawn = () =>
+      setUndrawn(
+        form.querySelectorAll("[data-generative-ui-error]").length +
+          (card?.querySelector(':scope > [role="alert"]') ? 1 : 0),
+      );
+    countUndrawn();
+    const observer = new MutationObserver(countUndrawn);
+    observer.observe(form, { childList: true, subtree: true });
+    // The line arrives after the form when the refusal comes from the browser.
+    if (card) observer.observe(card, { childList: true });
+    return () => observer.disconnect();
+  }, []);
+  const broken = failed > 0 || undrawn > 0;
   return (
-    <FormFailures.Provider value={{ failed: failed > 0, count }}>
+    <FormFailures.Provider value={{ failed: broken, count, send }}>
       <Stack
         {...aria}
+        {...scrollMark(props.scrollable)}
+        ref={element}
         as="form"
         aria-label={props.label}
         direction="vertical"
         // Four steps between a form's fields is the catalog's default.
         gap={props.gap === undefined ? 4 : undefined}
         data-a2ui-input=""
-        style={{ minWidth: 0, ...layoutStyle(props) }}
+        // A form that scrolls is a Tab stop of its own, so the keyboard can scroll it before it
+        // reaches the fields inside.
+        tabIndex={props.scrollable ? 0 : undefined}
+        style={layoutStyle(props)}
         onSubmit={(event) => {
           event.preventDefault();
-          if (failed === 0) props.onSubmit?.({});
+          // A Form inside this one sends its own event. Its submit bubbles here too and is not
+          // this form's: handled, the form around it sent an event of its own for it, or said that
+          // one it never meant to send was dropped.
+          if (event.target !== event.currentTarget) return;
+          if (broken) return;
+          // The SDK drops an event that arrives while the Bot is still replying. Say so, or the
+          // person believes the form was sent.
+          send(props.onSubmit?.({}));
         }}
       >
+        {unsent && (
+          <Banner
+            role="status"
+            status="warning"
+            title="Nothing was sent. The Bot is still replying."
+            description="Send it again once the reply has finished."
+          />
+        )}
+        {undrawn > 0 && <A2UIPartError />}
         {props.children}
       </Stack>
     </FormFailures.Provider>
@@ -82,6 +171,15 @@ export function openActionUrl(href: string | undefined) {
   if (url && /^(https?:|mailto:)/i.test(url))
     window.open(url, "_blank", "noopener,noreferrer");
 }
+
+/**
+ * The mark the SDK puts on a container that scrolls, as its own containers carry it: the SDK's
+ * stylesheet draws a focus ring on it. Only a box that scrolls has it. One that clips its children
+ * is no Tab stop on purpose: Chromium does not scroll it by key, so the stop would do nothing.
+ */
+const scrollMark = (scrollable: boolean | undefined) => ({
+  "data-a2ui-scroll": scrollable ? "" : undefined,
+});
 
 const FLEX_ALIGN = {
   start: "flex-start",
@@ -101,30 +199,65 @@ const FLEX_JUSTIFY = {
 const length = (value: number | string | undefined) =>
   typeof value === "number" ? `calc(var(--spacing-1) * ${value})` : value;
 
-/** Where a container puts its children, and how wide and tall it is. */
-function layoutStyle(props: {
-  align?: keyof typeof FLEX_ALIGN;
-  justify?: keyof typeof FLEX_JUSTIFY;
-  wrap?: "nowrap" | "wrap" | "wrap-reverse";
-  gap?: number | string;
-  padding?: number | string;
-  border?: boolean;
-  width?: number | string;
-  height?: number | string;
-  flex?: number;
-}): CSSProperties {
+/**
+ * Where a container puts its children, and how wide and tall it is. The catalog's layout props,
+ * resolved as the SDK resolves them for its own containers.
+ *
+ * A colour or a corner radius the catalog names is a token, not CSS. The SDK writes it as the
+ * theme's variable, with its own value behind it, so a token the theme names no variable for
+ * still draws. That value is the SDK's light one. Its dark values live in the SDK's stylesheet,
+ * which only the standard components it draws itself add to the page, so, until one has been
+ * drawn there, an interface drawn by OpenBot's controls alone keeps the light value in a dark
+ * conversation. A raw colour or raw CSS passes through.
+ */
+function layoutStyle(
+  props: Control<"Form"> | Control<"Pressable">,
+): CSSProperties {
+  const radii = props.radius;
+  const corners =
+    typeof radii === "object" && radii !== null
+      ? {
+          borderTopLeftRadius: radius(radii.topLeft),
+          borderTopRightRadius: radius(radii.topRight),
+          borderBottomLeftRadius: radius(radii.bottomLeft),
+          borderBottomRightRadius: radius(radii.bottomRight),
+        }
+      : { borderRadius: radius(radii) };
   return {
-    alignItems: props.align ? FLEX_ALIGN[props.align] : undefined,
-    justifyContent: props.justify ? FLEX_JUSTIFY[props.justify] : undefined,
-    flexWrap: props.wrap,
-    gap: length(props.gap),
-    padding: length(props.padding),
-    border: props.border
-      ? "1px solid var(--a2ui-color-border-default)"
+    display: props.inline ? "inline-flex" : undefined,
+    // The catalog's props resolve as `any` (with the SDK's 1.85.0 types, `Control<"Form">` is `any`
+    // under the app's `tsc`), so the two lookups name their keys: the SDK has already checked both
+    // against the catalog's enum.
+    alignItems: props.align
+      ? FLEX_ALIGN[props.align as keyof typeof FLEX_ALIGN]
       : undefined,
+    justifyContent: props.justify
+      ? FLEX_JUSTIFY[props.justify as keyof typeof FLEX_JUSTIFY]
+      : undefined,
+    flexWrap: props.wrap,
+    gap: length(props.gap) ?? (props.disableAutoSpacing ? 0 : undefined),
+    rowGap: length(props.rowGap),
+    columnGap: length(props.columnGap),
+    padding: props.flush ? 0 : length(props.padding),
+    background: backgroundColor(props.background),
+    border: props.border
+      ? `1px solid ${borderColor(props.borderColor ?? "default")}`
+      : undefined,
+    ...corners,
     width: length(props.width),
     height: length(props.height),
+    minWidth: length(props.minWidth ?? props.minSize) ?? 0,
+    maxWidth: length(props.maxWidth ?? props.maxSize) ?? "100%",
+    minHeight: length(props.minHeight ?? props.minSize),
+    maxHeight: length(props.maxHeight ?? props.maxSize),
     flex: props.flex,
+    flexGrow: props.weight,
+    aspectRatio: props.aspectRatio,
+    overflow: props.scrollable ? "auto" : props.clip ? "hidden" : undefined,
+    boxShadow: props.shadow
+      ? "var(--a2ui-shadow-sm, var(--shadow-low))"
+      : undefined,
+    boxSizing: "border-box",
   };
 }
 
@@ -132,6 +265,7 @@ export function A2UIPressable(props: Control<"Pressable">) {
   const aria = useGenerativeUIAccessibility();
   const container = useRef<HTMLElement>(null);
   const seen = useRef(false);
+  const { send } = useContext(FormFailures);
   const { onVisible } = props;
   // `onVisible` is sent once, the first time the container scrolls into view.
   useEffect(() => {
@@ -150,12 +284,13 @@ export function A2UIPressable(props: Control<"Pressable">) {
   const press = () => {
     if (props.disabled) return;
     if (props.href) openActionUrl(props.href);
-    else props.onClick?.({});
+    else send(props.onClick?.({}));
   };
 
   return (
     <Stack
       {...aria}
+      {...scrollMark(props.scrollable)}
       ref={container}
       role="button"
       tabIndex={props.disabled ? -1 : 0}
@@ -167,10 +302,10 @@ export function A2UIPressable(props: Control<"Pressable">) {
       style={{
         cursor: props.disabled ? "not-allowed" : "pointer",
         opacity: props.disabled ? 0.5 : undefined,
-        boxShadow: props.insetBorder
-          ? "inset 0 0 0 1px var(--a2ui-color-border-default)"
-          : undefined,
         ...layoutStyle(props),
+        ...(props.insetBorder
+          ? { boxShadow: "inset 0 0 0 1px var(--a2ui-color-border-default)" }
+          : {}),
       }}
       onClick={(event) => {
         event.stopPropagation();

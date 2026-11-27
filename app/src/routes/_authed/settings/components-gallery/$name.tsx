@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import { IconCode, IconTag } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
@@ -98,14 +99,14 @@ function RouteComponent() {
         headingRef={heading}
         title="Components gallery"
       >
-        <div
+        <VStack
           aria-busy="true"
           aria-label="Loading this component"
           role="status"
           className="mt-8"
         >
           <Skeleton className="aspect-video w-full rounded-lg" />
-        </div>
+        </VStack>
       </CapabilityPage>
     );
   }

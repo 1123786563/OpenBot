@@ -7,7 +7,8 @@
  * What the phone's sign-in hands every request (src/auth.ts) and expo-crypto's randomUUID are the
  * platform here, stood in for as in generated-client.test.ts.
  */
-import { afterAll, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, expect, mock, test } from "bun:test";
+import appConfig from "../app.config";
 
 const ORG = "/api/v2/organizations/default";
 
@@ -83,18 +84,27 @@ const server = Bun.serve({
 });
 const serverUrl = `http://127.0.0.1:${server.port}`;
 
-mock.module("../src/auth", () => ({
-  serverUrl,
-  // A session of its own: the mutator keeps each session's organizations, and this server's are not
-  // generated-client.test.ts's.
-  authClient: { getCookie: () => "better-auth.session_token=tolerant-reader" },
-}));
+function installNativeAuthFixture() {
+  mock.module("../src/auth", () => ({
+    serverUrl,
+    usesBrowserSession: false,
+    organizationStore: undefined,
+    renewHostedSignIn: undefined,
+    // A session of its own: the mutator keeps each session's organizations, and this server's are not
+    // generated-client.test.ts's.
+    authClient: {
+      getCookie: () => "better-auth.session_token=tolerant-reader",
+    },
+  }));
+}
+installNativeAuthFixture();
+beforeEach(installNativeAuthFixture);
 mock.module("expo-crypto", () => ({
   randomUUID: () => crypto.randomUUID(),
 }));
 // The mutator names the app on every request, from the release expo-constants gives it as built.
 mock.module("expo-constants", () => ({
-  default: { expoConfig: { extra: { openbotRelease: "1.1.0" } } },
+  default: { expoConfig: appConfig },
 }));
 
 const { getTask } = await import("../src/api/generated/tasks/tasks");

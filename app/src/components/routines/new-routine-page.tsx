@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/i18n";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { untitledLine } from "@/lib/channels/label";
 import {
@@ -45,6 +46,7 @@ import {
   type RoutineFormValues,
   routineFormSchema,
   scheduleSentence,
+  usesDaylightSaving,
   WEEKDAY_LABEL,
 } from "@/lib/routines/form";
 import {
@@ -101,6 +103,7 @@ function RoutineCreateForm({
   agentId: presetAgentId,
   channelId: presetChannelId,
 }: RoutineCreateProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const agents = useQuery(agentListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
@@ -125,6 +128,7 @@ function RoutineCreateForm({
       errorNotice.current?.focus();
   }, [failed]);
   const timeZone = browserTimeZone();
+  const daylightSaving = usesDaylightSaving(timeZone);
   const timeZoneName =
     new Intl.DateTimeFormat("en", {
       timeZone,
@@ -229,6 +233,7 @@ function RoutineCreateForm({
                 <Button
                   type="button"
                   variant="outline"
+                  style={{ minHeight: "var(--spacing-11)" }}
                   disabled={createRoutine.isPending}
                   onClick={() => void submitRoutine(true)}
                 >
@@ -481,8 +486,17 @@ function RoutineCreateForm({
               <form.Subscribe selector={(state) => state.values}>
                 {(values) => (
                   <FieldDescription id="routine-schedule-preview">
-                    {scheduleSentence(values)} ({timeZoneName}). For a schedule
-                    like every other Tuesday, ask the Bot in a conversation.
+                    {scheduleSentence(values)} ({timeZoneName}).{" "}
+                    {daylightSaving ? (
+                      <>
+                        {t(
+                          "routines.daylightSaving",
+                          "This time zone uses daylight saving time, so the routine keeps this clock time all year.",
+                        )}{" "}
+                      </>
+                    ) : null}
+                    For a schedule like every other Tuesday, ask the Bot in a
+                    conversation.
                   </FieldDescription>
                 )}
               </form.Subscribe>

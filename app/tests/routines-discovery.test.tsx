@@ -19,7 +19,11 @@ import type * as React from "react";
 import { RoutineComposerButton } from "@/components/routines/new-routine-button";
 import { RoutinesConnectionPage } from "@/components/routines/routines-connection-page";
 import { RoutinesList } from "@/components/routines/routines-list";
-import { cronFrom, scheduleSentence } from "@/lib/routines/form";
+import {
+  cronFrom,
+  scheduleSentence,
+  usesDaylightSaving,
+} from "@/lib/routines/form";
 import {
   type RoutineRecord,
   type RoutineRunRecord,
@@ -73,10 +77,14 @@ function routine(overrides: Partial<RoutineRecord>): RoutineRecord {
 }
 
 /** `/api/routines` and `/api/agents` in the shapes the server sends them. */
-function draw(element: React.ReactNode, page: RoutinesPage) {
+function draw(
+  element: React.ReactNode,
+  page: RoutinesPage,
+  runs: RoutineRunRecord[] = [],
+) {
   global.fetch = (async (input: RequestInfo | URL) => {
     const path = String(input);
-    if (path.endsWith("/runs")) return Response.json({ runs: [] });
+    if (path.endsWith("/runs")) return Response.json({ runs });
     if (path.startsWith("/api/routines")) return Response.json(page);
     if (path.startsWith("/api/agents"))
       return Response.json({
@@ -350,4 +358,53 @@ test("overlapping routine writes keep feedback on the routine being changed", as
     morningResponse.resolve(Response.json({ ok: true }));
     eveningResponse.resolve(Response.json({ ok: true }));
   }
+});
+
+test("embedded empty routines keep one create action in the section heading", async () => {
+  const view = draw(<RoutinesList embedded />, { routines: [], sweep: SWEEP });
+  await view.findByText("No routines yet");
+  expect(view.container.querySelector("[data-slot=empty]")).toBeNull();
+  expect(view.getAllByRole("link", { name: "New routine" })).toHaveLength(1);
+  expect(
+    view.getByRole("heading", { name: "Routines" }).parentElement?.textContent,
+  ).toContain("New routine");
+});
+
+test.each([false, true])(
+  "run history links to its source when conversation gone is %s",
+  async (gone) => {
+    const task = routine({});
+    const view = draw(
+      <RoutinesList />,
+      {
+        routines: [{ ...task, channel: { ...task.channel, gone } }],
+        sweep: SWEEP,
+      },
+      [
+        {
+          id: "run-1",
+          status: "succeeded",
+          startedAt: "2026-01-05T09:00:00Z",
+          finishedAt: null,
+          error: null,
+          source: "schedule",
+          conversationRunId: "conversation-run",
+        },
+      ],
+    );
+    fireEvent.click(await view.findByRole("button", { name: /Run history/ }));
+    const link = await view.findByRole("link", {
+      name: gone ? "Open Bot" : "Open Conversation Run",
+    });
+    expect(link.getAttribute("href")).toBe(
+      gone
+        ? "/bots/lead-desk"
+        : "/channel/conversation-1?runId=conversation-run",
+    );
+  },
+);
+
+test("the schedule distinguishes seasonal offsets from a fixed time zone", () => {
+  expect(usesDaylightSaving("America/New_York")).toBe(true);
+  expect(usesDaylightSaving("UTC")).toBe(false);
 });

@@ -3,15 +3,12 @@ import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useRef } from "react";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotScopeSelect } from "@/components/bots/bot-scope-select";
-import {
-  PageEmpty,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { PageEmpty, PageShell } from "@/components/layout/page-shell";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
 import { RoutinesList } from "@/components/routines/routines-list";
 import { buttonVariants } from "@/components/ui/button";
+import { useTranslation } from "@/i18n";
 import { useBotNames } from "@/lib/agents/bot-names";
 import {
   chooseBot,
@@ -70,6 +67,7 @@ function AllGoals() {
 }
 
 function GoalsOverview() {
+  const { t } = useTranslation();
   const { agent, panel } = Route.useSearch();
   const hash = useLocation({ select: (location) => location.hash });
   const showRoutines = panel === "routines" || hash === routinesHeadingId;
@@ -102,7 +100,7 @@ function GoalsOverview() {
           }
           retry={() => Promise.all([agents.refetch(), user.refetch()])}
           retrying={agents.isFetching || user.isFetching}
-          retryLabel="Retry loading Bot choices"
+          retryLabel={t("bots.retryChoices", "Retry loading Bot choices")}
           retryBelow
           focusAfterRetry={() => selector.current}
         />
@@ -179,8 +177,11 @@ function WorkForBot({
         })}
       </nav>
       {showRoutines ? (
-        <PageSection
-          action={
+        <RoutinesList
+          agentId={bot.id}
+          embedded
+          headingId={routinesHeadingId}
+          sectionLink={
             <Link
               className="inline-flex min-h-11 items-center text-sm underline underline-offset-4"
               params={{ agentId: bot.id }}
@@ -189,14 +190,11 @@ function WorkForBot({
               Open routines
             </Link>
           }
-          headingId={routinesHeadingId}
-          title="Routines"
-        >
-          <RoutinesList agentId={bot.id} embedded />
-        </PageSection>
+        />
       ) : (
         <BotResponsibilities
           agentId={bot.id}
+          embedded
           searchable
           sectionTitle={`Goals for ${bot.name}`}
         />

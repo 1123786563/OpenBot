@@ -112,7 +112,7 @@ type Viewer = {
 
 type Run = {
   nonce: string;
-  phase: "echo" | "output";
+  phase: "echo" | "output" | "done";
   out: string;
   dropped: boolean;
   incomplete: boolean;
@@ -384,7 +384,12 @@ export function createLiveShell(options: LiveShellOptions) {
     const waiters = promptWaiters;
     promptWaiters = [];
     for (const wake of waiters) wake();
-    if (run && mark.nonce === run.nonce) run.finish(mark.status);
+    if (run && mark.nonce === run.nonce) {
+      // The next prompt can arrive in the same PTY chunk as this mark, before the waiting
+      // command gets to clear the run. Keep drawing it in the terminal without capturing it.
+      run.phase = "done";
+      run.finish(mark.status);
+    }
   }
 
   function onText(text: string) {

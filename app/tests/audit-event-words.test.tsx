@@ -172,18 +172,32 @@ test("Admin shows the stored name on hover, for matching a row against the expor
 });
 
 test("the search box still finds a row by its stored name", async () => {
-  const view = await renderAs("personal");
-  await userEvent
-    .setup({ document })
-    .type(
-      view.getByRole("searchbox", { name: "Search events" }),
-      "parallel/web_search",
-    );
-  await waitFor(() =>
-    expect(whats(view.container).map((line) => line.textContent)).toEqual([
-      "Search the web",
-    ]),
+  // The same stored name the words replaced, asked of the server so it reaches older pages too.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes("/api/admin/audit-events")) return Response.json({});
+      return Response.json({ events: [ROWS[4]] });
+    },
+    { preconnect: realFetch.preconnect },
   );
+  try {
+    const view = await renderAs("personal");
+    await userEvent
+      .setup({ document })
+      .type(
+        view.getByRole("searchbox", { name: "Search events" }),
+        "parallel/web_search",
+      );
+    await waitFor(() =>
+      expect(whats(view.container).map((line) => line.textContent)).toEqual([
+        "Search the web",
+      ]),
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 /**

@@ -414,12 +414,51 @@ test("editing a removed rule preserves the draft and prevents replacing it", asy
   expect(saved).toHaveLength(0);
 });
 
+test("leaving a boundary draft can keep editing or discard without saving", async () => {
+  serving({ mode: "enforce", deny: [custom], allow: ["true"] });
+  const { view, router } = open(`/admin/boundaries/${boundaryRuleId(custom)}`);
+  const rule = await view.findByRole("textbox", { name: "Rule" });
+  const draft = 'page.host == "blocked.example.test"';
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.clear(rule);
+  await user.type(rule, draft);
+  const back = view.getByRole("link", { name: "Boundaries" });
+  await user.click(back);
+  await view.findByRole("alertdialog", { name: "Discard boundary draft?" });
+  await user.click(view.getByRole("button", { name: "Keep editing" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(rule).toHaveProperty("value", draft);
+  await waitFor(() =>
+    expect(view.container.ownerDocument.activeElement).toBe(back),
+  );
+
+  await user.click(back);
+  await view.findByRole("alertdialog", { name: "Discard boundary draft?" });
+  await user.click(view.getByRole("button", { name: "Discard changes" }));
+  await waitFor(() =>
+    expect(router.state.location.pathname).toBe("/admin/boundaries"),
+  );
+  expect(saved).toHaveLength(0);
+});
+
 test("a positional bookmark asks the administrator to find the boundary again", async () => {
-  serving({ mode: "enforce", deny: [template.rule, custom], allow: ["true"] });
+  const initial: ActionPolicy = {
+    mode: "enforce",
+    deny: [template.rule, custom],
+    allow: ["true"],
+    labels: { [custom]: { name: "Unrelated boundary", description: "" } },
+  };
+  serving(initial);
   const { view } = open("/admin/boundaries/1");
   await view.findByRole("heading", { name: "Choose a boundary" });
   expect(view.getByText(/older link used a position in the list/)).toBeTruthy();
   expect(view.queryByRole("button", { name: "Remove rule" })).toBeNull();
+  expect(
+    view.queryByRole("heading", { name: "Unrelated boundary" }),
+  ).toBeNull();
+  expect(saved).toHaveLength(0);
+  expect(expectedPolicies).toHaveLength(0);
+  expect(stored).toEqual(initial);
 });
 
 test("changing Trial mode reviews impact and declines to overwrite a newer policy", async () => {

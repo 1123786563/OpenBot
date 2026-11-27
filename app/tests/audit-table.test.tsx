@@ -201,20 +201,44 @@ test("newest first, and a press on When turns it oldest first", async () => {
   );
 });
 
-test("search narrows the rows already loaded, and says how many match", async () => {
-  const view = await renderAudit();
-  const user = userEvent.setup({ document });
-  const input = view.getByRole("searchbox", { name: "Search events" });
-  await user.type(input, "save deal");
-  await waitFor(() =>
-    expect(whats(view.container)).toEqual(["Click on a page"]),
+test("search asks the server for matching rows and counts what it shows", async () => {
+  const realFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes("/api/admin/audit-events")) return Response.json({});
+      requests.push(url);
+      const q = new URL(url, "http://openbot.local").searchParams.get("q");
+      // The server answers the words it was given; the client then narrows what it drew.
+      const matching = q === "save deal" || q === "deal click" ? [ROWS[0]] : [];
+      return Response.json({ events: matching });
+    },
+    { preconnect: realFetch.preconnect },
   );
-  expect(view.getByText("1 of 3 events")).toBeDefined();
-  await user.clear(input);
-  await user.type(input, "deal click");
-  await waitFor(() =>
-    expect(whats(view.container)).toEqual(["Click on a page"]),
-  );
+  try {
+    const view = await renderAudit();
+    const user = userEvent.setup({ document });
+    const input = view.getByRole("searchbox", { name: "Search events" });
+    await user.type(input, "save deal");
+    await waitFor(() =>
+      expect(requests.some((url) => url.includes("q=save+deal"))).toBe(true),
+    );
+    await waitFor(() =>
+      expect(whats(view.container)).toEqual(["Click on a page"]),
+    );
+    expect(view.getByText("1 event")).toBeDefined();
+    await user.clear(input);
+    await user.type(input, "deal click");
+    await waitFor(() =>
+      expect(requests.some((url) => url.includes("q=deal+click"))).toBe(true),
+    );
+    await waitFor(() =>
+      expect(whats(view.container)).toEqual(["Click on a page"]),
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("each row carries what happened, for its colour", async () => {

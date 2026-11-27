@@ -69,7 +69,9 @@ const radius = (scale: number) => `calc(var(--radius) * ${scale})`;
 /**
  * OpenBot's tokens, by reference. They switch under `.dark` themselves, so one set covers both
  * schemes, and set at the top level they outrank the SDK's built-in dark values. Status tints,
- * highlights and shadows have no OpenBot token and keep the SDK's light and dark values.
+ * highlights and shadows have no OpenBot token and keep the SDK's values, its dark ones only once
+ * a standard component the SDK draws itself has added its stylesheet to the page (`layoutStyle`
+ * in a2ui-form.tsx).
  *
  * The font is spelled out rather than `var(--font-sans)`: that one lives in `@theme inline`, which
  * Tailwind inlines into utilities instead of emitting as a variable.

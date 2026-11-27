@@ -61,7 +61,7 @@ describe("when somebody was last here", () => {
     expect(removed?.revoked).toBe(true);
     expect(removed?.lastSignedInAt).toBe(SIGNED_IN_AT.toISOString());
 
-    await store.restore(dana);
+    await store.restore(dana, "an-admin");
     const back = await store.find(dana);
     expect(back?.revoked).toBe(false);
     expect(back?.lastSignedInAt).toBe(SIGNED_IN_AT.toISOString());
@@ -83,7 +83,7 @@ describe("when somebody was last here", () => {
     await person("abe", null);
 
     await store.revoke(zoe, "an-admin");
-    await store.restore(zoe);
+    await store.restore(zoe, "an-admin");
 
     const { people } = await store.list({ search: PREFIX });
     expect(people.map((one) => one.id.replace(PREFIX, ""))).toEqual([

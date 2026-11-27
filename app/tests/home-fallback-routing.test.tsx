@@ -205,6 +205,64 @@ test("a Bot named on Home is carried into To when copying the draft", async () =
   expect(view.router.state.location.searchStr).toBe("?agent=own");
 });
 
+test("Home keeps typing and copying a draft when the browser refuses to store it", async () => {
+  const own = agent({ id: "own", name: "Own Bot", visibility: "public" });
+  // A browser that refuses writes: reads still work, every write throws.
+  const storage = sessionStorage;
+  const originalStorage = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "sessionStorage",
+  );
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: new Proxy(storage, {
+      get(target, property) {
+        if (property === "setItem")
+          return () => {
+            throw new DOMException("Storage is denied.", "QuotaExceededError");
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }),
+  });
+  installHomeRoutingFetch({
+    routeResponse: Response.json({ error: "router down" }, { status: 503 }),
+    starts: [],
+  });
+  const view = renderHome(queryClientWithAgents([own], "storage-denied"));
+  try {
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    const editor = await view.findByRole("textbox", { name: "Message" });
+    await user.click(editor);
+    await user.keyboard("Keep this temporary draft");
+    expect(
+      await view.findByText(
+        "Your draft is temporary. Copy your message before closing or refreshing this tab.",
+      ),
+    ).toBeTruthy();
+    expect(editor.textContent).toBe("Keep this temporary draft");
+    await user.click(
+      view.getByRole("button", { name: "Choose Bots for a new conversation" }),
+    );
+    await view.findByText("New conversation destination");
+    const composition = view.router.state.location.state.newConversation;
+    expect(composition).toBeTruthy();
+    expect(
+      readComposeDraft(
+        composeDraftKey("storage-denied", composition ?? "", "message"),
+        draftSegments,
+      ),
+    ).toEqual([text("Keep this temporary draft")]);
+  } finally {
+    if (originalStorage)
+      Object.defineProperty(globalThis, "sessionStorage", originalStorage);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  }
+  // Nothing reached the tab's storage; the copy lived only in this tab's memory.
+  expect(sessionStorage.length).toBe(0);
+});
+
 test("/ fallback routing matches the server default when route selection is unavailable", async () => {
   const ownPublic = agent({
     id: "own-public",

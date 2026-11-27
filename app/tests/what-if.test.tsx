@@ -77,7 +77,7 @@ function client() {
   return queryClient;
 }
 
-function renderWhatIf() {
+function renderWhatIf(initialPath = "/admin/what-if") {
   /*
    * The page reads its search through its own route, `/_authed/admin/what-if`, so it is mounted at
    * that id, under the same layout routes the app has. Mounted at `/admin/what-if`, its
@@ -115,11 +115,16 @@ function renderWhatIf() {
       component: () => null,
     }),
   );
+  const audit = createRoute({
+    getParentRoute: () => admin,
+    path: "/audit",
+    component: () => <AuditPage ask />,
+  });
   const router = createRouter({
     routeTree: root.addChildren([
-      authed.addChildren([admin.addChildren([page, ...pages])]),
+      authed.addChildren([admin.addChildren([page, audit, ...pages])]),
     ]),
-    history: createMemoryHistory({ initialEntries: ["/admin/what-if"] }),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   return {
     ...render(
@@ -272,21 +277,25 @@ test("editing the action while a check runs discards the previous action's resul
   expect(view.queryByText("What happens")).toBeNull();
 });
 
-test("a new Audit link updates the open simulator and Start over clears the link", async () => {
-  serve({ "/api/admin/what-if/vocabulary": answers.vocabulary });
-  const view = renderWhatIf();
-  await view.findByText("Choose a Bot.");
-  const linkedAction = encodeURIComponent(
-    JSON.stringify(JSON.stringify(answers.checked.action)),
-  );
-  await act(async () => {
-    view.router.history.push(`/admin/what-if?action=${linkedAction}`);
+test("Audit Try a change opens the scenario with its Bot and app, and Start over clears the link", async () => {
+  serve({
+    "/api/admin/audit-events": { events: [answers.event] },
+    [`/api/admin/what-if/explain/${answers.event.id}`]: answers.explained,
+    "/api/admin/what-if/vocabulary": answers.vocabulary,
+  });
+  const view = renderWhatIf("/admin/audit");
+  const user = userEvent.setup({ document });
+  await user.click(await view.findByRole("button", { name: "Why?" }));
+  await user.click(await view.findByText("Try a change"));
+  await waitFor(() => {
+    const chips = [...view.container.querySelectorAll("[data-what-if-chip]")];
+    expect(chips.map((chip) => chip.textContent)).toEqual(
+      expect.arrayContaining(["Bot:Sales", "App:Gmail"]),
+    );
   });
   const check = await view.findByRole("button", { name: "Check" });
   await waitFor(() => expect(check).toHaveProperty("disabled", false));
-  await userEvent
-    .setup({ document })
-    .click(view.getByRole("button", { name: "Start over" }));
+  await user.click(view.getByRole("button", { name: "Start over" }));
   await waitFor(() => expect(view.router.state.location.searchStr).toBe(""));
   expect(check).toHaveProperty("disabled", true);
   expect(document.activeElement).toBe(

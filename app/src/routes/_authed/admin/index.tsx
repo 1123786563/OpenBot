@@ -90,13 +90,15 @@ function RouteComponent() {
           enterKeyHint="search"
           label="Find a setting"
           onChange={setQuery}
-          onEnter={() =>
-            firstResult && links.current.get(firstResult.title)?.focus()
-          }
           onKeyDown={(event) => {
-            if (event.key !== "Escape" || !q || isComposing(event)) return;
-            event.preventDefault();
-            setQuery("");
+            if (isComposing(event)) return;
+            if (event.key === "Enter" && firstResult) {
+              event.preventDefault();
+              links.current.get(firstResult.title)?.focus();
+            } else if (event.key === "Escape" && q) {
+              event.preventDefault();
+              setQuery("");
+            }
           }}
           size="lg"
           type="search"

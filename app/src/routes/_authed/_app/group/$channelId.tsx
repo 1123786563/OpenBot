@@ -1,5 +1,7 @@
-import { HStack } from "@astryxdesign/core/HStack";
-import { VStack } from "@astryxdesign/core/Stack";
+import { Divider } from "@astryxdesign/core/Divider";
+import { Heading } from "@astryxdesign/core/Heading";
+import { Stack, VStack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { learningEvidencePermission } from "@openbot/shared/direct-chat-learning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
@@ -10,9 +12,10 @@ import { ConversationSurface } from "@/components/channels/conversation-surface"
 import { GroupChat } from "@/components/channels/group-chat";
 import { GroupPeopleButton } from "@/components/channels/group-people";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
+import { useTranslation } from "@/i18n";
 import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { channelQueryOptions } from "@/lib/channels/queries";
-import { client, tryClient } from "@/lib/client";
+import { canKeepCachedRead, client, tryClient } from "@/lib/client";
 import { groupQueryOptions } from "@/lib/groups";
 
 /** A conversation with several Bots. The channel is an ordinary channel with more than one Bot. */
@@ -22,6 +25,7 @@ export const Route = createFileRoute("/_authed/_app/group/$channelId")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation();
   const { channelId } = Route.useParams();
   const { runId } = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -30,31 +34,48 @@ function RouteComponent() {
   });
   const channel = useQuery(channelQueryOptions(channelId));
   const group = useQuery(groupQueryOptions(channelId));
-  const visibleChannel = group.data ? channel.data : undefined;
+  const canReadGroup = Boolean(group.data) && canKeepCachedRead(group.error);
+  const visibleChannel =
+    canReadGroup && canKeepCachedRead(channel.error) ? channel.data : undefined;
   useMarkOpenChannelRead(channelId);
   return (
     <ConversationSurface>
-      <HStack
-        as="header"
+      <Stack
         align="center"
-        gap={1.5}
-        className="sticky top-0 min-h-12 shrink-0 border-b border-border px-3 py-2"
+        as="header"
+        direction="horizontal"
+        className="sticky top-0 shrink-0"
+        gap={2}
         data-slot="conversation-header"
+        style={{
+          paddingBlock: "var(--spacing-2)",
+          paddingInline: "var(--spacing-3)",
+        }}
+        wrap="wrap"
       >
         <SidebarToggle />
         <ChannelAvatar
           participantIds={visibleChannel?.agentIds ?? []}
           size={22}
         />
-        <h1 className="min-w-0 truncate text-sm tracking-tight">
-          {visibleChannel?.name ?? "Group conversation"}
-        </h1>
-        <GroupLearningPermission channelId={channelId} />
-        <GroupPeopleButton
-          channelId={channelId}
-          onLeave={() => void navigate({ to: "/" })}
-        />
-      </HStack>
+        <Heading
+          level={1}
+          style={{ fontSize: "var(--font-size-base)", minWidth: 0 }}
+          wordBreak="break-word"
+        >
+          {visibleChannel?.name ?? t("conversation.group.title")}
+        </Heading>
+        {canReadGroup && (
+          <>
+            <GroupLearningPermission channelId={channelId} />
+            <GroupPeopleButton
+              channelId={channelId}
+              onLeave={() => void navigate({ to: "/" })}
+            />
+          </>
+        )}
+      </Stack>
+      <Divider />
       {(visibleChannel?.agentIds ?? []).map((agentId) => (
         <BotPausedBanner agentId={agentId} key={agentId} />
       ))}
@@ -105,9 +126,9 @@ function GroupLearningPermission({ channelId }: { channelId: string }) {
         Allow Learning from this conversation
       </label>
       {save.error && (
-        <p role="alert" className="text-destructive">
+        <Text as="p" role="alert" style={{ color: "var(--color-text-error)" }}>
           {save.error.message}
-        </p>
+        </Text>
       )}
     </VStack>
   );

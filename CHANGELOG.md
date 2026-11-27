@@ -8,6 +8,39 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- **A generated form that could not be drawn whole is no longer sent.** If part of a form fails
+  to draw, because a control is bound to the wrong kind of value, the form says "Couldn't show this
+  part of the reply." and cannot be sent, so the Bot never receives an answer that is missing a
+  field. The rest of the message, and the forms beside it, still work. If an update to an interface
+  could not be applied, every form in that interface says the same and cannot be sent, even one
+  that looks whole, because it may hold values from before the update. An interface that could not
+  be drawn at all now shows its error in OpenBot's error colours in both light and dark.
+- **A Select in a generated form that the person clears now sends an empty value.** Before, the
+  field was left out of what the Bot received, so the Bot could read the answer as missing it.
+- **Generated forms and pressable areas take more of the layout a Bot gives them.** The spacing
+  between rows and columns, a background, a border colour, corner radius, minimum and maximum
+  sizes, a shadow, and an inline or scrollable box are now drawn as the Bot wrote them. Before,
+  only the gap, padding, width and height were. A Select now shows the icon and the empty option's
+  label a Bot gives it, and a date field takes its share of the width.
+- **A generated form used while the Bot is still replying says nothing was sent.** A form, or a
+  button in one, used while the reply is still being written was dropped in silence. It now shows
+  "Nothing was sent. The Bot is still replying." and asks to send it again once the reply has
+  finished. The notice goes as soon as a later send goes through, so it is not still on screen
+  while the Bot answers that message.
+- **A generated form that scrolls can be scrolled from the keyboard.** Tab now reaches the form
+  before the fields in it, and the arrow keys scroll it, with a focus ring to show where the
+  keyboard is. Before, Tab went straight to the first field, and no key could scroll the form.
+- **An interface that fails before its own error handling is named in a person's words.** The
+  transcript used to say "Couldn't show generative-ui-surface." for an interface a Bot drew. It now
+  says "Couldn't show this part of the reply.", and every such message ends with the next step:
+  "Ask the Bot to send it again."
+- **Date and time fields in a generated form show where the keyboard focus is.** A date field, a
+  time field and the time part of a date and time field showed no focus ring when Tab reached
+  them. They now show the same ring as the other controls.
+- **The buttons and spacing inside an interface a Bot drew now follow the theme.** A button there
+  had lost its colour and its corners: a destructive button was not red, and a chosen option showed
+  no fill. The text of a field touched its border, and the options of an open list touched each
+  other. They now look like the rest of OpenBot, in light and in dark.
 - Settings live in one file per service, and there is no `.env` in the repository root any more:
   `deploy/openbot/.env` (database address, ports, the secret the server and the worker share),
   `deploy/openbot/.env.server`, `deploy/openbot/.env.worker` and `deploy/agents/.env` (the model
@@ -24,6 +57,94 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   `bun run sync:env` writes all four. A key in two folders that one process reads is refused.
   It also no longer stops on `MANAGED_AGENT_TOKEN` and `AGENT_TOOL_TOKEN` that `scripts/start.sh`
   generated: it carries them over. Any other value that only a local file holds still stops it.
+- **Removing somebody's access now says when it is only half done.** The removal takes effect at
+  once. If their credentials or Recorders could not be retired, you see "Access is removed for this
+  person, but some of their credentials or Recorders could not be retired yet. Try again to finish."
+  Removing the access again finishes it and writes no second removal on the Audit trail. Before, the
+  same case answered with a plain error.
+- **A change and its Audit row are saved together.** Changing somebody's role, removing or
+  restoring their access, deleting a skill from the library and saving permission switches each
+  write their Audit row in the same transaction as the change. If the Audit trail refuses the row,
+  nothing changes and you can save again.
+- **Saving Permissions refuses a preview that is out of date.** If another admin changed the
+  switches after you read the impact, saving answers "Permissions changed while you were reviewing
+  them. Review the new impact and save again." and writes nothing.
+- **Publishing a component says when Audit could not record it.** The reply says whether the
+  component is published, so you know which way to switch to record it.
+- **Removing an identity provider or revoking a credential shows who is affected first.** Before
+  you confirm, the dialog lists the people who would lose their only way in and those who keep one,
+  or, for a credential, what holds it and the Bots that hold it. The button stays off until the list
+  has loaded. A long list of people shows 20 names and the true total.
+- **Removing an app source from Memory waits for the copies the backend holds.** The copies are
+  retired first. While any is left, nothing is deleted and the request is refused, so a retry can
+  finish. Before, a copy left behind came back as the person's own memory for every Bot of theirs.
+  Forgetting such a memory now writes an Audit row too.
+- **Confirmations name what they touch.** Deleting a skill names the Bots that offer it. Forgetting
+  a memory shows the whole fact and which of your Bots use it. Revoking a personal Bot key says
+  "Revoking this key is permanent. Add a replacement key to restore access."
+- **A message saved for a new conversation can be discarded.** Its page has "Discard saved message",
+  which removes the copy saved in the browser from Home's list of messages to resume. "Choose Bots
+  in a new conversation" opens the new conversation with a copy of the text and names the
+  attachments to add again.
+- **Audit rows are easier to read.** A person's rows show their email and the role change
+  ("ada@example.com · Member → Admin"). A stopped Recorder's row carries the email of the person it
+  belonged to, and no row is written when a stop stopped nothing. Password, app source and identity
+  provider rows have names.
+- **A conversation with several Bots names each stage the way every other conversation does.** A
+  Bot waiting its turn says "Queued" and one working says "Thinking", as `/bot` and a conversation
+  with one Bot do, and a run the person stopped says "The run was stopped." Before, the same run read
+  "Waiting to reply" or "Run ended" there. A run that is waiting on the person says "Waiting for your
+  approval." everywhere.
+- **A run you stopped is not shown as an error after a reload.** On `/bot` and in a conversation, a
+  run the server stopped at your request came back in red as "The Bot run was stopped." after every
+  reload, under the plain "The run was stopped." It now reads "The run was stopped." once.
+- **An approval that ends without your answer says why, and what to do.** No approval expires on
+  its own. One ends when you withdraw it (asking is switched off while it waits), when the Bot's
+  work is stopped under it, or when the same request is decided in another tab, and the line where
+  the card was now reads, for example, "Withdrawn. You turned off asking before changes. Ask the Bot
+  again if you still need it." until the Bot's own answer for that step arrives. The next step
+  follows what ran. Where nothing ran, because you declined the step, it was withdrawn, or the
+  check just before it ran turned it away, it is "Ask the Bot again if you still need it." Where
+  the step may have run, because its outcome is unknown or it could not be carried out, it is
+  "Check whether it happened before you ask the Bot again." A computer step keeps its own card once
+  its request has ended. Each answer's description also says that the Bot carries on in the same
+  conversation afterwards. A decision is sent once: a fast double press, or a press while the card
+  folds away, sends nothing more, and one the server refused can be sent again.
+- **A conversation you can no longer read offers the way back.** When your access to a conversation
+  ends, a group conversation refuses to open, or a conversation page cannot open at all, the page
+  now says why and links to Home instead of leaving you with a Retry that can never succeed.
+- **Stop in a conversation with one Bot stops the run on the server, and says so.** Stop used to
+  end only this browser's copy of the turn, and the Bot went on working. It now reads the
+  conversation first and stops the run that is going now. Your message stays sent, nothing is drawn
+  in red, and the conversation says "The run was stopped." A run stopped from another tab while you
+  watch reads the same. A Stop on a run that had already ended lets this browser's end of the turn
+  go. A stop the server refuses says "The Bot couldn't be stopped. Try again." until you send
+  another message.
+- **A Bot's own chat (`/bot`) picks up where the Bot left off.** Opening it loads the stored
+  conversation, and a read that fails keeps what is on screen and your draft, saying "Couldn't load
+  earlier messages." with Try again. After you decide an approval there, the chat shows the Bot
+  still working on the server and draws the reply when that turn ends, instead of sitting idle
+  until you reopened it. Stop reads the conversation first and stops the run that is going now, on
+  the server, and says "The run was stopped." only once the server confirms it. A stop the server
+  refuses says "The Bot couldn't be stopped. Try again." and leaves the turn going here, with Stop
+  there to press again. The chat says what became of a run the server holds for it in the same words
+  a conversation with one Bot uses, and offers Check outcome when nobody can vouch for how a run
+  ended. Access that ends while the chat is open hides what was read and links back to Home as soon
+  as a send fails, not on the next one.
+- **`/bot` reads the conversation again after each of your turns, answered or not.** What was said
+  of an earlier run gives way to the next answer, so "The run was stopped." does not stay on screen
+  under it. Earlier messages that could not be loaded when the chat opened arrive after the next
+  reply, even when Try again was pressed while the Bot was replying, without reopening the chat.
+  If a read fails after a turn that answered, `/bot` now says "Couldn't load earlier messages."
+  with Try again, and what was said stays on screen. Before, it said so only when `/bot` opened,
+  after a failed send, after a Stop, or after you answered an approval.
+- **A conversation with several Bots asks for an approval where it waits, and the reply follows
+  the answer.** A Bot waiting for your approval asks in the conversation with the same card a
+  conversation with one Bot uses, once for that Bot, instead of one sentence and a link to the
+  Bot's page. Once you answer, its line says it is working again and the reply arrives without
+  leaving the conversation. A working Bot's avatar carries the working badge, as it does on Home.
+  A group offers no Stop while a Bot is working: a stop there would leave the Bot unable to answer
+  any later turn in that conversation.
 
 ## 1.0.3
 

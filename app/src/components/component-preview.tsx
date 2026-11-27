@@ -1,10 +1,10 @@
-import { Button } from "@astryxdesign/core/Button";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Stack } from "@astryxdesign/core/Stack";
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SandboxHost } from "@/components/gallery/sandbox-host";
+import { ReadError } from "@/components/layout/read-status";
 import { galleryComponent } from "@/lib/copilot/gallery-registry";
 import {
   type SandboxedRecord,
@@ -15,43 +15,53 @@ import {
 export function AdminComponentPreview({
   name,
   kind,
+  tile = false,
+  focusAfterRetry,
 }: {
   name: string;
   kind: string;
+  /** Keep preview artwork out of the tile link’s accessible name and tab order. */
+  tile?: boolean;
+  focusAfterRetry?: () => HTMLElement | null;
 }) {
   const sandboxed = useQuery({
     ...sandboxedListQueryOptions(),
     enabled: kind === "sandboxed",
   });
-  if (kind === "sandboxed" && sandboxed.isPending) {
-    return <SandboxHost status={LOADING} {...TILE} />;
-  }
-  if (kind === "sandboxed" && sandboxed.error) {
-    return (
-      <SandboxHost
-        status={{
-          kind: "error",
-          message: "Couldn't load the preview.",
-          action: (
-            <Button
-              clickAction={async () => {
-                await sandboxed.refetch();
-              }}
-              label="Retry"
-              size="sm"
+  const content =
+    kind === "sandboxed" && sandboxed.isPending ? (
+      <SandboxHost status={LOADING} {...TILE} />
+    ) : kind === "sandboxed" && sandboxed.error ? (
+      tile ? (
+        <SandboxHost
+          status={{ kind: "error", message: "Couldn't load the preview." }}
+          {...TILE}
+        />
+      ) : (
+        <SandboxHost {...TILE}>
+          <Stack padding={3}>
+            <ReadError
+              focusAfterRetry={focusAfterRetry}
+              message="Couldn't load the preview."
+              retry={sandboxed.refetch}
+              retrying={sandboxed.isFetching}
             />
-          ),
-        }}
-        {...TILE}
+          </Stack>
+        </SandboxHost>
+      )
+    ) : (
+      <ComponentPreview
+        kind={kind}
+        name={name}
+        sandboxed={sandboxed.data?.find((component) => component.name === name)}
       />
     );
-  }
+  if (!tile) return content;
+  // A tile is one link: its preview is artwork, so keep it out of the accessible name and tab order.
   return (
-    <ComponentPreview
-      kind={kind}
-      name={name}
-      sandboxed={sandboxed.data?.find((component) => component.name === name)}
-    />
+    <Stack aria-hidden="true" height="100%" inert width="100%">
+      {content}
+    </Stack>
   );
 }
 

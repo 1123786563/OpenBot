@@ -4,6 +4,7 @@ import {
   IntelligenceAgentRunner,
   PlatformRequestError,
 } from "@copilotkit/runtime/v2";
+import { decisionInvalidated } from "@openbot/shared/approval-outcomes";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
@@ -39,11 +40,7 @@ import {
 import { createWorkQueue, parkedPersonalWork } from "../work/queue";
 import { readExecutionAccess } from "./account-access";
 import { PERSONAL_BOT_WORK } from "./bot-work";
-import {
-  decisionInvalidated,
-  readDecisionAccess,
-  runWithDecisionAccess,
-} from "./decision-access";
+import { readDecisionAccess, runWithDecisionAccess } from "./decision-access";
 import { ensureDecisionActor } from "./decision-actor";
 import { trackIntelligenceRuns } from "./intelligence-inventory";
 import type { workspaceQuotas } from "./quotas";

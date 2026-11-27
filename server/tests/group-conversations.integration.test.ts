@@ -645,6 +645,12 @@ describe("group conversations in PostgreSQL", () => {
       "completed",
       "waiting",
     ]);
+    // The waiting row names the Bot's thread in the group: the approval card in a group conversation
+    // is drawn from the requests for that thread.
+    expect(messages.at(-1)).toMatchObject({
+      agentId: grace,
+      threadId: await conversations.store.thread(owner.id, channel.id, grace),
+    });
 
     await conversations.continueWaiting(`${prefix}-approval`, async () => ({
       replyText: "Approved and done.",
@@ -1269,6 +1275,14 @@ describe("group conversations in PostgreSQL", () => {
     expect(
       (await conversations.list(second.id, channel.id)).messages.at(-1),
     ).toMatchObject({ text: "a" });
+    expect(
+      (await conversations.list(second.id, channel.id)).people.map(
+        ({ userId, creator }) => [userId, creator],
+      ),
+    ).toEqual([
+      [second.id, true],
+      [third.id, false],
+    ]);
     await conversations.removeMember(second.id, channel.id, third.id);
     for (const gone of [owner, third])
       await expect(conversations.list(gone.id, channel.id)).rejects.toThrow(

@@ -32,3 +32,9 @@ ISSUE17_DIR=/tmp/openbot-issue18 bun scripts/acceptance/astryx-rollout.mjs team 
 The fixture uses Personal local sign-in and seeded Team sessions. It reuses each signed-in account while testing its four saved values. External SSO, live model turns, connected-app consent exchanges, and native binaries were outside this run. Unsent Conversation text still clears on full reload, as recorded in both #17 baselines.
 
 For verification after the review fixes, seed four distinct Team accounts with the four retired skin preferences before running the `retired` phase. Use IDs `issue17-<skin>`, roles `user`, completed onboarding, and sessions with tokens `issue17-<skin>-token`, matching the isolated Better Auth setup above. The harness opens a fresh browser context for each of these accounts and checks the stored value before loading Bots.
+
+## #193 bookmark migration
+
+The previous 63-pass browser matrix predates #128. The [21-address bookmark contract](../web127-bookmarks.json) records the expected URLs for Team admins, Team members, and Personal users. The router fixture checks all 63 role and address combinations, including Bot selection, Connections callbacks, the Personal Memory fallback, and the Team member fallback from Admin. Component tests cover choosing an available Bot from an old Activity, Ideas, or Goals bookmark. The shared recovery suite covers unknown legacy screens.
+
+The local sign-in test simulates a same-origin return with a session fixture. The final production-build run still needs the 21-address browser matrix, a real external-provider return, a live Team role downgrade, and screen-reader checks.
