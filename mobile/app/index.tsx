@@ -1,4 +1,4 @@
-import { Link, router } from "expo-router";
+import { Link, router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   Button,
@@ -27,6 +27,10 @@ import {
 } from "../src/auth";
 import { HELD_OUT, linkButtons } from "../src/company-sign-in";
 import { companySignInTicket } from "../src/company-sign-in-ticket";
+import {
+  isLocalMobilePreview,
+  previewConversations,
+} from "../src/home-preview";
 import { homeView } from "../src/home-view";
 import { linkCompanyAccount, onCompanyLinked } from "../src/link-company";
 import { registerPush, unregisterPush } from "../src/notifications";
@@ -34,7 +38,25 @@ import { onOrganizationGone } from "../src/organization-gone";
 import { onRenewalNeedsClick } from "../src/renewal";
 import { useLoad } from "../src/use-load";
 export default function Home() {
+  const { preview } = useLocalSearchParams();
+  if (isLocalMobilePreview("/", preview)) return <HomeScreen preview />;
+  return <ConnectedHome />;
+}
+
+function ConnectedHome() {
   const { data: session, isPending } = authClient.useSession();
+  return <HomeScreen session={session} isPending={isPending} />;
+}
+
+function HomeScreen({
+  session,
+  isPending = false,
+  preview = false,
+}: {
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+  preview?: boolean;
+}) {
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
@@ -53,7 +75,7 @@ export default function Home() {
     [],
   );
   // Only once the session has answered, and only for somebody signed out: it is the signed-out screen's.
-  const options = useLoad(loadOptions, !session && !isPending);
+  const options = useLoad(loadOptions, !preview && !session && !isPending);
   // A failure of that read belongs to the signed-out screen, and is not shown once somebody is signed in.
   const optionsError = session ? undefined : options.error;
   // The person's organizations and the one they work in; picking another reads everything below again.
@@ -123,14 +145,15 @@ export default function Home() {
   );
   const nextCursor =
     olderCursor === undefined ? conversations.data?.nextCursor : olderCursor;
-  const allConversations = Array.from(
-    new Map(
-      [...(conversations.data?.conversations ?? []), ...older].map((item) => [
-        item.id,
-        item,
-      ]),
-    ).values(),
-  );
+  const allConversations = preview
+    ? previewConversations.map(({ id, name }) => ({ id, name, active: true }))
+    : Array.from(
+        new Map(
+          [...(conversations.data?.conversations ?? []), ...older].map(
+            (item) => [item.id, item],
+          ),
+        ).values(),
+      );
   async function act(work: () => Promise<unknown>) {
     setBusy(true);
     setError("");
@@ -164,20 +187,24 @@ export default function Home() {
     <ScrollView
       contentContainerStyle={{ padding: 20, gap: 16 }}
       refreshControl={
-        <RefreshControl
-          refreshing={conversations.pending}
-          onRefresh={() => {
-            void conversations.refresh();
-          }}
-        />
+        preview ? undefined : (
+          <RefreshControl
+            refreshing={conversations.pending}
+            onRefresh={() => {
+              void conversations.refresh();
+            }}
+          />
+        )
       }
     >
       <Text style={{ fontSize: 24, fontWeight: "600" }}>
-        {session
-          ? `Welcome, ${session.user.name ?? session.user.email}`
-          : "Sign in to OpenBot"}
+        {preview
+          ? "Welcome, Alex"
+          : session
+            ? `Welcome, ${session.user.name ?? session.user.email}`
+            : "Sign in to OpenBot"}
       </Text>
-      <Text>{serverUrl}</Text>
+      <Text>{preview ? "Local preview · Sample data" : serverUrl}</Text>
       {(view === "working" || view === "held-out") &&
         !organizations.error &&
         (organizations.data?.organizations.length ?? 0) > 1 && (
@@ -273,7 +300,7 @@ export default function Home() {
           />
           {signOutButton}
         </>
-      ) : !session ? (
+      ) : !session && !preview ? (
         <View style={{ gap: 12 }}>
           <Text>
             {isPending
@@ -316,20 +343,39 @@ export default function Home() {
         </View>
       ) : (
         <>
-          <Link href="/needs-you" style={{ fontSize: 18, color: "#2563eb" }}>
+          <Link
+            onPress={preview ? (event) => event.preventDefault() : undefined}
+            href="/needs-you"
+            style={{ fontSize: 18, color: "#2563eb" }}
+          >
             Needs you
           </Link>
-          <Link href="/approvals" style={{ fontSize: 18, color: "#2563eb" }}>
+          <Link
+            onPress={preview ? (event) => event.preventDefault() : undefined}
+            href="/approvals"
+            style={{ fontSize: 18, color: "#2563eb" }}
+          >
             Questions and approvals
           </Link>
-          <Link href="/bots" style={{ fontSize: 18, color: "#2563eb" }}>
+          <Link
+            href={
+              preview
+                ? { pathname: "/bots", params: { preview: "1" } }
+                : "/bots"
+            }
+            style={{ fontSize: 18, color: "#2563eb" }}
+          >
             Bots, routines and computers
           </Link>
-          <Link href="/memory" style={{ fontSize: 18, color: "#2563eb" }}>
+          <Link
+            onPress={preview ? (event) => event.preventDefault() : undefined}
+            href="/memory"
+            style={{ fontSize: 18, color: "#2563eb" }}
+          >
             Memory
           </Link>
           <Button
-            disabled={busy}
+            disabled={busy || preview}
             title={
               pushRegistered ? "Notifications enabled" : "Enable notifications"
             }
@@ -346,7 +392,10 @@ export default function Home() {
               key={conversation.id}
               href={{
                 pathname: "/conversation",
-                params: { channelId: conversation.id },
+                params: {
+                  channelId: conversation.id,
+                  ...(preview ? { preview: "1" } : {}),
+                },
               }}
               style={{ paddingVertical: 12, color: "#2563eb" }}
             >
@@ -375,7 +424,7 @@ export default function Home() {
               No conversations yet. Create one in OpenBot on your computer.
             </Text>
           )}
-          {signOutButton}
+          {!preview && signOutButton}
         </>
       )}
     </ScrollView>

@@ -1,10 +1,11 @@
 import * as Notifications from "expo-notifications";
-import { router, Stack } from "expo-router";
+import { router, Stack, useGlobalSearchParams, usePathname } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Platform, View } from "react-native";
 import { setSignedInPerson } from "../src/api";
 import { authClient } from "../src/auth";
 import { withSecurityFloor } from "../src/floor-gate";
+import { isLocalMobilePreview } from "../src/home-preview";
 import { notificationDestination } from "../src/links";
 import { onSessionRefused } from "../src/session-refused";
 import { useVersionVerdict, VersionGate } from "../src/version-gate";
@@ -73,4 +74,25 @@ function Layout() {
     </View>
   );
 }
-export default withSecurityFloor(Layout);
+const AuthenticatedLayout = withSecurityFloor(Layout);
+
+export default function RootLayout() {
+  const pathname = usePathname();
+  const { preview } = useGlobalSearchParams();
+  if (isLocalMobilePreview(pathname, preview)) {
+    return (
+      <Stack>
+        <Stack.Screen name="index" options={{ title: "OpenBot" }} />
+        <Stack.Screen name="conversation" options={{ title: "Conversation" }} />
+        <Stack.Screen name="bots" options={{ title: "Bots" }} />
+        <Stack.Screen name="bot" options={{ title: "Bot" }} />
+        <Stack.Screen name="routine" options={{ title: "Routine" }} />
+        <Stack.Screen name="computer" options={{ title: "Computer" }} />
+        <Stack.Screen name="plugins" options={{ title: "Plugins" }} />
+        <Stack.Screen name="memory" options={{ title: "Memory" }} />
+        <Stack.Screen name="rules" options={{ title: "Custom rules" }} />
+      </Stack>
+    );
+  }
+  return <AuthenticatedLayout />;
+}

@@ -1,4 +1,4 @@
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Link, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -25,8 +25,17 @@ import {
 } from "../src/api/generated/computers/computers";
 import type { ComputerHumanInput } from "../src/api/generated/model";
 import { authClient, serverUrl } from "../src/auth";
+import { isLocalMobilePreview, previewBots } from "../src/home-preview";
 import { clientHeaders } from "../src/release";
-import { colors, input, muted, Problem, Screen, useAction } from "../src/ui";
+import {
+  colors,
+  heading,
+  input,
+  muted,
+  Problem,
+  Screen,
+  useAction,
+} from "../src/ui";
 
 type Frame = { uri: string; width: number; height: number };
 
@@ -132,8 +141,35 @@ function useLiveFrame(botId: string, enabled: boolean) {
  * you tap and type, and Return control hands it back.
  */
 export default function ComputerScreen() {
-  const { botId = "" } = useLocalSearchParams<{ botId: string }>();
+  const { botId = "", preview } = useLocalSearchParams();
+  const id = typeof botId === "string" ? botId : "";
+  if (isLocalMobilePreview("/computer", preview)) {
+    const sample = previewBots.find((bot) => bot.id === id);
+    if (!sample)
+      return (
+        <Redirect href={{ pathname: "/bots", params: { preview: "1" } }} />
+      );
+    return <ComputerView botId={id} sample={sample} />;
+  }
+  return <ConnectedComputer botId={id} />;
+}
+
+function ConnectedComputer({ botId }: { botId: string }) {
   const { data: session, isPending } = authClient.useSession();
+  return <ComputerView botId={botId} session={session} isPending={isPending} />;
+}
+
+function ComputerView({
+  botId,
+  sample,
+  session,
+  isPending = false,
+}: {
+  botId: string;
+  sample?: (typeof previewBots)[number];
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+}) {
   const action = useAction();
   const [control, setControl] = useState<ComputerControl | null>(null);
   const [requestId, setRequestId] = useState("");
@@ -202,7 +238,7 @@ export default function ComputerScreen() {
   };
   useEffect(() => () => release.current(), []);
 
-  if (!session && !isPending) return <Redirect href="/" />;
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
 
   const send = (
     kind: "click" | "type" | "key" | "scroll",
@@ -215,6 +251,14 @@ export default function ComputerScreen() {
 
   return (
     <Screen>
+      {sample && (
+        <>
+          <Link href={{ pathname: "/bot", params: { botId, preview: "1" } }}>
+            Back to preview Bot
+          </Link>
+          <Text style={heading}>{sample.name}’s computer</Text>
+        </>
+      )}
       <View
         style={{
           padding: 12,
@@ -224,14 +268,17 @@ export default function ComputerScreen() {
         }}
       >
         <Text style={{ fontWeight: "600" }}>
-          {!control
-            ? "Checking who has control…"
-            : control.transitioning
-              ? "Finishing the Bot's current action before giving you control…"
-              : driving
-                ? "You have control. Tap the screen to click."
-                : "The Bot has control."}
+          {sample
+            ? "The Bot has control."
+            : !control
+              ? "Checking who has control…"
+              : control.transitioning
+                ? "Finishing the Bot's current action before giving you control…"
+                : driving
+                  ? "You have control. Tap the screen to click."
+                  : "The Bot has control."}
         </Text>
+        {sample && <Text style={muted}>Sample screen · Read only</Text>}
         {control?.reason ? <Text style={muted}>{control.reason}</Text> : null}
       </View>
       <Problem message={action.error || live.problem} />
@@ -286,7 +333,24 @@ export default function ComputerScreen() {
           borderColor: colors.success,
         }}
       >
-        {frame ? (
+        {sample ? (
+          <View
+            style={{
+              backgroundColor: "white",
+              margin: 16,
+              padding: 16,
+              gap: 8,
+              borderRadius: 6,
+            }}
+          >
+            <Text style={muted}>OpenBot Workspace</Text>
+            <Text style={heading}>Planning notes</Text>
+            <Text>
+              Confirm the demo scope and share the walkthrough with the team.
+            </Text>
+            <Text style={muted}>Last updated by {sample.name}</Text>
+          </View>
+        ) : frame ? (
           <Image
             source={{ uri: frame.uri }}
             resizeMode="contain"
@@ -359,7 +423,7 @@ export default function ComputerScreen() {
       ) : (
         <Button
           title="Take control"
-          disabled={Boolean(action.busy) || control?.transitioning}
+          disabled={Boolean(sample || action.busy) || control?.transitioning}
           onPress={() => {
             void take();
           }}
