@@ -264,18 +264,29 @@ test("a push token registered by one person cannot be moved to another person's 
     projectId,
     platform: "ios",
   });
+  const rotated = token.replace("]", "rotated]");
+  await store.registerDevice({
+    id: ownersDevice,
+    ownerUserId: owner,
+    token: rotated,
+    projectId,
+    platform: "ios",
+  });
+  expect(await store.devices(owner)).toEqual([
+    expect.objectContaining({ id: ownersDevice, token: rotated }),
+  ]);
   // After the owner signs out on the phone, the next person to sign in there takes the token.
   await store.removeDevice(owner, ownersDevice);
   const next = randomUUID();
   await store.registerDevice({
     id: next,
     ownerUserId: stranger,
-    token,
+    token: rotated,
     projectId,
     platform: "ios",
   });
   expect(await store.devices(stranger)).toEqual([
-    expect.objectContaining({ id: next, token }),
+    expect.objectContaining({ id: next, token: rotated }),
   ]);
   expect(await store.devices(owner)).toEqual([]);
 });

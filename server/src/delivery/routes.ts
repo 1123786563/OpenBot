@@ -196,6 +196,13 @@ export function createDeliveryRoutes(deps: {
       201,
     );
   });
+  routes.get("/devices", async (c) =>
+    c.json({
+      devices: (await deps.store.devices(c.var.actor.id)).map(
+        ({ id, platform, createdAt }) => ({ id, platform, createdAt }),
+      ),
+    }),
+  );
   routes.post("/devices", async (c) => {
     if (!deps.pushProjectId)
       throw new DeliveryRefusedError(
@@ -218,7 +225,14 @@ export function createDeliveryRoutes(deps: {
       ownerUserId: c.var.actor.id,
     });
     return c.json(
-      { device: { id: device?.id, enabled: device?.enabled } },
+      {
+        device: {
+          id: device.id,
+          enabled: device.enabled,
+          platform: device.platform,
+          createdAt: device.createdAt.toISOString(),
+        },
+      },
       201,
     );
   });

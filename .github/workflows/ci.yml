@@ -416,6 +416,8 @@ jobs:
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
         working-directory: desktop
+      # Root discovery also runs the native client's HTTP and security-floor tests.
+      - run: npm ci --prefix mobile --ignore-scripts
       # The same migrator a deployment runs, rather than `drizzle-kit migrate`: it is the one that
       # refuses a database holding a stamp newer than the migrations it is about to walk past
       # (server/src/db/migration-reach.ts), and a CI database that is ever reused rather than

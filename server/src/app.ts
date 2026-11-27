@@ -29,6 +29,7 @@ import {
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
+import { createApiV2Routes } from "./api-v2/routes";
 import { createReviewerGuidanceRoutes } from "./approvals/reviewer-guidance";
 import { createApprovalRoutes } from "./approvals/routes";
 import { createApprovalRuleDraftRoutes } from "./approvals/rule-translate";
@@ -2700,6 +2701,20 @@ export function createApp(
       ),
     );
   }
+
+  app.route(
+    "/api/v2",
+    createApiV2Routes({
+      dispatch: (request, env) => app.fetch(request, env),
+      requireUser,
+      routineStore,
+      deployment: {
+        builtInBots: config.runtime.mode === "openbot",
+        isolatedBots: deploymentCanIsolate(config.computer),
+        botComputers: Boolean(computerGateway && computerPolicy),
+      },
+    }),
+  );
 
   /*
    * The built app, served by the API that serves it.

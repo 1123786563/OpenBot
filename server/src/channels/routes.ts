@@ -113,7 +113,7 @@ export type ChannelPage = {
   nextCursor: string | null;
 };
 
-export type ChannelQuery = { cursor?: string; limit?: number };
+export type ChannelQuery = { cursor?: string; limit?: number; botId?: string };
 
 /**
  * How many channels one page holds.
@@ -757,6 +757,19 @@ export function createChannelStore(
           and(
             isNull(channels.deletedAt),
             isNull(channelMemberships.archivedAt),
+            query.botId
+              ? exists(
+                  database
+                    .select({ id: channelAgents.channelId })
+                    .from(channelAgents)
+                    .where(
+                      and(
+                        eq(channelAgents.channelId, channels.id),
+                        eq(channelAgents.agentId, query.botId),
+                      ),
+                    ),
+                )
+              : undefined,
             // One row comparison over the whole sort key, which only reads as "everything after the
             // cursor" because every part of that key descends. See ROSTER_ORDER.
             cursor
@@ -1665,7 +1678,9 @@ export function createChannelRoutes(
         MAX_CHANNEL_PAGE,
       );
       if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+      const botId = url.searchParams.get("botId");
       const page = await store.list(context.var.actor, {
+        ...(botId ? { botId } : {}),
         ...(url.searchParams.get("cursor")
           ? { cursor: url.searchParams.get("cursor") as string }
           : {}),

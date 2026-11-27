@@ -1,6 +1,6 @@
 import * as Crypto from "expo-crypto";
 import { Redirect, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
   RefreshControl,
@@ -33,6 +33,7 @@ export default function ConversationScreen() {
   const [text, setText] = useState(draft ?? "");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const pendingSend = useRef<{ key: string; id: string } | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload for whoever is signed in now, not the previous person
   const loadChannels = useCallback(
     () => getConversation(ORGANIZATION_ID, channelId ?? ""),
@@ -64,14 +65,19 @@ export default function ConversationScreen() {
     if (!text.trim() || !agentId || sending) return;
     setSending(true);
     setError("");
-    const pendingText = text;
-    const externalId = Crypto.randomUUID();
+    const key = JSON.stringify([session?.user.id, channelId, agentId, text]);
+    const id =
+      pendingSend.current?.key === key
+        ? pendingSend.current.id
+        : Crypto.randomUUID();
+    pendingSend.current = { key, id };
     try {
       await sendConversationMessage(ORGANIZATION_ID, channelId, {
-        id: externalId,
-        text: pendingText,
+        id,
+        text,
         botId: agentId,
       });
+      pendingSend.current = null;
       setText("");
       await history.refresh();
     } catch (failure) {

@@ -314,7 +314,7 @@ function sweepDto(sweptAt: Date | null, now = new Date()): SweepDto {
   };
 }
 
-function routineDto(routine: RoutineSummary): RoutineDto {
+export function routineDto(routine: RoutineSummary): RoutineDto {
   return {
     id: routine.id,
     agentId: routine.agentId,

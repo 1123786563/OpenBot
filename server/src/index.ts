@@ -129,7 +129,11 @@ import {
 } from "./channels/attachments";
 import { purgeDeletedConversations } from "./channels/deletion-cleanup";
 import type { DirectChatReflect } from "./channels/direct-chat";
-import { expireDirectChatEvents } from "./channels/direct-chat-replay";
+import {
+  directChatHistory,
+  expireDirectChatEvents,
+  messagesFor,
+} from "./channels/direct-chat-replay";
 import {
   createChannelEventHub,
   startChannelActivityListener,
@@ -4181,11 +4185,17 @@ const app = createApp(
         scopeFor: deliveryScopeFor,
         listConversations: async (owner, cursor) =>
           channelStore.list(await actorFor(owner), { cursor, limit: 100 }),
-        history: (scope) =>
-          routineIntelligence.getThreadMessages({
-            threadId: scope.threadId,
-            userId: scope.ownerUserId,
-          }),
+        history: async (scope) =>
+          config.runtime.mode === "openbot"
+            ? {
+                messages: messagesFor(
+                  await directChatHistory(database, scope.threadId),
+                ),
+              }
+            : routineIntelligence.getThreadMessages({
+                threadId: scope.threadId,
+                userId: scope.ownerUserId,
+              }),
         slack: deliveryProviders.slack,
         twilio: deliveryProviders.sms,
         pushProjectId: deliveryProviders.pushProjectId,

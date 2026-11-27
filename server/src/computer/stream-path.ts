@@ -17,9 +17,11 @@ export function streamPathBotId(pathname: string): string | null {
 export function computerSocketPath(
   pathname: string,
 ): { botId: string; socket: "stream" | "terminal" } | null {
-  const match = pathname.match(
-    /^\/api\/computers\/([^/]+)\/(stream|terminal)$/,
-  );
+  const match =
+    pathname.match(/^\/api\/computers\/([^/]+)\/(stream|terminal)$/) ??
+    pathname.match(
+      /^\/api\/v2\/organizations\/default\/computers\/([^/]+)\/(screen)$/,
+    );
   if (!match?.[1] || !match[2]) return null;
   try {
     return {

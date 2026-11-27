@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   and,
   asc,
@@ -282,32 +282,59 @@ export function createDeliveryStore(database: Database) {
       return rows.length === 1;
     },
     async registerDevice(input: Omit<PushDevice, "enabled">) {
-      // A token already held by someone else moves only once its owner has signed out on that phone
-      // (which disables the row). Otherwise anyone who learned a token could take over its
-      // notifications, approval and sign-in links included.
-      const [device] = await database
-        .insert(pushDevices)
-        .values({ ...input, enabled: true })
-        .onConflictDoUpdate({
-          target: pushDevices.token,
-          set: {
-            id: input.id,
-            ownerUserId: input.ownerUserId,
-            projectId: input.projectId,
-            platform: input.platform,
-            enabled: true,
-          },
-          setWhere: or(
-            eq(pushDevices.ownerUserId, input.ownerUserId),
-            eq(pushDevices.enabled, false),
-          ),
-        })
-        .returning();
-      if (!device)
-        throw new DeliveryRefusedError(
-          "This device is already registered to another account. Sign out of OpenBot on it first.",
+      return database.transaction(async (tx) => {
+        // Lock both unique keys even before they have rows. Hash tokens outside the database so
+        // they aren't sent as lock query parameters.
+        const locks = [
+          `push-device-id:${input.id}`,
+          `push-device-token:${input.token}`,
+        ].map((key) =>
+          createHash("sha256").update(key).digest().readBigInt64BE(),
         );
-      return device;
+        locks.sort((a, b) => (a < b ? -1 : 1));
+        for (const lock of locks) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(${lock.toString()}::bigint)`,
+          );
+        }
+        const found = await tx
+          .select()
+          .from(pushDevices)
+          .where(
+            or(
+              eq(pushDevices.id, input.id),
+              eq(pushDevices.token, input.token),
+            ),
+          )
+          .orderBy(asc(pushDevices.id))
+          .for("update");
+        if (
+          found.some(
+            (device) =>
+              device.enabled && device.ownerUserId !== input.ownerUserId,
+          )
+        )
+          throw new DeliveryRefusedError(
+            "This device is already registered to another account. Sign out of OpenBot on it first.",
+          );
+
+        const byId = found.find((device) => device.id === input.id);
+        const byToken = found.find((device) => device.token === input.token);
+        if (byId && byToken && byId.id !== byToken.id)
+          await tx.delete(pushDevices).where(eq(pushDevices.id, byToken.id));
+
+        const previous = byId ?? byToken;
+        const values = { ...input, enabled: true };
+        const [device] = previous
+          ? await tx
+              .update(pushDevices)
+              .set(values)
+              .where(eq(pushDevices.id, previous.id))
+              .returning()
+          : await tx.insert(pushDevices).values(values).returning();
+        if (!device) throw new Error("Device registration did not save.");
+        return device;
+      });
     },
     async devices(owner: string) {
       return database

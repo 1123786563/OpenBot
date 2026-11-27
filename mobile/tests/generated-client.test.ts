@@ -84,6 +84,32 @@ const ada = {
   canManage: true,
 };
 
+/** A task as the spec's example has it, from a server that has added a status and a field. */
+const task = {
+  id: "7c2d6b1f-6f10-4a53-9d51-5f0d6c0e2f1a",
+  botId: "general-assistant",
+  conversationId: "5f0d6c0e-2f1a-4a53-9d51-6f3d6b1f6f10",
+  threadId: null,
+  title: "Reply to Sam about the spec",
+  why: "Sam asked for the spec by Friday.",
+  origin: "check_in",
+  suggestionId: null,
+  sourceApp: "Gmail",
+  sourceLink: null,
+  originConversationId: null,
+  status: "parked",
+  failure: null,
+  failedAt: null,
+  stoppedAt: null,
+  next: "Read the draft and send it.",
+  workingSince: null,
+  lastActivityAt: "2026-11-14T09:05:00.000Z",
+  resolvedAt: null,
+  createdAt: "2026-11-14T09:00:00.000Z",
+  updatedAt: "2026-11-14T09:05:00.000Z",
+  priority: { by: "a newer server" },
+};
+
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -324,6 +350,22 @@ const server = Bun.serve({
           headers: { "content-type": "application/problem+json" },
         },
       );
+    if (route === `GET ${MINE}` && url.searchParams.get("limit") === "3")
+      return Response.json({
+        organizations: [
+          {
+            id: "org_work",
+            slug: "work",
+            name: "Work",
+            role: "auditor",
+            active: true,
+            seats: 12,
+          },
+        ],
+        canCreate: false,
+        nextCursor: null,
+        addedLater: true,
+      });
     if (route === `GET ${MINE}` && outsideDefault)
       return Response.json({
         organizations: [
@@ -358,6 +400,23 @@ const server = Bun.serve({
           },
         ],
         canCreate: false,
+        nextCursor: null,
+      });
+    if (route === `GET ${ORG}/tasks/t_1`)
+      return Response.json({ task, addedLater: true });
+    if (route === `GET ${ORG}/routines/r_1/runs`)
+      return Response.json({
+        runs: [
+          {
+            id: "run_1",
+            status: "cancelled",
+            source: "schedule",
+            startedAt: "2026-11-14T09:00:00.000Z",
+            finishedAt: null,
+            error: null,
+            retriedBy: "a newer server",
+          },
+        ],
         nextCursor: null,
       });
     if (route === `GET ${ORG}/bots`) {
@@ -448,7 +507,8 @@ const { getBot, pauseBot } = await import("../src/api/generated/bots/bots");
 const { deleteDevice, registerDevice } = await import(
   "../src/api/generated/devices/devices"
 );
-const { deleteRoutine } = await import(
+const { getTask } = await import("../src/api/generated/tasks/tasks");
+const { deleteRoutine, listRoutineRuns } = await import(
   "../src/api/generated/routines/routines"
 );
 const { replaceBotGrant } = await import(
@@ -466,7 +526,7 @@ const {
   setSignedInPerson,
 } = await import("../src/api");
 const { homeView } = await import("../src/home-view");
-const { listInvitations } = await import(
+const { listInvitations, listOrganizations } = await import(
   "../src/api/generated/organizations/organizations"
 );
 const { NOT_IN_ORGANIZATION } = await import("../src/organization");
@@ -1139,4 +1199,25 @@ describe("renewing a hosted OpenBot's sign-in", () => {
       stop();
     }
   });
+});
+
+test("a task in a status this app doesn't know, with a field it doesn't know, reads as sent", async () => {
+  const answer = await getTask("org_work", "t_1");
+  expect(answer.task.status).toBe("parked");
+  expect((answer.task as Record<string, unknown>).priority).toEqual({
+    by: "a newer server",
+  });
+  expect((answer as Record<string, unknown>).addedLater).toBe(true);
+});
+
+test("a routine run in a status this app doesn't know reads as sent", async () => {
+  const answer = await listRoutineRuns("org_work", "r_1");
+  expect(answer.runs.map((run) => run.status)).toEqual(["cancelled"]);
+});
+
+test("an organization in which the person has a role this app doesn't know reads as sent", async () => {
+  const answer = await listOrganizations({ limit: 3 });
+  expect(answer.organizations.map((organization) => organization.role)).toEqual(
+    ["auditor"],
+  );
 });

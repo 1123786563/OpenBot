@@ -155,6 +155,9 @@ export type RoutineSummary = {
   timezone: string;
   enabled: boolean;
   nextRunAt: Date;
+  cron: string;
+  goalId: string | null;
+  createdAt: Date;
   channelId: string;
   /** The target channel's name, or null when the row is gone entirely rather than soft-deleted. */
   channelName: string | null;
@@ -991,6 +994,9 @@ export function createRoutineStore(database: Database): RoutineStore {
           agentId: routine.agentId,
           instruction: routine.instruction,
           title: routine.title,
+          cron: routine.cron,
+          goalId: routine.goalId,
+          createdAt: routine.createdAt,
           schedule: describeCron(routine.cron),
           timezone: routine.timezone,
           enabled: routine.enabled,

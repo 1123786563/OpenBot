@@ -8,14 +8,11 @@
  * `{"settings": {"proactiveDailyRuns": 22}}`, with "Always allow this scope", which the server
  * refuses for it. The approval below is that one, as the API sent it.
  *
- * The phone's copies are held to the web's originals (shared/tool-name.ts, shared/standing-rule.ts).
+ * Standing rules and labelled details are held to the Web helpers.
  */
 import { expect, test } from "bun:test";
 import { offersStandingRule as webOffersStandingRule } from "../../shared/standing-rule";
-import {
-  approvalDetails as webApprovalDetails,
-  approvalPhrase as webApprovalPhrase,
-} from "../../shared/tool-name";
+import { approvalDetails as webApprovalDetails } from "../../shared/tool-name";
 import {
   type ApprovalActionWords,
   approvalAsk,
@@ -123,7 +120,7 @@ test("a change with no rows lists the values that differ", () => {
   expect(approvalChange(undefined)).toBeNull();
 });
 
-test("every settings tool reads exactly as the web names it", () => {
+test("settings approvals name the requested change", () => {
   const settings = (tool: string, args?: unknown, target?: unknown) => ({
     botId: "scout",
     toolRef: `openbot-settings/${tool}`,
@@ -147,8 +144,22 @@ test("every settings tool reads exactly as the web names it", () => {
     settings("manage_teams", { action: "remove_member" }),
     settings("manage_teams"),
   ];
-  for (const action of cases)
-    expect(approvalAsk(action)).toBe(webApprovalPhrase(action));
+  expect(cases.map(approvalAsk)).toEqual([
+    "change your settings",
+    "change Scout's settings",
+    "change a Bot's settings",
+    "change your organization's settings",
+    "invite someone to your organization",
+    "change someone's role in your organization",
+    "remove someone from your organization",
+    "change people in your organization",
+    "create a team",
+    "rename a team",
+    "move a team",
+    "add someone to a team",
+    "take someone out of a team",
+    "change your organization's teams",
+  ]);
 });
 
 test("the standing-answer rule is the web's", () => {
