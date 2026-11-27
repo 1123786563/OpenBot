@@ -4,6 +4,7 @@
 
 - 首次部署按下方步骤配置并启动服务。
 - 在 1Panel 安装 OpenBot 或独立中间件时，使用[本地应用商店包](1panel/README.md)。
+- 规划共享数据库、Redis Sentinel、RustFS 和 Flexprice 时，见[中间件集中部署方案](centralized-deployment-plan.md)。
 - 维护现有服务时，使用 `deploy/compose.sh <组件> ps` 或 `deploy/compose.sh <组件> logs --tail 50`。
 - 使用已经搭好的本机全量环境时，见[本机源码部署与验收](local-development.md)。
 - 迁移已有实例、设置日志保留期或使用可选服务时，见[中间件运维手册](operations.md)。
