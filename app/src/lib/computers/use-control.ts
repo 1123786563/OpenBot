@@ -28,7 +28,11 @@ const stores = new Map<string, ControlStore>();
 const MISSED_READS_BEFORE_PAUSE = 2;
 
 /** One authoritative poll and mutation gate per visible Bot, shared by chat, sidebar and modal. */
-function createControlStore(computerId: string): ControlStore {
+function createControlStore(
+  computerId: string,
+  surface: "browser" | "terminal",
+  key: string,
+): ControlStore {
   let snapshot = EMPTY;
   let version = 0;
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -49,6 +53,7 @@ function createControlStore(computerId: string): ControlStore {
       computerId,
       undefined,
       abort.signal,
+      surface,
     ).catch(() => null);
     if (reading === abort) reading = undefined;
     if (abort.signal.aborted || mine !== version || snapshot.busy) return;
@@ -65,7 +70,7 @@ function createControlStore(computerId: string): ControlStore {
       ? snapshot.problem?.startsWith("Reconnecting:")
         ? null
         : snapshot.problem
-      : "Reconnecting: browser ownership could not be checked. Input is paused.";
+      : `Reconnecting: ${surface} ownership could not be checked. Input is paused.`;
     // The same answer as last time changes nothing on screen, so nothing is told. Every view of the
     // computer re-rendered once a second for a state that had not moved.
     if (
@@ -78,8 +83,8 @@ function createControlStore(computerId: string): ControlStore {
   // Keep the same store through Strict Mode resubscriptions and pending mutations.
   const disposeWhenUnused = () =>
     queueMicrotask(() => {
-      if (!listeners.size && !snapshot.busy && stores.get(computerId) === store)
-        stores.delete(computerId);
+      if (!listeners.size && !snapshot.busy && stores.get(key) === store)
+        stores.delete(key);
     });
   const change = async (action: Action): Promise<boolean> => {
     if (snapshot.busy || snapshot.control?.transitioning) return false;
@@ -102,11 +107,12 @@ function createControlStore(computerId: string): ControlStore {
           ? await takeControl(
               computerId,
               control?.requested ? requestId : undefined,
+              surface,
             )
           : requestId
             ? action === "release"
-              ? await releaseControl(computerId, requestId)
-              : await cancelControl(computerId, requestId)
+              ? await releaseControl(computerId, requestId, surface)
+              : await cancelControl(computerId, requestId, surface)
             : null;
       publish({
         control: next ?? control,
@@ -182,11 +188,16 @@ export function heldByOther(
   );
 }
 
-export function useComputerControl(computerId: string, enabled = true) {
-  let store = enabled ? stores.get(computerId) : undefined;
+export function useComputerControl(
+  computerId: string,
+  enabled = true,
+  surface: "browser" | "terminal" = "browser",
+) {
+  const key = JSON.stringify([computerId, surface]);
+  let store = enabled ? stores.get(key) : undefined;
   if (enabled && !store) {
-    store = createControlStore(computerId);
-    stores.set(computerId, store);
+    store = createControlStore(computerId, surface, key);
+    stores.set(key, store);
   }
   const snapshot = useSyncExternalStore(
     store?.subscribe ?? noSubscription,

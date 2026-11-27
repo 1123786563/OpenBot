@@ -162,7 +162,7 @@ Target deployment acceptance remains open for all four steps.
 
 ## Still gated on a deployment
 
-Querying and closing orders on the real channel needs the test merchant. The restore and rollback drills above run against the ledger; the deployment drill that starts an older build is separate. An application's credential, and the controlled executor behind `/v1/dispatch`, are mounted by a deployment. The WeKnora adapter in `server/src/billing/weknora-ingestion.ts` keeps its own in-memory authorization map and has not moved onto this contract.
+Querying and closing orders on the real channel needs the test merchant. The restore and rollback drills above run against the ledger; the deployment drill that starts an older build is separate. An application's credential, and the controlled executor behind `/v1/dispatch`, are mounted by a deployment. The WeKnora ingestion adapter in `server/src/billing/weknora-ingestion.ts` spends the person's durable Spending Authorization; its live pilot recordings predate that migration and must be re-recorded against it.
 
 OpenBot's own model calls make the ledger's reservation. The adapter wired into the server (`server/src/managed-model-trial.ts`), for Web direct chat and the auxiliary calls beside it, reads `GET /v1/quote`, reserves on that Price Version as the app `openbot` with Test Credits, and sends `resumable: false`, since nothing retries a chat turn by its operation ID. `server/tests/managed-model-routes.integration.test.ts` runs it against these routes and the real ledger.
 

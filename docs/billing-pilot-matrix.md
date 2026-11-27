@@ -124,3 +124,39 @@ bun test --no-env-file --env-file=.env.test --timeout 90000 \
 The approved Harness/provider routes, direct-access controls on the target
 deployment, and the real account-status and Workspace Suspension matrix
 with #69 remain pending.
+
+## Evidence for independent reruns
+
+Run the matrix from the repository root after configuring the approved target
+and its Test Credit accounts. Use a new output directory for each run.
+
+```sh
+bun --no-env-file server/scripts/pilot-matrix.ts <run-dir>
+```
+
+Set `PILOT_EVIDENCE=deployment`, `PILOT_DEPLOYMENT_ID`,
+`PILOT_SOURCE_COMMIT` (full Git commit), `PILOT_BUILD_VERSION`, and
+`PILOT_IMAGE_DIGEST` (the running image's SHA-256 digest). Supply the product
+entry and gateway with `PILOT_TARGET_URL`, `PILOT_TARGET_TOKEN`,
+`PILOT_GATEWAY_URL`, and `PILOT_GATEWAY_REVISION`. The three Test Credit
+accounts use `PILOT_TOKEN_A/B/C` for execution and
+`PILOT_SESSION_COOKIE_A/B/C` for their own account endpoints. Set
+`PILOT_ROUTE_A/B` to the two published route IDs.
+
+Provide `PILOT_WEKNORA_URL`, `PILOT_WEKNORA_SERVICE_TOKEN`,
+`PILOT_WEKNORA_SUBJECT`, and `PILOT_WEKNORA_RESOURCE_ID` for the WeKnora leg.
+Use `PILOT_ACCOUNT_STATUS_URL`, `PILOT_WORKSPACE_ID`, and
+`PILOT_OPERATOR_TOKEN` with a dedicated test workspace for the suspension
+leg. Lago reconciliation uses `PILOT_TARGET_DATABASE_URL` for the same
+deployment and `PILOT_LAGO_URL`, `LAGO_API_KEY`, and
+`LAGO_USAGE_SUBSCRIPTION_ID` for its zero-rate destination. Supply credentials
+through the process environment.
+
+Share `<run-dir>/manifest.json` with the reviewer. It records the deployment
+provenance, rerun command, each scenario's result, operation IDs allocated by
+the scenario, and failure codes. `scenario_failed` directs the runner to the
+private diagnostics for the detailed cause. Keep the raw `matrix.json`,
+`worker.env`, and console output private. A scenario failure produces a
+nonzero exit code. Fixture runs have empty signoff references. For deployment
+evidence, cite `deploymentRef` and `rampRef` in #112 after verifying the
+deployment and reviewing the results.

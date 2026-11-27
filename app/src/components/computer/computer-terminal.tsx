@@ -8,12 +8,14 @@ import { TERMINAL_BACKGROUND } from "./terminal-theme";
  * The Computer panel's Terminal tab: the Bot's live shell, and the wheel under it.
  *
  * Drawn as the screen's card is (computer-view.tsx): the same rounded frame and border, and the same
- * row beneath it saying who has control, with the same Take control and Hand back. It is the same
- * wheel. Taking it here takes the whole computer, as it does from the screen, and the Bot waits until
- * it is handed back. The terminal inside is always a dark terminal, in either of the app's themes.
+ * row beneath it saying who has control, with the same Take control and Hand back.
  */
 export function ComputerTerminal({ computerId }: { computerId: string }) {
-  const { control, someoneElse } = useComputerControl(computerId);
+  const { control, someoneElse } = useComputerControl(
+    computerId,
+    true,
+    "terminal",
+  );
   /** The signed-in person holds the wheel. Someone else holding it on a shared Bot is not them typing. */
   const driving =
     control?.holder === "human" && !control.transitioning && !someoneElse;
@@ -66,8 +68,8 @@ export function ComputerTerminal({ computerId }: { computerId: string }) {
         {driving ? (
           <span className="text-sm">
             <strong className="font-medium">You have control</strong> of the
-            terminal and the screen. Click the terminal and type. The Bot waits
-            until you hand it back.
+            terminal. Click the terminal and type. The Bot waits until you hand
+            it back.
           </span>
         ) : (
           <span className="text-muted-foreground text-xs">
@@ -82,6 +84,7 @@ export function ComputerTerminal({ computerId }: { computerId: string }) {
         )}
         <ComputerControlButton
           computerId={computerId}
+          surface="terminal"
           onTakeControl={() => terminal.current?.focus()}
         />
       </div>

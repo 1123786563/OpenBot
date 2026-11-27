@@ -239,6 +239,7 @@ export type BotBrowserRouteDeps = {
     | "status"
     | "browserCleared"
     | "seatFor"
+    | "browserFor"
     | "addressOf"
     | "tokenFor"
   >;
@@ -400,12 +401,15 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
     path: string,
     options: Omit<NonNullable<Parameters<typeof call>[3]>, "token"> = {},
   ) => {
-    const token = deps.gateway.tokenFor(seat);
-    return call(base, deps.gateway.addressOf(seat), path, {
+    const token = hostFor(seat).tokenFor(seat);
+    return call(base, hostFor(seat).addressOf(seat), path, {
       ...options,
       ...(token ? { token } : {}),
+      ...(hostFor(seat) !== deps.gateway ? { redirect: "error" } : {}),
     });
   };
+  const hostFor = (seat: ComputerSeat) =>
+    deps.gateway.browserFor?.(seat) ?? deps.gateway;
   const connections = deps.recorder.connections;
   const notSetUp = deps.singleUser
     ? SENTENCES.notSetUpSingleUser
@@ -418,9 +422,9 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
     Response.json({ error: SENTENCES.slow }, { status: 504 });
   /** Whether the Bot's computer is up, and where it is: each within what is left of the request's budget. */
   const statusOf = (seat: ComputerSeat) =>
-    inBudget(deps.gateway.status(seat), "status", SENTENCES.slow);
+    inBudget(hostFor(seat).status(seat), "status", SENTENCES.slow);
   const where = (seat: ComputerSeat) =>
-    inBudget(deps.gateway.locate(seat), "locate", SENTENCES.slow);
+    inBudget(hostFor(seat).locate(seat), "locate", SENTENCES.slow);
   /** The Bot's seat for the person asking: their own computer's, or the Bot's own computer when it is isolated. */
   const seatFor = (botId: string, actor: { id: string }) =>
     deps.gateway.seatFor(botId, actor.id);
@@ -632,7 +636,7 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
         userId,
         wheel.control,
         stateOf(taken.body) ?? wheel.state,
-        deps.recordRefused,
+        hostFor(seat) === deps.gateway ? deps.recordRefused : undefined,
       ),
     );
   }
@@ -676,7 +680,7 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
     const botId = seat.botId;
     const { actor } = asker;
     // Before the wheel or the computer is asked, and long before a connection is minted for a profile others can read.
-    if (deps.recordRefused)
+    if (hostFor(seat) === deps.gateway && deps.recordRefused)
       return Response.json({ error: deps.recordRefused }, { status: 403 });
     const wheel = await withTheWheel(seat, actor.id);
     if (!wheel.ok) return wheel.response;
@@ -795,7 +799,7 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
         actor.id,
         wheel.control,
         stateOf(answer.body) ?? wheel.state,
-        deps.recordRefused,
+        hostFor(seat) === deps.gateway ? deps.recordRefused : undefined,
       ),
     );
   }
@@ -858,7 +862,7 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
         userId,
         seen.control,
         stateOf(answer.body) ?? seen.state,
-        deps.recordRefused,
+        hostFor(seat) === deps.gateway ? deps.recordRefused : undefined,
       ),
     );
   }
@@ -911,7 +915,7 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
         actor.id,
         wheel.control,
         stateOf(answer.body) ?? CLOSED,
-        deps.recordRefused,
+        hostFor(seat) === deps.gateway ? deps.recordRefused : undefined,
       ),
     );
   }
@@ -930,7 +934,7 @@ export function createBotBrowser(deps: BotBrowserRouteDeps): BotBrowser {
         context.var.actor.id,
         seen.control,
         seen.state,
-        deps.recordRefused,
+        hostFor(seat) === deps.gateway ? deps.recordRefused : undefined,
       ),
     );
   });

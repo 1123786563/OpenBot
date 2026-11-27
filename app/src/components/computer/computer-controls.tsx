@@ -10,14 +10,19 @@ export function ComputerControlButton({
   computerId,
   onTakeControl,
   prominent = false,
+  surface = "browser",
 }: {
   computerId: string;
   onTakeControl?: () => void;
+  surface?: "browser" | "terminal";
   /** Take control drawn solid rather than outlined: where it is the one action offered, over the Bot's screen. */
   prominent?: boolean;
 }) {
-  const { control, busy, problem, change, someoneElse } =
-    useComputerControl(computerId);
+  const { control, busy, problem, change, someoneElse } = useComputerControl(
+    computerId,
+    true,
+    surface,
+  );
   // Someone else's wheel is not the person's to hand back, and not theirs to take from under them either.
   const human = control?.holder === "human" && !someoneElse;
   return (

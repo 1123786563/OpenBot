@@ -1,12 +1,17 @@
 import { outcomeForPerson } from "@openbot/shared/approval-outcomes";
+import {
+  BROWSER_UPLOAD_DESCRIPTION,
+  browserUploadResult,
+  browserUploadToolInput,
+} from "@openbot/shared/browser-upload";
 import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
+import { ComputerView } from "@/components/computer/computer-view";
+import { HelpRequestCard } from "@/components/computer/help-request-card";
 import {
   commandStatus,
   TerminalBlock,
 } from "@/components/computer/terminal-block";
-import { ComputerView } from "@/components/computer/computer-view";
-import { HelpRequestCard } from "@/components/computer/help-request-card";
 import { tryClient } from "@/lib/client";
 import { noteBrowsed, outputOf, readOutcome } from "@/lib/computers/activity";
 import { callComputer, type ToolOutcome } from "@/lib/computers/call";
@@ -320,6 +325,10 @@ const OFFERED: Readonly<Record<string, OfferRule>> = {
   computer_run_command: offeredComputer,
   computer_write_file: offeredComputer,
   computer_scroll: offeredBrowser,
+  computer_upload_browser_file: (bot, name) =>
+    bot.browserUpload === true &&
+    offeredNavigate(bot, name) === true &&
+    offeredComputer(bot, name) === true,
 };
 
 export function ComputerTools() {
@@ -332,6 +341,31 @@ export function ComputerTools() {
   const botOf = useBotOfCall();
   const bot = useActiveBotHolder();
   useOfferedTo(OFFERED);
+
+  useFrontendTool({
+    name: "computer_upload_browser_file",
+    description: BROWSER_UPLOAD_DESCRIPTION,
+    parameters: browserUploadToolInput,
+    handler: async () => ({
+      ok: false,
+      reason: "Browser upload requires an approval in this conversation.",
+    }),
+    render: ({ result }) => {
+      if (!result) return null;
+      const outcome = browserUploadResult.safeParse(readOutcome(result));
+      if (!outcome.success) return null;
+      return (
+        <ActionLine
+          label="Uploaded file"
+          attempted="Upload file"
+          failed={outcome.data.status !== "accepted"}
+          detail={
+            outcome.data.status === "accepted" ? undefined : outcome.data.reason
+          }
+        />
+      );
+    },
+  });
 
   useFrontendTool({
     name: "computer_navigate",

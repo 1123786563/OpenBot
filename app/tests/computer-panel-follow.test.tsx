@@ -177,7 +177,7 @@ test("Take control in the terminal gives the terminal the keyboard, says so in t
   act(() => take.click());
   await waitFor(() =>
     expect(document.body.textContent).toContain(
-      "of the terminal and the screen. Click the terminal and type.",
+      "You have control of the terminal. Click the terminal and type.",
     ),
   );
   expect(asked).toContain("POST /api/computers/wheel-bot/control/take");

@@ -16,6 +16,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { Composer } from "@/components/channels/composer/composer";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -136,9 +137,7 @@ async function uploaded(
 ) {
   await waitFor(() => {
     expect(queryByLabelText(`Remove ${name}`)).not.toBeNull();
-    expect((getByLabelText("Send message") as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect(isDisabled(getByLabelText("Send message"))).toBe(false);
   });
 }
 

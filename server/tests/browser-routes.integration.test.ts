@@ -28,6 +28,7 @@ import {
 } from "@openbot/shared/recorder-api";
 import { RECORDER_EXTENSION_ID } from "@openbot/shared/recorder-extension";
 import { eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { NOT_ITS_OWN_COMPUTER } from "../../agent-computer/src/person-access";
 import { NO_INSTALLED_BROWSER } from "../../agent-computer/src/person-launch";
 import { createApp } from "../src/app";
@@ -36,6 +37,7 @@ import { DEV_ACTOR, initializeDevActorUser } from "../src/auth/dev-actor";
 import { createOrganizationAuth } from "../src/auth/organization";
 import { organizationUserStore } from "../src/auth/organization-store";
 import { openbotAddress } from "../src/browser/address";
+import { cubeSandboxBrowsers } from "../src/browser/cubesandbox";
 import { personBrowserEgressPolicy } from "../src/browser/egress";
 import {
   gatewayBrowserComputers,
@@ -52,7 +54,11 @@ import {
   OPEN_BUDGET_MS,
   STATE_TIMEOUT_MS,
 } from "../src/browser/routes";
-import { botSeat, type ComputerSeat } from "../src/computer/computer-key";
+import {
+  botSeat,
+  type ComputerSeat,
+  personSeat,
+} from "../src/computer/computer-key";
 import { createComputerGateway } from "../src/computer/gateway";
 import { withPolicyPushOnWake } from "../src/computer/policy-network";
 import {
@@ -452,6 +458,7 @@ function build(
     token?: string;
     /** The Bots' computer provider, in place of the stand-in computer as a computer of each one's own. */
     provider?: ComputerProvider;
+    pilotBots?: boolean;
     /** How long the browser routes wait for the computer, in place of their own deadline. */
     callTimeoutMs?: number;
     /** Each browser route's budget, in place of its own. */
@@ -496,8 +503,34 @@ function build(
       token: COMPUTER_TOKEN,
     },
   );
+  const browserProvider = cubeSandboxBrowsers(environment, {
+    policyForBot: async () => personPolicy,
+    serialize: (_id, run) => run(),
+  });
+  const pilotBots = new Set([
+    "spec201-public",
+    "spec201-other",
+    "spec201-isolated",
+  ]);
+  const botProfiles = {
+    get: async (_actor: unknown, botId: string) =>
+      pilotBots.has(botId)
+        ? { name: botId, visibility: "public", ownerUserId: ada.id }
+        : null,
+  };
   const gateway = createComputerGateway({
     provider,
+    browserProvider,
+    ...(options.pilotBots
+      ? {
+          seats: {
+            seatFor: async (botId: string, userId: string) =>
+              isPersonBrowserId(botId) || botId === "spec201-isolated"
+                ? botSeat(botId)
+                : personSeat(userId, botId),
+          },
+        }
+      : {}),
     auditStore,
     policy: () => undefined,
     token: options.token ?? COMPUTER_TOKEN,
@@ -517,6 +550,7 @@ function build(
   args[2] = roleRepository;
   args[7] = gateway;
   args[8] = {} as never;
+  if (options.pilotBots) args[9] = botProfiles as never;
   args[12] = auditStore;
   const place = personBrowserPlace({
     provider,
@@ -528,6 +562,9 @@ function build(
     recorder,
     browser: {
       ...(options.computers === false ? {} : place),
+      pilotComputers:
+        browserProvider &&
+        gatewayBrowserComputers(gateway, undefined, browserProvider),
       recorder,
       openbotUrl: openbotAddress(config),
       singleUser: config.singleUser,
@@ -537,7 +574,7 @@ function build(
       ...(options.budgetMs ? { budgetMs: options.budgetMs } : {}),
     },
   };
-  return { app: createApp(...args), gateway, config };
+  return { app: createApp(...args), gateway, config, botProfiles };
 }
 
 type OpenBot = ReturnType<typeof build>;
@@ -643,6 +680,231 @@ describe("opening a person's own browser", () => {
       as: "ada",
     });
     expect(refused.status).toBe(503);
+  });
+
+  test("pilot browser routes bind screens and takeover to their own volume and seat across replacement", async () => {
+    const creates: z.infer<typeof createSchema>[] = [];
+    const starts: string[] = [];
+    const running = new Set<string>();
+    const sandboxes = new Map<
+      string,
+      (typeof creates)[number] & { sandboxID: string }
+    >();
+    const createSchema = z.object({
+      templateID: z.string(),
+      metadata: z.object({ openbotBrowser: z.string() }),
+      volumeMounts: z.array(
+        z.object({ name: z.string(), path: z.string(), readOnly: z.boolean() }),
+      ),
+      envVars: z.object({
+        COMPUTER_TOKEN: z.string(),
+        COMPUTER_PERSON_ID: z.string(),
+        OPENBOT_BROWSER_ONLY: z.string(),
+      }),
+    });
+    const cube = Bun.serve<{ frame: { sandbox: string; bot: string } }>({
+      port: 0,
+      async fetch(request, server) {
+        const url = new URL(request.url);
+        if (url.pathname === "/sandboxes") {
+          if (request.method === "GET") {
+            const metadata = url.searchParams.get("metadata");
+            return Response.json(
+              [...sandboxes.values()]
+                .filter(
+                  (sandbox) =>
+                    metadata ===
+                    `openbotBrowser=${sandbox.metadata.openbotBrowser}`,
+                )
+                .map(({ sandboxID, metadata }) => ({
+                  sandboxID,
+                  metadata,
+                  state: "running",
+                })),
+            );
+          }
+          const body = createSchema.parse(await request.json());
+          creates.push(body);
+          const sandboxID = `sandbox-${creates.length}`;
+          sandboxes.set(sandboxID, { ...body, sandboxID });
+          return Response.json({ sandboxID }, { status: 201 });
+        }
+        const [, sandboxID, ...rest] = url.pathname.split("/");
+        const path = `/${rest.join("/")}`;
+        const sandbox = sandboxes.get(sandboxID);
+        if (!sandbox) return new Response(null, { status: 404 });
+        if (path === "/envd/process.Process/Start") {
+          const frame = new Uint8Array(await request.arrayBuffer());
+          const payload = new TextDecoder().decode(frame.subarray(5));
+          if (
+            !payload.includes("/app/src/index.ts") ||
+            new DataView(frame.buffer).getUint32(1) !== frame.length - 5
+          )
+            return new Response(null, { status: 400 });
+          starts.push(sandboxID);
+          running.add(sandboxID);
+          return new Response(new Uint8Array([0, 0, 0, 0, 2, 123, 125]), {
+            headers: { "content-type": "application/connect+json" },
+          });
+        }
+        if (!running.has(sandboxID)) return new Response(null, { status: 503 });
+        if (path === "/stream") {
+          if (
+            url.searchParams.get("token") !== sandbox.envVars.COMPUTER_TOKEN ||
+            url.searchParams.has("person")
+          )
+            return new Response(null, { status: 401 });
+          const frame = {
+            sandbox: sandboxID,
+            bot: url.searchParams.get("bot") ?? "",
+          };
+          return server.upgrade(request, { data: { frame } })
+            ? undefined
+            : new Response(null, { status: 400 });
+        }
+        const headers = new Headers(request.headers);
+        if (
+          headers.get("x-openbot-computer-token") !==
+          sandbox.envVars.COMPUTER_TOKEN
+        )
+          return new Response(null, { status: 401 });
+        if (path === "/control/take") {
+          return Response.json({
+            holder: "human",
+            sandbox: sandboxID,
+            bot: headers.get("x-openbot-bot-id"),
+          });
+        }
+        headers.set("x-openbot-computer-token", COMPUTER_TOKEN);
+        return fetch(`http://127.0.0.1:${COMPUTER_PORT}${path}`, {
+          method: request.method,
+          headers,
+          body: request.body,
+        });
+      },
+      websocket: {
+        open: (ws) => {
+          ws.send(JSON.stringify({ type: "frame", ...ws.data.frame }));
+        },
+        message() {},
+      },
+    });
+    const pilot = build(
+      {
+        OPENBOT_CUBE_API_URL: cube.url.href,
+        OPENBOT_CUBE_BROWSER_TEMPLATE: "browser-template",
+        OPENBOT_CUBE_BROWSER_SECRET:
+          "fixture-browser-secret-with-32-characters",
+        OPENBOT_CUBE_ENVD_URL: `${cube.url.href}{{sandbox}}/envd`,
+        OPENBOT_CUBE_BROWSER_URL: `${cube.url.href}{{sandbox}}`,
+        OPENBOT_CUBE_BROWSER_VOLUMES: JSON.stringify({
+          [ada.id]: "ada-browser-volume",
+          [ben.id]: "ben-browser-volume",
+        }),
+        OPENBOT_OPENSHELL_PILOT_USERS: [ada.id, ben.id].join(","),
+        OPENBOT_OPENSHELL_GATEWAY: "pilot-gateway",
+        OPENBOT_OPENSHELL_WORKSPACE: "pilot-workspace",
+        OPENBOT_OPENSHELL_IMAGE: "execution:pilot",
+        OPENBOT_OPENSHELL_TOKEN: "fixture-execution-token-with-32-characters",
+      },
+      {
+        pilotBots: true,
+        provider: createSharedComputerProvider({
+          baseUrl: `http://127.0.0.1:${COMPUTER_PORT}`,
+          token: COMPUTER_TOKEN,
+        }),
+      },
+    );
+    const front = startHttpServer({
+      port: 0,
+      config: pilot.config,
+      resolveRequestActor: async (request) => {
+        const person = personOf(request.headers.get("cookie"));
+        if (!person) throw new Error("Sign in first.");
+        return { id: person.id, name: person.name, role: "user" };
+      },
+      agentProfileStore: pilot.botProfiles as never,
+      computerGateway: pilot.gateway,
+      app: pilot.app,
+    });
+    const watch = (as: keyof typeof PEOPLE, bot: string) =>
+      new Promise<string>((resolve) => {
+        const socket = new WebSocket(
+          `ws://127.0.0.1:${front.port}/api/computers/${bot}/stream`,
+          { headers: { cookie: `test-session=${as}` } } as never,
+        );
+        socket.onmessage = (event) => {
+          resolve(String(event.data));
+          socket.close();
+        };
+        socket.onerror = () => resolve("refused");
+        socket.onclose = () => resolve("refused");
+      });
+    const personBrowser = personBrowserId(ada.id);
+    const publicBot = "spec201-public";
+    try {
+      const state = await call(pilot, "/api/browser", { as: "admin" });
+      expect(await state.json()).toMatchObject({ available: false });
+      expect(creates).toHaveLength(0);
+      const first = await open(pilot, "ada");
+      expect(first).toMatchObject({ computerId: personBrowser });
+      expect(JSON.parse(await watch("ada", personBrowser))).toMatchObject({
+        sandbox: "sandbox-1",
+        bot: personBrowser,
+      });
+      expect(await watch("ben", personBrowser)).toBe("refused");
+      expect(JSON.parse(await watch("ada", publicBot))).toMatchObject({
+        sandbox: "sandbox-1",
+        bot: publicBot,
+      });
+      expect(JSON.parse(await watch("ada", "spec201-other"))).toMatchObject({
+        sandbox: "sandbox-1",
+        bot: "spec201-other",
+      });
+      expect(JSON.parse(await watch("ben", publicBot))).toMatchObject({
+        sandbox: "sandbox-2",
+        bot: publicBot,
+      });
+      expect(JSON.parse(await watch("ada", "spec201-isolated"))).toEqual({
+        type: "frame",
+        bot: "spec201-isolated",
+      });
+      const taken = await call(
+        pilot,
+        `/api/computers/${publicBot}/control/take`,
+        {
+          as: "ada",
+          method: "POST",
+          json: { requestId: "fixture-request" },
+        },
+      );
+      expect(taken.status).toBe(200);
+      expect(await taken.json()).toMatchObject({
+        holder: "human",
+        sandbox: "sandbox-1",
+        bot: publicBot,
+      });
+      sandboxes.delete("sandbox-1");
+      const second = await open(pilot, "ada");
+      expect(second).toMatchObject({ computerId: personBrowser });
+      expect(JSON.parse(await watch("ada", publicBot))).toMatchObject({
+        sandbox: "sandbox-3",
+        bot: publicBot,
+      });
+      expect(starts).toEqual(["sandbox-1", "sandbox-2", "sandbox-3"]);
+      expect(creates[0]).toEqual(creates[2]);
+      expect(creates.map((create) => create.volumeMounts)).toEqual([
+        [{ name: "ada-browser-volume", path: "/profiles", readOnly: false }],
+        [{ name: "ben-browser-volume", path: "/profiles", readOnly: false }],
+        [{ name: "ada-browser-volume", path: "/profiles", readOnly: false }],
+      ]);
+      expect(creates[0]?.envVars.COMPUTER_TOKEN).not.toBe(
+        creates[1]?.envVars.COMPUTER_TOKEN,
+      );
+    } finally {
+      await front.stop(true);
+      await cube.stop(true);
+    }
   });
 
   test("asking the state never starts a computer or opens a browser: the app asks on every load", async () => {

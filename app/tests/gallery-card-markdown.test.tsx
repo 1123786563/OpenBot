@@ -294,7 +294,10 @@ test("a choice's options can shrink to the card, so a long link in one wraps", (
       status="executing"
     />,
   );
-  expect(container.querySelector("fieldset")?.className.split(/\s+/)).toContain(
-    "min-w-0",
+  const holder = [...container.querySelectorAll("*")].find(
+    (element) =>
+      element.textContent === LONG_URL &&
+      element.className.toString().split(/\s+/).includes("break-words"),
   );
+  expect(holder?.className.toString().split(/\s+/)).toContain("min-w-0");
 });

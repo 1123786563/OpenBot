@@ -23,19 +23,38 @@ export function assertPageAccess(
   }
 }
 
+type NavigationPage = Pick<Page, "goto" | "url"> & {
+  waitForFunction(
+    predicate: () => boolean,
+    arg: undefined,
+    options: { timeout: number },
+  ): Promise<{ dispose(): Promise<void> }>;
+};
+
 /** Validate the destination before goto and the resulting page before callers read its content. */
 export async function navigateWebPage(
-  page: Pick<Page, "goto" | "url">,
+  page: NavigationPage,
   url: string,
   backend: Backend,
   timeoutMs: number,
 ) {
   const parsed = parseNavigateUrl(url);
   if (!parsed.ok) throw new Error(parsed.error);
+  const started = performance.now();
   const response = await page.goto(parsed.url, {
-    waitUntil: "domcontentloaded",
+    waitUntil: "commit",
     timeout: timeoutMs,
   });
+  assertPageAccess(backend, page.url());
+  // Deferred scripts can hold DOMContentLoaded even when the new document is readable.
+  const ready = await page.waitForFunction(
+    () =>
+      document.readyState !== "loading" ||
+      Boolean(document.title.trim() && document.body?.childElementCount),
+    undefined,
+    { timeout: Math.max(1, timeoutMs - (performance.now() - started)) },
+  );
+  await ready.dispose();
   assertPageAccess(backend, page.url());
   return response;
 }

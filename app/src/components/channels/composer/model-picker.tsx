@@ -1,3 +1,6 @@
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { HStack, Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import {
   IconCheck,
@@ -7,7 +10,6 @@ import {
 } from "@tabler/icons-react";
 import { useMemo, useRef, useState } from "react";
 import { HarnessMark } from "@/components/agents/harness-mark";
-import { Button } from "@/components/ui/button";
 import {
   Combobox,
   ComboboxCollection,
@@ -18,11 +20,6 @@ import {
   ComboboxLabel,
   ComboboxList,
 } from "@/components/ui/combobox";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { markFor } from "@/lib/marks";
 import {
   effortLabel,
@@ -69,9 +66,12 @@ const sameChoice = (a: Choice, b: Choice) =>
  */
 function DefaultTag() {
   return (
-    <span className="ml-auto shrink-0 pr-5 text-muted-foreground text-xs">
+    <Text
+      className="ml-auto shrink-0 pr-5 text-muted-foreground text-xs"
+      type="inherit"
+    >
       Default
-    </span>
+    </Text>
   );
 }
 
@@ -258,35 +258,35 @@ function Picker({
       open={open}
       value={current}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            /*
-             * Base UI's trigger rather than `ComboboxTrigger`, which draws its own larger chevron:
-             * this one is a ghost button like its neighbours in the row.
-             */
-            <ComboboxPrimitive.Trigger
-              ref={trigger}
-              aria-label={
-                effortText
-                  ? `Model: ${selected.label}, thinking: ${effortText}`
-                  : `Model: ${selected.label}`
-              }
-              className={cn(
-                "h-8 shrink-0 gap-1 px-2 font-normal text-muted-foreground",
-                className,
-              )}
-              data-slot="composer-model"
-              render={<Button size="sm" type="button" variant="ghost" />}
-              nativeButton
-            >
-              <IconCpu aria-hidden className="size-4 shrink-0" />
-              <IconChevronDown aria-hidden className="size-3.5 shrink-0" />
-            </ComboboxPrimitive.Trigger>
-          }
-        />
-        <TooltipContent side="top">{shown}</TooltipContent>
-      </Tooltip>
+      {/*
+       * Base UI's trigger rather than `ComboboxTrigger`, which draws its own larger chevron: this
+       * one is a ghost icon button like its neighbours in the row.
+       */}
+      <ComboboxPrimitive.Trigger
+        className={className}
+        data-slot="composer-model"
+        nativeButton
+        ref={trigger}
+        render={
+          <IconButton
+            icon={
+              <>
+                <IconCpu aria-hidden className="size-4 shrink-0" />
+                <IconChevronDown aria-hidden className="size-3.5 shrink-0" />
+              </>
+            }
+            label={
+              effortText
+                ? `Model: ${selected.label}, thinking: ${effortText}`
+                : `Model: ${selected.label}`
+            }
+            size="sm"
+            tooltip={shown}
+            type="button"
+            variant="ghost"
+          />
+        }
+      />
       <ComboboxContent
         align="start"
         className={cn(
@@ -295,7 +295,7 @@ function Picker({
           effortsOnly
             ? "w-44 grid-cols-1"
             : twoColumns
-              ? "w-[30rem] grid-cols-[minmax(0,1fr)_11rem]"
+              ? "w-120 grid-cols-[minmax(0,1fr)_var(--spacing-44)]"
               : "w-72 grid-cols-1",
         )}
         // After a pick, the message box, where the person goes next; otherwise back to the trigger.
@@ -320,16 +320,19 @@ function Picker({
           showTrigger={false}
         />
         {noModels && !effortsOnly ? (
-          <p className="col-start-1 row-start-2 px-3 py-6 text-center text-muted-foreground text-sm">
+          <Text
+            as="p"
+            className="col-start-1 row-start-2 px-3 py-6 text-center text-muted-foreground text-sm"
+          >
             No models match.
-          </p>
+          </Text>
         ) : null}
         <ComboboxList className="contents">
           {(group: ChoiceGroup) =>
             group.value === "models" ? (
               <ComboboxGroup
                 aria-label="Models"
-                className="no-scrollbar col-start-1 row-start-2 max-h-[min(20rem,calc(var(--available-height)-4rem))] min-h-0 scroll-py-1 overflow-y-auto overscroll-contain p-1.5 pt-0.5"
+                className="no-scrollbar col-start-1 row-start-2 max-h-[min(var(--spacing-80),calc(var(--available-height)-var(--spacing-16)))] min-h-0 scroll-py-1 overflow-y-auto overscroll-contain p-1.5 pt-0.5"
                 items={group.items}
                 key="models"
               >
@@ -343,9 +346,9 @@ function Picker({
                         value={choice}
                       >
                         <ModelMark model={choice.model} />
-                        <span className="min-w-0 truncate">
+                        <Text className="min-w-0 truncate" type="inherit">
                           {choice.model.label}
-                        </span>
+                        </Text>
                         {choice.model.id === catalogue.default ? (
                           <DefaultTag />
                         ) : null}
@@ -369,15 +372,16 @@ function Picker({
                  * Headed with the model it belongs to, as the column beside a list of models. The
                  * name sits outside the label, so the group is still called "Thinking".
                  */}
-                <div className="flex h-10 items-center gap-2 px-2.5">
+                <HStack align="center" className="h-10 px-2.5" gap={2}>
                   <ComboboxLabel className="p-0">Thinking</ComboboxLabel>
-                  <span
+                  <Text
                     aria-hidden
                     className="ml-auto min-w-0 truncate text-muted-foreground text-xs"
+                    type="inherit"
                   >
                     {selected.label}
-                  </span>
-                </div>
+                  </Text>
+                </HStack>
                 <ComboboxCollection>
                   {(choice: Choice) =>
                     choice.kind === "effort" ? (
@@ -389,15 +393,21 @@ function Picker({
                         key={choice.effort ?? "default"}
                         value={choice}
                       >
-                        <span className="min-w-0 truncate">{choice.label}</span>
+                        <Text className="min-w-0 truncate" type="inherit">
+                          {choice.label}
+                        </Text>
                         {choice.effort !== null &&
                         choice.effort === selected.defaultEffort ? (
                           <DefaultTag />
                         ) : null}
                         {choice.effort === running ? (
-                          <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
+                          <Stack
+                            align="center"
+                            className="pointer-events-none absolute right-2 size-4"
+                            justify="center"
+                          >
                             <IconCheck />
-                          </span>
+                          </Stack>
                         ) : null}
                       </ComboboxItem>
                     ) : null

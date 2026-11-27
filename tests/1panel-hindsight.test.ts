@@ -1,23 +1,13 @@
 import { expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import {
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 
-const packages = join(import.meta.dir, "../deploy/1panel/apps/hindsight");
-// The package directory is named for the release it ships, so a version bump must not break this file.
-const version = readdirSync(packages, { withFileTypes: true }).find((entry) =>
-  entry.isDirectory(),
-)?.name;
-if (!version) throw new Error(`no version directory under ${packages}`);
-const app = join(packages, version);
+import { packageDir } from "./support/1panel-package";
+
+const app = packageDir("hindsight");
 const consoleAccessKey = "HINDSIGHT_CP_ACCESS_KEY";
 const tenantApiKey = "HINDSIGHT_API_TENANT_API_KEY";
 
@@ -73,13 +63,6 @@ function render(overrides: Record<string, string> = {}) {
     rmSync(env, { recursive: true, force: true });
   }
 }
-
-test("the 1Panel Hindsight package ships one version directory", () => {
-  const versions = readdirSync(packages, { withFileTypes: true }).filter(
-    (entry) => entry.isDirectory(),
-  );
-  expect(versions.map((entry) => entry.name)).toEqual([version]);
-});
 
 /** Hindsight only shows its login page when this variable reaches the control plane, so it must not be optional. */
 test("the 1Panel Hindsight package always gives the console an access key", () => {

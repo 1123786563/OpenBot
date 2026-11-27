@@ -30,6 +30,7 @@ import { queryClient } from "@/query-client";
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
 import { Route as HomeRoute } from "@/routes/_authed/_app/index";
 import { Route as StartRoute } from "@/routes/_authed/_app/start.$startId";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /** Real home/new routes hand the selected starter prompt to real ChannelChat and its HTTP run. */
@@ -364,11 +365,9 @@ for (const path of ["/", `/channel/new?agent=${BOT}`]) {
     expect(runs[0]?.threadId).toBe("tour-thread-1");
     await waitFor(() =>
       expect(
-        (
-          view.getByRole("button", {
-            name: STARTER_SUGGESTIONS[2].title,
-          }) as HTMLButtonElement
-        ).disabled,
+        isDisabled(
+          view.getByRole("button", { name: STARTER_SUGGESTIONS[2].title }),
+        ),
       ).toBe(false),
     );
     fireEvent.click(
@@ -442,7 +441,7 @@ for (const failed of [false, true]) {
     const suggestion = (await view.findByRole("button", {
       name: STARTER_SUGGESTIONS[2].title,
     })) as HTMLButtonElement;
-    await waitFor(() => expect(suggestion.disabled).toBe(false));
+    await waitFor(() => expect(isDisabled(suggestion)).toBe(false));
     let release = () => {};
     modelSaveGate = new Promise<void>((resolve) => {
       release = resolve;
@@ -457,13 +456,13 @@ for (const failed of [false, true]) {
         name: "Alternate model",
       }),
     );
-    await waitFor(() => expect(suggestion.disabled).toBe(true));
+    await waitFor(() => expect(isDisabled(suggestion)).toBe(true));
     fireEvent.click(suggestion);
     expect(runs).toHaveLength(1);
     await act(async () => {
       release();
     });
-    await waitFor(() => expect(suggestion.disabled).toBe(false));
+    await waitFor(() => expect(isDisabled(suggestion)).toBe(false));
     expect(runs).toHaveLength(1);
     if (!failed) {
       fireEvent.click(suggestion);
@@ -484,11 +483,11 @@ test("a failed in-conversation starter turn reports its error only in the transc
   const suggestion = (await view.findByRole("button", {
     name: STARTER_SUGGESTIONS[2].title,
   })) as HTMLButtonElement;
-  await waitFor(() => expect(suggestion.disabled).toBe(false));
+  await waitFor(() => expect(isDisabled(suggestion)).toBe(false));
   failRun = true;
   fireEvent.click(suggestion);
   await view.findByText("Starter task failed once");
-  await waitFor(() => expect(suggestion.disabled).toBe(false));
+  await waitFor(() => expect(isDisabled(suggestion)).toBe(false));
   expect(view.getAllByText("Starter task failed once")).toHaveLength(1);
   expect(
     within(view.getByRole("region", { name: "Starter tasks" })).queryByRole(

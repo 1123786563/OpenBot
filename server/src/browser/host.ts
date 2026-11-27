@@ -15,6 +15,7 @@ import {
 } from "../computer/policy-network";
 import { type ComputerProvider, ProviderError } from "../computer/provider";
 import type { Edition } from "../edition";
+import type { BrowserProvider } from "./cubesandbox";
 import type { BrowserComputers, BrowserRouteDeps } from "./routes";
 
 /**
@@ -175,16 +176,23 @@ export function personBrowserShows(
  * same `browserUrl`): every address checked as a computer's, and the person's network policy pushed on the way
  * (`withPolicyPushOnWake`). */
 export function gatewayBrowserComputers(
-  gateway: Pick<ComputerGateway, "locate" | "status" | "tokenFor">,
+  gateway: Pick<
+    ComputerGateway,
+    "locate" | "status" | "tokenFor" | "browserFor"
+  >,
   browserUrl: string | undefined,
+  pilot?: BrowserProvider,
 ): BrowserComputers {
+  const host = (id: string) =>
+    pilot ? (gateway.browserFor?.(botSeat(id)) ?? gateway) : gateway;
   return {
     shows: personBrowserShows(browserUrl),
+    ...(pilot ? { serves: (id: string) => pilot.serves(botSeat(id)) } : {}),
     // A person's browser is a computer of its own, never a seat on the person's computer beside their Bots.
-    locate: (computerId) => gateway.locate(botSeat(computerId)),
-    tokenFor: (computerId) => gateway.tokenFor(botSeat(computerId)),
+    locate: (computerId) => host(computerId).locate(botSeat(computerId)),
+    tokenFor: (computerId) => host(computerId).tokenFor(botSeat(computerId)),
     running: async (computerId) =>
-      (await gateway.status(botSeat(computerId))).state === "ready",
+      (await host(computerId).status(botSeat(computerId))).state === "ready",
   };
 }
 

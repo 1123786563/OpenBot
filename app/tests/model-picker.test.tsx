@@ -162,9 +162,8 @@ test("the trigger is a CPU icon, and names a model that takes no effort on its o
   // No name and no maker's mark in the row: the CPU icon and a chevron, named for screen readers.
   expect(trigger.textContent).toBe("");
   expect(trigger.querySelector("img")).toBeNull();
-  expect(trigger.firstElementChild?.classList.contains("tabler-icon-cpu")).toBe(
-    true,
-  );
+  expect(trigger.querySelector("svg.tabler-icon-cpu")).not.toBeNull();
+  expect(trigger.querySelector("svg.tabler-icon-chevron-down")).not.toBeNull();
 });
 
 /** The open popup of a picker drawn on its own. */

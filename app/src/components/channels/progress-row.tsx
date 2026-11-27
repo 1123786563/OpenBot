@@ -1,3 +1,5 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import type { ReactNode } from "react";
 
 /**
@@ -20,14 +22,23 @@ export function ProgressRow({
   media?: ReactNode;
 }) {
   return (
-    <p
-      className="flex items-center gap-2 text-muted-foreground text-sm"
+    <Stack
+      as="p"
+      align="center"
+      className="text-muted-foreground text-sm"
       data-testid="progress-row"
+      gap={2}
       // `status` rather than `alert`: progress, not an interruption.
       role="status"
     >
-      {media ? <span aria-hidden="true">{media}</span> : null}
-      <span className="tool-line-running">{label}</span>
-    </p>
+      {media ? (
+        <Stack as="span" aria-hidden="true">
+          {media}
+        </Stack>
+      ) : null}
+      <Text as="span" className="tool-line-running" color="inherit">
+        {label}
+      </Text>
+    </Stack>
   );
 }

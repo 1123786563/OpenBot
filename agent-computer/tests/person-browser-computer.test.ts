@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -163,6 +164,82 @@ afterAll(async () => {
   site?.stop(true);
   if (root) await rm(root, { recursive: true, force: true });
 }, 30_000);
+
+test.skipIf(!asked)(
+  "a browser-only computer isolates Chromium profiles and restores login after its process is replaced",
+  async () => {
+    const ada = "spec201-ada";
+    const ben = "spec201-ben";
+    const personBrowser = `person-${createHash("sha256").update(ada).digest("hex").slice(0, 32)}`;
+    const origin = `http://127.0.0.1:${site?.port}`;
+    const start = (person: string) =>
+      startComputer(person, {
+        OPENBOT_BROWSER_ONLY: "on",
+        COMPUTER_PERSON_ID: person,
+        OPENBOT_RECORDER_DIR: FIXTURE,
+      });
+    const openFor = (on: Computer) =>
+      call("/browser/open", {
+        on,
+        botId: personBrowser,
+        body: { connection: connection() },
+      });
+    const botVisit = async (on: Computer, botId: string, path: string) => {
+      const response = await call("/navigate", {
+        on,
+        botId,
+        body: { url: origin + path },
+      });
+      expect(response.status).toBe(200);
+      return (await response.json()).title;
+    };
+    const ownVisit = async (on: Computer, path: string) => {
+      const response = await call("/browser/navigate", {
+        on,
+        botId: personBrowser,
+        body: { url: origin + path },
+      });
+      expect(response.status).toBe(200);
+      const state: BrowserState = await response.json();
+      return state.tabs.find((tab) => tab.active)?.title;
+    };
+
+    const first = await start(ada);
+    const other = await start(ben);
+    expect((await openFor(first)).status).toBe(200);
+    expect((await openFor(other)).status).toBe(403);
+    const bot = "public-bot";
+    expect(await botVisit(first, bot, "/set-cookie")).toBe("set");
+    expect(await botVisit(first, bot, "/cookies")).toBe(
+      "cookies:signed-in=yes",
+    );
+    expect(await botVisit(other, bot, "/cookies")).toBe("cookies:");
+    expect(await botVisit(first, "other-bot", "/cookies")).toBe("cookies:");
+    expect(await ownVisit(first, "/cookies")).toBe("cookies:");
+    expect(await ownVisit(first, "/set-cookie")).toBe("set");
+    for (const path of ["/exec", "/files/read"]) {
+      const response = await call(path, { on: first, botId: bot, body: {} });
+      expect(response.status).toBe(403);
+    }
+    expect(
+      (await fetch(`${first.base}/terminal?token=${TOKEN}&bot=${bot}`)).status,
+    ).toBe(403);
+    first.child.kill();
+    expect(await first.child.exited).toBe(0);
+    const replacement = await start(ada);
+    expect((await openFor(replacement)).status).toBe(200);
+    expect(await ownVisit(replacement, "/cookies")).toBe(
+      "cookies:signed-in=yes",
+    );
+    expect(await botVisit(replacement, bot, "/cookies")).toBe(
+      "cookies:signed-in=yes",
+    );
+    expect(await botVisit(replacement, "other-bot", "/cookies")).toBe(
+      "cookies:",
+    );
+  },
+  60_000,
+);
 
 describe.skipIf(!asked)("a person's browser on the computer", () => {
   test("is behind the computer token like every other route", async () => {

@@ -62,12 +62,13 @@ tar -xzf openbot.tar.gz -C /opt/1panel/resource/apps/local/
 | 带数据库选择器的条目 | 实例 | 安装条件 |
 | --- | --- | --- |
 | OpenBot | PostgreSQL | 实例需提供 pgvector。1.0.3 首次迁移会创建和删除 `vector` 扩展 |
-| Hindsight | PostgreSQL | 实例需提供 pgvector。复用数据库时，确认目标库已启用 `vector` 扩展 |
 | Bifrost、Infisical | PostgreSQL | 为每个应用使用独立的库和用户 |
 | Lago | PostgreSQL | 使用 PostgreSQL 15 或更新版本，且实例已安装 `pg_partman`。1Panel 安装时创建专用库和用户。空库迁移完成后撤销自动创建角色的 `SUPERUSER` 权限 |
 | OpenObserve | PostgreSQL | OpenObserve 将元数据写入 PostgreSQL，日志数据保存在原有数据卷；OTel Collector 随同安装 |
 | SPIRE | PostgreSQL | 将服务端数据存入 PostgreSQL；仍须持久化本地密钥和 Agent 数据，并按下文登记加入令牌 |
 | Opik | MySQL | 使用 MySQL 8.4。ClickHouse、ZooKeeper 和 MinIO 随同安装 |
+
+Hindsight 1.3.0 自带 PostgreSQL（`pgvector/pgvector:pg17`），默认不使用数据库选择器。要改用 1Panel 实例，把安装表单的「PostgreSQL 主机」填成该实例的容器名：实例需提供 pgvector，复用数据库时确认目标库已启用 `vector` 扩展。1Panel 自带的 PostgreSQL 集群镜像里的 pgvector 按 AVX-512 编译，在没有 AVX-512 的机器上一次向量写入就会让数据库后端崩溃，这种机器请保持默认的自带数据库。
 
 Lago、Infisical 和 Opik 在安装表单的「已有 Redis 实例」下拉框中选择 1Panel 管理的 Redis，应用包不再自带 Redis。1Panel 填入 Redis 的容器名和密码，应用通过 `1panel-network` 以端口 6379 连接。Redis 未设密码时，「Redis 密码」留空。密码含 URI 特殊字符时，Lago 填原始值；Infisical 和 Opik 另填「URL 编码后的 Redis 密码」，编码规则与数据库密码相同。
 

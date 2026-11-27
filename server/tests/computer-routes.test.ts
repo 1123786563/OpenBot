@@ -1,13 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { MiddlewareHandler } from "hono";
+import { receiveBrowserDownload } from "../../agent-computer/src/browser-downloads";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
+import { personBrowserId } from "../src/browser/person";
 import type { ComputerSeat } from "../src/computer/computer-key";
-import { personSeat } from "../src/computer/computer-key";
+import { botSeat, personSeat, seatOf } from "../src/computer/computer-key";
 import {
   type ComputerGateway,
   ComputerStillStartingError,
+  createComputerGateway,
 } from "../src/computer/gateway";
 import type { PolicyStore } from "../src/computer/policy-store";
+import { createSharedComputerProvider } from "../src/computer/provider";
 import { createComputerRoutes } from "../src/computer/routes";
 
 describe("computer routes", () => {
@@ -322,4 +329,511 @@ describe("human input", () => {
     expect(response.status).toBe(400);
     expect(calls).toHaveLength(0);
   });
+});
+
+test("a pilot command uses the execution workspace and fails closed when it is unavailable", async () => {
+  let executionAvailable = true;
+  const executionRequests: string[] = [];
+  const execution = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      executionRequests.push(new URL(request.url).pathname);
+      const body = await request.json();
+      return Response.json({
+        command: body.command,
+        stdout: "from execution workspace",
+        stderr: "",
+        exitCode: 0,
+        elapsedMs: 1,
+        timedOut: false,
+        truncated: false,
+      });
+    },
+  });
+  try {
+    const gatewayFor = (configureExecution: boolean) =>
+      createComputerGateway({
+        provider: createSharedComputerProvider({
+          baseUrl: "http://127.0.0.1:1",
+        }),
+        browserProvider: {
+          serves: (seat) =>
+            seat.key.kind === "person" && seat.key.personId === "pilot",
+          locate: async () => {
+            throw new Error("CubeSandbox is unavailable");
+          },
+          status: async (seat) => ({
+            botId: seat.botId,
+            state: "unreachable",
+            reason: "Fixture outage",
+          }),
+          tokenFor: () => "browser-fixture-token",
+        },
+        auditStore: { insert: async () => {} },
+        policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+        ...(configureExecution
+          ? {
+              execution: {
+                pilotUsers: new Set(["pilot"]),
+                connect: async () => {
+                  if (!executionAvailable)
+                    throw new Error("OpenShell is unavailable");
+                  return { url: execution.url.href };
+                },
+              },
+            }
+          : {}),
+      });
+    const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+      context,
+      next,
+    ) => {
+      context.set("actor", { id: "pilot", role: "user" } as AuthenticatedActor);
+      await next();
+    };
+    const exec = (gateway: ComputerGateway) =>
+      createComputerRoutes(
+        gateway,
+        {} as PolicyStore,
+        requireUser,
+        async () => true,
+      ).request("http://openbot.test/notes/exec", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: "pwd" }),
+      });
+    const gateway = gatewayFor(true);
+    const response = await exec(gateway);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stdout: "from execution workspace",
+    });
+    executionAvailable = false;
+    const failure = await exec(gateway);
+    expect(failure.status).toBe(503);
+    expect(await failure.text()).toContain("OpenShell is unavailable");
+    const missing = await exec(gatewayFor(false));
+    expect(missing.status).toBe(503);
+    expect(await missing.text()).toContain(
+      "OpenShell execution is not configured",
+    );
+    expect(executionRequests).toEqual(["/exec"]);
+  } finally {
+    await execution.stop(true);
+  }
+});
+
+test("retrying a pilot download transfers only the initiating seat's file without navigating again", async () => {
+  const id = "136a7716-7a42-448e-a6b0-ffec2ae66ead";
+  const emptyId = "828e5380-5cc3-4310-b706-fd1b29419512";
+  const bytes = new Uint8Array([0, 255, 128, 10]);
+  let navigations = 0;
+  let available = false;
+  let loseReceipt = false;
+  const workspaces = await mkdtemp(join(tmpdir(), "openbot-download-routes-"));
+  const audit: string[] = [];
+  const browser = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/navigate") {
+        navigations++;
+        return Response.json({
+          url: "https://example.com",
+          title: "",
+          text: "",
+          truncated: false,
+          elapsedMs: 1,
+          browserDownload: {
+            status: "ready",
+            id: navigations === 1 ? id : emptyId,
+          },
+        });
+      }
+      if (
+        [id, emptyId].some((file) => path === `/browser-downloads/${file}`) &&
+        request.headers.get("x-openbot-computer-token") === "browser-pilot" &&
+        request.headers.get("x-openbot-bot-id") === "notes"
+      )
+        return path.endsWith(emptyId)
+          ? new Response(new Uint8Array(), {
+              headers: { "content-length": "0" },
+            })
+          : new Response(bytes, { headers: { "content-length": "4" } });
+      return Response.json({ error: "Download not found." }, { status: 404 });
+    },
+  });
+  const execution = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const token = request.headers.get("x-openbot-computer-token");
+      const workspace = join(workspaces, encodeURIComponent(String(token)));
+      const received = await receiveBrowserDownload(request, workspace);
+      if (received) {
+        if (received.ok && loseReceipt) {
+          loseReceipt = false;
+          return Response.json({ error: "Lost receipt." }, { status: 503 });
+        }
+        return received;
+      }
+      const command = Bun.spawn(
+        ["od", "-An", "-t", "u1", join(workspace, `download-${id}`)],
+        { stderr: "ignore" },
+      );
+      const result = await new Response(command.stdout).text();
+      await command.exited;
+      return Response.json({ stdout: result.trim().split(/\s+/).join(",") });
+    },
+  });
+  try {
+    const gateway = createComputerGateway({
+      provider: createSharedComputerProvider({ baseUrl: "http://127.0.0.1:1" }),
+      browserProvider: {
+        serves: (seat) => seat.key.kind === "person",
+        locate: async () => browser.url.href,
+        status: async (seat) => ({ botId: seat.botId, state: "ready" }),
+        tokenFor: (seat) =>
+          seat.key.kind === "person" ? `browser-${seat.key.personId}` : "",
+      },
+      execution: {
+        pilotUsers: new Set(["pilot", "other"]),
+        connect: async (seat) => {
+          if (!available || seat.key.kind !== "person")
+            throw new Error("Fixture execution outage.");
+          return {
+            url: execution.url.href,
+            token: `${seat.key.personId}/${seat.botId}`,
+          };
+        },
+      },
+      auditStore: {
+        insert: async (event) => {
+          audit.push(event.eventType);
+        },
+      },
+      policy: () => ({ mode: "enforce", allow: ["true"], deny: [] }),
+    });
+    const post = async (path: string, body: object, person = "pilot") => {
+      const routes = createComputerRoutes(
+        gateway,
+        {} as PolicyStore,
+        asActor({ ...member, id: person }),
+        async () => true,
+      );
+      return routes.request(`http://openbot.test/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    };
+    const initial = await post("notes/navigate", {
+      url: "https://example.com",
+    });
+    expect(initial.status).toBe(200);
+    expect(await initial.json()).toMatchObject({
+      download: { status: "failed", id },
+    });
+    available = true;
+    for (const [bot, person] of [
+      ["other-bot", "pilot"],
+      ["notes", "other"],
+    ]) {
+      const denied = await post(
+        `${bot}/browser-downloads/retry`,
+        { id },
+        person,
+      );
+      expect(denied.status).toBe(404);
+      const command = await post(
+        `${bot}/exec`,
+        { command: "read download" },
+        person,
+      );
+      expect(await command.json()).toMatchObject({ stdout: "" });
+    }
+    loseReceipt = true;
+    const lost = await post("notes/browser-downloads/retry", { id });
+    expect(lost.status).toBe(503);
+    expect(await readdir(join(workspaces, "pilot%2Fnotes"))).toEqual([
+      `download-${id}`,
+    ]);
+    for (const response of await Promise.all([
+      post("notes/browser-downloads/retry", { id }),
+      post("notes/browser-downloads/retry", { id }),
+    ])) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        status: "delivered",
+        id,
+        path: `download-${id}`,
+        bytes: 4,
+      });
+    }
+    const command = await post("notes/exec", { command: "read download" });
+    expect(await command.json()).toMatchObject({ stdout: "0,255,128,10" });
+    expect(await readdir(join(workspaces, "pilot%2Fnotes"))).toEqual([
+      `download-${id}`,
+    ]);
+    expect(navigations).toBe(1);
+    const automatic = await post("notes/navigate", {
+      url: "https://example.com",
+    });
+    expect(await automatic.json()).toMatchObject({
+      download: {
+        status: "delivered",
+        id: emptyId,
+        path: `download-${emptyId}`,
+        bytes: 0,
+      },
+    });
+    expect(audit).toContain("computer.browser_download_failed");
+    expect(audit).toContain("computer.browser_download_delivered");
+  } finally {
+    await browser.stop(true);
+    await execution.stop(true);
+    await rm(workspaces, { recursive: true, force: true });
+  }
+});
+
+test("manual browser downloads reach only an owned recipient workspace after explicit selection", async () => {
+  const id = "136a7716-7a42-448e-a6b0-ffec2ae66ead";
+  const person = personBrowserId("pilot");
+  const file = {
+    id,
+    name: "invoice.pdf",
+    bytes: 4,
+    downloadedAt: "2026-11-26T00:00:00.000Z",
+  };
+  const bytes = new Uint8Array([0, 255, 128, 10]);
+  const workspace = await mkdtemp(join(tmpdir(), "openbot-manual-download-"));
+  const writes: string[] = [];
+  const browser = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (
+        request.headers.get("x-openbot-computer-token") === "browser-pilot" &&
+        request.headers.get("x-openbot-bot-id") === person
+      ) {
+        if (path === "/browser-downloads")
+          return Response.json({ downloads: [file] });
+        if (path === `/browser-downloads/${id}`)
+          return new Response(bytes, { headers: { "content-length": "4" } });
+      }
+      return Response.json({ error: "Download not found." }, { status: 404 });
+    },
+  });
+  const execution = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const token = request.headers.get("x-openbot-computer-token");
+      if (token) writes.push(token);
+      return (
+        (await receiveBrowserDownload(request, workspace)) ??
+        new Response(null, { status: 404 })
+      );
+    },
+  });
+  try {
+    const gateway = createComputerGateway({
+      provider: createSharedComputerProvider({ baseUrl: "http://127.0.0.1:1" }),
+      browserProvider: {
+        serves: () => true,
+        locate: async () => browser.url.href,
+        status: async (seat) => ({ botId: seat.botId, state: "ready" }),
+        tokenFor: (seat) =>
+          seat.key.kind === "person"
+            ? `browser-${seat.key.personId}`
+            : seat.botId === person
+              ? "browser-pilot"
+              : "browser-other",
+      },
+      seats: { seatFor: async (bot, user) => seatOf(bot, user, null, false) },
+      execution: {
+        pilotUsers: new Set(["pilot", "other"]),
+        connect: async (seat) => ({
+          url: execution.url.href,
+          token:
+            seat.key.kind === "person"
+              ? `${seat.key.personId}/${seat.botId}`
+              : "isolated",
+        }),
+      },
+      auditStore: { insert: async () => {} },
+      policy: () => ({ mode: "enforce", allow: [], deny: [] }),
+    });
+    const routesFor = (user: string) =>
+      createComputerRoutes(
+        gateway,
+        {} as PolicyStore,
+        asActor({ ...member, id: user }),
+        async () => true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async (actor, bot) =>
+          (actor.id === "pilot" && bot === "notes") ||
+          (actor.id === "other" && bot === "other-notes"),
+      );
+    const post = (bot: string, user = "pilot", action = "deliver") =>
+      routesFor(user).request(`/${bot}/browser-downloads/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+    const list = await routesFor("pilot").request(
+      `/${person}/browser-downloads`,
+    );
+    expect(list.status).toBe(200);
+    expect(await list.json()).toEqual({ downloads: [file] });
+    expect(
+      (await routesFor("other").request(`/${person}/browser-downloads`)).status,
+    ).toBe(404);
+    expect((await post("foreign")).status).toBe(404);
+    expect((await post("notes", "other")).status).toBe(404);
+    expect((await post("other-notes", "other")).status).toBe(404);
+    expect((await post("notes", "pilot", "retry")).status).toBe(404);
+    expect(writes).toEqual([]);
+    for (const response of await Promise.all([post("notes"), post("notes")])) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        status: "delivered",
+        id,
+        path: `download-${id}`,
+        bytes: 4,
+      });
+    }
+    expect(writes).toEqual(["pilot/notes", "pilot/notes"]);
+    expect(await readdir(workspace)).toEqual([`download-${id}`]);
+    expect(
+      new Uint8Array(
+        await Bun.file(join(workspace, `download-${id}`)).arrayBuffer(),
+      ),
+    ).toEqual(bytes);
+  } finally {
+    await browser.stop(true);
+    await execution.stop(true);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("pilot lifecycle routes require separate confirmations and scope actions to the signed-in seat", async () => {
+  const calls: string[] = [];
+  const ownId = personBrowserId("pilot");
+  let browserAvailable = true;
+  const gateway = createComputerGateway({
+    provider: createSharedComputerProvider({ baseUrl: "http://127.0.0.1:1" }),
+    seats: {
+      seatFor: async (id, user) =>
+        id === ownId ? botSeat(id) : personSeat(user, id),
+    },
+    browserProvider: {
+      serves: (seat) =>
+        seat.botId === ownId ||
+        (seat.key.kind === "person" && seat.key.personId === "pilot"),
+      locate: async () => "http://127.0.0.1:1",
+      status: async (seat) => ({ botId: seat.botId, state: "ready" }),
+      tokenFor: () => "fixture",
+      stop: async (seat) => {
+        calls.push(`browser:${seat.botId}`);
+        if (!browserAvailable) throw new Error("Fixture outage");
+        return true;
+      },
+      reset: async (seat) => {
+        calls.push(`profile:${seat.botId}`);
+      },
+    },
+    execution: {
+      pilotUsers: new Set(["pilot"]),
+      connect: async (_seat, mode) => {
+        calls.push(mode ?? "wake");
+        throw new Error(
+          "OpenShell execution is stopped. Reopen the terminal to start it.",
+        );
+      },
+      stop: async (seat) => {
+        calls.push(`stop:${seat.botId}`);
+        return true;
+      },
+      clear: async (seat) => {
+        calls.push(`clear:${seat.botId}`);
+        return true;
+      },
+      stopPerson: async (id) => {
+        calls.push(`execution:${id}`);
+        return true;
+      },
+    },
+    auditStore: { insert: async () => {} },
+    policy: () => undefined,
+  });
+  const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+    context,
+    next,
+  ) => {
+    context.set("actor", { id: "pilot", role: "user" } as AuthenticatedActor);
+    await next();
+  };
+  const routes = createComputerRoutes(
+    gateway,
+    {} as PolicyStore,
+    requireUser,
+    async (_actor, botId) => botId === "notes",
+  );
+  const capabilities = await routes.request("http://openbot.test/pilot");
+  expect(await capabilities.json()).toEqual({
+    lifecycle: { browserId: ownId, browser: true, execution: true },
+  });
+  const act = (path: string, confirmation?: string) =>
+    routes.request(`http://openbot.test/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmation }),
+    });
+  expect(
+    (await act("notes/computers/reset-profile", "clear-workspace")).status,
+  ).toBe(400);
+  expect((await act("notes/computers/clear-workspace")).status).toBe(400);
+  expect(
+    (await act("other/computers/clear-workspace", "clear-workspace")).status,
+  ).toBe(404);
+  expect(calls).toEqual([]);
+  const control = await routes.request(
+    "http://openbot.test/notes/control?surface=terminal",
+  );
+  expect(control.status).toBe(503);
+  expect(calls.splice(0)).toEqual(["observe"]);
+  expect((await act("notes/computers/stop-execution")).status).toBe(200);
+  expect(calls).toEqual(["stop:notes"]);
+  expect(
+    (await act("notes/computers/reset-profile", "reset-profile")).status,
+  ).toBe(200);
+  expect(
+    (await act("notes/computers/clear-workspace", "clear-workspace")).status,
+  ).toBe(200);
+  expect(
+    (
+      await act(
+        `${personBrowserId("other")}/computers/reset-profile`,
+        "reset-profile",
+      )
+    ).status,
+  ).toBe(404);
+  expect((await act(`${ownId}/computers/stop-personal`)).status).toBe(200);
+  expect(calls).toEqual([
+    "stop:notes",
+    "profile:notes",
+    "clear:notes",
+    `browser:${ownId}`,
+    "execution:pilot",
+  ]);
+  browserAvailable = false;
+  expect((await act(`${ownId}/computers/stop-personal`)).status).toBe(503);
+  expect(calls.slice(-2)).toEqual([`browser:${ownId}`, "execution:pilot"]);
 });

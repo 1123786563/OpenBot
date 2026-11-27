@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import type { TestCreditLedger } from "./test-credit";
+import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
 import type { createBifrostEmbeddingExecutor } from "./test-credit-embedding-bifrost";
 import { WEKNORA_APPLICATION_ID as applicationId } from "./weknora-ingestion";
@@ -16,6 +16,12 @@ import {
 } from "./weknora-work";
 
 const id = z.uuid();
+// Periodic maintenance charges this platform Billing Account's execution
+// budget when the deployment funds it without a person's grant (#110 平台预算).
+const platformMaintenanceIdentity = {
+  issuer: "openbot:platform",
+  subject: "weknora-maintenance",
+} satisfies VerifiedBillingIdentity;
 const scope = z.strictObject({
   subject: z.string().min(1).max(256),
   authorizationId: id,
@@ -60,6 +66,7 @@ export type WeKnoraRuntime = {
   issuer: string;
   serviceToken: string;
   routeId?: string;
+  maintenanceBudgetId?: string;
   execute?: ReturnType<typeof createBifrostEmbeddingExecutor>;
   work?: Partial<
     Record<
@@ -73,6 +80,7 @@ export function createWeKnoraRoutes({
   issuer,
   serviceToken,
   routeId,
+  maintenanceBudgetId,
   execute,
   work,
   ledger,
@@ -294,12 +302,15 @@ export function createWeKnoraRoutes({
     }
   });
   api.post("/work", async (context) => {
-    const parsed = scope
-      .extend({
-        operationId: id,
-        input: workInput,
-      })
-      .safeParse(await context.req.json().catch(() => undefined));
+    const parsed =
+      // Platform-funded maintenance omits the person's grant (#110 平台预算).
+      (
+        maintenanceBudgetId
+          ? scope.extend({ authorizationId: id.optional() })
+          : scope
+      )
+        .extend({ operationId: id, input: workInput })
+        .safeParse(await context.req.json().catch(() => undefined));
     if (!parsed.success)
       return context.json({ code: "invalid_work_request" }, 400);
     const { subject, authorizationId, taskId, operationId, input } =
@@ -308,36 +319,50 @@ export function createWeKnoraRoutes({
     const path = work?.[kind];
     if (!path) return context.json({ code: "route_unavailable" }, 503);
     const resourceId = weknoraWorkResource(parsed.data.resourceId, kind);
-    const identity = await ledger.authorizationIdentity(
-      applicationId,
-      authorizationId,
-    );
-    const grant = await ledger.authorizationSummary(
-      applicationId,
-      authorizationId,
-    );
-    if (
-      !identity ||
-      identity.issuer !== issuer ||
-      identity.subject !== subject ||
-      !grant ||
-      grant.resourcePrefix !== resourceId ||
-      grant.kind !== (kind === "maintenance" ? "background" : "online") ||
-      grant.taskId !== (taskId ?? null)
-    )
-      return context.json({ code: "not_authorized" }, 403);
-    if (grant.state !== "active")
-      return context.json({ code: `authorization_${grant.state}` }, 410);
+    const platformBudgetId = authorizationId ? undefined : maintenanceBudgetId;
+    const identity = authorizationId
+      ? await ledger.authorizationIdentity(applicationId, authorizationId)
+      : platformMaintenanceIdentity;
+    const grant = authorizationId
+      ? await ledger.authorizationSummary(applicationId, authorizationId)
+      : undefined;
+    if (authorizationId) {
+      if (
+        !identity ||
+        identity.issuer !== issuer ||
+        identity.subject !== subject ||
+        !grant ||
+        grant.resourcePrefix !== resourceId ||
+        grant.kind !== (kind === "maintenance" ? "background" : "online") ||
+        grant.taskId !== (taskId ?? null)
+      )
+        return context.json({ code: "not_authorized" }, 403);
+      if (grant.state !== "active")
+        return context.json({ code: `authorization_${grant.state}` }, 410);
+    } else {
+      // Only maintenance runs on the platform budget, and only when the
+      // deployment funds one (#110 平台预算).
+      if (kind !== "maintenance" || !platformBudgetId)
+        return context.json({ code: "not_authorized" }, 403);
+      if (identity.subject !== subject)
+        return context.json({ code: "not_authorized" }, 403);
+      // A missing budget pauses the charged step like a spent one.
+      if (!(await ledger.budget(identity, platformBudgetId)))
+        return context.json({ code: "execution_limit" }, 429);
+    }
+    const creditType: "test" | "paid" = grant ? grant.creditType : "test";
 
     const stepId = digest(
       JSON.stringify([kind, resourceId, taskId, input]),
     ).toString("hex");
     const replay = async () => {
-      const receipt = await ledger.authorizedOperation(
-        applicationId,
-        authorizationId,
-        operationId,
-      );
+      const receipt = authorizationId
+        ? await ledger.authorizedOperation(
+            applicationId,
+            authorizationId,
+            operationId,
+          )
+        : await ledger.reconcile(identity, operationId);
       if (!receipt || receipt.state === "reserved") return undefined;
       if (receipt.stepId !== stepId)
         return context.json({ code: "operation_conflict" }, 409);
@@ -380,7 +405,9 @@ export function createWeKnoraRoutes({
       kind === "rerank" ? "rerank" : undefined,
     );
     if (!selected) return context.json({ code: "route_unavailable" }, 503);
-    const binding = { authorizationId, operationId };
+    const binding = authorizationId
+      ? { authorizationId, operationId }
+      : { operationId };
     const reservation = await ledger.reserve(
       identity,
       {
@@ -391,8 +418,9 @@ export function createWeKnoraRoutes({
         stepId,
         route: selected.route.id,
         priceVersion: selected.quote.priceVersion,
-        creditType: grant.creditType,
+        creditType,
         resumable: false,
+        budgetId: platformBudgetId,
       },
       { weknoraWork: kind },
     );
@@ -431,9 +459,10 @@ export function createWeKnoraRoutes({
             admission.accountId,
             operationId,
             request,
-            {
-              recheckAuthorization: true,
-            },
+            // Without a grant there is nothing to recheck but the budget.
+            authorizationId
+              ? { recheckAuthorization: true }
+              : { recheckAdmission: true },
           );
           return bound;
         },

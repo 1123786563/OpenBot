@@ -348,6 +348,10 @@ export function createApprovalService(
                 complete: async () => undefined,
               }
             : undefined;
+        if (candidate.toolRef === "computer_upload_browser_file")
+          throw new ApprovalRefusedError(
+            "The approved file or site changed. Request a new approval.",
+          );
       }
       /*
        * The person's own earlier answer in this conversation comes first, before any policy that
@@ -440,7 +444,10 @@ export function createApprovalService(
             behaviour: "ask",
             source: "safety",
             closed: true,
-            reason: "This Corsair action requires one-time Approval.",
+            reason:
+              candidate.toolRef === "computer_upload_browser_file"
+                ? "Approve one upload attempt. If retrying an unknown outcome, the site may already have received the file."
+                : "This action requires one-time approval.",
             ...(evaluated?.review ? { review: evaluated.review } : {}),
           };
         } else if (taskAsks) {
@@ -789,7 +796,7 @@ export function createApprovalService(
               request.decision !== "allow_once"
             )
               throw new ApprovalRefusedError(
-                "This Corsair action requires one-time Approval.",
+                "This action requires one-time approval.",
               );
             current = await dependencies.validate(request.action);
             if (

@@ -103,18 +103,19 @@ function slices(container: HTMLElement) {
 }
 
 /**
- * A part's slider, by the name it is read out with.
- *
- * Found by its attributes, not by role: Base UI keeps a thumb `visibility: hidden` until it has
- * measured the track, and happy-dom lays nothing out, so here the slider never shows and Testing
- * Library will not return it. In a browser it does.
+ * A part's slider, by the name it is read out with. Astryx's slider is a focusable element with the
+ * slider role, named through the hidden label beside it.
  */
 function slider(container: HTMLElement, name: string) {
-  const input = container.querySelector<HTMLInputElement>(
-    `input[type="range"][aria-label="${name}"]`,
+  const thumb = [
+    ...container.querySelectorAll<HTMLElement>('[role="slider"]'),
+  ].find(
+    (element) =>
+      document.getElementById(element.getAttribute("aria-labelledby") ?? "")
+        ?.textContent === name,
   );
-  if (!input) throw new Error(`No slider named ${name}`);
-  return input;
+  if (!thumb) throw new Error(`No slider named ${name}`);
+  return thumb;
 }
 
 function total(container: HTMLElement) {
@@ -123,7 +124,7 @@ function total(container: HTMLElement) {
 
 test("editing a part of a budget updates its share of the bar, the total and the data model", async () => {
   const view = draw();
-  const lodging = (await view.findByRole("spinbutton", {
+  const lodging = (await view.findByRole("textbox", {
     name: "Lodging",
   })) as HTMLInputElement;
   expect(total(view.container)).toBe("$380");
@@ -159,7 +160,7 @@ test("editing a part of a budget updates its share of the bar, the total and the
 
 /** Each part's share as the row shows it, in order: "24%" read as 24. */
 function shares(container: HTMLElement) {
-  return [...container.querySelectorAll("li")]
+  return [...container.querySelectorAll('[data-slot="breakdown-part"]')]
     .map((row) =>
       [...row.querySelectorAll("span")].find((span) =>
         /^\d+%$/.test(span.textContent ?? ""),
@@ -170,7 +171,7 @@ function shares(container: HTMLElement) {
 
 test("the shares a budget shows always add up to 100%", async () => {
   const view = draw();
-  const food = (await view.findByRole("spinbutton", {
+  const food = (await view.findByRole("textbox", {
     name: "Food",
   })) as HTMLInputElement;
 
@@ -188,7 +189,7 @@ test("the shares a budget shows always add up to 100%", async () => {
 
 test("a part's slider changes the total, and a part at nothing leaves the bar", async () => {
   const view = draw();
-  await view.findByRole("spinbutton", { name: "Food" });
+  await view.findByRole("textbox", { name: "Food" });
   const food = slider(view.container, "Food");
   expect(total(view.container)).toBe("$380");
 
@@ -200,6 +201,6 @@ test("a part's slider changes the total, and a part at nothing leaves the bar", 
     "Lodging",
   ]);
   expect(
-    (view.getByRole("spinbutton", { name: "Food" }) as HTMLInputElement).value,
+    (view.getByRole("textbox", { name: "Food" }) as HTMLInputElement).value,
   ).toBe("0");
 });

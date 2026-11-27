@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -2183,5 +2184,453 @@ test("scoped pilot closure reconciles each order through its original channel", 
     finish.resolve();
     await dispatched?.catch(() => undefined);
     await restoreCatalog();
+  }
+}, 20_000);
+
+test("a live channel requires distinct provider credentials and a non-fixture merchant", async () => {
+  const { loadCreditPackLiveChannel } = await import(
+    "../src/billing/credit-pack-live-channel"
+  );
+  const base = {
+    OPENBOT_CREDIT_PACK_LIVE_ORIGIN: "https://pay.example.test",
+    OPENBOT_CREDIT_PACK_LIVE_TOKEN: "live-token-0123456789abcdef",
+    OPENBOT_CREDIT_PACK_LIVE_ACCOUNT_IDS: accountIds[0],
+    OPENBOT_CREDIT_PACK_LIVE_APPLICATION_IDS: openbotApp,
+    OPENBOT_CREDIT_PACK_LIVE_MERCHANT: "merchant-live-001",
+    OPENBOT_CREDIT_PACK_LIVE_PRODUCT: code,
+  };
+  expect(loadCreditPackLiveChannel({ ...base })).toBeDefined();
+  expect(
+    loadCreditPackLiveChannel({
+      ...base,
+      OPENBOT_CREDIT_PACK_LIVE_MERCHANT: "fixture-live",
+    }),
+  ).toBeUndefined();
+  expect(
+    loadCreditPackLiveChannel({
+      ...base,
+      OPENBOT_CREDIT_PACK_LIVE_ORIGIN: "http://127.0.0.1:3000",
+    }),
+  ).toBeUndefined();
+  expect(
+    loadCreditPackLiveChannel({
+      ...base,
+      OPENBOT_CREDIT_PACK_TEST_ORIGIN: "https://pay.example.test",
+      OPENBOT_CREDIT_PACK_TEST_TOKEN: base.OPENBOT_CREDIT_PACK_LIVE_TOKEN,
+    }),
+  ).toBeUndefined();
+  expect(loadCreditPackLiveChannel({})).toBeUndefined();
+  expect(() =>
+    loadCreditPackTestChannel({
+      OPENBOT_CREDIT_PACK_TEST_ORIGIN: "https://pay.example.test",
+      OPENBOT_CREDIT_PACK_TEST_MERCHANT: "merchant-live-001",
+    }),
+  ).toThrow("Live payment channels require the live channel adapter.");
+});
+
+test("a live channel signs provider calls and admits only signed callbacks", async () => {
+  const { loadCreditPackLiveChannel, liveCallbackSignature } = await import(
+    "../src/billing/credit-pack-live-channel"
+  );
+  const { createCreditPackCheckout } = await import(
+    "../src/billing/credit-pack-checkout"
+  );
+  const liveToken = "live-contract-token-000000000001";
+  const liveMerchant = "merchant-live-contract";
+  const signature = (route: string, body = "") =>
+    liveCallbackSignature(liveToken, route, body);
+  const channel = loadCreditPackLiveChannel({
+    OPENBOT_CREDIT_PACK_LIVE_ORIGIN: "https://payments.example.test",
+    OPENBOT_CREDIT_PACK_LIVE_TOKEN: liveToken,
+    OPENBOT_CREDIT_PACK_LIVE_ACCOUNT_IDS: accountIds[0],
+    OPENBOT_CREDIT_PACK_LIVE_APPLICATION_IDS: openbotApp,
+    OPENBOT_CREDIT_PACK_LIVE_MERCHANT: liveMerchant,
+    OPENBOT_CREDIT_PACK_LIVE_PRODUCT: code,
+  });
+  if (!channel) throw new Error("Live channel did not load.");
+  expect(channel.merchant).toBe(liveMerchant);
+  expect(channel.kind).toBe("wechat");
+  expect(channel.fixture).toBe(false);
+  expect(channel.allows(accountIds[0])).toBe(true);
+
+  const signed = (route: string) =>
+    new Request("https://openbot.test/api/billing/credit-pack-test/callback", {
+      headers: {
+        "x-channel-route": route,
+        "x-signature": signature(route),
+      },
+    });
+  expect(await channel.authenticates(signed("callback"))).toBe(true);
+  expect(
+    await channel.authenticates(
+      new Request("https://openbot.test/callback", {
+        headers: {
+          "x-channel-route": "callback",
+          "x-signature": liveCallbackSignature("wrong-token", "callback"),
+        },
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    await channel.authenticates(
+      new Request("https://openbot.test/callback", {
+        headers: {
+          "x-channel-route": "refund-callback",
+          "x-signature": signature("callback"),
+        },
+      }),
+    ),
+  ).toBe(false);
+
+  const checkout = createCreditPackCheckout({ channel, ledger, paid });
+  const live = new Hono<{
+    Variables: {
+      identity: import("../src/billing/test-credit").VerifiedBillingIdentity;
+    };
+  }>();
+  live.use("*", async (context, next) => {
+    context.set("identity", { issuer, subject: alice });
+    await next();
+  });
+  live.route("/api/billing", checkout);
+  const liveApi = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: (request) => live.fetch(request),
+  });
+  const callback = (route: string, body?: object, ok = true) => {
+    const payload = JSON.stringify(body ?? {});
+    return fetch(
+      new URL(`/api/billing/credit-pack-test/${route}`, liveApi.url),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-channel-route": route,
+          "x-signature": ok ? signature(route, payload) : "invalid",
+        },
+        body: payload,
+      },
+    );
+  };
+  expect((await callback("callback", undefined, false)).status).toBe(401);
+  expect((await callback("callback", { state: "not-a-payment" })).status).toBe(
+    400,
+  );
+  expect((await callback("refund-callback", undefined, false)).status).toBe(
+    401,
+  );
+  expect(
+    (await callback("refund-callback", { state: "not-a-refund" })).status,
+  ).toBe(400);
+  await liveApi.stop(true);
+}, 20_000);
+
+test("a live channel signs checkout, query, close and refund requests to the provider", async () => {
+  const { loadCreditPackLiveChannel } = await import(
+    "../src/billing/credit-pack-live-channel"
+  );
+  const token = "live-contract-token-000000000002";
+  const merchant = "merchant-live-contract";
+  const origin = "https://payments.example.test";
+  const channel = loadCreditPackLiveChannel({
+    OPENBOT_CREDIT_PACK_LIVE_ORIGIN: origin,
+    OPENBOT_CREDIT_PACK_LIVE_TOKEN: token,
+    OPENBOT_CREDIT_PACK_LIVE_ACCOUNT_IDS: accountIds[0],
+    OPENBOT_CREDIT_PACK_LIVE_APPLICATION_IDS: openbotApp,
+    OPENBOT_CREDIT_PACK_LIVE_MERCHANT: merchant,
+    OPENBOT_CREDIT_PACK_LIVE_PRODUCT: code,
+  });
+  if (!channel) throw new Error("Live channel did not load.");
+  const orderId = crypto.randomUUID();
+  const refundId = crypto.randomUUID();
+  const terms: RefundTerms = {
+    refundId,
+    orderId,
+    merchantId: merchant,
+    currency: "CNY",
+    amountCents: 2500,
+    channelOrderRef: "live-ref-1",
+  };
+  const payment = {
+    state: "paid",
+    ...terms,
+    paidAt: "2026-11-26T10:00:00.000Z",
+  };
+  const replies = [
+    { checkoutUrl: `${origin}/checkout/${orderId}` },
+    payment,
+    { ...payment, state: "failed" },
+    { ...terms, state: "processing" },
+    { state: "unknown" },
+  ];
+  const calls: {
+    url: string;
+    method: string;
+    authorization: string | null;
+    signature: string | null;
+    body: string;
+  }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const body = await request.clone().text();
+    calls.push({
+      url: request.url,
+      method: request.method,
+      authorization: request.headers.get("authorization"),
+      signature: request.headers.get("x-signature"),
+      body,
+    });
+    return Response.json(replies.shift());
+  }) as typeof fetch;
+  const sign = (route: string, body: string) =>
+    createHmac("sha256", token).update(`${route}:${body}`).digest("hex");
+  try {
+    expect(await channel.checkout({ id: orderId, priceCents: 2500 })).toBe(
+      `${origin}/checkout/${orderId}`,
+    );
+    expect(await channel.query(orderId)).toMatchObject({ state: "paid" });
+    expect(await channel.close(orderId)).toMatchObject({ state: "failed" });
+    expect(await channel.startRefund(terms)).toMatchObject({
+      state: "processing",
+    });
+    expect(await channel.queryRefund(refundId)).toEqual({ state: "unknown" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  expect(calls).toHaveLength(5);
+  const checkoutBody = JSON.stringify({
+    orderId,
+    merchantId: merchant,
+    amountCents: 2500,
+    currency: "CNY",
+    productCode: code,
+  });
+  expect(calls[0]).toEqual({
+    url: `${origin}/orders/${orderId}`,
+    method: "POST",
+    authorization: `Bearer ${token}`,
+    signature: sign(`orders/${orderId}`, checkoutBody),
+    body: checkoutBody,
+  });
+  expect(calls[1]).toEqual({
+    url: `${origin}/orders/${orderId}`,
+    method: "GET",
+    authorization: `Bearer ${token}`,
+    signature: sign(`orders/${orderId}`, ""),
+    body: "",
+  });
+  expect(calls[2]).toEqual({
+    url: `${origin}/orders/close/${orderId}`,
+    method: "POST",
+    authorization: `Bearer ${token}`,
+    signature: sign(`orders/close/${orderId}`, "{}"),
+    body: "{}",
+  });
+  const refundBody = JSON.stringify(terms);
+  expect(calls[3]).toEqual({
+    url: `${origin}/refunds/${refundId}`,
+    method: "POST",
+    authorization: `Bearer ${token}`,
+    signature: sign(`refunds/${refundId}`, refundBody),
+    body: refundBody,
+  });
+  expect(calls[4]).toEqual({
+    url: `${origin}/refunds/${refundId}`,
+    method: "GET",
+    authorization: `Bearer ${token}`,
+    signature: sign(`refunds/${refundId}`, ""),
+    body: "",
+  });
+}, 20_000);
+
+test("a live channel pays, grants, refunds through its provider and reconciles once", async () => {
+  const { loadCreditPackLiveChannel } = await import(
+    "../src/billing/credit-pack-live-channel"
+  );
+  await approvePaths();
+  const subject = crypto.randomUUID();
+  fixtureSubjects.add(subject);
+  const [{ id: accountId }] = await database
+    .insert(testCreditAccounts)
+    .values({ issuer, subject })
+    .returning();
+  accountIds.push(accountId);
+  const product = await publish(2_500, 25_000_000n);
+  const providerOrigin = "https://provider-e2e.example.test";
+  const liveToken = "live-e2e-provider-token-00000001";
+  const liveMerchant = "merchant-live-e2e";
+  const channel = loadCreditPackLiveChannel({
+    OPENBOT_CREDIT_PACK_LIVE_ORIGIN: providerOrigin,
+    OPENBOT_CREDIT_PACK_LIVE_TOKEN: liveToken,
+    OPENBOT_CREDIT_PACK_LIVE_ACCOUNT_IDS: accountId,
+    OPENBOT_CREDIT_PACK_LIVE_APPLICATION_IDS: openbotApp,
+    OPENBOT_CREDIT_PACK_LIVE_MERCHANT: liveMerchant,
+    OPENBOT_CREDIT_PACK_LIVE_PRODUCT: code,
+  });
+  if (!channel) throw new Error("Live channel did not load.");
+  const app = new Hono();
+  app.route(
+    "/api/billing",
+    createTestCreditRoutes({
+      ledger,
+      paid: { ledger: paid, creditPackTestChannel: channel },
+      authenticate: async () => ({ issuer, subject }),
+    }),
+  );
+  const liveApi = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: (request) => app.fetch(request),
+  });
+  const get = (path: string) =>
+    fetch(new URL(`/api/billing${path}`, liveApi.url));
+  const post = (path: string, body?: object) =>
+    fetch(new URL(`/api/billing${path}`, liveApi.url), {
+      method: "POST",
+      headers: body ? { "content-type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  const callback = (route: string, body: object, credential = liveToken) => {
+    const payload = JSON.stringify(body);
+    return fetch(
+      new URL(`/api/billing/credit-pack-test/${route}`, liveApi.url),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-channel-route": route,
+          "x-signature": createHmac("sha256", credential)
+            .update(`${route}:${payload}`)
+            .digest("hex"),
+        },
+        body: payload,
+      },
+    );
+  };
+  const providerOrders = new Map<string, object>();
+  const providerRefunds = new Map<string, object>();
+  const providerCalls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    if (!request.url.startsWith(providerOrigin)) return originalFetch(request);
+    const parts = new URL(request.url).pathname.split("/").filter(Boolean);
+    providerCalls.push(`${request.method} /${parts.join("/")}`);
+    if (parts[0] === "orders" && parts.length === 2) {
+      if (request.method === "POST")
+        return Response.json({
+          checkoutUrl: `${providerOrigin}/pay/${parts[1]}`,
+        });
+      return Response.json(
+        providerOrders.get(parts[1]) ?? { state: "unknown" },
+      );
+    }
+    if (parts[0] === "orders" && parts[1] === "close")
+      return Response.json({ state: "unknown" });
+    if (parts[0] === "refunds") {
+      if (request.method === "POST") {
+        const terms = testRefundTerms.parse(await request.json());
+        providerRefunds.set(parts[1], terms);
+        return Response.json({ ...terms, state: "processing" });
+      }
+      return Response.json(
+        providerRefunds.get(parts[1]) ?? { state: "unknown" },
+      );
+    }
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+  try {
+    const offer = await (await get("/paid/credit-pack")).json();
+    expect(offer.available).toBe(true);
+    expect(offer.product).toMatchObject({
+      version: product.version,
+      priceCents: product.priceCents,
+      currency: "CNY",
+    });
+    const orderId = crypto.randomUUID();
+    expect(
+      (await post(orders, { orderId, version: product.version })).status,
+    ).toBe(201);
+    const [orderRow] = await database
+      .select({ testMerchant: paidOrders.testMerchant })
+      .from(paidOrders)
+      .where(eq(paidOrders.id, orderId));
+    expect(orderRow.testMerchant).toBeNull();
+    expect((await post(`${orders}/${orderId}/checkout`, {})).status).toBe(200);
+    const payment = {
+      state: "paid",
+      orderId,
+      merchantId: liveMerchant,
+      currency: "CNY",
+      amountCents: product.priceCents,
+      channelOrderRef: `live-${orderId}`,
+      paidAt: new Date().toISOString(),
+    };
+    for (const mismatch of [
+      { merchantId: "merchant-live-elsewhere" },
+      { amountCents: 1 },
+      { currency: "USD" },
+    ])
+      expect(
+        (await callback("callback", { ...payment, ...mismatch })).status,
+      ).toBe(409);
+    expect(await (await get(orders)).json()).toMatchObject([
+      { id: orderId, state: "pending", entitlementId: null },
+    ]);
+    expect((await callback("callback", payment)).status).toBe(200);
+    expect(await (await get(orders)).json()).toMatchObject([
+      {
+        id: orderId,
+        state: "verified",
+        priceCents: product.priceCents,
+        entitlementId: expect.any(String),
+      },
+    ]);
+    expect(await (await get("/paid/balance")).json()).toMatchObject({
+      availableMicrocredits: product.creditsMicrocredits.toString(),
+    });
+    // The same provider signature replayed cannot grant again.
+    expect((await callback("callback", payment)).status).toBe(200);
+    expect(await (await get("/paid/balance")).json()).toMatchObject({
+      availableMicrocredits: product.creditsMicrocredits.toString(),
+    });
+
+    const refunding = await (
+      await post(`${orders}/${orderId}/refund`, {})
+    ).json();
+    expect(refunding).toMatchObject({
+      state: "refund_pending",
+      creditsFrozen: true,
+      refund: { state: "processing", amountCents: product.priceCents },
+    });
+    expect(await (await get("/paid/balance")).json()).toMatchObject({
+      availableMicrocredits: "0",
+    });
+    const terms = providerRefunds.get(refunding.refund.id);
+    if (!terms) throw new Error("The provider never received the refund.");
+    expect(terms).toMatchObject({
+      orderId,
+      merchantId: liveMerchant,
+      currency: "CNY",
+      amountCents: product.priceCents,
+      channelOrderRef: `live-${orderId}`,
+    });
+    providerRefunds.set(refunding.refund.id, { ...terms, state: "confirmed" });
+    expect(
+      await (await post(`${orders}/${orderId}/refund/verify`, {})).json(),
+    ).toMatchObject({ state: "refunded", refund: { state: "confirmed" } });
+    expect(await (await get("/paid/balance")).json()).toMatchObject({
+      availableMicrocredits: "0",
+    });
+    expect(providerCalls).toEqual([
+      `POST /orders/${orderId}`,
+      `POST /refunds/${refunding.refund.id}`,
+      `GET /refunds/${refunding.refund.id}`,
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await liveApi.stop(true);
   }
 }, 20_000);

@@ -4,29 +4,19 @@ import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
-import {
-  CopilotChat,
-  CopilotChatInput,
-  type CopilotChatInputProps,
-} from "@copilotkit/react-core/v2";
 import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  createContext,
-  useContext,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useRef, useState } from "react";
 import { z } from "zod";
 import { ConversationApprovals } from "@/components/approvals/inline-approval";
 import { astryxScope } from "@/components/astryx-pilot/theme";
+import { BotChatView } from "@/components/channels/bot-chat-view";
 import {
   ConversationLoading,
   ConversationReadError,
 } from "@/components/channels/conversation-status";
-import { TelemetryAssistantMessage } from "@/components/channels/telemetry-assistant-message";
+import { ConversationSurface } from "@/components/channels/conversation-surface";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -47,6 +37,7 @@ import { agentKeys, agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   composeDraftKey,
+  draftSegments,
   readComposeDraft,
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
@@ -55,50 +46,26 @@ import { useOpenComputerOnRequest } from "@/lib/computers/panel-view";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { useBotActivity } from "@/lib/copilot/bot-activity";
 import { useBotThread } from "@/lib/copilot/bot-thread";
-import { useStoppedTurn } from "@/lib/copilot/stopped-turn";
 import { searchTextEntry } from "@/lib/search-text";
 
-const QuickDraftKey = createContext<string | undefined>(undefined);
 const quickDraftText = z.string();
 
-function QuickChatInput({ value, onChange, ...input }: CopilotChatInputProps) {
-  const key = useContext(QuickDraftKey);
-  const draft = useRef<{ key: string; restoring?: string } | undefined>(
-    undefined,
-  );
-  useLayoutEffect(() => {
-    if (!key || !onChange) return;
-    if (draft.current?.key !== key) {
-      const saved = value ? undefined : readComposeDraft(key, quickDraftText);
-      draft.current = { key, restoring: saved };
-      if (saved) {
-        onChange(saved);
-        return;
-      }
-    }
-    if (draft.current.restoring) {
-      if (value !== draft.current.restoring) return;
-      draft.current.restoring = undefined;
-    }
-    writeComposeDraft(key, value || undefined);
-  }, [key, onChange, value]);
+/**
+ * The composer keeps a draft as segments (text and `/` chips); the packaged chat kept plain text
+ * under the same key. A draft written before this screen moved over is read once, in the older shape,
+ * and put back in the one the composer reads, or the first thing typed here wipes it.
+ */
+function keepEarlierDraft(key: string | undefined) {
+  const earlier = readComposeDraft(key, quickDraftText);
+  if (earlier) writeComposeDraft(key, [{ type: "text", text: earlier }]);
+}
 
-  return (
-    <CopilotChatInput
-      {...input}
-      addMenuButton={{ className: "quick-chat-touch-target" }}
-      cancelTranscribeButton={{ className: "quick-chat-touch-target" }}
-      finishTranscribeButton={{ className: "quick-chat-touch-target" }}
-      onChange={onChange}
-      sendButton={{ className: "quick-chat-touch-target" }}
-      startTranscribeButton={{ className: "quick-chat-touch-target" }}
-      textArea={{
-        "aria-label": "Message",
-        className: "quick-chat-message",
-        placeholder: "Describe what you want to get done…",
-      }}
-      value={value}
-    />
+function hasDraft(key: string | undefined) {
+  return Boolean(
+    readComposeDraft(key, quickDraftText)?.trim() ??
+      readComposeDraft(key, draftSegments)?.some(
+        (segment) => segment.type !== "text" || segment.text.trim(),
+      ),
   );
 }
 
@@ -268,7 +235,7 @@ function RouteComponent() {
       <Stack gap={3} style={{ padding: "var(--spacing-4, 1rem)" }}>
         <ConversationReadError
           description={
-            readComposeDraft(draftKey, quickDraftText)?.trim()
+            hasDraft(draftKey)
               ? "Your unsent message stays with this Bot in this tab."
               : undefined
           }
@@ -350,16 +317,10 @@ function BotChat({
   const [showNewConversation, setShowNewConversation] = useState(false);
   const newConversationButton = useRef<HTMLButtonElement>(null);
   const cancelNewConversation = useRef<HTMLButtonElement>(null);
-  /*
-   * A turn that ends without an answer has to be said out loud here, because the packaged chat says
-   * nothing. It reports a failed run to an `onError` prop and otherwise carries on as though the
-   * turn simply finished: the composer unlocks, the spinner goes, and the transcript keeps the
-   * person's own message with nothing under it. The banner that would have explained it belongs to
-   * a provider this app does not mount.
-   */
-  const stopped = useStoppedTurn(agentId);
   // What the Bot did on its computer in this conversation, for the Activity pane beside its screen.
   useBotActivity(agentId);
+  // Before the first render, which is when the composer reads the draft.
+  useState(() => keepEarlierDraft(draftKey));
   const { watch } = Route.useSearch();
   const navigate = Route.useNavigate();
   const showComputer = (open: boolean) =>
@@ -377,180 +338,164 @@ function BotChat({
       waiting={threadId ? <ConversationApprovals threadId={threadId} /> : null}
       detail={<ComputerViewPanel agentId={agentId} name={name} />}
     >
-      <Stack height="100%" minHeight={0}>
-        <SidebarToggleBar />
-        <Stack
-          align="center"
-          as="header"
-          direction="horizontal"
-          gap={3}
-          justify="between"
-          style={{
-            paddingBlock: "var(--spacing-3)",
-            paddingInline: "var(--spacing-4)",
-          }}
-          wrap="wrap"
-        >
-          <Stack gap={1} style={{ minWidth: 0 }}>
-            <Heading
-              id="quick-chat-title"
-              level={1}
-              tabIndex={-1}
-              wordBreak="break-word"
-            >
-              {name}
-            </Heading>
-            {purpose && purpose.toLowerCase() !== name.trim().toLowerCase() ? (
-              <details className="min-w-0 max-w-prose">
-                <summary className="min-h-11 content-center cursor-pointer text-sm underline underline-offset-4">
-                  About this Bot
-                </summary>
-                <Text
-                  as="p"
-                  className="max-h-24 overflow-y-auto wrap-anywhere"
-                  color="secondary"
-                  display="block"
-                  tabIndex={0}
-                  type="supporting"
-                >
-                  {purpose}
-                </Text>
-              </details>
-            ) : null}
-          </Stack>
+      {/*
+       * The Astryx theme around the header and the chat together, so the transcript, the composer and
+       * the cards resolve the same palette a Conversation does, in either appearance.
+       */}
+      <ConversationSurface>
+        <Stack height="100%" minHeight={0}>
+          <SidebarToggleBar />
           <Stack
             align="center"
-            className="quick-chat-actions"
+            as="header"
             direction="horizontal"
-            gap={2}
+            gap={3}
+            justify="between"
+            style={{
+              paddingBlock: "var(--spacing-3)",
+              paddingInline: "var(--spacing-4)",
+            }}
             wrap="wrap"
           >
-            <ComputerChatControls
-              computerId={agentId}
-              open={watch === true}
-              onOpenChange={showComputer}
-            />
-            <AstryxButton
-              icon={<IconPlus />}
-              isLoading={starting}
-              isDisabled={!threadId}
-              label="New chat with this Bot"
-              onClick={() => setShowNewConversation(true)}
-              ref={newConversationButton}
-              size="md"
-              variant="secondary"
-            />
-          </Stack>
-        </Stack>
-        <Divider />
-        <Dialog
-          open={showNewConversation}
-          onOpenChange={setShowNewConversation}
-        >
-          <DialogContent
-            {...astryxScope}
-            finalFocus={newConversationButton}
-            initialFocus={cancelNewConversation}
-            role="alertdialog"
-            showCloseButton={false}
-          >
-            <DialogTitle>Start a new conversation?</DialogTitle>
-            <DialogDescription>
-              The new conversation starts with an empty history.
-              {draftKey ? " Your saved draft stays with this Bot." : null}
-            </DialogDescription>
-            <DialogFooter className="flex-wrap">
+            <Stack gap={1} style={{ minWidth: 0 }}>
+              <Heading
+                id="quick-chat-title"
+                level={1}
+                tabIndex={-1}
+                wordBreak="break-word"
+              >
+                {name}
+              </Heading>
+              {purpose &&
+              purpose.toLowerCase() !== name.trim().toLowerCase() ? (
+                <details className="min-w-0 max-w-prose">
+                  <summary className="min-h-11 content-center cursor-pointer text-sm underline underline-offset-4">
+                    About this Bot
+                  </summary>
+                  <Text
+                    as="p"
+                    className="max-h-24 overflow-y-auto wrap-anywhere"
+                    color="secondary"
+                    display="block"
+                    tabIndex={0}
+                    type="supporting"
+                  >
+                    {purpose}
+                  </Text>
+                </details>
+              ) : null}
+            </Stack>
+            <Stack
+              align="center"
+              className="quick-chat-actions"
+              direction="horizontal"
+              gap={2}
+              wrap="wrap"
+            >
+              <ComputerChatControls
+                computerId={agentId}
+                open={watch === true}
+                onOpenChange={showComputer}
+              />
               <AstryxButton
-                className="confirmation-action"
-                label="Cancel"
-                onClick={() => setShowNewConversation(false)}
-                ref={cancelNewConversation}
+                icon={<IconPlus />}
+                isLoading={starting}
+                isDisabled={!threadId}
+                label="New chat with this Bot"
+                onClick={() => setShowNewConversation(true)}
+                ref={newConversationButton}
+                size="md"
                 variant="secondary"
               />
-              <AstryxButton
-                className="confirmation-action"
-                label="Start new conversation"
-                onClick={() => {
-                  setShowNewConversation(false);
-                  startNew();
-                }}
-                variant="primary"
-              />
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        {history === "unavailable" ? (
-          <ConversationReadError
-            title="Couldn't check your earlier messages."
-            description="This conversation is still open. You can check whether earlier messages are available."
-            retryLabel="Check history"
-            retryBelow
-            retry={retryHistory}
-            retrying={checkingHistory}
-          />
-        ) : null}
-        {history === "missing" && (
-          <Banner
-            status="warning"
-            title="Earlier messages are no longer available."
-            description="You can start a new conversation with this Bot."
-            role="status"
-          />
-        )}
-        {startFailed && (
-          <ConversationReadError
-            title="Couldn't start a new conversation."
-            description={
-              threadId
-                ? "Your current conversation is still open."
-                : "Try again to start chatting with this Bot."
-            }
-            retry={startNew}
-            retryBelow
-            retrying={starting}
-          />
-        )}
-        {/*
-         * Under the header rather than at the end of the transcript, which is where the missing answer
-         * was going to be and where the channel draws its own version of this. The packaged chat owns
-         * that list and virtualises it, so reaching into it means replacing the whole message view and
-         * taking on its scrolling. The cost of putting the sentence here instead is that it is not
-         * beside the gap it explains; what it buys is that it is always on screen, whatever the
-         * transcript has been scrolled to, and that it survives the next release of the chat.
-         */}
-        {stopped ? (
-          <Banner
-            role="alert"
-            status="error"
-            title="The Bot stopped before replying."
-            description={stopped}
-          />
-        ) : null}
-        <Stack minHeight={0} style={{ flex: 1 }}>
+            </Stack>
+          </Stack>
+          <Divider />
+          <Dialog
+            open={showNewConversation}
+            onOpenChange={setShowNewConversation}
+          >
+            <DialogContent
+              {...astryxScope}
+              finalFocus={newConversationButton}
+              initialFocus={cancelNewConversation}
+              role="alertdialog"
+              showCloseButton={false}
+            >
+              <DialogTitle>Start a new conversation?</DialogTitle>
+              <DialogDescription>
+                The new conversation starts with an empty history.
+                {draftKey ? " Your saved draft stays with this Bot." : null}
+              </DialogDescription>
+              <DialogFooter className="flex-wrap">
+                <AstryxButton
+                  className="confirmation-action"
+                  label="Cancel"
+                  onClick={() => setShowNewConversation(false)}
+                  ref={cancelNewConversation}
+                  variant="secondary"
+                />
+                <AstryxButton
+                  className="confirmation-action"
+                  label="Start new conversation"
+                  onClick={() => {
+                    setShowNewConversation(false);
+                    startNew();
+                  }}
+                  variant="primary"
+                />
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {history === "unavailable" ? (
+            <ConversationReadError
+              title="Couldn't check your earlier messages."
+              description="This conversation is still open. You can check whether earlier messages are available."
+              retryLabel="Check history"
+              retryBelow
+              retry={retryHistory}
+              retrying={checkingHistory}
+            />
+          ) : null}
+          {history === "missing" && (
+            <Banner
+              status="warning"
+              title="Earlier messages are no longer available."
+              description="You can start a new conversation with this Bot."
+              role="status"
+            />
+          )}
+          {startFailed && (
+            <ConversationReadError
+              title="Couldn't start a new conversation."
+              description={
+                threadId
+                  ? "Your current conversation is still open."
+                  : "Try again to start chatting with this Bot."
+              }
+              retry={startNew}
+              retryBelow
+              retrying={starting}
+            />
+          )}
           {/*
-           * Keyed on the thread as well as the agent. Switching agents was already handled by
-           * `agentId`, but `startNew` changes only the thread while the agent stays put, and the
-           * packaged chat's own `startNewThread`/`setActiveThreadId` are proven no-ops once
-           * `threadId` is a controlled prop (node_modules/@copilotkit/react-core/dist/copilotkit-
-           * C4RqjAba.mjs:226-254): asking it to start over does nothing while it still holds the
-           * old id. A key that omits the thread would leave the previous conversation on screen
-           * under a composer that silently posts to the new one.
+           * Keyed on the thread as well as the agent: `startNew` changes only the thread, and a view
+           * that stayed mounted would keep the previous conversation on screen under a composer that
+           * posts to the new one.
            */}
-          {threadId ? (
-            <QuickDraftKey.Provider value={draftKey}>
-              <CopilotChat
+          <Stack minHeight={0} style={{ flex: 1 }}>
+            {threadId ? (
+              <BotChatView
                 agentId={agentId}
-                input={QuickChatInput}
-                messageView={{ assistantMessage: TelemetryAssistantMessage }}
+                draftKey={draftKey}
                 key={`${agentId}:${threadId}`}
                 threadId={threadId}
               />
-            </QuickDraftKey.Provider>
-          ) : !startFailed ? (
-            <ConversationLoading label="Opening conversation…" />
-          ) : null}
+            ) : !startFailed ? (
+              <ConversationLoading label="Opening conversation…" />
+            ) : null}
+          </Stack>
         </Stack>
-      </Stack>
+      </ConversationSurface>
     </DetailPanel>
   );
 }

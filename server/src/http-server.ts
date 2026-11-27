@@ -188,7 +188,7 @@ export function startHttpServer(deps: {
   resolveRequestActor: (
     request: Request,
   ) => Promise<{ id: string; name: string; role: OpenBotRole }>;
-  agentProfileStore: AgentProfileStore;
+  agentProfileStore: Pick<AgentProfileStore, "get">;
   computerGateway: ComputerGateway | undefined;
   app: {
     fetch: (
@@ -196,7 +196,10 @@ export function startHttpServer(deps: {
       env: FrontDoorBindings,
     ) => Response | Promise<Response>;
   };
-}): { stop(closeActiveConnections?: boolean): Promise<void> } {
+}): {
+  port: number | undefined;
+  stop(closeActiveConnections?: boolean): Promise<void>;
+} {
   const {
     port,
     config,
@@ -368,21 +371,38 @@ export function startHttpServer(deps: {
           const seat = computerGateway
             ? await computerGateway.seatFor(streamBotId, actor.id)
             : undefined;
-          const streamBase =
-            computerGateway && seat
-              ? await computerGateway.locate(seat)
-              : undefined;
-          if (!streamBase || !computerGateway || !seat) {
+          if (!computerGateway || !seat) {
             return new Response("No computer address is configured.", {
               status: 503,
             });
           }
+          const host =
+            (named.socket === "stream"
+              ? computerGateway.browserFor?.(seat)
+              : undefined) ?? computerGateway;
+          const observing = url.searchParams.get("observe") === "1";
+          const connection =
+            named.socket === "terminal"
+              ? await computerGateway.terminalConnection(
+                  seat,
+                  observing ? "observe" : "wake",
+                )
+              : {
+                  url: await host.locate(seat),
+                  token: host.tokenFor(seat),
+                };
           upstream = toStreamUrl(
-            streamBase,
-            computerGateway.addressOf(seat),
-            computerGateway.tokenFor(seat),
+            connection.url,
+            host.addressOf(seat),
+            connection.token,
             named.socket,
           );
+          if (
+            observing &&
+            named.socket === "stream" &&
+            host !== computerGateway
+          )
+            upstream += "&observe=1";
         } catch (error) {
           // Said out loud rather than falling back to another Bot's computer, which is the failure this
           // whole path exists to prevent.

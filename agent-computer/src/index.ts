@@ -3,7 +3,15 @@ import { setDefaultAutoSelectFamily } from "node:net";
 import { join } from "node:path";
 import { type ServerWebSocket, serve } from "bun";
 import type { ConsoleMessage, Page } from "playwright";
-import { downloadHeaders } from "../../shared/file-download";
+import { z } from "zod";
+import { browserUploadDispatch } from "../../shared/browser-upload";
+import {
+  botBrowserActionPaths,
+  browserControlPaths,
+  browserGesturePaths,
+  browserObservationPaths,
+  humanBrowserInputPaths,
+} from "../../shared/computer-browser-paths";
 import {
   isPersonBrowserId,
   RECORDER_DIR_ENV,
@@ -25,6 +33,7 @@ import { createBotBrowserHost, isBotBrowserPath } from "./bot-browser-host";
 import { isPlainBotId, seatIdFor } from "./bot-id";
 import { createBrowserHost, isBrowserPath } from "./browser-host";
 import { browserRuntimeFromEnv } from "./browser-runtime";
+import { uploadFromBrowser } from "./browser-upload";
 import { detectChallenge } from "./challenge";
 import {
   ControlError,
@@ -36,6 +45,7 @@ import {
 import { keyForOpenList } from "./dropdown-list";
 import { handleEgressPolicyRequest, startEgressFilter } from "./egress";
 import { enterText, FieldValueError } from "./enter-text";
+import { handleFileRequest } from "./file-routes";
 import { identity } from "./identity";
 import { createInputQueue, type InputQueue } from "./input-queue";
 import {
@@ -43,6 +53,7 @@ import {
   parseLoopbackRelays,
   startLoopbackRelays,
 } from "./loopback-relay";
+import { storeManualBrowserDownloads } from "./manual-browser-downloads";
 import {
   assertPageAccess,
   navigateWebPage,
@@ -86,19 +97,17 @@ import {
   parseSignInCode,
   parseSignInFill,
 } from "./sign-in";
-import { startVirtualDisplay } from "./virtual-display";
-import { applyWebBotAuthPush } from "./web-bot-auth";
 import {
-  WorkspaceFileError,
-  WorkspaceFileNotFoundError,
-  WorkspaceFileTooLargeError,
-  WorkspacePathError,
-} from "./workspace";
+  STAGED_BROWSER_DOWNLOADS_DIRNAME,
+  stageBrowserDownloads,
+} from "./staged-browser-downloads";
 import {
   createTerminalSockets,
   TERMINAL_UNAVAILABLE,
   type TerminalSocketData,
 } from "./terminal-socket";
+import { startVirtualDisplay } from "./virtual-display";
+import { applyWebBotAuthPush } from "./web-bot-auth";
 import { createWorkspaces } from "./workspaces";
 
 /**
@@ -158,6 +167,18 @@ setDefaultAutoSelectFamily(false);
 const RUNTIME = browserRuntimeFromEnv(process.env);
 /** Whose this computer is, which decides whether a person's browser may run on it. See person-access.ts. */
 const OWNER = computerOwner(process.env);
+const browserDownloads =
+  OWNER.kind === "browser"
+    ? stageBrowserDownloads(process.env.PROFILES_DIR?.trim() || "/profiles")
+    : undefined;
+
+const manualDownloads =
+  OWNER.kind === "browser"
+    ? storeManualBrowserDownloads(
+        process.env.PROFILES_DIR?.trim() || "/profiles",
+      )
+    : undefined;
+
 const BROWSER_MODE = RUNTIME.mode;
 /*
  * The display this process was started on, kept before the virtual one replaces it. A person's
@@ -254,9 +275,11 @@ function seatOf(
     query?.get("bot")?.trim() ||
     DEFAULT_BOT_ID;
   const person =
-    request.headers.get("x-openbot-person-id")?.trim() ||
-    query?.get("person")?.trim() ||
-    undefined;
+    OWNER.kind === "browser"
+      ? undefined
+      : request.headers.get("x-openbot-person-id")?.trim() ||
+        query?.get("person")?.trim() ||
+        undefined;
   try {
     return { bot, seat: seatIdFor(bot, person) };
   } catch {
@@ -376,6 +399,10 @@ const profiles = createProfiles(
   },
   {
     personDisplay: PERSON_DISPLAY,
+    onPersonPage: manualDownloads?.watch,
+    retainedProfileEntry: browserDownloads
+      ? STAGED_BROWSER_DOWNLOADS_DIRNAME
+      : undefined,
     // A Bot's browser a person is working in, or has been asked to, is never closed for memory, and
     // none of its tabs are closed for being idle. A person's own browser has no Bot's wheel to hold:
     // it is never closed for memory whoever is at it (`chooseForMemory`), and its tabs are never swept.
@@ -779,6 +806,7 @@ async function notePersonFilled(
 /** What a live-screen socket carries: the Bot whose screen it is showing. */
 type StreamData = {
   botId: string;
+  observe?: boolean;
   /** The person's input so far, applied one message after another. See input-queue.ts. */
   inputs?: InputQueue;
   /** The newest frame not sent yet: the connection or the viewer has enough on its way. */
@@ -985,6 +1013,17 @@ serve<StreamData & TerminalSocketData>({
    */
   websocket: terminalSockets.around({
     async open(ws) {
+      if (ws.data.observe && !profiles.isLive(ws.data.botId)) {
+        ws.send(
+          JSON.stringify({
+            type: "error",
+            error: COMPUTER_STOPPED,
+            fatal: true,
+          }),
+        );
+        ws.close();
+        return;
+      }
       const session = sessions.for(ws.data.botId);
       /*
        * Claimed before anything is awaited, and that order is the fix.
@@ -1121,6 +1160,20 @@ serve<StreamData & TerminalSocketData>({
       return json({ error: "Not authorised." }, 401);
     }
 
+    if (
+      OWNER.kind === "browser" &&
+      url.pathname === "/computers/stop-all" &&
+      request.method === "POST"
+    ) {
+      return json({ wasRunning: await profiles.stopAll() });
+    }
+
+    if (OWNER.kind === "browser" && !browserOnlyPath(url.pathname))
+      return json(
+        { error: "This computer serves browser operations only." },
+        403,
+      );
+
     // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
     // goes through this seat's session, so there is no path where one Bot's call reaches another's,
     // nor one person's call another person's seat on a computer they share.
@@ -1165,10 +1218,31 @@ serve<StreamData & TerminalSocketData>({
     // person's browser id sent here is told it has the wrong routes rather than that it may not use them.
     if (isBotBrowserPath(url.pathname))
       return botBrowser.handle(request, url.pathname, botId);
+    if (
+      manualDownloads &&
+      OWNER.kind === "browser" &&
+      botId === OWNER.browserId &&
+      request.method === "GET"
+    ) {
+      if (url.pathname === "/browser-downloads") return manualDownloads.list();
+      if (url.pathname.startsWith("/browser-downloads/"))
+        return manualDownloads.read(
+          url.pathname.slice("/browser-downloads/".length),
+        );
+    }
     // A person's browser id reaches the person's browser routes, the live screen and the computer's
     // housekeeping, and nothing a Bot acts or reads through. See person-access.ts.
     if (isPersonBrowserId(botId) && !personMayUse(url.pathname))
       return json({ error: PERSONS_OWN_BROWSER }, 403);
+    if (
+      browserDownloads &&
+      request.method === "GET" &&
+      url.pathname.startsWith("/browser-downloads/")
+    )
+      return browserDownloads.read(
+        botId,
+        url.pathname.slice("/browser-downloads/".length),
+      );
     if (isBrowserPath(url.pathname))
       return browserHost.handle(request, url.pathname, botId);
     if (isRealBrowserPath(url.pathname))
@@ -1226,7 +1300,16 @@ serve<StreamData & TerminalSocketData>({
         if (streamBotId === undefined) {
           return json({ error: "That is not a usable bot id." }, 400);
         }
-        if (server.upgrade(request, { data: { botId: streamBotId } }))
+        if (
+          server.upgrade(request, {
+            data: {
+              botId: streamBotId,
+              observe:
+                OWNER.kind === "browser" &&
+                url.searchParams.get("observe") === "1",
+            },
+          })
+        )
           return undefined as unknown as Response;
         return json({ error: "Expected a WebSocket upgrade." }, 400);
       }
@@ -1459,6 +1542,42 @@ serve<StreamData & TerminalSocketData>({
         return json(changed);
       }
 
+      if (
+        OWNER.kind === "browser" &&
+        ["/browser-upload", "/human/browser-upload"].includes(url.pathname) &&
+        request.method === "POST"
+      ) {
+        const human = url.pathname === "/human/browser-upload";
+        const body: unknown = await request.json().catch(() => null);
+        const input = (
+          human
+            ? browserUploadDispatch.extend({ by: z.string().min(1) })
+            : browserUploadDispatch
+        ).safeParse(body);
+        if (!input.success)
+          return json({ error: "Invalid browser upload." }, 400);
+        const by = "by" in input.data ? input.data.by : undefined;
+        const maySend = () => {
+          if (request.signal.aborted) return false;
+          if (human)
+            return typeof by === "string" && session.control.personHolds(by);
+          session.control.assertBotMayAct(true);
+          return true;
+        };
+        if (!maySend())
+          return json({
+            status: "not_sent",
+            reason: human ? TAKE_CONTROL_FIRST : "Stopped.",
+          });
+        return json(
+          await uploadFromBrowser(
+            await currentPage(botId),
+            input.data,
+            maySend,
+          ),
+        );
+      }
+
       // A person's input, by pixel. The Bot addresses elements by reference because it reads a list; a
       // person addresses them by pointing, because they are looking at a picture. Different problem,
       // different endpoint, and only usable while they hold the wheel.
@@ -1672,12 +1791,33 @@ serve<StreamData & TerminalSocketData>({
           // The person's Stop, landing after the request arrived: nothing has been opened yet.
           if (request.signal.aborted)
             return json({ error: "Stopped.", stopped: true }, 499);
-          const response = await navigateWebPage(
-            target,
-            parsed.url,
-            RUNTIME.backend,
-            NAVIGATION_TIMEOUT_MS,
-          );
+          const run = () =>
+            navigateWebPage(
+              target,
+              parsed.url,
+              RUNTIME.backend,
+              NAVIGATION_TIMEOUT_MS,
+            );
+          const navigation = browserDownloads
+            ? await browserDownloads.capture({
+                botId,
+                page: target,
+                kind: "navigation",
+                signal: request.signal,
+                run,
+              })
+            : { result: await run() };
+          if (!("result" in navigation)) {
+            return json({
+              url: target.url(),
+              title: "",
+              text: "",
+              truncated: false,
+              elapsedMs: Date.now() - startedAt,
+              browserDownload: navigation.browserDownload,
+            });
+          }
+          const response = navigation.result;
           // A new document wipes every stamp, so every ref handed out before now is meaningless.
           // Bumping the generation makes an action carrying one fail with "take a new snapshot" rather
           // than fall through to a selector that matches nothing and read as a missing element.
@@ -1715,7 +1855,11 @@ serve<StreamData & TerminalSocketData>({
           return json(
             {
               error:
-                error instanceof Error ? error.message : "Navigation failed.",
+                error instanceof Error && error.name === "TimeoutError"
+                  ? "The page did not become readable in time. Read the current page before retrying."
+                  : error instanceof Error
+                    ? error.message
+                    : "Navigation failed.",
             },
             502,
           );
@@ -1754,55 +1898,13 @@ serve<StreamData & TerminalSocketData>({
         }
       }
 
-      // The Bot's files. Confined to the workspace by workspace.ts. Nothing here decides whether a Bot
-      // MAY touch a path: the gateway in front of this process does that.
-      if (url.pathname === "/files/download" && request.method === "GET") {
-        try {
-          const { files } = await workspaces.for(botId);
-          const file = await files.download(url.searchParams.get("path") ?? "");
-          return new Response(file.body, {
-            headers: downloadHeaders(file.name, file.bytes),
-          });
-        } catch (error) {
-          return json(
-            { error: describe(error, "The file could not be downloaded.") },
-            fileStatus(error),
-          );
-        }
-      }
-
-      if (url.pathname === "/files/read" && request.method === "POST") {
-        const body = (await request.json().catch(() => null)) as {
-          path?: unknown;
-        } | null;
-        try {
-          const { files } = await workspaces.for(botId);
-          return json(await files.read(String(body?.path ?? "")));
-        } catch (error) {
-          return json(
-            { error: describe(error, "The file could not be read.") },
-            fileStatus(error),
-          );
-        }
-      }
-
-      if (url.pathname === "/files/list" && request.method === "POST") {
-        const body = (await request.json().catch(() => null)) as {
-          path?: unknown;
-        } | null;
-        try {
-          const { files } = await workspaces.for(botId);
-          return json(
-            await files.list(
-              typeof body?.path === "string" ? body.path : undefined,
-            ),
-          );
-        } catch (error) {
-          return json(
-            { error: describe(error, "The folder could not be listed.") },
-            fileStatus(error),
-          );
-        }
+      if (url.pathname.startsWith("/files/")) {
+        const fileResponse = await handleFileRequest(
+          request,
+          url,
+          async () => (await workspaces.for(botId)).files,
+        );
+        if (fileResponse) return fileResponse;
       }
 
       /*
@@ -1849,30 +1951,6 @@ serve<StreamData & TerminalSocketData>({
           return json(
             { error: describe(error, "The command could not be run.") },
             500,
-          );
-        }
-      }
-
-      if (url.pathname === "/files/write" && request.method === "POST") {
-        const body = (await request.json().catch(() => null)) as {
-          path?: unknown;
-          contents?: unknown;
-          append?: unknown;
-        } | null;
-        if (typeof body?.contents !== "string") {
-          return json({ error: "The contents to write are required." }, 400);
-        }
-        try {
-          const { files } = await workspaces.for(botId);
-          return json(
-            await files.write(String(body?.path ?? ""), body.contents, {
-              append: body.append === true,
-            }),
-          );
-        } catch (error) {
-          return json(
-            { error: describe(error, "The file could not be written.") },
-            fileStatus(error),
           );
         }
       }
@@ -1947,16 +2025,32 @@ serve<StreamData & TerminalSocketData>({
           session.control.assertBotMayAct(true);
           watched = target;
           target.on("console", listen);
-          const detail = await performAction(
-            session,
-            target,
-            url.pathname,
-            body,
-            // The caller going away is the stop signal: the surface aborts its request, the server
-            // aborts the one it made to this computer, and Bun aborts this one in turn.
-            request.signal,
-          );
-          return json({ ...detail, elapsedMs: Date.now() - startedAt });
+          const run = () =>
+            performAction(
+              session,
+              target,
+              url.pathname,
+              body,
+              // The caller going away is the stop signal: the surface aborts its request, the server
+              // aborts the one it made to this computer, and Bun aborts this one in turn.
+              request.signal,
+            );
+          const action = browserDownloads
+            ? await browserDownloads.capture({
+                botId,
+                page: target,
+                kind: "gesture",
+                signal: request.signal,
+                run,
+              })
+            : { result: await run() };
+          return json({
+            ...("result" in action ? action.result : {}),
+            ...("browserDownload" in action
+              ? { browserDownload: action.browserDownload }
+              : {}),
+            elapsedMs: Date.now() - startedAt,
+          });
         } catch (error) {
           /*
            * Stopped, not failed. The signal is checked rather than the error text: Playwright words an
@@ -2051,29 +2145,36 @@ type ActionBody = {
   submit?: unknown;
 };
 
-const ACTIONS = new Set(["/click", "/type", "/key", "/scroll"]);
+const ACTIONS = new Set(browserGesturePaths);
 
 /**
  * What the Bot does to its browser, one at a time (browser-turns.ts). A snapshot is here because it stamps the page and
  * moves the snapshot on, so an action must not resolve a ref while one is being taken.
  */
 const HOLDS_THE_BROWSER = new Set([
-  "/navigate",
-  ...ACTIONS,
+  ...botBrowserActionPaths,
+  "/human/browser-upload",
   "/snapshot",
-  "/sign-in/fill",
-  "/sign-in/code",
 ]);
 
 /** A look at the page: after what was sent before it, beside what is sent after it. */
-const WAITS_FOR_THE_BROWSER = new Set(["/screenshot", "/read"]);
+const WAITS_FOR_THE_BROWSER = new Set(browserObservationPaths);
 
-const HUMAN_INPUT = new Set([
-  "/human/click",
-  "/human/type",
-  "/human/key",
-  "/human/scroll",
-]);
+function browserOnlyPath(path: string): boolean {
+  return (
+    personMayUse(path) ||
+    isBotBrowserPath(path) ||
+    (browserDownloads !== undefined &&
+      (path === "/browser-downloads" ||
+        path.startsWith("/browser-downloads/"))) ||
+    HOLDS_THE_BROWSER.has(path) ||
+    WAITS_FOR_THE_BROWSER.has(path) ||
+    HUMAN_INPUT.has(path) ||
+    browserControlPaths.includes(path)
+  );
+}
+
+const HUMAN_INPUT = new Set(humanBrowserInputPaths);
 
 /**
  * Carry out one thing a person did with their mouse or keyboard.
@@ -2237,23 +2338,6 @@ async function performAction(
 
 function describe(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-/**
- * Which status a file failure deserves.
- *
- * A path outside the workspace is the caller asking for something it may never have, so 403: retrying
- * it unchanged will never work, and it is not a fault. A missing download is 404, an oversized
- * download is 413, and an ordinary bad file request is 400, because a different request could
- * succeed. Collapsing these into 500 would tell the caller the computer is broken and invite a retry
- * of the same request.
- */
-function fileStatus(error: unknown): 400 | 403 | 404 | 413 | 500 {
-  if (error instanceof WorkspacePathError) return 403;
-  if (error instanceof WorkspaceFileTooLargeError) return 413;
-  if (error instanceof WorkspaceFileNotFoundError) return 404;
-  if (error instanceof WorkspaceFileError) return 400;
-  return 500;
 }
 
 console.info(`agent-computer listening on http://127.0.0.1:${PORT}`);

@@ -249,6 +249,8 @@ export function PersonalCloud({
       online.current = true;
       if (foreground.current) resume();
     };
+    window.addEventListener("pagehide", background);
+    window.addEventListener("pageshow", resume);
     window.addEventListener("blur", background);
     window.addEventListener("focus", resume);
     window.addEventListener("offline", disconnected);
@@ -256,6 +258,8 @@ export function PersonalCloud({
     document.addEventListener("visibilitychange", visibility);
     return () => {
       generation.current++;
+      window.removeEventListener("pagehide", background);
+      window.removeEventListener("pageshow", resume);
       window.removeEventListener("blur", background);
       window.removeEventListener("focus", resume);
       window.removeEventListener("offline", disconnected);

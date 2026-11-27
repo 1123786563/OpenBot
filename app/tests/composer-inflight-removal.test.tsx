@@ -9,6 +9,7 @@ import {
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Composer } from "@/components/channels/composer/composer";
+import { isDisabled } from "./control-state";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -185,9 +186,7 @@ test("an upload nobody removed keeps its row", async () => {
   // against a composer that had not yet reconciled anything. `canSendDraft` refuses a draft
   // carrying an upload in flight, so a live Send is an upload that has been answered.
   await waitFor(() =>
-    expect(
-      (view.getByLabelText("Send message") as HTMLButtonElement).disabled,
-    ).toBe(false),
+    expect(isDisabled(view.getByLabelText("Send message"))).toBe(false),
   );
 
   expect(deletes).toEqual([]);
@@ -225,9 +224,7 @@ test("a message that was sent keeps the rows it carried", async () => {
   // `canSendDraft` refuses a draft carrying an upload in flight, so a live Send is an upload that
   // has been answered — and a submit fired before that would be a no-op.
   await waitFor(() =>
-    expect(
-      (view.getByLabelText("Send message") as HTMLButtonElement).disabled,
-    ).toBe(false),
+    expect(isDisabled(view.getByLabelText("Send message"))).toBe(false),
   );
 
   fireEvent.submit(form);
@@ -268,9 +265,7 @@ test("a parked message keeps the rows it is carrying", async () => {
   );
   releaseUploads();
   await waitFor(() =>
-    expect(
-      (view.getByLabelText("Queue message") as HTMLButtonElement).disabled,
-    ).toBe(false),
+    expect(isDisabled(view.getByLabelText("Queue message"))).toBe(false),
   );
 
   fireEvent.submit(form);

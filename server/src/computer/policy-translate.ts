@@ -51,6 +51,7 @@ export const COMPUTER_TOOLS: { tool: string; intent: Intent; key?: string }[] =
     { tool: "computer_key", intent: "activate", key: "Space" },
     { tool: "computer_scroll", intent: "read" },
     { tool: "computer_read_file", intent: "read_file" },
+    { tool: "computer_upload_browser_file", intent: "upload_file" },
     { tool: "computer_download_file", intent: "download_file" },
     { tool: "computer_write_file", intent: "write_file" },
     { tool: "computer_list_files", intent: "list_files" },
@@ -65,6 +66,8 @@ const INTENTS: Record<Intent, string> = {
   navigate: "opening a page: computer_navigate",
   read: "scrolling the page: computer_scroll",
   read_file: "reading a file in the Bot's workspace: computer_read_file",
+  upload_file:
+    "uploading a workspace file to a site: computer_upload_browser_file",
   download_file: "downloading a file: computer_download_file",
   write_file: "saving a file in the Bot's workspace: computer_write_file",
   list_files: "listing the Bot's workspace: computer_list_files",

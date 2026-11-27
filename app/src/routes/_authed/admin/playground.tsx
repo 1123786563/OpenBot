@@ -8,6 +8,7 @@ import { useId, useRef, useState } from "react";
 import "@/components/astryx-pilot/capability-surface.css";
 import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
 import { astryxScope } from "@/components/astryx-pilot/theme";
+import { SandboxHost } from "@/components/gallery/sandbox-host";
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import {
@@ -464,19 +465,8 @@ function PlaygroundPage() {
         </fieldset>
 
         <div className="space-y-4">
-          <section
-            aria-labelledby="playground-preview"
-            className="astryx-playground-preview min-w-0 rounded-lg border p-4"
-          >
-            <header className="flex flex-wrap items-center justify-between gap-2">
-              <h2
-                className="text-sm font-medium"
-                id="playground-preview"
-                ref={previewHeading}
-                tabIndex={-1}
-              >
-                Preview
-              </h2>
+          <SandboxHost
+            action={
               <Button
                 className="confirmation-action"
                 onClick={() => editorHeading.current?.focus()}
@@ -486,33 +476,41 @@ function PlaygroundPage() {
               >
                 Back to editor
               </Button>
-            </header>
-            {sample === null ? (
-              <p className="text-sm text-destructive">
-                {validation.ok
-                  ? "The sample arguments aren't available."
-                  : (validation.fields.sampleArguments ??
-                    "Fix the JSON fields before previewing.")}
-              </p>
-            ) : (
-              <OpenGenerativeUIActivityRenderer
-                activityType="open-generative-ui"
-                agent={null}
-                content={{
-                  css: draft.css,
-                  cssComplete: true,
-                  html: [draft.html],
-                  htmlComplete: true,
-                  // Provide sample args in the same sandbox evaluation as the component code.
-                  jsFunctions: `window.__args = ${JSON.stringify(sample)};\n${draft.jsFunctions}`,
-                  jsFunctionsComplete: true,
-                  generating: false,
-                }}
-                key={`${draft.html}${draft.css}${draft.jsFunctions}${draft.sampleArguments}`}
-                message={null}
-              />
-            )}
-          </section>
+            }
+            headingLevel={2}
+            ref={previewHeading}
+            status={
+              sample === null
+                ? {
+                    kind: "error",
+                    message: "This preview can't be drawn.",
+                    description: validation.ok
+                      ? "The sample arguments aren't available."
+                      : (validation.fields.sampleArguments ??
+                        "Fix the JSON fields before previewing."),
+                  }
+                : undefined
+            }
+            tabIndex={-1}
+            title="Preview"
+          >
+            <OpenGenerativeUIActivityRenderer
+              activityType="open-generative-ui"
+              agent={null}
+              content={{
+                css: draft.css,
+                cssComplete: true,
+                html: [draft.html],
+                htmlComplete: true,
+                // Provide sample args in the same sandbox evaluation as the component code.
+                jsFunctions: `window.__args = ${JSON.stringify(sample)};\n${draft.jsFunctions}`,
+                jsFunctionsComplete: true,
+                generating: false,
+              }}
+              key={`${draft.html}${draft.css}${draft.jsFunctions}${draft.sampleArguments}`}
+              message={null}
+            />
+          </SandboxHost>
 
           <div className="rounded-lg border border-border bg-card">
             <h2

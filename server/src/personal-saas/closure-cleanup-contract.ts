@@ -31,14 +31,53 @@ export const closureTombstone = z.strictObject({
     .transform((value) => new Date(value)),
 });
 
+export const agenticStorageLocator = z.object({
+  fileSystemId: z.string().min(1),
+  agenticSpaceId: z.string().min(1),
+  accessPointId: z.string().min(1),
+});
+export type AgenticStorageLocator = z.output<typeof agenticStorageLocator>;
+
+export const closureStorageRecovery = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("unknown") }),
+  z.strictObject({ kind: z.literal("none") }),
+  z.strictObject({
+    kind: z.literal("agenticfs"),
+    ...agenticStorageLocator.shape,
+    released: z.boolean(),
+  }),
+]);
+export type ClosureStorageRecovery = z.output<typeof closureStorageRecovery>;
+export type AgenticStorageRecovery = Extract<
+  ClosureStorageRecovery,
+  { kind: "agenticfs" }
+>;
+
+const recoveryOperation = closureTombstone.extend({
+  intelligence: z.array(intelligenceLocator),
+});
+
 export const closureRestoreJournal = z
-  .strictObject({
-    version: z.literal(2),
-    operations: z.array(
-      closureTombstone.extend({ intelligence: z.array(intelligenceLocator) }),
-    ),
-  })
-  .transform(({ operations }) => operations);
+  .discriminatedUnion("version", [
+    z.strictObject({
+      version: z.literal(2),
+      operations: z.array(recoveryOperation),
+    }),
+    z.strictObject({
+      version: z.literal(3),
+      operations: z.array(
+        recoveryOperation.extend({ storage: closureStorageRecovery }),
+      ),
+    }),
+  ])
+  .transform((journal) =>
+    journal.version === 3
+      ? journal.operations
+      : journal.operations.map((record) => ({
+          ...record,
+          storage: { kind: "unknown" } satisfies ClosureStorageRecovery,
+        })),
+  );
 
 export const backupSchedule = z
   .array(

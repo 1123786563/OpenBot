@@ -9,6 +9,7 @@ import {
   fireEvent,
   render,
   waitFor,
+  within,
 } from "@testing-library/react";
 import {
   ChatTranscript,
@@ -221,7 +222,9 @@ test("a turn that is only an attachment is still waited on", () => {
     { busy: true },
   );
 
-  expect(getByRole("status").textContent).toBe("Thinking");
+  expect(within(getByRole("log")).getByRole("status").textContent).toBe(
+    "Thinking",
+  );
 });
 
 test("a turn that is only an attachment anchors the scroller on itself", () => {
@@ -997,13 +1000,15 @@ test("a goal's turn is drawn as a compact line with the model's message behind D
   const instruction = "Summarise the front page.";
   const raw = `${frameFiring(instruction)}\n\nSuccess criteria: Posted.\nProgress so far: No progress recorded yet.\nTrigger: manual/requested\nEvent data:\n{}\n\nRecord meaningful progress with report_responsibility_progress for responsibility 0b6c1a52-8d7e-4f0a-9b1f-3c2d1e0f9a8b.`;
   const message: UserMessage = { id: "firing-1", role: "user", content: raw };
-  const { container, getByText } = renderTranscript([message]);
+  const { container, getByRole, getByText } = renderTranscript([message]);
   await settleReactWork();
 
   expect(getByText("Worked on a goal.")).toBeTruthy();
   expect(getByText(instruction)).toBeTruthy();
   expect(container.textContent).toContain("Trigger: manual");
-  const details = container.querySelector("details");
-  expect(details?.open).toBe(false);
-  expect(details?.textContent).toContain("Success criteria: Posted.");
+  const details = getByRole("button", { name: "Details" });
+  expect(details.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(details);
+  expect(details.getAttribute("aria-expanded")).toBe("true");
+  expect(getByText(/Success criteria: Posted\./)).toBeTruthy();
 });
