@@ -66,6 +66,12 @@ receivers:
       field: attributes.cri_tag
       value: F
       on_error: drop_quiet
+    # Docker's log directory holds every container on the host, so a line that is not an OpenBot
+    # record says nothing about OpenBot. The transform keeps structured records and drops the rest.
+    - type: add
+      field: attributes.docker_source
+      value: docker
+      on_error: drop_quiet
   otlp/audit:
     protocols:
       http:
@@ -78,7 +84,7 @@ processors:
     log_statements:
     - error_mode: silent
       statements:
-      - keep_keys(log.attributes, ["cri_stream"])
+      - keep_keys(log.attributes, ["cri_stream", "docker_source"])
       - merge_maps(log.attributes, ParseJSON(log.body), "insert") where IsString(log.body)
     # A claimed OpenBot envelope must pass the structured-record filter.
     - conditions:
@@ -202,7 +208,7 @@ processors:
         "severity", "service", "component", "event_category", "legacy_event", "diagnostic", "outcome", "operation",
         "error_category"]) where log.attributes["event_category"] == "legacy_unstructured"
     - conditions:
-      - log.attributes["cri_stream"] != nil
+      - log.attributes["cri_stream"] != nil and log.attributes["docker_source"] != "docker"
       statements:
       - keep_keys(log.attributes, ["cri_stream"])
       - set(log.body, "openbot_runtime")
