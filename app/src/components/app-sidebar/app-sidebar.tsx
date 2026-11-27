@@ -3,6 +3,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import {
+  IconBolt,
   IconBook,
   IconBrain,
   IconLogout,
@@ -40,6 +41,7 @@ import {
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -66,7 +68,7 @@ import { BotsNavBadge } from "../bot-profile/attention";
 import { BrowserNavItem } from "../browser/browser-nav-item";
 import { navigationRender } from "../edition/team-features-dialog";
 import { OpenBotVersion } from "../layout/openbot-version";
-import { Button } from "../ui/button";
+import { Button, buttonVariants } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
 import { ChannelPagination } from "./channel-pagination";
@@ -228,6 +230,21 @@ function ChannelRow({
   );
 }
 
+type WorkspacePane = "chats" | "bots";
+
+function paneFor(pathname: string): WorkspacePane | null {
+  if (pathname.startsWith("/bots/") && pathname !== "/bots/") return "bots";
+  if (
+    pathname === "/" ||
+    pathname === "/bot" ||
+    pathname.startsWith("/channel/") ||
+    pathname.startsWith("/group/") ||
+    pathname.startsWith("/start/")
+  )
+    return "chats";
+  return null;
+}
+
 export function AppSidebar({
   navId,
   returnFocus,
@@ -255,26 +272,25 @@ export function AppSidebar({
    */
   const animateOrder =
     !searching && (channels.data?.length ?? 0) <= MAX_ANIMATED_ROWS;
-  const { isMobile } = useSidebar();
-  const pane = useRouterState({
-    select: ({ location: { pathname } }) => {
-      if (pathname.startsWith("/bots/") && pathname !== "/bots/") return "bots";
-      if (
-        pathname === "/" ||
-        pathname === "/bot" ||
-        pathname.startsWith("/channel/") ||
-        pathname.startsWith("/group/") ||
-        pathname.startsWith("/start/")
-      )
-        return "chats";
-      return null;
-    },
+  const { isMobile, setOpen } = useSidebar();
+  const pathname = useRouterState({
+    select: ({ location }) => location.pathname,
   });
+  const [selection, setSelection] = useState<{
+    pathname: string;
+    pane: WorkspacePane;
+  }>();
+  const pane =
+    selection?.pathname === pathname ? selection.pane : paneFor(pathname);
+  const selectPane = (next: WorkspacePane) => {
+    setSelection({ pathname, pane: next });
+    if (!isMobile) setOpen(true);
+  };
 
   return (
     <>
       {!isMobile ? (
-        <WorkspaceNavigation inChat={pane === "chats"}>
+        <WorkspaceNavigation pane={pane} selectPane={selectPane}>
           {pane ? desktopToggle : null}
         </WorkspaceNavigation>
       ) : null}
@@ -299,9 +315,11 @@ export function AppSidebar({
             : {})}
           {...props}
         >
-          {isMobile ? <WorkspaceNavigation inChat={pane === "chats"} /> : null}
+          {isMobile ? (
+            <WorkspaceNavigation pane={pane} selectPane={selectPane} />
+          ) : null}
           {pane === "bots" ? (
-            <BotRosterPane />
+            <BotRosterPane channels={channels.data ?? []} emphasis={emphasis} />
           ) : pane === "chats" ? (
             <>
               <SidebarHeader className="px-2 pb-1 pt-2">
@@ -419,11 +437,28 @@ export function AppSidebar({
   );
 }
 
-function BotRosterPane() {
+function BotRosterPane({
+  channels,
+  emphasis,
+}: {
+  channels: ChannelSummary[];
+  emphasis: MessageListEmphasis;
+}) {
   const { t } = useTranslation();
   const { data: agents } = useQuery(agentListQueryOptions());
   const [search, setSearch] = useState("");
   const needle = search.trim().toLocaleLowerCase();
+  const conversations = new Map<string, ChannelSummary[]>();
+  for (const channel of pinnedFirst(channels)) {
+    const [agentId] = channel.agentIds;
+    if (!agentId || channel.agentIds.length !== 1) continue;
+    const recent = conversations.get(agentId) ?? [];
+    if (recent.length < 3) {
+      recent.push(channel);
+      conversations.set(agentId, recent);
+    }
+  }
+
   return (
     <>
       <SidebarHeader className="px-2 pb-1 pt-2">
@@ -476,19 +511,54 @@ function BotRosterPane() {
                     {agent.name}
                   </Text>
                 </SidebarMenuButton>
+                <SidebarMenuAction
+                  aria-label={t(
+                    "nav.newConversationWith",
+                    "New conversation with {bot}",
+                    { bot: agent.name },
+                  )}
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/channel/new"
+                      search={{ agent: agent.id }}
+                    />
+                  )}
+                >
+                  <IconMessageCirclePlus />
+                </SidebarMenuAction>
+                {conversations.has(agent.id) ? (
+                  <SidebarMenu className="ps-3">
+                    {conversations.get(agent.id)?.map((channel) => (
+                      <ChannelRow
+                        key={channel.id}
+                        channel={channel}
+                        emphasis={emphasis}
+                        animateOrder={false}
+                      />
+                    ))}
+                  </SidebarMenu>
+                ) : null}
               </SidebarMenuItem>
             ))}
         </SidebarMenu>
       </SidebarContent>
+      <SidebarFooter>
+        <Link className={buttonVariants({ variant: "ghost" })} to="/bots">
+          {t("nav.allBots", "All Bots")}
+        </Link>
+      </SidebarFooter>
     </>
   );
 }
 
 function WorkspaceNavigation({
-  inChat,
+  pane,
+  selectPane,
   children,
 }: {
-  inChat: boolean;
+  pane: WorkspacePane | null;
+  selectPane: (pane: WorkspacePane) => void;
   children?: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -519,10 +589,9 @@ function WorkspaceNavigation({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              isActive={inChat}
-              render={(props) => (
-                <Link {...props} to="/" activeOptions={{ exact: true }} />
-              )}
+              aria-pressed={pane === "chats"}
+              isActive={pane === "chats"}
+              onClick={() => selectPane("chats")}
             >
               <IconMessages aria-hidden />
               <Text type="label" color="inherit">
@@ -530,9 +599,23 @@ function WorkspaceNavigation({
               </Text>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-label={t("nav.bots", "Bots")}
+              aria-pressed={pane === "bots"}
+              isActive={pane === "bots"}
+              onClick={() => selectPane("bots")}
+            >
+              <IconBolt aria-hidden />
+              <Text type="label" color="inherit">
+                {t("nav.bots", "Bots")}
+              </Text>
+              <BotsNavBadge />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           {navigation
             .filter(isNavigationLink)
-            .filter((item) => item.section === "primary")
+            .filter((item) => item.section === "primary" && item.id !== "bots")
             .map((item) =>
               item.id === "capabilities"
                 ? {
@@ -562,8 +645,6 @@ function WorkspaceNavigation({
                         ? t("nav.skills", "Skills")
                         : t(item.messageId, item.label)}
                   </Text>
-                  {/* What waits on you across every Bot; Bots lists them first. */}
-                  {item.id === "bots" ? <BotsNavBadge /> : null}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}

@@ -157,7 +157,7 @@ function renderSidebar(
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return { view, user: userEvent.setup({ document }) };
+  return { router, view, user: userEvent.setup({ document }) };
 }
 
 /** Label and address of every link in `root`, in document order. */
@@ -193,8 +193,6 @@ test.each(["user", "admin"] as const)(
         to,
       })),
     ).toEqual([
-      { label: "Chats", to: "/" },
-      { label: "Bots", to: "/bots" },
       { label: "Routines", to: "/routines" },
       { label: "Goals", to: "/responsibilities?view=goals" },
       { label: "Skills", to: "/capabilities/skills" },
@@ -212,7 +210,9 @@ test.each(["user", "admin"] as const)(
     const badge = within(workspace).getByRole("img", {
       name: "1 thing needs you",
     });
-    expect(badge.closest("a")?.getAttribute("href")).toBe("/bots");
+    expect(
+      within(workspace).getByRole("button", { name: "Bots" }).contains(badge),
+    ).toBe(true);
 
     await user.click(view.getByRole("button", { name: /Maya Chen/ }));
     const menu = await view.findByRole("menu");
@@ -226,6 +226,26 @@ test.each(["user", "admin"] as const)(
     expect(links(menu)).toEqual(expectedAccount(role));
   },
 );
+
+test("Chats and Bots switch the sidebar while keeping the current route", async () => {
+  const { router, view, user } = renderSidebar("user");
+  const workspace = await view.findByRole("navigation", { name: "Workspace" });
+  const chats = within(workspace).getByRole("button", { name: "Chats" });
+  const bots = within(workspace).getByRole("button", { name: "Bots" });
+  expect(chats.getAttribute("aria-pressed")).toBe("true");
+  await user.click(bots);
+  expect(bots.getAttribute("aria-pressed")).toBe("true");
+  expect(view.getByRole("textbox", { name: "Search Bots" })).toBeTruthy();
+  expect(
+    view.getByRole("link", { name: "All Bots" }).getAttribute("href"),
+  ).toBe("/bots");
+  expect(router.state.location.pathname).toBe("/");
+  await user.click(chats);
+  expect(
+    view.getByRole("textbox", { name: "Search conversations" }),
+  ).toBeTruthy();
+  expect(router.state.location.pathname).toBe("/");
+});
 
 test("the workspace rail shows the server version below the account control", async () => {
   const { view } = renderSidebar("user", "team", { version: "v0.3.1" });
@@ -378,8 +398,6 @@ test("the sidebar rail speaks the language and keeps the pane's state", async ()
  * address, its order or who may see it when the language changed fails here.
  */
 const TEAM_PRIMARY = [
-  ["聊天", "/"],
-  ["Bot", "/bots"],
   ["例行任务", "/routines"],
   ["目标", "/responsibilities?view=goals"],
   ["技能", "/capabilities/skills"],
@@ -388,8 +406,6 @@ const TEAM_PRIMARY = [
   ["记忆", "/capabilities/memory"],
 ] as const;
 const PERSONAL_PRIMARY = [
-  ["聊天", "/"],
-  ["Bot", "/bots"],
   ["例行任务", "/routines"],
   ["目标", "/responsibilities?view=goals"],
   ["应用", "/connections"],

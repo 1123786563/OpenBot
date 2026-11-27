@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { PageShell } from "@/components/layout/page-shell";
 import { NewRoutineButton } from "@/components/routines/new-routine-button";
+import { CheckInsSection } from "@/components/settings/check-ins";
 import { RoutinesList } from "@/components/routines/routines-list";
 
 declare module "@tanstack/react-router" {
@@ -41,7 +42,7 @@ function RoutinesPage() {
     <AstryxSurface className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <PageShell
         action={<NewRoutineButton />}
-        description="Bots do work for you on a schedule and post what they did. Set one up here, or ask a Bot something like “every weekday at 9, send me…”."
+        description="Schedule work, track a goal, or let your Bots check in when something needs you. Set up a routine here or ask a Bot in a conversation."
         headingRef={heading}
         title="Routines"
       >
@@ -57,6 +58,7 @@ function RoutinesPage() {
           View Bot tasks
         </Link>
         <RoutinesList hasCreateAction searchable />
+        <CheckInsSection compact />
       </PageShell>
     </AstryxSurface>
   );

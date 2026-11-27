@@ -1,9 +1,16 @@
-import { IconDots, IconListSearch, IconPlus } from "@tabler/icons-react";
+import {
+  IconChalkboardTeacher,
+  IconChevronRight,
+  IconDots,
+  IconListSearch,
+  IconPlus,
+} from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { DraftLeaveConfirmation } from "@/components/admin/controls/draft-leave-confirmation";
+import { TEACH_A_BOT } from "@/components/browser/browser-nav-item";
 import { CapabilitiesShell } from "@/components/capabilities/capabilities-shell";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
@@ -11,6 +18,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { RowMark } from "@/components/layout/row-mark";
 import { ReadError } from "@/components/layout/read-status";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
@@ -38,6 +46,8 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { browserStateQueryOptions } from "@/lib/browser/queries";
+import { canKeepCachedRead } from "@/lib/client";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   removeSkillMutationOptions,
@@ -146,6 +156,8 @@ function SkillsPage() {
     refetch: refetchSkills,
   } = useQuery(pluginsPageQueryOptions());
   const profile = useQuery(currentUserQueryOptions());
+  const browser = useQuery(browserStateQueryOptions());
+  const canTeach = browser.data?.available && canKeepCachedRead(browser.error);
   const me = profile.data;
   /*
    * Both, because `mine` is the intersection of the two: until the person is known, nothing matches
@@ -198,6 +210,26 @@ function SkillsPage() {
     >
       <CapabilitiesShell>
         {confirmation}
+        {canTeach ? (
+          <PageSection title={TEACH_A_BOT}>
+            <PageRows>
+              <Item size="sm" render={<Link to="/browser" />}>
+                <RowMark>
+                  <IconChalkboardTeacher aria-hidden />
+                </RowMark>
+                <ItemContent>
+                  <ItemTitle>Record a task</ItemTitle>
+                  <ItemDescription>
+                    Show a Bot how you do a task in your browser.
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <IconChevronRight aria-hidden className="size-4" />
+                </ItemActions>
+              </Item>
+            </PageRows>
+          </PageSection>
+        ) : null}
 
         <PageSection
           action={

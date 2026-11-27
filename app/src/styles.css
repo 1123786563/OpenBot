@@ -705,6 +705,17 @@ button.quick-chat-touch-target {
     white-space: normal;
   }
 
+  .astryx-workspace-links [data-sidebar="menu-button"][data-active]::before {
+    position: absolute;
+    inset-block-start: --spacing(3);
+    inset-inline-start: 0;
+    inline-size: --spacing(0.5);
+    block-size: --spacing(5);
+    border-radius: var(--radius-full);
+    background: var(--foreground);
+    content: "";
+  }
+
   .astryx-workspace-links [data-sidebar="menu-button"] svg {
     inline-size: --spacing(5);
     block-size: --spacing(5);

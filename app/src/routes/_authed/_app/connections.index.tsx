@@ -14,6 +14,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
+import { AddCustomMcp } from "@/components/connections/add-custom-mcp";
 import {
   ConnectionAction,
   ConnectionPage,
@@ -46,6 +47,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { useConnectApp } from "@/lib/connections/connect-app";
 import {
   type CorsairIntegration,
@@ -258,6 +260,7 @@ const markFor = (key: string) => keyedLookup(MARKS, key);
 const LOADING_ROWS = ["a", "b", "c", "d"];
 
 function RouteComponent() {
+  const { data: user } = useQuery(currentUserQueryOptions());
   const { connected: outcome, authorized, linked } = Route.useSearch();
   /*
    * ALL THREE READ ONCE HERE, AND ALL THREE DROPPED FROM THE URL BELOW — not just `?linked=`.
@@ -441,6 +444,7 @@ function RouteComponent() {
 
   return (
     <ConnectionPage
+      action={user?.role === "admin" ? <AddCustomMcp /> : undefined}
       className="@container"
       description={
         personal

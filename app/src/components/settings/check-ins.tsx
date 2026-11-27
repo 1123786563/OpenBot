@@ -32,7 +32,11 @@ import { queryClient } from "@/query-client";
  * When an admin turned check-ins off for this person, the switch is off and cannot be changed, and
  * says who turned it off. Their own choice is kept underneath for when the admin turns it back on.
  */
-export function CheckInsSection() {
+export function CheckInsSection({
+  compact = false,
+}: {
+  compact?: boolean;
+} = {}) {
   const preferences = useUserPreferences();
   const allowed = useQuery(proactiveAllowedQueryOptions());
   // Each Bot's own check-ins are on its Memory page, or on What it can do where there is no memory.
@@ -54,8 +58,12 @@ export function CheckInsSection() {
     save.mutate({ proactive: next ? "on" : "off" });
   return (
     <PageSection
-      description="Your Bots check the apps they can read and tell you when something needs you, at most once an hour. They never act without asking."
-      title="Check-ins"
+      description={
+        compact
+          ? undefined
+          : "Your Bots check the apps they can read and tell you when something needs you, at most once an hour. They never act without asking."
+      }
+      title={compact ? undefined : "Check-ins"}
     >
       {preferences.isPending ? (
         <div aria-busy="true" aria-label="Loading check-ins" role="status">
@@ -98,12 +106,16 @@ export function CheckInsSection() {
               <IconRadar />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>All your Bots</ItemTitle>
+              <ItemTitle>
+                {compact ? "Check-ins from all your Bots" : "All your Bots"}
+              </ItemTitle>
               <ItemDescription>
                 {byAdmin
                   ? "Turned off by your admin."
                   : on
-                    ? `On. Each Bot's own check-ins are on its ${botPage} page.`
+                    ? compact
+                      ? "On. Your Bots check what they can read and tell you when something needs you, at most once an hour."
+                      : `On. Each Bot's own check-ins are on its ${botPage} page.`
                     : "Off. None of your Bots check in for you."}
               </ItemDescription>
             </ItemContent>

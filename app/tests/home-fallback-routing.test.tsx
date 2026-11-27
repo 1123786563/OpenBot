@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, waitFor } from "@testing-library/react";
+import { cleanup, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { text } from "prompt-area/helpers";
 import {
@@ -8,6 +8,7 @@ import {
   draftSegments,
   readComposeDraft,
 } from "@/lib/channels/compose-draft";
+import { modelKeys, type ModelCatalogue } from "@/lib/models/queries";
 import { pluginKeys } from "@/lib/plugins/queries";
 import {
   agent,
@@ -81,6 +82,62 @@ test("/ starts the box with the words a link hands over, and sends them only whe
   const user = userEvent.setup({ document: view.container.ownerDocument });
   await user.click(await view.findByRole("button", { name: "Send message" }));
   await waitFor(() => expect(starts).toEqual([["own-public"]]));
+});
+
+test("Home sends the chosen model to a compatible routed conversation", async () => {
+  const bot = agent({
+    id: "managed",
+    name: "Managed Bot",
+    runsOnOpenBotModel: true,
+  });
+  const query = queryClientWithAgents([bot]);
+  query.setQueryData(modelKeys.catalogue, {
+    provider: "openai",
+    source: "gateway",
+    exposure: "allowed",
+    default: "default",
+    models: [
+      { id: "default", label: "Default model" },
+      { id: "fast", label: "Fast model" },
+    ],
+    choosable: true,
+  } satisfies ModelCatalogue);
+  const saves: unknown[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/route") return Response.json({ agentId: bot.id });
+      if (url === "/api/channels" && init?.method === "POST") {
+        return createdChannel(
+          "model-channel",
+          readChannelRequest(init).agentIds,
+        );
+      }
+      if (
+        url === "/api/channels/model-channel/model" &&
+        init?.method === "PUT"
+      ) {
+        const pick: unknown = JSON.parse(String(init.body));
+        saves.push(pick);
+        return Response.json(pick);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const view = renderHome(query);
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(
+    await view.findByRole("combobox", { name: "Model: Default model" }),
+  );
+  await user.click(
+    within(await view.findByRole("dialog")).getByRole("option", {
+      name: "Fast model",
+    }),
+  );
+  expect(saves).toEqual([]);
+  await submitHomeMessage(view, "Plan the week");
+  await waitFor(() => expect(saves).toEqual([{ model: "fast", effort: null }]));
 });
 
 test("Home restores an unsent draft without replacing a linked starter", async () => {

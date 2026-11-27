@@ -1,3 +1,4 @@
+import { Popover } from "@astryxdesign/core/Popover";
 import { Grid } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -6,7 +7,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { LinkProvider } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { VStack } from "@astryxdesign/core/VStack";
-import { IconArrowUpRight, IconFileText } from "@tabler/icons-react";
+import { IconArrowUpRight, IconCpu, IconFileText } from "@tabler/icons-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -15,11 +16,12 @@ import {
   segmentsToPlainText,
   text,
 } from "prompt-area/helpers";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { toDraft } from "@/components/channels/composer/draft";
+import { ModelPicker } from "@/components/channels/composer/model-picker";
 import { WorkingNow } from "@/components/channels/working-now";
 import { BusinessLink } from "@/components/edition/business-link";
 import { ReadStatus } from "@/components/layout/read-status";
@@ -38,6 +40,8 @@ import { useSubmitConversationStart } from "@/lib/channels/start";
 import { ClientError } from "@/lib/client";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { editionOf } from "@/lib/edition-guard";
+import { modelCatalogueQueryOptions } from "@/lib/models/queries";
+import { useDraftModel } from "@/lib/models/run-model";
 import { newId } from "@/lib/new-id";
 import { useAnyBotSkillCommands } from "@/lib/plugins/skill-commands";
 
@@ -59,8 +63,10 @@ export const Route = createFileRoute("/_authed/_app/")({
 function RouteComponent() {
   const navigate = Route.useNavigate();
   const currentDraft = useRef<Segment[]>([]);
+  const [mentionedBot, setMentionedBot] = useState<string | null>();
   const trackDraft = useCallback((segments: Segment[]) => {
     currentDraft.current = segments;
+    setMentionedBot(toDraft(segments).agentId);
   }, []);
   const { data: user } = useQuery(currentUserQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
@@ -79,6 +85,26 @@ function RouteComponent() {
     "message",
   );
   const savedStarts = user ? pendingStartsFor(user.id) : [];
+  // An automatically routed request can use a pick only when every candidate accepts it.
+  const canPickModel = (agentId?: string | null) =>
+    agentId
+      ? (agents?.some(
+          (agent) => agent.id === agentId && agent.runsOnOpenBotModel === true,
+        ) ?? false)
+      : Boolean(
+          agents?.length &&
+            agents.every((agent) => agent.runsOnOpenBotModel === true),
+        );
+  const pickable = canPickModel(mentionedBot);
+  const models = useQuery({
+    ...modelCatalogueQueryOptions(),
+    enabled: pickable,
+  });
+  const catalogue = pickable ? models.data : undefined;
+  const draftModel = useDraftModel(catalogue);
+  const defaultModel = catalogue?.models.find(
+    (model) => model.id === catalogue.default,
+  );
 
   /** Default recipient when the composer draft has no mention. */
   /*
@@ -124,6 +150,55 @@ function RouteComponent() {
               commands={skillCommands}
               className="astryx-home-composer w-full min-w-0"
               editorClassName="text-base"
+              modelPicker={
+                catalogue?.choosable && draftModel.value ? (
+                  <ModelPicker
+                    catalogue={catalogue}
+                    value={draftModel.value}
+                    onChange={draftModel.choose}
+                  />
+                ) : (
+                  <Popover
+                    label="Conversation model"
+                    placement="above"
+                    content={
+                      <VStack gap={2} maxWidth="16rem">
+                        <Text weight="semibold">
+                          {defaultModel?.label ?? "Automatic model"}
+                        </Text>
+                        <Text type="supporting">
+                          {!pickable
+                            ? "The receiving Bot determines the model. Use @ to choose a Bot that supports model selection."
+                            : models.isPending
+                              ? "Loading models…"
+                              : defaultModel
+                                ? "Only the default model is currently available."
+                                : "The model list is currently unavailable."}
+                        </Text>
+                        {pickable && !models.isPending ? (
+                          <Button
+                            label="Refresh models"
+                            size="sm"
+                            variant="ghost"
+                            type="button"
+                            isLoading={models.isFetching}
+                            onClick={() => void models.refetch()}
+                          />
+                        ) : null}
+                      </VStack>
+                    }
+                  >
+                    <Button
+                      label={`Model: ${defaultModel?.label ?? "Automatic"}`}
+                      icon={<IconCpu aria-hidden />}
+                      isIconOnly
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                    />
+                  </Popover>
+                )
+              }
               disabled={!fallback}
               {...(asked ? { initialValue: asked, autoFocus: true } : {})}
               onSubmit={(draft) =>
@@ -132,7 +207,7 @@ function RouteComponent() {
                   draft.agentId
                     ? { kind: "direct", agentId: draft.agentId }
                     : { kind: "route", fallbackId: fallback?.id },
-                  null,
+                  canPickModel(draft.agentId) ? draftModel.requested : null,
                   () => writeComposeDraft(messageKey),
                 )
               }
@@ -167,6 +242,15 @@ function RouteComponent() {
                     );
                     const message = segmentsToPlainText(draft);
                     writeComposeDraft(destination, [text(message)]);
+                    if (
+                      draftModel.requested &&
+                      addressedBot?.runsOnOpenBotModel
+                    ) {
+                      writeComposeDraft(
+                        composeDraftKey(user?.id, newConversation, "model"),
+                        draftModel.requested,
+                      );
+                    }
                     void navigate({
                       to: "/channel/new",
                       search: addressedBot ? { agent: addressedBot.id } : {},
@@ -222,6 +306,7 @@ function RouteComponent() {
                     isEmpty: false,
                   },
                   { kind: "direct", agentId: fallback.id },
+                  canPickModel(fallback.id) ? draftModel.requested : null,
                 );
               }}
             />

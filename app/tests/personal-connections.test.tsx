@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { authKeys } from "@/lib/auth/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { identityKeys } from "@/lib/identity/queries";
 import {
@@ -156,9 +157,23 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-function draw(edition: "team" | "personal", at = "/connections") {
+function draw(
+  edition: "team" | "personal",
+  at = "/connections",
+  role: "admin" | "user" = "user",
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+  });
+  client.setQueryData(authKeys.currentUser(), {
+    id: "connection-tester",
+    name: "Tester",
+    email: "tester@example.test",
+    role,
+    onboarding: null,
+  });
+  client.setQueryDefaults(authKeys.currentUser(), {
+    staleTime: Number.POSITIVE_INFINITY,
   });
   client.setQueryData(deploymentKeys.capabilities(), {
     generativeUi: true,
@@ -401,4 +416,29 @@ test("retrying a failed Connections read restores discovery in place", async () 
   ).toBeTruthy();
   expect(view.queryByText(/^Couldn't load your connections/)).toBeNull();
   expect(history.location.pathname).toBe("/connections");
+});
+
+test("an Apps administrator can register a custom MCP server from its form", async () => {
+  const { view, user } = draw("team", "/connections", "admin");
+  await user.click(await view.findByRole("button", { name: "Add custom MCP" }));
+  const dialog = await view.findByRole("dialog", { name: "Add custom MCP" });
+  await user.type(
+    within(dialog).getByRole("textbox", { name: /^Name/ }),
+    "Example MCP",
+  );
+  await user.type(
+    within(dialog).getByRole("textbox", { name: /^Server URL/ }),
+    "https://example.test/mcp",
+  );
+  await user.click(within(dialog).getByRole("button", { name: "Add server" }));
+  await waitFor(() =>
+    expect(view.queryByRole("dialog", { name: "Add custom MCP" })).toBeNull(),
+  );
+  expect(writes).toContain("POST /api/plugins/servers/custom");
+});
+
+test("Apps does not show MCP registration to workspace members", async () => {
+  const { view } = draw("team");
+  await view.findByRole("heading", { name: "Connections" });
+  expect(view.queryByRole("button", { name: "Add custom MCP" })).toBeNull();
 });
