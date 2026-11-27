@@ -1103,12 +1103,11 @@ const routineIntelligence = config.runtime.intelligence
       }),
     )
   : createIntelligenceClient();
-const approvalComputerTools = async (
-  ownerUserId: string,
+const computerToolsForActor = async (
+  actor: Awaited<ReturnType<typeof actorFor>>,
   agentId: string,
   initiator: AuditInitiator,
 ) => {
-  const actor = await actorFor(ownerUserId);
   const profile = await agentProfileStore.get(actor, agentId);
   if (!profile)
     throw new ApprovalRefusedError("That Bot is no longer available to you.");
@@ -1123,6 +1122,12 @@ const approvalComputerTools = async (
       })
     : [];
 };
+
+const approvalComputerTools = async (
+  ownerUserId: string,
+  agentId: string,
+  initiator: AuditInitiator,
+) => computerToolsForActor(await actorFor(ownerUserId), agentId, initiator);
 
 const approvalService = createServerApprovalService({
   storedApprovals,
@@ -2884,6 +2889,7 @@ const copilotRuntime = mountCopilotRuntime(
   {
     directChat: {
       database,
+      computerTools: computerToolsForActor,
       profiles: agentProfileStore,
       testCredit: directChatTestCredit && {
         ledger: testCreditLedger,
