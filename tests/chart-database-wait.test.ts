@@ -298,7 +298,7 @@ afterAll(async () => {
   } finally {
     await admin.close({ timeout: 5 });
   }
-});
+}, 30_000);
 
 /** The rendered init container, as the server Deployment of a vanilla install carries it. */
 function renderedWait(): Container {

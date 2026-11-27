@@ -48,6 +48,7 @@ async function throwawayDatabase(): Promise<string> {
   return url.href;
 }
 
+// Each scratch database drop waits for PostgreSQL storage cleanup.
 afterAll(async () => {
   const admin = postgres(administrative.href, { max: 1, onnotice: () => {} });
   try {
@@ -57,7 +58,7 @@ afterAll(async () => {
   } finally {
     await admin.end({ timeout: 5 });
   }
-}, 30_000);
+}, 120_000);
 
 type Entry = { tag: string; when: number; sql: string };
 
