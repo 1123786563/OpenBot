@@ -81,7 +81,8 @@ export const organizationStore: OrganizationStore = {
       ? localStorage.getItem(pickedOrganization(person))
       : SecureStore.getItemAsync(pickedOrganization(person)),
   write: async (person, id) => {
-    if (usesBrowserSession) localStorage.setItem(pickedOrganization(person), id);
+    if (usesBrowserSession)
+      localStorage.setItem(pickedOrganization(person), id);
     else await SecureStore.setItemAsync(pickedOrganization(person), id);
   },
 };

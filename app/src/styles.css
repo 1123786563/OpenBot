@@ -808,7 +808,9 @@
 }
 
 @media (width >= 48rem) and (height >= 42rem) {
-  .astryx-workspace-main .astryx-conversation-composer [data-slot="composer-input"] {
+  .astryx-workspace-main
+    .astryx-conversation-composer
+    [data-slot="composer-input"] {
     min-block-size: --spacing(13);
   }
 }
