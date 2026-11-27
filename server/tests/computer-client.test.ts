@@ -276,6 +276,18 @@ describe("computer client", () => {
  * Reported as a stale snapshot, not as computer unavailability. A model can recover by taking a
  * fresh snapshot.
  */
+test("a navigation timeout is not a missing element", async () => {
+  const client = clientWith(() =>
+    Response.json(
+      { error: "page.goto: Timeout 30000ms exceeded." },
+      { status: 502 },
+    ),
+  );
+  await expect(client.navigate("https://github.com/")).rejects.toBeInstanceOf(
+    ComputerUnavailableError,
+  );
+});
+
 describe("acting on an element that is not there", () => {
   const playwrightTimeout = {
     error:

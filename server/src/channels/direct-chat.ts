@@ -17,6 +17,10 @@ import { DIRECT_CHAT_REPLAY_HEADER } from "@openbot/shared/direct-chat-replay";
 import { answerMessageId } from "@openbot/shared/handoff-markers";
 import type { MarketSkillSnapshot } from "@openbot/toolkit/continuation";
 import {
+  type HeadlessTool,
+  HeadlessToolsMiddleware,
+} from "@openbot/toolkit/headless-tools";
+import {
   CONTEXT_REVOKED,
   CONTEXT_REVOKED_MESSAGE,
   createRunContext,
@@ -49,19 +53,19 @@ import {
   type ApprovalAction,
   parseApprovalContinuation,
 } from "../approvals/types";
-import type { AuditInitiator } from "../audit";
+import { type AuditInitiator, PERSON_INITIATOR } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { createRoleRepository } from "../auth/guards";
+import type { BackgroundModelWaiting } from "../billing/background-model";
 import {
   type DirectChatTestCredit,
   testCreditConfirmation,
 } from "../billing/direct-chat-test-credit";
-import type { BackgroundModelWaiting } from "../billing/background-model";
 import type { IdentifyActor } from "../copilot";
 import type { Database } from "../db/client";
 import {
-  approvalRequests,
   agents,
+  approvalRequests,
   channelAgents,
   channelMemberships,
   channels,
@@ -348,6 +352,11 @@ export function createDirectChatRoutes(deps: {
     text: string;
     conversationRunId: string;
   }) => Promise<unknown>;
+  computerTools?: (
+    actor: AgentActor,
+    agentId: string,
+    initiator: AuditInitiator,
+  ) => Promise<HeadlessTool[]>;
   agentFor: (
     actor: AgentActor,
     agentId: string,
@@ -2730,12 +2739,17 @@ export function createDirectChatRoutes(deps: {
             continuation,
           }).messages
         : seededMessages;
+      const initiator = background?.initiator ?? PERSON_INITIATOR;
+      const computerTools =
+        (await deps.computerTools?.(actor, agentId, initiator)) ?? [];
+      if (computerTools.length > 0)
+        agent.use(new HeadlessToolsMiddleware(computerTools, initiator));
       agent.setMessages(runMessages);
       const input = turnInput({
         ...key,
         messages: runMessages,
         state: continuation?.snapshot.state ?? {},
-        tools: [],
+        tools: computerTools,
         continuation,
         skill: background?.source === "group" ? background.skill : undefined,
       });

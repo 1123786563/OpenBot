@@ -522,7 +522,7 @@ function throwMappedError(
   if (status === 413) {
     throw new WorkspaceTooLargeError(detail);
   }
-  if (/waiting for locator|Timeout .* exceeded/i.test(detail)) {
+  if (/waiting for locator/i.test(detail)) {
     const ref = detail.match(/aria-ref=([A-Za-z0-9_-]+)/)?.[1];
     throw new ElementNotFoundError(
       `${ref ? `Element ${ref} is` : "That element is"} not on the page any more. Take a fresh snapshot and use the refs from it.`,

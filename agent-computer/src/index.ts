@@ -1855,7 +1855,11 @@ serve<StreamData & TerminalSocketData>({
           return json(
             {
               error:
-                error instanceof Error ? error.message : "Navigation failed.",
+                error instanceof Error && error.name === "TimeoutError"
+                  ? "The page did not become readable in time. Read the current page before retrying."
+                  : error instanceof Error
+                    ? error.message
+                    : "Navigation failed.",
             },
             502,
           );

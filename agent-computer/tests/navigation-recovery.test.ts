@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
-import type { Page } from "playwright";
 import { assertPageAccess, navigateWebPage } from "../src/navigation";
 
 function fixture() {
   let url = "https://example.com/";
   let failure = true;
   const visited: string[] = [];
-  const page: Pick<Page, "goto" | "url"> = {
+  const page: Parameters<typeof navigateWebPage>[0] = {
     url: () => url,
+    waitForFunction: async () => ({ dispose: async () => {} }),
     async goto(target) {
       visited.push(target);
       if (failure) {
@@ -57,8 +57,9 @@ test("navigation never accepts file/chrome targets or returns a nonweb redirect 
     ).rejects.toThrow();
   }
   expect(visited).toHaveLength(0);
-  const redirected: Pick<Page, "goto" | "url"> = {
+  const redirected: Parameters<typeof navigateWebPage>[0] = {
     goto: async () => null,
+    waitForFunction: fixture().page.waitForFunction,
     url: () => "file:///private/secret",
   };
   await expect(
@@ -70,4 +71,29 @@ test("navigation never accepts file/chrome targets or returns a nonweb redirect 
     ),
   ).rejects.toThrow(/only web pages/);
   expect(() => assertPageAccess("local-chrome", "about:blank")).not.toThrow();
+});
+
+test("navigation waits for a readable document after the new page commits", async () => {
+  const events: string[] = [];
+  const page: Parameters<typeof navigateWebPage>[0] = {
+    url: () => "https://example.com/",
+    async goto(_, options) {
+      expect(options?.waitUntil).toBe("commit");
+      events.push("committed");
+      return null;
+    },
+    async waitForFunction(_, __, options) {
+      expect(options.timeout).toBeGreaterThan(0);
+      expect(options.timeout).toBeLessThanOrEqual(1000);
+      events.push("readable");
+      return {
+        async dispose() {
+          events.push("disposed");
+        },
+      };
+    },
+  };
+
+  await navigateWebPage(page, "https://example.com/", "local-chrome", 1000);
+  expect(events).toEqual(["committed", "readable", "disposed"]);
 });
