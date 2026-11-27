@@ -21,7 +21,6 @@
 | `/worker` | 后台 Worker |
 | `/flexprice` | Flexprice |
 | `/temporal` | Temporal |
-| `/openobserve` | 日志服务管理凭据 |
 
 API、Worker 启动时读取配置；在 Infisical 保存修改后，在应用节点执行 `docker compose -f /opt/persaas/apps.yml up -d --force-recreate openbot worker`。读取失败时进程退出，不使用旧配置启动。
 
@@ -34,7 +33,9 @@ bash sync-config.sh
 docker compose -f data.yml up -d --force-recreate flexprice temporal
 ```
 
-四个机器身份只有项目读取权限，但可读取该项目内其他目录；不要把无关项目的密钥放入此项目。引导文件 `infisical-*.env` 包含机器身份凭据，仅 root 可读。Infisical 自身的数据库、Redis DB0、加密密钥保存在 1Panel 应用配置中，避免启动循环依赖。旧 `server.env` 等文件仅为恢复快照，修改它们不会更新正在运行的应用。OpenObserve 管理凭据在配置中心留存，其运行配置仍由 1Panel 管理。
+四个机器身份只有项目读取权限，但可读取该项目内其他目录；不要把无关项目的密钥放入此项目。引导文件 `infisical-*.env` 包含机器身份凭据，仅 root 可读。Infisical 自身的数据库、Redis DB0、加密密钥保存在 1Panel 应用配置中，避免启动循环依赖。旧 `server.env` 等文件仅为恢复快照，修改它们不会更新正在运行的应用。中间件管理员凭据与恢复归档位于独立的 **Persaas Infrastructure → prod** 项目，运行身份没有该项目权限；其运行配置仍由 1Panel 管理。
+
+新增 Bifrost、Opik、Lago、MySQL 以及 Flexprice 控制台的入口、配置归档和维护步骤见 [中间件指南](extensions/README.md)。
 
 ## 检查服务
 
@@ -110,7 +111,7 @@ journalctl -u persaas-certificates.service -n 30 --no-pager
 
 ## 备份和恢复
 
-在数据节点手工生成一份 PostgreSQL 与私密配置备份：
+在数据节点手工生成八个 PostgreSQL 库、Opik MySQL 与私密配置备份：
 
 ```sh
 bash /opt/persaas/backup-postgres.sh
@@ -123,7 +124,7 @@ ls -lh /opt/persaas/backups/
 /opt/persaas/backups/initial-data-backup-20261128.tar.gz
 ```
 
-在独立数据库中恢复并检查数据后，再规划正式切换。不要把 `roles.sql` 或配置归档直接覆盖到运行中的实例。恢复时使用 PostgreSQL 18 的 `pg_restore`。
+在数据节点运行 `python3 /opt/persaas/verify-backup.py`，可将最新归档恢复到专用临时库，验证八个 PostgreSQL 库和 Opik MySQL，并自动移除临时库。此检查会使用额外磁盘与数据库资源，避开业务高峰。验证通过后，再规划正式恢复切换。不要把 `roles.sql` 或配置归档直接覆盖到运行中的实例。恢复时使用 PostgreSQL 18 的 `pg_restore`。
 
 归档包含数据库凭据，保存为 root 专用文件。继续配置自动异机复制、对象存储备份及备份保留策略；当前脚本没有自动清理旧备份。
 

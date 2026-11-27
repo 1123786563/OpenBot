@@ -1,0 +1,30 @@
+<clickhouse>
+  <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+  <macros>
+    <shard>1</shard>
+    <replica>persaas</replica>
+    <cluster>opik_cluster</cluster>
+  </macros>
+  <zookeeper>
+    <node>
+      <host>persaas-opik-zookeeper</host>
+      <port>2181</port>
+    </node>
+  </zookeeper>
+  <distributed_ddl>
+    <path>/persaas/opik/task_queue/ddl</path>
+  </distributed_ddl>
+  <remote_servers>
+    <opik_cluster>
+      <shard>
+        <internal_replication>true</internal_replication>
+        <replica>
+          <host>1Panel-clickhouse-qp1A</host>
+          <port>9000</port>
+          <user>opik</user>
+          <password>__OPIK_CLICKHOUSE_PASSWORD__</password>
+        </replica>
+      </shard>
+    </opik_cluster>
+  </remote_servers>
+</clickhouse>

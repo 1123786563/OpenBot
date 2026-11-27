@@ -1,0 +1,294 @@
+networks:
+    1panel-network:
+        external: true
+    client:
+        external: true
+        name: openbot-opik
+    default:
+        ipam: {}
+services:
+    backend:
+        command:
+            - bash
+            - -c
+            - ./run_db_migrations.sh && ./provision_agent_insights_readonly_user.sh && ./entrypoint.sh
+        container_name: persaas-opik-backend
+        depends_on:
+            zookeeper:
+                condition: service_healthy
+        deploy:
+            resources:
+                limits:
+                    memory: 1536m
+        entrypoint: null
+        environment:
+            ANALYTICS_DB_ASYNC_INSERT_BUSY_TIMEOUT_MAX_MS: ""
+            ANALYTICS_DB_ASYNC_INSERT_BUSY_TIMEOUT_MIN_MS: ""
+            ANALYTICS_DB_ASYNC_INSERT_MAX_DATA_SIZE: ""
+            ANALYTICS_DB_CLUSTER_HEALTH_CHECK_ENABLED: "false"
+            ANALYTICS_DB_COLD_STORAGE_DISK_HEALTH_CHECK_ENABLED: "false"
+            ANALYTICS_DB_DATA_MODEL_DELETION_EVENTS_INSERT_BATCH_SIZE: "1000"
+            ANALYTICS_DB_DATA_MODEL_SPAN_COLUMNS_NON_NULLABLE: "false"
+            ANALYTICS_DB_DATA_MODEL_SPAN_DELETION_EVENTS_CAPTURE_ENABLED: "false"
+            ANALYTICS_DB_DATA_MODEL_SPAN_WEEKS_BACKFILL_ENABLED: "false"
+            ANALYTICS_DB_DATA_MODEL_SPAN_WEEKS_READ_ENABLED: "false"
+            ANALYTICS_DB_DATA_MODEL_SPANS_DISTRIBUTED_WRAP_ENABLED: "false"
+            ANALYTICS_DB_DATA_MODEL_TRACE_COLUMNS_NON_NULLABLE: "false"
+            ANALYTICS_DB_DATA_MODEL_TRACE_DELETION_EVENTS_CAPTURE_ENABLED: "false"
+            ANALYTICS_DB_DATA_MODEL_TRACES_DISTRIBUTED_WRAP_ENABLED: "false"
+            ANALYTICS_DB_DATABASE_NAME: opik
+            ANALYTICS_DB_HOST: 1Panel-clickhouse-qp1A
+            ANALYTICS_DB_HTTP_HEADERS_PROGRESS_INTERVAL_MS: "3000"
+            ANALYTICS_DB_MIGRATIONS_PASS: ${OPIK_CLICKHOUSE_PASSWORD}
+            ANALYTICS_DB_MIGRATIONS_URL: jdbc:clickhouse://1Panel-clickhouse-qp1A:8123/default?compress=0
+            ANALYTICS_DB_MIGRATIONS_USER: opik
+            ANALYTICS_DB_PASS: ${OPIK_CLICKHOUSE_PASSWORD}
+            ANALYTICS_DB_PORT: "8123"
+            ANALYTICS_DB_PROTOCOL: HTTP
+            ANALYTICS_DB_QUERY_PARAMETERS: health_check_interval=2000&compress=0&auto_discovery=true&failover=3&custom_http_params=max_query_size=100000000,async_insert_busy_timeout_max_ms=250,async_insert_busy_timeout_min_ms=100,async_insert=1,wait_for_async_insert=1,async_insert_use_adaptive_busy_timeout=1,async_insert_deduplicate=1,use_skip_indexes_if_final=1,optimize_skip_unused_shards=1,do_not_merge_across_partitions_select_final=1,distributed_product_mode=local
+            ANALYTICS_DB_READ_ONLY_FREEFORM_EXTENDED_SQL_PASS: ${OPIK_CLICKHOUSE_PASSWORD}
+            ANALYTICS_DB_READ_ONLY_FREEFORM_EXTENDED_SQL_USER: comet_readonly_freeform_extended_sql_user
+            ANALYTICS_DB_READ_ONLY_FREEFORM_EXTENDED_SQL_USER_ENABLED: '"false"'
+            ANALYTICS_DB_READ_ONLY_FREEFORM_SQL_PASS: ${OPIK_CLICKHOUSE_PASSWORD}
+            ANALYTICS_DB_READ_ONLY_FREEFORM_SQL_USER: comet_readonly_freeform_sql_user
+            ANALYTICS_DB_USERNAME: opik
+            ATTACHMENTS_STRIP_MIN_SIZE: "256000"
+            AWS_ACCESS_KEY_ID: ${OPIK_S3_ACCESS_KEY}
+            AWS_SECRET_ACCESS_KEY: ${OPIK_S3_SECRET_KEY}
+            CORS: "false"
+            DOCKER_BUILDKIT: "1"
+            IS_MINIO: "true"
+            JACKSON_MAX_STRING_LENGTH: "104857600"
+            JAVA_OPTS: -Dliquibase.propertySubstitutionEnabled=true -XX:+UseG1GC -XX:MaxRAMPercentage=65.0 -XX:ActiveProcessorCount=2
+            LLM_MODEL_REGISTRY_DEFAULT_RESOURCE: llm-models-default.yaml
+            LLM_MODEL_REGISTRY_LOCAL_OVERRIDE_PATH: ""
+            LLM_MODEL_REGISTRY_REFRESH_INTERVAL_SECONDS: "300"
+            LLM_MODEL_REGISTRY_REMOTE_ENABLED: '"false"'
+            LLM_MODEL_REGISTRY_REMOTE_URL: ""
+            LLM_PROVIDER_DESTINATION_GUARD: '"relaxed"'
+            LLM_PROVIDER_DESTINATION_SCHEME: '"plaintext_or_tls"'
+            LLM_PROVIDER_TOKEN_AUTH_DESTINATION_GUARD: '"relaxed"'
+            LLM_PROVIDER_VIDEO_URL_DESTINATION_GUARD: '"relaxed"'
+            OPIK_ANONYMOUS_ID: ""
+            OPIK_OTEL_SDK_ENABLED: "false"
+            OPIK_USAGE_REPORT_ENABLED: "false"
+            OTEL_EXPERIMENTAL_EXPORTER_OTLP_RETRY_ENABLED: "true"
+            OTEL_EXPERIMENTAL_RESOURCE_DISABLED_KEYS: process.command_args
+            OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+            OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION: BASE2_EXPONENTIAL_BUCKET_HISTOGRAM
+            OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: delta
+            OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+            OTEL_INSTRUMENTATION_HTTP_SERVER_CAPTURE_REQUEST_HEADERS: Comet-Workspace,x-opik-debug-sdk-version
+            OTEL_INSTRUMENTATION_HTTP_SERVER_EMIT_EXPERIMENTAL_TELEMETRY: "true"
+            OTEL_PROPAGATORS: tracecontext,baggage,b3
+            OTEL_VERSION: 2.16.0
+            PARTITION_METRICS_ENABLED: "false"
+            PARTITION_METRICS_INTERVAL: 5m
+            PARTITION_METRICS_LWD_TABLES: traces,spans
+            PYTHON_EVALUATOR_URL: http://python-backend:8000
+            REDIS_URL: redis://:${PANEL_REDIS_ROOT_PASSWORD}@persaas-redis:6379/2
+            S3_BUCKET: opik
+            S3_REGION: us-east-1
+            S3_URL: https://opik.persaas.cn
+            STATE_DB_DATABASE_NAME: ${PANEL_DB_NAME:?Enter the database name}
+            STATE_DB_PASS: ${PANEL_DB_USER_PASSWORD:?Enter the database password}
+            STATE_DB_PROTOCOL: jdbc:mysql://
+            STATE_DB_URL: persaas-mysql:3306/opik?rewriteBatchedStatements=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+            STATE_DB_USER: ${PANEL_DB_USER:?Enter the database user}
+            TOGGLE_ANNOTATION_QUEUE_AUTOMATION_ENABLED: '"true"'
+            TOGGLE_CUSTOM_CHARTS_ENABLED: '"false"'
+            TOGGLE_CUSTOM_CHARTS_PUBLIC_ENDPOINTS_ENABLED: '"false"'
+            TOGGLE_GUARDRAILS_ENABLED: '"false"'
+            TOGGLE_OLLIE_ENABLED: '"false"'
+            TOGGLE_OPIK_AI_ENABLED: '"false"'
+            TOGGLE_WELCOME_WIZARD_ENABLED: '"true"'
+            UUID_VALIDATION_AUDIT_ONLY: "false"
+            UUID_VALIDATION_ENABLED: "false"
+            UUID_VALIDATION_WINDOW: 24h
+        healthcheck:
+            interval: 1s
+            retries: 600
+            start_period: 1s
+            test:
+                - CMD
+                - curl
+                - -f
+                - http://localhost:8080/health-check
+            timeout: 10m0s
+        hostname: backend
+        image: ghcr.io/comet-ml/opik/opik-backend:2.3.4
+        labels:
+            createdBy: Apps
+        logging:
+            driver: json-file
+            options:
+                max-file: "3"
+                max-size: 10m
+        networks:
+            1panel-network: {}
+            default: null
+        restart: unless-stopped
+        tmpfs:
+            - /tmp
+    frontend:
+        command: null
+        container_name: persaas-opik
+        depends_on:
+            backend:
+                condition: service_healthy
+                required: true
+        deploy:
+            resources:
+                limits:
+                    memory: 256m
+        entrypoint:
+            - /bin/sh
+            - -c
+            - |
+              umask 077
+              printf '%s:{PLAIN}%s\n' "$$OPIK_AUTH_USERNAME" "$$OPIK_AUTH_PASSWORD" > /tmp/opik-htpasswd
+              exec /docker-entrypoint.sh nginx -g 'daemon off;'
+        environment:
+            NGINX_CONF_SUFFIX: local
+            NGINX_PORT: "5173"
+            OPIK_AUTH_PASSWORD: ${OPIK_AUTH_PASSWORD:?Set the Opik login password}
+            OPIK_AUTH_USERNAME: ${OPIK_AUTH_USERNAME:-admin}
+            OPIK_VERSION: 2.3.4
+            OTEL_COLLECTOR_HOST: otel-collector
+            OTEL_COLLECTOR_PORT: "4317"
+            OTEL_TRACE: false
+        healthcheck:
+            interval: 1s
+            retries: 10
+            start_period: 1s
+            test:
+                - CMD-SHELL
+                - curl --fail --fail-early http://localhost:5173/health
+            timeout: 30s
+        hostname: frontend
+        image: ghcr.io/comet-ml/opik/opik-frontend:2.3.4
+        labels:
+            createdBy: Apps
+        logging:
+            driver: json-file
+            options:
+                max-file: "3"
+                max-size: 10m
+        networks:
+            client:
+                aliases:
+                    - opik-frontend
+            default: {}
+        ports:
+            - 127.0.0.1:${PANEL_APP_PORT_HTTP:-15173}:5173
+        restart: unless-stopped
+        volumes:
+            - ./nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro
+    python-backend:
+        command: null
+        container_name: persaas-opik-python-backend
+        deploy:
+            resources:
+                limits:
+                    memory: 768m
+        entrypoint: null
+        environment:
+            OPIK_OTEL_SDK_ENABLED: "false"
+            OPIK_REVERSE_PROXY_URL: http://frontend:5173/api
+            OPIK_URL_OVERRIDE: http://backend:8080
+            OPIK_VERSION: 2.3.4
+            OPTSTUDIO_LLM_MAX_TOKENS: "8192"
+            OPTSTUDIO_LOG_LEVEL: INFO
+            OPTSTUDIO_MAX_CONCURRENT_JOBS: "1"
+            OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+            OTEL_VERSION: 2.16.0
+            PYTHON_BACKEND_PORT: "8000"
+            PYTHON_CODE_EXECUTOR_ALLOW_NETWORK: "false"
+            PYTHON_CODE_EXECUTOR_CONTAINERS_NUM: "1"
+            PYTHON_CODE_EXECUTOR_CPU_SHARES: "512"
+            PYTHON_CODE_EXECUTOR_DOCKER_HARDENING: "true"
+            PYTHON_CODE_EXECUTOR_DOCKER_PIDS_LIMIT: "64"
+            PYTHON_CODE_EXECUTOR_DOCKER_TMPFS_SIZE: 16m
+            PYTHON_CODE_EXECUTOR_EXEC_TIMEOUT_IN_SECS: "3"
+            PYTHON_CODE_EXECUTOR_IMAGE_TAG: 2.3.4
+            PYTHON_CODE_EXECUTOR_MAX_RESULT_SIZE_IN_BYTES: "67108864"
+            PYTHON_CODE_EXECUTOR_MEM_LIMIT: 256m
+            PYTHON_CODE_EXECUTOR_PROCESS_NETWORK_ISOLATION: "true"
+            PYTHON_CODE_EXECUTOR_READY_TIMEOUT_SECONDS: "10"
+            PYTHON_CODE_EXECUTOR_STRATEGY: process
+            REDIS_URL: redis://:${PANEL_REDIS_ROOT_PASSWORD}@persaas-redis:6379/2
+            RQ_WORKER_ENABLED: "true"
+            RQ_WORKER_TTL_FAILURE: "86400"
+        healthcheck:
+            interval: 2s
+            retries: 30
+            start_period: 2s
+            test:
+                - CMD
+                - sh
+                - -c
+                - if [ -f /opt/opik-python-backend/src/opik_backend/healthcheck.py ]; then wget --spider --quiet http://127.0.0.1:8000/healthcheck; else exit 0; fi
+            timeout: 1m0s
+        hostname: python-backend
+        image: ghcr.io/comet-ml/opik/opik-python-backend:2.3.4
+        labels:
+            createdBy: Apps
+        logging:
+            driver: json-file
+            options:
+                max-file: "3"
+                max-size: 10m
+        networks:
+            1panel-network: {}
+            default: null
+        restart: unless-stopped
+    zookeeper:
+        command: null
+        container_name: persaas-opik-zookeeper
+        deploy:
+            resources:
+                limits:
+                    cpus: ${CPUS}
+                    memory: ${MEMORY_LIMIT}
+        entrypoint:
+            - /bin/bash
+            - -c
+            - |
+              # Create data directory if it doesn't exist (for fresh installations)
+              # We use /bitnami/zookeeper/data path for compatibility with upgrades from Bitnami images
+              # Fresh installs need this directory created, while upgrades already have it with existing data
+              mkdir -p /bitnami/zookeeper/data
+              chown -R zookeeper:zookeeper /bitnami/zookeeper
+              # Run the original entrypoint as zookeeper user
+              exec gosu zookeeper /docker-entrypoint.sh zkServer.sh start-foreground
+        environment:
+            JVMFLAGS: -Xms64m -Xmx128m
+            ZOO_4LW_COMMANDS_WHITELIST: srvr,ruok
+            ZOO_DATA_DIR: /bitnami/zookeeper/data
+            ZOO_DATA_LOG_DIR: /bitnami/zookeeper/data
+        healthcheck:
+            interval: 1s
+            retries: 300
+            test:
+                - CMD-SHELL
+                - echo ruok | nc localhost 2181 | grep -q imok
+            timeout: 1s
+        hostname: persaas-opik-zookeeper
+        image: zookeeper:3.9.7
+        labels:
+            createdBy: Apps
+        logging:
+            driver: json-file
+            options:
+                max-file: "3"
+                max-size: 10m
+        networks:
+            1panel-network: {}
+            default: null
+        restart: unless-stopped
+        user: root
+        volumes:
+            - zookeeper:/bitnami/zookeeper
+volumes:
+    zookeeper:
+        name: persaas-opik-20261128-zookeeper

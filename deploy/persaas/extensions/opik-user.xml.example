@@ -1,0 +1,27 @@
+<clickhouse>
+  <profiles>
+    <persaas_opik>
+      <enable_time_time64_type>1</enable_time_time64_type>
+      <max_memory_usage>1500000000</max_memory_usage>
+    </persaas_opik>
+  </profiles>
+  <users>
+    <opik>
+      <password_sha256_hex>__OPIK_CLICKHOUSE_PASSWORD_SHA256__</password_sha256_hex>
+      <networks>
+        <ip>172.16.0.0/12</ip>
+        <ip>127.0.0.1</ip>
+      </networks>
+      <profile>persaas_opik</profile>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT ALL ON opik.*</query>
+        <query>GRANT CLUSTER ON *.*</query>
+        <query>GRANT ALL ON default.DATABASECHANGELOG</query>
+        <query>GRANT ALL ON default.DATABASECHANGELOG1</query>
+        <query>GRANT ALL ON default.DATABASECHANGELOGLOCK</query>
+        <query>GRANT ALL ON default.DATABASECHANGELOGLOCK1</query>
+      </grants>
+    </opik>
+  </users>
+</clickhouse>

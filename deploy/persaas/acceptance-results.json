@@ -1,0 +1,69 @@
+{
+  "application": {
+    "at": "2026-11-27T19:14:42.897735+00:00",
+    "passed": [
+      "public HTTPS health",
+      "anonymous account request refused",
+      "OAuth uses the configured Casdoor",
+      "Casdoor owner login",
+      "OAuth authorization code",
+      "signed-in owner is administrator",
+      "authenticated Bot list",
+      "conversation request queued",
+      "new model response persisted in conversation",
+      "Flexprice health",
+      "Infisical initialized and registration closed",
+      "sign-out invalidates session"
+    ],
+    "blocked": [
+      "CubeSandbox browser/template/volume: existing API key is unavailable",
+      "OpenBot to Flexprice usage delivery: integration is not implemented",
+      "Redis Sentinel topology decision is pending"
+    ]
+  },
+  "middleware": {
+    "at": "2026-11-27T19:13:36.706785+00:00",
+    "passed": [
+      "Bifrost admin API requires authentication",
+      "Bifrost inference requires authentication",
+      "Bifrost restricted virtual key reaches real model",
+      "Opik console requires authentication",
+      "Opik trace ingestion",
+      "Opik trace readback",
+      "Lago administrator login",
+      "Lago API health",
+      "Flexprice native administrator login",
+      "Flexprice authenticated environment customer API",
+      "Flexprice public signup is closed at console proxy",
+      "OpenObserve protected API requires authentication",
+      "OpenObserve log ingestion",
+      "OpenObserve log search readback",
+      "opik RustFS object HTTPS round trip",
+      "lago RustFS object HTTPS round trip"
+    ],
+    "opikTraceId": "01a21e6d-61ed-729a-984c-d118170df46f"
+  },
+  "newDatabaseRestoreTables": {
+    "bifrostPostgreSQL": 91,
+    "lagoPostgreSQL": 183,
+    "opikMySQL": 56
+  },
+  "backupSHA256": "80b17bc9ded5cb14ab5467c55f4c1d9ba730938c5f92ce5b2aba8e5ff0177ddb",
+  "flexpriceDNS": "pending",
+  "backupRestoreVerified": [
+    "openbot",
+    "casdoor",
+    "flexprice",
+    "temporal",
+    "temporal_visibility",
+    "infisical",
+    "bifrost",
+    "lago",
+    "opik-mysql"
+  ],
+  "vaultIsolation": {
+    "runtimeIdentities": 4,
+    "infrastructureReadStatus": 403,
+    "runtimeReadStatus": 200
+  }
+}
