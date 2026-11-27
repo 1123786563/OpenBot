@@ -3588,6 +3588,7 @@ const personResponseSweep = repeatAfterEach(
     personResponseOwner,
     authoriseQuestion,
     approvalContinuationRunner,
+    runBackground: copilotRuntime.runBackground,
     responsibilityStore,
     responsibilityAnswerTurn,
     sourceForCoordinationRun,

@@ -157,9 +157,10 @@ describe("Infisical preload", () => {
       // /agents is read whole: the server picks each Bot's model from the settings the Bots run with.
       AGENT_BOT_MODEL: "agents-model",
       MANAGED_AGENT_TOKEN: "from-infisical",
-      dotted: undefined,
-      CLIENT_SECRET: undefined,
     });
+    // A key with a dot is not a variable, and the identity is not left in what the server sees.
+    expect(run.seen && "dotted" in run.seen).toBe(false);
+    expect(run.seen && "CLIENT_SECRET" in run.seen).toBe(false);
     expect(asked[0]).toMatchObject({
       body: { clientId: "identity", clientSecret: CLIENT_SECRET },
     });

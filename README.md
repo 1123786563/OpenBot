@@ -363,11 +363,8 @@ Settings live in one file per service, and there is no `.env` in the repository 
 
 - `DATABASE_URL`
 - `KEY_ENCRYPTION_KEY`
-- `INTELLIGENCE_API_URL`
-- `INTELLIGENCE_GATEWAY_WS_URL`
-- `CPK_INTELLIGENCE_API_KEY` (or the older `INTELLIGENCE_API_KEY`)
 
-
+CopilotKit Intelligence is optional. With none of `INTELLIGENCE_API_URL`, `INTELLIGENCE_GATEWAY_WS_URL` and an Intelligence key set, OpenBot keeps Conversation history, Personal Memory and Learning itself. Set some of them and not the others, and the server refuses to start.
 
 Settings worth knowing:
 
