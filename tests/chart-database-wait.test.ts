@@ -288,6 +288,7 @@ async function scratchDatabase(): Promise<string> {
   return url.href;
 }
 
+// Dropping a database waits for a PostgreSQL checkpoint, including when other suites are writing.
 afterAll(async () => {
   if (!databaseUrl || created.length === 0) return;
   const admin = new SQL(administrative());
@@ -298,7 +299,7 @@ afterAll(async () => {
   } finally {
     await admin.close({ timeout: 5 });
   }
-}, 30_000);
+}, 120_000);
 
 /** The rendered init container, as the server Deployment of a vanilla install carries it. */
 function renderedWait(): Container {
