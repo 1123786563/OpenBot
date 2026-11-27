@@ -347,6 +347,17 @@ describe("start.sh server restart guard", () => {
       expect(result.pkillLog).toContain(
         "--env-file=../deploy/infisical/.env.openbot-client --preload ./scripts/infisical-env.ts --watch src/index.ts",
       );
+      // And the same launches since deploy/.local/pilot.env joined the command line, which servers
+      // started by this version carry.
+      expect(result.pkillLog).toContain(
+        "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/.local/pilot.env src/production-entry.ts",
+      );
+      expect(result.pkillLog).toContain(
+        "bun --env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts --env-file=../deploy/.local/pilot.env src/production-entry.ts",
+      );
+      expect(result.pkillLog).toContain(
+        "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/infisical/.env.openbot-client --env-file=../deploy/.local/pilot.env --preload ./scripts/infisical-env.ts --watch src/index.ts",
+      );
       // No `.env` in the repository root: Compose is given each service's file, never that one.
       // Each of the three Compose calls is given the same four, so they are compared once.
       expect([
