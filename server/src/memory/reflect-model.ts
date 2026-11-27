@@ -18,12 +18,17 @@ const callbackBody = z.object({
     )
     .min(2)
     .max(64),
-  response_format: z.object({
-    type: z.literal("json_schema"),
-    json_schema: z.object({ schema: z.record(z.string(), z.unknown()) }),
-  }),
+  tools: z.array(z.unknown()).max(0).optional(),
+  response_format: z
+    .object({
+      type: z.literal("json_schema"),
+      json_schema: z.object({ schema: z.record(z.string(), z.unknown()) }),
+    })
+    .optional(),
 });
 const marker = /^\[OpenBot Reflect ([0-9a-f-]{36})\]\n/;
+const finalQuestionMarker =
+  /(?:^|\n)## Question\n\[OpenBot Reflect ([0-9a-f-]{36})\]\n/;
 const failure = (status: number) =>
   Response.json(
     { error: { message: "Reflect model unavailable" } },
@@ -43,6 +48,7 @@ export function createReflectModelGateway({
     string,
     {
       scope: RunScope;
+      markedQuery: string;
       canDispatch: () => Promise<boolean>;
       calls: Map<string, Promise<string | null>>;
       failed: boolean;
@@ -65,13 +71,14 @@ export function createReflectModelGateway({
       const key = randomUUID();
       const session = {
         scope,
+        markedQuery: `[OpenBot Reflect ${key}]\n${query}`,
         canDispatch,
         calls: new Map<string, Promise<string | null>>(),
         failed: false,
       };
       sessions.set(key, session);
       try {
-        const result = await request(`[OpenBot Reflect ${key}]\n${query}`);
+        const result = await request(session.markedQuery);
         if (result === null || session.failed || !session.calls.size)
           return null;
         const completions = await Promise.all(session.calls.values());
@@ -95,19 +102,31 @@ export function createReflectModelGateway({
       if (!parsed.success) return failure(400);
       const { messages, response_format } = parsed.data;
       const first = messages.find((message) => message.role === "user");
-      const key = first?.content.match(marker)?.[1];
+      const key = response_format
+        ? first?.content.match(marker)?.[1]
+        : first?.content.match(finalQuestionMarker)?.[1];
       const session = key && sessions.get(key);
       if (!key || !first || !session || session.failed) return failure(403);
+
+      if (
+        !response_format &&
+        !first.content.includes(
+          `## Question\n${session.markedQuery}\n\n## Instructions\n`,
+        )
+      )
+        return failure(403);
 
       const prompt = messages.map(({ role, content }) => ({
         role,
         content: content.replaceAll(`[OpenBot Reflect ${key}]\n`, ""),
       }));
-      const schema = JSON.stringify(response_format.json_schema.schema);
-      prompt.unshift({
-        role: "system",
-        content: `Return only JSON conforming to this schema:\n${schema}`,
-      });
+      if (response_format) {
+        const schema = JSON.stringify(response_format.json_schema.schema);
+        prompt.unshift({
+          role: "system",
+          content: `Return only JSON conforming to this schema:\n${schema}`,
+        });
+      }
       const payload = JSON.stringify(prompt);
       if (payload.length > 150_000) {
         session.failed = true;

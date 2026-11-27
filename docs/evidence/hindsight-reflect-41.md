@@ -19,6 +19,30 @@ injected Reflect response. The real Hindsight probes exercised the Bot tool
 and the ingestion-to-callback path. Those probes used synthetic model
 responses throughout.
 
+## November 27 callback verification
+
+The November 27 rerun used the #211 integration base (`609103fde`), an
+isolated self-hosted Hindsight 1.2.0 process, disposable PostgreSQL with
+pgvector, and fixture embeddings and model completions. The native and
+managed probes passed with 7 and 20 assertions respectively. The managed
+probe used OpenBot’s PostgreSQL Test Credit ledger and approved fixture
+route.
+
+With the Hindsight iteration limit set to one, its final synthesis callback
+arrived without a response format. Hindsight placed the active Run’s marked
+question under `## Question`. The managed callback forwarded that request
+through the fixture executor and returned HTTP 200. Hindsight returned no
+source evidence, so OpenBot returned local retrieval. The callback regression
+also checks that an altered question is rejected and that the Run marker
+never reaches the model.
+
+Earlier provider-backed qwen-long probes recorded settlement on the approved
+route. Their positive request fell back to local retrieval. A temporary
+adapter accepted the final synthesis callback shape, but the gateway
+returned 503 and recorded no new provider dispatch. The provider-backed
+run has yet to produce a reflection bound to a current OpenBot Memory
+version.
+
 ## Provider acceptance
 
 Provider-backed routing and billing remain open. Both checked-in Zhipu

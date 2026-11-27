@@ -47,7 +47,11 @@ test("a Hindsight model callback uses authenticated run scope and Test Credit ad
       route: "approved-v1",
       token: "hindsight-fixture",
     });
-    const callback = (query: string, token = "hindsight-fixture") =>
+    const callback = (
+      query: string,
+      token = "hindsight-fixture",
+      structured = true,
+    ) =>
       gateway.complete(
         new Request(
           "http://openbot.test/internal/hindsight/v1/chat/completions",
@@ -60,10 +64,12 @@ test("a Hindsight model callback uses authenticated run scope and Test Credit ad
                 { role: "system", content: "Answer using retrieved evidence." },
                 { role: "user", content: query },
               ],
-              response_format: {
-                type: "json_schema",
-                json_schema: { schema: { type: "object" } },
-              },
+              response_format: structured
+                ? {
+                    type: "json_schema",
+                    json_schema: { schema: { type: "object" } },
+                  }
+                : undefined,
             }),
           },
         ),
@@ -112,6 +118,35 @@ test("a Hindsight model callback uses authenticated run scope and Test Credit ad
     });
     expect(JSON.stringify(calls)).not.toContain("OpenBot Reflect");
     expect(calls[2]?.body).toEqual({ operationId });
+    calls.length = 0;
+
+    const finalPrompt = (question: string) =>
+      `## Retrieved Data\nAmber lanterns are available.\n\n## Question\n${question}\n\n## Instructions\nSynthesize the answer.`;
+    const finalCallback = (prompt: string) =>
+      callback(prompt, "hindsight-fixture", false);
+    expect(
+      await gateway.reflect({
+        ...run,
+        request: async (ticket) => {
+          expect((await finalCallback(ticket)).status).toBe(403);
+          expect(
+            (await finalCallback(finalPrompt(`${ticket}altered`))).status,
+          ).toBe(403);
+          return (await finalCallback(finalPrompt(ticket))).json();
+        },
+      }),
+    ).toMatchObject({
+      choices: [{ message: { content: '{"answer":"amber"}' } }],
+    });
+    expect(calls.map(({ path }) => path)).toEqual([
+      "/v1/reserve",
+      "/v1/dispatch",
+      "/v1/reconcile",
+    ]);
+    expect(calls[1]?.body.messages).toEqual([
+      { role: "system", content: "Answer using retrieved evidence." },
+      { role: "user", content: finalPrompt(query) },
+    ]);
     calls.length = 0;
 
     const fallback = (ticket: string) =>
