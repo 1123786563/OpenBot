@@ -9,6 +9,7 @@
  * platform gives. Everything between a screen's call and the network is the app's own code.
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { version as RELEASE } from "../../package.json";
 import fixture from "../../shared/fixtures/client-version/cases.json";
 import appConfig from "../app.config";
 
@@ -64,8 +65,6 @@ let deploymentAnswer: { status: number; body: unknown } = {
   status: 200,
   body: fixture.deployments.current,
 };
-// The fork currently builds the phone app from the upstream 1.2.1 client.
-const RELEASE = "1.2.1";
 /** The organization the signed-in person is working in: one of two they are in, and not the first. */
 const ORG = "/api/v2/organizations/org_work";
 const MINE = "/api/v2/people/me/organizations";

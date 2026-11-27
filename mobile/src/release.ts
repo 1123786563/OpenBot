@@ -1,8 +1,8 @@
 /**
  * The OpenBot release this app was built from, and the header that names it on every request to OpenBot.
  *
- * The build records the client release from app.config.ts in `extra.openbotRelease`. Expo's own app version is
- * a store number and says nothing about which OpenBot client this is.
+ * The build records the repository version through app.config.ts in `extra.openbotRelease`. Expo's own app
+ * version is the store version.
  */
 import Constants from "expo-constants";
 import { CLIENT_HEADER, clientToken, isVersion } from "./client-version";

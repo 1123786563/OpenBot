@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d146385b-3fa1-45a0-8103-b4304f420ae9" name="Changes" comment="feat: add Astryx web pilot, cloud SaaS ADRs, and observability export&#10;&#10;- Add ADRs 0001-0009 covering Personal SaaS identity and workspace, account status gates, the Astryx pilot decision, OpenBot-owned intelligence state, self-hosted Corsair, Bifrost model routing, the single Credit ledger, and OpenObserve observability&#10;- Pilot Astryx on the /bots list and Create Bot flow: new astryx-pilot theme and field/action components wired into bots.index.tsx, bot-roster.tsx, and new-bot-sheet.tsx, with layout, PRODUCT.md, and test updates&#10;- Add the Astryx pilot doc and migration specs for Astryx and Corsair&#10;- Add AGENTS.md, CLAUDE.md, and docs/agents guides for issue tracking, triage labels, and domain docs&#10;- Update domain glossaries and GLOSSARY-MAP, adding the billing glossary&#10;- Export audit events as OpenTelemetry records with run correlation fields in server/src/audit.ts, adding OTel deps, .env.example vars, and lockfile updates&#10;- Ignore .idea/ in .gitignore and add its IDE-local ignore file" />
+    <list default="true" id="d146385b-3fa1-45a0-8103-b4304f420ae9" name="Changes" comment="feat: add Astryx web pilot, cloud SaaS ADRs, and observability export&#10;&#10;- Add ADRs 0001-0009 covering Personal SaaS identity and workspace, account status gates, the Astryx pilot decision, OpenBot-owned intelligence state, self-hosted Corsair, Bifrost model routing, the single Credit ledger, and OpenObserve observability&#10;- Pilot Astryx on the /bots list and Create Bot flow: new astryx-pilot theme and field/action components wired into bots.index.tsx, bot-roster.tsx, and new-bot-sheet.tsx, with layout, PRODUCT.md, and test updates&#10;- Add the Astryx pilot doc and migration specs for Astryx and Corsair&#10;- Add AGENTS.md, CLAUDE.md, and docs/agents guides for issue tracking, triage labels, and domain docs&#10;- Update domain glossaries and GLOSSARY-MAP, adding the billing glossary&#10;- Export audit events as OpenTelemetry records with run correlation fields in server/src/audit.ts, adding OTel deps, .env.example vars, and lockfile updates&#10;- Ignore .idea/ in .gitignore and add its IDE-local ignore file">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -100,7 +102,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "SONARLINT_PRECOMMIT_ANALYSIS": "false",
-    "git-widget-placeholder": "integration/openobserve",
+    "git-widget-placeholder": "main",
     "kotlin-language-version-configured": "true",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -110,6 +112,19 @@
     "ts.external.directory.path": "/Users/wuyj/IdeaProjects/OpenBot/node_modules/typescript/lib"
   }
 }]]></component>
+  <component name="RunManager">
+    <configuration default="true" type="JetRunConfigurationType">
+      <module name="OpenBot" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration default="true" type="KotlinStandaloneScriptRunConfigurationType">
+      <module name="OpenBot" />
+      <option name="filePath" />
+      <method v="2" />
+    </configuration>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

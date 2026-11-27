@@ -1,8 +1,14 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ExpoConfig } from "expo/config";
 
 const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
-// The upstream release of this mobile client when built in the fork checkout.
-const openbotRelease = "1.2.1";
+/** The OpenBot release this app is built from: the repository's own version, which the app names on every request. */
+const openbotRelease = (
+  JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8")) as {
+    version: string;
+  }
+).version;
 const config: ExpoConfig = {
   name: "OpenBot",
   slug: "openbot",
