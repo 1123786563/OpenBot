@@ -125,7 +125,6 @@ jobs:
       # existing desktop/server installation contract. CI installs its own reviewed lockfile.
       - run: npm ci --prefix mobile --ignore-scripts
       - run: npm run --prefix mobile typecheck
-      - run: npm test --prefix mobile
 
   # The agent-computer tests that launch a real Chromium. They are asked for by name because a
   # machine running `bun test` is not required to have a browser, and these are the only tests that
@@ -416,6 +415,9 @@ jobs:
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
         working-directory: desktop
+      # Root test discovery runs the mobile suites as well. Install their native dependencies
+      # from the separate lockfile so Bun can load the real signature verifier.
+      - run: npm ci --prefix mobile --ignore-scripts
       # The same migrator a deployment runs, rather than `drizzle-kit migrate`: it is the one that
       # refuses a database holding a stamp newer than the migrations it is about to walk past
       # (server/src/db/migration-reach.ts), and a CI database that is ever reused rather than

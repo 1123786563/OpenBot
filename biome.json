@@ -6,6 +6,7 @@
       "!**/dist",
       "!.",
       "!.superpowers",
+      "!.impeccable",
       "!**/.venv*",
       "!app/src/lib/generated/application-config.ts",
       "!app/src/routeTree.gen.ts",
@@ -29,6 +30,10 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["mobile/src/api/generated/**"],
+      "linter": { "enabled": false }
+    },
     {
       "includes": ["**/tests/**", "**/*.test.ts", "**/*.test.tsx"],
       "linter": {

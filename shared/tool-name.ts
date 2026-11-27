@@ -160,6 +160,7 @@ export function approvalWords(action: {
   scope: string;
   /** What the action is aimed at, as the server resolved it. A folder's carries its name. */
   target?: unknown;
+  args?: unknown;
   /** Which of the person's accounts at the app, where they hold several: "from dana@work.example". */
   account?: string;
 }): {
@@ -179,21 +180,93 @@ export function approvalPhrase(action: {
   toolRef: string;
   scope: string;
   target?: unknown;
+  args?: unknown;
   /** Which of the person's accounts at the app, where they hold several: "from dana@work.example". */
   account?: string;
 }): string {
   const { action: words, place, joiner } = approvalParts(action);
-  return joiner ? `${words} ${joiner} ${place}` : `${words} ${place}`;
+  return joiner
+    ? `${words} ${joiner} ${place}`
+    : place
+      ? `${words} ${place}`
+      : words;
+}
+
+function settingsAsk(
+  tool: string,
+  args: unknown,
+  target: unknown,
+): string | undefined {
+  const asked =
+    args &&
+    typeof args === "object" &&
+    "action" in args &&
+    typeof args.action === "string"
+      ? args.action
+      : "";
+  switch (tool) {
+    case "update_my_settings":
+      return "change your settings";
+    case "update_my_bot": {
+      const change =
+        target && typeof target === "object" && "change" in target
+          ? target.change
+          : null;
+      const bot =
+        change && typeof change === "object" && "bot" in change
+          ? change.bot
+          : null;
+      const name =
+        bot &&
+        typeof bot === "object" &&
+        "name" in bot &&
+        typeof bot.name === "string"
+          ? bot.name.trim()
+          : "";
+      return name ? `change ${name}'s settings` : "change a Bot's settings";
+    }
+    case "update_organization_settings":
+      return "change your organization's settings";
+    case "manage_people":
+      return (
+        new Map([
+          ["invite", "invite someone to your organization"],
+          ["change_role", "change someone's role in your organization"],
+          ["remove", "remove someone from your organization"],
+        ]).get(asked) ?? "change people in your organization"
+      );
+    case "manage_teams":
+      return (
+        new Map([
+          ["create", "create a team"],
+          ["rename", "rename a team"],
+          ["move", "move a team"],
+          ["add_member", "add someone to a team"],
+          ["remove_member", "take someone out of a team"],
+        ]).get(asked) ?? "change your organization's teams"
+      );
+    default:
+      return undefined;
+  }
 }
 
 function approvalParts(action: {
   toolRef: string;
   scope: string;
   target?: unknown;
+  args?: unknown;
   account?: string;
 }): { action: string; place: string; joiner: "on" | "in" | "" } {
   const slash = action.toolRef.indexOf("/");
   const app = action.toolRef.slice(0, slash);
+  if (app === "openbot-settings" && action.scope === app) {
+    const ask = settingsAsk(
+      action.toolRef.slice(slash + 1),
+      action.args,
+      action.target,
+    );
+    if (ask) return { action: ask, place: "", joiner: "" };
+  }
   if (slash > 0 && app === action.scope) {
     const { label } = appToolName(app, action.toolRef.slice(slash + 1));
     const words = lowerFirst(label);
