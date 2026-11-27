@@ -17,7 +17,9 @@ docker exec persaas-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uro
 docker exec -u 0 persaas-lago-api cat /lago-secrets/keys.json > "$tmp/lago-secrets.json"
 tar -czf "$tmp/configuration.tar.gz" -C /opt \
   persaas/credentials.json persaas/server.env persaas/worker.env \
-  persaas/data.yml persaas/flexprice.env persaas/temporal.env \
+  persaas/data.yml persaas/flexprice.env persaas/temporal.env persaas/collector.env \
+  1panel/1panel/www/sites/openobserve.persaas.cn/proxy/root.conf \
+  1panel/1panel/www/sites/www.persaas.cn/proxy/root.conf \
   persaas/infisical-server.env persaas/infisical-worker.env \
   persaas/infisical-flexprice.env persaas/infisical-temporal.env \
   1panel/apps/local/infisical/infisical/.env \

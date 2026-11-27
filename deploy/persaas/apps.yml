@@ -1,5 +1,20 @@
 name: persaas-apps
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.139.0
+    restart: unless-stopped
+    mem_limit: 256m
+    user: "0:0"
+    command: [--config=/etc/otelcol-contrib/config.yaml]
+    env_file: collector.env
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./runtime-logs:/runtime-logs:ro
+      - /var/lib/docker/containers:/docker-containers:ro
+    networks: [apps]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
   migrate:
     image: openbot-server:persaas-20261128
     profiles: [tools]

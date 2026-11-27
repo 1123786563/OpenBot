@@ -40,3 +40,7 @@
 这些结果不覆盖计费对账、收款、真实 Run 的 Opik 追踪投递和主站日志自动采集。此前列出的 CubeSandbox API Key、Redis Sentinel 和完整灾备缺口仍存在。
 
 最终归档再次验证九个数据库恢复成功；SHA-256：`80b17bc9ded5cb14ab5467c55f4c1d9ba730938c5f92ce5b2aba8e5ff0177ddb`。自动化结果摘要见 [acceptance-results.json](acceptance-results.json)。
+
+## 真实浏览器业务验收更新
+
+后续真实登录、原生聊天、任务、技能和记忆测试，以及 WAF/Opik 修复、附件与目标失败项，见 [平台功能验收](PLATFORM-ACCEPTANCE.md)。该报告更新了此前“追踪和日志未验”的状态，也明确保留了尚未完成的商业计费、沙箱和高可用工作。

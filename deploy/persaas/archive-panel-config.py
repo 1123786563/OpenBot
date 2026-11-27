@@ -66,6 +66,7 @@ def main():
         if name == 'lago':
             values['LAGO_SECRET_KEYS_JSON'] = subprocess.check_output(['docker', 'exec', '-u', '0', 'persaas-lago-api', 'cat', '/lago-secrets/keys.json']).decode()
         archive(name, values)
+    archive('entry-proxy', {'OPENBOT_PROXY_CONFIG': Path('/opt/1panel/1panel/www/sites/www.persaas.cn/proxy/root.conf').read_text()})
     archive('openobserve', {'ADMIN_EMAIL': credentials['openobserveEmail'], 'ADMIN_PASSWORD': credentials['openobservePassword']})
     archive('flexprice-admin', {'ADMIN_EMAIL': credentials['adminEmail'], 'ADMIN_PASSWORD': credentials['flexpriceOwnerPassword'], 'CONSOLE_LOCAL_URL': 'http://127.0.0.1:18085', 'FRONTEND_VERSION': 'v2.0.22'})
 
