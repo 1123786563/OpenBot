@@ -27,6 +27,7 @@ const SECRETS = {
   "/server": [
     { secretKey: "FROM_DOT_ENV", secretValue: "from-infisical" },
     { secretKey: "FROM_SERVER_FILE", secretValue: "from-infisical" },
+    { secretKey: "PILOT_KEPT", secretValue: "from-infisical" },
     { secretKey: "db.url", secretValue: "not-a-variable" },
     { secretKey: "EMPTY", secretValue: "" },
   ],
@@ -102,6 +103,7 @@ async function start(
     "process.env.FROM_SHELL, ONLY_INFISICAL: process.env.ONLY_INFISICAL, EMPTY: process.env.EMPTY, " +
     "FROM_SERVER_FILE: process.env.FROM_SERVER_FILE, AGENT_BOT_MODEL: process.env.AGENT_BOT_MODEL, " +
     "MANAGED_AGENT_TOKEN: process.env.MANAGED_AGENT_TOKEN, DATABASE_URL: process.env.DATABASE_URL, " +
+    "PILOT_KEPT: process.env.PILOT_KEPT, " +
     "dotted: process.env['db.url'], CLIENT_SECRET: process.env.INFISICAL_CLIENT_SECRET }))";
   const child = Bun.spawn(
     ["bun", ...arguments_, "--preload", preload, "-e", report],
@@ -152,6 +154,9 @@ describe("Infisical preload", () => {
       FROM_DOT_ENV: "from-infisical",
       FROM_SHELL: "from-shell",
       FROM_SERVER_FILE: "from-infisical",
+      // A key no settings file supplied lands in the environment from Infisical, as the pilot test
+      // below relies on: the same key there keeps its file's value instead.
+      PILOT_KEPT: "from-infisical",
       DATABASE_URL: "from-infisical",
       EMPTY: "",
       // /agents is read whole: the server picks each Bot's model from the settings the Bots run with.
@@ -183,6 +188,17 @@ describe("Infisical preload", () => {
     const run = await start([`--env-file=${identityFile}`], identity);
     expect(run.status, run.stderr).toBe(0);
     expect(run.seen?.ONLY_INFISICAL).toBe("from-the-identity-file");
+  });
+
+  test("a machine's own file, such as deploy/.local/pilot.env, is kept over Infisical", async () => {
+    // Beside the settings files, the way start.sh and `bun run dev` name it: last, so it wins there,
+    // and not one of SERVER_ENV_FILES, so the preload keeps it here.
+    const pilotFile = join(directory, "..", ".local", "pilot.env");
+    mkdirSync(join(directory, "..", ".local"), { recursive: true });
+    writeFileSync(pilotFile, "PILOT_KEPT=from-the-pilot-file\n");
+    const run = await start([`--env-file=${pilotFile}`], identity);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.seen?.PILOT_KEPT).toBe("from-the-pilot-file");
   });
 
   test("without .env, the environment is kept and Infisical fills in the rest", async () => {
