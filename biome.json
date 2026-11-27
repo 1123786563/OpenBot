@@ -150,6 +150,12 @@
       }
     },
     {
+      "includes": ["mobile/src/api/generated/**"],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["mobile/src/check-ins.tsx", "mobile/app/needs-you.tsx"],
       "linter": {
         "rules": {
