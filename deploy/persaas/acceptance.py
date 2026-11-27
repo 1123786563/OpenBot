@@ -92,7 +92,7 @@ def main():
     finally:
         call(BASE + "/api/auth/sign-out", {})
     check("sign-out invalidates session", json.loads(call(BASE + "/api/auth/get-session")) is None)
-    report = {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "passed": passed, "blocked": ["CubeSandbox browser/template/volume: existing API key is unavailable", "OpenBot to Flexprice usage delivery: integration is not implemented", "Redis Sentinel topology decision is pending"]}
+    report = {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "passed": passed, "blocked": ["CubeSandbox browser/template/volume: existing API key is unavailable", "OpenBot to Flexprice usage delivery: integration is not implemented"]}
     target = ROOT / "acceptance-report.json"
     target.write_text(json.dumps(report, indent=2))
     target.chmod(0o600)

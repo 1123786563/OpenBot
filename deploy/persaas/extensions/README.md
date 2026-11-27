@@ -30,7 +30,7 @@ Infisical **Persaas Infrastructure → prod** 下的 `/bifrost`、`/opik`、`/la
 - Bifrost 使用共享 PostgreSQL 的独立 `bifrost` 库和非超级用户。主站已通过受限虚拟密钥访问 `zhipu/glm-4.7`，未开放匿名推理。
 - Opik 使用 1Panel MySQL 的独立 `opik` 库、共享 ClickHouse 的 `opik` 库及专用账号。其 Liquibase 元数据另占 `default.DATABASECHANGELOG`、`DATABASECHANGELOG1`、`DATABASECHANGELOGLOCK`、`DATABASECHANGELOGLOCK1`，不要让其他实例复用这些表。
 - Opik 使用独立持久化 ZooKeeper 卷 `persaas-opik-20261128-zookeeper`。迁移与运行驱动均关闭 ClickHouse HTTP 压缩，以兼容现有 26.11.3。ClickHouse 配置样例为 `opik-clickhouse.xml.example`、`opik-user.xml.example`；需从私密配置填入密码及其 SHA-256，不能直接挂载带占位符的样例。不要移除 JDBC URL 的 `/default?compress=0` 或运行时的 `compress=0`。
-- Redis：Infisical DB0、Opik DB2、Flexprice DB3、Lago 作业 DB6、缓存 DB7、Cable DB8。当前仍是单 Redis，Sentinel 尚未落实。
+- Redis：Infisical DB0、Opik DB2、Flexprice DB3、Lago 作业 DB6、缓存 DB7、Cable DB8。当前按用户确认的经济方案使用单 Redis；Sentinel 后续升级，不作为本阶段验收阻塞项。
 - Lago 使用独立 PostgreSQL 15 + pg_partman；现有 PG18 没有该扩展，不在其上强行安装或降级。Lago API、Worker、Clock、PDF 均已启动。
 - S3 使用现有 RustFS，Opik 与 Lago 分别使用私有 bucket 和受限服务密钥。HTTPS 桶路径分别为 `opik.persaas.cn/opik/`、`lago-api.persaas.cn/lago/`，保留原始路径与 Host 以验证 S3 签名；不代理 RustFS 管理 API。
 - Opik 和 Lago 的匿名注册已关闭；Flexprice 控制台代理也拒绝公开 signup。

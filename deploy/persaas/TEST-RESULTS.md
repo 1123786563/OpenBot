@@ -22,7 +22,7 @@
 
 - CubeSandbox 仅健康接口通过；现有 API Key 缺失，模板、卷、浏览器和数据通道未验收。未修改 43.136.78.18。
 - OpenBot 的用量投递仍是 Lago 适配器；Flexprice 套餐、用量对账、收款未完成接入。
-- Redis 当前仍是单实例，尚未落实 Sentinel。两台现有主机也未提供整个平台高可用。
+- Redis 当前为单实例。用户于 2026-11-28 确认本阶段保留单 Redis、后续升级 Sentinel；不再作为本阶段验收阻塞项。当前没有自动故障切换或整个平台高可用。
 - 定时业务任务、文件/对象存储业务、其他模型、第三方渠道，以及未启用的 Opik/Hindsight/Bifrost 未做端到端覆盖。
 - 备份尚不覆盖对象存储、ClickHouse、Kafka、Redis；每日自动异机复制和保留策略尚未配置。
 - 配置中心不可用时，已运行进程继续使用启动时配置；新启动进程会失败。机器身份引导凭据及配置中心自身的加密密钥仍需 root 专用离线备份。
@@ -37,7 +37,7 @@
 - Flexprice 前端 v2.0.22 完成 TypeScript 与 Vite 生产构建，在回环 18085 端口运行。原生认证与同源 API 通过检查；尚缺 `flexprice.persaas.cn` DNS，未验收公网控制台 HTTPS 或浏览器交互流程。
 - 九个公开站点的证书及续期配置已登记；Flexprice 控制台尚未计入其中。
 
-这些结果不覆盖计费对账、收款、真实 Run 的 Opik 追踪投递和主站日志自动采集。此前列出的 CubeSandbox API Key、Redis Sentinel 和完整灾备缺口仍存在。
+这些结果不覆盖计费对账、收款、真实 Run 的 Opik 追踪投递和主站日志自动采集。CubeSandbox API Key 和完整灾备缺口仍存在；Redis Sentinel 已按用户决定列为后续升级项。
 
 最终归档再次验证九个数据库恢复成功；SHA-256：`80b17bc9ded5cb14ab5467c55f4c1d9ba730938c5f92ce5b2aba8e5ff0177ddb`。自动化结果摘要见 [acceptance-results.json](acceptance-results.json)。
 

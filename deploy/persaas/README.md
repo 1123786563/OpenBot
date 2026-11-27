@@ -37,6 +37,10 @@ docker compose -f data.yml up -d --force-recreate flexprice temporal
 
 新增 Bifrost、Opik、Lago、MySQL 以及 Flexprice 控制台的入口、配置归档和维护步骤见 [中间件指南](extensions/README.md)。
 
+## Redis 当前方案
+
+2026-11-28 用户确认先使用单 Redis，后续升级 Sentinel。当前沿用 1Panel 管理的 `persaas-redis`，Infisical 使用 DB0、Opik DB2、Flexprice DB3，Lago 作业 DB6、缓存 DB7、Cable DB8。数据库编号用于应用数据分区，不提供实例级故障隔离。当前无自动故障切换；Sentinel 不作为本阶段验收阻塞项。
+
 ## 检查服务
 
 在 129.28.39.52 执行：

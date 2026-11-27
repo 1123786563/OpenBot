@@ -25,7 +25,7 @@
 | Credits／预算／充值／扣费 | **未配置完整** | 页面显示 Billing Account unavailable、No model route yet、无 Test Credits；未创建真实收费套餐、未充值、未扣款 |
 | CubeSandbox | **缺现有 API Key** | 健康接口可访问，模板和沙箱接口 401；浏览器/电脑功能不可用。未修改 43.136.78.18 |
 | Flexprice | API 已验、业务未接 | 原生登录、环境内客户 API 通过；公网控制台缺 DNS，OpenBot 仍使用 Lago 用量适配器，尚未切换到 Flexprice |
-| Redis Sentinel | **未部署** | 仍是共享 Redis 单实例，按应用分 DB；两台主机不等于整个平台高可用 |
+| Redis | 当前方案已确认 | 2026-11-28 用户确认先保留共享单实例、按应用分 DB，后续升级 Sentinel；不再作为本阶段阻塞项。当前无自动故障切换 |
 | 语音、转录、共享与高级管理策略 | 未全面验收 | 未提供语音服务、第三方账号等依赖；只检查了部分管理页面，不将未测项记为通过 |
 
 ## 本轮部署修复
@@ -80,7 +80,7 @@ Trace 仅含状态、时间和 duration 等元数据；此轮没有为测试上�
 - 目标：`server/src/responsibilities/wiring.ts` 的执行仍依赖 Intelligence runner；当前部署为 OpenBot 原生运行模式。需要接入原生后台执行后再测。语音归档和历史提示也需要在该模式下排查。
 - 商业计费：尚需账户、费率、预算、Test Credits、用量出站全链路和支付策略；Lago 测试事件不能代替真实业务结算验证。
 - 补齐 CubeSandbox 现有 API Key、Flexprice DNS、第三方服务凭据后才能完成对应功能验收。不得为绕过缺失密钥修改 CubeSandbox 主机。
-- Sentinel、对象存储/ClickHouse/Kafka/Redis 完整备份及自动异机复制仍待完成。
+- Sentinel 已按用户决定列为后续升级项。对象存储/ClickHouse/Kafka/Redis 完整备份及自动异机复制仍待完成。
 
 ## 复验与备份
 

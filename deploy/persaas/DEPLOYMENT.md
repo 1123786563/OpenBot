@@ -52,7 +52,7 @@ Infisical 的 prod 项目集中保存运行配置与中间件恢复归档。API�
 ## 尚未完成
 
 - CubeSandbox `/templates` 和 `/sandboxes` 返回 401，待提供现有 API Key。浏览器模板、持久卷和数据通道尚未验收，OpenBot 暂未启用 CubeSandbox 浏览器提供者。
-- Redis 当前为单实例。之前提出的 Sentinel 要求仍待决定；两台跨地域机器不能提供三个独立故障节点。
+- Redis 当前按用户于 2026-11-28 确认的经济方案保留单实例，按应用分 DB；Sentinel 留待后续升级，不作为本阶段验收阻塞项。当前没有 Redis 自动故障切换，两台跨地域机器也不构成三个独立故障节点。
 - Flexprice 服务已运行，但仓库仍使用 Lago 用量投递代码。套餐、用量投递、对账与收款没有完成替换。
 - Casdoor 注册暂未开放，只创建测试管理员。新增用户需由管理员在 Casdoor 中管理。
 - Hindsight 等配套服务未启用；Opik 自动追踪与 OpenObserve 自动日志采集尚未完成业务验收。
