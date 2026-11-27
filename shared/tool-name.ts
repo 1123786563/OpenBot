@@ -207,6 +207,15 @@ function approvalParts(action: {
    * A browser action on the site it acts on, with the control it presses when the page named one:
    * "click the link “Python” on en.wikipedia.org". Activity said "Approve computer_click".
    */
+  if (action.toolRef === "computer_upload_browser_file") {
+    const path = computerFile(action.target);
+    const name = path?.split("/").at(-1);
+    return {
+      action: name ? `upload “${name}” once` : "upload a file once",
+      place: action.scope,
+      joiner: "on",
+    };
+  }
   const browser = browserAction(action.toolRef, action.target);
   if (browser) return { action: browser, place: action.scope, joiner: "on" };
   /*
@@ -625,6 +634,14 @@ const OWN_TOOLS: Record<string, OwnTool> = {
   computer_screenshot: {
     running: "Taking a screenshot",
     done: "Took a screenshot",
+  },
+  computer_upload_browser_file: {
+    running: "Uploading a workspace file",
+    done: "Attempted a file upload",
+  },
+  computer_retry_browser_download: {
+    running: "Retrying browser download delivery",
+    done: "Retried browser download delivery",
   },
 
   // The Bot's computer, and folders on yours. The same action reads the same on either.

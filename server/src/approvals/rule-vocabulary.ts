@@ -77,6 +77,11 @@ export const COMPUTER_APPROVAL_TOOLS: readonly {
     about: "download a file",
   },
   {
+    ref: "computer_upload_browser_file",
+    effects: ["write"],
+    about: "upload a workspace file to a site with one-time approval",
+  },
+  {
     ref: "computer_write_file",
     effects: ["write"],
     about: "save a file in the Bot's workspace",

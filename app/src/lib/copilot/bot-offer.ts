@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect } from "react";
 import { defer, from, mergeMap } from "rxjs";
 import { agentQueryOptions } from "@/lib/agents/queries";
 import { agentComponentsQueryOptions } from "@/lib/components/queries";
+import { browserUploadQueryOptions } from "@/lib/computers/queries";
 import { botOfAgent } from "@/lib/copilot/active-bot";
 import {
   type CapabilityKey,
@@ -45,6 +46,7 @@ export type BotFacts = {
   profile: { visibility: string; canManage: boolean } | undefined;
   /** What this deployment lets the person do at all. Undefined: could not be read. */
   capabilities: Partial<Record<CapabilityKey, boolean>> | undefined;
+  browserUpload?: boolean;
   /** The skills this Bot holds, by slug. */
   skills: ReadonlySet<string>;
 };
@@ -151,12 +153,14 @@ async function fact<T>(
 export async function factsFor(
   queries: QueryClient,
   botId: string,
+  needsBrowserUpload = false,
 ): Promise<BotFacts> {
   const components = agentComponentsQueryOptions(botId);
   const profile = agentQueryOptions(botId);
   const mine = myCapabilitiesQueryOptions();
   const plugins = agentPluginsQueryOptions(botId);
-  const [held, owner, allowed, granted] = await Promise.all([
+  const upload = browserUploadQueryOptions(botId);
+  const [held, owner, allowed, granted, browserUpload] = await Promise.all([
     fact(
       queries.getQueryData(components.queryKey),
       () => queries.prefetchQuery({ ...components, staleTime: FRESH_MS }),
@@ -177,6 +181,13 @@ export async function factsFor(
       () => queries.prefetchQuery({ ...plugins, staleTime: FRESH_MS }),
       () => queries.fetchQuery(plugins),
     ),
+    needsBrowserUpload
+      ? fact(
+          queries.getQueryData(upload.queryKey),
+          () => queries.prefetchQuery(upload),
+          () => queries.fetchQuery(upload),
+        )
+      : undefined,
   ]);
   return {
     components: held
@@ -185,6 +196,7 @@ export async function factsFor(
         )
       : undefined,
     profile: owner,
+    browserUpload,
     capabilities: allowed?.capabilities,
     skills: new Set((granted?.skills ?? []).map((skill) => skill.slug)),
   };
@@ -227,7 +239,17 @@ export function offerItsOwnTools(
   agent.use((input: RunAgentInput, next: AbstractAgent) => {
     if (narrowed.has(input.tools)) return next.run(input);
     return defer(() =>
-      from(botId ? factsFor(queries, botId) : Promise.resolve(NO_BOT)),
+      from(
+        botId
+          ? factsFor(
+              queries,
+              botId,
+              input.tools.some(
+                ({ name }) => name === "computer_upload_browser_file",
+              ),
+            )
+          : Promise.resolve(NO_BOT),
+      ),
     ).pipe(
       mergeMap((bot) => {
         const tools = offerFor(input.tools, bot);

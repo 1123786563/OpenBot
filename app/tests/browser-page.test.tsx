@@ -76,6 +76,8 @@ const PERSON_BROWSER = `person-${"ab12".repeat(8)}`;
 type Write = { path: string; method: string; body: unknown };
 const writes: Write[] = [];
 let state: BrowserApiState;
+const MANUAL_DOWNLOAD_ID = "a50a44db-c582-4029-aa0a-f01865983d80";
+let manualDownloads = false;
 let openAnswer: BrowserOpenResponse;
 let stateFails: number | false = false;
 let openFails = false;
@@ -229,6 +231,44 @@ async function server(path: string, init?: RequestInit): Promise<Response> {
   const refusal = refusals[path];
   if (refusal && method === "POST")
     return Response.json({ error: refusal }, { status: 409 });
+  if (
+    manualDownloads &&
+    path === `/api/computers/${PERSON_BROWSER}/browser-downloads`
+  )
+    return Response.json({
+      downloads: [
+        {
+          id: MANUAL_DOWNLOAD_ID,
+          name: "invoice.pdf",
+          bytes: 4,
+          downloadedAt: "2026-11-26T00:00:00.000Z",
+        },
+      ],
+    });
+  if (manualDownloads && path === "/api/agents")
+    return Response.json({
+      agents: [
+        { id: "notes", name: "Notes Bot", mine: true, isolationActive: false },
+        { id: "shared", name: "Shared Bot", mine: false },
+        {
+          id: "isolated",
+          name: "Isolated Bot",
+          mine: true,
+          isolationActive: true,
+        },
+      ],
+    });
+  if (
+    manualDownloads &&
+    path === "/api/computers/notes/browser-downloads/deliver" &&
+    method === "POST"
+  )
+    return Response.json({
+      status: "delivered",
+      path: `download-${MANUAL_DOWNLOAD_ID}`,
+      id: MANUAL_DOWNLOAD_ID,
+      bytes: 4,
+    });
   if (path === "/api/me")
     return Response.json({
       user: {
@@ -449,6 +489,7 @@ beforeEach(() => {
   queryClient.clear();
   writes.length = 0;
   stateFails = false;
+  manualDownloads = false;
   openFails = false;
   stateHeld = null;
   refusals = {};
@@ -2889,4 +2930,54 @@ test("on hosted OpenBot Clear browser data asks first in one sentence, Cancel do
     ).toEqual(["Browser cleared"]),
   );
   toast.close();
+});
+
+test("sends one selected personal download to one owned Bot on confirmation", async () => {
+  state = screenState();
+  openAnswer = answerFor("screen");
+  manualDownloads = true;
+  const user = userEvent.setup({ document });
+  const view = draw(<BrowserPage />);
+  const send = await view.findByRole("button", { name: "Deliver to Bot" });
+  expect(send.getAttribute("aria-disabled")).toBe("true");
+  await user.click(
+    await view.findByRole("combobox", { name: "Downloaded file" }),
+  );
+  const invoice = await view.findByRole("option", { name: /invoice.pdf/ });
+  await act(async () => {
+    invoice.click();
+  });
+  expect(send.getAttribute("aria-disabled")).toBe("true");
+  await user.click(
+    await view.findByRole("combobox", { name: "Recipient Bot" }),
+  );
+  expect(view.queryByRole("option", { name: "Shared Bot" })).toBeNull();
+  expect(view.queryByRole("option", { name: "Isolated Bot" })).toBeNull();
+  const notes = await view.findByRole("option", { name: "Notes Bot" });
+  await act(async () => {
+    notes.click();
+  });
+  expect(writes.filter(({ path }) => path.endsWith("/deliver"))).toEqual([]);
+  expect(
+    view.getByRole("combobox", { name: "Downloaded file" }).textContent,
+  ).toContain("invoice.pdf");
+  expect(
+    view.getByRole("combobox", { name: "Recipient Bot" }).textContent,
+  ).toContain("Notes Bot");
+  expect(send.getAttribute("aria-disabled")).toBeNull();
+  await act(async () => {
+    await user.click(send);
+  });
+  expect(writes.filter(({ path }) => path.endsWith("/deliver"))).toEqual([
+    {
+      path: "/api/computers/notes/browser-downloads/deliver",
+      method: "POST",
+      body: { id: MANUAL_DOWNLOAD_ID },
+    },
+  ]);
+  expect(
+    await view.findByText(
+      `Saved in the Bot workspace as download-${MANUAL_DOWNLOAD_ID}.`,
+    ),
+  ).toBeTruthy();
 });

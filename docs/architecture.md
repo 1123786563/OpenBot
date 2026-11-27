@@ -4,7 +4,7 @@ OpenBot combines a React app, a Hono API server, PostgreSQL, CopilotKit Intellig
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/architecture-dark.svg">
-  <img src="../assets/architecture-light.svg" alt="A turn goes from the app to the server, which sends it to a Bot over AG-UI. Every tool call the Bot makes returns through the gateway, which resolves the target, decides it against the configured policy, records an audit row, and only then acts, or refuses and names the rule. Allowed actions reach that Bot's own computer, one container each holding its own Chromium, logins and workspace, created by the supervisor. Every decision lands in PostgreSQL; threads and memory live in CopilotKit Intelligence.">
+  <img src="../assets/architecture-light.svg" alt="The API gateway resolves tool targets, enforces policy, and records audit events in PostgreSQL. The supervisor creates legacy isolated computers with Chromium and a workspace. The personal computer pilot routes browser actions to CubeSandbox and execution to OpenShell. CopilotKit Intelligence can store threads and memory.">
 </picture>
 
 Regenerate it with `bun run diagram` after changing anything it shows.

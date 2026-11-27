@@ -18,14 +18,17 @@ import type {
   RequestHelpInput,
 } from "@openbot/shared/computer-control";
 
+type ControlSurface = "browser" | "terminal";
+
 async function callControl(
   computerId: string,
   path: string,
   body?: unknown,
   signal?: AbortSignal,
+  surface?: ControlSurface,
 ): Promise<ControlState | null> {
   const response = await tryClient(
-    `/api/computers/${encodeURIComponent(computerId)}${path}`,
+    `/api/computers/${encodeURIComponent(computerId)}${path}${surface === "terminal" ? (path.includes("?") ? "&surface=terminal" : "?surface=terminal") : ""}`,
     { ...(body === undefined ? {} : { method: "POST", body }), signal },
   );
   if (!response.ok) return null;
@@ -50,36 +53,77 @@ export function readControl(
   computerId: string,
   requestId?: string,
   signal?: AbortSignal,
+  surface?: ControlSurface,
 ) {
   return callControl(
     computerId,
     `/control${requestId ? `?requestId=${encodeURIComponent(requestId)}` : ""}`,
     undefined,
     signal,
+    surface,
   );
 }
 
-export async function takeControl(computerId: string, requestId?: string) {
+export async function takeControl(
+  computerId: string,
+  requestId?: string,
+  surface?: ControlSurface,
+) {
   const id =
     requestId ??
     (
-      await callControl(computerId, "/control/request", {
-        reason: "I want to take control of the browser.",
-        // A person's own take, so nothing shows its reason back to them as though the Bot had asked.
-        source: "manual",
-      } satisfies RequestHelpInput)
+      await callControl(
+        computerId,
+        "/control/request",
+        {
+          reason:
+            surface === "terminal"
+              ? "I want to take control of the terminal."
+              : "I want to take control of the browser.",
+          // A person's own take, so nothing shows its reason back to them as though the Bot had asked.
+          source: "manual",
+        } satisfies RequestHelpInput,
+        undefined,
+        surface,
+      )
     )?.request?.id;
   return id
-    ? callControl(computerId, "/control/take", { requestId: id })
+    ? callControl(
+        computerId,
+        "/control/take",
+        { requestId: id },
+        undefined,
+        surface,
+      )
     : null;
 }
 
-export function releaseControl(computerId: string, requestId: string) {
-  return callControl(computerId, "/control/release", { requestId });
+export function releaseControl(
+  computerId: string,
+  requestId: string,
+  surface?: ControlSurface,
+) {
+  return callControl(
+    computerId,
+    "/control/release",
+    { requestId },
+    undefined,
+    surface,
+  );
 }
 
-export function cancelControl(computerId: string, requestId: string) {
-  return callControl(computerId, "/control/cancel", { requestId });
+export function cancelControl(
+  computerId: string,
+  requestId: string,
+  surface?: ControlSurface,
+) {
+  return callControl(
+    computerId,
+    "/control/cancel",
+    { requestId },
+    undefined,
+    surface,
+  );
 }
 
 /**

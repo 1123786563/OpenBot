@@ -11,6 +11,7 @@ import {
 } from "@/lib/bot-browser/queries";
 import { botsReason, supplySecret } from "@/lib/computers/control";
 import {
+  browserUploadQueryOptions,
   type ComputerState,
   computerStatusQueryOptions,
 } from "@/lib/computers/queries";
@@ -23,6 +24,7 @@ import { useComputerControl } from "@/lib/computers/use-control";
 import { queryClient } from "@/query-client";
 import { ChannelAvatar } from "../channels/avatar";
 import { BotBrowserBar, BotRecordPanel } from "./bot-browser";
+import { BrowserUpload } from "./browser-upload";
 import { ComputerControlButton } from "./computer-controls";
 import { LiveScreen, type LiveScreenHandle } from "./live-screen";
 import { useElementVisible, usePageVisible } from "./preview-visibility";
@@ -427,6 +429,10 @@ export function ComputerView({
 
   /** Secret prompts keep the screen live even though the human does not hold the wheel. */
   const secretPending = Boolean(control?.secretWanted);
+  const browserUpload = useQuery({
+    ...browserUploadQueryOptions(computerId),
+    enabled: expanded && !settled && driving && !secretPending,
+  });
   const secretPendingRef = useRef(false);
   secretPendingRef.current = secretPending;
   // Held in a ref so a slow response cannot overwrite a newer frame after the component moved on.
@@ -1196,6 +1202,12 @@ export function ComputerView({
                   Record, under the wheel, because it is only for the person holding it. Branched on
                   the data first, so a read that fails after one has answered keeps what it showed.
                 */}
+                  {!settled &&
+                  driving &&
+                  !secretPending &&
+                  browserUpload.data === true ? (
+                    <BrowserUpload key={computerId} botId={computerId} />
+                  ) : null}
                   {settled ? null : botBrowser.data ? (
                     <BotRecordPanel
                       botId={computerId}

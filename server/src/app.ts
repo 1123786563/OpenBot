@@ -2022,6 +2022,11 @@ export function createApp(
             })
           : undefined,
         auditStore,
+        agentProfileStore
+          ? async (actor, botId) =>
+              (await agentProfileStore.get(actor, botId))?.ownerUserId ===
+              actor.id
+          : undefined,
       ),
     );
     // Beside `/policy` and named in DEPLOYMENT_ROUTES with it: the computer router's Bot guard

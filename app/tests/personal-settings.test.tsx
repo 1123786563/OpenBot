@@ -29,6 +29,8 @@ import {
   type ComputerFleet,
   computerFleetQueryOptions,
   computerKeys,
+  type PilotComputerLifecycle,
+  pilotComputerQueryOptions,
 } from "@/lib/computers/queries";
 import {
   type DeploymentCapabilities,
@@ -120,13 +122,17 @@ describe("the Settings sidebar", () => {
 describe("the personal pages under Settings", () => {
   type BeforeLoad = (input: {
     context: { queryClient: QueryClient };
+    location: { pathname: string };
   }) => Promise<unknown> | unknown;
   const beforeLoad = PersonalSettingsRoute.options
     .beforeLoad as unknown as BeforeLoad;
 
-  async function outcome(client: QueryClient) {
+  async function outcome(client: QueryClient, pathname = "/settings/skills") {
     try {
-      await beforeLoad({ context: { queryClient: client } });
+      await beforeLoad({
+        context: { queryClient: client },
+        location: { pathname },
+      });
       return "open";
     } catch (thrown) {
       return isRedirect(thrown) ? thrown.options.to : thrown;
@@ -139,6 +145,23 @@ describe("the personal pages under Settings", () => {
 
   test("send the team edition back to Settings", async () => {
     expect(await outcome(clientFor("team"))).toBe("/settings");
+  });
+
+  test("team pilot enrollment opens only the account Computer page", async () => {
+    const client = clientFor("team");
+    const { queryKey } = pilotComputerQueryOptions();
+    client.setQueryData(queryKey, null);
+    expect(await outcome(client, "/settings/computer")).toBe("/settings");
+    client.setQueryData(
+      queryKey,
+      (): PilotComputerLifecycle => ({
+        browserId: "fixture",
+        browser: true,
+        execution: true,
+      }),
+    );
+    expect(await outcome(client, "/settings/computer")).toBe("open");
+    expect(await outcome(client, "/settings/skills")).toBe("/settings");
   });
 
   test("send an edition that couldn't be read back to Settings", async () => {

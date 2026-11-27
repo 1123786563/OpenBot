@@ -48,6 +48,47 @@ const {
   ...withoutSignIn
 } = baseEnvironment;
 
+describe("computer pilot enrollment", () => {
+  const execution = {
+    ...baseEnvironment,
+    AGENT_COMPUTER_URL: "http://127.0.0.1:4100",
+    OPENBOT_OPENSHELL_PILOT_USERS: "pilot, execution-only",
+    OPENBOT_OPENSHELL_GATEWAY: "pilot-gateway",
+    OPENBOT_OPENSHELL_WORKSPACE: "pilot-workspace",
+    OPENBOT_OPENSHELL_IMAGE: "execution:pilot",
+    OPENBOT_OPENSHELL_TOKEN: "fixture-execution-token-with-32-characters",
+  };
+
+  test("rejects a Cube browser binding without matching OpenShell enrollment", () => {
+    expect(() =>
+      loadConfig({
+        ...execution,
+        OPENBOT_CUBE_BROWSER_VOLUMES: '{"pilot":"first","other":"second"}',
+      }),
+    ).toThrow(/OPENBOT_CUBE_BROWSER_VOLUMES.*OPENBOT_OPENSHELL_PILOT_USERS/);
+    expect(() =>
+      loadConfig({
+        ...execution,
+        OPENBOT_CUBE_BROWSER_VOLUMES: '{"pilot":"first"}',
+        OPENBOT_OPENSHELL_PILOT_USERS: undefined,
+      }),
+    ).toThrow(/OPENBOT_CUBE_BROWSER_VOLUMES.*OPENBOT_OPENSHELL_PILOT_USERS/);
+  });
+
+  test.each([undefined, "{}", '{"pilot":"first"}'])(
+    "accepts OpenShell enrollment with Cube bindings %s",
+    (bindings) => {
+      const config = loadConfig({
+        ...execution,
+        OPENBOT_CUBE_BROWSER_VOLUMES: bindings,
+      });
+      expect(config.computerExecution?.pilotUsers).toEqual(
+        new Set(["pilot", "execution-only"]),
+      );
+    },
+  );
+});
+
 describe("deployment configuration", () => {
   test.each([undefined, "", "stale-legacy-key"])(
     "uses the CLI runtime key with legacy value %s",

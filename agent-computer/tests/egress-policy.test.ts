@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { once } from "node:events";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { connect, type Socket } from "node:net";
 import {
@@ -199,7 +200,7 @@ describe("the network policy rules", () => {
 
 /**
  * The filter, driven over real sockets on 127.0.0.1: a policy pushed while it runs applies to the
- * next connection without restarting anything.
+ * next connection and can revoke active traffic without restarting anything.
  */
 describe("the filter proxy", () => {
   afterEach(async () => {
@@ -222,33 +223,155 @@ describe("the filter proxy", () => {
     };
   }
 
-  function connectThrough(
+  function openTunnel(
     filterPort: number,
     target: string,
     botId?: string,
     secret?: string,
   ) {
-    return new Promise<string>((resolve, reject) => {
-      const socket = connect(filterPort, "127.0.0.1", () => {
-        const auth =
-          botId && secret
-            ? `Proxy-Authorization: Basic ${Buffer.from(`${botId}:${secret}`).toString("base64")}\r\n`
-            : "";
-        socket.write(
-          `CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n${auth}\r\n`,
-        );
-      });
-      let seen = "";
-      socket.on("data", (chunk) => {
-        seen += chunk.toString();
-        if (seen.includes("\r\n\r\n")) {
-          socket.destroy();
-          resolve(seen.split("\r\n")[0] ?? "");
-        }
-      });
-      socket.on("error", reject);
-    });
+    return new Promise<{ socket: Socket; status: string }>(
+      (resolve, reject) => {
+        const socket = connect(filterPort, "127.0.0.1", () => {
+          const auth =
+            botId && secret
+              ? `Proxy-Authorization: Basic ${Buffer.from(`${botId}:${secret}`).toString("base64")}\r\n`
+              : "";
+          socket.write(
+            `CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n${auth}\r\n`,
+          );
+        });
+        let seen = "";
+        const readStatus = (chunk: Buffer) => {
+          seen += chunk.toString();
+          if (seen.includes("\r\n\r\n")) {
+            socket.off("data", readStatus);
+            resolve({ socket, status: seen.split("\r\n")[0] ?? "" });
+          }
+        };
+        socket.on("data", readStatus);
+        socket.on("error", reject);
+      },
+    );
   }
+
+  async function connectThrough(...args: Parameters<typeof openTunnel>) {
+    const { socket, status } = await openTunnel(...args);
+    socket.destroy();
+    return status;
+  }
+
+  test("an accepted policy update closes only tunnels it no longer allows", async () => {
+    const target = await origin();
+    const filter = await startEgressFilter({ env: {} });
+    const secret = egressFor("sales", {})?.password;
+    const where = `127.0.0.1:${target.port}`;
+    const explicitAllow = {
+      mode: "allowlist_only",
+      rules: [
+        { type: "cidr", value: "127.0.0.1/32", ports: String(target.port) },
+      ],
+    };
+    const push = (botId: string, policy: unknown) =>
+      handleEgressPolicyRequest(
+        botId,
+        new Request("http://computer/egress-policy", {
+          method: "PUT",
+          body: JSON.stringify({ policy }),
+        }),
+      );
+
+    await push("sales", explicitAllow);
+    await push("research", explicitAllow);
+    const sales = await openTunnel(filter.browserPort, where, "sales", secret);
+    const research = await openTunnel(
+      filter.browserPort,
+      where,
+      "research",
+      secret,
+    );
+    try {
+      expect(sales.status).toContain("200");
+      expect(research.status).toContain("200");
+      const closed = once(sales.socket, "close").then(() => "closed");
+      expect((await push("sales", explicitAllow)).status).toBe(200);
+      expect(
+        await Promise.race([closed, Bun.sleep(50).then(() => "open")]),
+      ).toBe("open");
+      expect(
+        (await push("sales", { mode: "deny_all", rules: [] })).status,
+      ).toBe(200);
+      expect(
+        await Promise.race([closed, Bun.sleep(250).then(() => "open")]),
+      ).toBe("closed");
+      expect(research.socket.destroyed).toBe(false);
+      expect(
+        await connectThrough(filter.browserPort, where, "research", secret),
+      ).toContain("200");
+    } finally {
+      sales.socket.destroy();
+      research.socket.destroy();
+      await target.close();
+    }
+  });
+
+  test("a policy tightened during DNS governs the pending connection", async () => {
+    const target = await origin();
+    const filter = await startEgressFilter({ env: {} });
+    const lookupStarted = Promise.withResolvers<void>();
+    const lookupResult = Promise.withResolvers<string[]>();
+    setEgressResolver(() => {
+      lookupStarted.resolve();
+      return lookupResult.promise;
+    });
+    setEgressPolicy("sales", { mode: "allow_all", rules: [] });
+    try {
+      const status = connectThrough(filter.port, `fixture.test:${target.port}`);
+      await lookupStarted.promise;
+      setEgressPolicy("sales", { mode: "deny_all", rules: [] });
+      lookupResult.resolve(["127.0.0.1"]);
+      expect(await status).toContain("403");
+    } finally {
+      lookupResult.resolve(["127.0.0.1"]);
+      await target.close();
+    }
+  });
+
+  test("a policy update ends an in-flight plain HTTP response on both sides", async () => {
+    const originClosed = Promise.withResolvers<void>();
+    const server = createServer((_request, response) => {
+      response.once("close", () => originClosed.resolve());
+      response.write("fixture");
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const filter = await startEgressFilter({ env: {} });
+    setEgressPolicy("sales", { mode: "allow_all", rules: [] });
+    const client = connect(filter.port, "127.0.0.1", () => {
+      client.write(
+        `GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`,
+      );
+    });
+    try {
+      expect(String((await once(client, "data"))[0])).toStartWith(
+        "HTTP/1.1 200",
+      );
+      const clientClosed = once(client, "close");
+      setEgressPolicy("sales", { mode: "deny_all", rules: [] });
+      const ended = Promise.all([clientClosed, originClosed.promise]).then(
+        () => "closed",
+      );
+      expect(
+        await Promise.race([ended, Bun.sleep(250).then(() => "open")]),
+      ).toBe("closed");
+    } finally {
+      client.destroy();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 
   test("the browser is pointed at the filter's browser listener with the Bot in its credentials", async () => {
     const filter = await startEgressFilter({ env: {} });
