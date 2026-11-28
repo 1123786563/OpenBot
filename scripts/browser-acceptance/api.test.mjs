@@ -34,6 +34,12 @@ test("the shell can load an empty Bot attention feed", async () => {
   expect(await response.json()).toEqual({ bots: [], lastPingId: null });
 });
 
+test("the Computer pilot reports an unavailable lifecycle", async () => {
+  const response = await request("/api/computers/pilot");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ lifecycle: null });
+});
+
 test("a fresh direct thread can connect and read empty history", async () => {
   const mint = await request("/api/threads/mint", { method: "POST" });
   expect(mint.status).toBe(200);
