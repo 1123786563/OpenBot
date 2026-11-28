@@ -186,6 +186,39 @@ test("Escape returns focus to New Bot on the empty roster", async () => {
   await waitFor(() => expect(document.activeElement).toBe(newBot));
 });
 
+test("Escape and Cancel ask before discarding edited Bot details", async () => {
+  const view = renderEntry("/bots");
+  const user = userEvent.setup({ document });
+  await user.click(await view.findByRole("link", { name: "New Bot" }));
+  const sheet = within(await view.findByRole("dialog", { name: "New Bot" }));
+  const name = sheet.getByLabelText("Name");
+  await user.type(name, "Planning Bot");
+
+  await user.keyboard("{Escape}");
+  const confirmation = within(
+    await view.findByRole("alertdialog", { name: "Discard this Bot draft?" }),
+  );
+  await user.click(confirmation.getByRole("button", { name: "Keep editing" }));
+  await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+  expect(name).toHaveProperty("value", "Planning Bot");
+  expect(view.history.location.search).toBe("?new=true");
+
+  await user.click(sheet.getByRole("button", { name: "Cancel" }));
+  const discard = await view.findByRole("button", { name: "Discard changes" });
+  await user.click(discard);
+  await waitFor(() =>
+    expect(view.queryByRole("dialog", { name: "New Bot" })).toBeNull(),
+  );
+  expect(view.history.location.search).toBe("");
+
+  await user.click(view.getByRole("link", { name: "New Bot" }));
+  expect(
+    within(await view.findByRole("dialog", { name: "New Bot" })).getByLabelText(
+      "Name",
+    ),
+  ).toHaveProperty("value", "");
+});
+
 test("dismissing a directly opened creation sheet focuses the Bots header action", async () => {
   const view = renderEntry("/bots?new=true");
   const sheet = within(await view.findByRole("dialog", { name: "New Bot" }));
