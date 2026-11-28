@@ -32,6 +32,7 @@ import {
   agentProfiles,
   agents,
   channels,
+  directChatRuns,
   groupBotThreads,
   intelligenceChannelMappings,
   personalSaasAccounts,
@@ -107,6 +108,41 @@ async function bot(
   createdAgents.push(profile.id);
   return profile.id;
 }
+
+test("the group Run owner can read a verified reply, but only after verification", async () => {
+  const owner = await person();
+  const teammate = await person();
+  const ada = await bot(owner, "Ada");
+  const grace = await bot(owner, "Grace");
+  const channel = await channelStore.create(owner, [ada, grace]);
+  createdChannels.push(channel.id);
+  const group = createGroupStore(database, () => threadIdentity.mint());
+  await group.addMember(owner.id, channel.id, teammate.email);
+  const threadId = await group.thread(owner.id, channel.id, ada);
+  const id = randomUUID();
+  await database.insert(directChatRuns).values({
+    id,
+    threadId,
+    groupThreadId: threadId,
+    userMessageId: randomUUID(),
+    prompt: "What was the outcome?",
+    status: "failed",
+    stopReason: "stopped",
+    externalOutcome: "unknown",
+    reply: "Verified reply",
+  });
+  expect(await group.backgroundRuns?.(owner.id, channel.id)).toMatchObject([
+    { id, externalOutcome: "unknown", partialReply: null },
+  ]);
+  await database
+    .update(directChatRuns)
+    .set({ externalOutcome: "executed" })
+    .where(eq(directChatRuns.id, id));
+  expect(await group.backgroundRuns?.(owner.id, channel.id)).toMatchObject([
+    { id, externalOutcome: "executed", partialReply: "Verified reply" },
+  ]);
+  expect(await group.backgroundRuns?.(teammate.id, channel.id)).toEqual([]);
+});
 
 function service(options: {
   replies: Record<
