@@ -1773,3 +1773,11 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 | `/tasks` | `e32e29d13` | 隔离 Personal | 3 2 3 3 3 3 2 3 3 3 | 28/40 | 完成确认解释了七天内可重新打开任务，取消恢复原焦点，写入失败可重试。简体中文引导中的「已解决」与页面上的 Resolved 不一致。跨状态搜索和实机读屏播报仍待验。 |
 
 独立自动检测覆盖同一构建的 16 个 Chromium 样本，包括桌面与窄屏、浅色与深色，以及有任务、审批重试、完成确认和提交重试。任务元信息出现 8 次小字号警告，桌面浅色有 4 次嵌套卡片提示，窄屏有 10 次孤词提示。源码检测为 0 项，页面异常为 0。 [自动检测原始记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector-main.XHTQ59/run.json) · [完成流程证据](/Users/wuyj/.local/state/openbot-spec-127/evidence/web127-main-e32e29d.oysADh/tasks/run.json)
+
+### Ideas 有建议时的独立复评
+
+| 视图 | 构建 | 测试身份 | H1–H10 | 暂定分 | 设计判断 |
+|---|---|---|---|---:|---|
+| `/ideas` | `23c9dcfed` | 隔离 Personal | 2 3 3 3 3 3 3 3 3 3 | 29/40 | 忽略会解释 30 天影响，取消后复位焦点，提交失败可重试。开始处理时按钮禁用，成功后原先没有回执或直达任务入口。 |
+
+独立自动检测在 390 和 1440 CSS 像素的浅深主题下检查了 16 个 Chromium 场景，包含有建议、忽略确认、忽略重试和启动中。源码检测为 0 项，浏览器检测的 4 项均为桌面浅色嵌套卡片提示，尚未复现具体影响。16 个场景均无页面异常和文档横向溢出。 [自动检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector-ideas.VEapuq/run.json) · [开始处理记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-ideas-start.AzyjhL/run.json) · [忽略记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-ideas-populated.vhs6LC/run.json)

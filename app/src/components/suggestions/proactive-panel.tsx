@@ -9,7 +9,7 @@ import {
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { InlineEmpty } from "@/components/layout/page-parts";
 import {
@@ -115,6 +115,16 @@ export function SuggestionsInbox({
   const bots = useQuery(agentListQueryOptions());
   const [expanded, setExpanded] = useState(false);
   const [search, setSearch] = useState("");
+  const [started, setStarted] = useState<{
+    channelId: string;
+    title: string;
+  }>();
+  const startedLink = useRef<HTMLAnchorElement>(null);
+  const showStarted = readable ? started : undefined;
+  useEffect(() => {
+    if (showStarted && document.activeElement === document.body)
+      startedLink.current?.focus();
+  }, [showStarted]);
   const searchId = useId();
   const searchInput = useRef<HTMLInputElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -158,6 +168,7 @@ export function SuggestionsInbox({
     !showEmpty &&
     agentId !== undefined &&
     !suggestions.isError &&
+    !showStarted &&
     shown.length === 0
   ) {
     return null;
@@ -184,6 +195,23 @@ export function SuggestionsInbox({
       title="Suggested next steps"
     >
       {confirmation}
+      {showStarted ? (
+        <Stack gap={2}>
+          <Text as="p" role="status">
+            {t("ideas.taskStarted", "Started a task for {title}.", {
+              title: showStarted.title,
+            })}
+          </Text>
+          <Link
+            className="self-start underline underline-offset-2"
+            params={{ channelId: showStarted.channelId }}
+            ref={startedLink}
+            to="/channel/$channelId"
+          >
+            {t("ideas.openTask", "Open task")}
+          </Link>
+        </Stack>
+      ) : null}
       {suggestions.isPending ? (
         <ReadStatus kind="loading" message="Loading suggested next steps…" />
       ) : null}
@@ -262,6 +290,9 @@ export function SuggestionsInbox({
                 botName={botName(suggestion.agentId)}
                 canAct={!suggestions.isError}
                 onDismiss={(trigger) => confirmDismiss(suggestion, trigger)}
+                onStarted={(channelId) =>
+                  setStarted({ channelId, title: suggestion.title })
+                }
                 suggestion={suggestion}
               />
             </Fragment>

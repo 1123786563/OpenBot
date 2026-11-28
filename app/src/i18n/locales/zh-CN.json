@@ -92,6 +92,8 @@
   "frame.skipToContent": "跳到主要内容",
   "frame.tryAgain": "重试",
   "ideas.actionConsequences": "选择「开始处理」会启动任务。选择「忽略」后，定期检查将在 30 天内跳过类似的建议。",
+  "ideas.openTask": "打开任务",
+  "ideas.taskStarted": "已为「{title}」启动任务。",
   "nav.account": "账户",
   "nav.admin": "管理",
   "nav.allBots": "全部 Bot",
