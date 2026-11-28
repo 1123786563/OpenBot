@@ -42,6 +42,12 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 
 #193 使用构建提交 `ccca02100` 复跑了旧书签、登录回跳和认证客户端测试，共 126 项通过。模拟 Team 成员从 `/s/goals?agent=expenses` 发起登录后，目标路径仍保留原地址。恢复已登录会话后，路由到达 `/responsibilities?agent=expenses&view=goals`。隔离 OIDC 复验使用构建 `a692a090c`、本机 Keycloak 26.4.7 和 PostgreSQL，经过 OpenBot 的真实授权码回调，保留 `agent=expenses` 并进入 Goals。在同一会话内将测试账号从管理员降为成员后，`/api/me` 返回成员，重新打开 `/admin/plugins/parallel` 回到首页。记录与截图位于 `~/.local/state/openbot-spec-127/evidence/group-acceptance.2OHO1J/bookmarks-oidc/`。 [书签测试](../../app/tests/legacy-bookmarks.test.tsx) [登录回跳测试](../../app/tests/sign-resume.test.tsx)
 
+## #184 首次使用与交还复验
+
+Chromium 和 WebKit 各验证了首次使用的进度保存、完成保存与预约回退。测试覆盖 320、390、1440 CSS 像素与低动态模式。进度写入返回 503 后，键盘重试保存当前步骤，重新打开无步骤参数的地址仍回到该步骤。完成写入返回 503 后，键盘重试进入工作区。模拟离线时，预约入口提示日历不可用，并发出在新标签页打开预约入口的请求。测试捕获了该跳转，真实预约待验。 [流程与构建索引](/Users/wuyj/.local/state/openbot-spec-127/evidence/web184-onboarding-recovery.md)
+
+桌面交还的模拟连接确认从 503 恢复后，Firefox ESR 的焦点回到桌面入口，Orca 读出了链接。为 Bot 登录网站的四个隔离浏览器场景验证了读取重试恢复焦点，以及请求过期后移除表单。真实请求投递、验证码与桌面协议端到端流程仍待复验。 [桌面交还读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-desktop-return.VQNRGK) · [为 Bot 登录网站记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/website-sign-in-main.GnnhT1/evidence/run.json)
+
 ## 设计判断
 
 `design.md` 记录一名评审对两项共享恢复画面的 H1–H10 观察。两个画面分别展示地址失效和页面加载失败，首要动作与焦点环可见。完整任务状态与第二名独立评审仍待验证。表中「待」代表当前构建缺少可打分的完整任务证据。「–」表示 H7 效率项按既有口径不适用。
@@ -91,9 +97,9 @@ Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发�
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
 |---|---|---|---|---|---:|
 | `view-1` | /sign · `/sign` | 未登录 | 4/4。首屏，待验完整任务状态 | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-2` | /onboarding · `/onboarding` | Personal | 4/4。首屏，待验完整任务状态。观察到 `/onboarding?step=welcome`。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-3` | /desktop-return · `/desktop-return` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 – 待 待 待 | 36 |
-| `view-4` | /sign-in/$requestId · `/sign-in/$requestId` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-2` | /onboarding · `/onboarding` | Personal | 4/4 首屏。另验进度写入、完成写入和预约回退，真实预约待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-3` | /desktop-return · `/desktop-return` | Personal | 4/4 首屏。另验模拟确认失败后的读屏重试和桌面入口焦点 | 待 待 待 待 待 待 – 待 待 待 | 36 |
+| `view-4` | /sign-in/$requestId · `/sign-in/$requestId` | Personal | 4/4 首屏。另验读失败恢复与过期表单清理，真实请求待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-5` | Home · `/` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-6` | New conversation · `/channel/new` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-7` | Start handoff · `/start/$startId` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 – 待 待 待 | 36 |
