@@ -100,11 +100,19 @@ Chromium 和 WebKit 各验证了首次使用的进度保存、完成保存与预
 
 同一主线构建使用 Firefox ESR、Orca 和隔离 API 复验四个 Arcade 与 Composio 目录入口。Personal 和 Team 管理员收到模拟 503 时均可在原页重试。配置恢复后，焦点回到 Search apps。连接和授权定向回归共 125 项通过，覆盖 GitHub 添加中断后沿用请求标识以及 Arcade 连接与审计写入。真实供应商授权、真实 Bot 使用范围和独立评分仍待验。 [Personal 读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-broker-directory.UReeeL) · [Team 读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-admin-broker-directory.sZVzgc) · [连接回归](/Users/wuyj/.local/state/openbot-spec-127/evidence/web190-connection-regression.tT7XaJ/results.log)
 
+### #180 审批有效期复验
+
+主线 `e94fe7f4c` 合入后，在隔离 PostgreSQL 重跑四项测试。待批请求在 Run 仍进行时保留，不按经过时间过期。Run 完成、失败或停止后，迟到的审批无法继续该 Run。语音触发工具的审批通过后，原 Run 只续跑一次。以上使用测试模型和持久化数据库，真实供应商流式回复与审批续跑仍待验。 [实现 #271](https://github.com/1123786563/OpenBot/pull/271) · [定向复验日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/web180-main-postgres.WpVvau/results.log)
+
 ### #189 工作视图复验
 
 Firefox ESR 和 Orca 在 Personal 隔离环境中复验了 Tasks、Ideas、Goals、嵌入式 Routines 和 Activity 的读取失败与键盘重试。Goals 的首次复验发现焦点落在标题。用 `e644eb6ef` 加上 #263 的代码改动重新构建后，焦点回到 Bot 选择器。Ideas 建议读取恢复后聚焦建议区标题。Activity 恢复后聚焦进行中区块，Orca 依次读出三个空态。新建例行任务的调度控件读出了时区与夏令时说明。 [读屏证据索引](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-acceptance-audit.md) · [Goals 修复 #263](https://github.com/1123786563/OpenBot/pull/263)
 
 Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发失败场景。任务与审批各显示一个错误，键盘只重试对应请求，恢复后聚焦任务状态筛选器。两种浏览器也验证了任务和例行任务历史的来源链接。Goals 的 Bot 选择器和导航至少相隔 16 CSS 像素。新建表单实测的四个控件均达到 44 × 44 CSS 像素。这些浏览器场景使用隔离模拟 API。真实角色的保存记录见上方例行任务条目。独立评分仍待完成。 [Chromium 并发恢复](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-concurrent-themed.XCD3BY/run.json) · [WebKit 并发恢复](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-concurrent-webkit-en.1nHRMf/run.json) · [布局与触区](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-targets.0ljWZC/run.json)
+
+在候选构建 `36b040e89` 上，Personal 用户用 macOS 27.2.1 与 Safari 27.2 复验 Tasks 的读取恢复。VoiceOver 开启期间，Option-Tab 到达无障碍按钮「重新加载任务」。按 Enter 后，隔离 API 由 503 恢复为 200，焦点回到 `Task status` 组合框。验收后已确认 VoiceOver 关闭。记录包含 Safari 无障碍焦点和 HTTP 请求，语音播报仍待验。 [实机记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/safari-tasks.k877fJ/README.md)
+
+同一构建下，320 CSS 像素的 Chromium 英语和 WebKit 简体中文场景验证了「标记为完成」的初始焦点、Escape 取消后焦点回归、取消零写入，以及保存成功但响应丢失时只写入一次。 [浏览器记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-build.yWpzDB/run.json) · [实现 #273](https://github.com/1123786563/OpenBot/pull/273)
 
 ### #191 治理与 #192 Admin 复验
 
