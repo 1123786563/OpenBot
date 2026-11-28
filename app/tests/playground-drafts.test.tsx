@@ -87,6 +87,13 @@ async function draw() {
 
 test("cancelling a dirty open restores focus and leaves the draft in the editor", async () => {
   const { view, user } = await draw();
+  const savedRow = view.getByRole("listitem", { name: "" });
+  expect(
+    within(savedRow).getByText("draft only, no Bot can draw it"),
+  ).toBeTruthy();
+  expect(
+    within(savedRow).queryByText(/edited since publishing|unpublished edits/),
+  ).toBeNull();
   const title = view.getByRole("textbox", { name: "Title" });
   await user.type(title, "Unsaved title");
   const open = view.getByRole("button", { name: "Open Saved card" });

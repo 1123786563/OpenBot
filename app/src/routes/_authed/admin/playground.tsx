@@ -348,7 +348,7 @@ function PlaygroundPage() {
           {/* The JSON fields explain their own invalid state inline; these two names are
               the only inputs whose absence disables the buttons without a visible reason. */}
           {!canWrite && !busy && (!draft.slug || !draft.title) ? (
-            <p className="text-muted-foreground text-xs">
+            <p className="text-muted-foreground text-sm">
               Name and title are needed first.
             </p>
           ) : null}
@@ -556,12 +556,12 @@ function PlaygroundPage() {
                     <div style={{ minInlineSize: 0, overflowWrap: "anywhere" }}>
                       <p>{component.title}</p>
                       <div className="font-mono text-xs">{component.name}</div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-pretty text-muted-foreground text-sm">
                         {component.published
                           ? `published, revision ${component.revision}`
                           : "draft only, no Bot can draw it"}
-                        {component.hasUnpublishedChanges
-                          ? " · edited since publishing"
+                        {component.published && component.hasUnpublishedChanges
+                          ? " · unpublished edits"
                           : ""}
                       </div>
                     </div>
@@ -597,7 +597,7 @@ function PlaygroundPage() {
                 ))}
               </ul>
             )}
-            <p className="border-border border-t px-4 py-2 text-muted-foreground text-xs">
+            <p className="text-pretty border-border border-t px-4 py-2 text-muted-foreground text-sm">
               Publishing makes it available to every Bot. Turn it off for one
               Bot on the UI components page.
             </p>
