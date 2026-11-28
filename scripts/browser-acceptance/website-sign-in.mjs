@@ -37,6 +37,13 @@ const result = await fetch(FIXTURE_API_URL + requestPath);
 assert(result.ok);
 const request = await result.json();
 assert.equal(request.status, "pending");
+const rosterResponse = await fetch(`${FIXTURE_API_URL}/api/channels`);
+assert(rosterResponse.ok);
+const { channels } = await rosterResponse.json();
+const conversation = channels.find(
+  (channel) => channel.threadId && channel.agentIds.length === 1,
+);
+assert(conversation, "The fixture needs a direct conversation with a Thread");
 
 const browser = await chromium.launch();
 const cases = [];
@@ -73,6 +80,7 @@ try {
             json: {
               ...request,
               status,
+              threadId: conversation.threadId,
               origin:
                 "https://a-long-account-sign-in-subdomain.staging.example.test",
             },
@@ -109,16 +117,37 @@ try {
           path: join(EVIDENCE_DIR, `${width}-${theme}-restored.png`),
         });
 
+        status = "code_required";
+        await page.reload();
+        const code = page.getByLabel("Verification code");
+        await code.waitFor();
+        assert.equal(await password.count(), 0);
+        await page.screenshot({
+          path: join(EVIDENCE_DIR, `${width}-${theme}-verification.png`),
+        });
+
         status = "expired";
         await page.reload();
         await page
           .getByRole("region", { name: "This sign-in link expired" })
           .waitFor();
         assert.equal(await password.count(), 0);
-        assert.equal(writes, 0);
+        assert.equal(await code.count(), 0);
         await page.screenshot({
           path: join(EVIDENCE_DIR, `${width}-${theme}-expired.png`),
         });
+        const returnLink = page.getByRole("link", {
+          name: "Return to conversation",
+        });
+        await returnLink.waitFor();
+        const destination = `/channel/${conversation.id}`;
+        assert.equal(await returnLink.getAttribute("href"), destination);
+        for (let tab = 0; tab < 10 && !(await focused(returnLink)); tab++)
+          await page.keyboard.press("Tab");
+        assert(await focused(returnLink));
+        await page.keyboard.press("Enter");
+        await page.waitForURL(`${FIXTURE_APP_URL}${destination}`);
+        assert.equal(writes, 0);
         cases.push({
           width,
           height,
@@ -126,7 +155,9 @@ try {
           reads,
           writes,
           retryFocusRestored: true,
+          verificationFormRestored: true,
           expiredFormRemoved: true,
+          returnedToConversation: destination,
         });
       } finally {
         await context.close();
