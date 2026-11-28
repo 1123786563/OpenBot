@@ -43,3 +43,7 @@ Use the archived production build and manifest as above, then run `scripts/brows
 ## Ideas task handoff
 
 Use the archived production build and manifest as above, then run `scripts/browser-acceptance/first-batch.sh --ideas-start`. At 390 and 1440 CSS pixels in both themes, Chromium and WebKit start a seeded suggestion by keyboard and attempt repeat activation while the response is pending. Each scenario checks that only one start reached the isolated API, that focus moves to the new Open task link, and that the link leads to the same Conversation as the resulting Tasks row. The runner saves the handoff screenshot and a `run.json` record for each scenario.
+
+## Bot profile return
+
+Use the archived production build and manifest as above, then run `scripts/browser-acceptance/first-batch.sh --bot-roster-return`. The runner opens a Bot from a filtered directory by keyboard. It checks both browser Back and the profile's Bots link for preservation of the search query and focus on the original result. Chromium and WebKit cover 390 and 1440 CSS pixels in both themes. The runner also verifies that a profile opened by direct URL can return to the directory.

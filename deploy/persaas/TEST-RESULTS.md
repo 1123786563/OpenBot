@@ -107,3 +107,29 @@ Service observations:
 - PostgreSQL/pgvector and Lago PostgreSQL readiness passed. MySQL and ClickHouse executed `SELECT 1`. Authenticated Redis PING returned PONG. Both Kafka brokers answered topic-list requests. Temporal at `temporal:7233` reported WorkflowService SERVING. RustFS health and readiness returned 200.
 
 No production restart was required because the current configuration already matches Infisical. Database env remains local-only. These checks establish configuration consistency and service health; they do not replace full business acceptance or close the previously recorded Bifrost inference and Flexprice billing integration items.
+
+## Bifrost inference and Flexprice usage — 2026-11-28 13:45 CST
+
+- Repaired the DB-managed `zhipu` custom provider: explicit `/chat/completions` overrides for ordinary/streaming requests and the previously documented Coding Plan base URL. The former configuration appended `/v1` under `/v4`, returning 404. Restored the missing OpenBot virtual-key provider binding, limited to the existing `code-plan` key and `glm-4.7`.
+- Public gateway ordinary and streaming requests returned HTTP 200; ordinary content was `OK`; the streaming response contained content, usage and `[DONE]`. Re-ran the production main-site acceptance: all 12 checks passed, including real Casdoor OAuth, administrator identity, a fresh model response persisted in the conversation, and logout. Runtime confirmed the app uses the Bifrost URL and matching application virtual key.
+- Created a dedicated UTC Flexprice customer, SUM(microcredits) meter, single zero-rate usage price, plan and active subscription. Application integration settings are six individual entries in Runtime/prod `/worker` (16 entries total); the three Lago exporter entries were removed. Middleware configuration remains in Infrastructure.
+- Built and deployed `openbot-worker:persaas-flexprice-20261128` on the app node; migration 0165 applied successfully. The API image remains the existing Casdoor release. A deployment-state OpenBot database dump (497 KiB, root-only) was verified on the data node after migration. The earlier pre-migration dump attempt was not confirmed and is not counted as backup evidence.
+- Found and corrected Kafka topic mismatch: producer wrote `persaas_staging_events`, while event/meter consumers listened on `persaas_events`. Aligned ordinary and lazy consumer settings with their producer topics in Infrastructure and the runtime env file, then recreated Flexprice in its existing combined `local` mode.
+- A clearly marked acceptance event (3 input tokens, 5 output tokens, 17 microcredits) travelled from the OpenBot outbox through the live Worker to Flexprice. Exact event readback passed, independent delivery state became `accepted`, and SUM usage was 17. Replayed the same event ID; a later query remained 17. The acceptance account/event is retained as zero-price test evidence.
+- This verifies settled-usage export and reconciliation. OpenBot's ledger remains authoritative for balances; Flexprice does not charge this dedicated zero-rate subscription. Payment checkout, recharge and automatic collection are outside this verification. Ordinary conversation acceptance alone does not prove a billing settlement.
+- Local tests: 21 billing/settlement/migration tests passed with 224 assertions; a further 24 runtime-log/Worker tests passed. Server and Worker TypeScript checks passed. No production credentials were written to Git.
+
+Operational instructions: [BILLING-INTEGRATION.md](BILLING-INTEGRATION.md).
+
+Final health checks: data and app `check.sh` exited 0; no unhealthy container on the data node; app API healthy, Worker running for 16 minutes with zero restarts. Flexprice Infrastructure/runtime comparison reported zero changed env files.
+
+## Local Flexprice source deployment — 2026-11-28 14:17 CST
+
+- Published Linux amd64 server/migrate built from `/Users/wuyj/IdeaProjects/flexprice` at `d7d5c1120`; production SHA-256 matches local artifact `06f5e44c0d3f361b027fc29253376f98f32c8f069581d4564c5b22218598cb08`.
+- Published production frontend built from `/Users/wuyj/IdeaProjects/flexprice-front` at `70a95c83` including existing uncommitted working-tree changes. Those changes were preserved. Frontend build/typecheck and 26 selected tests passed; backend config tests passed.
+- All 121 deployed migration files match local source byte-for-byte. No schema migration was necessary. Flexprice PostgreSQL and previous Compose were backed up before replacement.
+- New API/frontend images run with zero restarts. Middleware env check reported zero differences for every managed folder; signup disabled in Infrastructure and running backend env.
+- Middleware acceptance passed all 16 checks: authenticated Bifrost inference, Opik trace ingestion/readback, Lago login/API, Flexprice login/customer API, OpenObserve ingestion/search, RustFS round trips, and anonymous access rejection. Main-site acceptance passed all 12 checks again. Application node health and Worker flush passed with unavailable=false/paused=0.
+- New 19-microcredit acceptance event persisted on the local-source release. SUM moved from 17 to 36; replay remained 36, proving Kafka/ClickHouse processing and deduplication after the upgrade.
+- Browser opened `https://flexprice.persaas.cn/auth` and `https://www.persaas.cn/`; both login pages rendered, including the Casdoor button on OpenBot. Browser login itself was not performed; authenticated HTTP acceptance was performed separately.
+- Temporary deployment SSH key removed from the server and local private key deleted after verification.
