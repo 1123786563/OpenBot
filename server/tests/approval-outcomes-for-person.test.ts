@@ -65,3 +65,9 @@ test("no sentence a person reads for a step is in the words written for the Bot"
     .filter(({ read }) => WRITTEN_FOR_THE_BOT.test(read));
   expect(leaks).toEqual([]);
 });
+
+test("a request withdrawn by Stop can be asked again without treating it as dispatched", () => {
+  const reason = outcomes.runStoppedBeforeApproval;
+  expect(outcomes.outcomeForPerson(reason)).toBe(reason);
+  expect(outcomes.nextStepForPerson(reason)).toBe("ask-again");
+});

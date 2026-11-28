@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { decisionInvalidated } from "@openbot/shared/approval-outcomes";
+import {
+  decisionInvalidated,
+  runStoppedBeforeApproval,
+} from "@openbot/shared/approval-outcomes";
 import {
   and,
   desc,
@@ -163,12 +166,14 @@ export function createApprovalStore(
   const reconcile = (owner: string) =>
     database.transaction(async (tx) => {
       await reconcileDecisionHistory(tx, owner, now);
-      const reason = "The Bot run was stopped before this action was approved.";
       await tx
         .update(approvalRequests)
         .set({
           status: "denied",
-          result: { content: reason, error: reason },
+          result: {
+            content: runStoppedBeforeApproval,
+            error: runStoppedBeforeApproval,
+          },
           decidedAt: new Date(now()),
         })
         .where(
