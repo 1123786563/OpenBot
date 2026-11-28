@@ -243,7 +243,7 @@ function ActiveView({
           retryBelow
           retryLabel={t(
             "tasks.retryApprovals",
-            "Retry loading approvals and questions",
+            "Retry approvals and questions",
           )}
           retrying={waiting.isFetching}
           focusAfterRetry={() =>

@@ -1754,3 +1754,14 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 | `/admin/permissions` | 40/40（100%，暂定） | 32/40 | 3 4 3 4 3 3 3 3 3 3 | `6a0756d3f` | 模拟 Team 管理员 | `*-admin-permissions.png` | 成员查询与部署默认值分区。待验并发保存、409 后恢复和 Audit。 |
 | `/admin/audit` | 40/40（100%，暂定） | 32/40 | 3 4 3 3 3 4 3 3 3 3 | `6a0756d3f` | 模拟 Team 管理员 | `*-admin-audit.png` | 判定和行上下文可读取，设置读取失败可独立重试。待验真实写入对应的事件。 |
 | `/admin/components/$name` | 40/40（100%，暂定） | 31/40 | 3 3 4 4 3 3 3 3 2 3 | `6a0756d3f` | 模拟 Team 管理员 | `*-admin-components-chat.png` | 详情保留返回入口。待验发布、拒绝和审计状态。 |
+
+## #189 Tasks 与 Ideas 独立复评
+
+设计评分与自动检测由两个独立评审完成。以下为修复前的暂定分，使用 `bbbbe63fa` 的隔离 Personal 首屏及已归档的重试、来源跳转和 Orca 流程。
+
+| 视图 | H1–H10 | 暂定分 | 设计判断 |
+|---|---|---:|---|
+| `/tasks` | 3 3 2 3 2 3 2 3 3 2 | 26/40 | 320 CSS 像素下审批重试标签截断。Mark done 会立即把任务移出当前列表，恢复入口在 Resolved。待复评完成回执、撤销可见性和清单效率。 |
+| `/ideas` | 3 3 3 3 3 3 3 3 3 3 | 30/40 | Bot 范围和忽略后果清楚。Orca 在建议读取失败时重复播报，重试后焦点回到建议标题。待复评术语一致性和有建议时的完整操作。 |
+
+自动检测在两个视图的源码和 8 个桌面、窄屏、浅深主题首屏样本中报告 0 项。该检测范围为默认隔离状态，故障状态的截断由设计评审发现。缩短审批重试标签后，Chromium 和 WebKit 在三种宽度和浅深主题下通过 12 次复验，完整标签均可显示，键盘仍分别重试对应请求。修复后的独立评分和真实服务流程仍待验。 [自动检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector.O96dPs) · [窄屏修复复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-retry-label.10gpsL/run.json)

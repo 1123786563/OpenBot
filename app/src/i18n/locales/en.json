@@ -286,6 +286,6 @@
   "sign.sso.or": "or",
   "sign.title": "Sign in",
   "sign.unconfigured": "Sign-in isn’t set up yet.",
-  "tasks.retryApprovals": "Retry loading approvals and questions",
+  "tasks.retryApprovals": "Retry approvals and questions",
   "tasks.retryTasks": "Retry loading tasks"
 }

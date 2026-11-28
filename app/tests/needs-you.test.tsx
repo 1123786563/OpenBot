@@ -628,7 +628,7 @@ test("Tasks names each retry and only reloads the corresponding request", async 
     name: "Retry loading tasks",
   });
   const retryApprovals = await view.findByRole("button", {
-    name: "Retry loading approvals and questions",
+    name: "Retry approvals and questions",
   });
   expect(view.getAllByRole("alert")).toHaveLength(2);
   expect(view.queryByRole("button", { name: /^Retry$/ })).toBeNull();
