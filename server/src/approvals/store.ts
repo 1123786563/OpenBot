@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import {
   decisionInvalidated,
+  runEndedBeforeApproval,
   runStoppedBeforeApproval,
 } from "@openbot/shared/approval-outcomes";
 import {
   and,
   desc,
   eq,
-  exists,
   inArray,
   isNull,
   ne,
@@ -166,32 +166,23 @@ export function createApprovalStore(
   const reconcile = (owner: string) =>
     database.transaction(async (tx) => {
       await reconcileDecisionHistory(tx, owner, now);
+      const reason = sql`case when ${directChatRuns.stopReason} = 'stopped'
+        then ${runStoppedBeforeApproval}::text else ${runEndedBeforeApproval}::text end`;
       await tx
         .update(approvalRequests)
         .set({
           status: "denied",
-          result: {
-            content: runStoppedBeforeApproval,
-            error: runStoppedBeforeApproval,
-          },
+          result: sql`jsonb_build_object('content', ${reason}, 'error', ${reason})`,
           decidedAt: new Date(now()),
         })
+        .from(directChatRuns)
         .where(
           and(
             eq(approvalRequests.ownerUserId, owner),
             eq(approvalRequests.status, "pending"),
-            exists(
-              tx
-                .select({ id: directChatRuns.id })
-                .from(directChatRuns)
-                .where(
-                  and(
-                    eq(directChatRuns.id, approvalRequests.runId),
-                    sql`${directChatRuns.threadId} = ${approvalRequests.action}->>'threadId'`,
-                    eq(directChatRuns.stopReason, "stopped"),
-                  ),
-                ),
-            ),
+            eq(directChatRuns.id, approvalRequests.runId),
+            sql`${directChatRuns.threadId} = ${approvalRequests.action}->>'threadId'`,
+            ne(directChatRuns.status, "running"),
           ),
         );
     });
