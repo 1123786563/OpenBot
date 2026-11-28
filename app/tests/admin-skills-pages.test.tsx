@@ -203,6 +203,29 @@ describe("the Skills list", () => {
     expect(view.container.textContent).not.toContain("every Bot");
   });
 
+  test("a search with no matches keeps focus and can be cleared", async () => {
+    skills.push(
+      ...Array.from({ length: 8 }, (_, index) =>
+        skill({
+          id: `skill-${index}`,
+          slug: `skill-${index}`,
+          title: `Skill ${index}`,
+        }),
+      ),
+    );
+    const { view } = renderAt("/admin/skills");
+    const user = userEvent.setup({ document });
+    const search = await view.findByRole("textbox", { name: "Search skills" });
+
+    await user.type(search, "unmatched");
+    await view.findByText("Nothing matches “unmatched”.");
+    expect(document.activeElement).toBe(search);
+
+    await user.keyboard("{Backspace>9/}");
+    expect(await view.findByText("Triage the inbox")).toBeTruthy();
+    expect(document.activeElement).toBe(search);
+  });
+
   test("New skill is a link to its own page", async () => {
     const { view } = renderAt("/admin/skills");
     await view.findByText("Triage the inbox");
