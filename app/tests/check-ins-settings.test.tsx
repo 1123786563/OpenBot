@@ -246,6 +246,10 @@ test("a failed Check-ins settings refresh preserves the daily limit draft until 
     });
   });
   await dialog.findByText("Your changes are still here. Retry before saving.");
+  expect(view.queryByText("Couldn't load check-in settings.")).toBeNull();
+  expect(view.getAllByText("Couldn't refresh check-in settings.")).toHaveLength(
+    1,
+  );
   expect(input).toHaveProperty("value", "36");
   expect(save.matches(':disabled, [aria-disabled="true"]')).toBe(true);
   const form = input.closest("form");
