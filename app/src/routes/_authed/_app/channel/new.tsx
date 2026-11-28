@@ -1,5 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { PageHeader } from "@/components/layout/page-parts";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -21,6 +20,7 @@ import {
   toAgentOptions,
 } from "@/components/channels/composer";
 import { ModelPicker } from "@/components/channels/composer/model-picker";
+import { PageHeader } from "@/components/layout/page-parts";
 import { ReadStatus } from "@/components/layout/read-status";
 import { StarterSuggestions } from "@/components/starter-tour/starter-suggestions";
 import {
@@ -38,13 +38,16 @@ import {
   agentQueryOptions,
 } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { attachmentUrl } from "@/lib/channels/attachments";
 import {
   composeDraftKey,
   readComposeDraft,
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
+import { readPendingFile } from "@/lib/channels/pending-files";
+import { readPendingStart } from "@/lib/channels/pending-start";
 import { useSubmitConversationStart } from "@/lib/channels/start";
-import { ClientError } from "@/lib/client";
+import { ClientError, client } from "@/lib/client";
 import { modelCatalogueQueryOptions } from "@/lib/models/queries";
 import { useDraftModel } from "@/lib/models/run-model";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
@@ -104,7 +107,7 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
       composition,
       copiedFromHome: location.state.copiedFromHome,
       copiedFromStart: location.state.copiedFromStart,
-      attachmentNames: location.state.attachmentNames,
+      copiedStartId: location.state.copiedStartId,
     };
   },
   component: RouteComponent,
@@ -117,8 +120,8 @@ declare module "@tanstack/react-router" {
     copiedFromHome?: true;
     /** Set when a refused `/start/$startId` hands its text over as a copy. */
     copiedFromStart?: true;
-    /** Attachment names a refused start hands over for an explicit re-add checklist. */
-    attachmentNames?: string[];
+    /** Owner-scoped start to copy attachments from, when the person asks. */
+    copiedStartId?: string;
   }
 }
 
@@ -128,7 +131,7 @@ function ownedBy(composition: string) {
 }
 
 function RouteComponent() {
-  const { composition, copiedFromHome, copiedFromStart, attachmentNames } =
+  const { composition, copiedFromHome, copiedFromStart, copiedStartId } =
     Route.useRouteContext();
   const { data: user } = useQuery(currentUserQueryOptions());
   const owner = user?.id;
@@ -137,7 +140,7 @@ function RouteComponent() {
       composition={composition}
       copiedFromHome={copiedFromHome}
       copiedFromStart={copiedFromStart}
-      attachmentNames={attachmentNames}
+      copiedStartId={copiedStartId}
       owner={owner}
       key={JSON.stringify([owner, composition])}
     />
@@ -148,23 +151,47 @@ function NewConversation({
   composition,
   copiedFromHome,
   copiedFromStart,
-  attachmentNames,
+  copiedStartId,
   owner,
 }: {
   composition: string;
   copiedFromHome: true | undefined;
   copiedFromStart: true | undefined;
-  attachmentNames: string[] | undefined;
+  copiedStartId: string | undefined;
   owner: string | undefined;
 }) {
-  // The page's own navigations carry the handover forward, so picking a Bot keeps the checklist.
+  // The page's own navigations keep the original start available when choosing a Bot.
   const historyState = {
     ...ownedBy(composition),
     copiedFromHome,
     copiedFromStart,
-    attachmentNames,
+    copiedStartId,
   };
   const { agent: urlAgent } = Route.useSearch();
+  const original =
+    owner && copiedStartId ? readPendingStart(owner, copiedStartId) : null;
+  const originalFiles =
+    original?.state === "pending" ? original.draft.attachments : [];
+  async function loadOriginalFiles() {
+    const source =
+      owner && copiedStartId ? readPendingStart(owner, copiedStartId) : null;
+    if (source?.state !== "pending") {
+      throw new Error("The original message is no longer available.");
+    }
+    return Promise.all(
+      source.draft.attachments.map(async (reference) => {
+        if ("localFileKey" in reference)
+          return readPendingFile(reference.localFileKey);
+        const response = await client(attachmentUrl(reference.attachmentId), {
+          fallback: `Couldn't read ${reference.name} from the original message.`,
+        });
+        const blob = await response.blob();
+        return new File([blob], reference.name, {
+          type: reference.mimeType ?? blob.type,
+        });
+      }),
+    );
+  }
   const messageKey = composeDraftKey(owner, composition, "message");
   const recipientsKey = composeDraftKey(owner, composition, "recipients");
   const modelKey = composeDraftKey(owner, composition, "model");
@@ -608,20 +635,21 @@ function NewConversation({
               default model.
             </p>
           ) : null}
-          {/* No file can be staged before a conversation exists, so its names are only a checklist. */}
-          {attachmentNames?.length ? (
-            <Text
-              as="p"
-              className="[overflow-wrap:anywhere]"
-              color="secondary"
-              size="sm"
-            >
-              Attachments aren’t copied. Attach these again once the
-              conversation opens: {attachmentNames.join(", ")}.
+          {group && originalFiles.length > 0 ? (
+            <Text as="p" color="secondary" size="sm">
+              Choose one Bot to add the original attachments.
             </Text>
           ) : null}
           <Composer
             allowFirstMessageAttachments={!group}
+            originalFiles={
+              originalFiles.length > 0
+                ? {
+                    names: originalFiles.map(({ name }) => name),
+                    load: loadOriginalFiles,
+                  }
+                : undefined
+            }
             draftStorageKey={messageKey}
             restoredDraftMessage={
               copiedFromStart

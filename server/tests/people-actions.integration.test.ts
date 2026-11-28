@@ -185,17 +185,8 @@ test("two administrators granting the same role at once leave the role granted",
 
   expect(answers.map((answer) => answer.status)).toEqual([200, 200]);
   expect((await store.find(GRANT_RACE.id))?.role).toBe("admin");
-  /*
-   * Observed, not yet decided: both requests read the old role, so both write a row and the trail
-   * reads as two role changes although the role changed once. The screen's duplicate guard stops one
-   * administrator pressing twice; two administrators are two requests. Whether the trail should say
-   * one change is an open question for whoever owns the Audit page, and a conditional write would
-   * have to keep the half-finished removal's retry working.
-   */
   const rows = await rowsFor(GRANT_RACE, "person.role_changed");
-  expect(rows).toHaveLength(2);
   expect(rows.map((row) => row.payload)).toEqual([
-    { email: GRANT_RACE.email, from: "user", to: "admin" },
     { email: GRANT_RACE.email, from: "user", to: "admin" },
   ]);
 });
@@ -219,8 +210,7 @@ test("two administrators removing the same person at once leave one denial and n
       .where(eq(sessions.userId, REMOVE_RACE.id)),
   ).toEqual([]);
   expect((await store.find(REMOVE_RACE.id))?.revoked).toBe(true);
-  // The same open question as the role above: one removal, two rows.
-  expect(await rowsFor(REMOVE_RACE, "person.access_revoked")).toHaveLength(2);
+  expect(await rowsFor(REMOVE_RACE, "person.access_revoked")).toHaveLength(1);
 });
 
 test("granting a role again after it committed writes no second change", async () => {

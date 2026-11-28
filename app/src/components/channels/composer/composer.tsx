@@ -248,6 +248,7 @@ export type ComposerProps = {
    * The caller builds one per event, which it has to do anyway to say which cause it was.
    */
   droppedAttachments?: DroppedAttachments;
+  originalFiles?: { names: string[]; load: () => Promise<File[]> };
   /**
    * HOW MANY ATTACHMENTS ARE SITTING IN THE CALLER'S QUEUE, BECAUSE THE SERVER IS STILL COUNTING
    * THEM AND THIS COMPOSER CANNOT SEE THEM.
@@ -376,6 +377,7 @@ export function Composer({
   onDraftChange,
   restoredDraftMessage,
   droppedAttachments,
+  originalFiles,
   // Nothing parked is the right answer for every caller without a queue, which is most of them.
   queuedAttachmentCount = 0,
   routine,
@@ -871,6 +873,52 @@ export function Composer({
     [disabled, processFiles, queuedAttachmentCount],
   );
 
+  const copyingOriginalFiles = useRef(false);
+  const [fileCopy, setFileCopy] = useState<
+    "ready" | "loading" | "added" | "error"
+  >("ready");
+  const originalFileAction =
+    originalFiles && allowFirstMessageAttachments && fileCopy !== "added" ? (
+      <Stack align="start" gap={1}>
+        <Text
+          as="p"
+          color="secondary"
+          size="sm"
+          className="[overflow-wrap:anywhere]"
+        >
+          Original attachments: {originalFiles.names.join(", ")}.
+        </Text>
+        <Button
+          isDisabled={!canAttach || fileCopy === "loading"}
+          label={
+            fileCopy === "loading"
+              ? "Adding original attachments…"
+              : "Add original attachments"
+          }
+          variant="secondary"
+          onClick={async () => {
+            if (copyingOriginalFiles.current) return;
+            copyingOriginalFiles.current = true;
+            setFileCopy("loading");
+            try {
+              await stageFiles(await originalFiles.load());
+              setFileCopy("added");
+            } catch {
+              setFileCopy("error");
+            } finally {
+              copyingOriginalFiles.current = false;
+            }
+          }}
+        />
+        {fileCopy === "error" ? (
+          <Text as="p" color="secondary" size="sm" role="alert">
+            Couldn't read the original attachments. Try again or add the files
+            yourself.
+          </Text>
+        ) : null}
+      </Stack>
+    ) : null;
+
   /**
    * The image half of a paste that our own listener let through.
    *
@@ -1211,7 +1259,7 @@ export function Composer({
     [staged],
   );
 
-  const isBusy = pending || isSubmitting;
+  const isBusy = pending || isSubmitting || fileCopy === "loading";
   const triggers = useMemo(
     () => buildTriggers({ agents, commands }),
     [agents, commands],
@@ -1286,6 +1334,7 @@ export function Composer({
       if (
         !canSendDraft(submitted) ||
         overCap(submitted) ||
+        copyingOriginalFiles.current ||
         disabled ||
         dictation.session.getSnapshot().phase !== "idle"
       ) {
@@ -1686,6 +1735,7 @@ export function Composer({
         {tooManyStagedNotice}
         <LiveDictationNotice dictation={dictation} />
         {draftStatus}
+        {originalFileAction}
         <form
           aria-busy={isBusy}
           data-slot="composer"

@@ -2,7 +2,10 @@ import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { savePendingStart } from "@/lib/channels/pending-start";
+import {
+  discardPendingStart,
+  savePendingStart,
+} from "@/lib/channels/pending-start";
 import {
   agent,
   createdChannel,
@@ -134,6 +137,65 @@ test("automatic routing keeps the start ID and waits for a confirmed quote", asy
     confirmation: { route: quote.route, priceVersion: quote.priceVersion },
   });
   expect(created).toBe(1);
+});
+
+test("a first message stays recoverable in the current tab when site storage denies writes", async () => {
+  const originalStorage = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "localStorage",
+  );
+  const storage = localStorage;
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: new Proxy(storage, {
+      get(target, property) {
+        if (property === "setItem" || property === "removeItem")
+          return () => {
+            throw new DOMException("Storage is denied.", "SecurityError");
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }),
+  });
+  const message = "Keep this temporary first message";
+  let id: string | undefined;
+  try {
+    answerRequests(async (url, init) => {
+      if (url === "/api/route") return Response.json({ agentId: knowledge.id });
+      if (url === "/api/channels" && init?.method === "POST") {
+        id = readChannelRequest(init).requestId;
+        return Response.json(
+          { error: "Creation unavailable." },
+          { status: 503 },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const view = renderAt("/");
+    await submitHomeMessage(view, message);
+    await view.findByText(
+      "This message is saved only in this tab. Copy it before closing or refreshing this tab.",
+    );
+    expect(view.getByText(message)).toBeTruthy();
+    expect(
+      view.getByRole("button", { name: "Copy message text" }),
+    ).toBeTruthy();
+    const path = view.router.state.location.pathname;
+    expect(path).toBe(`/start/${id}`);
+    view.unmount();
+
+    const home = renderAt("/");
+    await home.findByRole("link", { name: new RegExp(message) });
+    home.unmount();
+    const other = renderAt(path, "another-person");
+    await other.findByText("This conversation start is unavailable.");
+    expect(other.queryByText(message)).toBeNull();
+  } finally {
+    if (originalStorage)
+      Object.defineProperty(globalThis, "localStorage", originalStorage);
+    if (id) discardPendingStart("person", id);
+  }
 });
 
 test("reloading an interrupted creation keeps the first message and reuses its request ID", async () => {

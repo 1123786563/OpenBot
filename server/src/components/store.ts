@@ -1,4 +1,11 @@
-import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import {
+  type AuditEventInput,
+  createAuditStore,
+  recordAuditEvent,
+  type TransactionAuditStore,
+  withAuditTransaction,
+} from "../audit";
 import type { Database } from "../db/client";
 import {
   componentExclusions,
@@ -41,6 +48,14 @@ export type GrantedComponent = {
 export type ComponentDecision =
   | { allowed: true; description: string }
   | { allowed: false; reason: string };
+
+export class ComponentPublicationConflictError extends Error {
+  constructor() {
+    super(
+      "Publication or its draft changed. Review the current settings and try again.",
+    );
+  }
+}
 
 export class ComponentNotFoundError extends Error {
   constructor(name: string) {
@@ -135,6 +150,13 @@ export type ComponentStore = {
     functionName: string,
     args: Record<string, unknown>,
   ): Promise<unknown>;
+  savePublication(input: {
+    name: string;
+    by: string;
+    published: boolean;
+    expectedUpdatedAt: string;
+    event: AuditEventInput;
+  }): Promise<void>;
   publish(name: string, by: string): Promise<void>;
   unpublish(name: string, by: string): Promise<void>;
   saveDraft(name: string, description: string, by: string): Promise<void>;
@@ -150,7 +172,10 @@ const iso = (value: Date | string | null): string | null =>
  */
 export const BUILD = "the build";
 
-export function createComponentStore(database: Database): ComponentStore {
+export function createComponentStore(
+  database: Database,
+  auditFor: TransactionAuditStore = createAuditStore,
+): ComponentStore {
   async function requireComponent(name: string) {
     const [row] = await database
       .select()
@@ -244,7 +269,7 @@ export function createComponentStore(database: Database): ComponentStore {
             title: entry.title,
             draftDescription: entry.description,
             publishedDescription: entry.description,
-            updatedAt: new Date(),
+            updatedAt: sql`greatest(clock_timestamp(), ${components.updatedAt} + interval '1 millisecond')`,
           })
           .where(
             and(
@@ -416,6 +441,39 @@ export function createComponentStore(database: Database): ComponentStore {
         .onConflictDoNothing();
     },
 
+    async savePublication({ name, by, published, expectedUpdatedAt, event }) {
+      await withAuditTransaction(database, async (tx, deferTap) => {
+        const [row] = await tx
+          .select()
+          .from(components)
+          .where(eq(components.name, name))
+          .limit(1)
+          .for("update");
+        if (!row) throw new ComponentNotFoundError(name);
+        if (row.kind === "sandboxed") {
+          throw new SandboxedPublicationRequiredError(name);
+        }
+        if (iso(row.updatedAt) !== expectedUpdatedAt) {
+          throw new ComponentPublicationConflictError();
+        }
+        const now = new Date(
+          Math.max(Date.now(), new Date(expectedUpdatedAt).getTime() + 1),
+        );
+        await tx
+          .update(components)
+          .set({
+            published,
+            ...(published
+              ? { publishedDescription: row.draftDescription, publishedAt: now }
+              : {}),
+            updatedBy: by,
+            updatedAt: now,
+          })
+          .where(eq(components.name, name));
+        await recordAuditEvent(auditFor(tx, deferTap), event);
+      });
+    },
+
     async publish(name, by) {
       const row = await requireComponent(name);
       if (row.kind === "sandboxed") {
@@ -429,7 +487,7 @@ export function createComponentStore(database: Database): ComponentStore {
           published: true,
           publishedAt: new Date(),
           updatedBy: by,
-          updatedAt: new Date(),
+          updatedAt: sql`greatest(clock_timestamp(), ${components.updatedAt} + interval '1 millisecond')`,
         })
         .where(eq(components.name, name));
     },
@@ -441,7 +499,11 @@ export function createComponentStore(database: Database): ComponentStore {
       }
       await database
         .update(components)
-        .set({ published: false, updatedBy: by, updatedAt: new Date() })
+        .set({
+          published: false,
+          updatedBy: by,
+          updatedAt: sql`greatest(clock_timestamp(), ${components.updatedAt} + interval '1 millisecond')`,
+        })
         // Grants are left alone. Unpublishing is "nobody may use this for now", not "forget who was
         // trusted with it", clearing them would silently destroy an administrator's work and make
         // re-publishing a re-grant of everything.
@@ -523,7 +585,7 @@ export function createComponentStore(database: Database): ComponentStore {
         .set({
           draftDescription: description,
           updatedBy: by,
-          updatedAt: new Date(),
+          updatedAt: sql`greatest(clock_timestamp(), ${components.updatedAt} + interval '1 millisecond')`,
         })
         .where(eq(components.name, name));
     },

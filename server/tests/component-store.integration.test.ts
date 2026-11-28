@@ -7,9 +7,9 @@ import {
   test,
 } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { type AuditStore, createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createComponentRoutes } from "../src/components/routes";
@@ -444,11 +444,11 @@ describe("a publication the trail could not record", () => {
     "/components",
     createComponentRoutes(store, asAdmin, trail, async () => true),
   );
-  const post = (name: string, published: boolean) =>
+  const post = (name: string, published: boolean, expectedUpdatedAt?: string) =>
     hono.request(`http://t/components/${name}/publication`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ published }),
+      body: JSON.stringify({ published, expectedUpdatedAt }),
     });
   const stored = async (name: string) =>
     (await store.list()).find((component) => component.name === name);
@@ -467,6 +467,53 @@ describe("a publication the trail could not record", () => {
     await database
       .insert(users)
       .values({ id: admin, email: `${admin}@example.test` });
+  });
+
+  test("only one publication can commit from the same preview", async () => {
+    const name = `testPublicationRace_${suite}`;
+    await makeComponent(name, true);
+    const preview = await stored(name);
+    if (!preview) throw new Error("Missing component fixture");
+    const responses = await Promise.all([
+      post(name, false, preview.updatedAt),
+      post(name, false, preview.updatedAt),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 409,
+    ]);
+    expect((await stored(name))?.published).toBe(false);
+    expect(await recorded(name)).toHaveLength(1);
+  });
+
+  test("a guarded publication whose Audit insert fails can retry from the same preview", async () => {
+    const name = `testGuardedPublicationRetry_${suite}`;
+    await makeComponent(name, false);
+    const preview = await stored(name);
+    if (!preview) throw new Error("Missing component fixture");
+    const failingStore = createComponentStore(database, () => ({
+      insert: async () => {
+        throw new Error("the trail is unavailable");
+      },
+    }));
+    await expect(
+      failingStore.savePublication({
+        name,
+        by: `${admin}@example.test`,
+        published: true,
+        expectedUpdatedAt: preview.updatedAt,
+        event: {
+          eventType: "component.published",
+          targetType: "component",
+          targetId: name,
+          payload: {},
+        },
+      }),
+    ).rejects.toThrow();
+    expect((await stored(name))?.published).toBe(false);
+    expect(await recorded(name)).toHaveLength(0);
+    expect((await post(name, true, preview.updatedAt)).status).toBe(200);
+    expect((await stored(name))?.published).toBe(true);
+    expect(await recorded(name)).toHaveLength(1);
   });
 
   test("unpublishing is in force though the trail refused it, and trying it again records one row", async () => {

@@ -72,6 +72,11 @@ let failNextAnswer = false;
 let messages: GroupMessage[] = [];
 /** Runs of their own the Bots are making in the group; undefined when there are none. */
 let background: unknown[] | undefined;
+let stoppableTurnIds: string[] = [];
+let stoppedTurns: string[] = [];
+let failStop = false;
+let reconciliations: string[] = [];
+let failReconciliation = false;
 let answers: unknown[] = [];
 let groupSends: unknown[] = [];
 /** The approval inbox's requests, as `/api/approvals` answers them. */
@@ -108,6 +113,21 @@ beforeAll(() => {
           { id: BUDGET, name: "Budget Buddy", avatarSeed: BUDGET },
         ],
       });
+    if (
+      url.pathname === `/api/groups/${CHANNEL}/turns/stop-me/stop` &&
+      method === "POST"
+    ) {
+      stoppedTurns.push("stop-me");
+      if (failStop) return Response.json({}, { status: 503 });
+      stoppableTurnIds = [];
+      messages = [
+        {
+          ...line("stop-me", null, "A turn to stop", "failed"),
+          stopReason: "stopped",
+        },
+      ];
+      return Response.json({ stopped: true });
+    }
     if (url.pathname === `/api/groups/${CHANNEL}`) {
       if (denied)
         return Response.json(
@@ -127,8 +147,18 @@ beforeAll(() => {
           { userId: "me", email: "me@example.test", name: null, creator: true },
         ],
         messages,
+        stoppableTurnIds,
         ...(background ? { backgroundRuns: background } : {}),
       });
+    }
+    if (
+      url.pathname.endsWith("/runs/run-unknown/reconcile") &&
+      method === "POST"
+    ) {
+      reconciliations.push(url.pathname + url.search);
+      if (failReconciliation) return Response.json({}, { status: 503 });
+      background = [unknownRun("executed")];
+      return Response.json({ externalOutcome: "executed" });
     }
     if (url.pathname === "/api/approvals")
       return Response.json({
@@ -208,6 +238,11 @@ beforeEach(() => {
   decidedRequests = [];
   decisions = [];
   background = undefined;
+  stoppableTurnIds = [];
+  stoppedTurns = [];
+  failStop = false;
+  reconciliations = [];
+  failReconciliation = false;
   messages = [
     line(
       "m-1",
@@ -351,6 +386,57 @@ test("a group names a queued Bot, a working Bot and a stopped run as every conve
   expect(view.queryByText("Run ended")).toBeNull();
 });
 
+test("a group retries a failed stop and shows the server's stopped state", async () => {
+  showQuestion = false;
+  messages = [line("stop-me", null, "A turn to stop")];
+  stoppableTurnIds = ["stop-me"];
+  failStop = true;
+  const view = conversation();
+  const user = userEvent.setup({ document });
+  const stop = await view.findByRole("button", { name: "Stop this turn" });
+  await user.click(stop);
+  await view.findByText("Couldn't stop this turn. Try again.");
+  failStop = false;
+  await user.click(stop);
+  await view.findByText("The run was stopped.");
+  expect(view.queryByRole("button", { name: "Stop this turn" })).toBeNull();
+  expect(view.queryByText("Message sent. No Bot reply yet.")).toBeNull();
+  expect(stoppedTurns).toEqual(["stop-me", "stop-me"]);
+});
+
+function unknownRun(externalOutcome: "unknown" | "executed") {
+  return {
+    id: "run-unknown",
+    agentId: ERRANDS,
+    threadId: ERRANDS_THREAD,
+    status: "failed",
+    waitingForApproval: false,
+    partialReply: null,
+    externalOutcome,
+    stopReason: "stopped",
+  };
+}
+
+test("a group can check the outcome of its stopped Run without repeating its work", async () => {
+  showQuestion = false;
+  background = [unknownRun("unknown")];
+  failReconciliation = true;
+  const view = conversation();
+  const user = userEvent.setup({ document });
+  const check = await view.findByRole("button", { name: "Check outcome" });
+  await user.click(check);
+  await view.findByText("Couldn't check the outcome. Try again.");
+  failReconciliation = false;
+  await user.click(check);
+  await view.findByText("The outcome was verified.");
+  expect(view.queryByRole("button", { name: "Check outcome" })).toBeNull();
+  expect(reconciliations).toEqual([
+    `/api/copilotkit/threads/${ERRANDS_THREAD}/runs/run-unknown/reconcile?agentId=${ERRANDS}`,
+    `/api/copilotkit/threads/${ERRANDS_THREAD}/runs/run-unknown/reconcile?agentId=${ERRANDS}`,
+  ]);
+  expect(groupSends).toEqual([]);
+});
+
 test("an empty group gives the next step as a status", async () => {
   showQuestion = false;
   messages = [];
@@ -396,7 +482,9 @@ test("a group this person can no longer read hides its old messages and offers t
 const ERRANDS_THREAD = "errand-helper-group-thread";
 
 /** An approval waiting on the Errand Helper's thread in the group. */
-function waitingApproval(threadId: string) {
+function waitingApproval(
+  threadId: string,
+): ApprovalInboxData["requests"][number] {
   return {
     id: "approval-1",
     status: "pending",
@@ -616,6 +704,41 @@ test("a group keeps reading while a Bot's line waits, and reads faster once the 
   ).toBe(1_500);
 });
 
+test("an approval stops background polling at the waiting pace until the decision", () => {
+  const now = Date.now();
+  const conversation = {
+    bots: [],
+    people: [],
+    messages: [],
+    backgroundRuns: [
+      {
+        id: "run-waiting",
+        agentId: ERRANDS,
+        threadId: ERRANDS_THREAD,
+        status: "running" as const,
+        waitingForApproval: true,
+        partialReply: null,
+        externalOutcome: null,
+      },
+    ],
+  };
+  expect(groupPollInterval(conversation, null, now)).toBe(10_000);
+  const inbox: ApprovalInboxData = {
+    enabled: true,
+    requests: [
+      {
+        ...waitingApproval(ERRANDS_THREAD),
+        status: "approved",
+        decidedAt: new Date(now - 1_000).toISOString(),
+      },
+    ],
+    rules: [],
+    teamRules: [],
+    questions: [],
+  };
+  expect(groupPollInterval(conversation, inbox, now)).toBe(1_500);
+});
+
 /* A run the server holds for an approval, with no line of its own waiting, asks the same way. */
 test("a run waiting on an approval in the group asks there, under no Bot's line", async () => {
   showQuestion = false;
@@ -636,6 +759,7 @@ test("a run waiting on an approval in the group asks there, under no Bot's line"
   expect(
     await view.findByRole("region", { name: "Waiting for your approval" }),
   ).toBeTruthy();
+  expect(view.queryByText("Working…")).toBeNull();
 });
 
 /*

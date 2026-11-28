@@ -123,6 +123,16 @@ Web 类型检查、Vite 构建和 83 项定向测试通过。真实发送、审�
 
 快速会话在构建 `index-DgciQld7.js` 验证输入框的可访问名称为 Message。占位符对比度浅色为 4.74∶1，深色为 5.11∶1。两组渲染检测无发现，键盘重试后均聚焦 Bot 标题。
 
+## #176 首发附件和响应丢失
+
+PR #213 在本地 Personal 环境用 Chromium、OpenBot API 和隔离 PostgreSQL 验证了首发恢复。浏览器丢弃已成功的创建响应后，从保存的交接恢复原会话。丢弃上传的 201 响应后，重试确认了原附件。最终历史只匹配一条用户消息，附件下载返回 200，读回内容与 38 字节原文件一致。数据库记录含一个附带附件引用的首发 Run，状态为失败。本轮证据覆盖草稿、会话与附件持久化。真实 Bot 回复及经 Intelligence 网关的断线重发仍待验。 [PR #213](https://github.com/1123786563/OpenBot/pull/213)
+
+本地记录位于 `~/.local/state/openbot-spec-127/evidence/first-attachment-browser.mRpb7v/`。浏览器请求与读回结果见 `browser.json`，最终数据库查询见 `browser-final-db.txt`。构建入口 HTML 的 SHA-256 为 `5ad3c78a668368b54c61a7578794b8288bedd24a95eb085cbb873191b27cc587`。
+
+在构建 `ccca02100` 上，142 项定向测试通过。PostgreSQL 复验覆盖同一创建请求并发重试后仍返回原 Conversation 和 Thread，以及身份与收件人隔离。另一个原生直聊集成测试在收到第一个 SSE 游标后断开连接，随后从该游标续传至 Run 完成。Bot fixture 只派发一次。 [会话创建集成测试](../server/tests/channel-activity.integration.test.ts) [原生直聊集成测试](../server/tests/direct-chat.integration.test.ts)
+
+PR #228 的生产构建 `fe90f71ed` 用隔离 API 通过四组 Chromium 复验。1440×900 和 390×844 各跑浅色和深色。更换收件人后，读取原附件遇到 503 时可重试。成功后先在新草稿显示附件，发送时用新会话重新上传相同字节。原草稿仍保留原附件 ID。报告、截图和构建哈希位于 `~/.local/state/openbot-spec-127/evidence/attachment-handoff.wA8RS3/retest/`。 [PR #228](https://github.com/1123786563/OpenBot/pull/228) [复跑说明](../scripts/browser-acceptance/README.md)
+
 ## 单 Bot 会话首发重试复评
 
 生产构建 `index-CSQ8edEN.js` 与样式 `index-Cp7d8Tw_.css` 使用本地模拟 API。OpenBot 直聊在 Thread 可完整读取且原纯文本消息尚未出现时提供「Resend message」。发送前再次检查历史，重发沿用原消息 ID。历史无法完整检查时，可继续检查并保留浏览器草稿。

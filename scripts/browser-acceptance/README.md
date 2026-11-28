@@ -19,3 +19,11 @@ State is process-local and shared by tabs using this fixture. Restart to reset e
 API schemas follow `app/src/lib/auth/queries.ts`, `shared/user-preferences.ts`, and the navigation/model/setup envelopes in `app/tests/starter-tour-route.test.tsx`: `{user}`, 401 when signed out, `{preferences}`, `{instructions}`, `{channels,nextCursor:null}`, and capability auth provider/SSO flags. The roster is the six `ChannelSummary` conversations in `conversations.mjs`, aged from each request so their short relative times stay put, with one waiting on a Bot and one nobody has used; the runner expects the same rows. Preferences and instructions support edits in memory. Social/SSO starts redirect to the fixture login switch; no identity provider is contacted.
 
 The isolated Vite wrapper injects a minimal desktop IPC fixture before the real app mounts, using `DesktopAiConnection` and `DesktopUsageData` shapes from `app/src/lib/desktop/queries.ts`. It supplies a compatible endpoint, long model and address, and 3,960-character standing instructions. Unsupported desktop commands reject explicitly. This is a browser fixture, not native desktop acceptance.
+
+## First-message attachment handoff
+
+Set `BUILD_DIR` to a production build that includes the attachment handoff, `BUILD_MANIFEST` to its JSON manifest containing `commit` and `indexSha256`, and `EVIDENCE_DIR` to an absolute output directory. Run `scripts/browser-acceptance/first-batch.sh --first-attachment` from the worktree root. The script uses an isolated fixture to exercise an interrupted read, then checks the multipart upload in the new conversation and the unchanged reference in the original draft. It writes four screenshots and `run.json`.
+
+## Group turn stop
+
+Use a production build that includes group turn Stop, its `BUILD_MANIFEST`, and an absolute `EVIDENCE_DIR`. Run `scripts/browser-acceptance/first-batch.sh --group-stop` from the worktree root. The fixture returns a 503 on the first Stop request. Chromium reaches Stop with Tab, activates it with Enter, retries in place, and checks that the stopped state appears without another message being sent. The script writes four screenshots and `run.json` with the build and request counts.

@@ -222,10 +222,12 @@ async function capture(browser, cases, role, width, theme) {
             });
           });
         }
-        if (entry.view === "Route load failure") {
+        const routeLoadFailure = entry.view === "Route load failure";
+        let routeBlocked = routeLoadFailure;
+        if (routeLoadFailure) {
           // The Settings route is lazy-loaded in this production build.
           await page.route("**/assets/route-settings-*.js", (route) =>
-            route.abort(),
+            routeBlocked ? route.abort() : route.continue(),
           );
         }
         await page.goto(new URL(entry.path, FIXTURE_APP_URL).href, {
@@ -236,6 +238,21 @@ async function capture(browser, cases, role, width, theme) {
           .locator("#root > *")
           .first()
           .waitFor({ state: "attached", timeout: 5000 });
+        if (entry.heading) {
+          await page
+            .getByRole("heading", {
+              name: entry.heading,
+              level: 1,
+              exact: true,
+            })
+            .waitFor({ timeout: 5000 });
+        }
+        if (entry.description) {
+          await page
+            .getByText(entry.description, { exact: true })
+            .first()
+            .waitFor({ timeout: 5000 });
+        }
         if (entry.expected) {
           await page.waitForURL(
             (url) => url.pathname + url.search + url.hash === entry.expected,
@@ -287,6 +304,34 @@ async function capture(browser, cases, role, width, theme) {
               record.drawerFailure = String(error);
             }
           }
+        }
+        if (routeLoadFailure) {
+          const retry = page.getByRole("button", { name: "Try again" });
+          await retry.click();
+          await page
+            .getByText(
+              "The page still couldn’t load. You can try again or open your workspace.",
+              { exact: true },
+            )
+            .first()
+            .waitFor({ timeout: 5000 });
+          routeBlocked = false;
+          await retry.click();
+          await page
+            .getByRole("heading", {
+              name: "Notifications",
+              level: 1,
+              exact: true,
+            })
+            .waitFor({ timeout: 8000 });
+          await page.waitForFunction(
+            () =>
+              document.activeElement?.matches("h1") &&
+              document.activeElement.textContent?.trim() === "Notifications",
+            {},
+            { timeout: 3000 },
+          );
+          record.routeRetryRecovered = true;
         }
         assert.equal(context.serviceWorkers().length, 0);
       } catch (error) {
@@ -371,6 +416,24 @@ assert.deepEqual(
   [],
 );
 if (mode === "full") {
+  const renderFailures = records.flatMap(({ id, console }) =>
+    console.flatMap(([level, message]) => {
+      if (level !== "error" || !/^\w*Error:/.test(message)) return [];
+      // The recovery view deliberately aborts a route chunk.
+      if (
+        views.some(
+          ({ id: viewId, view }) =>
+            view === "Route load failure" && id.startsWith(`${viewId}-`),
+        ) &&
+        message.startsWith(
+          "TypeError: Failed to fetch dynamically imported module:",
+        )
+      )
+        return [];
+      return [`${id}: ${message.split("\n", 1)[0]}`];
+    }),
+  );
+  assert.deepEqual(renderFailures, [], "Unexpected rendered page exceptions");
   const unimplemented = new Set(
     records.flatMap((record) =>
       record.apiFailures

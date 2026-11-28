@@ -209,7 +209,31 @@ describe("the Published switch", () => {
     );
     expect(view.getByText("No Bot can use it.")).toBeTruthy();
     expect(publications()).toHaveLength(1);
-    expect(publications()[0]?.body).toEqual({ published: false });
+    expect(publications()[0]?.body).toEqual({
+      published: false,
+      expectedUpdatedAt: "2026-11-20T09:00:00.000Z",
+    });
+  });
+
+  test("a stale publication refreshes the switch and requires a new decision", async () => {
+    publication = {
+      status: 409,
+      body: { error: "Publication or its draft changed." },
+    };
+    lands = true;
+    const { view, user } = open();
+    const toggle = await switchOff(view);
+    await user.click(toggle);
+    expect((await view.findByRole("alert")).textContent).toContain(
+      "Publication or its draft changed.",
+    );
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-checked")).toBe("false"),
+    );
+    expect(
+      view.getByRole("button", { name: "Try again" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(publications()).toHaveLength(1);
   });
 
   test("a publication the trail could not record says what landed, and Retry records it", async () => {
@@ -243,8 +267,8 @@ describe("the Published switch", () => {
     await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     expect(publications().map((write) => write.body)).toEqual([
-      { published: false },
-      { published: false },
+      { published: false, expectedUpdatedAt: "2026-11-20T09:00:00.000Z" },
+      { published: false, expectedUpdatedAt: "2026-11-20T09:00:00.000Z" },
     ]);
   });
 
@@ -265,7 +289,10 @@ describe("the Published switch", () => {
       expect(toggle.getAttribute("aria-checked")).toBe("false"),
     );
     expect(publications()).toHaveLength(1);
-    expect(publications()[0]?.body).toEqual({ published: false });
+    expect(publications()[0]?.body).toEqual({
+      published: false,
+      expectedUpdatedAt: "2026-11-20T09:00:00.000Z",
+    });
   });
 
   test("a refusal that changed nothing leaves the switch as it was and can be retried", async () => {
@@ -350,7 +377,10 @@ describe("Publish description", () => {
     release();
     await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
     expect(publications()).toHaveLength(1);
-    expect(publications()[0]?.body).toEqual({ published: true });
+    expect(publications()[0]?.body).toEqual({
+      published: true,
+      expectedUpdatedAt: "2026-11-20T09:00:00.000Z",
+    });
   });
 
   test("a description that published but whose Audit row failed says so, and Try again records it", async () => {
@@ -395,8 +425,8 @@ describe("Publish description", () => {
 
     await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
     expect(publications().map((write) => write.body)).toEqual([
-      { published: true },
-      { published: true },
+      { published: true, expectedUpdatedAt: "2026-11-20T09:00:00.000Z" },
+      { published: true, expectedUpdatedAt: "2026-11-20T09:00:00.000Z" },
     ]);
     expect(view.getByText("Description published.")).toBeTruthy();
   });

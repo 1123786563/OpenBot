@@ -22,11 +22,21 @@ Playground 异常来自 Playwright 的 Service Worker 拦截脚本。该脚本�
 
 集成提交 `954600c7a` 补齐剩余模拟端点后，使用同一个 `87e7b5876` 生产构建复跑全量。360 个页面样本完成采集，63 个书签均匹配目的地，API 501、页面异常和文档级横向溢出均为 0。四个 Playground 样本均通过预览和沙箱检查。未登录样本的 `GET /api/me` 按预期返回 401。接口和 Playground 的 24 项定向测试通过。证据在 `~/.local/state/openbot-spec-127/evidence/full-fixture.R4ZED5/` 的 `summary.json` 和 `sweep/run.json`。全量走查现在对遇到的 501 直接报错。真实环境验收按要求挂起，正式验收维持 0/88。
 
+## 2026-11-28 Chromium 全量复跑
+
+Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的 SHA-256 为 `eb353cf054f1bb1c114cfc7e3013ef160ec4d60a445102af1fd5cbc266726dae`。首次走查发现模拟 API 缺少 `GET /api/computers/pilot`。补齐未启用时的 `{ lifecycle: null }` 响应后，用同一构建重跑。360 个页面样本和 63 个书签组合均完成，页面异常、文档级横向溢出、未实现接口和目的地不匹配均为 0。原始矩阵和截图位于 `~/.local/state/openbot-spec-127/evidence/current-acceptance.z62MJZ/full-sweep-pilot/`。
+
+可访问性快照另发现，Bot 档案和 Admin Check-ins 各有四个样本落入路由错误边界。模拟的 Bot 工具授权和企业设置响应补齐后，八个样本均渲染了预期标题和内容。用同一归档构建复跑的 423 个样本通过新增的渲染异常检查，刻意模拟路由加载故障的样本仍保留。复验记录在同一目录的 `full-sweep-render-verified/run.json`。
+
+本轮使用本地隔离模拟 API。逐页真实任务与独立评分仍待验，正式验收维持 0/88。
+
 ## 书签与退役
 
 21 条书签 × Team 管理员、Team 成员、Personal 共 **63/63**，覆盖六个旧外观入口、Bot 参数、Personal Memory 回退和两个回调参数。两条 Connections 回调在页面消费参数之前经过带参数的目标地址，浏览器历史保存在 `bookmark-history/run.json`。未知 `/s/*` 进入共享恢复页。组件测试另覆盖模拟登录返回和角色变化。 [书签合同](web127-bookmarks.json)
 
 `PATCH /api/settings/preferences` 只接受 `openbot` 作为 skin。退役值返回 400，混合请求中的其他变更也不生效。既有 PostgreSQL 行即使存有 `openduet`，读出和更新其他偏好后的响应均为 `openbot`，数据库继续保留兼容值。
+
+#193 使用构建提交 `ccca02100` 复跑了旧书签、登录回跳和认证客户端测试，共 126 项通过。模拟 Team 成员从 `/s/goals?agent=expenses` 发起登录后，目标路径仍保留原地址。恢复已登录会话后，路由到达 `/responsibilities?agent=expenses&view=goals`。隔离 OIDC 复验使用构建 `a692a090c`、本机 Keycloak 26.4.7 和 PostgreSQL，经过 OpenBot 的真实授权码回调，保留 `agent=expenses` 并进入 Goals。在同一会话内将测试账号从管理员降为成员后，`/api/me` 返回成员，重新打开 `/admin/plugins/parallel` 回到首页。记录与截图位于 `~/.local/state/openbot-spec-127/evidence/group-acceptance.2OHO1J/bookmarks-oidc/`。 [书签测试](../../app/tests/legacy-bookmarks.test.tsx) [登录回跳测试](../../app/tests/sign-resume.test.tsx)
 
 ## 设计判断
 
@@ -38,6 +48,8 @@ Playground 异常来自 Playwright 的 Service Worker 拦截脚本。该脚本�
 - `shells-final/run.json` 记录工作区、Admin 和 Settings 的窄屏抽屉流程，浅暗合计 6/6 次 Escape 关闭后回焦。共 128 条实色对比样本，其中 4 条告警最低 8.67∶1，124 条链接最低 16.53∶1。半透明和叠层背景、其余页面的告警、完整读错回归继续待验。
 - Astryx 构建检测 4 项通过，0 警告，0 失败。#194 定向回归通过。集成全套记录在 wave-2 基线 `6a0756d3f`，尾分片仍有 6 项失败。#194 的独立 fixture 范围内以定向结果为准。
 - Playground 首轮在部分单元捕获到沙箱 iframe 的存储或 Service Worker 异常。复测将主题初始化限制在顶层文档，本地存储异常消失，四个单元仍有 Service Worker 异常。成功发布与真实组件加载仍需适用环境。
+
+构建 `ccca02100` 的 #183 Chromium 复验记录了 28 个共享布局与恢复页样本。工作区、Admin 和 Settings 在 390×844 的浅色与深色下都能用 Escape 关闭抽屉，焦点返回原按钮，共六组。页面异常和文档级横向溢出均为 0。49 项导航定向测试在 15 秒超时下全部通过。首次与浏览器走查并行执行时，有三项达到默认 5 秒超时。原始矩阵见 `~/.local/state/openbot-spec-127/evidence/current-acceptance.z62MJZ/shells-pilot/run.json`。真实读屏和真实依赖故障恢复仍待验。
 
 ## 待验项目
 

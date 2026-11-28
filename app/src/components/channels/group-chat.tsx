@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   type MouseEvent,
+  type ReactNode,
   type Ref,
   useEffect,
   useLayoutEffect,
@@ -39,12 +40,15 @@ import {
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
 import { canKeepCachedRead } from "@/lib/client";
+import { controlThreadRun } from "@/lib/copilot/thread-messages";
 import {
   awaitingFirstReply,
+  type GroupBackgroundRun,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
   sendGroupMessageMutationOptions,
+  stopGroupTurnMutationOptions,
 } from "@/lib/groups";
 import {
   markdownComponents,
@@ -59,7 +63,7 @@ import {
   ConversationReadError,
   ConversationUnavailable,
 } from "./conversation-status";
-import { RUN_STAGE, runOutcomeWords } from "./run-stage";
+import { RUN_STAGE, RUN_WAS_STOPPED, runOutcomeWords } from "./run-stage";
 import { TeamBotConsentCard } from "./team-bot-consent";
 
 const groupSubmission = z.discriminatedUnion("kind", [
@@ -167,16 +171,22 @@ export function GroupChat({
         : [],
     ),
   );
+  const carryingOn =
+    carriedOn.size > 0 ||
+    background.some(
+      (run) =>
+        run.waitingForApproval &&
+        carryingOnAfterApproval(inbox.data, run.threadId),
+    );
   const seenCarriedOn = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     const before = seenCarriedOn.current;
-    const now = carriedOn.size > 0;
-    seenCarriedOn.current = now;
-    if (before !== undefined && before !== now)
+    seenCarriedOn.current = carryingOn;
+    if (before !== undefined && before !== carryingOn)
       void queryClient.invalidateQueries({
         queryKey: groupKeys.detail(channelId),
       });
-  }, [carriedOn, channelId, queryClient]);
+  }, [carryingOn, channelId, queryClient]);
   const question = groupQuestion(inbox.data, channelId);
   // The Bot whose conversation it is: for a hand-off, the one that handed the work on.
   const askerId = question?.conversationBotId ?? question?.botId;
@@ -184,6 +194,33 @@ export function GroupChat({
     (bot) => bot.id === askerId,
   );
   const answer = useMutation(answerPersonQuestionMutationOptions(queryClient));
+  const stop = useMutation(
+    stopGroupTurnMutationOptions(queryClient, channelId),
+  );
+  const stopInFlight = useRef(false);
+  async function stopTurn(id: string) {
+    if (stopInFlight.current) return;
+    stopInFlight.current = true;
+    try {
+      await stop.mutateAsync(id);
+    } catch {
+      // The message keeps its Stop control until the server confirms.
+    } finally {
+      stopInFlight.current = false;
+    }
+  }
+  const reconcile = useMutation({
+    mutationFn: (run: GroupBackgroundRun) =>
+      controlThreadRun({
+        action: "reconcile",
+        threadId: run.threadId,
+        agentId: run.agentId,
+        runId: run.id,
+      }),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
+  });
+
   const answerTo = async (text: string, questionId: string) => {
     await answer.mutateAsync({ id: questionId, response: text });
     // The answer is in the transcript now, and the Bot's turn on it is queued.
@@ -225,7 +262,10 @@ export function GroupChat({
   const landed = useRef(false);
   const newest = messages.at(-1);
   const awaitingReply =
-    newest?.agentId === null && bots.length > 0 && !question;
+    newest?.agentId === null &&
+    newest.stopReason !== "stopped" &&
+    bots.length > 0 &&
+    !question;
   // Reading dataUpdatedAt keeps this status current even if a poll returns the same transcript.
   const checkingForReply =
     awaitingReply && group.dataUpdatedAt > 0 && awaitingFirstReply(newest);
@@ -387,6 +427,27 @@ export function GroupChat({
                   ? (names.get(message.answeredBy) ?? "another Bot")
                   : undefined
               }
+              stopAction={
+                message.ownerUserId === me?.id &&
+                group.data?.stoppableTurnIds?.includes(message.id) ? (
+                  <Stack align="end" gap={1}>
+                    <RecoveryButton
+                      label="Stop this turn"
+                      variant="ghost"
+                      isDisabled={stop.isPending}
+                      isLoading={
+                        stop.isPending && stop.variables === message.id
+                      }
+                      clickAction={() => void stopTurn(message.id)}
+                    />
+                    {stop.isError && stop.variables === message.id ? (
+                      <Text as="p" type="supporting" role="alert">
+                        Couldn't stop this turn. Try again.
+                      </Text>
+                    ) : null}
+                  </Stack>
+                ) : undefined
+              }
               mine={message.ownerUserId === me?.id}
               available={message.agentId !== null && names.has(message.agentId)}
               carryingOn={carriedOn.has(message.id)}
@@ -417,7 +478,7 @@ export function GroupChat({
               <ChannelAvatar
                 participantIds={[run.agentId]}
                 size={24}
-                typing={run.status === "running"}
+                typing={run.status === "running" && !run.waitingForApproval}
               />
               <MessageContent>
                 <strong>{names.get(run.agentId)}</strong>
@@ -426,7 +487,9 @@ export function GroupChat({
                 )}
                 <Text as="p" role="status" type="supporting">
                   {run.reason ??
-                    runOutcomeWords(run) ??
+                    (run.externalOutcome === "executed" && !run.partialReply
+                      ? "The outcome was verified."
+                      : runOutcomeWords(run)) ??
                     (run.status === "failed"
                       ? RUN_STAGE.ended
                       : run.status === "running"
@@ -434,12 +497,26 @@ export function GroupChat({
                         : RUN_STAGE.completed)}
                 </Text>
               </MessageContent>
-              {/*
-                NO STOP ON A GROUP'S RUN, ON PURPOSE. A Bot's turn here is a run the server owns,
-                and a stop leaves its outcome "unknown" (`direct-chat-replay.ts`). Nothing in a
-                group can then vouch for it, so the Bot answers "busy" to every later turn of its
-                own, for good (`store.start` in `group.ts`). A wait on an approval ends with Deny.
-              */}
+              {run.externalOutcome === "unknown" ? (
+                <Stack align="start" gap={1}>
+                  <RecoveryButton
+                    className="conversation-recovery-action"
+                    label="Check outcome"
+                    variant="ghost"
+                    size="lg"
+                    isDisabled={reconcile.isPending}
+                    isLoading={
+                      reconcile.isPending && reconcile.variables?.id === run.id
+                    }
+                    clickAction={() => reconcile.mutate(run)}
+                  />
+                  {reconcile.isError && reconcile.variables?.id === run.id ? (
+                    <Text as="p" type="supporting" role="alert">
+                      Couldn't check the outcome. Try again.
+                    </Text>
+                  ) : null}
+                </Stack>
+              ) : null}
             </MessageRow>
           ))}
           {awaitingReply && (
@@ -588,6 +665,7 @@ function GroupLine({
   available,
   carryingOn,
   rememberActivityLink,
+  stopAction,
 }: {
   message: GroupMessage;
   name: string;
@@ -597,6 +675,7 @@ function GroupLine({
   available: boolean;
   /** The line waits on an approval the server is carrying on from: the Bot's turn again. */
   carryingOn: boolean;
+  stopAction?: ReactNode;
   rememberActivityLink: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   if (message.agentId === null)
@@ -613,6 +692,12 @@ function GroupLine({
               <span className="whitespace-pre-wrap">{message.text}</span>
             </BubbleContent>
           </Bubble>
+          {stopAction}
+          {message.stopReason === "stopped" ? (
+            <Text as="p" role="status" type="supporting">
+              {RUN_WAS_STOPPED}
+            </Text>
+          ) : null}
         </MessageContent>
       </MessageRow>
     );
@@ -677,6 +762,10 @@ function GroupLine({
               {message.reason ?? message.text}
             </Text>
           </section>
+        ) : message.stopReason === "stopped" ? (
+          <Text as="p" role="status" type="supporting">
+            {RUN_WAS_STOPPED}
+          </Text>
         ) : message.status === "failed" ? (
           <Stack gap={1}>
             <Text

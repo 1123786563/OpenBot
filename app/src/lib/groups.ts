@@ -24,6 +24,7 @@ export type GroupMessage = {
   text: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;
+  stopReason?: "stopped" | "context_revoked";
   /** Why a Bot is waiting or paused. */
   reason?: string;
   /** For an answer relayed from another Bot through `message_bot`: which Bot answered. */
@@ -60,6 +61,7 @@ export type GroupConversation = {
   people: GroupPerson[];
   messages: GroupMessage[];
   backgroundRuns?: GroupBackgroundRun[];
+  stoppableTurnIds?: string[];
 };
 
 export const groupKeys = {
@@ -86,20 +88,29 @@ export function groupPollInterval(
   now = Date.now(),
 ): number | false {
   const messages = conversation?.messages ?? [];
+  const background = conversation?.backgroundRuns ?? [];
   if (
     messages.some(
       (message) => message.status === "running" || message.status === "queued",
     ) ||
-    conversation?.backgroundRuns?.some(({ status }) => status === "running") ||
+    background.some(
+      ({ status, waitingForApproval }) =>
+        status === "running" && !waitingForApproval,
+    ) ||
     awaitingFirstReply(messages.at(-1))
   )
     return WORKING_POLL_MS;
-  const waiting = messages.filter(
-    (message) => message.status === "waiting" && message.threadId,
-  );
+  const waiting = [
+    ...messages.flatMap(({ status, threadId }) =>
+      status === "waiting" && threadId ? [threadId] : [],
+    ),
+    ...background.flatMap(({ status, waitingForApproval, threadId }) =>
+      status === "running" && waitingForApproval ? [threadId] : [],
+    ),
+  ];
   if (waiting.length === 0) return false;
-  return waiting.some((message) =>
-    carryingOnAfterApproval(inbox, message.threadId ?? "", now),
+  return waiting.some((threadId) =>
+    carryingOnAfterApproval(inbox, threadId, now),
   )
     ? WORKING_POLL_MS
     : WAITING_POLL_MS;
@@ -150,8 +161,33 @@ export function awaitingFirstReply(last: GroupMessage | undefined) {
   return (
     last !== undefined &&
     last.agentId === null &&
+    last.stopReason !== "stopped" &&
     Date.now() - Date.parse(last.createdAt) < 10 * 60_000
   );
+}
+
+export function stopGroupTurnMutationOptions(
+  queryClient: QueryClient,
+  channelId: string,
+) {
+  return mutationOptions({
+    mutationFn: async (messageId: string) => {
+      await client(
+        `/api/groups/${encodeURIComponent(channelId)}/turns/${encodeURIComponent(messageId)}/stop`,
+        {
+          method: "POST",
+          fallback: "Couldn't stop this turn. Try again.",
+        },
+      );
+    },
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: groupKeys.detail(channelId),
+        }),
+        queryClient.invalidateQueries({ queryKey: approvalsKey }),
+      ]),
+  });
 }
 
 export function sendGroupMessageMutationOptions(

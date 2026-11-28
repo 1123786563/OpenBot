@@ -11,6 +11,7 @@ import {
 } from "../src/db/schema/responsibilities";
 import { workItems } from "../src/db/schema/work";
 import { createResponsibilityBindingStore } from "../src/responsibilities/bindings";
+import { createResponsibilityRoutes } from "../src/responsibilities/routes";
 import { createResponsibilityStore } from "../src/responsibilities/store";
 import {
   ResponsibilityNotFoundError,
@@ -71,7 +72,7 @@ afterAll(async () => {
   await database.$client.close();
 });
 
-test("repeating a GitHub binding request creates one binding and one credential", async () => {
+test("retrying a GitHub binding after losing the HTTP response keeps one binding and credential", async () => {
   const vault = createCredentialStore(database);
   const bindings = createResponsibilityBindingStore(database, {
     store: vault,
@@ -83,21 +84,63 @@ test("repeating a GitHub binding request creates one binding and one credential"
     secret: "fixture-secret",
     requestId: bindingRequestId,
   };
-  const [first, retry] = await Promise.all([
-    bindings.create(ownerId, input),
-    bindings.create(ownerId, input),
-  ]);
+  const routes = createResponsibilityRoutes(
+    store,
+    {
+      ingest: async () => {
+        throw new Error("Creating a binding must not ingest an event.");
+      },
+    },
+    async (context, next) => {
+      context.set("actor", {
+        id: ownerId,
+        email: `${ownerId}@example.test`,
+        role: "user",
+      });
+      await next();
+    },
+    bindings,
+  );
+  const submitDraft = () =>
+    routes.request("/sources/github", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+
+  const interrupted = await submitDraft();
+  expect(interrupted.status).toBe(201);
+  // The transaction has committed, but the caller never receives the result.
+  await interrupted.body?.cancel();
+  const [first] = await bindings.list(ownerId);
+  if (!first)
+    throw new Error("The initial HTTP request did not save a binding.");
   bindingIds.push(first.id);
-  expect(retry).toEqual(first);
+
+  const retries = await Promise.all([submitDraft(), submitDraft()]);
+  for (const retry of retries) {
+    expect(retry.status).toBe(201);
+    expect(await retry.json()).toEqual({
+      binding: {
+        ...first,
+        createdAt: first.createdAt.toISOString(),
+        webhookPath: `/api/events/github/${first.id}`,
+      },
+    });
+  }
   expect(await bindings.list(ownerId)).toHaveLength(1);
   const stored = await database
     .select({ id: credentials.id })
     .from(credentials)
     .where(eq(credentials.keyId, first.id));
   expect(stored).toHaveLength(1);
-  const other = await bindings.create(strangerId, input);
+  const [other, concurrent] = await Promise.all([
+    bindings.create(strangerId, input),
+    bindings.create(strangerId, input),
+  ]);
   bindingIds.push(other.id);
   expect(other.id).not.toBe(first.id);
+  expect(concurrent).toEqual(other);
   await expect(
     bindings.create(ownerId, { ...input, repository: "acme/other" }),
   ).rejects.toBeInstanceOf(ResponsibilityRefusedError);
