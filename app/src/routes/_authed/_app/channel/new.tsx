@@ -602,7 +602,7 @@ function NewConversation({
           emptyRoster ? newBotButton.current : pickerInput.current
         }
         leavesDraft={({ next }) =>
-          next.pathname !== "/channel/new" || next.search.new !== true
+          next.routeId !== Route.id || next.search.new !== true
         }
         open={creatingBot === true}
         onClose={closeBotCreation}
