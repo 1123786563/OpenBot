@@ -15,8 +15,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import { useTranslation } from "@/i18n";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
   changeProactiveSettingMutationOptions,
   type ProactiveSetting,
@@ -46,6 +46,7 @@ export function SuggestionRow({
   setting,
   inGroup = false,
   onDismiss,
+  onStarted,
 }: {
   suggestion: ProactiveSuggestion;
   /** The Bot it came from, said on the row unless the row sits under that Bot's header. */
@@ -55,6 +56,7 @@ export function SuggestionRow({
   setting?: ProactiveSetting;
   inGroup?: boolean;
   onDismiss?: (trigger: HTMLButtonElement) => void;
+  onStarted?: (channelId: string) => void;
 }) {
   const { data: capabilities } = useQuery(deploymentCapabilitiesQueryOptions());
   const [budgetOpen, setBudgetOpen] = useState(false);
@@ -66,6 +68,33 @@ export function SuggestionRow({
   const site = suggestion.sourceLink ? sourceSite(suggestion.sourceLink) : null;
   const initial = (suggestion.sourceApp ?? "").trim().charAt(0).toUpperCase();
   const error = act.error ?? stop.error;
+
+  async function start(budgetId?: string) {
+    const result = await act.mutateAsync({
+      id: suggestion.id,
+      action: "start",
+      ...(budgetId ? { budgetId } : {}),
+    });
+    if (onStarted) {
+      const payload: unknown = await result
+        .clone()
+        .json()
+        .catch(() => null);
+      if (payload && typeof payload === "object" && "task" in payload) {
+        const task = payload.task;
+        if (
+          task &&
+          typeof task === "object" &&
+          "channelId" in task &&
+          typeof task.channelId === "string"
+        ) {
+          onStarted(task.channelId);
+        }
+      }
+    }
+    return result;
+  }
+
   return (
     <BoardRow
       actions={
@@ -74,7 +103,7 @@ export function SuggestionRow({
             <Button
               className="min-h-11"
               disabled={act.isPending}
-              onClick={() => act.mutate({ id: suggestion.id, action: "start" })}
+              onClick={() => void start().catch(() => undefined)}
               size="sm"
               variant="outline"
             >
@@ -95,13 +124,7 @@ export function SuggestionRow({
               <ExecutionBudgetDialog
                 title="Set a Task budget"
                 onClose={() => setBudgetOpen(false)}
-                submit={(budgetId) =>
-                  act.mutateAsync({
-                    id: suggestion.id,
-                    action: "start",
-                    budgetId,
-                  })
-                }
+                submit={start}
               />
             ) : null}
             <Button

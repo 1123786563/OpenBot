@@ -39,3 +39,7 @@ Set `BUILD_DIR`, `BUILD_MANIFEST`, and `EVIDENCE_DIR` as above. Run `bun --no-en
 ## Tasks confirmation and retry contrast
 
 Use the archived production build and manifest as above, then run `scripts/browser-acceptance/first-batch.sh --task-confirmation`. Chromium and WebKit exercise Tasks at 320 CSS pixels in light and dark mode. The cases cover approvals read recovery, keyboard cancellation and focus restoration, and a committed task completion whose response is lost. The runner samples the retry button as it appears and requires a contrast ratio of at least 4.5:1. It saves screenshots and the raw ratios in `run.json`.
+
+## Ideas task handoff
+
+Use the archived production build and manifest as above, then run `scripts/browser-acceptance/first-batch.sh --ideas-start`. At 390 and 1440 CSS pixels in both themes, Chromium and WebKit start a seeded suggestion by keyboard and attempt repeat activation while the response is pending. Each scenario checks that only one start reached the isolated API, that focus moves to the new Open task link, and that the link leads to the same Conversation as the resulting Tasks row. The runner saves the handoff screenshot and a `run.json` record for each scenario.
