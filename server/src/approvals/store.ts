@@ -4,6 +4,7 @@ import {
   and,
   desc,
   eq,
+  exists,
   inArray,
   isNull,
   ne,
@@ -160,7 +161,35 @@ export function createApprovalStore(
   }
 
   const reconcile = (owner: string) =>
-    database.transaction((tx) => reconcileDecisionHistory(tx, owner, now));
+    database.transaction(async (tx) => {
+      await reconcileDecisionHistory(tx, owner, now);
+      const reason = "The Bot run was stopped before this action was approved.";
+      await tx
+        .update(approvalRequests)
+        .set({
+          status: "denied",
+          result: { content: reason, error: reason },
+          decidedAt: new Date(now()),
+        })
+        .where(
+          and(
+            eq(approvalRequests.ownerUserId, owner),
+            eq(approvalRequests.status, "pending"),
+            exists(
+              tx
+                .select({ id: directChatRuns.id })
+                .from(directChatRuns)
+                .where(
+                  and(
+                    eq(directChatRuns.id, approvalRequests.runId),
+                    sql`${directChatRuns.threadId} = ${approvalRequests.action}->>'threadId'`,
+                    eq(directChatRuns.stopReason, "stopped"),
+                  ),
+                ),
+            ),
+          ),
+        );
+    });
   const verify = async (
     tx: Transaction,
     owner: string,
