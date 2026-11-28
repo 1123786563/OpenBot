@@ -8,6 +8,7 @@ import {
   applyCapabilityChanges,
   previewCapabilityChanges,
 } from "../../server/src/admin/capability-changes.ts";
+import { DEFAULT_ENTERPRISE_SETTINGS } from "../../server/src/admin/settings-store.ts";
 import { firstBatchRead } from "./first-batch-reads.mjs";
 
 export const boundary = 'page.host == "blocked.example.test"';
@@ -231,7 +232,20 @@ export const governance = {
             roles: {},
             groups: {},
           })),
+          settings: DEFAULT_ENTERPRISE_SETTINGS,
           groups: [],
+          network: [],
+          defaultDestinations: [],
+          mcpServers: [],
+          builtInModel: null,
+          scim: {
+            configured: false,
+            connectionId: "",
+            baseUrl: null,
+            rotating: false,
+          },
+          otel: { configured: false },
+          actionRecordRetentionDays: 90,
         });
       case "/api/admin/enterprise/capabilities/translate":
         return json({

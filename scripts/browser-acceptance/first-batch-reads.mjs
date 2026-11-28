@@ -52,8 +52,7 @@ export function firstBatchRead(request, path, json) {
     "/api/passwords": { passwordManager: true, logins: [] },
     "/api/plugins": { catalogue: [], servers: [], skills: [skill] },
     "/api/plugins/for/whatif-sales": {
-      catalogue: [],
-      servers: [],
+      tools: [],
       skills: [skill],
     },
     "/api/memory": { memories: [] },

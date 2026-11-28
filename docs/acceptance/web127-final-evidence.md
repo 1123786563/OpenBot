@@ -26,6 +26,8 @@ Playground 异常来自 Playwright 的 Service Worker 拦截脚本。该脚本�
 
 Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的 SHA-256 为 `eb353cf054f1bb1c114cfc7e3013ef160ec4d60a445102af1fd5cbc266726dae`。首次走查发现模拟 API 缺少 `GET /api/computers/pilot`。补齐未启用时的 `{ lifecycle: null }` 响应后，用同一构建重跑。360 个页面样本和 63 个书签组合均完成，页面异常、文档级横向溢出、未实现接口和目的地不匹配均为 0。原始矩阵和截图位于 `~/.local/state/openbot-spec-127/evidence/current-acceptance.z62MJZ/full-sweep-pilot/`。
 
+可访问性快照另发现，Bot 档案和 Admin Check-ins 各有四个样本落入路由错误边界。模拟的 Bot 工具授权和企业设置响应补齐后，八个样本均渲染了预期标题和内容。用同一归档构建复跑的 423 个样本通过新增的渲染异常检查，刻意模拟路由加载故障的样本仍保留。复验记录在同一目录的 `full-sweep-render-verified/run.json`。
+
 本轮使用本地隔离模拟 API。逐页真实任务与独立评分仍待验，正式验收维持 0/88。
 
 ## 书签与退役
