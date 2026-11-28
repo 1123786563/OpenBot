@@ -1617,6 +1617,12 @@ Team 与 Personal 的 Chromium、WebKit 在 320、390、1440 像素通过 12 组
 
 生产构建 `index-BsoYmnYL.js` 在 Chromium、WebKit 的 1440、390、320 像素通过六组模拟提交。验证显示 Eastern Time 时仍提交正确的时区，并核对实际发送的每小时配置和新会话命名。三组草稿、重复提交和失败重试回归通过。9 项定向测试、Web 类型检查和 Impeccable 源码检测通过。真实排程和实际读屏待验。 [基线](/tmp/openbot-order2-review/routine-create-guidance-baseline.log) · [Chromium](/tmp/openbot-order2-review/routine-create-guidance-chromium.log) · [WebKit](/tmp/openbot-order2-review/routine-create-guidance-webkit.log) · [草稿回归](/tmp/openbot-order2-review/routine-create-guidance-regression.log) · [320 像素表单](/tmp/openbot-order2-review/routine-create-guidance-320.png)
 
+构建 `105c98736` 的 Chromium 在 390×844 连接隔离 OpenBot API 和 PostgreSQL。Personal 管理员用键盘提交新例行任务，API 只收到一次创建请求并返回 201。列表标题接收焦点，刷新后仍可见该任务。数据库中对应任务仅一条，接口读回 `America/New_York` 及关联会话 ID。 [浏览器记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-browser-db.Ik2oB2/run.json) · [数据库计数](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-browser-db.Ik2oB2/db-count.txt)
+
+同一构建的 Tasks、Ideas、Goals、Routines、新建例行任务和 Activity 在 320 CSS 像素用 Chromium 和 WebKit 检查浅色和深色，24 个模拟页面样本均无页面异常或文档级横向溢出。另有 120 项 Web 和 PostgreSQL 定向测试通过。读屏及最终独立评分仍待验。 [窄屏记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-narrow.sdlgOU/run.json)
+
+同一构建通过本地 Keycloak 的真实 OIDC 回调登录 Team 管理员和普通成员。两种角色各用键盘保存一次，均返回 201，焦点回到列表标题，刷新后能看到自己的任务。各账号的例行任务接口仅返回本人的记录。隔离数据库确认两条记录归属不同账号。 [Team 浏览器记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-team-browser.fydU7n/run.json) · [数据库计数](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-team-browser.fydU7n/db-count.txt)
+
 ## Goals 视图布局复评
 
 `/responsibilities?view=goals` 从 39/40 升至 **40/40（100%，暂定）**，H1–H10 均为 4。H8 加 1 分。同一个 Bot 的目标和例行任务各自按需显示。切换入口就在 Bot 选择器下方，例行任务无需滚过目标清单即可查阅。24 条目标的 320 像素 Chromium 场景中，例行任务标题从原来的 2,258 CSS 像素处移至切换后的首屏。只打开 Goals 时无需读取例行任务列表。例行任务视图可用地址直接打开，兼容 `/s/goals` 和旧页内锚点。
