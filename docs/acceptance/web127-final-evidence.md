@@ -133,8 +133,10 @@ Firefox ESR 和 Orca 在主线构建 `bbbbe63fa` 的隔离 Team 环境验证了 
 
 - #184 的网站登录回归在 Chromium 和 WebKit 的 390、1440 CSS 像素与浅深主题下各通过四项。验证码阶段刷新后仅显示验证码输入框，过期后用键盘返回原会话。测试使用隔离 API，未提交凭据。实际网站投递和接管待验。 [验收脚本 #276](https://github.com/1123786563/OpenBot/pull/276) · [Chromium](/Users/wuyj/.local/state/openbot-spec-127/evidence/web184-code-chromium.F75An0/run.json) · [WebKit](/Users/wuyj/.local/state/openbot-spec-127/evidence/web184-code-webkit.Y7escJ/run.json)
 - #189 在主线生产构建 `9f3de65b7` 上通过 Ideas 八项和 Tasks 四项隔离浏览器场景。Ideas 提交期间阻止重复操作，成功后提供可聚焦的直达会话链接。Tasks 在 320 CSS 像素下通过键盘取消、重试、字号及对比度检查；简体中文的完成提示和目标分组同名。真实 Bot 执行及实机播报待验。 [Ideas 实现 #280](https://github.com/1123786563/OpenBot/pull/280) · [Ideas 复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-main-9f3de6.I0FE6F/ideas/run.json) · [Tasks 复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-main-9f3de6.I0FE6F/tasks/run.json)
-- #192 在主线 `d4f66b14e` 的 Audit 页面及 PostgreSQL 联合回归通过 16 项。通过 HTTP 查询和导出首屏之外的同一历史记录后，降低测试账号的数据库权限，原模拟会话的两个请求都返回 403。另有八个隔离浏览器场景证实 503 保留旧记录、403 清除旧记录。真实身份供应商登录后的 Audit 验收待补。 [集成测试 #277](https://github.com/1123786563/OpenBot/pull/277) · [主线测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-merged.8BgDOk/results.log) · [浏览器矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-matrix.gwSkZL/browser.json)
+- #192 在主线 `d4f66b14e` 的 Audit 页面及 PostgreSQL 联合回归通过 16 项。通过 HTTP 查询和导出首屏之外的同一历史记录后，降低测试账号的数据库权限，原模拟会话的两个请求都返回 403。另有八个隔离浏览器场景证实 503 保留旧记录、403 清除旧记录。 [集成测试 #277](https://github.com/1123786563/OpenBot/pull/277) · [主线测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-merged.8BgDOk/results.log) · [浏览器矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-audit-matrix.gwSkZL/browser.json)
 
+
+- #192 在隔离站经 Keycloak 的真实 OAuth 授权码回调登录。Chromium 构建 `2eff44601` 使用同一 Better Auth 会话 cookie 搜索并导出首屏之外的旧记录。OpenBot 服务通过 PostgreSQL 读取角色和 Audit。数据库把账号从管理员降为普通用户后，同一会话的搜索、CSV 和刷新均返回 403，页面清除原记录。另在 Chromium 和 WebKit 用模拟登录身份连接同一服务实现复验，PostgreSQL 的查询与角色判定保持真实。 [Keycloak 登录与降权](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-oidc-audit.0EC2xU/run.json) · [双浏览器复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-postgres-role.TJ91cG/browser.json)
 
 ### #186 Bot 清单、创建和区块恢复
 
