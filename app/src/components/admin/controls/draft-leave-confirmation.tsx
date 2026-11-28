@@ -1,6 +1,10 @@
 import { type ShouldBlockFn, useBlocker } from "@tanstack/react-router";
-import { useTranslation } from "@/i18n";
-import { type RefObject, useLayoutEffect, useRef } from "react";
+import {
+  type ComponentProps,
+  type RefObject,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { astryxScope } from "@/components/astryx-pilot/theme";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,9 +15,11 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTranslation } from "@/i18n";
 
 export function DraftLeaveConfirmation({
   description,
+  finalFocus,
   hasDraft,
   leavesDraft,
   overlayClassName,
@@ -22,6 +28,7 @@ export function DraftLeaveConfirmation({
   title,
 }: {
   description?: string;
+  finalFocus?: ComponentProps<typeof DialogContent>["finalFocus"];
   hasDraft: boolean | RefObject<boolean>;
   leavesDraft?: (location: Parameters<ShouldBlockFn>[0]) => boolean;
   overlayClassName?: string;
@@ -56,6 +63,7 @@ export function DraftLeaveConfirmation({
     >
       <DialogContent
         {...astryxScope}
+        finalFocus={finalFocus}
         initialFocus={keepEditing}
         overlayClassName={overlayClassName}
         role="alertdialog"
