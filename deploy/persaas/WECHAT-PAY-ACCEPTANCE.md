@@ -35,12 +35,12 @@ Flexprice 的三个测试包通过，含 PostgreSQL 结算用例、微信 Native
 
 ## 核对发布版本和密钥
 
-部署前用 `go version -m` 和 `sha256sum` 核对两个 Linux amd64 文件。候选二进制内的 `vcs.revision` 均为 `bb02a7f3ca720e53af215dc46258b90285647d1b`，`vcs.modified=false`。
+部署前用 `go version -m` 和 `sha256sum` 核对两个 Linux amd64 文件。候选二进制内的 `vcs.revision` 均为 `ca3677197b3a2b92fc25bd914e69f835309c1654`，`vcs.modified=false`。
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `server` | `e9a39ac4fa2f1d9058efd22aa7cf3ba28e2d999b0caac72ea2218ab053def1fa` |
-| `migrate` | `10e0395ae9147fc77d0226f8d17e9ddf445c6811ddb5247cd39603ea71614b6f` |
+| `server` | `d7c77ce43cd5cbfcdd6719365b2d1427d3d863a378ffad2396d255e3e3add515` |
+| `migrate` | `c804bbe889a4322161d78d9a724534dfca80220bdf0758b74f79284ec804ac49` |
 
 - 在目标 Flexprice 的 Infisical 服务目录保存 `FLEXPRICE_AUTH_DISABLE_SIGNUP=true`，以及 `FLEXPRICE_WECHAT_CHECKOUT_MERCHANTS_JSON`。数组中启用对应商户，核对 `tenant_id` 和 `environment_id`。商户条目使用 `enabled`、`app_id`、`merchant_id`、`serial_number`、`private_key`、`public_key`、`public_key_id`、`api_v3_key` 和 `notify_url`。通知 URL 使用目标 Flexprice HTTPS 地址的 `/v1/webhooks/wechat`。
 - 如目标使用 Flexprice 自身的 Infisical 加载器，核对 `INFISICAL_ENABLED=true`、`INFISICAL_SITE_URL`、`INFISICAL_PROJECT_ID`、`INFISICAL_ENVIRONMENT`、`INFISICAL_SECRET_PATH` 和只读身份的 `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID`、`INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`。同名容器环境变量会覆盖 Infisical。若使用 Persaas 现有下发流程，从已授权的 Infisical 目录下发到私有容器 env。参见 [Infisical 中间件管理](INFISICAL-MIDDLEWARE.md)。

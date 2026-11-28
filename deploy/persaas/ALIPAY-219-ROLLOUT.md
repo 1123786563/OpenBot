@@ -4,14 +4,14 @@
 
 ## 固定版本并复跑本机验收
 
-OpenBot 验收从 `2dbef5eade7576a8889579924d215e49d48036cf` 开始。本机支付演练使用 Flexprice `bb780f798bcdf2b14ac68debedee54254e901e74`。包含 webhook 配置支持的发布候选为 `bb02a7f3ca720e53af215dc46258b90285647d1b`。两个候选可执行文件的 Go 构建信息均记录该提交、`vcs.modified=false`、`linux/amd64`。
+OpenBot 验收从 `2dbef5eade7576a8889579924d215e49d48036cf` 开始。本机支付演练使用 Flexprice `bb780f798bcdf2b14ac68debedee54254e901e74`。包含 webhook 配置支持的发布候选为 `ca3677197b3a2b92fc25bd914e69f835309c1654`。两个候选可执行文件的 Go 构建信息均记录该提交、`vcs.modified=false`、`linux/amd64`。
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `server` | `e9a39ac4fa2f1d9058efd22aa7cf3ba28e2d999b0caac72ea2218ab053def1fa` |
-| `migrate` | `10e0395ae9147fc77d0226f8d17e9ddf445c6811ddb5247cd39603ea71614b6f` |
+| `server` | `d7c77ce43cd5cbfcdd6719365b2d1427d3d863a378ffad2396d255e3e3add515` |
+| `migrate` | `c804bbe889a4322161d78d9a724534dfca80220bdf0758b74f79284ec804ac49` |
 
-候选文件位于本机 `/tmp/flexprice-214-linux.iBmCp1`。归档时保留对应源码、迁移目录、配置及镜像摘要。当前 `data.yml` 的 `flexprice:2.1.52-persaas` 标签不足以证明运行的是候选版本。发布包中服务和迁移任务应引用同一候选镜像摘要。先在隔离环境执行迁移和启动检查。
+候选文件位于本机 `/tmp/flexprice-214-linux.4WRO3m`。归档时保留对应源码、迁移目录、配置及镜像摘要。当前 `data.yml` 的 `flexprice:2.1.52-persaas` 标签不足以证明运行的是候选版本。发布包中服务和迁移任务应引用同一候选镜像摘要。先在隔离环境执行迁移和启动检查。
 
 在 OpenBot 仓库根目录连接专用本机 PostgreSQL，设置 `TEST_DATABASE_URL`，链接本地 `.env.test` 并安装锁定依赖后执行：
 
@@ -77,3 +77,5 @@ FLEXPRICE_TEST_POSTGRES_DSN="$LOCAL_FLEXPRICE_TEST_DSN" \
 在 Flexprice 的 Infisical 服务目录设置 `FLEXPRICE_WEBHOOK_ENABLED=true` 和 `FLEXPRICE_WEBHOOK_TENANTS_JSON`。JSON 的顶层键是 Flexprice 租户 ID。对应租户对象设置 `enabled` 为 `true`，`included_events` 为 `["invoice.update.payment"]`，`endpoint` 为目标 OpenBot 的 HTTPS `/api/billing/credit-pack-flexprice/alipay/callback` 完整 URL。`headers.Authorization` 使用 `Bearer` 加空格及 OpenBot `OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN` 的值。当前环境已有原生 webhook 时，保留其他租户的配置条目。
 
 用测试订单核对 Flexprice 原生通知返回 2xx、OpenBot 只发一次点。校验凭据不一致时通知被拒绝。验收证据只记录回调时间、HTTP 状态及脱敏订单引用。
+
+支付宝返回签名有效、且交易号和全额退款金额匹配的资金变动回执时，可以确认成功。查单缺少明确结果、超时或无法核验时，保留冻结并使用原退款请求号核验。需要人工处理时，使用与原交易和退款请求号对应的商户凭证。
