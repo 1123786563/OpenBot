@@ -95,6 +95,7 @@ export function AttachmentStrip({
         aria-label="Attachments"
         as="ul"
         className="pb-3"
+        style={{ maxBlockSize: "30dvh", overflowY: "auto" }}
         direction="horizontal"
         gap={2}
         wrap="wrap"
@@ -144,12 +145,10 @@ export function AttachmentStrip({
             <IconFile className="size-5 shrink-0 text-muted-foreground" />
             <Stack className="min-w-0">
               <Text
-                className="font-medium text-xs"
+                className="font-medium text-sm"
                 display="block"
                 style={{
-                  maxBlockSize: "3lh",
                   overflowWrap: "anywhere",
-                  overflowY: "auto",
                 }}
                 tabIndex={0}
               >
