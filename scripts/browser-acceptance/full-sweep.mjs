@@ -371,6 +371,24 @@ assert.deepEqual(
   [],
 );
 if (mode === "full") {
+  const renderFailures = records.flatMap(({ id, console }) =>
+    console.flatMap(([level, message]) => {
+      if (level !== "error" || !/^\w*Error:/.test(message)) return [];
+      // The recovery view deliberately aborts a route chunk.
+      if (
+        views.some(
+          ({ id: viewId, view }) =>
+            view === "Route load failure" && id.startsWith(`${viewId}-`),
+        ) &&
+        message.startsWith(
+          "TypeError: Failed to fetch dynamically imported module:",
+        )
+      )
+        return [];
+      return [`${id}: ${message.split("\n", 1)[0]}`];
+    }),
+  );
+  assert.deepEqual(renderFailures, [], "Unexpected rendered page exceptions");
   const unimplemented = new Set(
     records.flatMap((record) =>
       record.apiFailures

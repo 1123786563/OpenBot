@@ -213,7 +213,7 @@ export function sweepRead(
     case "/api/components/for-agent/general":
       return json({ components: [] });
     case "/api/plugins/for/general":
-      return json({ catalogue: [], servers: [], skills: [] });
+      return json({ tools: [], skills: [] });
     case `/api/memory/sources/available/${salesBot.id}`:
       return json({ tools: [] });
     case `/api/plugins/for/${salesBot.id}/apps`:
