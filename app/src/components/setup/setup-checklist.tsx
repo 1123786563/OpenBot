@@ -124,9 +124,9 @@ export function SetupChecklist({
         </div>
       ) : checklist.error ? (
         <ReadError
-          message="Couldn't check your setup."
+          message="Couldn't load your setup checklist."
           retry={checklist.refetch}
-          retryLabel="Check again"
+          retryLabel="Retry loading checklist"
           retrying={checklist.isFetching}
         />
       ) : (

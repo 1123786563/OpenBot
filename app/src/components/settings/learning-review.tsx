@@ -168,7 +168,10 @@ function ConversationLearning({
         <p role="alert">{saveAutoApprove.error.message}</p>
       )}
       {review.conversations.length === 0 ? (
-        <PageEmpty title="No conversations with Learning" />
+        <PageEmpty title="No conversations with Learning">
+          Open an active conversation with one Bot, select Learning in the
+          conversation header, then select Learn now.
+        </PageEmpty>
       ) : (
         <PageRows>
           {review.conversations.map((conversation) => (

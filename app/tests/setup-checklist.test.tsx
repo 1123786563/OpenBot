@@ -359,12 +359,16 @@ test("the summary counts in the singular and the plural", () => {
   );
 });
 
-test("a check that fails says so, and Check again stays", async () => {
+test("a checklist read failure offers a loading retry", async () => {
   answer = () => Response.json({ error: "nope" }, { status: 503 });
   const view = draw();
 
-  expect(await view.findByText("Couldn't check your setup.")).not.toBeNull();
-  expect(view.getByRole("button", { name: "Check again" })).not.toBeNull();
+  expect(
+    await view.findByText("Couldn't load your setup checklist."),
+  ).not.toBeNull();
+  expect(
+    view.getByRole("button", { name: "Retry loading checklist" }),
+  ).not.toBeNull();
 });
 
 test("a failed recheck keeps the last results and Check again recovers in place", async () => {
