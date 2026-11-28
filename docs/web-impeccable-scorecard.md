@@ -1766,6 +1766,18 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 
 自动检测在两个视图的源码和 8 个桌面、窄屏、浅深主题首屏样本中报告 0 项。该检测范围为默认隔离状态，故障状态的截断由设计评审发现。缩短审批重试标签后，Chromium 和 WebKit 在三种宽度和浅深主题下通过 12 次复验，完整标签均可显示，键盘仍分别重试对应请求。修复后的独立评分和真实服务流程仍待验。 [自动检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector.O96dPs) · [窄屏修复复验](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-retry-label.10gpsL/run.json)
 
+### Learning、Check-ins 与 Playground 独立复评
+
+设计与自动检测由两个独立评审完成。下列分数来自修改前的隔离构建，保持暂定。
+
+| 视图 | 构建 | 测试身份 | H1–H10 | 暂定分 | 设计判断 |
+|---|---|---|---|---:|---|
+| `/admin/learning` | `e9fa68221` | Team 管理员 | 3 2 3 3 3 2 3 3 3 3 | 28/40 | 读失败保留配置草稿并暂停提交。空状态要求到 Participation 选择容器，缺少直达入口。 |
+| `/admin/proactive` | `e9fa68221` | Team 管理员 | 3 3 3 2 3 3 3 3 3 3 | 29/40 | 错误时保留每日上限。背景页面和弹窗同时出现重试提示，窄屏弹窗的横排提示换行拥挤。 |
+| `/admin/playground` | `e9fa68221` | Team 管理员 | 2 3 3 3 3 3 3 3 4 3 | 30/40 | 恢复路径复用草稿版本。旧列表把「仅草稿」和「发布后有改动」同时用于未发布的组件。 |
+
+独立自动检测覆盖 40 个 Chromium 场景，包括桌面和窄屏、浅色和深色及读取、写入恢复。检测器报告 48 次小字、12 次长行及 20 次嵌套卡片提示，以及 16 次窄屏孤词提示。有效复测未见页面异常或横向溢出。真实发布交付和三页的读屏仍待补证。 [Learning 与 Check-ins](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector-recovery.uGkN1U/settings/scans.json) · [Playground](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector-recovery.uGkN1U/playground-clean/scans.json)
+
 ### Tasks 完成与重试复评
 
 | 视图 | 构建 | 测试身份 | H1–H10 | 暂定分 | 设计判断 |
