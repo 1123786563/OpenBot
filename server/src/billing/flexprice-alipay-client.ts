@@ -22,7 +22,9 @@ const invoiceResponse = z.object({
   amount_remaining: cnyAmount,
   paid_at: z.iso.datetime({ offset: true }).nullish(),
 });
+export const flexpriceQRChannel = z.enum(["alipay", "wechat"]);
 const qrResponse = z.object({
+  channel: flexpriceQRChannel,
   order_id: identifier,
   amount: cnyAmount,
   currency: z.string(),
@@ -43,6 +45,7 @@ export function flexpriceInvoiceKey(orderId: string) {
 export function createFlexpriceAlipayClient(options: {
   baseUrl: string;
   apiKey: string;
+  environmentId?: string;
 }) {
   const origin = new URL(options.baseUrl);
   if (
@@ -57,6 +60,9 @@ export function createFlexpriceAlipayClient(options: {
       headers: {
         "content-type": "application/json",
         "x-api-key": options.apiKey,
+        ...(options.environmentId
+          ? { "x-environment-id": options.environmentId }
+          : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       redirect: "error",
@@ -136,14 +142,14 @@ export function createFlexpriceAlipayClient(options: {
 
   async function checkout(
     invoice: { id: string; customer_id: string },
-    method: "GET" | "POST",
+    channel?: z.infer<typeof flexpriceQRChannel>,
   ) {
     const query = new URLSearchParams({ customer_id: invoice.customer_id });
     const response = await request(
-      `${invoicePath(invoice.id)}/alipay-checkout?${query}`,
-      method === "POST" ? {} : undefined,
+      `${invoicePath(invoice.id)}/qr-checkout?${query}`,
+      channel ? { channel } : undefined,
     );
-    if (method === "GET" && response.status === 404) {
+    if (!channel && response.status === 404) {
       await response.body?.cancel();
       return undefined;
     }

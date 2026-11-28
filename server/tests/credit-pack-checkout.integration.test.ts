@@ -2636,16 +2636,18 @@ test("a live channel pays, grants, refunds through its provider and reconciles o
   }
 }, 20_000);
 
-test("Flexprice Alipay checkout locks the buyer's CNY quote and settles only a matching invoice", async () => {
+test("Flexprice two-channel checkout locks the buyer's CNY quote and settles only a matching invoice", async () => {
   const buyer = accountIds[1];
   const orderId = crypto.randomUUID();
   const invoiceId = "inv_openbot_alipay";
   const customerId = "cus_openbot_alipay";
   const webhookToken = "fixture-flexprice-webhook-token-0001";
   let issuedInvoice: unknown;
+  let channel = "alipay";
+  let closeConfirmed = false;
   let invoicePaid = false;
   let reconcileOnQuery = false;
-  let confirmedByAlipay = false;
+  let confirmedByWeChat = false;
   let invoiceCurrency = "cny";
   let invoiceTotal = "25";
   let responseInvoiceId = invoiceId;
@@ -2687,16 +2689,29 @@ test("Flexprice Alipay checkout locks the buyer's CNY quote and settles only a m
       if (url.pathname === `/v1/invoices/${invoiceId}`)
         return Response.json(invoice());
       if (
-        url.pathname === `/v1/invoices/${invoiceId}/alipay-checkout` &&
+        url.pathname === `/v1/invoices/${invoiceId}/qr-checkout` &&
         url.searchParams.get("customer_id") === customerId
       ) {
         if (request.method === "GET" && reconcileOnQuery) invoicePaid = true;
+        const input =
+          request.method === "POST" ? await request.json() : undefined;
+        const waiting = input?.channel === "wechat" && !closeConfirmed;
+        if (input?.channel === "wechat" && closeConfirmed) channel = "wechat";
         return Response.json({
-          order_id: "pay_openbot_alipay",
-          status: confirmedByAlipay ? "paid" : "pending",
+          channel,
+          order_id: `pay_openbot_${channel}`,
+          status: confirmedByWeChat
+            ? "paid"
+            : waiting
+              ? "confirming"
+              : "pending",
           amount: "25.00",
           currency: "CNY",
-          qr_code: "https://qr.alipay.com/fixture",
+          qr_code: waiting
+            ? undefined
+            : channel === "wechat"
+              ? "weixin://wxpay/bizpayurl?fixture"
+              : "https://qr.alipay.com/fixture",
           expires_at: new Date(Date.now() + 60_000).toISOString(),
         });
       }
@@ -2708,14 +2723,21 @@ test("Flexprice Alipay checkout locks the buyer's CNY quote and settles only a m
     apiKey: "fixture-flexprice",
     webhookToken,
     merchant: "fixture-flexprice-merchant",
+    wechatMerchant: "fixture-wechat-merchant",
     productCodes: [code],
     applicationIds: [openbotApp],
     accountIds: [buyer, accountIds[0]],
   };
-  const mountFlexprice = () => {
+  const mountFlexprice = (wechatEnabled = true) => {
     return createTestCreditRoutes({
       ledger,
-      paid: { ledger: paid, flexpriceAlipay: settings },
+      paid: {
+        ledger: paid,
+        flexpriceAlipay: {
+          ...settings,
+          wechatMerchant: wechatEnabled ? settings.wechatMerchant : undefined,
+        },
+      },
       authenticate: async (request) => {
         const subject = request.headers.get("x-fixture-subject");
         return subject && fixtureSubjects.has(subject)
@@ -2763,6 +2785,28 @@ test("Flexprice Alipay checkout locks the buyer's CNY quote and settles only a m
       status: "pending",
       qrCode: "https://qr.alipay.com/fixture",
     });
+    billing = mountFlexprice(false);
+    expect(await (await request(root, bob)).json()).toMatchObject({
+      channels: ["alipay"],
+    });
+    expect((await request(checkout, bob, { channel: "wechat" })).status).toBe(
+      404,
+    );
+    billing = mountFlexprice();
+    expect(
+      await (await request(checkout, bob, { channel: "wechat" })).json(),
+    ).toMatchObject({
+      status: "confirming",
+      channel: "alipay",
+    });
+    closeConfirmed = true;
+    expect(
+      await (await request(checkout, bob, { channel: "wechat" })).json(),
+    ).toMatchObject({
+      status: "pending",
+      channel: "wechat",
+      qrCode: "weixin://wxpay/bizpayurl?fixture",
+    });
     expect(issuedInvoice).toMatchObject({
       customer_id: customerId,
       idempotency_key: `openbot-credit-pack:${orderId}`,
@@ -2783,7 +2827,7 @@ test("Flexprice Alipay checkout locks the buyer's CNY quote and settles only a m
     expect(await (await request(verify, bob, {})).json()).toMatchObject({
       state: "pending",
     });
-    confirmedByAlipay = true;
+    confirmedByWeChat = true;
     invoicePaid = true;
     for (const mismatch of ["wrong invoice", "currency", "amount"]) {
       responseInvoiceId =
@@ -2823,6 +2867,7 @@ test("Flexprice Alipay checkout locks the buyer's CNY quote and settles only a m
       expect.objectContaining({
         id: orderId,
         state: "verified",
+        channel: "wechat",
         creditsMicrocredits: "25000000",
       }),
     );
