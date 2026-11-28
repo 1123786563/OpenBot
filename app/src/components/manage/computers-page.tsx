@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { isPersonBrowserId } from "@openbot/shared/openbot-browser";
@@ -23,7 +24,7 @@ import {
   ActionUnavailable,
   useActionConfirmation,
 } from "@/components/ui/action-confirmation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -443,6 +444,37 @@ export function ComputersPage({ children }: { children?: ReactNode } = {}) {
           bots={(agents.data ?? []).filter((bot) => !bot.isolationActive)}
         />
       ) : null}
+      {!personal && children ? (
+        <HStack as="nav" aria-label="Computer sections" gap={2} wrap="wrap">
+          <a
+            className={buttonVariants({
+              className: "min-h-11",
+              variant: "outline",
+            })}
+            href="#computer-folders"
+          >
+            Folders
+          </a>
+          <a
+            className={buttonVariants({
+              className: "min-h-11",
+              variant: "outline",
+            })}
+            href="#idle-computers"
+          >
+            Idle computers
+          </a>
+          <a
+            className={buttonVariants({
+              className: "min-h-11",
+              variant: "outline",
+            })}
+            href="#computer-network"
+          >
+            Network
+          </a>
+        </HStack>
+      ) : null}
       <PageSection
         headingRef={fleetHeading}
         title={
@@ -753,6 +785,7 @@ function HostFoldersSection({
   return (
     <PageSection
       description="Choose folders a Bot can read on this computer. The desktop app asks before each edit or command. Access ends when you stop OpenBot."
+      headingId="computer-folders"
       title="Folders on this computer"
     >
       {readStatus}

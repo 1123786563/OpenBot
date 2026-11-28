@@ -1892,3 +1892,24 @@ Tasks 和 Ideas 的独立评分见上文。Tasks 内嵌的 Goals 与 Routines �
 四个目录使用 `5fd1f25a` 的桌面、窄屏浅深主题证据；Orca 读取重试来自 `bbbbe63f`。长详情检测构建的 index SHA 以 `cf59b4db` 开头。Slack 和 Routines 连接目前只有基线画面，其余正式评分待验。真实供应商同意、回调和授权变更仍待验证。 [#190](https://github.com/1123786563/OpenBot/issues/190)
 
 独立自动检测执行 70 个 Chromium 场景。源码扫描覆盖 16 个文件，均未报问题。浏览器检测记录 280 项警告，其中 Personal 25 项动作描述在各宽度和主题重复出现小字提示。另有长行与嵌套容器警告。四个目录的 16 个场景无检测发现。全部场景无页面异常和文档横向溢出。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web190-detector.ESLrxr)
+
+### #187 设备与凭据独立复评
+
+两位评审分别执行设计判断和自动检测。以下分数为整改前暂定分，使用主线 `b4aa5592` 的设备页面及归档的隔离流程。
+
+| 视图 | H1–H10 | 暂定分 |
+|---|---|---:|
+| `/browser` | 2 3 3 3 3 3 2 3 3 3 | 28/40 |
+| `/settings/browsers` | 3 3 3 3 4 3 3 2 3 3 | 30/40 |
+| `/settings/computer` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/admin/computers` | 3 2 3 3 3 3 3 2 3 3 | 28/40 |
+| `/settings/this-computer` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/admin/credentials` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/settings/credentials` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/admin/credentials/new` | 3 3 3 3 4 3 3 3 3 3 | 31/40 |
+| `/settings/credentials/new` | 3 3 3 3 4 3 3 3 3 3 | 31/40 |
+| `/settings/passwords` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+
+Team 管理员的 24 台设备样本将文件夹、闲置和网络设置置于清单之后。整改候选在页首加直达入口并验证键盘聚焦区块标题。Personal 与 Team 的 Chromium 设备套件 9/9，覆盖键盘、对比度和触区。Orca 只覆盖两类 Computer 列表恢复。真实本地 Computer 与 PostgreSQL 的 Browser 和 Recorder 集成测试 78/78。原生桌面端、实体触屏与生产角色待验。 [#187](https://github.com/1123786563/OpenBot/issues/187)
+
+独立自动检测在同一主线执行 112 个 Chromium 场景。22 个源码文件未报问题，浏览器检测有 53 个警告和 2 个建议，包含 Saved logins 小字、桌面长行和 Browser 动画。页面异常和横向溢出均为零。桌面端使用模拟桥接。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-detector.6mxzDi)
