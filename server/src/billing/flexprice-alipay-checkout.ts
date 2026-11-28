@@ -6,6 +6,7 @@ import {
   createFlexpriceAlipayClient,
   flexpriceInvoiceKey,
   flexpriceInvoiceNotification,
+  flexpriceQRChannel,
 } from "./flexprice-alipay-client";
 import { type PaidCreditLedger, PaidLedgerError } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
@@ -14,14 +15,18 @@ const settingsSchema = z.object({
   baseUrl: z.url(),
   apiKey: z.string().trim().min(1),
   webhookToken: z.string().regex(/^[A-Za-z0-9_-]{24,256}$/),
-  merchant: z.string().trim().min(1),
+  merchant: z.string().trim().min(1).optional(),
+  wechatMerchant: z.string().trim().min(1).optional(),
+  environmentId: z.string().trim().min(1).optional(),
   productCodes: z.array(z.string().min(1)).min(1),
   applicationIds: z.array(z.string().min(1)).min(1),
   accountIds: z.array(z.uuid()),
 });
 
 export function loadFlexpriceAlipaySettings(environment: NodeJS.ProcessEnv) {
-  if (environment.OPENBOT_FLEXPRICE_ALIPAY_ENABLED !== "true") return undefined;
+  const alipay = environment.OPENBOT_FLEXPRICE_ALIPAY_ENABLED === "true";
+  const wechat = environment.OPENBOT_FLEXPRICE_WECHAT_ENABLED === "true";
+  if (!alipay && !wechat) return undefined;
   const list = (value?: string) => [
     ...new Set(
       value
@@ -34,7 +39,21 @@ export function loadFlexpriceAlipaySettings(environment: NodeJS.ProcessEnv) {
     baseUrl: environment.OPENBOT_FLEXPRICE_ALIPAY_URL,
     apiKey: environment.OPENBOT_FLEXPRICE_ALIPAY_API_KEY,
     webhookToken: environment.OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN,
-    merchant: environment.OPENBOT_FLEXPRICE_ALIPAY_MERCHANT,
+    merchant: alipay
+      ? z
+          .string()
+          .trim()
+          .min(1)
+          .parse(environment.OPENBOT_FLEXPRICE_ALIPAY_MERCHANT)
+      : undefined,
+    wechatMerchant: wechat
+      ? z
+          .string()
+          .trim()
+          .min(1)
+          .parse(environment.OPENBOT_FLEXPRICE_WECHAT_MERCHANT)
+      : undefined,
+    environmentId: environment.OPENBOT_FLEXPRICE_ENVIRONMENT_ID,
     productCodes: list(environment.OPENBOT_FLEXPRICE_ALIPAY_PRODUCTS),
     applicationIds: list(environment.OPENBOT_FLEXPRICE_ALIPAY_APPLICATION_IDS),
     accountIds: list(environment.OPENBOT_FLEXPRICE_ALIPAY_ACCOUNT_IDS),
@@ -75,12 +94,12 @@ function checkQR(order: Order, qr: QRCheckout) {
 }
 
 function createReconciliation(paid: PaidCreditLedger, client: Client) {
-  return async (order: Order) => {
+  return async (order: Order, observed?: QRCheckout) => {
     if (!order.flexpriceInvoiceId || order.state !== "pending") return;
     const invoice = await client.readInvoice(order.flexpriceInvoiceId);
     checkInvoice(order, invoice);
-    // This read also asks Flexprice to reconcile the Alipay trade if it missed the merchant notification.
-    const qr = await client.checkout(invoice, "GET");
+    // A status read also reconciles missed merchant notifications.
+    const qr = observed ?? (await client.checkout(invoice));
     if (!qr) return;
     checkQR(order, qr);
     if (qr.status !== "paid") return;
@@ -96,7 +115,7 @@ function createReconciliation(paid: PaidCreditLedger, client: Client) {
       throw mismatch();
     const outcome = await paid.verifyOrder({
       orderId: order.id,
-      channel: "alipay",
+      channel: qr.channel,
       channelOrderRef: qr.order_id,
       flexpriceInvoiceId: invoice.id,
       currency: "CNY",
@@ -119,12 +138,11 @@ export function createFlexpriceAlipayCheckout({
 }) {
   const client = createFlexpriceAlipayClient(settings);
   const reconcile = createReconciliation(paid, client);
-  const sale = {
-    channel: "alipay",
-    merchant: settings.merchant,
-    fixture: false,
-  } satisfies Parameters<PaidCreditLedger["creditPackOffer"]>[3];
-  const scope = { ...sale, flexprice: true } satisfies Partial<
+  const sales = new Map<z.infer<typeof flexpriceQRChannel>, string>();
+  if (settings.merchant) sales.set("alipay", settings.merchant);
+  if (settings.wechatMerchant) sales.set("wechat", settings.wechatMerchant);
+  const defaultChannel = sales.keys().next().value;
+  const scope = { fixture: false, flexprice: true } satisfies Partial<
     Parameters<PaidCreditLedger["testPackOrders"]>[0]
   >;
   const root = "/paid/credit-pack/alipay/flexprice";
@@ -164,17 +182,34 @@ export function createFlexpriceAlipayCheckout({
     const accountId = await ledger.accountOf(context.var.identity);
     if (!accountId || !allowed.has(accountId)) return notFound();
     const offers = await Promise.all(
-      settings.productCodes.map(async (productCode) => ({
-        productCode,
-        ...(await paid.creditPackOffer(
-          accountId,
+      settings.productCodes.map(async (productCode) => {
+        const byChannel = await Promise.all(
+          [...sales].map(async ([channel, merchant]) => ({
+            channel,
+            ...(await paid.creditPackOffer(
+              accountId,
+              productCode,
+              settings.applicationIds,
+              {
+                channel,
+                merchant,
+                fixture: false,
+              },
+            )),
+          })),
+        );
+        const offer =
+          byChannel.find(({ available }) => available) ?? byChannel[0];
+        return {
+          ...offer,
           productCode,
-          settings.applicationIds,
-          sale,
-        )),
-      })),
+          channels: byChannel
+            .filter(({ available }) => available)
+            .map(({ channel }) => channel),
+        };
+      }),
     );
-    return context.json({ offers });
+    return context.json({ offers, channels: [...sales.keys()] });
   });
 
   api.get(`${root}/orders`, async (context) => {
@@ -191,18 +226,22 @@ export function createFlexpriceAlipayCheckout({
         orderId: z.uuid(),
         version: z.number().int().positive(),
         productCode: z.string(),
+        channel: flexpriceQRChannel.optional(),
       })
       .safeParse(await context.req.json().catch(() => undefined));
     if (!input.success || !products.has(input.data.productCode))
       return context.json({ error: "Invalid Credit Pack order." }, 400);
+    const channel = input.data.channel ?? defaultChannel;
+    const merchant = channel && sales.get(channel);
+    if (!channel || !merchant) return notFound();
     const order = await paid.createOrder({
       accountId,
-      channel: sale.channel,
+      channel,
       productCode: input.data.productCode,
       testPack: {
         id: input.data.orderId,
         version: input.data.version,
-        merchant: settings.merchant,
+        merchant,
         applicationIds: settings.applicationIds,
         live: true,
         flexprice: true,
@@ -224,22 +263,41 @@ export function createFlexpriceAlipayCheckout({
     if (!order) return notFound();
     if (order.state !== "pending")
       return context.json({ error: "This order is no longer pending." }, 409);
-    await paid.checkTestCheckout(
-      accountId,
-      settings.applicationIds,
-      sale,
-      order.priceCents,
-    );
+    const input = z
+      .strictObject({ channel: flexpriceQRChannel.optional() })
+      .safeParse(
+        context.req.raw.body
+          ? await context.req.json().catch(() => undefined)
+          : {},
+      );
+    if (!input.success)
+      return context.json({ error: "Invalid payment channel." }, 400);
+    const channel = input.data.channel ?? defaultChannel;
+    const merchant = channel && sales.get(channel);
+    if (!channel || !merchant) return notFound();
     const invoice = await invoiceFor(order);
     if (invoice.payment_status === "SUCCEEDED") {
       await reconcile({ ...order, flexpriceInvoiceId: invoice.id });
       return context.json({ status: "confirming" });
     }
-    const qr = await client.checkout(invoice, "POST");
+    await paid.checkTestCheckout(
+      accountId,
+      settings.applicationIds,
+      { channel, merchant, fixture: false },
+      order.priceCents,
+    );
+    const qr = await client.checkout(invoice, channel);
     if (!qr) throw new Error("Flexprice returned no QR checkout.");
     checkQR(order, qr);
+    if (qr.status === "paid")
+      await reconcile({ ...order, flexpriceInvoiceId: invoice.id }, qr);
     context.header("Cache-Control", "no-store");
+    if (qr.status !== "paid" && qr.channel !== channel)
+      return context.json({ channel: qr.channel, status: "confirming" });
+    if (qr.status === "pending" && !qr.qr_code)
+      return context.json({ channel, status: "confirming" });
     return context.json({
+      channel: qr.channel,
       status: qr.status,
       qrCode: qr.status === "pending" ? qr.qr_code : undefined,
       expiresAt: qr.expires_at,
