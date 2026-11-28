@@ -27,3 +27,7 @@ Set `BUILD_DIR` to a production build that includes the attachment handoff, `BUI
 ## Group turn stop
 
 Use a production build that includes group turn Stop, its `BUILD_MANIFEST`, and an absolute `EVIDENCE_DIR`. Run `scripts/browser-acceptance/first-batch.sh --group-stop` from the worktree root. The fixture returns a 503 on the first Stop request. Chromium reaches Stop with Tab, activates it with Enter, retries in place, and checks that the stopped state appears without another message being sent. The script writes four screenshots and `run.json` with the build and request counts.
+
+## Bot website sign-in recovery
+
+Set `BUILD_DIR`, `BUILD_MANIFEST`, and `EVIDENCE_DIR` as above, then run `scripts/browser-acceptance/first-batch.sh --website-sign-in`. Chromium retries an unavailable sign-in request by keyboard, checks focus and layout after recovery, then opens the expired state and verifies that the password field is gone. The run covers four viewport and theme combinations without sending credentials. It writes eight screenshots and `run.json`. The fixture does not contact an external sign-in provider.
