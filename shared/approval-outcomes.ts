@@ -105,12 +105,17 @@ export function notCarriedOut(reason: string): string {
 export const decisionInvalidated =
   "This decision was invalidated when workspace execution stopped.";
 
+/** A stopped Run can no longer act on a pending request. */
+export const runStoppedBeforeApproval =
+  "The Bot run was stopped before this action was approved.";
+
 /** The endings after which nothing ran. A step the check just before it turned away is told apart below. */
 const NEVER_RAN = new Set([
   DECLINED_BY_PERSON,
   WITHDRAWN_APPROVALS_OFF,
   WITHDRAWN_RULE_ALLOWS,
   decisionInvalidated,
+  runStoppedBeforeApproval,
   NOT_DONE,
 ]);
 

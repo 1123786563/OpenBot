@@ -319,9 +319,44 @@ describe("group conversations in PostgreSQL", () => {
     const sweeping = conversations.sweep();
     try {
       const active = await started.promise;
+      const approvals = createApprovalStore(database);
+      const pending = await approvals.open(
+        approvalAction({
+          actorId: owner.id,
+          botId: ada,
+          toolRef: "computer_write_file",
+          effect: "write",
+          scope: "project",
+          args: { path: "notes.txt" },
+          continuation: {
+            runId: active.id,
+            threadId: active.threadId,
+            toolCallId: randomUUID(),
+            toolName: "computer_write_file",
+            args: { path: "notes.txt" },
+            messages: [],
+            state: {},
+            context: [],
+            forwardedProps: {},
+          },
+        }),
+      );
+      expect(pending.status).toBe("pending");
       expect(await conversations.stop(owner.id, channel.id, messageId)).toEqual(
         { stopped: true },
       );
+      expect(await approvals.list(owner.id, active.threadId)).toMatchObject([
+        { id: pending.id, status: "denied" },
+      ]);
+      await expect(
+        approvals.decide(owner.id, pending.id, "allow_once"),
+      ).rejects.toThrow();
+      expect(
+        await database
+          .select()
+          .from(workItems)
+          .where(eq(workItems.key, pending.id)),
+      ).toEqual([]);
       const result = await conversations.list(owner.id, channel.id);
       expect(result.backgroundRuns).toMatchObject([
         {

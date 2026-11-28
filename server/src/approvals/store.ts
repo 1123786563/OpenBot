@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
-import { decisionInvalidated } from "@openbot/shared/approval-outcomes";
+import {
+  decisionInvalidated,
+  runStoppedBeforeApproval,
+} from "@openbot/shared/approval-outcomes";
 import {
   and,
   desc,
   eq,
+  exists,
   inArray,
   isNull,
   ne,
@@ -160,7 +164,37 @@ export function createApprovalStore(
   }
 
   const reconcile = (owner: string) =>
-    database.transaction((tx) => reconcileDecisionHistory(tx, owner, now));
+    database.transaction(async (tx) => {
+      await reconcileDecisionHistory(tx, owner, now);
+      await tx
+        .update(approvalRequests)
+        .set({
+          status: "denied",
+          result: {
+            content: runStoppedBeforeApproval,
+            error: runStoppedBeforeApproval,
+          },
+          decidedAt: new Date(now()),
+        })
+        .where(
+          and(
+            eq(approvalRequests.ownerUserId, owner),
+            eq(approvalRequests.status, "pending"),
+            exists(
+              tx
+                .select({ id: directChatRuns.id })
+                .from(directChatRuns)
+                .where(
+                  and(
+                    eq(directChatRuns.id, approvalRequests.runId),
+                    sql`${directChatRuns.threadId} = ${approvalRequests.action}->>'threadId'`,
+                    eq(directChatRuns.stopReason, "stopped"),
+                  ),
+                ),
+            ),
+          ),
+        );
+    });
   const verify = async (
     tx: Transaction,
     owner: string,
