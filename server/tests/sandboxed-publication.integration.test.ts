@@ -6,8 +6,8 @@ import { Hono } from "hono";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createComponentRoutes } from "../src/components/routes";
-import { createSandboxedRoutes } from "../src/components/sandboxed-routes";
 import { createSandboxedStore } from "../src/components/sandboxed";
+import { createSandboxedRoutes } from "../src/components/sandboxed-routes";
 import { createComponentStore } from "../src/components/store";
 import { createDatabase } from "../src/db/client";
 import { auditEvents, components, sandboxedComponents } from "../src/db/schema";
@@ -63,13 +63,17 @@ function fixture(label: string) {
   return { slug, name };
 }
 
-function postPublication(name: string, published: boolean) {
+function postPublication(
+  name: string,
+  published: boolean,
+  expectedUpdatedAt?: string,
+) {
   return routes.request(
     `http://t/components/${encodeURIComponent(name)}/publication`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ published }),
+      body: JSON.stringify({ published, expectedUpdatedAt }),
     },
   );
 }
@@ -142,6 +146,22 @@ test("retrying publish uses the same draft version and refuses a newer draft", a
 });
 
 describe("the generic Published switch on a sandboxed component", () => {
+  test("two administrators using the same preview cannot both publish", async () => {
+    const { slug, name } = fixture("race");
+    await saveDraft(slug);
+    const row = await governanceOf(name);
+    if (!row) throw new Error("Missing component fixture");
+    const expectedUpdatedAt = row.updatedAt.toISOString();
+    const responses = await Promise.all([
+      postPublication(name, true, expectedUpdatedAt),
+      postPublication(name, true, expectedUpdatedAt),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 409,
+    ]);
+    expect((await sourceOf(name))?.revision).toBe(1);
+  });
+
   test("publishes the source and the governance row together", async () => {
     const { slug, name } = fixture("publish");
     await saveDraft(slug);

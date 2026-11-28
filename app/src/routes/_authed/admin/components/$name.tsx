@@ -359,6 +359,7 @@ function ComponentDetail({
             await publishDescription.mutateAsync({
               name: component.name,
               published: true,
+              expectedUpdatedAt: current.updatedAt,
             });
           } catch (error) {
             // A 500 carries the server's sentence about what landed, as a boundary's does.
@@ -507,7 +508,11 @@ function ComponentDetail({
                 ref={publicationSwitch}
                 disabled={!canWrite || publicationBusy || saveDraft.isPending}
                 onCheckedChange={(published) =>
-                  setPublished.mutate({ name: component.name, published })
+                  setPublished.mutate({
+                    name: component.name,
+                    published,
+                    expectedUpdatedAt: component.updatedAt,
+                  })
                 }
               />
             </ItemActions>
@@ -530,7 +535,11 @@ function ComponentDetail({
               </p>
               <Button
                 className="min-h-11"
-                disabled={publicationBusy}
+                disabled={
+                  publicationBusy ||
+                  (setPublished.error instanceof ClientError &&
+                    setPublished.error.status === 409)
+                }
                 onClick={() => {
                   if (setPublished.variables)
                     setPublished.mutate(setPublished.variables);

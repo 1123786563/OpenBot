@@ -86,10 +86,17 @@ const PUBLICATION_FALLBACK = "Couldn't change publication. Try again.";
  */
 export function setComponentPublishedMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: async (variables: { name: string; published: boolean }) => {
+    mutationFn: async (variables: {
+      name: string;
+      published: boolean;
+      expectedUpdatedAt?: string;
+    }) => {
       await client(`${componentPath(variables.name)}/publication`, {
         method: "POST",
-        body: { published: variables.published },
+        body: {
+          published: variables.published,
+          expectedUpdatedAt: variables.expectedUpdatedAt,
+        },
         fallback: PUBLICATION_FALLBACK,
       });
     },

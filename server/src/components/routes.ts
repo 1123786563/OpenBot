@@ -15,6 +15,7 @@ import {
 } from "./sandboxed";
 import {
   ComponentNotFoundError,
+  ComponentPublicationConflictError,
   type ComponentStore,
   SandboxedPublicationRequiredError,
 } from "./store";
@@ -557,6 +558,7 @@ export function createComponentRoutes(
     const name = context.req.param("name");
     const body = (await context.req.json().catch(() => null)) as {
       published?: unknown;
+      expectedUpdatedAt?: unknown;
     } | null;
     /*
      * A real boolean, not truthiness. This used to read `body?.published !== false`, so an
@@ -571,14 +573,55 @@ export function createComponentRoutes(
     }
     const published = body.published;
 
+    const { expectedUpdatedAt } = body;
+    if (
+      expectedUpdatedAt !== undefined &&
+      typeof expectedUpdatedAt !== "string"
+    ) {
+      return context.json(
+        { error: "expectedUpdatedAt must be a string." },
+        400,
+      );
+    }
+    const actor = context.var.actor;
+    const preview =
+      expectedUpdatedAt === undefined
+        ? undefined
+        : {
+            expectedUpdatedAt,
+            event: {
+              eventType: published
+                ? ("component.published" as const)
+                : ("component.unpublished" as const),
+              targetType: "component",
+              targetId: name,
+              ...(actor.id && actor.email !== DEV_ACTOR_EMAIL
+                ? { actorUserId: actor.id }
+                : {}),
+              payload: { actor: actor.email },
+            },
+          };
+
     let recordedBySource = false;
     try {
+      if (preview) {
+        await store.savePublication({
+          name,
+          by: actor.email,
+          published,
+          ...preview,
+        });
+        return context.json({ published });
+      }
       if (published) {
         await store.publish(name, context.var.actor.email);
       } else {
         await store.unpublish(name, context.var.actor.email);
       }
     } catch (error) {
+      if (error instanceof ComponentPublicationConflictError) {
+        return context.json({ error: error.message }, 409);
+      }
       if (error instanceof SandboxedPublicationRequiredError) {
         if (!sandboxedStore) {
           return context.json(
@@ -591,13 +634,16 @@ export function createComponentRoutes(
         }
         try {
           if (published) {
-            await sandboxedStore.publish(name, context.var.actor.email);
+            await sandboxedStore.publish(name, actor.email, undefined, preview);
           } else {
-            await sandboxedStore.unpublish(name, context.var.actor.email);
+            await sandboxedStore.unpublish(name, actor.email, preview);
           }
           recordedBySource = true;
         } catch (sourceError) {
-          if (sourceError instanceof SandboxedPublicationRefusedError) {
+          if (
+            sourceError instanceof SandboxedPublicationRefusedError ||
+            sourceError instanceof ComponentPublicationConflictError
+          ) {
             return context.json({ error: sourceError.message }, 409);
           }
           if (sourceError instanceof SandboxedNotFoundError) {
