@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CapabilityPage } from "@/components/astryx-pilot/capability-surface";
 import { AdminComponentPreview } from "@/components/component-preview";
+import { ReadError } from "@/components/layout/read-status";
 import { SettingsItemBackground } from "@/components/settings/background";
-import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyDescription,
@@ -32,6 +32,7 @@ function RouteComponent() {
   const components = useQuery(componentListQueryOptions());
   /** Narrows the tiles by title. Shown only once the list is long enough to need it. */
   const [search, setSearch] = useState("");
+  const heading = useRef<HTMLHeadingElement>(null);
   const needle = search.trim().toLowerCase();
   const listed = (components.data ?? []).filter((component) =>
     `${component.title} ${component.name}`.toLowerCase().includes(needle),
@@ -40,6 +41,7 @@ function RouteComponent() {
   return (
     <CapabilityPage
       description="Choose which components each Bot can display. Published components are available to all Bots by default. Changes and blocked requests appear in Audit."
+      headingRef={heading}
       title="UI components"
     >
       {/*
@@ -71,19 +73,14 @@ function RouteComponent() {
           ))}
         </div>
       ) : components.error ? (
-        <div className="mt-12 flex flex-wrap items-center gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            Couldn't load components.
-          </p>
-          <Button
-            disabled={components.isFetching}
-            onClick={() => void components.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {components.isFetching ? "Retrying…" : "Retry"}
-          </Button>
+        <div className="mt-12">
+          <ReadError
+            focusAfterRetry={() => heading.current}
+            message="Couldn't load components."
+            retry={components.refetch}
+            retryBelow
+            retrying={components.isFetching}
+          />
         </div>
       ) : components.data?.length === 0 ? (
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
@@ -163,6 +160,7 @@ function RouteComponent() {
                       <AdminComponentPreview
                         kind={component.kind}
                         name={component.name}
+                        tile
                       />
                     </div>
                   </div>

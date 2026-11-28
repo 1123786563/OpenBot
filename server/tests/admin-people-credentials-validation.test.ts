@@ -226,6 +226,75 @@ describe("POST /api/admin/credentials/:id refusals", () => {
 });
 
 /**
+ * What points at a credential, read before an administrator revokes it. The vault answers the
+ * question; the route only refuses what it should not answer.
+ */
+describe("GET /api/admin/credentials/:id/usage", () => {
+  function appWith(
+    usage?: (credentialId: string) => Promise<unknown>,
+    role = "admin",
+  ) {
+    const calls: string[] = [];
+    // createApp takes positional stores: the usage reader is 40th, just before the billing ledgers,
+    // which stay last. Built by index so a store appended later cannot silently shift it.
+    const args = Array.from({ length: 41 }) as Parameters<typeof createApp>;
+    args[0] = loadConfig(testEnvironment()) as never;
+    args[1] = {
+      handler: () => new Response(null, { status: 204 }),
+      api: { getSession: async () => ({ user: ADMIN }) },
+    } as never;
+    args[2] = { rolesForUser: async () => [role] } as never;
+    if (usage) {
+      args[39] = {
+        usage: async (credentialId: string) => {
+          calls.push(credentialId);
+          return usage(credentialId);
+        },
+      } as never;
+    }
+    return { app: createApp(...args), calls };
+  }
+  const read = (app: ReturnType<typeof appWith>["app"], id: string) =>
+    app.request(`http://openbot.test/api/admin/credentials/${id}/usage`);
+
+  test("answers what the vault says holds the credential", async () => {
+    const usage = {
+      features: ["Model access for every Bot"],
+      bots: [{ id: "bot-ada", name: "Ada" }],
+    };
+    const { app, calls } = appWith(async () => usage);
+    const response = await read(app, "cred-1");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ usage });
+    expect(calls).toEqual(["cred-1"]);
+  });
+
+  test("answers 404 for a credential the vault does not hold", async () => {
+    const { app } = appWith(async () => null);
+    const response = await read(app, "cred-missing");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "Credential was not found.",
+    });
+  });
+
+  test("refuses a member before the vault is asked", async () => {
+    const { app, calls } = appWith(async () => null, "user");
+    expect((await read(app, "cred-1")).status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  test("answers 503 when the vault is not configured", async () => {
+    const { app } = appWith();
+    const response = await read(app, "cred-1");
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Credential storage is not configured.",
+    });
+  });
+});
+
+/**
  * A well-formed cursor carrying a non-date `lastSignedInAt` used to reach
  * `${cursor.lastSignedInAt}::timestamptz` in SQL and answer 500. It now falls back to the
  * first page like any other stale cursor.

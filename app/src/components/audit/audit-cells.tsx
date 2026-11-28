@@ -382,7 +382,35 @@ export function subjectText(event: AuditEvent, storedNames = true): string {
     typeof payload.scope === "string"
   )
     return payload.scope;
+  // A Person by their address, in Admin only, as the rule's expression is.
+  if (storedNames && event.targetType === "person") {
+    const person = personSubject(payload);
+    if (person) return person;
+  }
+  // The site a saved login was saved for or deleted from. Its id says nothing a person can read.
+  if (event.targetType === "password" && typeof payload.site === "string")
+    return payload.site;
+  // A Bot's app source for memory, by the app it read: the stored name in Admin, the app in words.
+  if (event.targetType === "memory_source" && typeof payload.app === "string")
+    return storedNames ? payload.app : connectorName(payload.app);
   return "";
+}
+
+/** The role a Person holds, in the words the People page uses for it. */
+const ROLE_WORDS: Record<string, string> = { admin: "Admin", user: "Member" };
+
+/**
+ * A Person by their address, and the role they moved between.
+ *
+ * The rows carry the address because `person:u1` means nothing to somebody reading the trail a year
+ * later. A row written before it carried an address names nobody, and draws no subject.
+ */
+function personSubject(payload: Record<string, unknown>): string | undefined {
+  const email = payload.email;
+  if (typeof email !== "string" || !email) return undefined;
+  const from = ROLE_WORDS[payload.from as string];
+  const to = ROLE_WORDS[payload.to as string];
+  return from && to ? `${email} · ${from} → ${to}` : email;
 }
 
 /**
@@ -1158,6 +1186,8 @@ const NAMED_TARGETS = new Set([
   "mcp_server",
   "skill",
   "credential",
+  // A registered provider's id is its name, on the Identity providers page too.
+  "identity_provider",
 ]);
 
 const DECISIONS: Record<string, string> = {

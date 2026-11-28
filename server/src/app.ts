@@ -7,6 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
 import { createBifrostAdminRoutes } from "./admin/bifrost-routes";
 import { createCapabilityChangeRoutes } from "./admin/capability-translate";
+import type { CredentialUsageReader } from "./admin/credential-usage";
 import { enterpriseControls } from "./admin/controls";
 import { createEnterpriseGate } from "./admin/gate";
 import { createNetworkAllowlistRoutes } from "./admin/network-routes";
@@ -250,6 +251,9 @@ import type { GovernanceReaders } from "./what-if-check";
  */
 const MULTIPART_FRAMING_ALLOWANCE = 64 * 1024;
 
+/** How many addresses the impact of removing an identity provider names on screen; the totals are exact. */
+const IMPACT_LIST_SIZE = 20;
+
 /**
  * The ceiling on the whole POST body of a channel attachment upload.
  *
@@ -290,26 +294,6 @@ export type DeploymentToolCallInput = {
 export type DeploymentToolCaller = (
   input: DeploymentToolCallInput,
 ) => Promise<{ text: string; isError: boolean } | null>;
-
-async function recordPersonEvent(
-  auditStore: AuditStore | undefined,
-  context: { var: AppVariables },
-  eventType:
-    | "person.role_changed"
-    | "person.access_revoked"
-    | "person.access_restored",
-  person: { id: string; email: string },
-  payload: Record<string, unknown>,
-) {
-  if (!auditStore) return;
-  await recordAuditEvent(auditStore, {
-    eventType,
-    targetType: "person",
-    targetId: person.id,
-    actorUserId: context.var.actor.id,
-    payload: { email: person.email, ...payload },
-  });
-}
 
 export function createApp(
   config: DeploymentConfig,
@@ -633,8 +617,18 @@ export function createApp(
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
   profileStore?: ProfileStore,
   /**
+   * What points at a vault row: the apps, people and Bots that hold a credential.
+   *
+   * Absent leaves the usage route answering 503 rather than "nothing uses it": a deployment that
+   * cannot read the pointers must not tell an administrator a credential is unused.
+   */
+  credentialUsage?: CredentialUsageReader,
+  /**
    * The shared billing ledgers (#86): a person's Test Credit balance, the paid side of their bill
    * (#107), and their execution budgets. Absent, `/api/billing` is not mounted.
+   *
+   * These parameters are positional, and this one stays last: tests place it at
+   * `createApp.length - 1`. A parameter added after it silently shifts every such call.
    */
   billing?: {
     testLedger: TestCreditLedger;
@@ -1276,7 +1270,7 @@ export function createApp(
       /*
        * The export answers the same filtered query as the list — `eventType`,
        * `actorUserId`, `initiatorKind`, `targetType`, `targetId`, `bot`, `app`, `tool`, `effect`,
-       * `intent`, `rule`, `from`, `to` — so the downloaded file and the table agree. Paging (`cursor`, `limit`) belongs to the
+       * `intent`, `rule`, `q`, `from`, `to` — so the downloaded file and the table agree. Paging (`cursor`, `limit`) belongs to the
        * JSON list and is ignored here; the export walks every matching page up to the
        * cap in `readAuditExportRows` and names the file after the day it was pulled.
        */
@@ -1287,12 +1281,19 @@ export function createApp(
           query,
         );
         if (auditStore) {
-          const { cursor: _cursor, limit: _limit, ...filters } = query;
+          const { cursor: _cursor, limit: _limit, q, ...filters } = query;
           await recordAuditEvent(auditStore, {
             eventType: "audit.exported",
             targetType: "audit_trail",
             actorUserId: context.var.actor.id,
-            payload: { format: "csv", rows: events.length, truncated, filters },
+            payload: {
+              format: "csv",
+              rows: events.length,
+              truncated,
+              filters,
+              // Keep searches from matching export events that repeat the search text.
+              ...(q ? { textSearch: true } : {}),
+            },
           });
         }
         const day = new Date().toISOString().slice(0, 10);
@@ -1446,19 +1447,9 @@ export function createApp(
       );
     }
 
-    if (person.role !== role) {
-      await peopleStore.setRole(userId, role);
-      await recordPersonEvent(
-        auditStore,
-        context,
-        "person.role_changed",
-        person,
-        {
-          from: person.role,
-          to: role,
-        },
-      );
-    }
+    // The change and its row on the trail are one transaction, in the store.
+    if (person.role !== role)
+      await peopleStore.setRole(userId, role, context.var.actor.id);
 
     return context.json({ person: await peopleStore.find(userId) });
   });
@@ -1503,22 +1494,34 @@ export function createApp(
     }
 
     if (person.revoked !== revoked) {
-      if (revoked) {
-        await peopleStore.revoke(userId, context.var.actor.id);
-      } else {
-        await peopleStore.restore(userId);
-      }
-      await recordPersonEvent(
-        auditStore,
-        context,
-        revoked ? "person.access_revoked" : "person.access_restored",
-        person,
-        {},
-      );
+      if (revoked) await peopleStore.revoke(userId, context.var.actor.id);
+      else await peopleStore.restore(userId, context.var.actor.id);
     }
 
+    /*
+     * The removal is already committed, so a retirement that fails is half a job rather than none of
+     * one. Say which half took effect and ask for the rest, as the sign-in policy does: removing them
+     * again reruns the retirement and writes no second removal on the trail.
+     */
     if (revoked) {
-      await peopleStore.retireOwned(userId, context.var.actor.id);
+      try {
+        await peopleStore.retireOwned(userId, context.var.actor.id);
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            type: "offboard-retire-failed",
+            userId,
+            error: String(error),
+          }),
+        );
+        return context.json(
+          {
+            error:
+              "Access is removed for this person, but some of their credentials or Recorders could not be retired yet. Try again to finish.",
+          },
+          503,
+        );
+      }
     }
 
     return context.json({ person: await peopleStore.find(userId) });
@@ -1588,6 +1591,70 @@ export function createApp(
       }
 
       return context.json({ removed: true });
+    },
+  );
+
+  /*
+   * Who can still sign in once a provider is removed, read before an administrator removes it.
+   *
+   * The account rows decide, not the provider's email domain, by the rule the sign-in path applies:
+   * who has signed in through the provider, and who of them keeps a way in. Each list is capped and
+   * answers its true total, and whether the person asking loses their only way in is read before the
+   * cap, since they may sit past it.
+   */
+  app.get(
+    "/api/admin/identity-providers/:providerId/impact",
+    requireUser,
+    async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) {
+        return denied;
+      }
+      if (!identityProviders) {
+        return context.json(
+          { error: "Identity providers are not available." },
+          503,
+        );
+      }
+      // Require SSO as it stands, which the removal does not change. Read as the sign-in path reads
+      // it and failing closed as it does: a setting that cannot be read admits nobody but the
+      // emergency admins, and the preview must not say otherwise.
+      let ssoRequired = false;
+      const controls = enterpriseControls();
+      if (controls) {
+        try {
+          ssoRequired = (await controls.store.settings()).ssoRequired;
+        } catch {
+          ssoRequired = true;
+        }
+      }
+      const impact = await identityProviders.impact(
+        context.req.param("providerId"),
+        ssoRequired,
+      );
+      if (!impact) {
+        return context.json({ error: "There is no such provider." }, 404);
+      }
+
+      return context.json({
+        impact: {
+          losing: {
+            total: impact.losing.length,
+            emails: impact.losing
+              .slice(0, IMPACT_LIST_SIZE)
+              .map((person) => person.email),
+          },
+          keeping: {
+            total: impact.keeping.length,
+            accounts: impact.keeping
+              .slice(0, IMPACT_LIST_SIZE)
+              .map(({ email, reason }) => ({ email, reason })),
+          },
+          includesYou: impact.losing.some(
+            (person) => person.userId === context.var.actor.id,
+          ),
+        },
+      });
     },
   );
 
@@ -1711,6 +1778,36 @@ export function createApp(
         }
         throw error;
       }
+    },
+  );
+  /*
+   * What points at a credential, read before an administrator revokes it.
+   *
+   * Asked of every table that holds the row's id rather than guessed from its type, so a credential
+   * nothing uses reads as such. A revoked row still answers: its pointers are what a screen needs to
+   * explain after the fact.
+   */
+  app.get(
+    "/api/admin/credentials/:credentialId/usage",
+    requireUser,
+    async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) {
+        return denied;
+      }
+      if (!credentialUsage) {
+        return context.json(
+          { error: "Credential storage is not configured." },
+          503,
+        );
+      }
+      const usage = await credentialUsage.usage(
+        context.req.param("credentialId"),
+      );
+      if (!usage) {
+        return context.json({ error: "Credential was not found." }, 404);
+      }
+      return context.json({ usage });
     },
   );
   app.get("/api/admin/package", requireUser, async (context) => {

@@ -850,6 +850,17 @@ export function createChannelAttachmentRoutes(
     }
 
     const uploadGroup = uploadGroupOf(formData);
+    const requestId = formData.get("requestId");
+    if (
+      requestId !== null &&
+      (typeof requestId !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          requestId,
+        ))
+    ) {
+      return context.json({ error: "Invalid attachment request ID." }, 400);
+    }
+    const fileBytes = Buffer.from(bytes);
 
     /*
      * THE COUNT AND THE INSERT ARE ONE STATEMENT, UNDER ONE LOCK.
@@ -954,32 +965,51 @@ export function createChannelAttachmentRoutes(
           where attachments.uploaded_by = ${actor.id}::text
             and attachments.attached_at is null
         ),
+        existing as (
+          select attachments.id, attachments.name, attachments.mime_type, attachments.size_bytes
+          from attachments
+          join membership on membership.id = attachments.channel_id
+          where attachments.id = ${requestId}::uuid
+            and attachments.uploaded_by = ${actor.id}::text
+            and attachments.upload_group = ${uploadGroup}::text
+            and attachments.name = ${name}::text
+            and attachments.mime_type = ${mimeType}::text
+            and attachments.bytes = ${fileBytes}::bytea
+        ),
         written as (
-          insert into attachments (channel_id, uploaded_by, upload_group, name, mime_type, size_bytes, bytes)
+          insert into attachments (id, channel_id, uploaded_by, upload_group, name, mime_type, size_bytes, bytes)
           select
+            coalesce(${requestId}::uuid, gen_random_uuid()),
             membership.id,
             ${actor.id}::text,
             ${uploadGroup}::text,
             ${name}::text,
             ${mimeType}::text,
             ${bytes.byteLength}::integer,
-            ${Buffer.from(bytes)}::bytea
+            ${fileBytes}::bytea
           from membership, staged, held
           where staged.waiting < ${MAX_ATTACHMENTS_PER_MESSAGE}::integer
             and held.waiting < ${MAX_STAGED_ATTACHMENTS_PER_UPLOADER}::integer
+            and not exists (select 1 from existing)
+          on conflict (id) do nothing
           returning id, name, mime_type, size_bytes
+        ),
+        uploaded as (
+          select * from existing
+          union all
+          select * from written
         )
         select
-          written.id as "id",
-          written.name as "name",
-          written.mime_type as "mimeType",
-          written.size_bytes as "sizeBytes",
+          uploaded.id as "id",
+          uploaded.name as "name",
+          uploaded.mime_type as "mimeType",
+          uploaded.size_bytes as "sizeBytes",
           staged.waiting as "waiting",
           held.waiting as "held",
           exists (select 1 from membership) as "isMember"
         from staged
         cross join held
-        left join written on true
+        left join uploaded on true
       `)) as unknown as UploadAttempt[];
 
         if (attempt.id !== null) {
@@ -1008,7 +1038,10 @@ export function createChannelAttachmentRoutes(
         if (attempt.waiting >= MAX_ATTACHMENTS_PER_MESSAGE) {
           return { staged: attempt.waiting };
         }
-        return { held: attempt.held };
+        if (attempt.held >= MAX_STAGED_ATTACHMENTS_PER_UPLOADER) {
+          return { held: attempt.held };
+        }
+        return { conflict: true } as const;
       })
       /*
        * EVERY OTHER FAILURE ON THIS ROUTE ANSWERS `{ error }`, AND SO DOES THIS ONE.
@@ -1063,6 +1096,12 @@ export function createChannelAttachmentRoutes(
      * no longer be below the limit — the statement that refused is the statement that counted — so
      * the two can never contradict each other in the same sentence.
      */
+    if ("conflict" in outcome) {
+      return context.json(
+        { error: "That attachment request was already used." },
+        409,
+      );
+    }
     if ("staged" in outcome) {
       return context.json(
         {

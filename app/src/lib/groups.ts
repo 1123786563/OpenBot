@@ -3,8 +3,14 @@ import {
   type QueryClient,
   queryOptions,
 } from "@tanstack/react-query";
+import {
+  type ApprovalInboxData,
+  approvalsKey,
+  carryingOnAfterApproval,
+} from "@/lib/approvals";
 import { type AgentChannel, channelKeys } from "@/lib/channels/queries";
 import { ClientError, canKeepCachedRead, client } from "@/lib/client";
+import { queryClient } from "@/query-client";
 
 /** One line of a group conversation: a person's message (`agentId` null) or one Bot's reply. */
 export type GroupMessage = {
@@ -13,6 +19,8 @@ export type GroupMessage = {
   /** Who sent it, for a person's line; whose run it was, for a Bot's. */
   ownerUserId: string;
   agentId: string | null;
+  /** For a Bot's line, the Bot's thread in the group that its run is on. */
+  threadId?: string | null;
   text: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;
@@ -58,6 +66,45 @@ export const groupKeys = {
   detail: (channelId: string) => ["groups", channelId] as const,
 };
 
+/** How long between reads while a Bot owes an answer, or the server is carrying one on. */
+const WORKING_POLL_MS = 1_500;
+/** How long between reads while a Bot's line waits on the person, who may not decide for a while. */
+const WAITING_POLL_MS = 10_000;
+
+/**
+ * How long to wait before the shared transcript is read again, or `false` when nothing will change.
+ *
+ * It is read while a Bot owes an answer: a line queued or working, a run the server holds, or a turn
+ * just sent. It is also read, slowly, while a Bot's line waits on an approval: the server writes
+ * that line's reply into it once the approval is decided (`continueWaiting` in
+ * server/src/channels/group.ts), and nothing marks the line as working in between. While the server
+ * is carrying such a line on, the read goes back to the working pace.
+ */
+export function groupPollInterval(
+  conversation: GroupConversation | null | undefined,
+  inbox: ApprovalInboxData | null | undefined,
+  now = Date.now(),
+): number | false {
+  const messages = conversation?.messages ?? [];
+  if (
+    messages.some(
+      (message) => message.status === "running" || message.status === "queued",
+    ) ||
+    conversation?.backgroundRuns?.some(({ status }) => status === "running") ||
+    awaitingFirstReply(messages.at(-1))
+  )
+    return WORKING_POLL_MS;
+  const waiting = messages.filter(
+    (message) => message.status === "waiting" && message.threadId,
+  );
+  if (waiting.length === 0) return false;
+  return waiting.some((message) =>
+    carryingOnAfterApproval(inbox, message.threadId ?? "", now),
+  )
+    ? WORKING_POLL_MS
+    : WAITING_POLL_MS;
+}
+
 /**
  * The shared transcript. Bot turns run on the server with nobody's browser attached, so the page
  * polls while a turn is still owed an answer and stops once every Bot has spoken.
@@ -85,17 +132,13 @@ export function groupQueryOptions(channelId: string) {
       }
     },
     retry: (failures, error) => failures < 1 && canKeepCachedRead(error),
+    // Judged again on every read, from the approvals the cache holds: the pace follows whether the
+    // server is carrying a waiting line on.
     refetchInterval: (query) =>
-      query.state.data?.messages.some(
-        (message) =>
-          message.status === "running" || message.status === "queued",
-      ) ||
-      query.state.data?.backgroundRuns?.some(
-        ({ status }) => status === "running",
-      ) ||
-      awaitingFirstReply(query.state.data?.messages.at(-1))
-        ? 1_500
-        : false,
+      groupPollInterval(
+        query.state.data,
+        queryClient.getQueryData<ApprovalInboxData | null>(approvalsKey),
+      ),
   });
 }
 

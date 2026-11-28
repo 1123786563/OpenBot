@@ -96,6 +96,15 @@ test("someone who cannot manage the Bot is not offered Delete", () => {
   expect(view.getByText("Duplicate")).toBeTruthy();
 });
 
+test("the Pinned and Hidden switches carry the widened touch target", () => {
+  const view = draw(BOT);
+  for (const name of ["Pinned", "Hidden"]) {
+    const toggle = view.getByRole("switch", { name });
+    // The control is 18.4px tall; the pseudo-element below it is the 44px touch target.
+    expect(toggle.className).toContain("after:-inset-y-3.5");
+  }
+});
+
 test("hiding a Bot takes the person back to the roster", async () => {
   serving();
   const onHidden = mock(() => {});

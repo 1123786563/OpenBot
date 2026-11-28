@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { failureMessage } from "@/lib/client";
 import {
   accountModePreview,
   setAccountModeMutationOptions,
@@ -98,7 +99,9 @@ export function AccountModeDialog({
         ) : null}
         {preview.error || change.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            {(change.error ?? preview.error)?.message}
+            {(change.error ?? preview.error)
+              ? failureMessage(change.error ?? preview.error)
+              : null}
           </p>
         ) : null}
         <DialogFooter className="mt-4">

@@ -97,6 +97,7 @@ test("says what it lists, and does not claim the Bot has done nothing", async ()
   expect(
     view.getByText("No tasks, routines or goals have finished yet."),
   ).toBeTruthy();
+  expect(view.container.querySelector("[data-slot=empty]")).toBeNull();
 });
 
 test("a failed cancellation can recheck the target without sending another request for an expired follow-up", async () => {

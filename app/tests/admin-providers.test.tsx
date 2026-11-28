@@ -466,3 +466,35 @@ test("cancelling allowlist edits restores the saved choices when reopened", asyn
     }),
   );
 });
+
+test("a failed allowlist save keeps the dialog, selection and a focused error", async () => {
+  const respond = global.fetch;
+  let fail = true;
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PUT" && fail)
+        return Response.json({}, { status: 503 });
+      return respond(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const view = await draw(ProvidersPage);
+  fireEvent.click(await view.findByRole("button", { name: /Allowed models/ }));
+  const picked = await view.findByRole("checkbox", { name: "Allow GPT-6 Sol" });
+  fireEvent.click(picked);
+  const save = view.getByRole("button", { name: "Save" });
+  fireEvent.click(save);
+
+  const error = await view.findByText(
+    "Couldn't save the allowed models. Try again.",
+  );
+  await waitFor(() => expect(document.activeElement === error).toBe(true));
+  expect(view.getByRole("dialog", { name: "Allowed models" })).toBeTruthy();
+  expect(picked.getAttribute("aria-checked")).toBe("true");
+
+  fail = false;
+  fireEvent.click(save);
+  await view.findByText("Allowed models saved");
+  expect(view.queryByRole("dialog")).toBeNull();
+});

@@ -47,7 +47,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { canKeepCachedRead } from "@/lib/client";
+import { canKeepCachedRead, ClientError } from "@/lib/client";
 import { isComposing } from "@/lib/composing";
 import { terminateMemberComputersMutationOptions } from "@/lib/enterprise/mutations";
 import {
@@ -331,10 +331,20 @@ function PeoplePage() {
         run: async () => {
           await currentPerson();
           attemptedRevocation = !person.revoked;
-          await setAccess.mutateAsync({
-            userId: person.id,
-            revoked: !person.revoked,
-          });
+          try {
+            await setAccess.mutateAsync({
+              userId: person.id,
+              revoked: !person.revoked,
+            });
+          } catch (error) {
+            /*
+             * The removal committed and the retirement did not. The server's sentence says which
+             * half took effect, and removing them again finishes the other half.
+             */
+            if (error instanceof ClientError && error.status === 503)
+              throw new ActionIncomplete(error.message);
+            throw error;
+          }
         },
       });
       return;

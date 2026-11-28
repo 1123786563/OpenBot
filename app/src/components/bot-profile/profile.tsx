@@ -198,6 +198,7 @@ export function BotProfile({
                   <Switch
                     aria-label="Active"
                     checked={!lifecycle.data.paused}
+                    className="after:-inset-y-3.5"
                     disabled={pause.isPending}
                     onCheckedChange={(active) =>
                       pause.mutate({ agentId: agent.id, paused: !active })

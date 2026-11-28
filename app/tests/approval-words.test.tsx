@@ -1,7 +1,16 @@
+import {
+  DECLINED_BY_PERSON,
+  OUTCOME_UNKNOWN,
+  WITHDRAWN_APPROVALS_OFF,
+  decisionInvalidated,
+  notCarriedOut,
+  notDoneOnRecheck,
+} from "@openbot/shared/approval-outcomes";
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { InlineApproval } from "@/components/approvals/inline-approval";
 import { WaitingForYou } from "@/components/approvals/waiting";
@@ -215,4 +224,228 @@ test("a paused approval shows the result of the action already sent", async () =
   const outcome = await view.findByRole("region", { name: "Paused action" });
   expect(outcome.textContent).toContain("The request was updated");
   expect(outcome.textContent).toContain("Review in progress");
+});
+
+/*
+ * There is no approval that "expires" on its own. What ends a waiting request is the person
+ * withdrawing it (asking switched off while it waited), the Bot's work being stopped under it, or
+ * the same request being decided in another tab. Each is said on the card's line, with what to do,
+ * until the Bot's own answer for that step arrives and takes the line.
+ */
+function decided(status: string, reason: string) {
+  global.fetch = Object.assign(
+    async () =>
+      Response.json({
+        enabled: true,
+        rules: [],
+        teamRules: [],
+        questions: [],
+        requests: [
+          {
+            ...request("mcp", "requests/get_request", "requests", {}),
+            status,
+            decidedAt: "2026-10-30T22:05:00Z",
+            result: { content: reason, error: reason },
+          },
+        ],
+      }),
+    { preconnect: originalFetch.preconnect },
+  );
+}
+
+test("a request withdrawn before its line has an answer is explained there, with what to do", async () => {
+  decided("denied", WITHDRAWN_APPROVALS_OFF);
+  const view = draw(
+    <InlineApproval
+      fallback={<p>Waiting for a result</p>}
+      resulted={false}
+      toolCallId="call-mcp"
+    />,
+  );
+  expect(
+    await view.findByText("Withdrawn. You turned off asking before changes."),
+  ).toBeTruthy();
+  expect(
+    view.getByText("Ask the Bot again if you still need it."),
+  ).toBeTruthy();
+  // Not a card any more: there is nothing left to answer.
+  expect(view.queryByRole("radio")).toBeNull();
+  expect(view.queryByRole("button")).toBeNull();
+  expect(view.queryByText("Waiting for a result")).toBeNull();
+});
+
+test("a decision the Bot's stopped work invalidated is said in the person's words", async () => {
+  decided("completed", decisionInvalidated);
+  const view = draw(
+    <InlineApproval fallback={null} resulted={false} toolCallId="call-mcp" />,
+  );
+  expect(
+    await view.findByText(
+      "Withdrawn. The Bot's work was stopped before it could do this.",
+    ),
+  ).toBeTruthy();
+  expect(view.queryByText(decisionInvalidated)).toBeNull();
+});
+
+test("a request the person declined is explained there, with the Bot to ask again", async () => {
+  decided("denied", DECLINED_BY_PERSON);
+  const view = draw(
+    <InlineApproval
+      fallback={<p>Waiting for a result</p>}
+      resulted={false}
+      toolCallId="call-mcp"
+    />,
+  );
+  expect(await view.findByText("You declined it.")).toBeTruthy();
+  expect(
+    view.getByText("Ask the Bot again if you still need it."),
+  ).toBeTruthy();
+});
+
+/*
+ * WHAT TO DO NEXT FOLLOWS WHAT RAN. A step whose outcome nobody can vouch for, or that could not be
+ * carried out, may have happened, so "Ask the Bot again if you still need it." under it was wrong.
+ * The sentence the server sends is written for the Bot and tells it to check whether it happened
+ * first; the person reads only what happened, so the check is said beside it in the person's words.
+ */
+test.each([
+  [
+    OUTCOME_UNKNOWN,
+    "It started, but OpenBot can't tell whether it finished. It wasn't run again.",
+  ],
+  [
+    notCarriedOut("the computer said: disk full. try later"),
+    "Not done: this action could not be carried out (the computer said: disk full. try later).",
+  ],
+])(
+  "a step that may have run (%#) is explained, with the check its Bot's sentence asks for",
+  async (reason, read) => {
+    decided("completed", reason);
+    const view = draw(
+      <InlineApproval fallback={null} resulted={false} toolCallId="call-mcp" />,
+    );
+    expect(await view.findByText(read)).toBeTruthy();
+    expect(
+      view.getByText("Check whether it happened before you ask the Bot again."),
+    ).toBeTruthy();
+    expect(
+      view.queryByText("Ask the Bot again if you still need it."),
+    ).toBeNull();
+  },
+);
+
+test("a step turned away by the check just before it ran is explained there, with the Bot to ask again", async () => {
+  // Nothing ran: the check before the step refused it, and says why.
+  decided(
+    "completed",
+    notDoneOnRecheck("The rule that allowed this was removed before it ran."),
+  );
+  const view = draw(
+    <InlineApproval fallback={null} resulted={false} toolCallId="call-mcp" />,
+  );
+  expect(
+    await view.findByText(
+      "Not done: The rule that allowed this was removed before it ran.",
+    ),
+  ).toBeTruthy();
+  expect(
+    view.getByText("Ask the Bot again if you still need it."),
+  ).toBeTruthy();
+});
+
+test("once the step has its own answer, the line is the tool's again", async () => {
+  decided("denied", WITHDRAWN_APPROVALS_OFF);
+  const view = draw(
+    <InlineApproval
+      fallback={<p>Withdrawn. You turned off asking before changes.</p>}
+      resulted
+      toolCallId="call-mcp"
+    />,
+  );
+  expect(
+    await view.findByText("Withdrawn. You turned off asking before changes."),
+  ).toBeTruthy();
+  expect(
+    view.queryByText("Ask the Bot again if you still need it."),
+  ).toBeNull();
+});
+
+/** A waiting request, and a decision route that answers as `decide` does and records what was sent. */
+function answering(decide: () => Response) {
+  const posts: unknown[] = [];
+  global.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/approvals")
+        return Response.json({
+          enabled: true,
+          rules: [],
+          teamRules: [],
+          questions: [],
+          requests: [
+            request("mcp", "requests/get_request", "requests", {
+              id: "r-expense",
+            }),
+          ],
+        });
+      if (path === "/api/approvals/mcp/decision") {
+        posts.push(JSON.parse(String(init?.body)));
+        return decide();
+      }
+      if (path.startsWith("/api/agents"))
+        return Response.json({
+          agents: [{ id: "assistant", name: "General Assistant" }],
+        });
+      return Response.json({ error: "not served" }, { status: 404 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  return posts;
+}
+
+test("each answer says whether the Bot then carries on in this conversation", async () => {
+  answering(() => Response.json({ id: "mcp", status: "approved" }));
+  const view = draw(<InlineApproval toolCallId="call-mcp" fallback={null} />);
+  const card = await view.findByRole("region", {
+    name: "Waiting for your approval",
+  });
+  expect(
+    await view.findByText(
+      "The Bot does it this time, then carries on in this conversation. You're asked again next time.",
+    ),
+  ).toBeTruthy();
+  expect(card.textContent).toContain(
+    "The Bot doesn't do it and is told you said no, then carries on without it.",
+  );
+});
+
+test("a second press while the first decision is on its way sends nothing more", async () => {
+  // As the server does: it refuses a second decision on the same request. One row, one continuation.
+  const posts = answering(() =>
+    Response.json({ id: "mcp", status: "approved" }),
+  );
+  const view = draw(<InlineApproval toolCallId="call-mcp" fallback={null} />);
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const allow = await view.findByRole("button", { name: "Allow once" });
+  await user.dblClick(allow);
+  await waitFor(() =>
+    expect(view.getAllByText("Allowed once").length).toBeGreaterThan(0),
+  );
+  expect(posts).toEqual([{ decision: "allow_once" }]);
+});
+
+test("a decision the server already has is said on the card in the server's words", async () => {
+  // Decided in another tab a moment earlier: the same card here is a press too late.
+  answering(() =>
+    Response.json(
+      { error: "This request was already decided." },
+      { status: 400 },
+    ),
+  );
+  const view = draw(<InlineApproval toolCallId="call-mcp" fallback={null} />);
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(await view.findByRole("button", { name: "Allow once" }));
+  expect(
+    await view.findByText("This request was already decided."),
+  ).toBeTruthy();
 });

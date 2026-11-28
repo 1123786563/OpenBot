@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
   agents,
+  auditEvents,
   pluginGrants,
   skills,
   users,
@@ -19,10 +20,20 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 
 const policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
 
+/** Whether the trail refuses a row written with its removal, as one that cannot be written does. */
+let trailRefuses = false;
 const store = createPluginStore({
   brokerProvider: "composio",
   database,
   auditStore: createAuditStore(database),
+  auditFor: (transaction, deferTap) =>
+    trailRefuses
+      ? {
+          insert: async () => {
+            throw new Error("the trail is unavailable");
+          },
+        }
+      : createAuditStore(transaction, deferTap),
   credentials: { readSecret: async () => null },
   encryptionKey: "x".repeat(44),
   policy: () => policy,
@@ -38,6 +49,8 @@ const keptSlug = `kept-${suite}`;
 const deploymentSlug = `triage-${suite}`;
 const unwrittenSlug = `unwritten-${suite}`;
 const botlessSlug = `botless-${suite}`;
+const auditedSlug = `audited-${suite}`;
+const refusedSlug = `refused-${suite}`;
 const missingBot = `agent_missing_${suite}`;
 
 beforeAll(async () => {
@@ -79,6 +92,8 @@ afterAll(async () => {
         deploymentSlug,
         unwrittenSlug,
         botlessSlug,
+        auditedSlug,
+        refusedSlug,
       ]),
     );
   await database
@@ -242,6 +257,112 @@ describe("a skill name written again after the skill was uninstalled", () => {
       );
 
     expect(held).toEqual([{ ref: keptSlug, agentId: aliceBot }]);
+  });
+
+  /*
+   * The whole removal, read back: the skill row, every Bot's grant on it, and one trail row saying
+   * it was uninstalled. The grant has a row of its own, so the count is of the uninstall alone.
+   */
+  test("uninstalling removes the skill and its grants, and writes one Audit row", async () => {
+    const slug = auditedSlug;
+    expect(
+      (await writeSkill(asAlice(), slug, "Alice's audited skill.")).status,
+    ).toBe(200);
+    expect((await grant(asAlice(), slug, aliceBot)).status).toBe(200);
+
+    expect((await uninstall(asAlice(), slug)).status).toBe(200);
+
+    expect(
+      await database.select().from(skills).where(eq(skills.slug, slug)),
+    ).toEqual([]);
+    expect(
+      await database
+        .select()
+        .from(pluginGrants)
+        .where(and(eq(pluginGrants.kind, "skill"), eq(pluginGrants.ref, slug))),
+    ).toEqual([]);
+    expect(await offered(asAlice(), aliceBot)).toEqual([
+      { slug: keptSlug, instructions: "Alice's other skill." },
+    ]);
+
+    const uninstalled = await database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.eventType, "configuration.changed"),
+          eq(auditEvents.targetType, "skill"),
+          eq(auditEvents.targetId, slug),
+          sql`${auditEvents.payload}->>'change' = 'skill_uninstalled'`,
+        ),
+      );
+    expect(uninstalled).toHaveLength(1);
+    expect(uninstalled[0]?.payload).toEqual({
+      // Who did it is the payload's actor, never `actorUserId`: the plugin store holds an email there.
+      actor: `${alice}@example.test`,
+      change: "skill_uninstalled",
+      skill: slug,
+    });
+    // The instructions themselves never reach the trail.
+    expect(JSON.stringify(uninstalled)).not.toContain("Alice's audited skill.");
+  });
+
+  /*
+   * The removal and its row commit together. A trail that refuses the row leaves the skill and every
+   * grant on it exactly as they were, so asking again deletes it and records it once, instead of
+   * being refused for a skill that is no longer there.
+   */
+  test("a removal the trail refuses leaves the skill and its grants, and asking again removes them once", async () => {
+    const slug = refusedSlug;
+    expect(
+      (await writeSkill(asAlice(), slug, "Alice's refused skill.")).status,
+    ).toBe(200);
+    expect((await grant(asAlice(), slug, aliceBot)).status).toBe(200);
+    const uninstalls = () =>
+      database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.eventType, "configuration.changed"),
+            eq(auditEvents.targetType, "skill"),
+            eq(auditEvents.targetId, slug),
+            sql`${auditEvents.payload}->>'change' = 'skill_uninstalled'`,
+          ),
+        );
+    const grantsOn = () =>
+      database
+        .select({ ref: pluginGrants.ref, agentId: pluginGrants.agentId })
+        .from(pluginGrants)
+        .where(and(eq(pluginGrants.kind, "skill"), eq(pluginGrants.ref, slug)));
+
+    trailRefuses = true;
+    try {
+      expect((await uninstall(asAlice(), slug)).status).toBe(500);
+    } finally {
+      trailRefuses = false;
+    }
+    expect(
+      await database.select().from(skills).where(eq(skills.slug, slug)),
+    ).toHaveLength(1);
+    expect(await grantsOn()).toEqual([{ ref: slug, agentId: aliceBot }]);
+    expect(await uninstalls()).toHaveLength(0);
+
+    expect((await uninstall(asAlice(), slug)).status).toBe(200);
+    expect(
+      await database.select().from(skills).where(eq(skills.slug, slug)),
+    ).toEqual([]);
+    expect(await grantsOn()).toEqual([]);
+    expect(await uninstalls()).toEqual([
+      expect.objectContaining({
+        targetId: slug,
+        payload: {
+          actor: `${alice}@example.test`,
+          change: "skill_uninstalled",
+          skill: slug,
+        },
+      }),
+    ]);
   });
 });
 

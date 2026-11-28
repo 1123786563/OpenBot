@@ -1164,6 +1164,46 @@ test("an app that could not be asked what it needs says why, inside the dialog",
   expect(view.queryByText(/Couldn't find out what this app needs/)).toBeNull();
 });
 
+/**
+ * WHAT A FAILURE WITH NO SENTENCE OF ITS OWN SAYS.
+ *
+ * The screen's banner used to be `thrown.message`, so a connection that never reached the server put
+ * the browser's "Failed to fetch" in front of a person. The sentence above it is the route's own and
+ * is kept; this one is nobody's, and the house sentence with its next step stands in for it.
+ */
+test("a request that never reaches the server says the house sentence", async () => {
+  installDeployment({
+    authScheme: "API_KEY",
+    checkable: true,
+    composioConfigured: true,
+    confirms: true,
+    fields: [PERPLEXITY_KEY],
+    recorded: true,
+    verified: true,
+    verifiedAt: CHECKED_AT,
+  });
+  const answer = global.fetch;
+  global.fetch = (async (
+    input: Parameters<typeof fetch>[0],
+    init?: RequestInit,
+  ) => {
+    if (String(input).includes("/connection/recheck"))
+      throw new TypeError("Failed to fetch");
+    return answer(input, init);
+  }) as typeof fetch;
+
+  const view = renderAccountScreen(queryClient());
+
+  await userEvent.click(await view.findByRole("button", { name: "Re-check" }));
+
+  await waitFor(() =>
+    expect(view.getByRole("alert").textContent).toBe(
+      "Couldn't complete that. Try again.",
+    ),
+  );
+  expect(view.queryByText("Failed to fetch")).toBeNull();
+});
+
 test("a consent app's Connect leaves for the vendor's own page", async () => {
   installDeployment({
     authScheme: "OAUTH2",

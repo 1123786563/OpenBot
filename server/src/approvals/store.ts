@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { decisionInvalidated } from "@openbot/shared/approval-outcomes";
 import {
   and,
   desc,
@@ -36,7 +37,6 @@ import { botTasks } from "../db/schema/tasks";
 import { workItems } from "../db/schema/work";
 import { currentEdition } from "../edition";
 import {
-  decisionInvalidated,
   readDecisionAccess,
   reconcileDecisionHistory,
 } from "../personal-saas/decision-access";

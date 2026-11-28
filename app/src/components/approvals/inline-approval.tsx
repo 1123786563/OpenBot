@@ -1,6 +1,11 @@
+import { Banner } from "@astryxdesign/core/Banner";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import {
+  nextStepForPerson,
+  outcomeForPerson,
+} from "@openbot/shared/approval-outcomes";
 import { offersStandingRule } from "@openbot/shared/standing-rule";
 import { approvalPhrase } from "@openbot/shared/tool-name";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +22,15 @@ import { noteWatched } from "@/lib/computers/activity";
 import { EASE_OUT } from "@/lib/motion";
 
 /**
+ * What to do about a request that ended before the Bot's answer for its step arrived. Which one
+ * follows what ran (`nextStepForPerson`).
+ */
+const NEXT_STEP = {
+  "ask-again": "Ask the Bot again if you still need it.",
+  "check-first": "Check whether it happened before you ask the Bot again.",
+} as const;
+
+/**
  * A pending approval, drawn in the conversation where the action it holds would have been.
  *
  * The same request as the Approvals page, read from the same owner-scoped inbox, so a decision made
@@ -30,26 +44,29 @@ const CHOICE_WORDS: Record<
 > = {
   allow_once: {
     label: "Allow once",
-    description: "The Bot does it this time. You're asked again next time.",
+    description:
+      "The Bot does it this time, then carries on in this conversation. You're asked again next time.",
     done: "Allowed once",
     tone: "positive",
   },
   allow_conversation: {
     label: "Allow for this conversation",
     description:
-      "The Bot does it now, and again in this conversation without asking.",
+      "The Bot does it now and carries on in this conversation, without asking again here.",
     done: "Allowed for this conversation",
     tone: "positive",
   },
   allow_always: {
     label: "Always allow here",
-    description: "The Bot does it now, and here without asking from now on.",
+    description:
+      "The Bot does it now and carries on in this conversation. It won't ask here again.",
     done: "Always allowed",
     tone: "positive",
   },
   deny: {
     label: "Deny",
-    description: "The Bot doesn't do it, and is told you said no.",
+    description:
+      "The Bot doesn't do it and is told you said no, then carries on without it.",
     done: "Denied",
     tone: "negative",
   },
@@ -64,9 +81,15 @@ const CHOICE_WORDS: Record<
 export function InlineApproval({
   toolCallId,
   fallback,
+  resulted,
 }: {
   toolCallId?: string;
   fallback: ReactNode;
+  /**
+   * Whether the tool call has its answer in the transcript. A request that ended before its answer
+   * is explained only when this says so (`false`); where it is unknown, the line stays the caller's.
+   */
+  resulted?: boolean;
 }) {
   const cache = useQueryClient();
   const inbox = useQuery(approvalInboxOptions());
@@ -107,6 +130,27 @@ export function InlineApproval({
         ];
   // In the words the step and Activity use for the same action: "Save a file todo.txt in share".
   const title = request ? approvalPhrase(request.action) : "";
+  /*
+   * No approval expires by itself. What ends one without an answer from this card is the person
+   * withdrawing it, the Bot's work being stopped under it, or the same request decided in another
+   * tab, and each leaves its reason on the request. Said here, until the Bot's own answer for this
+   * step reaches the transcript and takes the line back. A card this browser answered already shows
+   * that answer.
+   *
+   * ONLY WHERE THE CALLER SAYS THE STEP HAS NO ANSWER YET. A computer step's card is drawn without
+   * saying (`approval-tools.tsx`), and read as "not yet" it had a completed step replaced for good
+   * by the warning for its own request.
+   */
+  const explain =
+    request &&
+    !pending &&
+    request.result?.error &&
+    !request.result.pauseReason &&
+    resulted === false &&
+    !answered
+      ? request.result.error
+      : null;
+  const nextStep = explain ? nextStepForPerson(explain) : null;
   return (
     <>
       {/* The card leaves by folding away; what is left behind is the tool's own line. */}
@@ -164,6 +208,16 @@ export function InlineApproval({
             />
           )}
         </Stack>
+      ) : explain ? (
+        <Banner
+          collapsible={false}
+          // The next step follows what ran: ask again only where nothing ran, and check first
+          // where the step may have happened. What the person reads says only what happened; it is
+          // the sentence written for the Bot that says which of the two to do.
+          description={nextStep ? NEXT_STEP[nextStep] : undefined}
+          status="warning"
+          title={outcomeForPerson(explain)}
+        />
       ) : pending ? null : (
         fallback
       )}

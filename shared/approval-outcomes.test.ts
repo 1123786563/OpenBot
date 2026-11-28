@@ -5,9 +5,11 @@ import * as outcomes from "./approval-outcomes";
 const {
   ALREADY_WAITING,
   DECLINED_BY_PERSON,
+  decisionInvalidated,
   doneByPerson,
   HANDLED_BY_PERSON,
   OUTCOME_UNKNOWN,
+  nextStepForPerson,
   outcomeForPerson,
   WITHDRAWN_APPROVALS_OFF,
   WITHDRAWN_RULE_ALLOWS,
@@ -27,6 +29,46 @@ test.each([
   [WITHDRAWN_RULE_ALLOWS, "Withdrawn. A rule you saved now allows it."],
 ])("the server's sentence %#: the person reads their own", (sent, read) => {
   expect(outcomeForPerson(sent)).toBe(read);
+});
+
+test("a decision the Bot's stopped work invalidated reads as withdrawn, in plain words", () => {
+  // Word for word what the server writes on a request when the work it belonged to was stopped.
+  expect(decisionInvalidated).toBe(
+    "This decision was invalidated when workspace execution stopped.",
+  );
+  expect(outcomeForPerson(decisionInvalidated)).toBe(
+    "Withdrawn. The Bot's work was stopped before it could do this.",
+  );
+});
+
+test("the next step follows what ran: ask again only where nothing ran, and check first where the step may have happened", () => {
+  // Declined by the person, withdrawn, or invalidated by the Bot's stopped work: nothing ran.
+  for (const sent of [
+    DECLINED_BY_PERSON,
+    WITHDRAWN_APPROVALS_OFF,
+    WITHDRAWN_RULE_ALLOWS,
+    decisionInvalidated,
+  ])
+    expect(nextStepForPerson(sent)).toBe("ask-again");
+  // Turned away by the check just before it ran, with a reason and without one: nothing ran either.
+  expect(
+    nextStepForPerson(outcomes.notDoneOnRecheck("The disk is full.")),
+  ).toBe("ask-again");
+  expect(nextStepForPerson(outcomes.NOT_DONE)).toBe("ask-again");
+  // It may have run: it started and its outcome is unknown, or it could not be carried out.
+  for (const sent of [
+    OUTCOME_UNKNOWN,
+    outcomes.notCarriedOut("The disk is full."),
+  ])
+    expect(nextStepForPerson(sent)).toBe("check-first");
+  // A step the Bot takes up again itself, and a boundary's or the computer's own sentence, which
+  // says nothing about whether the step ran.
+  for (const sent of [
+    outcomes.NOT_RUN_WHILE_WAITING,
+    outcomes.NOT_RUN_AFTER_FAILURE,
+    "Commands that delete files are not allowed here.",
+  ])
+    expect(nextStepForPerson(sent)).toBeNull();
 });
 
 test("a step the person did themselves reads as theirs, and as done", () => {

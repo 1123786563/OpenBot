@@ -337,6 +337,17 @@ describe("the network policy reaching the shared computer", () => {
       );
     } finally {
       await computer.stop();
+      await setOrganizationPolicy({
+        scopeKind: "organization",
+        mode: "allowlist_only",
+        rules: [
+          {
+            type: "cidr",
+            value: "127.0.0.1/32",
+            ports: String(ORIGIN_PORT),
+          },
+        ],
+      });
     }
   }, 30_000);
 });

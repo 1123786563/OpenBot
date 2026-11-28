@@ -525,11 +525,9 @@ ending the session), and when they are removed. A sign-out that cannot end their
 does not happen: the person is told to try again, still signed in, and a `recorder.sign_out_failed`
 row goes on the audit trail.
 
-**Recordings cannot be deleted from OpenBot yet.** A recording goes from the person's browser to
-Intelligence, into their own Learning space (see [Automatic Learning](automatic-learning.md));
-OpenBot keeps only which recordings are whose. Intelligence has no API a server credential can call
-to delete a recording, or a Learning space that still holds one, so nobody can delete a recording
-from OpenBot, and a person's recordings stay in Intelligence after they are removed from OpenBot.
+**Recordings are stored by OpenBot, and only the person who made them can open one.** That person
+can delete a recording at any time. It can then no longer be opened or played back, and the restore
+procedure below keeps it deleted when a backup is restored.
 
 **Any one provider turns sign-in on**, and several may be configured at once. Each provider's id and
 secret must be set together, Okta additionally needs its issuer, and any of them requires

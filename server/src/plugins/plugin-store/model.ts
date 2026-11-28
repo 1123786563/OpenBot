@@ -6,6 +6,7 @@ import {
   type AuditInitiator,
   type AuditStore,
   DEPLOYMENT_INITIATOR,
+  type TransactionAuditStore,
 } from "../../audit";
 import type { EntraTokens } from "../../auth/entra-refusal";
 import type { ActionPolicy } from "../../computer/policy";
@@ -1252,6 +1253,12 @@ export type PluginStoreOptions = {
   sharedUse?: SharedUseGate;
   database: Database;
   auditStore: AuditStore;
+  /**
+   * Where a row goes when it has to commit with the write it records (`skills.ts`, a skill's
+   * removal), given that write's transaction. Absent writes through the transaction, as
+   * `connections.ts` does. A test passes its own to refuse the row.
+   */
+  auditFor?: TransactionAuditStore;
   /**
    * The vault, read and write.
    *

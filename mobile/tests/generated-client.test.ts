@@ -9,8 +9,7 @@
  * platform gives. Everything between a screen's call and the network is the app's own code.
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { version as RELEASE } from "../../package.json";
 import fixture from "../../shared/fixtures/client-version/cases.json";
 import appConfig from "../app.config";
 
@@ -66,12 +65,6 @@ let deploymentAnswer: { status: number; body: unknown } = {
   status: 200,
   body: fixture.deployments.current,
 };
-/** The OpenBot release this app is built from: the root package.json's version, read here on its own. */
-const RELEASE = (
-  JSON.parse(
-    readFileSync(join(import.meta.dir, "../../package.json"), "utf8"),
-  ) as { version: string }
-).version;
 /** The organization the signed-in person is working in: one of two they are in, and not the first. */
 const ORG = "/api/v2/organizations/org_work";
 const MINE = "/api/v2/people/me/organizations";
@@ -479,22 +472,26 @@ let cookie: string | null = COOKIE;
 /** What the phone keeps in its secure store (src/auth.ts `organizationStore`). */
 const secure = new Map<string, string>();
 
-mock.module("../src/auth", () => ({
-  serverUrl,
-  authClient: { getCookie: () => cookie },
-  // The in-app browser through the hosted sign-in, as OpenBot by CopilotKit answers somebody still signed in there.
-  renewHostedSignIn: async (signIn: string) => {
-    renewed.push(signIn);
-    if (hosted.renewalWorks) hosted.proofValid = true;
-  },
-  // Each person's pick, kept by who they are, as src/auth.ts keeps it in the phone's secure store.
-  organizationStore: {
-    read: async (person: string) => secure.get(person) ?? null,
-    write: async (person: string, id: string) => {
-      secure.set(person, id);
+function installNativeAuthFixture() {
+  mock.module("../src/auth", () => ({
+    serverUrl,
+    usesBrowserSession: false,
+    authClient: { getCookie: () => cookie },
+    // The in-app browser through the hosted sign-in, as OpenBot by CopilotKit answers somebody still signed in there.
+    renewHostedSignIn: async (signIn: string) => {
+      renewed.push(signIn);
+      if (hosted.renewalWorks) hosted.proofValid = true;
     },
-  },
-}));
+    // Each person's pick, kept by who they are, as src/auth.ts keeps it in the phone's secure store.
+    organizationStore: {
+      read: async (person: string) => secure.get(person) ?? null,
+      write: async (person: string, id: string) => {
+        secure.set(person, id);
+      },
+    },
+  }));
+}
+installNativeAuthFixture();
 mock.module("expo-crypto", () => ({
   randomUUID: () => crypto.randomUUID(),
 }));
@@ -541,6 +538,7 @@ const { checkVersion } = await import("../src/version-check");
 const { onUpdateRequired } = await import("../src/client-version");
 
 beforeEach(() => {
+  installNativeAuthFixture();
   seen.length = 0;
   named.length = 0;
   organizationNamed.length = 0;
@@ -715,7 +713,7 @@ test("switching a skill on gives the Bot its grant, the grant's id one path segm
 });
 
 test("every request names the phone app and the OpenBot release it was built from, not Expo's own app version", async () => {
-  // The release comes from the repository's root package.json as the app is built, never the store version.
+  // The built client release is independent of the Expo store version.
   expect(appConfig.extra?.openbotRelease).toBe(RELEASE);
   expect(appConfig.version).not.toBe(RELEASE);
   await getBot(ORGANIZATION_ID, "a b");
@@ -737,7 +735,16 @@ test("before sign-in the app reads the deployment and decides: this release's Op
   deploymentAnswer = { status: 200, body: fixture.deployments["v1.1.0"] };
   expect(await checkVersion()).toEqual({ kind: "ok" });
 
-  deploymentAnswer = { status: 200, body: fixture.deployments.raised };
+  deploymentAnswer = {
+    status: 200,
+    body: {
+      ...fixture.deployments.raised,
+      minimumClients: {
+        ...fixture.deployments.raised.minimumClients,
+        mobile: "9.0.0",
+      },
+    },
+  };
   expect(await checkVersion()).toEqual({
     kind: "app",
     detail:
@@ -769,7 +776,20 @@ test("anything but an app too old for its OpenBot decides nothing: the app opens
 });
 
 test("an OpenBot that raised the phone app's minimum for a security problem says so, from its deployment and from a refusal", async () => {
-  deploymentAnswer = { status: 200, body: fixture.deployments.security };
+  deploymentAnswer = {
+    status: 200,
+    body: {
+      ...fixture.deployments.security,
+      minimumClients: {
+        ...fixture.deployments.security.minimumClients,
+        mobile: "9.0.0",
+      },
+      securityMinimumClients: {
+        ...fixture.deployments.security.securityMinimumClients,
+        mobile: "9.0.0",
+      },
+    },
+  };
   expect(await checkVersion()).toEqual({
     kind: "app",
     detail:

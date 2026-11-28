@@ -129,12 +129,14 @@ function upload(
   channelId: string,
   file: File,
   uploadGroup?: string,
+  requestId?: string,
 ) {
   const formData = new FormData();
   formData.set("file", file);
   // Omitted where a test does not care, which is also the shape an older tab still sends: the
   // route counts those together in one legacy bucket rather than in nobody's.
   if (uploadGroup !== undefined) formData.set("uploadGroup", uploadGroup);
+  if (requestId !== undefined) formData.set("requestId", requestId);
   return app.request(`http://test/${channelId}/attachments`, {
     method: "POST",
     body: formData,
@@ -528,6 +530,38 @@ describe("POST /:channelId/attachments", () => {
     expect(body.id.length).toBeGreaterThan(0);
     expect(body.mimeType).toBe("image/png");
     expect(body.name).toBe("photo.png");
+  });
+
+  test("retrying an upload after an ambiguous response keeps one attachment", async () => {
+    const { app, channelId } = await harness();
+    const uploadGroup = randomUUID();
+    const requestId = randomUUID();
+    const file = new File(["first message"], "draft.txt", {
+      type: "text/plain",
+    });
+
+    const replies = await Promise.all([
+      upload(app, channelId, file, uploadGroup, requestId),
+      upload(app, channelId, file, uploadGroup, requestId),
+    ]);
+    for (const reply of replies) {
+      expect(reply.status).toBe(201);
+      expect(await reply.json()).toMatchObject({
+        id: requestId,
+        name: file.name,
+      });
+    }
+    const changed = new File(["different text"], file.name, {
+      type: file.type,
+    });
+    expect(
+      (await upload(app, channelId, changed, uploadGroup, requestId)).status,
+    ).toBe(409);
+    const rows = await database
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(eq(attachments.channelId, channelId));
+    expect(rows).toEqual([{ id: requestId }]);
   });
 
   test("a non-member uploading to the channel is refused", async () => {

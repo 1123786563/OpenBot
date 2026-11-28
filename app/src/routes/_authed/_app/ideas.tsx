@@ -1,14 +1,16 @@
 import { IconBulb } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, linkOptions } from "@tanstack/react-router";
+import { useRef } from "react";
 import { AstryxSurface } from "@/components/astryx-pilot/theme";
 import { BotScopeSelect } from "@/components/bots/bot-scope-select";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
-import { ReadStatus } from "@/components/layout/read-status";
+import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import {
   ProactiveResearchSettings,
   SuggestionsInbox,
 } from "@/components/suggestions/proactive-panel";
+import { useTranslation } from "@/i18n";
 import {
   chooseBot,
   resolveChosenBot,
@@ -25,6 +27,8 @@ export const Route = createFileRoute("/_authed/_app/ideas")({
 });
 
 function IdeasPage() {
+  const { t } = useTranslation();
+  const selector = useRef<HTMLSelectElement>(null);
   const { agent } = Route.useSearch();
   const roster = useQuery(agentListQueryOptions());
   const { data: user } = useQuery(currentUserQueryOptions());
@@ -45,10 +49,13 @@ function IdeasPage() {
         {roster.isPending ? (
           <ReadStatus kind="loading" message="Loading Bots…" />
         ) : roster.error ? (
-          <ReadStatus
-            kind="error"
+          <ReadError
+            focusAfterRetry={() => selector.current}
             message="Couldn’t load your Bots"
             retry={roster.refetch}
+            retryBelow
+            retryLabel={t("bots.retryChoices", "Retry loading Bot choices")}
+            retrying={roster.isFetching}
           />
         ) : available.length > 0 ? (
           <>
@@ -58,6 +65,7 @@ function IdeasPage() {
                 if (user) chooseBot(user.id, id);
                 void navigate({ search: { agent: id }, replace: true });
               }}
+              selectRef={selector}
               value={bot?.id ?? ""}
             />
             {bot ? (

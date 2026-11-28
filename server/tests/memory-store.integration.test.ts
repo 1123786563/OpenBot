@@ -5,15 +5,32 @@ import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { and, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
+import {
+  configure,
+  emptyCatalog,
+  pilotCatalogKey,
+  publish,
+  verify,
+} from "../src/admin/bifrost-catalog";
 import { createBotReset } from "../src/agents/lifecycle-reset";
 import { createAuditReader, createAuditStore } from "../src/audit";
 import { type AppVariables, createRequireUser } from "../src/auth/guards";
+import { createTestCreditLedger } from "../src/billing/test-credit";
+import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
+import { enterpriseSettings, lagoUsageEvents } from "../src/db/schema";
 import { agents, users } from "../src/db/schema/core";
 import { agentProfiles } from "../src/db/schema/coworker";
 import { memorySources, personalMemories } from "../src/db/schema/memory";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
+import {
+  testCreditAccounts,
+  testCreditBatches,
+  testCreditEnrollments,
+  testCreditEvidence,
+  testCreditOperations,
+} from "../src/db/schema/test-credit";
 import { createManagedModel } from "../src/managed-model-trial";
 import { createHindsight } from "../src/memory/hindsight";
 import { createMemoryIngestion } from "../src/memory/ingestion";
@@ -24,6 +41,7 @@ import { createMemoryStore } from "../src/memory/store";
 import { memoryTools } from "../src/memory/tools";
 import { MemoryNotFoundError, MemoryRefusedError } from "../src/memory/types";
 import { createPluginStore, PluginRefusedError } from "../src/plugins/store";
+import { fixtureTraceReport } from "./support/bifrost-evidence";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -1132,8 +1150,17 @@ test.skipIf(!nativeReflectUrl)(
         canUseMemory: async () => true,
       },
     });
-    const source = await store.create(owner, {
+    const formed = await store.formMemory(owner, {
+      agentId: bot,
+      sourceRef: ref,
+      sourceApp: "Fixture",
       content: "Synthetic observatory has amber lanterns.",
+    });
+    const source = await store.update(owner, formed.id, {
+      reviewState: "confirmed",
+    });
+    await store.create(other, {
+      content: "Other workspace has violet lanterns.",
     });
     await memory.syncHindsight();
     const reflect = memoryTools({
@@ -1146,18 +1173,45 @@ test.skipIf(!nativeReflectUrl)(
     const args = {
       query: "Which lanterns are available at the synthetic observatory?",
     };
-    expect(JSON.parse(await reflect.execute(args))).toMatchObject({
-      kind: "reflection",
-      text: expect.stringContaining("amber lanterns"),
-      sources: expect.arrayContaining([
-        { id: source.id, version: expect.any(String) },
-      ]),
+    const expectVersion = async (version: string | undefined) => {
+      if (!version) throw new Error("Missing approved Memory version");
+      expect(JSON.parse(await reflect.execute(args))).toMatchObject({
+        kind: "reflection",
+        text: expect.stringContaining("amber lanterns"),
+        sources: [{ id: source.id, version }],
+      });
+    };
+    await expectVersion(source.version);
+    expect(await memory.reflect(other, bot, args.query)).toEqual({
+      kind: "local",
+      memories: [],
     });
+    const edited = await store.update(owner, source.id, {
+      content: source.content,
+    });
+    expect(edited.version).not.toBe(source.version);
+    expect(JSON.parse(await reflect.execute(args))).toMatchObject({
+      kind: "local",
+    });
+    await memory.syncHindsight();
+    await expectVersion(edited.version);
+    await plugins.revoke("mcp", ref, bot, owner);
+    try {
+      expect(JSON.parse(await reflect.execute(args))).toEqual({
+        kind: "local",
+        memories: [],
+      });
+    } finally {
+      await plugins.grant("mcp", ref, bot, owner);
+    }
     await store.remove(owner, source.id);
-    expect(await reflect.execute(args)).not.toContain(source.id);
+    expect(JSON.parse(await reflect.execute(args))).toEqual({
+      kind: "local",
+      memories: [],
+    });
     await memory.syncHindsight();
   },
-  30_000,
+  90_000,
 );
 
 const managedReflectUrl = process.env.TEST_HINDSIGHT_MANAGED_REFLECT_API_URL;
@@ -1171,71 +1225,104 @@ test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
   async () => {
     if (!managedReflectUrl || !syntheticModelUrl)
       throw new Error("Missing managed Reflect fixture URL");
-    const priceVersion = "a6000000-0000-4000-8000-000000000001";
-    const operations = new Map<string, "reserved" | "dispatched" | "settled">();
+    const routeId = "fixture-reflect";
+    const harness = `agent-langgraph-agui@sha256:${"b".repeat(64)}`;
+    const draft = configure(emptyCatalog, {
+      harnessImage: harness,
+      routes: {
+        [routeId]: {
+          provider: "fixture",
+          model: "fixture-reflect",
+          gatewayRevision: "fixture-g1",
+          meteringRevision: "fixture-m1",
+          maxInputTokens: 8192,
+          maxOutputTokens: 1024,
+          tools: false,
+          price: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
+        },
+      },
+    });
+    const route = draft.routes[routeId];
+    if (!route) throw new Error("Missing Reflect fixture route");
+    const { catalog } = publish(
+      verify(draft, routeId, fixtureTraceReport(harness, route), "test"),
+      [routeId],
+      routeId,
+      "test",
+    );
+    const [previous] = await database
+      .select()
+      .from(enterpriseSettings)
+      .where(eq(enterpriseSettings.key, pilotCatalogKey));
+    await database
+      .insert(enterpriseSettings)
+      .values({ key: pilotCatalogKey, value: catalog })
+      .onConflictDoUpdate({
+        target: enterpriseSettings.key,
+        set: { value: catalog },
+      });
+    const ledger = createTestCreditLedger(database);
+    const identity = { issuer: "reflect-fixture", subject: owner };
+    const batchId = randomUUID();
+    await ledger.enroll({ identity, batchId, amount: 20_000n });
+    await ledger.claim(identity, batchId);
+    const accountId = await ledger.accountOf(identity);
+    if (!accountId) throw new Error("Missing Reflect fixture account");
+    const operations = new Set<string>();
     const scope = {
       personId: owner,
       botId: bot,
       conversationId: randomUUID(),
       runId: randomUUID(),
     };
+    const billing = createTestCreditRoutes({
+      ledger,
+      authenticate: async (request, intent) =>
+        intent === "execution" &&
+        request.headers.get("authorization") === "Bearer ledger-fixture"
+          ? identity
+          : undefined,
+      execute: async ({ operationId, route, messages }) => {
+        expect(route).toMatchObject({ id: routeId, provider: "fixture" });
+        expect(operations.has(operationId)).toBe(false);
+        operations.add(operationId);
+        const [schemaMessage, ...prompt] = messages;
+        if (schemaMessage?.role !== "system")
+          throw new Error("Missing Reflect schema");
+        const schema = JSON.parse(schemaMessage.content.split("\n")[1]);
+        const provider = await fetch(syntheticModelUrl, {
+          method: "POST",
+          body: JSON.stringify({
+            messages: prompt,
+            response_format: { type: "json_schema", json_schema: { schema } },
+          }),
+        });
+        if (!provider.ok) throw new Error("Reflect model fixture failed");
+        const completion = await provider.json();
+        return {
+          text: completion.choices[0].message.content,
+          usage: {
+            inputTokens: completion.usage.prompt_tokens,
+            outputTokens: completion.usage.completion_tokens,
+          },
+        };
+      },
+    });
     const control = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      async fetch(request) {
-        const path = new URL(request.url).pathname;
-        if (path === "/v1/quote")
-          return Response.json({ route: "fixture-approved-v1", priceVersion });
-        const body = await request.json();
-        if (path === "/v1/reserve") {
-          expect(body).toEqual({
-            operationId: expect.any(String),
-            applicationId: "openbot",
-            creditType: "test",
-            route: "fixture-approved-v1",
-            priceVersion,
-            resumable: false,
-          });
-          expect(operations.has(body.operationId)).toBe(false);
-          operations.set(body.operationId, "reserved");
-          return Response.json({ state: "reserved", permit: body.operationId });
-        }
-        if (path === "/v1/dispatch") {
-          expect(operations.get(body.operationId)).toBe("reserved");
-          expect(body.permit).toBe(body.operationId);
-          const [schemaMessage, ...messages] = body.messages;
-          const schema = JSON.parse(schemaMessage.content.split("\n")[1]);
-          const provider = await fetch(syntheticModelUrl, {
-            method: "POST",
-            body: JSON.stringify({
-              messages,
-              response_format: { type: "json_schema", json_schema: { schema } },
-            }),
-          });
-          expect(provider.ok).toBe(true);
-          operations.set(body.operationId, "dispatched");
-          const completion = await provider.json();
-          return Response.json({
-            state: "completed",
-            text: completion.choices[0].message.content,
-          });
-        }
-        expect(path).toBe("/v1/reconcile");
-        expect(operations.get(body.operationId)).toBe("dispatched");
-        operations.set(body.operationId, "settled");
-        return Response.json({ state: "settled" });
-      },
+      fetch: (request) => billing.fetch(request),
     });
     const gateway = createReflectModelGateway({
       model: createManagedModel({
         url: control.url,
         credentials: new Map([[owner, "ledger-fixture"]]),
       }),
-      route: "fixture-approved-v1",
+      route: routeId,
       token: "hindsight-fixture",
     });
     const callback = Bun.serve({
-      hostname: "0.0.0.0",
+      hostname: "127.0.0.1",
       port: managedReflectPort,
       fetch: (request) => gateway.complete(request),
     });
@@ -1248,6 +1335,7 @@ test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
             database,
             url: new URL(managedReflectUrl),
             reflect: true,
+            reflectTimeoutMs: 180_000,
           }),
           exposeNativeReflect: false,
           canUseMemory: async () => true,
@@ -1266,16 +1354,71 @@ test.skipIf(!managedReflectUrl || !managedReflectPort || !syntheticModelUrl)(
       ).toMatchObject({
         kind: "reflection",
         text: expect.stringContaining("amber lanterns"),
-        sources: [{ id: source.id, version: expect.any(String) }],
+        sources: [{ id: source.id, version: source.version }],
       });
       expect(operations.size).toBeGreaterThan(1);
-      expect(new Set(operations.values())).toEqual(new Set(["settled"]));
+      for (const operation of operations) {
+        expect(await ledger.receipt(identity, operation)).toMatchObject({
+          state: "settled",
+          route: routeId,
+          creditType: "test",
+          applicationId: "openbot",
+          chargedMicrocredits: "2",
+          heldMicrocredits: "0",
+        });
+      }
+      expect(await ledger.balance(identity)).toMatchObject({
+        chargedMicrocredits: String(operations.size * 2),
+        reservedMicrocredits: "0",
+      });
+      const model = createManagedModel({
+        url: control.url,
+        credentials: new Map([[owner, "ledger-fixture"]]),
+      });
+      const beforeRefusal = operations.size;
+      const result = await model.complete({
+        scope: { ...scope, source: "hindsight" },
+        step: "unpublished-route",
+        route: "fixture-unpublished",
+        messages: [{ role: "user", content: query }],
+      });
+      expect(result).toEqual({ state: "route_unavailable" });
+      expect(operations.size).toBe(beforeRefusal);
       await store.remove(owner, source.id);
       await memory.syncHindsight();
     } finally {
       callback.stop(true);
       control.stop(true);
+      await database.transaction(async (tx) => {
+        await tx
+          .delete(lagoUsageEvents)
+          .where(eq(lagoUsageEvents.accountId, accountId));
+        await tx
+          .delete(testCreditEvidence)
+          .where(eq(testCreditEvidence.accountId, accountId));
+        await tx
+          .delete(testCreditOperations)
+          .where(eq(testCreditOperations.accountId, accountId));
+        await tx
+          .delete(testCreditEnrollments)
+          .where(eq(testCreditEnrollments.accountId, accountId));
+        await tx
+          .delete(testCreditAccounts)
+          .where(eq(testCreditAccounts.id, accountId));
+        await tx
+          .delete(testCreditBatches)
+          .where(eq(testCreditBatches.id, batchId));
+        if (previous)
+          await tx
+            .update(enterpriseSettings)
+            .set({ value: previous.value })
+            .where(eq(enterpriseSettings.key, pilotCatalogKey));
+        else
+          await tx
+            .delete(enterpriseSettings)
+            .where(eq(enterpriseSettings.key, pilotCatalogKey));
+      });
     }
   },
-  30_000,
+  195_000,
 );

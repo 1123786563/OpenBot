@@ -25,6 +25,7 @@ import {
   skillSharingAllowed,
   skillSharingInSnapshot,
 } from "./admin/controls";
+import { createCredentialUsageReader } from "./admin/credential-usage";
 import { fixSettings } from "./admin/settings-store";
 import {
   CoworkerUnavailableError,
@@ -183,7 +184,7 @@ import {
   describeComputerIsolation,
 } from "./computer/provider";
 import { createSnapshotStore } from "./computer/snapshot-store";
-import { loadConfig } from "./config";
+import { configuredAuthProviders, loadConfig } from "./config";
 import {
   chooseOpenAIApi,
   mountCopilotRuntime,
@@ -665,7 +666,13 @@ const peopleStore = createPeopleStore(
       recorders: () => signOutRecorders(userId, "person_removed"),
     }),
 );
-const identityProviderStore = createIdentityProviderStore(database);
+const identityProviderStore = createIdentityProviderStore(
+  database,
+  // The emergency addresses, which keep a way in after the provider they used is removed.
+  config.auth?.initialAdminEmails ?? [],
+  // The social providers configured here, which sign somebody in with no registered provider.
+  configuredAuthProviders(config.auth),
+);
 /*
  * Built before `auth` for the same reason the people store is: sign-in writes to the trail, and the
  * store that receives those rows has to exist before anything can sign in.
@@ -3592,6 +3599,7 @@ const personResponseSweep = repeatAfterEach(
     personResponseOwner,
     authoriseQuestion,
     approvalContinuationRunner,
+    runBackground: copilotRuntime.runBackground,
     responsibilityStore,
     responsibilityAnswerTurn,
     sourceForCoordinationRun,
@@ -3759,6 +3767,8 @@ await installEnterpriseControls({
   database,
   databaseUrl: config.databaseUrl,
   auditStore: bootAuditStore,
+  // A permission switch's row commits with the switch it is about.
+  auditFor: createAuditStore,
   auditRunProofKey: config.keyEncryptionKey,
   personBrowserPolicy,
   // While a person records in a Bot's browser, the Recorder there reaches OpenBot and the gateway; the Bot does not.
@@ -4273,7 +4283,13 @@ const app = createApp(
   identityStore,
   identityGithubCallback,
   profileStore,
-  // A person's bill: Test Credit balance, the paid side, and budgets (#107).
+  // What holds a vault row, for the confirmation before an administrator revokes it. The model key
+  // is the one pointer no table holds, so it is passed in.
+  createCredentialUsageReader(database, {
+    provider: runtimeModel.provider,
+    keyId: tenantPackage.model.credentialSecretRef,
+  }),
+  // A person's bill: Test Credit balance, the paid side, and budgets (#107). Last: it stays there.
   {
     testLedger: testCreditLedger,
     runtime:

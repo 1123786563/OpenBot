@@ -1,4 +1,4 @@
-import { Redirect, useLocalSearchParams } from "expo-router";
+import { Link, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback } from "react";
 import { Switch, Text, View } from "react-native";
 import { ApiError, everyPage, ORGANIZATION_ID } from "../src/api";
@@ -9,6 +9,11 @@ import {
 } from "../src/api/generated/bot-grants/bot-grants";
 import { listSkills } from "../src/api/generated/skills/skills";
 import { authClient } from "../src/auth";
+import {
+  isLocalMobilePreview,
+  previewSkills,
+  previewTools,
+} from "../src/home-preview";
 import {
   card,
   heading,
@@ -22,8 +27,34 @@ import { useLoad } from "../src/use-load";
 
 /** What a Bot can use: skills switched on and off here, connected tools listed. */
 export default function PluginsScreen() {
-  const { botId = "" } = useLocalSearchParams<{ botId: string }>();
+  const { botId = "", preview } = useLocalSearchParams<{
+    botId: string;
+    preview?: string;
+  }>();
+  if (isLocalMobilePreview("/plugins", preview)) {
+    return <PluginsDetail botId={botId} sample />;
+  }
+  return <ConnectedPlugins botId={botId} />;
+}
+
+function ConnectedPlugins({ botId }: { botId: string }) {
   const { data: session, isPending } = authClient.useSession();
+  return (
+    <PluginsDetail botId={botId} session={session} isPending={isPending} />
+  );
+}
+
+function PluginsDetail({
+  botId,
+  sample = false,
+  session,
+  isPending = false,
+}: {
+  botId: string;
+  sample?: boolean;
+  session?: ReturnType<typeof authClient.useSession>["data"];
+  isPending?: boolean;
+}) {
   const action = useAction();
   const loadGranted = useCallback(async () => {
     const grants = await everyPage(
@@ -53,8 +84,14 @@ export default function PluginsScreen() {
     [],
   );
   const catalogue = useLoad(loadCatalogue, Boolean(session));
-  if (!session && !isPending) return <Redirect href="/" />;
-  const on = new Set(granted.data?.skills.map((skill) => skill.slug));
+  if (!sample && !session && !isPending) return <Redirect href="/" />;
+  const skills = sample ? previewSkills : catalogue.data?.skills;
+  const tools = sample ? previewTools : granted.data?.tools;
+  const on = new Set(
+    sample
+      ? ["weekly-planning"]
+      : granted.data?.skills.map((skill) => skill.slug),
+  );
 
   const setSkill = (slug: string, enabled: boolean) =>
     action.run(slug, async () => {
@@ -76,18 +113,25 @@ export default function PluginsScreen() {
   return (
     <Screen
       refreshing={granted.pending || catalogue.pending}
-      onRefresh={() => {
-        void granted.refresh();
-        void catalogue.refresh();
-      }}
+      onRefresh={
+        sample
+          ? undefined
+          : () => {
+              void granted.refresh();
+              void catalogue.refresh();
+            }
+      }
     >
+      {sample && (
+        <Link href={{ pathname: "/bot", params: { botId, preview: "1" } }}>
+          Back to preview Bot
+        </Link>
+      )}
       <Text style={heading}>Plugins</Text>
       <Problem message={action.error || granted.error || catalogue.error} />
       <Section title="Skills">
-        {catalogue.data?.skills.length === 0 && (
-          <Text style={muted}>No skills yet.</Text>
-        )}
-        {catalogue.data?.skills.map((skill) => (
+        {skills?.length === 0 && <Text style={muted}>No skills yet.</Text>}
+        {skills?.map((skill) => (
           <View
             key={skill.slug}
             style={[
@@ -104,7 +148,7 @@ export default function PluginsScreen() {
             <Switch
               accessibilityLabel={`Use ${skill.title}`}
               value={on.has(skill.slug)}
-              disabled={Boolean(action.busy) || !granted.data}
+              disabled={sample || Boolean(action.busy) || !granted.data}
               onValueChange={(enabled) => {
                 void setSkill(skill.slug, enabled);
               }}
@@ -117,10 +161,8 @@ export default function PluginsScreen() {
           Connecting an app needs its sign-in, so add and remove tools in
           OpenBot on your computer.
         </Text>
-        {granted.data?.tools.length === 0 && (
-          <Text style={muted}>No connected tools.</Text>
-        )}
-        {granted.data?.tools.map((tool) => (
+        {tools?.length === 0 && <Text style={muted}>No connected tools.</Text>}
+        {tools?.map((tool) => (
           <View key={tool.ref} style={card}>
             <Text style={{ fontWeight: "600" }}>{tool.ref}</Text>
             {tool.description ? (

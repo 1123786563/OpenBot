@@ -226,10 +226,10 @@ function omitCopilotkitUiStyles(): Plugin {
 
 export default defineConfig({
   plugins: [
-    omitCopilotkitUiStyles(),
     // Mode "server" makes Vite read `.env` and `.env.server` side by side: the two files the server is
     // started with.
     thisMachineOnly(loadEnv("server", settingsDir, "")),
+    omitCopilotkitUiStyles(),
     announceServerPort(apiPort.port),
     tanstackRouter({
       autoCodeSplitting: true,

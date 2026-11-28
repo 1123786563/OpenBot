@@ -45,6 +45,7 @@ type UploadedAttachment = {
 export function uploadToChannel(
   channelId: string,
   uploadGroup: string,
+  requestId?: string,
 ): (file: File) => Promise<AttachmentUploadResult> {
   return async (file: File): Promise<AttachmentUploadResult> => {
     const formData = new FormData();
@@ -60,6 +61,7 @@ export function uploadToChannel(
      * sweeper's window expired. Sending the group is what makes the two sides count the same rows.
      */
     formData.append("uploadGroup", uploadGroup);
+    if (requestId) formData.append("requestId", requestId);
 
     const response = await fetch(`/api/channels/${channelId}/attachments`, {
       method: "POST",

@@ -34,6 +34,11 @@ volume map. Enroll each of those users in OpenShell on every API replica.
 Keep the existing computer gateway configured and set the variables below on
 every replica. [OpenShell execution pilot](../../configuration.md#openshell-execution-pilot)
 
+On a machine started by `scripts/start.sh` or `bun run dev`, these variables
+can live in `deploy/.local/pilot.env` instead of the settings files: both
+launches read it, a value there wins over the settings files and over
+Infisical, and a machine without the file is unaffected.
+
 ```dotenv
 OPENBOT_CUBE_API_URL=https://cube-api.pilot.internal
 OPENBOT_CUBE_BROWSER_TEMPLATE=template-id

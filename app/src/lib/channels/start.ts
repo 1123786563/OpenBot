@@ -3,6 +3,11 @@ import { MutationObserver, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import type { ComposerDraft } from "@/components/channels/composer";
+import {
+  stagedRowId,
+  uploadToChannel,
+} from "@/components/channels/composer/attachments";
+import { t } from "@/i18n";
 import type { StoredThread } from "@/lib/copilot/thread-messages";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
@@ -23,10 +28,16 @@ import {
   pendingAttachmentRefs,
   readPendingStart,
   restorePendingAttachments,
+  type StartDraft,
   type StartRecipient,
   type StartRecord,
   savePendingStart,
 } from "./pending-start";
+import {
+  deletePendingFile,
+  readPendingFile,
+  savePendingFile,
+} from "./pending-files";
 import { channelKeys } from "./queries";
 import { CoworkerRoutingRefusedError, routeMessage } from "./route";
 
@@ -72,18 +83,56 @@ export function useSubmitConversationStart(owner: string | undefined) {
     setError(null);
     try {
       const id = newId();
-      const attachments = pendingAttachmentRefs(draft.attachments);
-      savePendingStart(owner, id, {
-        state: "pending",
-        progress: { phase: "creating" },
-        draft: {
-          text: draft.text,
-          commandIds: draft.commandIds,
-          attachments,
-          recipient,
-          model,
-        },
-      });
+      const files: string[] = [];
+      const attachments: StartDraft["attachments"] = [];
+      try {
+        if (recipient.kind === "group" && draft.attachments.length > 0) {
+          throw new Error(
+            "Remove the attachments before sending to multiple Bots.",
+          );
+        }
+        for (const attachment of draft.attachments) {
+          const metadata = attachment.metadata;
+          if (
+            attachment.status === "ready" &&
+            metadata &&
+            typeof metadata === "object" &&
+            "firstMessageFile" in metadata &&
+            metadata.firstMessageFile instanceof File
+          ) {
+            const file = metadata.firstMessageFile;
+            if (attachment.type !== "image" && attachment.type !== "document") {
+              throw new Error("This file type cannot be attached.");
+            }
+            const localFileKey = JSON.stringify([owner, id, attachment.id]);
+            await savePendingFile(localFileKey, file);
+            files.push(localFileKey);
+            attachments.push({
+              localFileKey,
+              uploadRequestId: newId(),
+              name: file.name,
+              mimeType: file.type,
+              type: attachment.type,
+            });
+          } else {
+            attachments.push(...pendingAttachmentRefs([attachment]));
+          }
+        }
+        savePendingStart(owner, id, {
+          state: "pending",
+          progress: { phase: "creating" },
+          draft: {
+            text: draft.text,
+            commandIds: draft.commandIds,
+            attachments,
+            recipient,
+            model,
+          },
+        });
+      } catch (error) {
+        await Promise.allSettled(files.map(deletePendingFile));
+        throw error;
+      }
       onSaved?.();
 
       const open = () =>
@@ -189,6 +238,36 @@ export function resumeConversationStart(
             .catch(() => undefined);
           throw error;
         }
+      }
+      for (const attachment of draft.attachments) {
+        if (!("localFileKey" in attachment)) continue;
+        const file = await readPendingFile(attachment.localFileKey);
+        const uploaded = await uploadToChannel(
+          channel.id,
+          id,
+          attachment.uploadRequestId,
+        )(file);
+        const attachmentId = stagedRowId(uploaded);
+        if (!attachmentId)
+          throw new Error("The upload did not return an attachment.");
+        const current = readPendingStart(owner, id);
+        if (!current) throw new Error("The saved message was discarded.");
+        if (current.state === "finished") return current;
+        draft = {
+          ...draft,
+          attachments: draft.attachments.map((entry) =>
+            entry === attachment
+              ? {
+                  attachmentId,
+                  name: attachment.name,
+                  mimeType: attachment.mimeType,
+                  type: attachment.type,
+                }
+              : entry,
+          ),
+        };
+        save({ state: "pending", draft, progress });
+        await deletePendingFile(attachment.localFileKey).catch(() => undefined);
       }
       const latest = readPendingStart(owner, id);
       if (latest?.state === "finished") return latest;
@@ -320,7 +399,9 @@ export async function resumeDirectFirstMessage({
         ? "Resend message uses the original message so it appears only once."
         : !historyChecked
           ? "The full conversation couldn’t load. Check for message loads it again without sending a copy."
-          : "Your browser has saved a copy. Check for message refreshes the conversation without sending it again.",
+          : start.draft.attachments.length > 0
+            ? t("conversation.delivery.attachments")
+            : t("conversation.delivery.checkOnly"),
     };
   };
 

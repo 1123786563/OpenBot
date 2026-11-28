@@ -80,6 +80,14 @@ describe("the Bot's commands in its live shell", () => {
     expect(second.stdout.trim()).toBe(pid ?? "");
   }, 20_000);
 
+  test("a command without a trailing newline returns only its own output", async () => {
+    const live = shell();
+    for (const command of ["printf one", "printf two", "printf three"]) {
+      const result = await live.run({ command });
+      expect(result.stdout).toBe(command.slice("printf ".length));
+    }
+  }, 20_000);
+
   test("a failing command reports its own exit code, and the shell carries on", async () => {
     const live = shell();
     const failed = await live.run({ command: "ls /no/such/place" });

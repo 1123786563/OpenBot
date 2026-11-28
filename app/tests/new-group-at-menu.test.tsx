@@ -17,9 +17,17 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { text } from "prompt-area/helpers";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
+import {
+  composeDraftKey,
+  draftSegments,
+  readComposeDraft,
+  writeComposeDraft,
+} from "@/lib/channels/compose-draft";
+import { savePendingStart } from "@/lib/channels/pending-start";
 import {
   type DeploymentCapabilities,
   deploymentKeys,
@@ -75,6 +83,8 @@ const CREATED = agent({ id: "created-bot", name: "Research Bot" });
 let sent: { method: string; path: string; body: unknown }[] = [];
 let originalFetch: typeof fetch;
 let loseGroupSendResponse = false;
+let refuseRoute = false;
+let groupMessages: unknown[] = [];
 let originalRect: typeof Range.prototype.getBoundingClientRect;
 
 beforeAll(() => {
@@ -120,7 +130,15 @@ beforeAll(() => {
         },
       });
     if (url.pathname === "/api/route" && method === "POST")
-      return NativeResponse.json({ agentId: CLAUDE.id, reason: "chosen" });
+      return refuseRoute
+        ? NativeResponse.json(
+            {
+              error: "More than one coworker matches that name.",
+              names: ["Data Analyst", "Risk Analyst"],
+            },
+            { status: 409 },
+          )
+        : NativeResponse.json({ agentId: CLAUDE.id, reason: "chosen" });
     if (url.pathname === "/api/agents" && method === "POST")
       return NativeResponse.json({ agent: CREATED }, { status: 201 });
     if (url.pathname === "/api/agents")
@@ -145,7 +163,11 @@ beforeAll(() => {
     }
     if (url.pathname === "/api/groups/group-1") {
       if (method === "GET")
-        return NativeResponse.json({ bots: [], people: [], messages: [] });
+        return NativeResponse.json({
+          bots: [],
+          people: [],
+          messages: groupMessages,
+        });
       if (method === "POST") {
         if (loseGroupSendResponse) {
           loseGroupSendResponse = false;
@@ -176,7 +198,10 @@ afterEach(() => {
   cleanup();
   sent = [];
   loseGroupSendResponse = false;
+  refuseRoute = false;
+  groupMessages = [];
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 afterAll(async () => {
@@ -506,4 +531,227 @@ test("a group first message reuses its ID after a lost response and reload", asy
       body: { id: startId, text: message, agentId: null },
     },
   ]);
+});
+
+test("a group first message the server already holds opens the group without a second post", async () => {
+  loseGroupSendResponse = true;
+  const bots = [CLAUDE, ASSISTANT];
+  const view = renderNewConversation(bots);
+  await addToTo(view, CLAUDE.name);
+  await addToTo(view, ASSISTANT.name);
+  const message = "The group already has this message.";
+  const user = userEvent.setup({ document });
+  await user.type(
+    await view.findByRole("textbox", { name: "Message" }),
+    message,
+  );
+  await user.keyboard("{Enter}");
+  await view.findByText("Couldn't continue the conversation.");
+  const startPath = view.router.state.location.pathname;
+  const startId = startPath.slice("/start/".length);
+  const stored = JSON.parse(
+    localStorage.getItem(
+      `openbot:conversation-start:new-group-tester:${startId}`,
+    ) ?? "null",
+  );
+  expect(stored.progress).toEqual({
+    phase: "submitted",
+    channelId: "group-1",
+  });
+  view.unmount();
+
+  groupMessages = [
+    {
+      id: startId,
+      channelId: "group-1",
+      ownerUserId: "new-group-tester",
+      agentId: null,
+      text: message,
+      status: "completed",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  const posts = () => sent.filter(({ method }) => method === "POST");
+  const before = posts().length;
+  const reloaded = renderNewConversation(bots, startPath);
+  await reloaded.findByText("The group");
+  expect(reloaded.router.state.location.pathname).toBe("/group/group-1");
+  expect(posts()).toHaveLength(before);
+  expect(
+    JSON.parse(
+      localStorage.getItem(
+        `openbot:conversation-start:new-group-tester:${startId}`,
+      ) ?? "null",
+    ),
+  ).toEqual({ state: "finished", channelId: "group-1", group: true });
+});
+
+test("a delivered group start keeps neither message text nor attachment references", async () => {
+  const startId = crypto.randomUUID();
+  savePendingStart("new-group-tester", startId, {
+    state: "pending",
+    progress: { phase: "submitted", channelId: "group-1" },
+    draft: {
+      text: "Already delivered to the group",
+      commandIds: [],
+      attachments: [
+        {
+          attachmentId: "attachment-1",
+          name: "brief.pdf",
+          type: "document",
+        },
+      ],
+      recipient: {
+        kind: "group",
+        agentIds: [CLAUDE.id, ASSISTANT.id],
+        addressedAgentId: null,
+      },
+      model: null,
+    },
+  });
+  groupMessages = [
+    {
+      id: startId,
+      channelId: "group-1",
+      ownerUserId: "new-group-tester",
+      agentId: null,
+      text: "Already delivered to the group",
+      status: "completed",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  const view = renderNewConversation([CLAUDE, ASSISTANT], `/start/${startId}`);
+  await view.findByText("The group");
+  const stored = localStorage.getItem(
+    `openbot:conversation-start:new-group-tester:${startId}`,
+  );
+  expect(JSON.parse(stored ?? "null")).toEqual({
+    state: "finished",
+    channelId: "group-1",
+    group: true,
+  });
+  for (const kept of [
+    "Already delivered to the group",
+    "brief.pdf",
+    "attachment-1",
+  ])
+    expect(stored).not.toContain(kept);
+  expect(sent.filter(({ method }) => method === "POST")).toEqual([]);
+});
+
+test("choosing Bots after a routing refusal carries the saved text and an attachment re-add checklist", async () => {
+  refuseRoute = true;
+  const startId = crypto.randomUUID();
+  const message = "Carry this text to the new conversation";
+  savePendingStart("new-group-tester", startId, {
+    state: "pending",
+    progress: { phase: "creating" },
+    draft: {
+      text: message,
+      commandIds: [],
+      attachments: [
+        {
+          attachmentId: "attachment-1",
+          name: "brief.pdf",
+          mimeType: "application/pdf",
+          type: "document",
+        },
+      ],
+      recipient: { kind: "route", fallbackId: CLAUDE.id },
+      model: null,
+    },
+  });
+  const view = renderNewConversation([CLAUDE, ASSISTANT], `/start/${startId}`);
+  await view.findByText("Choose a Bot for this message.");
+  writeComposeDraft(
+    composeDraftKey("new-group-tester", "unrelated-composition", "message"),
+    [text("An unrelated draft")],
+  );
+  const user = userEvent.setup({ document });
+  await user.click(
+    view.getByRole("button", { name: "Choose Bots in a new conversation" }),
+  );
+  await view.findByRole("heading", { name: "New conversation" });
+  const editor = await view.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect(editor.textContent).toBe(message));
+  expect(
+    view.getByText(
+      "Attachments aren’t copied. Attach these again once the conversation opens: brief.pdf.",
+    ),
+  ).toBeTruthy();
+  expect(view.getByText(/Your original message stays saved/)).toBeTruthy();
+  expect(view.queryByText(/Original draft kept on Home/)).toBeNull();
+  // Picking a Bot is the page's own navigation and must keep the checklist.
+  await addToTo(view, CLAUDE.name);
+  expect(view.getByText("brief.pdf", { exact: false })).toBeTruthy();
+  const editorAfterPick = view.getByRole("textbox", { name: "Message" });
+  expect(editorAfterPick.textContent).toBe(message);
+  const composition = view.router.state.location.state.newConversation;
+  expect(composition).toBeTruthy();
+  expect(
+    readComposeDraft(
+      composeDraftKey("new-group-tester", composition ?? "", "message"),
+      draftSegments,
+    ),
+  ).toEqual([text(message)]);
+  expect(composition).not.toBe("unrelated-composition");
+  expect(
+    readComposeDraft(
+      composeDraftKey("new-group-tester", "unrelated-composition", "message"),
+      draftSegments,
+    ),
+  ).toEqual([text("An unrelated draft")]);
+  expect(
+    localStorage.getItem(
+      `openbot:conversation-start:new-group-tester:${startId}`,
+    ),
+  ).toContain(message);
+  expect(
+    sent.some(
+      (write) =>
+        write.path.startsWith("/api/groups") || write.path === "/api/channels",
+    ),
+  ).toBe(false);
+});
+
+test("a start with only attachments hands over its checklist and no empty draft", async () => {
+  refuseRoute = true;
+  const startId = crypto.randomUUID();
+  savePendingStart("new-group-tester", startId, {
+    state: "pending",
+    progress: { phase: "creating" },
+    draft: {
+      text: "",
+      commandIds: [],
+      attachments: [
+        { attachmentId: "a", name: "one.pdf", type: "document" },
+        { attachmentId: "b", name: "one.pdf", type: "document" },
+        { attachmentId: "c", name: "shot.png", type: "image" },
+      ],
+      recipient: { kind: "route" },
+      model: null,
+    },
+  });
+  const view = renderNewConversation([CLAUDE, ASSISTANT], `/start/${startId}`);
+  await view.findByText("Choose a Bot for this message.");
+  expect(view.queryByRole("button", { name: "Copy message text" })).toBeNull();
+  const user = userEvent.setup({ document });
+  await user.click(
+    view.getByRole("button", { name: "Choose Bots in a new conversation" }),
+  );
+  await view.findByRole("heading", { name: "New conversation" });
+  const editor = await view.findByRole("textbox", { name: "Message" });
+  expect(editor.textContent).toBe("");
+  const composition = view.router.state.location.state.newConversation;
+  expect(
+    readComposeDraft(
+      composeDraftKey("new-group-tester", composition ?? "", "message"),
+      draftSegments,
+    ),
+  ).toBeUndefined();
+  expect(
+    view.getByText(
+      "Attachments aren’t copied. Attach these again once the conversation opens: one.pdf, one.pdf, shot.png.",
+    ),
+  ).toBeTruthy();
 });

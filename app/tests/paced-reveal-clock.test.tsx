@@ -17,14 +17,18 @@ import { settleReactWork } from "./settle-react-work";
 
 let now = 0;
 let queue: FrameRequestCallback[] = [];
-const real = {
-  raf: globalThis.requestAnimationFrame,
-  caf: globalThis.cancelAnimationFrame,
-  now: performance.now.bind(performance),
-};
+let restoreFrameClock: () => void;
 
 beforeAll(() => {
   GlobalRegistrator.register({ url: "http://localhost/" });
+  const raf = window.requestAnimationFrame;
+  const caf = window.cancelAnimationFrame;
+  const originalNow = performance.now.bind(performance);
+  restoreFrameClock = () => {
+    window.requestAnimationFrame = raf;
+    window.cancelAnimationFrame = caf;
+    performance.now = originalNow;
+  };
   window.requestAnimationFrame = (callback) => {
     queue.push(callback);
     return queue.length;
@@ -40,9 +44,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  window.requestAnimationFrame = real.raf;
-  window.cancelAnimationFrame = real.caf;
-  performance.now = real.now;
+  restoreFrameClock();
   await settleReactWork();
   GlobalRegistrator.unregister();
 });

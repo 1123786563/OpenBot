@@ -3,7 +3,7 @@
  *
  * Every operation the app uses calls this with the address, method, headers and serialised body the spec gives it. It
  * goes to the deployment the app was built for, in the organization the signed-in person is working in, with the
- * session's cookie and never the platform's own cookie jar, and a refusal is thrown as an {@link ApiError} in the server's own sentence.
+ * session's cookie from the browser or the native auth client. A refusal is thrown as an {@link ApiError}.
  * Every request names the app and the OpenBot release it was built from (`OpenBot-Client: mobile/<release>`), and a
  * refusal of this app as too old (CLIENT_UPDATE_REQUIRED) is also told to the root layout, which shows Update OpenBot.
  */
@@ -135,6 +135,11 @@ const organizations = createOrganizationChoice(
   () => signedInPerson,
 );
 
+async function organizationSession(): Promise<string | null> {
+  if (auth.usesBrowserSession) return signedInPerson ?? null;
+  return authClient.getCookie();
+}
+
 /** An address with its organization filled in, for whoever holds `cookie`. Any other address is left as it is. */
 function inOrganization(url: string, cookie: string | null): Promise<string> {
   return organizations.address(
@@ -167,7 +172,7 @@ async function organizationFor(
  * the organization, starting with a slash.
  */
 export async function organizationAddress(rest: string): Promise<string> {
-  return inOrganization(`${ORGANIZATION}${rest}`, await authClient.getCookie());
+  return inOrganization(`${ORGANIZATION}${rest}`, await organizationSession());
 }
 
 /**
@@ -215,7 +220,7 @@ export async function organizationsHeld(): Promise<ListedOrganization[]> {
 
 /** The signed-in person's organizations, and the one they work in. */
 export async function organizationChoices(): Promise<OrganizationChoices> {
-  return organizations.choices((await authClient.getCookie()) ?? "");
+  return organizations.choices((await organizationSession()) ?? "");
 }
 
 /**
@@ -225,7 +230,7 @@ export async function organizationChoices(): Promise<OrganizationChoices> {
 export async function chooseOrganization(
   id: string,
 ): Promise<OrganizationChoices> {
-  return organizations.choose(id, (await authClient.getCookie()) ?? "");
+  return organizations.choose(id, (await organizationSession()) ?? "");
 }
 
 /** The person asking, as the API addresses them in its `people/{personId}` operations. */
@@ -280,16 +285,16 @@ export async function apiRequest<T>(
   if (apiWrite(url, method) && !headers["idempotency-key"])
     headers["idempotency-key"] = Crypto.randomUUID();
   Object.assign(headers, clientHeaders());
-  const cookie = anonymous ? null : await authClient.getCookie();
-  if (cookie) headers.cookie = cookie;
-  const address = await inOrganization(url, cookie);
-  const organization = await organizationFor(address, cookie);
+  const session = anonymous ? null : await organizationSession();
+  if (session && !auth.usesBrowserSession) headers.cookie = session;
+  const address = await inOrganization(url, session);
+  const organization = await organizationFor(address, session);
   if (organization) headers[ORGANIZATION_HEADER] = organization;
   const response = await fetch(`${serverUrl}${address}`, {
     ...init,
     method,
     headers,
-    credentials: "omit",
+    credentials: auth.usesBrowserSession && !anonymous ? "same-origin" : "omit",
   });
   if (response.status === 204) return undefined as T;
   const body: unknown = await response.json().catch(() => null);
@@ -297,14 +302,14 @@ export async function apiRequest<T>(
     const { said, code, minimumVersion, security } = refusal(body);
     // Sent as somebody signed in and refused as nobody: the session is gone, and the app reads it again.
     // Except a hosted OpenBot's sign-in needing renewal, which is never being signed out: the session still works.
-    if (response.status === 401 && cookie && code !== RENEWAL_REQUIRED)
+    if (response.status === 401 && session && code !== RENEWAL_REQUIRED)
       reportSessionRefused();
     /*
      * A hosted OpenBot's proof ran out: renewed through the hosted sign-in in the in-app browser, then the request is
      * sent again, once, exactly as it was, its Idempotency-Key and all, so a write that did land is answered as a
      * repeat and never done twice. Refused for renewal again, the person is offered "Sign in again".
      */
-    if (code === RENEWAL_REQUIRED && cookie) {
+    if (code === RENEWAL_REQUIRED && session) {
       const signIn = signInAddress(response.headers.get(SIGN_IN_HEADER));
       if (!renewed && auth.renewHostedSignIn) {
         const { cookie: _sent, ...again } = headers;
@@ -317,9 +322,9 @@ export async function apiRequest<T>(
     // organizations again and works in another of theirs, and Home is told.
     if (
       code === ORGANIZATION_NOT_FOUND &&
-      cookie &&
+      session &&
       organization &&
-      (await organizations.gone(organization, cookie))
+      (await organizations.gone(organization, session))
     )
       reportOrganizationGone();
     if (code === CLIENT_UPDATE_REQUIRED) {

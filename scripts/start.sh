@@ -243,6 +243,11 @@ stop_server_processes_for_restart() {
   stop_matching "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env src/production-entry.ts"
   stop_matching "bun --env-file=../.env src/index.ts"
   stop_matching "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/infisical/.env.openbot-client --preload ./scripts/infisical-env.ts --watch src/index.ts"
+  # The same launches since deploy/.local/pilot.env joined the command line. The shorter lines above
+  # stay for a server an older start.sh or `bun run dev` left running.
+  stop_matching "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/.local/pilot.env src/production-entry.ts"
+  stop_matching "bun --env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts --env-file=../deploy/.local/pilot.env src/production-entry.ts"
+  stop_matching "bun --env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/infisical/.env.openbot-client --env-file=../deploy/.local/pilot.env --preload ./scripts/infisical-env.ts --watch src/index.ts"
 }
 
 echo
@@ -448,9 +453,15 @@ fi
 # must stay final, and a value that came from a file could not be told from one of those. Without the
 # identity, the deployment's, the server's and the agents' files are the configuration. Word-split on
 # purpose: one flag per word.
-SERVER_LAUNCH="--env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env"
+#
+# deploy/.local/pilot.env is this machine's own settings, the CubeSandbox and OpenShell pilot's among
+# them, and `bun run dev` names it as well. It is the last env file on the command line, so its values
+# win over the settings files and, through the preload, over Infisical; what the shell exports still
+# wins over it. Bun keeps an env file named on the command line that does not exist, so a machine
+# without the file starts the same way. See stop_server_processes_for_restart for the launch lines.
+SERVER_LAUNCH="--env-file=../deploy/openbot/.env --env-file=../deploy/openbot/.env.server --env-file=../deploy/agents/.env --env-file=../deploy/.local/pilot.env"
 if [ -f "$ROOT/deploy/infisical/.env.openbot-client" ]; then
-  SERVER_LAUNCH="--env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts"
+  SERVER_LAUNCH="--env-file=../deploy/infisical/.env.openbot-client --preload=./scripts/infisical-env.ts --env-file=../deploy/.local/pilot.env"
 fi
 # Redirect the whole background group. Redirecting only Bun inside `(command &)` leaves its
 # waiting Bash wrapper holding the updater's captured stdout/stderr open after this script exits.

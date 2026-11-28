@@ -1,5 +1,6 @@
+import { EventType } from "@ag-ui/core";
 import { describe, expect, test } from "bun:test";
-import { stoppedReason } from "../src/lib/copilot/stopped-turn";
+import { followLastRun, stoppedReason } from "../src/lib/copilot/stopped-turn";
 
 /**
  * What a person is told when a turn ends and no answer came.
@@ -64,5 +65,45 @@ describe("the reason a turn ended", () => {
     expect(stoppedReason({ message: "not a string or an Error" })).toBe(
       "The Bot stopped without saying why.",
     );
+  });
+});
+
+describe("how the last run in a replayed thread ended", () => {
+  test("a run the person stopped is not a failure, where any other ending still is", () => {
+    // What the server writes for a run it stopped, and replays when the thread is joined
+    // (`stoppedRunEvent` in direct-chat-replay.ts): a RUN_ERROR that carries the reason.
+    const heard: Parameters<
+      Parameters<typeof followLastRun>[0]["subscribe"]
+    >[0][] = [];
+    const last = followLastRun({
+      subscribe: (subscriber) => {
+        heard.push(subscriber);
+        return { unsubscribe: () => undefined };
+      },
+    });
+    const [agent] = heard;
+    if (!agent) throw new Error("Nothing subscribed.");
+
+    agent.onRunStartedEvent?.({} as never);
+    // The hook reads only the event; the rest of what a subscriber also gets is left out.
+    agent.onRunErrorEvent?.({
+      event: {
+        type: EventType.RUN_ERROR,
+        message: "The Bot run was stopped.",
+        code: "stopped",
+      },
+    } as never);
+    expect(last.failure()).toBeNull();
+    expect(last.running()).toBe(false);
+
+    agent.onRunStartedEvent?.({} as never);
+    agent.onRunErrorEvent?.({
+      event: {
+        type: EventType.RUN_ERROR,
+        message: "The Bot run lost access.",
+        code: "access_revoked",
+      },
+    } as never);
+    expect(last.failure()).toBe("The Bot run lost access.");
   });
 });

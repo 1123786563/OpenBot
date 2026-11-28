@@ -50,6 +50,8 @@ const originalFetch = global.fetch;
 let writes: { method: string; path: string; body: unknown }[];
 let skills: PluginSkill[];
 let hiddenRosterStatus: number;
+/** The status the next DELETE answers with, or 200. */
+let deleteStatus: number;
 
 function skill(overrides: Partial<PluginSkill> = {}): PluginSkill {
   return {
@@ -71,6 +73,7 @@ beforeEach(() => {
   writes = [];
   skills = [skill()];
   hiddenRosterStatus = 200;
+  deleteStatus = 200;
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
@@ -80,6 +83,10 @@ beforeEach(() => {
         new Response(JSON.stringify(body), {
           headers: { "content-type": "application/json" },
         });
+      if (method === "DELETE") {
+        writes.push({ method, path: url, body: null });
+        return new Response(null, { status: deleteStatus });
+      }
       if (method !== "GET") {
         writes.push({
           method,
@@ -310,6 +317,12 @@ describe("a skill's page", () => {
     const grace = await view.findByRole("switch", {
       name: "Grace offers Triage the inbox",
     });
+    // The consequence is stated before any switch is pressed.
+    expect(
+      view.getByText(
+        "These switches update the / menu immediately. The form below saves the skill’s content separately.",
+      ),
+    ).toBeTruthy();
     fireEvent.click(grace);
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes[0]).toEqual({
@@ -325,6 +338,140 @@ describe("a skill's page", () => {
     expect(writes[1]?.path).toBe(
       "/api/plugins/grants?kind=skill&ref=triage&agentId=bot-ada",
     );
+  });
+
+  test("deleting names the Bots that offer the skill", async () => {
+    const { view } = renderAt("/admin/skills/triage");
+    const user = userEvent.setup({ document });
+    await user.click(
+      await view.findByRole("button", { name: /^Delete People can.t run it/ }),
+    );
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Delete Triage the inbox?",
+    });
+    expect(dialog.textContent).toContain("Ada offers this skill.");
+    expect(dialog.textContent).not.toContain("Grace");
+  });
+
+  test("deleting a skill no Bot offers says so, and does not name any", async () => {
+    skills = [skill({ grantedTo: [] })];
+    const { view } = renderAt("/admin/skills/triage");
+    const user = userEvent.setup({ document });
+    await user.click(
+      await view.findByRole("button", { name: /^Delete People can.t run it/ }),
+    );
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Delete Triage the inbox?",
+    });
+    expect(dialog.textContent).toContain("No Bot offers this skill.");
+    expect(dialog.textContent).not.toMatch(/Ada|Grace/);
+    expect(dialog.textContent).not.toContain("Couldn't read");
+  });
+
+  test("deleting says the Bot list could not be read instead of naming none", async () => {
+    hiddenRosterStatus = 503;
+    const { view } = renderAt("/admin/skills/triage");
+    const user = userEvent.setup({ document });
+    await user.click(
+      await view.findByRole("button", { name: /^Delete People can.t run it/ }),
+    );
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Delete Triage the inbox?",
+    });
+    expect(dialog.textContent).toContain(
+      "Couldn't read the Bot list, so this may not name every Bot that offers it.",
+    );
+    expect(dialog.textContent).not.toContain("No Bot offers this skill.");
+    expect(dialog.textContent).not.toMatch(/Ada|Grace/);
+  });
+
+  test("cancelling a delete sends nothing and returns focus to its row", async () => {
+    const { view } = renderAt("/admin/skills/triage");
+    const user = userEvent.setup({ document });
+    const row = await view.findByRole("button", {
+      name: /^Delete People can.t run it/,
+    });
+    await user.click(row);
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Delete Triage the inbox?",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(view.queryByRole("alertdialog")).toBeNull());
+    expect(writes).toEqual([]);
+    expect(document.activeElement).toBe(row);
+    expect(
+      view.getByRole("switch", { name: "Ada offers Triage the inbox" }),
+    ).toBeTruthy();
+  });
+
+  test("activating Delete twice sends one DELETE", async () => {
+    // The first DELETE is held open, so the second activation lands while it is in flight.
+    let release: () => void = () => {};
+    const holding = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const serve = global.fetch;
+    let attempts = 0;
+    global.fetch = Object.assign(
+      async (...args: Parameters<typeof fetch>) => {
+        if (args[1]?.method !== "DELETE") return serve(...args);
+        attempts += 1;
+        if (attempts === 1) await holding;
+        return serve(...args);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { view, router } = renderAt("/admin/skills/triage");
+    const user = userEvent.setup({ document });
+    await user.click(
+      await view.findByRole("button", { name: /^Delete People can.t run it/ }),
+    );
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Delete Triage the inbox?",
+    });
+    const confirm = within(dialog).getByRole("button", { name: "Delete" });
+    await user.click(confirm);
+    await waitFor(() => expect(attempts).toBe(1));
+    expect(
+      within(dialog).getByRole("button", { name: "Deleting…" }),
+    ).toBeTruthy();
+    confirm.click();
+    fireEvent.click(confirm);
+    expect(attempts).toBe(1);
+    release();
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/admin/skills"),
+    );
+    expect(attempts).toBe(1);
+    expect(writes).toEqual([
+      { method: "DELETE", path: "/api/plugins/skills/triage", body: null },
+    ]);
+  });
+
+  test("a failed delete keeps the confirmation and retries in place", async () => {
+    const { view, router } = renderAt("/admin/skills/triage");
+    const user = userEvent.setup({ document });
+    await user.click(
+      await view.findByRole("button", { name: /^Delete People can.t run it/ }),
+    );
+    const dialog = await view.findByRole("alertdialog", {
+      name: "Delete Triage the inbox?",
+    });
+    deleteStatus = 503;
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect((await within(dialog).findByRole("alert")).textContent).toMatch(
+      /Couldn't delete this skill/,
+    );
+    expect(router.state.location.pathname).toBe("/admin/skills/triage");
+    deleteStatus = 200;
+    await user.click(within(dialog).getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/admin/skills"),
+    );
+    expect(writes).toEqual([
+      { method: "DELETE", path: "/api/plugins/skills/triage", body: null },
+      { method: "DELETE", path: "/api/plugins/skills/triage", body: null },
+    ]);
   });
 
   test("deleting asks first, then goes back to the list", async () => {

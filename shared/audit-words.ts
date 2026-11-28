@@ -314,6 +314,8 @@ const CHANGES: Readonly<Record<string, string>> = {
   mcp_server_removed: "Turn off an app",
   skill_installed: "Save a skill",
   skill_uninstalled: "Delete a skill",
+  // A Bot's app source for memory, from its Memory page; see memory/store.ts `removeSource`.
+  memory_source_removed: "Remove an app source",
   // A person's folders on their own computer, from Settings > Computer; see host-access/routes.ts.
   host_folder_granted: "Give a Bot a folder",
   host_folder_revoked: "Take a folder from a Bot",

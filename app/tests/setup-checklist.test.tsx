@@ -368,3 +368,37 @@ test("a check that fails says so, and Check again stays", async () => {
   ).not.toBeNull();
   expect(view.getByRole("button", { name: "Check again" })).not.toBeNull();
 });
+
+test("a failed recheck keeps the last results and Check again recovers in place", async () => {
+  serving(ADMIN);
+  const view = draw();
+  await view.findByRole("list", { name: "Setup" });
+  const check = view.getByRole("button", { name: "Check again" });
+  onCheck = () => {
+    answer = () => Response.json({}, { status: 503 });
+  };
+
+  check.focus();
+  fireEvent.click(check);
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Couldn't check again. The list below is from the last check.",
+  );
+  expect(rowOf(view, "model").getByText("Needs setup")).toBeTruthy();
+  expect(document.activeElement === check).toBe(true);
+
+  onCheck = () => {
+    serving({
+      ...ADMIN,
+      rows: ADMIN.rows.map((row) => ({
+        ...row,
+        ready: true,
+        status: "ready",
+        fix: null,
+      })),
+    });
+  };
+  fireEvent.click(check);
+  await view.findByText("Everything is set up.");
+  expect(view.queryByRole("alert")).toBeNull();
+  expect(document.activeElement === check).toBe(true);
+});

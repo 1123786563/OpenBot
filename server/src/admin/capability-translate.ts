@@ -41,7 +41,6 @@ import {
   CAPABILITY_LABELS,
   type CapabilityRow,
   DEFAULT_CAPABILITIES,
-  isCapability,
 } from "./capabilities";
 import {
   applyCapabilityChanges,
@@ -489,6 +488,13 @@ const authoringInput = z
     text: z.string().trim().min(1).max(2_000),
   })
   .optional();
+/**
+ * The switches a preview read, echoed back by a save. Empty is a deployment with no switches yet.
+ * Same scope and permission as a change; a stored switch is on or off, never inherited.
+ */
+const snapshotInput = z.array(
+  z.strictObject({ ...changeInput.shape, allowed: z.boolean() }),
+);
 
 /** The changes a body carries, the organization's with no id, or the sentence saying why not. */
 function changesFrom(
@@ -524,9 +530,10 @@ const UNAVAILABLE = "Admin settings aren't available on this server.";
  *   request that reaches the model is on the trail (`capability.changes_translated`).
  * - `POST /preview`: `{ changes }` in, each member's permissions before and after and the recent use
  *   of what anybody loses (`CapabilityPreview`). Writes nothing.
- * - `POST /batch`: `{ changes, authoring? }`. Refused, with what is wrong, unless every change checks;
- *   then written in one transaction, each switch on the trail as `capability.changed` with what it
- *   was before and the sentence it was written from.
+ * - `POST /batch`: `{ changes, basedOn?, authoring? }`. Refused, with what is wrong, unless every
+ *   change checks, and refused again when `basedOn` is no longer what is stored; then written in one
+ *   transaction together with each switch's `capability.changed` row, which says what it was before
+ *   and the sentence it was written from.
  *
  * Admin only, like every other switch.
  */
@@ -628,16 +635,18 @@ export function createCapabilityChangeRoutes(options: {
     if (!controls) return context.json({ error: UNAVAILABLE }, 503);
     const members = await membersOf(controls);
     const vocabulary = await vocabularyOf(controls, members);
-    return context.json(
-      await previewCapabilityChanges({
+    return context.json({
+      ...(await previewCapabilityChanges({
         changes: parsed.changes,
         rows: vocabulary.rows,
         members,
         groups: vocabulary.groups.map((group) => group.name),
         ...(options.auditReader ? { reader: options.auditReader } : {}),
         now: options.now?.() ?? new Date(),
-      }),
-    );
+      })),
+      // The switches this answer was worked out from, so a save can say what it read.
+      basedOn: vocabulary.rows,
+    });
   });
 
   routes.post("/batch", options.requireUser, adminOnly, async (context) => {
@@ -653,6 +662,15 @@ export function createCapabilityChangeRoutes(options: {
           error:
             'authoring must be { source: "english", text } with text of at most 2000 characters.',
         },
+        400,
+      );
+    // Optional: a caller that never read a preview saves against whatever is in force now.
+    const reading = (body as { basedOn?: unknown } | null)?.basedOn;
+    const basedOn =
+      reading === undefined ? undefined : snapshotInput.safeParse(reading);
+    if (basedOn && !basedOn.success)
+      return context.json(
+        { error: "basedOn must be the switches the preview read." },
         400,
       );
     const controls = enterpriseControls();
@@ -671,34 +689,42 @@ export function createCapabilityChangeRoutes(options: {
       );
 
     const actor = context.var.actor;
-    const before = await controls.store.capabilityRows();
-    await controls.store.setCapabilities(parsed.changes, actor.email);
-    await controls.refresh();
-    // One id for the switches saved together, so the trail can put them back together.
-    const batch = crypto.randomUUID();
-    for (const change of parsed.changes)
-      await recordAuditEvent(controls.deps.auditStore, {
-        eventType: "capability.changed",
-        targetType: "capability",
-        targetId: change.capability,
-        actorUserId: actor.id,
-        payload: {
-          ...change,
-          title: isCapability(change.capability)
-            ? CAPABILITY_LABELS[change.capability].title
-            : change.capability,
-          by: actor.email,
-          before:
-            before.find(
-              (row) =>
-                row.scopeKind === change.scopeKind &&
-                row.scopeId === change.scopeId &&
-                row.capability === change.capability,
-            )?.allowed ?? null,
-          batch,
+    let saved: boolean;
+    try {
+      saved = await controls.store.setCapabilities(
+        parsed.changes,
+        actor.email,
+        basedOn?.data,
+        {
+          actorId: actor.id,
           ...(authoring.data ? { authoring: authoring.data } : {}),
         },
-      });
+      );
+    } catch (error) {
+      /*
+       * The switches and their rows commit together, so nothing is in force. Saving again is the
+       * same save, and it records each switch with what it was before.
+       */
+      console.error(
+        JSON.stringify({
+          type: "capability-change-unrecorded",
+          error: String(error),
+        }),
+      );
+      return context.json(
+        { error: "Couldn't save the changes. Nothing changed. Try again." },
+        500,
+      );
+    }
+    if (!saved)
+      return context.json(
+        {
+          error:
+            "Permissions changed while you were reviewing them. Review the new impact and save again.",
+        },
+        409,
+      );
+    await controls.refresh();
     return context.json({ saved: parsed.changes });
   });
 

@@ -42,6 +42,17 @@ export type PreviewPerson = {
   capabilities: PreviewCapability[];
 };
 
+/** One switch as stored, with no owner or date: only what decides a permission. */
+export type CapabilitySnapshotRow = {
+  scopeKind: "organization" | "role" | "group";
+  scopeId: string;
+  capability: CapabilityKey;
+  allowed: boolean;
+};
+
+/** Every switch in force, which a preview read and a save says it was based on. */
+export type CapabilitySnapshot = CapabilitySnapshotRow[];
+
 /**
  * Each member's permissions before and after, decided on the server by the rule OpenBot enforces.
  * `people` lists those losing a permission first, then those gaining one, then those keeping one
@@ -49,6 +60,8 @@ export type PreviewPerson = {
  */
 export type CapabilityPreview = {
   check: CapabilityChangesCheck;
+  /** The switches the impact was worked out from. Sent back with the save. */
+  basedOn: CapabilitySnapshot;
   people: PreviewPerson[];
   counts: {
     people: number;

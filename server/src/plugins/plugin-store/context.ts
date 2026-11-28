@@ -2211,6 +2211,7 @@ export function createStoreContext(options: PluginStoreOptions) {
     options,
     database,
     auditStore,
+    auditFor: options.auditFor ?? createAuditStore,
     credentials,
     encryptionKey,
     injectedVendor,

@@ -143,3 +143,95 @@ test("answered, it folds into one line with the answer, and takes no keys", asyn
   await user.keyboard("1{Enter}");
   expect(sent).toEqual([]);
 });
+
+/** A card whose caller says what is on its way, as the approval card does. */
+function HeldCard({
+  sent,
+  submitting = false,
+  error = null,
+  answer,
+}: {
+  sent: [string, string][];
+  submitting?: boolean;
+  error?: string | null;
+  answer?: DecisionAnswer;
+}) {
+  return (
+    <DecisionCard
+      {...(answer ? { answer } : {})}
+      error={error}
+      onSubmit={(value, text) => {
+        sent.push([value, text]);
+      }}
+      options={OPTIONS}
+      submitting={submitting}
+      title="Which environment?"
+    />
+  );
+}
+
+/*
+ * A SEND THAT WENT THROUGH IS FINAL. The card unlocked again as soon as the caller said nothing was
+ * on its way, which is also what it says once the decision is in: until the caller's next read
+ * folded the card away, a second press sent a second decision, and the server refused it.
+ */
+test("a decision that was sent is not sent again while the card is still on screen", async () => {
+  const sent: [string, string][] = [];
+  const view = render(<HeldCard sent={sent} />);
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  // On its way, then through, and still drawn until the caller takes it away.
+  view.rerender(<HeldCard sent={sent} submitting />);
+  view.rerender(<HeldCard sent={sent} />);
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  expect(sent).toEqual([["staging", ""]]);
+});
+
+test("a card that has its answer takes no second decision", async () => {
+  const sent: [string, string][] = [];
+  const answer: DecisionAnswer = {
+    label: "Answered",
+    choice: "Staging",
+    tone: "positive",
+  };
+  const view = render(<HeldCard sent={sent} />);
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  view.rerender(<HeldCard answer={answer} sent={sent} />);
+  // The rows are still folding away, so the button is still on screen.
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  expect(sent).toEqual([["staging", ""]]);
+});
+
+/*
+ * A REFUSED ONE CAN BE PRESSED AGAIN. A send that settles inside one render never says it was on
+ * its way, and the card stayed locked for good: the button looked ready and did nothing.
+ */
+test("a decision that came back refused can be sent again, though nothing showed it was on its way", async () => {
+  const sent: [string, string][] = [];
+  const view = render(<HeldCard sent={sent} />);
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  view.rerender(
+    <HeldCard error="This request was already decided." sent={sent} />,
+  );
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  expect(sent).toEqual([
+    ["staging", ""],
+    ["staging", ""],
+  ]);
+});
+
+test("a decision that came back refused on its way can be sent again too", async () => {
+  const sent: [string, string][] = [];
+  const view = render(<HeldCard sent={sent} />);
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  view.rerender(<HeldCard sent={sent} submitting />);
+  view.rerender(<HeldCard error="Couldn't reach the server." sent={sent} />);
+  await user.click(view.getByRole("button", { name: "Staging" }));
+  expect(sent).toEqual([
+    ["staging", ""],
+    ["staging", ""],
+  ]);
+});

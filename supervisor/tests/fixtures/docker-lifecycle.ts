@@ -619,6 +619,7 @@ describe("package installation on a computer", () => {
 set -eu
 repo=/tmp/openbot-packages
 mkdir -p "$repo/build/DEBIAN" "$repo/build/usr/local/bin"
+chmod 755 "$repo/build/DEBIAN"
 cat > "$repo/build/DEBIAN/control" <<'CONTROL'
 Package: openbot-test-tool
 Version: 1.0

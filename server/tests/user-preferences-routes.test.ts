@@ -180,28 +180,27 @@ test("keeps the person's narration choice without touching the others, and start
   ).toBe(null);
 });
 
-test("saves the skin on the account without touching the other preferences", async () => {
+test("accepts the default skin without touching the other preferences", async () => {
   const { appFor } = fixture();
   const alice = appFor("alice");
   await alice.request(path, patch({ messageListEmphasis: "agent" }));
-  const saved = await alice.request(path, patch({ skin: "opendots" }));
+  const saved = await alice.request(path, patch({ skin: "openbot" }));
   expect(saved.status).toBe(200);
   expect(await saved.json()).toEqual({
     preferences: {
       messageListEmphasis: "agent",
       selfHostBannerDismissed: false,
       narration: null,
-      skin: "opendots",
+      skin: "openbot",
       proactive: "on",
     },
   });
-  // Another browser signed in as Alice reads the same skin; Bob keeps the default.
   expect(await (await appFor("alice").request(path)).json()).toEqual({
     preferences: {
       messageListEmphasis: "agent",
       selfHostBannerDismissed: false,
       narration: null,
-      skin: "opendots",
+      skin: "openbot",
       proactive: "on",
     },
   });
@@ -214,17 +213,21 @@ test("saves the skin on the account without touching the other preferences", asy
   ).toBe("openbot");
 });
 
-test("a skin OpenBot does not ship is refused with the skins it does", async () => {
-  const { appFor } = fixture();
-  const refused = await appFor("alice").request(
-    path,
-    patch({ skin: "retired-skin" }),
-  );
-  expect(refused.status).toBe(400);
-  expect(((await refused.json()) as { error: string }).error).toContain(
-    "openbot, openduet, opendots, openmuse",
-  );
-});
+test.each(["openduet", "opendots", "openmuse", "retired-skin"])(
+  "refuses skin %s and leaves the account preferences intact",
+  async (skin) => {
+    const { appFor } = fixture();
+    const alice = appFor("alice");
+    const refused = await alice.request(
+      path,
+      patch({ skin, messageListEmphasis: "agent" }),
+    );
+    expect(refused.status).toBe(400);
+    expect(await (await alice.request(path)).json()).toEqual({
+      preferences: DEFAULT_USER_PREFERENCES,
+    });
+  },
+);
 
 test("check-ins start on, and a person's off is kept without touching the others", async () => {
   // Off stops every one of this person's Bots checking in; the default keeps them checking.
@@ -233,15 +236,15 @@ test("check-ins start on, and a person's off is kept without touching the others
   expect((await (await alice.request(path)).json()).preferences.proactive).toBe(
     "on",
   );
-  await alice.request(path, patch({ skin: "openduet" }));
+  await alice.request(path, patch({ narration: "on" }));
   const saved = await alice.request(path, patch({ proactive: "off" }));
   expect(saved.status).toBe(200);
   expect(await (await appFor("alice").request(path)).json()).toEqual({
     preferences: {
       messageListEmphasis: "thread",
       selfHostBannerDismissed: false,
-      narration: null,
-      skin: "openduet",
+      narration: "on",
+      skin: "openbot",
       proactive: "off",
     },
   });

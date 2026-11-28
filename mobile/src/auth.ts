@@ -3,6 +3,7 @@ import { ssoClient } from "@better-auth/sso/client";
 import { createAuthClient } from "better-auth/react";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
+import { Platform } from "react-native";
 import { openWith } from "./link-company";
 import type { OrganizationStore } from "./organization";
 import { clientHeaders } from "./release";
@@ -23,6 +24,8 @@ if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash)
     "Use the public deployment URL without credentials or query parameters.",
   );
 export const serverUrl = endpoint.origin;
+export const usesBrowserSession = Platform.OS === "web";
+const callbackURL = usesBrowserSession ? serverUrl : "openbotmobile://";
 export const authClient = createAuthClient({
   baseURL: serverUrl,
   // Sign-in's own requests name the app too; the Expo plugin keeps these and adds the session's cookie.
@@ -39,7 +42,7 @@ export const authClient = createAuthClient({
 export async function signIn(provider: "google" | "microsoft" | "okta") {
   const result = await authClient.signIn.social({
     provider: provider as "google",
-    callbackURL: "openbotmobile://",
+    callbackURL,
   });
   if (result.error)
     throw new Error(result.error.message ?? "Could not sign in.");
@@ -47,7 +50,7 @@ export async function signIn(provider: "google" | "microsoft" | "okta") {
 export async function signInEnterprise(email: string) {
   const result = await authClient.signIn.sso({
     email,
-    callbackURL: "openbotmobile://",
+    callbackURL,
   });
   if (result.error)
     throw new Error(
@@ -73,9 +76,15 @@ const pickedOrganization = (person: string) =>
     "-",
   );
 export const organizationStore: OrganizationStore = {
-  read: (person) => SecureStore.getItemAsync(pickedOrganization(person)),
-  write: (person, id) =>
-    SecureStore.setItemAsync(pickedOrganization(person), id),
+  read: async (person) =>
+    usesBrowserSession
+      ? localStorage.getItem(pickedOrganization(person))
+      : SecureStore.getItemAsync(pickedOrganization(person)),
+  write: async (person, id) => {
+    if (usesBrowserSession)
+      localStorage.setItem(pickedOrganization(person), id);
+    else await SecureStore.setItemAsync(pickedOrganization(person), id);
+  },
 };
 
 /**

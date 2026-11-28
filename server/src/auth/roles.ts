@@ -38,7 +38,7 @@ export function roleForEmail(
  * process would find no role at all and be refused with a 403 that reads as a permissions bug.
  */
 export async function setRole(
-  database: Database,
+  database: Pick<Database, "transaction">,
   userId: string,
   role: OpenBotRole,
 ): Promise<OpenBotRole> {

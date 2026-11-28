@@ -1,4 +1,5 @@
 import { type BaseEvent, EventType, type Message } from "@ag-ui/client";
+import { attachmentUrl } from "@openbot/shared/attachments";
 import { CONTEXT_REVOKED_MESSAGE } from "@openbot/toolkit/run-context";
 import { and, asc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import type { ProfileReadExecutor } from "../agents/profile-store";
@@ -105,8 +106,27 @@ export function messagesFor(
     const id =
       run.assistantMessageId ?? (includePartial ? run.partialMessageId : null);
     const content = run.reply ?? (includePartial ? run.partialReply : null);
+    const promptAttachments = run.promptAttachments ?? [];
+    const prompt: Extract<Message, { role: "user" }> = {
+      id: run.userMessageId,
+      role: "user",
+      content: promptAttachments.length
+        ? [
+            ...(run.prompt
+              ? [{ type: "text" as const, text: run.prompt }]
+              : []),
+            ...promptAttachments.map(({ id, name, mimeType }) => ({
+              type: mimeType.startsWith("image/")
+                ? ("image" as const)
+                : ("document" as const),
+              source: { type: "url" as const, value: attachmentUrl(id) },
+              metadata: { attachmentId: id, filename: name },
+            })),
+          ]
+        : run.prompt,
+    };
     return [
-      { id: run.userMessageId, role: "user", content: run.prompt },
+      prompt,
       ...(id && content !== null
         ? [{ id, role: "assistant" as const, content }]
         : []),

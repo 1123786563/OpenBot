@@ -8,13 +8,15 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useLocation,
   useParams,
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect, useRef } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { agentKeys } from "@/lib/agents/queries";
+import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { deploymentKeys } from "@/lib/deployment/queries";
 import { Route as BotsRoute } from "@/routes/_authed/_app/bots.index";
 import { settleReactWork } from "./settle-react-work";
@@ -32,11 +34,56 @@ afterAll(async () => {
   GlobalRegistrator.unregister();
 });
 
-function renderEntry(initialEntry: string) {
+function bot(overrides: Partial<AgentProfile> & { id: string }): AgentProfile {
+  return {
+    name: overrides.id,
+    title: "Title",
+    roleDescription: "Role",
+    avatarSeed: "seed",
+    visibility: "private",
+    endpoint: null,
+    builtIn: true,
+    hasAuth: false,
+    hasCallbackToken: false,
+    isolated: false,
+    isolationActive: false,
+    isolationOffReason: null,
+    hidden: false,
+    pinned: false,
+    systemOwned: false,
+    canManage: true,
+    mine: true,
+    ...overrides,
+  };
+}
+
+/**
+ * The Bot's own page, as far as this harness needs it: its title takes focus after creation.
+ * Mirrors `bots.$agentId.index.tsx`'s heading effect, which is where the focus hand-off lands.
+ */
+function DetailProfile() {
+  const { agentId } = useParams({ strict: false });
+  const createdBotId = useLocation({
+    select: (location) => location.state.createdBotId,
+  });
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (createdBotId !== agentId || document.activeElement !== document.body)
+      return;
+    heading.current?.focus();
+  }, [agentId, createdBotId]);
+  return (
+    <h1 ref={heading} tabIndex={-1}>
+      Bot profile for {agentId}
+    </h1>
+  );
+}
+
+function renderEntry(initialEntry: string, agents: AgentProfile[] = []) {
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  query.setQueryData(agentKeys.list(false), []);
+  query.setQueryData(agentKeys.list(false), agents);
   query.setQueryData(agentKeys.list(true), []);
   query.setQueryData(deploymentKeys.capabilities(), { edition: "personal" });
   globalThis.fetch = Object.assign(
@@ -52,7 +99,10 @@ function renderEntry(initialEntry: string) {
           { status: 201 },
         );
       }
-      if (path === "/api/agents" || path === "/api/agents?hidden=true") {
+      if (path === "/api/agents") {
+        return NativeResponse.json({ agents });
+      }
+      if (path === "/api/agents?hidden=true") {
         return NativeResponse.json({ agents: [] });
       }
       return NativeResponse.json({}, { status: 404 });
@@ -72,9 +122,7 @@ function renderEntry(initialEntry: string) {
   const detail = createRoute({
     path: "/bots/$agentId",
     getParentRoute: () => app,
-    component: () => (
-      <h1>Bot profile for {useParams({ strict: false }).agentId}</h1>
-    ),
+    component: DetailProfile,
   });
   const home = createRoute({
     path: "/",
@@ -154,4 +202,42 @@ test("dismissing a directly opened creation sheet focuses the Bots header action
       header.getByRole(rosterActionRole, { name: "New Bot" }),
     ),
   );
+});
+
+test("Back from a Bot's page keeps the search and focuses the row that opened it", async () => {
+  const agents = [
+    bot({ id: "planning", name: "Planning Bot" }),
+    bot({ id: "expenses", name: "Expenses" }),
+  ];
+  const view = renderEntry("/bots?q=plan", agents);
+  const opened = (await view.findByText("Planning Bot")).closest("a");
+  expect(opened?.getAttribute("href")).toBe("/bots/planning");
+
+  await userEvent.setup({ document }).click(opened as HTMLElement);
+  expect(
+    await view.findByRole("heading", { name: "Bot profile for planning" }),
+  ).toBeTruthy();
+
+  await act(async () => view.history.back());
+  await waitFor(() => expect(view.history.location.search).toBe("?q=plan"));
+  const restored = (await view.findByText("Planning Bot")).closest("a");
+  expect(restored?.getAttribute("href")).toBe("/bots/planning");
+  await waitFor(() => expect(document.activeElement).toBe(restored));
+});
+
+test("a newly created Bot's page title takes focus", async () => {
+  const view = renderEntry("/bots");
+  const user = userEvent.setup({ document });
+  const header = within(await view.findByRole("banner"));
+  await user.click(header.getByRole(rosterActionRole, { name: "New Bot" }));
+  const sheet = within(await view.findByRole("dialog", { name: "New Bot" }));
+  await user.type(sheet.getByLabelText("Name"), "Planning Bot");
+  await user.click(await sheet.findByRole("button", { name: "Create Bot" }));
+
+  const heading = await view.findByRole(
+    "heading",
+    { name: "Bot profile for new-bot" },
+    { timeout: 3500 },
+  );
+  await waitFor(() => expect(document.activeElement).toBe(heading));
 });

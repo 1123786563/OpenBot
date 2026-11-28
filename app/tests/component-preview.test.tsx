@@ -10,7 +10,7 @@ import {
 import * as ReactCoreV2 from "@copilotkit/react-core/v2";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import {
   AdminComponentPreview,
   ComponentPreview,
@@ -206,6 +206,99 @@ test("a preview whose source can't be read shows an Astryx error and a retry", a
     fetcher.mockResolvedValue(Response.json({ components: [PUBLISHED] }));
     fireEvent.click(view.getByRole("button", { name: "Retry" }));
     expect(await view.findByTestId("sandbox-renderer")).toBeTruthy();
+  } finally {
+    queryClient.clear();
+  }
+});
+
+test("a recovered detail preview returns focus to its heading", async () => {
+  fetcher.mockResolvedValue(Response.json({}, { status: 500 }));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  try {
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <h2 id="preview-heading" tabIndex={-1}>
+          Preview
+        </h2>
+        <AdminComponentPreview
+          focusAfterRetry={() => document.getElementById("preview-heading")}
+          kind="sandboxed"
+          name={PUBLISHED.name}
+        />
+      </QueryClientProvider>,
+    );
+    const retry = await view.findByRole("button", { name: "Retry" });
+    retry.focus();
+    fetcher.mockResolvedValue(Response.json({ components: [PUBLISHED] }));
+    fireEvent.click(retry);
+    await view.findByTestId("sandbox-renderer");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        view.getByRole("heading", { name: "Preview" }),
+      ),
+    );
+  } finally {
+    queryClient.clear();
+  }
+});
+
+test("a recovered preview leaves focus where the person moved it during Retry", async () => {
+  fetcher.mockResolvedValue(Response.json({}, { status: 500 }));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  try {
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <h2 id="preview-heading" tabIndex={-1}>
+          Preview
+        </h2>
+        <button type="button">Open settings</button>
+        <AdminComponentPreview
+          focusAfterRetry={() => document.getElementById("preview-heading")}
+          kind="sandboxed"
+          name={PUBLISHED.name}
+        />
+      </QueryClientProvider>,
+    );
+    const retry = await view.findByRole("button", { name: "Retry" });
+    const { promise, resolve: answer } = Promise.withResolvers<Response>();
+    fetcher.mockReturnValueOnce(promise);
+    retry.focus();
+    fireEvent.click(retry);
+    const settings = view.getByRole("button", { name: "Open settings" });
+    settings.focus();
+    answer(Response.json({ components: [PUBLISHED] }));
+
+    await view.findByTestId("sandbox-renderer");
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    expect(document.activeElement).toBe(settings);
+  } finally {
+    queryClient.clear();
+  }
+});
+
+test("a failed tile preview keeps its sentence, hides it from a screen reader, and offers no nested Retry", async () => {
+  fetcher.mockResolvedValue(Response.json({}, { status: 500 }));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  try {
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <AdminComponentPreview kind="sandboxed" name={PUBLISHED.name} tile />
+      </QueryClientProvider>,
+    );
+    const failed = await view.findByText("Couldn't load the preview.");
+    expect(failed.closest(".astryx-banner")).toBeTruthy();
+    // The tile stays a link: a button inside it would activate the link and lose the list.
+    expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
+    // And nothing inside the tile reaches the link's accessible name.
+    expect(failed.closest("[inert]")?.getAttribute("aria-hidden")).toBe("true");
   } finally {
     queryClient.clear();
   }

@@ -1205,6 +1205,7 @@ describe("the catalogue a deployment offers", () => {
       exposure: "all",
       default: "gpt-5.5",
       choosable: false,
+      choicesUnavailable: true,
       models: [{ id: "gpt-5.5", label: "GPT-5.5", vendor: "openai" }],
     });
     expect(logged.join("\n")).toContain("model-list-unreadable");

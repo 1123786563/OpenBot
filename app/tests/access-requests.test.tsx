@@ -127,14 +127,19 @@ function serving(options: {
   return sent;
 }
 
-function draw(Page: () => ReactNode) {
+function draw(Page: () => ReactNode, initialPath = "/") {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const root = createRootRoute({ component: Outlet });
-  const page = createRoute({
+  const authed = createRoute({
+    id: "_authed",
     getParentRoute: () => root,
-    path: "/",
+    component: Outlet,
+  });
+  const page = createRoute({
+    getParentRoute: () => authed,
+    path: initialPath === "/" ? "/" : "/admin/plugins/",
     component: Page,
   });
   const app = createRoute({
@@ -153,8 +158,13 @@ function draw(Page: () => ReactNode) {
     component: () => null,
   });
   const router = createRouter({
-    routeTree: root.addChildren([page, app, composio, bot]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: root.addChildren([
+      authed.addChildren([page]),
+      app,
+      composio,
+      bot,
+    ]),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   return {
     client,
@@ -345,7 +355,7 @@ test("the Plugins list puts every request first and counts them on each app's ro
     ],
   });
   const Page = PluginsIndexRoute.options.component as () => ReactNode;
-  const view = draw(Page);
+  const view = draw(Page, "/admin/plugins/");
   expect(await view.findByText("Requests")).toBeTruthy();
   expect(view.getByText("Turn on Slack for Expenses")).toBeTruthy();
   const gmail = within(await view.findByTestId("plugin-composio-gmail"));

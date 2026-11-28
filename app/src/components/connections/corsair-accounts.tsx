@@ -12,6 +12,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { failureMessage } from "@/lib/client";
 import {
   corsairAccountsQueryOptions,
   corsairKeys,
@@ -235,12 +236,12 @@ export function CorsairAccounts({
       )}
       {revocations.isError ? (
         <p className="text-sm text-destructive" role="alert">
-          {revocations.error.message}
+          {failureMessage(revocations.error)}
         </p>
       ) : null}
       {action.isError ? (
         <p className="text-sm text-destructive" role="alert">
-          {action.error.message}
+          {failureMessage(action.error)}
         </p>
       ) : null}
       {accounts.data ? (

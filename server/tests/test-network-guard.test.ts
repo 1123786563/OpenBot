@@ -259,13 +259,8 @@ describe("the test network guard lets the suite reach what the suite owns", () =
     }
   });
 
-  /**
-   * The database is the one far NAME a raw socket may reach without its lookup being checked,
-   * because it is deployment configuration rather than a vendor. `home.arpa` (RFC 8375) never
-   * resolves in public DNS, so the connection fails in DNS — and the point is that it got as far as
-   * DNS instead of being refused. Not `.invalid`: that is a special-use name the guard lets through
-   * on its own terms, so a case aimed at one could not tell whether the database allowance exists.
-   */
+  // A configured database hostname reaches the socket's resolver. A synthetic DNS error proves
+  // that without waiting on the machine's resolver or opening a connection.
   test("the configured database host, through a raw socket", async () => {
     const configured = process.env.TEST_DATABASE_URL;
     process.env.TEST_DATABASE_URL =
@@ -274,11 +269,19 @@ describe("the test network guard lets the suite reach what the suite owns", () =
       const { outcome, refused } = await plant(
         () =>
           new Promise<void>((_resolve, reject) => {
-            net.connect(5432, "db.openbot.home.arpa").on("error", reject);
+            net
+              .connect({
+                port: 5432,
+                host: "db.openbot.home.arpa",
+                lookup: (_name, _options, callback) => {
+                  callback(new Error("fixture DNS failure"), "", 0);
+                },
+              })
+              .on("error", reject);
           }),
       );
 
-      expect(outcome).not.toContain(refusedCall);
+      expect(outcome).toBe("threw: fixture DNS failure");
       expect(refused).toEqual([]);
     } finally {
       if (configured === undefined) delete process.env.TEST_DATABASE_URL;

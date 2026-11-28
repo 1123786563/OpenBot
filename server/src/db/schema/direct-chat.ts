@@ -17,6 +17,12 @@ import {
 import { intelligenceChannelMappings } from "./core";
 import { groupBotThreads } from "./group";
 
+export type DirectChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+};
+
 export const directChatRuns = pgTable(
   "direct_chat_runs",
   {
@@ -37,6 +43,8 @@ export const directChatRuns = pgTable(
     id: text("id").notNull(),
     userMessageId: text("user_message_id").notNull(),
     prompt: text("prompt").notNull(),
+    promptAttachments:
+      jsonb("prompt_attachments").$type<DirectChatAttachment[]>(),
     testCreditOperationId: text("test_credit_operation_id"),
     testCreditRequest: jsonb(
       "test_credit_request",

@@ -8,7 +8,9 @@ import { testEnvironment } from "./support/environment";
  * Who may change who can get in.
  *
  * The rules worth pinning are the refusals, because each of them stops a deployment reaching a state
- * with nobody able to administer it, and none of them is obvious from the route's shape.
+ * with nobody able to administer it, and none of them is obvious from the route's shape. What a
+ * change puts on the trail is the store's, held against a real database in
+ * people-actions.integration.test.ts; here the store is a fake that only says what it was asked.
  */
 const ADMIN = {
   id: "admin-1",
@@ -35,6 +37,7 @@ function person(overrides: Partial<Person> = {}): Person {
 function appWith(
   people: Person[],
   role: "admin" | "user" = "admin",
+  overrides: Partial<PeopleStore> = {},
 ): {
   request: (path: string, init?: RequestInit) => Promise<Response>;
   calls: string[];
@@ -45,8 +48,8 @@ function appWith(
     // against a real database in people-paging.integration.test.ts.
     list: async () => ({ people, nextCursor: null }),
     find: async (userId) => people.find((entry) => entry.id === userId),
-    setRole: async (userId, next) => {
-      calls.push(`setRole:${userId}:${next}`);
+    setRole: async (userId, next, by) => {
+      calls.push(`setRole:${userId}:${next}:${by}`);
     },
     revoke: async (userId, by) => {
       calls.push(`revoke:${userId}:${by}`);
@@ -54,10 +57,11 @@ function appWith(
     retireOwned: async (userId, by) => {
       calls.push(`retireOwned:${userId}:${by}`);
     },
-    restore: async (userId) => {
-      calls.push(`restore:${userId}`);
+    restore: async (userId, by) => {
+      calls.push(`restore:${userId}:${by}`);
     },
     isRevoked: async () => false,
+    ...overrides,
   };
 
   const app = createApp(
@@ -68,13 +72,10 @@ function appWith(
     } as never,
     { rolesForUser: async () => [role] },
     /*
-     * Positions 4-17 are the other stores; `store` is 18, peopleStore.
-     *
-     * Fourteen, not fifteen. This arrived from main written against a signature that still had
-     * `connectorService`, which the knowledge lane removed along with the connector it served — so
-     * the count is one shorter here. Every parameter from 4 on is optional, so getting it wrong is a
-     * silent type-check pass: the store lands in `ssoProviderCount`, the people routes see no store,
-     * and every test below fails with a 503 that says nothing about why.
+     * Fourteen fillers, not fifteen: positions 4-17 are other stores, and `store` is 18,
+     * peopleStore. Every parameter from 4 on is optional, so getting the count wrong is a silent
+     * type-check pass: the store lands in `ssoProviderCount`, the people routes see no store, and
+     * every test below fails with a 503 that says nothing about why.
      */
     ...(Array.from({ length: 14 }) as never[]),
     store as never,
@@ -122,7 +123,8 @@ describe("people routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(calls).toEqual(["setRole:u1:admin"]);
+    // Who asked goes with it, for the row the store writes.
+    expect(calls).toEqual(["setRole:u1:admin:admin-1"]);
   });
 
   /**
@@ -202,7 +204,56 @@ describe("people routes", () => {
 
     await request("/api/admin/people/u1/access", json({ revoked: false }));
 
-    expect(calls).toEqual(["restore:u1"]);
+    expect(calls).toEqual(["restore:u1:admin-1"]);
+  });
+
+  /*
+   * The removal commits before the retirement runs, so a broker that will not answer leaves the
+   * person removed and their credentials live. A bare 500 told the administrator nothing had been
+   * confirmed; the answer now says which half took effect, and asking again finishes the other half
+   * without removing them twice.
+   */
+  test("a removal whose retirement failed says what took effect and asks for a retry", async () => {
+    const member = person();
+    let attempts = 0;
+    const { request, calls } = appWith([member], "admin", {
+      // The removal sticks, as the real store's does: the retry finds them already removed.
+      revoke: async (userId, by) => {
+        calls.push(`revoke:${userId}:${by}`);
+        member.revoked = true;
+      },
+      retireOwned: async (userId, by) => {
+        calls.push(`retireOwned:${userId}:${by}`);
+        attempts += 1;
+        if (attempts === 1)
+          throw new Error("composio: 503 Service Unavailable");
+      },
+    });
+
+    const failed = await request(
+      "/api/admin/people/u1/access",
+      json({ revoked: true }),
+    );
+
+    expect(failed.status).toBe(503);
+    expect((await failed.json()).error).toBe(
+      "Access is removed for this person, but some of their credentials or Recorders could not be retired yet. Try again to finish.",
+    );
+    expect(calls).toEqual([
+      `revoke:u1:${ADMIN.id}`,
+      `retireOwned:u1:${ADMIN.id}`,
+    ]);
+
+    expect(
+      (await request("/api/admin/people/u1/access", json({ revoked: true })))
+        .status,
+    ).toBe(200);
+    expect(attempts).toBe(2);
+    expect(calls).toEqual([
+      `revoke:u1:${ADMIN.id}`,
+      `retireOwned:u1:${ADMIN.id}`,
+      `retireOwned:u1:${ADMIN.id}`,
+    ]);
   });
 
   test("refuses a role that is not one of the two", async () => {

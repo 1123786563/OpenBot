@@ -17,12 +17,10 @@ import { Link, useParams, useRouterState } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useRef, useState } from "react";
-import { useTranslation } from "@/i18n";
 import { astryxScope } from "@/components/astryx-pilot/theme";
-import { OpenBotLogo } from "@/components/edition/openbot-logo";
 import { ChannelAvatar } from "@/components/channels/avatar";
-import { agentListQueryOptions } from "@/lib/agents/queries";
 import { BrandName } from "@/components/edition/brand-name";
+import { OpenBotLogo } from "@/components/edition/openbot-logo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,8 +45,9 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useTranslation } from "@/i18n";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { useOffersMemory } from "@/lib/deployment/queries";
 import { useSignOutOffered } from "@/lib/auth/sign-out-offered";
 import { untitledLine } from "@/lib/channels/label";
 import {
@@ -56,6 +55,7 @@ import {
   channelListQueryOptions,
 } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
+import { useOffersMemory } from "@/lib/deployment/queries";
 import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { isNavigationLink, useNavigationItems } from "@/lib/navigation";
@@ -233,7 +233,7 @@ function ChannelRow({
 type WorkspacePane = "chats" | "bots";
 
 function paneFor(pathname: string): WorkspacePane | null {
-  if (pathname.startsWith("/bots/") && pathname !== "/bots/") return "bots";
+  if (pathname === "/bots" || pathname.startsWith("/bots/")) return "bots";
   if (
     pathname === "/" ||
     pathname === "/bot" ||

@@ -114,6 +114,8 @@ test("a running Bot's row says Active and its switch is on", async () => {
   const control = await view.findByRole("switch", { name: "Active" });
   expect(checked(control)).toBe(true);
   expect(view.queryByText("Paused")).toBeNull();
+  // The control is 18.4px tall; the pseudo-element below it is the 44px touch target.
+  expect(control.className).toContain("after:-inset-y-3.5");
 });
 
 test("a paused Bot's Active switch is off, and the row says it is paused", async () => {

@@ -2,6 +2,7 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { IconFile, IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 
@@ -136,47 +137,32 @@ export function AttachmentStrip({
            * attachments rather than as two things that happened to land next to each other.
            */
           <Staged
-            className="h-20 w-40 rounded-xl border border-border bg-muted/40 p-2"
+            className="min-h-20 w-40 rounded-xl border border-border bg-muted/40 p-2"
             justify="between"
             key={file.id}
           >
-            {/*
-             * `shrink-0` because the tile's height is fixed and the text below it is not. A third
-             * line, which is exactly what the truncation warning adds, takes the extra out of the
-             * only child that can give: this icon. It renders visibly smaller on precisely the
-             * tiles that carry the warning, which is the wrong moment to look broken.
-             */}
             <IconFile className="size-5 shrink-0 text-muted-foreground" />
             <Stack className="min-w-0">
-              <span title={file.name}>
-                <Text className="truncate font-medium text-xs" display="block">
-                  {file.name}
-                </Text>
-              </span>
+              <Text
+                className="font-medium text-xs"
+                display="block"
+                style={{
+                  maxBlockSize: "3lh",
+                  overflowWrap: "anywhere",
+                  overflowY: "auto",
+                }}
+                tabIndex={0}
+              >
+                {file.name}
+              </Text>
               {file.loading ? (
                 <Text as="p" className="text-muted-foreground text-xs">
                   Uploading…
                 </Text>
               ) : file.size === undefined ? null : (
-                /*
-                 * ON THE SIZE LINE, NOT UNDER IT, AND THAT IS A LAYOUT CONSTRAINT RATHER THAN A
-                 * PREFERENCE. The tile's height is fixed so that a file and a thumbnail read as
-                 * one row. A third line does not fit: with three lines the two in-flow children
-                 * need 65px (a 20px icon and three 15px lines) inside a 62px box. Something
-                 * has to give, and the only choices are the icon shrinking to 17px or the text
-                 * spilling past the border. Folding the warning onto this line keeps two.
-                 *
-                 * `truncate` is the guarantee, not the wording: `formatBytes` is unbounded, so a
-                 * large enough file would wrap this line and put the third one back. The short
-                 * phrasing is what keeps it from ellipsizing at any realistic size; `title`
-                 * carries the sentence that actually explains it.
-                 */
-                <span
-                  title={
-                    file.mayTruncate === true
-                      ? "The Bot reads only the first 120,000 characters of this file."
-                      : undefined
-                  }
+                <Tooltip
+                  content="The Bot reads only the first 120,000 characters of this file."
+                  isEnabled={file.mayTruncate === true}
                 >
                   <Text
                     className="truncate text-muted-foreground text-xs"
@@ -185,7 +171,7 @@ export function AttachmentStrip({
                     {formatBytes(file.size)}
                     {file.mayTruncate === true ? " · may be cut" : null}
                   </Text>
-                </span>
+                </Tooltip>
               )}
             </Stack>
             <RemoveButton name={file.name} onRemove={() => onRemove(file.id)} />

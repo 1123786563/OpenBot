@@ -7,7 +7,14 @@ import {
   IconUser,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useId, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  type RefObject,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   PageEmpty,
   PageRows,
@@ -83,6 +90,7 @@ export function RememberFact({
   const [content, setContent] = useState("");
   const formId = useId();
   const opener = useRef<HTMLButtonElement>(null);
+  const submitting = useRef(false);
   const remember = useMutation(createMemoryMutationOptions(queryClient));
   return (
     <>
@@ -118,6 +126,7 @@ export function RememberFact({
         }
         description="All your Bots will know it."
         dirty={!!content.trim()}
+        guardNavigation={submitting}
         onClose={() => setOpen(false)}
         open={open}
         opener={() => opener.current ?? fallbackFocus?.() ?? null}
@@ -130,10 +139,14 @@ export function RememberFact({
           onSubmit={(event) => {
             event.preventDefault();
             if (!canWrite || remember.isPending || !content.trim()) return;
+            submitting.current = true;
             remember.mutate(content, {
               onSuccess: () => {
                 setContent("");
                 setOpen(false);
+              },
+              onSettled: () => {
+                submitting.current = false;
               },
             });
           }}
@@ -309,7 +322,7 @@ export function MemoryList({ description }: { description?: ReactNode } = {}) {
                 onForget={(trigger) =>
                   requestConfirmation({
                     title: "Forget this memory?",
-                    description: `“${clip(memory.content)}” will be removed from your memories. Your Bots will stop using it. You can't undo this.`,
+                    description: `“${memory.content}” will be removed from your memories. ${forgetAudience(memory, botName)} You can't undo this.`,
                     confirmLabel: "Forget memory",
                     pendingLabel: "Forgetting…",
                     failureMessage: "Couldn't forget this memory. Try again.",
@@ -397,6 +410,7 @@ function MemoryRow({
     .trimEnd();
   const hasPreview = preview !== memory.content.trimEnd();
   const editButton = useRef<HTMLButtonElement>(null);
+  const submitting = useRef(false);
   const save = useMutation(updateMemoryMutationOptions(queryClient));
   const update = (input: {
     content?: string;
@@ -547,16 +561,23 @@ function MemoryRow({
           canWrite={canWrite}
           memory={memory}
           onClose={() => setEditing(false)}
-          onSave={(content) =>
+          onSave={(content) => {
+            submitting.current = true;
             save.mutate(
               { id: memory.id, input: { content } },
-              { onSuccess: () => setEditing(false) },
-            )
-          }
+              {
+                onSuccess: () => setEditing(false),
+                onSettled: () => {
+                  submitting.current = false;
+                },
+              },
+            );
+          }}
           error={save.error?.message ?? null}
           finalFocus={() => editButton.current ?? fallbackFocus()}
           refresh={refresh}
           saving={save.isPending}
+          submitting={submitting}
         />
       ) : null}
     </Item>
@@ -567,6 +588,25 @@ function memoryOrigin(memory: MemoryRecord) {
   return memory.formedBy === "person" && memory.provenance === "You"
     ? "Added by you"
     : memory.provenance;
+}
+
+/**
+ * Which Bots stop using a fact when it is forgotten.
+ *
+ * The reach is the server's, not a guess: a Bot-formed memory is recalled only by the Bot that
+ * formed it, an imported one only through its source, and only a fact of the person's own reaches
+ * every Bot of theirs. Saying "your Bots" for all three told somebody forgetting one Bot's fact
+ * that every Bot would lose it.
+ */
+function forgetAudience(
+  memory: MemoryRecord,
+  botName: (id: string | null) => string,
+) {
+  if (memory.formedBy === "bot")
+    return `Only ${botName(memory.formedByAgentId)} uses it.`;
+  if (memory.formedBy === "import")
+    return `Only Bots reading ${memory.sourceApp ?? memory.provenance} use it.`;
+  return "All your Bots use it.";
 }
 
 /** A memory's words, cut short enough to name the switch beside them. */
@@ -585,6 +625,7 @@ function EditMemoryDialog({
   onClose,
   finalFocus,
   refresh,
+  submitting,
 }: {
   canWrite: boolean;
   memory: MemoryRecord;
@@ -594,6 +635,7 @@ function EditMemoryDialog({
   onClose: () => void;
   finalFocus: () => HTMLElement | null;
   refresh?: MemoryRefresh;
+  submitting: RefObject<boolean>;
 }) {
   const [content, setContent] = useState(memory.content);
   const id = useId();
@@ -612,6 +654,7 @@ function EditMemoryDialog({
       }
       description={memory.provenance}
       dirty={dirty}
+      guardNavigation={submitting}
       onClose={onClose}
       open
       opener={finalFocus}

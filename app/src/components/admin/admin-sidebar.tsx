@@ -1,6 +1,6 @@
 import { IconArrowLeft } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
-import type * as React from "react";
+import type { RefObject } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -11,17 +11,43 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import { useTranslation } from "@/i18n";
 import { ADMIN_NAVIGATION } from "./admin-navigation";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 const adminLinkOptions = { to: "/admin" } satisfies LinkOptions;
 
 export function AdminSidebar({
+  navId,
+  returnFocus,
   ...props
-}: React.ComponentProps<typeof Sidebar>) {
+}: React.ComponentProps<typeof Sidebar> & {
+  /** The navigation's id: the desktop pane's and the mobile sheet's, so the toggle's aria-controls names it. */
+  navId?: string;
+  /** Where the closed sheet sends focus. */
+  returnFocus?: RefObject<HTMLButtonElement | null>;
+}) {
+  const { isMobile } = useSidebar();
+  const { t } = useTranslation();
   return (
-    <Sidebar variant="inset" {...props}>
+    <Sidebar
+      variant="inset"
+      {...(navId
+        ? {
+            id: isMobile ? undefined : navId,
+            mobileNavigation: {
+              title: t("nav.admin", "Admin"),
+              popup: {
+                id: navId,
+                finalFocus: returnFocus,
+              },
+            },
+          }
+        : {})}
+      {...props}
+    >
       {/*
        * Pinned to the same height as the app sidebar's header. Left to itself this one is 60px
        * against the app's 45px — `p-2` around a `size="lg"` button rather than a fixed height — so
@@ -38,7 +64,7 @@ export function AdminSidebar({
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
                   <IconArrowLeft className="mr-2 h-4 w-4" />
-                  Workspace
+                  {t("nav.workspace", "Workspace")}
                 </Link>
               )}
             />
@@ -46,7 +72,7 @@ export function AdminSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <nav aria-label="Admin">
+        <nav aria-label={t("nav.admin", "Admin")}>
           <SidebarGroup>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -62,7 +88,7 @@ export function AdminSidebar({
                       activeProps={{ "data-active": true }}
                       {...props}
                     >
-                      Overview
+                      {t("admin.sidebar.overview", "Overview")}
                     </Link>
                   )}
                 />
@@ -71,7 +97,9 @@ export function AdminSidebar({
           </SidebarGroup>
           {ADMIN_NAVIGATION.map((group) => (
             <SidebarGroup key={group.title}>
-              <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
+              <SidebarGroupLabel>
+                {t(group.messageId, group.label)}
+              </SidebarGroupLabel>
               <SidebarMenu className="gap-px">
                 {group.items.map((item) => (
                   <SidebarMenuItem key={item.title}>
@@ -83,7 +111,7 @@ export function AdminSidebar({
                           {...props}
                         >
                           <item.icon className="mr-2 h-4 w-4" />
-                          {item.title}
+                          {t(item.messageId, item.label)}
                         </Link>
                       )}
                     />

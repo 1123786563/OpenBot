@@ -1,13 +1,15 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { agents, users } from "../src/db/schema/core";
-import { personalMemories } from "../src/db/schema/memory";
+import { agents, auditEvents, users } from "../src/db/schema/core";
+import { defaultOptOuts } from "../src/db/schema/defaults";
+import { memorySources, personalMemories } from "../src/db/schema/memory";
 import {
   createIntelligenceMemory,
   type IntelligenceMemoryClient,
 } from "../src/memory/intelligence";
+import { createMemoryRoutes } from "../src/memory/routes";
 import { createMemoryStore } from "../src/memory/store";
 import {
   MemoryNotFoundError,
@@ -31,7 +33,7 @@ function fakeIntelligence() {
   };
   const rows: Row[] = [];
   const calls: { method: string; userId?: string; grant?: unknown }[] = [];
-  const state = { entitled: true, down: false };
+  const state = { entitled: true, down: false, failRemove: false };
   let next = 1;
   const fail = (status: number) =>
     Object.assign(new Error(`HTTP ${status}`), { status });
@@ -151,6 +153,8 @@ function fakeIntelligence() {
     async removeMemory(params: { userId: string; id: string }) {
       calls.push({ method: "removeMemory", userId: params.userId });
       guard();
+      // Reachable, but one retirement fails: a copy is left out there to be tried again.
+      if (state.failRemove) throw fail(500);
       const row = rows.find(
         (candidate) =>
           candidate.id === params.id &&
@@ -212,6 +216,12 @@ beforeEach(async () => {
   await database
     .delete(personalMemories)
     .where(inArray(personalMemories.ownerUserId, [ada, grace]));
+  await database
+    .delete(memorySources)
+    .where(inArray(memorySources.ownerUserId, [ada, grace]));
+  await database
+    .delete(defaultOptOuts)
+    .where(inArray(defaultOptOuts.ownerUserId, [ada, grace]));
   fake = fakeIntelligence();
   clock += 10 * 60_000 + 1;
   store = createMemoryStore(database, {
@@ -226,6 +236,12 @@ afterAll(async () => {
   await database
     .delete(personalMemories)
     .where(inArray(personalMemories.ownerUserId, [ada, grace]));
+  await database
+    .delete(memorySources)
+    .where(inArray(memorySources.ownerUserId, [ada, grace]));
+  await database
+    .delete(defaultOptOuts)
+    .where(inArray(defaultOptOuts.ownerUserId, [ada, grace]));
   await database.delete(agents).where(inArray(agents.id, [bot, otherBot]));
   await database.delete(users).where(inArray(users.id, [ada, grace]));
   await database.$client.end();
@@ -366,6 +382,24 @@ test("a memory only Intelligence holds is the person's own: recalled, edited and
   ).rejects.toBeInstanceOf(MemoryRefusedError);
   await store.remove(ada, edited.id);
   expect(fake.live(ada)).toEqual([]);
+  // A forget the person asked for, on the trail like any other. The edit above has its own row for
+  // the same memory, and the fake's memory ids are the same in every run, so the forget's rows for
+  // this person are the ones read.
+  const forgotten = await database
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.actorUserId, ada),
+        eq(auditEvents.targetType, "personal_memory"),
+        eq(auditEvents.targetId, edited.id),
+        sql`${auditEvents.payload}->>'change' = 'memory_deleted'`,
+      ),
+    );
+  expect(forgotten.map((row) => [row.payload.change, row.actorUserId])).toEqual(
+    [["memory_deleted", ada]],
+  );
+  expect(JSON.stringify(forgotten)).not.toContain("emacs keybindings");
 });
 
 test("a memory OpenBot describes cannot be forgotten through its Intelligence id", async () => {
@@ -384,4 +418,170 @@ test("editing an Intelligence-only memory while Intelligence is down answers una
   await expect(
     store.update(ada, `intelligence:${id}`, { content: "Speaks Spanish" }),
   ).rejects.toBeInstanceOf(MemoryUnavailableError);
+});
+
+/**
+ * A source whose imported fact has been accepted, so Intelligence holds a copy of it.
+ *
+ * The copy is the whole point: removing the source cascades the local row away, and a row that is
+ * gone cannot be retried. Anything left in Intelligence is then read back as the person's own and
+ * reaches every Bot of theirs, which is wider than the source ever was.
+ */
+async function sourceWithMirroredImport(owner: string) {
+  const source = await store.createSource(owner, {
+    agentId: bot,
+    toolRef: "drive/search",
+    title: "Receipts folder",
+  });
+  await store.completeSync(owner, source.id, [
+    {
+      externalId: "doc-1",
+      digest: "digest-1",
+      content: "The launch is in May",
+      provenance: "Roadmap",
+    },
+  ]);
+  const [row] = await database
+    .select()
+    .from(personalMemories)
+    .where(eq(personalMemories.sourceId, source.id));
+  if (!row) throw new Error("The imported fixture row is missing.");
+  await store.update(owner, row.id, { reviewState: "confirmed" });
+  const mirrored = await rowOf(row.id);
+  if (!mirrored?.intelligenceMemoryId)
+    throw new Error("The fixture was not mirrored to Intelligence.");
+  return { source, row: mirrored };
+}
+
+const removalAudit = (owner: string, sourceId: string) =>
+  database
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.actorUserId, owner),
+        eq(auditEvents.targetType, "memory_source"),
+        eq(auditEvents.targetId, sourceId),
+      ),
+    );
+
+test("removing a source while Intelligence is unreachable keeps the source and its memories", async () => {
+  const { source, row } = await sourceWithMirroredImport(ada);
+  fake.state.down = true;
+  clock += 10 * 60_000 + 1;
+
+  await expect(store.removeSource(ada, source.id)).rejects.toBeInstanceOf(
+    MemoryUnavailableError,
+  );
+
+  // Nothing was removed: the source, the local row and its Intelligence link all stand.
+  expect(await store.sources(ada)).toHaveLength(1);
+  expect((await rowOf(row.id))?.intelligenceMemoryId).toBe(
+    row.intelligenceMemoryId,
+  );
+  expect(fake.live(ada).map((memory) => memory.content)).toEqual([
+    "The launch is in May",
+  ]);
+  expect(await removalAudit(ada, source.id)).toEqual([]);
+});
+
+test("a retirement that fails leaves the source in place, and retrying finishes without orphan copies", async () => {
+  const { source, row } = await sourceWithMirroredImport(ada);
+  fake.state.failRemove = true;
+
+  await expect(store.removeSource(ada, source.id)).rejects.toBeInstanceOf(
+    MemoryUnavailableError,
+  );
+  expect(await store.sources(ada)).toHaveLength(1);
+  expect((await rowOf(row.id))?.intelligenceMemoryId).toBe(
+    row.intelligenceMemoryId,
+  );
+  expect(fake.live(ada)).toHaveLength(1);
+
+  fake.state.failRemove = false;
+  await store.removeSource(ada, source.id);
+
+  expect(await store.sources(ada)).toEqual([]);
+  expect(await rowOf(row.id)).toBeUndefined();
+  // No orphan: nothing is left in Intelligence for this person to reach through another Bot.
+  expect(fake.live(ada)).toEqual([]);
+  expect(await store.list(ada)).toEqual([]);
+  expect(await removalAudit(ada, source.id)).toHaveLength(1);
+});
+
+test("removing a source writes exactly one removal Audit row, with its opt-out", async () => {
+  const { source, row } = await sourceWithMirroredImport(ada);
+
+  await store.removeSource(ada, source.id);
+
+  const events = await removalAudit(ada, source.id);
+  expect(events).toHaveLength(1);
+  expect(events[0]?.eventType).toBe("configuration.changed");
+  expect(events[0]?.payload).toMatchObject({ change: "memory_source_removed" });
+  // The fact's own words never reach the trail.
+  expect(JSON.stringify(events)).not.toContain("The launch is in May");
+  expect(fake.live(ada)).toEqual([]);
+  expect(await rowOf(row.id)).toBeUndefined();
+  expect(
+    await database
+      .select()
+      .from(defaultOptOuts)
+      .where(eq(defaultOptOuts.ownerUserId, ada)),
+  ).toMatchObject([{ agentId: bot, feature: "memory_source", scope: "drive" }]);
+});
+
+test("a source with no Intelligence copies is removed while Intelligence is unreachable", async () => {
+  const source = await store.createSource(ada, {
+    agentId: bot,
+    toolRef: "drive/search",
+    title: "Unreviewed folder",
+  });
+  await store.completeSync(ada, source.id, [
+    {
+      externalId: "doc-2",
+      digest: "digest-2",
+      content: "Still awaiting review",
+      provenance: "Notes",
+    },
+  ]);
+  fake.state.down = true;
+  clock += 10 * 60_000 + 1;
+
+  // Nothing was mirrored, so there is nothing to retire and no reason to refuse.
+  await store.removeSource(ada, source.id);
+
+  expect(await store.sources(ada)).toEqual([]);
+  expect(await removalAudit(ada, source.id)).toHaveLength(1);
+});
+
+/*
+ * The same removal through the route the browser calls, because the confirmation's Try again only
+ * works if the refusal arrives as a retryable 503 rather than a 500 or a silent 204.
+ */
+test("the removal route answers 503 while copies remain, and 204 once a retry retires them", async () => {
+  const { source, row } = await sourceWithMirroredImport(ada);
+  const routes = createMemoryRoutes(
+    store,
+    {} as never,
+    async (context, next) => {
+      context.set("actor", { id: ada, email: `${ada}@example.test` } as never);
+      await next();
+    },
+  );
+  const remove = () =>
+    routes.request(`/sources/${source.id}`, { method: "DELETE" });
+
+  fake.state.failRemove = true;
+  const refused = await remove();
+  expect(refused.status).toBe(503);
+  expect(await store.sources(ada)).toHaveLength(1);
+  expect((await rowOf(row.id))?.intelligenceMemoryId).toBe(
+    row.intelligenceMemoryId,
+  );
+
+  fake.state.failRemove = false;
+  expect((await remove()).status).toBe(204);
+  expect(await store.sources(ada)).toEqual([]);
+  expect(fake.live(ada)).toEqual([]);
+  expect(await removalAudit(ada, source.id)).toHaveLength(1);
 });

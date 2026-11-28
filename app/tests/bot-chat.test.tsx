@@ -1,17 +1,20 @@
 import { expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import { fireEvent, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { botThreadKey } from "@/lib/copilot/bot-thread";
 import {
   agent,
+  answerWith,
   botRuntime,
   currentJoin,
   queryClientWithAgents,
   releaseRun,
   renderBot,
+  type RunPlan,
   runtime,
 } from "./bot-route-default-agent.fixture";
+import { settleReactWork } from "./settle-react-work";
 
 botRuntime();
 
@@ -217,6 +220,69 @@ test("a new chat starts with an empty transcript", async () => {
   expect(view.queryByText("Plan my week")).toBeNull();
 });
 
+/*
+ * WORK THAT OUTLIVES ITS CHAT MUST NOT TOUCH THE NEXT CHAT OF THE SAME BOT. The Bot's agent is one
+ * object whoever's chat is on screen. A turn still going when the person started a new conversation
+ * read its own thread once it ended, after its view was gone, and merged that thread into the new
+ * chat: the first chat's words were on screen in the second, and its next run carried them.
+ */
+test("a turn that ends after its chat was left is not read into the next chat of the same Bot", async () => {
+  runtime.plans = [HOLDING, { kind: "answers", text: "Here is today's plan." }];
+  const view = open();
+  await send(view, "Plan my week");
+  const first = currentJoin().threadId;
+  await waitFor(() => expect(runtime.reads).toEqual([first]));
+  /*
+   * The first chat's turn ends when its view goes, and reads its thread at once. The server holds
+   * that read, so it lands when the test says and not when a load says.
+   */
+  let answer: ((response: Response) => void) | undefined;
+  answerWith((url) =>
+    url.pathname.includes(`/${first}/messages`)
+      ? new Promise<Response>((resolve) => {
+          answer = resolve;
+        })
+      : undefined,
+  );
+  fireEvent.click(view.getByRole("button", { name: "New chat with this Bot" }));
+  fireEvent.click(
+    await view.findByRole("button", { name: "Start new conversation" }),
+  );
+  await waitFor(() => expect(answer).toBeDefined());
+  await waitFor(() => expect(currentJoin().threadId).not.toBe(first));
+  // The new chat is open and restored before the first chat's read is answered.
+  await waitFor(() => expect(runtime.reads).toContain(currentJoin().threadId));
+  await view.findByRole("button", { name: "Send message" });
+  await settleReactWork();
+
+  releaseRun([
+    {
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId: "partial",
+      delta: "Here is yesterday's plan.",
+    },
+    { type: "TEXT_MESSAGE_END", messageId: "partial" },
+    { type: "RUN_FINISHED", threadId: first, runId: "run-1" },
+  ]);
+  // The read is answered with everything the first chat's thread holds.
+  answer?.(
+    new Response(JSON.stringify({ messages: runtime.stored.get(first) }), {
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  await settleReactWork();
+  expect(view.queryByText("Plan my week")).toBeNull();
+  expect(view.queryByText("Here is yesterday's plan.")).toBeNull();
+
+  // What the new chat sends is the new chat's words alone.
+  await send(view, "And today");
+  await said(view, "Here is today's plan.");
+  await settled(view);
+  expect(runtime.runs.at(-1)?.messages).toEqual([
+    { id: expect.any(String), role: "user", content: "And today" },
+  ]);
+});
+
 /** A turn that called an app's tool OpenBot asks about, and has no answer yet. */
 const CALL = "call-invite";
 const THREAD = "thread-remembered";
@@ -299,4 +365,746 @@ test("a thread reopened with an approval still waiting shows it, and answering i
   expect((await card.findAllByText("Allowed once")).length).toBeGreaterThan(0);
   // The server continues the original run from that decision; this browser starts none of its own.
   expect(runtime.runs).toHaveLength(0);
+});
+
+/** A message read that fails says so, keeps the words typed before it, and comes back in place. */
+test("a history read that fails is shown, keeps the draft, and recovers in place", async () => {
+  let failReads = true;
+  answerWith((url) =>
+    url.pathname.endsWith("/messages") && failReads
+      ? new Response(null, { status: 503 })
+      : undefined,
+  );
+  const view = open();
+  await view.findByText("Couldn't load earlier messages.");
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  const box = view.getByRole("textbox", { name: "Message" });
+  await user.type(box, "Keep these words");
+
+  // The backend answers again: the notice goes and nothing typed was lost.
+  failReads = false;
+  await user.click(view.getByRole("button", { name: "Try again" }));
+  await waitFor(() =>
+    expect(view.queryByText("Couldn't load earlier messages.")).toBeNull(),
+  );
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Keep these words",
+  );
+});
+
+/*
+ * A READ THAT LANDS WHILE THE BOT IS REPLYING MERGES NOTHING, because the live stream owns the
+ * transcript until it ends. With no read after the turn, the earlier messages a failed opening read
+ * had left out never arrived, short of reopening the chat. The read after the turn brings them.
+ */
+test("earlier messages that could not be loaded arrive after the next reply, without reopening the chat", async () => {
+  const THREAD = "thread-late";
+  const earlier: Message[] = [
+    { id: "u-early", role: "user", content: "What did we decide?" },
+    { id: "a-early", role: "assistant", content: "To ship on Friday." },
+  ];
+  runtime.stored.set(THREAD, earlier);
+  // The server names a thread's runs in every read, as this one does for a run that answered.
+  runtime.threadRuns.set(THREAD, [
+    {
+      id: "run-early",
+      status: "completed",
+      userMessageId: "u-early",
+      assistantMessageId: "a-early",
+    },
+  ]);
+  let failReads = true;
+  answerWith((url) =>
+    url.pathname.endsWith("/messages") && failReads
+      ? new Response(null, { status: 503 })
+      : undefined,
+  );
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.plans = [HOLDING];
+  const view = open();
+  await view.findByText("Couldn't load earlier messages.");
+
+  await send(view, "And Saturday?");
+  // Try again while the Bot is replying: the read succeeds and the notice goes, but the reply
+  // still owns the transcript, so the earlier messages are not merged into it.
+  failReads = false;
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(view.getByRole("button", { name: "Try again" }));
+  await waitFor(() =>
+    expect(view.queryByText("Couldn't load earlier messages.")).toBeNull(),
+  );
+  expect(view.queryByText("To ship on Friday.")).toBeNull();
+
+  releaseRun([
+    {
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId: "partial",
+      delta: "Saturday is free.",
+    },
+    { type: "TEXT_MESSAGE_END", messageId: "partial" },
+    { type: "RUN_FINISHED", threadId: THREAD, runId: "run-late" },
+  ]);
+  await said(view, "Saturday is free.");
+  await settled(view);
+  // The thread is read once the turn ends, answered or not, and what was missing is on screen.
+  expect(await view.findByText("What did we decide?")).toBeTruthy();
+  expect(view.getByText("To ship on Friday.")).toBeTruthy();
+  expect(view.getByText("Saturday is free.")).toBeTruthy();
+});
+
+/**
+ * The approval in a thread kept for this Bot, as the inbox holds it at whatever status it reached.
+ * It names the tool call the transcript still shows unanswered, so the step shimmers while the
+ * server carries the turn on.
+ */
+function approvedInbox(status: "approved" | "completed", threadId: string) {
+  return [
+    {
+      id: "approval-1",
+      status,
+      createdAt: "2026-11-05T10:00:00.000Z",
+      // Just now: the server carries a turn on for ten minutes after a decision.
+      decidedAt: new Date().toISOString(),
+      action: {
+        botId: BOT.id,
+        toolRef: "arcade-GoogleCalendar/CreateEvent",
+        effect: "write",
+        scope: "arcade-GoogleCalendar",
+        threadId,
+        toolCallId: CALL,
+        args: { summary: "Spec review" },
+        target: {},
+        policy: {
+          behaviour: "ask",
+          source: "safety",
+          reason: "Sending something to other people asks you first.",
+          kind: "sending",
+        },
+      },
+    },
+  ];
+}
+
+test("after a decision, the Bot working on the server shows here and its reply arrives without reopening", async () => {
+  const THREAD = "thread-remembered";
+  runtime.stored.set(THREAD, asked);
+  runtime.inbox = approvedInbox("approved", THREAD);
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  const client = queryClientWithAgents([BOT]);
+  const view = renderBot(client, ROUTE);
+  expect(
+    await view.findByText(
+      "Invite sam@example.com to Spec review on Friday at 10.",
+    ),
+  ).toBeTruthy();
+
+  // The server has the turn: the step it is on shimmers, and this tab has no run to stop.
+  await waitFor(() =>
+    expect(view.container.querySelector(".tool-line-running")).toBeTruthy(),
+  );
+  expect(view.queryByRole("button", { name: "Stop the Bot" })).toBeNull();
+
+  // It ended and wrote the reply. Read when it did, without opening the conversation again.
+  const reply = {
+    id: "reply-1",
+    role: "assistant",
+    content: "Invited sam@example.com to the Spec review.",
+  } satisfies Message;
+  runtime.stored.set(THREAD, [
+    ...asked,
+    { id: "result-1", role: "tool", toolCallId: CALL, content: "sent" },
+    reply,
+  ]);
+  runtime.inbox = approvedInbox("completed", THREAD);
+  await act(() => client.invalidateQueries({ queryKey: ["approvals"] }));
+  // The reply draws the address as its own element, so the sentence is read off the transcript.
+  await waitFor(() =>
+    expect(view.container.textContent).toContain(reply.content),
+  );
+  await waitFor(() =>
+    expect(view.container.querySelector(".tool-line-running")).toBeNull(),
+  );
+});
+
+test("access to the thread ending hides what was read and offers the way back", async () => {
+  const THREAD = "thread-remembered";
+  runtime.stored.set(THREAD, asked);
+  runtime.inbox = approvedInbox("approved", THREAD);
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  let denyReads = false;
+  answerWith((url) =>
+    url.pathname.endsWith("/messages") && denyReads
+      ? new Response(null, { status: 403 })
+      : undefined,
+  );
+  const client = queryClientWithAgents([BOT]);
+  const view = renderBot(client, ROUTE);
+  expect(
+    await view.findByText(
+      "Invite sam@example.com to Spec review on Friday at 10.",
+    ),
+  ).toBeTruthy();
+
+  denyReads = true;
+  runtime.inbox = approvedInbox("completed", THREAD);
+  await act(() => client.invalidateQueries({ queryKey: ["approvals"] }));
+  expect(await view.findByRole("link", { name: "Back to Home" })).toBeTruthy();
+  expect(view.getByText("Conversation access ended.")).toBeTruthy();
+  expect(
+    view.queryByText("Invite sam@example.com to Spec review on Friday at 10."),
+  ).toBeNull();
+});
+
+/** A turn the Bot takes its time over, so Stop has a run to reach. */
+const HOLDING: RunPlan = {
+  kind: "holds",
+  events: [
+    { type: "TEXT_MESSAGE_START", messageId: "partial", role: "assistant" },
+  ],
+};
+
+/** A run the server holds for this tab's turn, as the messages read names it. */
+const liveRun = (id: string) => ({
+  id,
+  status: "running",
+  userMessageId: `u-${id}`,
+  assistantMessageId: null,
+});
+
+/** Press Stop the Bot, once the run is on the wire and there is one to reach. */
+async function pressStop(view: ReturnType<typeof open>) {
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(await view.findByRole("button", { name: "Stop the Bot" }));
+}
+
+/*
+ * Stop reaches the run the person is watching. A `/bot` thread is read when the chat opens, and
+ * that read said nothing about the run started after it: Stop only aborted this browser's copy, said
+ * "The run was stopped." while the Bot went on working, and the next send was refused. So the thread
+ * is read again when Stop is pressed, and the run that read names is the one stopped, as a
+ * conversation with one Bot does. Only the server's own word says the run was stopped.
+ */
+test("Stop the Bot stops the run this tab started, and the server's word says it was stopped", async () => {
+  runtime.plans = [HOLDING];
+  const view = open();
+  await send(view, "Take your time");
+  // The server holds this tab's run from the moment its request arrives.
+  const { threadId } = currentJoin();
+  runtime.threadRuns.set(threadId, [liveRun("run-live")]);
+  await pressStop(view);
+
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId, runId: "run-live" }]),
+  );
+  expect(await view.findByText("The run was stopped.")).toBeTruthy();
+  // As the server ends a run it stopped: a RUN_ERROR that is not a failure to the person who asked.
+  releaseRun([
+    { type: "RUN_ERROR", message: "The Bot run was stopped.", code: "stopped" },
+  ]);
+  await settled(view);
+  expect(view.queryByTestId("transcript-stopped")).toBeNull();
+  expect(view.getByText("The run was stopped.")).toBeTruthy();
+});
+
+test("a run that was going when the chat opened, and has ended since, is not the one Stop posts", async () => {
+  const THREAD = "thread-stale";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.threadRuns.set(THREAD, [liveRun("run-old")]);
+  runtime.plans = [HOLDING];
+  const view = open();
+  await waitFor(() => expect(runtime.reads).toEqual([THREAD]));
+  await send(view, "Take your time");
+  // The older run answered; the one going now is this tab's.
+  runtime.threadRuns.set(THREAD, [
+    {
+      id: "run-old",
+      status: "completed",
+      userMessageId: "u-run-old",
+      assistantMessageId: "a-run-old",
+    },
+    liveRun("run-live"),
+  ]);
+  await pressStop(view);
+
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId: THREAD, runId: "run-live" }]),
+  );
+  // The server ends the stopped run's stream, as `stoppedRunEvent` does. Let the turn rest here:
+  // a run left open is aborted when the chat is closed after the test, and under load that abort
+  // landed in the next test's record.
+  releaseRun([
+    { type: "RUN_ERROR", code: "stopped", message: "The Bot run was stopped." },
+  ]);
+  await settled(view);
+});
+
+test("a stop the server did not make lets this browser's end of the turn go, and says nothing was stopped", async () => {
+  const THREAD = "thread-ended";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  // The read that opened the chat found a run going. It ended before Stop was pressed.
+  runtime.threadRuns.set(THREAD, [liveRun("run-old")]);
+  runtime.plans = [HOLDING];
+  const view = open();
+  await waitFor(() => expect(runtime.reads).toEqual([THREAD]));
+  await send(view, "Take your time");
+  // The server confirms only a run still going: this one is over, so it stopped nothing.
+  runtime.stopAnswer = "ended";
+  await pressStop(view);
+
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId: THREAD, runId: "run-old" }]),
+  );
+  await waitFor(() => expect(runtime.aborts).toEqual([THREAD]));
+  await settled(view);
+  expect(view.queryByText("The run was stopped.")).toBeNull();
+  expect(view.queryByTestId("transcript-stopped")).toBeNull();
+});
+
+/*
+ * THE SAME FOR A STOP THAT IS STILL WAITING ON THE SERVER WHEN ITS CHAT IS LEFT. It went on to abort
+ * the agent and to read the thread again, and by then the agent was the next chat's of the same Bot:
+ * the run that chat was watching was the one stopped.
+ */
+test("a Stop still waiting on the server when the chat is left neither aborts the agent nor reads again", async () => {
+  const THREAD = "thread-left-mid-stop";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.plans = [HOLDING];
+  const view = open();
+  await waitFor(() => expect(runtime.reads).toEqual([THREAD]));
+  await send(view, "Take your time");
+  // Stop reads the thread first. The server holds that read until the chat has been left.
+  let answer: ((response: Response) => void) | undefined;
+  answerWith((url) =>
+    url.pathname.includes(`/${THREAD}/messages`)
+      ? new Promise<Response>((resolve) => {
+          answer = resolve;
+        })
+      : undefined,
+  );
+  await pressStop(view);
+  await waitFor(() => expect(answer).toBeDefined());
+  view.unmount();
+
+  // The read names a run going, which the server then says had already ended.
+  runtime.stopAnswer = "ended";
+  answer?.(
+    new Response(
+      JSON.stringify({ messages: [], runs: [liveRun("run-live")] }),
+      { headers: { "content-type": "application/json" } },
+    ),
+  );
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId: THREAD, runId: "run-live" }]),
+  );
+  await settleReactWork();
+  expect(runtime.aborts).toEqual([]);
+  expect(runtime.reads).toEqual([THREAD]);
+});
+
+/*
+ * A REFUSED STOP STOPS NOTHING. It used to abort this browser's copy of the run as well, so the Bot
+ * went on working on the server while its reply stopped arriving here, and Stop went with the run:
+ * "Try again" pointed at a button that was no longer there. Only a run that had already ended is
+ * let go here. After a refusal the run keeps streaming and Stop stays for another press, and a
+ * press the server then confirms replaces the refusal with what it says.
+ */
+test("a stop the server refuses leaves the run going here, with Stop to press again, and a later stop that is confirmed says so", async () => {
+  runtime.plans = [HOLDING];
+  const view = open();
+  await send(view, "Take your time");
+  const { threadId } = currentJoin();
+  runtime.threadRuns.set(threadId, [liveRun("run-live")]);
+  runtime.stopAnswer = "refused";
+  await pressStop(view);
+
+  const refused = "The Bot couldn't be stopped. Try again.";
+  expect(await view.findByText(refused)).toBeTruthy();
+  // Nothing was stopped: this browser's copy of the run was not ended.
+  expect(runtime.aborts).toEqual([]);
+  await view.findByRole("button", { name: "Stop the Bot" });
+
+  runtime.stopAnswer = "confirms";
+  await pressStop(view);
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([
+      { threadId, runId: "run-live" },
+      { threadId, runId: "run-live" },
+    ]),
+  );
+  expect(await view.findByText("The run was stopped.")).toBeTruthy();
+  expect(view.queryByText(refused)).toBeNull();
+  expect(runtime.aborts).toEqual([]);
+  releaseRun([
+    { type: "RUN_ERROR", message: "The Bot run was stopped.", code: "stopped" },
+  ]);
+  await settled(view);
+  expect(view.queryByTestId("transcript-stopped")).toBeNull();
+});
+
+test("a failure after a stop the server refused is still a failure", async () => {
+  runtime.plans = [HOLDING];
+  const view = open();
+  await send(view, "Take your time");
+  const { threadId } = currentJoin();
+  runtime.threadRuns.set(threadId, [liveRun("run-live")]);
+  runtime.stopAnswer = "refused";
+  await pressStop(view);
+  const refused = "The Bot couldn't be stopped. Try again.";
+  expect(await view.findByText(refused)).toBeTruthy();
+  await view.findByRole("button", { name: "Stop the Bot" });
+
+  // The run then fails on its own. Nobody stopped it, so it fails like any other run.
+  releaseRun([{ type: "RUN_ERROR", message: REJECTED }]);
+  const shown = await view.findByTestId("transcript-stopped");
+  expect(shown.textContent).toBe(REJECTED);
+  await settled(view);
+  expect(view.queryByText(refused)).toBeNull();
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Take your time",
+  );
+});
+
+/*
+ * A FAILURE WHILE A STOP IS STILL BEING ASKED IS STILL A FAILURE, whatever the server then answers.
+ * From the press, before the server had said anything, the rest of the run was taken to be the
+ * person's stop. A run that failed in that time was swallowed: the person read "The Bot couldn't be
+ * stopped. Try again.", or nothing at all, with no word of what went wrong, and their words counted
+ * as sent.
+ */
+test.each([
+  [
+    "refuses the Stop",
+    () =>
+      new Response(JSON.stringify({ error: "The run could not be stopped." }), {
+        status: 500,
+      }),
+  ],
+  [
+    "says the run had already ended",
+    () =>
+      new Response(JSON.stringify({ stopped: false }), {
+        headers: { "content-type": "application/json" },
+      }),
+  ],
+])(
+  "a run that fails while its Stop is still being asked is a failure when the server %s",
+  async (_, fromServer: () => Response) => {
+    runtime.plans = [HOLDING];
+    const view = open();
+    await send(view, "Take your time");
+    const { threadId } = currentJoin();
+    runtime.threadRuns.set(threadId, [liveRun("run-live")]);
+    // The server holds the stop it is asked for until the run has failed.
+    let answer: ((response: Response) => void) | undefined;
+    answerWith((url) =>
+      url.pathname.endsWith("/stop")
+        ? new Promise<Response>((resolve) => {
+            answer = resolve;
+          })
+        : undefined,
+    );
+    await pressStop(view);
+    await waitFor(() => expect(answer).toBeDefined());
+
+    releaseRun([{ type: "RUN_ERROR", message: REJECTED }]);
+    await view.findByTestId("transcript-stopped");
+    answer?.(fromServer());
+    await settled(view);
+    // What went wrong stays on screen, nothing about the Stop replaces it, and the words come back.
+    expect(view.getByTestId("transcript-stopped").textContent).toBe(REJECTED);
+    expect(
+      view.queryByText("The Bot couldn't be stopped. Try again."),
+    ).toBeNull();
+    expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe(
+      "Take your time",
+    );
+  },
+);
+
+/*
+ * THE THREAD IS READ AGAIN AFTER EVERY TURN OF THIS TAB, answered or not. It was read only after a
+ * turn that failed, so "The run was stopped." stayed on screen under the next turn's answer.
+ */
+test("after a Stop is confirmed, the next turn's answer takes the sentence about the stop away", async () => {
+  runtime.plans = [HOLDING, { kind: "answers", text: "All done." }];
+  const view = open();
+  await send(view, "Take your time");
+  const { threadId } = currentJoin();
+  runtime.threadRuns.set(threadId, [liveRun("run-1")]);
+  await pressStop(view);
+  await waitFor(() =>
+    expect(runtime.stops).toEqual([{ threadId, runId: "run-1" }]),
+  );
+  expect(await view.findByText("The run was stopped.")).toBeTruthy();
+  releaseRun([
+    { type: "RUN_ERROR", message: "The Bot run was stopped.", code: "stopped" },
+  ]);
+  await settled(view);
+  expect(view.getByText("The run was stopped.")).toBeTruthy();
+
+  // The next turn answers. As the server then records the thread: the stopped run is no longer
+  // the last one, and a run that ended as it should has nothing to explain.
+  answerWith((url) => {
+    if (!url.pathname.endsWith("/run")) return undefined;
+    runtime.threadRuns.set(threadId, [
+      { ...liveRun("run-1"), status: "failed", stopReason: "stopped" },
+      {
+        id: "run-2",
+        status: "completed",
+        userMessageId: "u-run-2",
+        assistantMessageId: "a-run-2",
+      },
+    ]);
+    return undefined;
+  });
+  await send(view, "And now");
+  await said(view, "All done.");
+  await settled(view);
+  await waitFor(() =>
+    expect(view.queryByText("The run was stopped.")).toBeNull(),
+  );
+});
+
+/*
+ * What became of a stored run is said on `/bot` as a conversation with one Bot says it, from the same
+ * notice. Each shape is one the server writes (`direct-chat.ts`): a run stopped while it was
+ * dispatching an action leaves `unknown`, a managed model's own record settles it as `executed` or
+ * `not_dispatched`, and a run the server stopped carries its reason.
+ */
+const STORED_RUNS: [string, Record<string, unknown>, string][] = [
+  [
+    "waiting for approval",
+    { id: "run-waiting", status: "running", waitingForApproval: true },
+    "Waiting for your approval.",
+  ],
+  [
+    "stopped with an outcome nobody can vouch for",
+    {
+      id: "run-unknown",
+      status: "failed",
+      stopReason: "stopped",
+      externalOutcome: "unknown",
+    },
+    "The previous run's external outcome is unknown. Check the outcome before sending again.",
+  ],
+  [
+    "paused",
+    { id: "run-paused", status: "failed", stopReason: "context_revoked" },
+    "The run paused because Memory or Learned skill access changed.",
+  ],
+  [
+    "not dispatched",
+    { id: "run-not-sent", status: "failed", externalOutcome: "not_dispatched" },
+    "The action was not dispatched. Send your request again to retry.",
+  ],
+  [
+    "executed",
+    { id: "run-done", status: "failed", externalOutcome: "executed" },
+    "The outcome was verified and added to the conversation.",
+  ],
+  [
+    "stopped",
+    { id: "run-stopped", status: "failed", stopReason: "stopped" },
+    "The run was stopped.",
+  ],
+  [
+    "stopped when access was revoked",
+    { id: "run-revoked", status: "failed", stopReason: "access_revoked" },
+    "The run ended when access was revoked.",
+  ],
+];
+
+test.each(STORED_RUNS)(
+  "a run %s says so on /bot, as every conversation does",
+  async (_, run, words) => {
+    const THREAD = `thread-${String(run.id)}`;
+    localStorage.setItem(botThreadKey(BOT.id), THREAD);
+    runtime.threadRuns.set(THREAD, [
+      { userMessageId: "u-1", assistantMessageId: null, ...run },
+    ]);
+    const view = open();
+    expect(
+      await view.findByText(words, { selector: "[role=status]" }),
+    ).toBeTruthy();
+  },
+);
+
+/*
+ * On a deployment with a managed model, a run the person stopped can leave its outcome unknown, and
+ * the next send is refused until somebody checks it. A conversation with one Bot offers "Check
+ * outcome" there; `/bot` must not be left without it once its Stop reaches the server.
+ */
+test("a run whose outcome nobody can vouch for is explained on /bot, and Check outcome asks the server about it", async () => {
+  const THREAD = "thread-unverified";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  const run = {
+    id: "run-unverified",
+    status: "failed",
+    stopReason: "stopped",
+    externalOutcome: "unknown",
+    userMessageId: "u-1",
+    assistantMessageId: null,
+  };
+  runtime.threadRuns.set(THREAD, [run]);
+  const view = open();
+  expect(
+    await view.findByText(
+      "The previous run's external outcome is unknown. Check the outcome before sending again.",
+      { selector: "[role=status]" },
+    ),
+  ).toBeTruthy();
+  const user = userEvent.setup({ document: view.container.ownerDocument });
+  await user.click(view.getByRole("button", { name: "Check outcome" }));
+
+  await waitFor(() => expect(runtime.reconciles).toEqual(["run-unverified"]));
+  // The server settled it, and the read after that says what it settled to.
+  expect(
+    await view.findByText(
+      "The outcome was verified and added to the conversation.",
+    ),
+  ).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Check outcome" })).toBeNull();
+});
+
+/*
+ * A turn of this tab that fails is read back at once. On a deployment with a managed model such a
+ * run ends with an outcome nobody can vouch for, and the next send is refused until it is checked:
+ * the sentence and its way out have to be on screen before the person types again, not after a reload.
+ */
+test("a turn that fails leaves an outcome to check on /bot, without reopening the chat", async () => {
+  const THREAD = "thread-managed";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.plans = [{ kind: "fails", message: REJECTED }];
+  // The server's record of the run, as a managed model's failure leaves it.
+  answerWith((url) => {
+    if (url.pathname.endsWith("/run"))
+      runtime.threadRuns.set(THREAD, [
+        {
+          id: "run-1",
+          status: "failed",
+          externalOutcome: "unknown",
+          userMessageId: "u-1",
+          assistantMessageId: null,
+        },
+      ]);
+    return undefined;
+  });
+  const view = open();
+  await waitFor(() => expect(runtime.reads).toEqual([THREAD]));
+  await send(view, "Plan my week");
+
+  expect(await view.findByTestId("transcript-stopped")).toBeTruthy();
+  expect(
+    await view.findByText(
+      "The previous run's external outcome is unknown. Check the outcome before sending again.",
+      { selector: "[role=status]" },
+    ),
+  ).toBeTruthy();
+  expect(view.getByRole("button", { name: "Check outcome" })).toBeTruthy();
+});
+
+/*
+ * A RUN STOPPED IN ANOTHER TAB while this one streams the turn. The server ends the stream with a
+ * RUN_ERROR carrying its reason (`stoppedRunEvent`), and read as a failure it drew the stop in red
+ * with the words put back in the box. It is not a failure: the notice says "The run was stopped."
+ * from the read after the turn, as it does in a conversation.
+ */
+test("a run stopped in another tab is not drawn as a failure on /bot, and the notice says it was stopped", async () => {
+  const THREAD = "thread-stopped-elsewhere";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.plans = [
+    { kind: "fails", message: "The Bot run was stopped.", code: "stopped" },
+  ];
+  answerWith((url) => {
+    if (url.pathname.endsWith("/run"))
+      runtime.threadRuns.set(THREAD, [
+        {
+          id: "run-1",
+          status: "failed",
+          stopReason: "stopped",
+          userMessageId: "u-1",
+          assistantMessageId: null,
+        },
+      ]);
+    return undefined;
+  });
+  const view = open();
+  await waitFor(() => expect(runtime.reads).toEqual([THREAD]));
+  await send(view, "Plan my week");
+
+  await settled(view);
+  expect(view.queryByTestId("transcript-stopped")).toBeNull();
+  expect(view.getByRole("textbox", { name: "Message" }).textContent).toBe("");
+  expect(
+    await view.findByText("The run was stopped.", {
+      selector: "[role=status]",
+    }),
+  ).toBeTruthy();
+});
+
+/*
+ * Access that ends while the chat is open showed only on the next send, as a red run error with the
+ * old content still on screen. The read after a failed send hides it and offers the way back.
+ */
+test("a send that fails because access ended hides what was read and offers the way back", async () => {
+  const THREAD = "thread-taken-away";
+  runtime.stored.set(THREAD, asked);
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  let takenAway = false;
+  answerWith((url) =>
+    takenAway &&
+    (url.pathname.endsWith("/run") || url.pathname.endsWith("/messages"))
+      ? new Response(JSON.stringify({ error: "Not yours." }), { status: 403 })
+      : undefined,
+  );
+  const view = open();
+  expect(
+    await view.findByText(
+      "Invite sam@example.com to Spec review on Friday at 10.",
+    ),
+  ).toBeTruthy();
+
+  takenAway = true;
+  await send(view, "And today");
+  expect(await view.findByRole("link", { name: "Back to Home" })).toBeTruthy();
+  expect(view.getByText("Conversation access ended.")).toBeTruthy();
+  expect(
+    view.queryByText("Invite sam@example.com to Spec review on Friday at 10."),
+  ).toBeNull();
+});
+
+/*
+ * A stopped run comes back as the server recorded it, a RUN_ERROR that carries its reason, and read
+ * as a failure it was drawn in red under the plain notice: live, and again after a reload, when the
+ * replay sends it back. A stop is not a failure, either time.
+ */
+test("a run the person stopped is not drawn as a failure, live or after a reload", async () => {
+  const THREAD = "thread-stopped-reload";
+  localStorage.setItem(botThreadKey(BOT.id), THREAD);
+  runtime.threadRuns.set(THREAD, [
+    {
+      id: "run-1",
+      status: "failed",
+      stopReason: "stopped",
+      userMessageId: "u-1",
+      assistantMessageId: null,
+    },
+  ]);
+  runtime.plans = [
+    { kind: "fails", message: "The Bot run was stopped.", code: "stopped" },
+  ];
+  const live = open();
+  await send(live, "Take your time");
+  await settled(live);
+  await said(live, "Take your time");
+  expect(live.queryByTestId("transcript-stopped")).toBeNull();
+  expect(live.getByText("The run was stopped.")).toBeTruthy();
+
+  live.unmount();
+  const back = open();
+  await settled(back);
+  await said(back, "Take your time");
+  expect(back.queryByTestId("transcript-stopped")).toBeNull();
+  expect(back.queryByText("The Bot run was stopped.")).toBeNull();
+  expect(back.getByText("The run was stopped.")).toBeTruthy();
 });

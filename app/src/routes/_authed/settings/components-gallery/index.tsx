@@ -1,5 +1,7 @@
+import { Grid } from "@astryxdesign/core/Grid";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
@@ -128,16 +130,17 @@ function RouteComponent() {
     >
       {components.isPending ? (
         /* The grid's own shape while it loads, so the page is never blank. */
-        <div
+        <Grid
           aria-busy="true"
           aria-label="Loading components"
           role="status"
-          className="mt-12 grid w-full grid-cols-1 gap-4 md:grid-cols-2"
+          className="mt-12 w-full grid-cols-1 md:grid-cols-2"
+          gap={4}
         >
           {[0, 1, 2, 3].map((key) => (
             <Skeleton key={key} className="aspect-square rounded-lg" />
           ))}
-        </div>
+        </Grid>
       ) : components.error ? (
         <ReadError
           focusAfterRetry={() => heading.current}
@@ -162,11 +165,7 @@ function RouteComponent() {
             aria-label="Search published components"
             className="space-y-2"
           >
-            <Text
-              as="p"
-              size="sm"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
+            <Text as="p" size="sm" color="secondary">
               Open a component to find its name. In a conversation, ask a Bot
               with access to show the component by that name.
             </Text>
@@ -214,7 +213,7 @@ function RouteComponent() {
                    * definition, so a dot saying so would be the same mark on every tile.
                    */
                   <Link
-                    className="astryx-component-tile flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="astryx-component-tile flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                     data-testid={`gallery-${component.name}`}
                     key={component.name}
                     onClick={(event) => {
@@ -247,17 +246,17 @@ function RouteComponent() {
                       </p>
                     </header>
                     {spec?.preview ? (
-                      <div className="relative mt-auto aspect-[3/2]">
-                        <div className="absolute top-0 left-0 h-full w-full p-3">
+                      <VStack className="relative mt-auto aspect-[3/2]">
+                        <VStack className="absolute inset-0" padding={3}>
                           <SettingsItemBackground className="h-full w-full rounded-md" />
-                        </div>
-                        <div className="absolute top-0 left-0 z-10 h-full w-full p-3">
+                        </VStack>
+                        <VStack className="absolute inset-0 z-10" padding={3}>
                           <ComponentPreview
                             kind={component.kind}
                             name={component.name}
                           />
-                        </div>
-                      </div>
+                        </VStack>
+                      </VStack>
                     ) : null}
                   </Link>
                 );

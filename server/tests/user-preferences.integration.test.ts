@@ -102,27 +102,22 @@ test("the narration choice is kept in the database beside the others", async () 
   });
 });
 
-test("the skin is saved on the account and survives a new store", async () => {
-  const id = await person();
-  expect(await store.patch(id, { skin: "openmuse" })).toEqual({
-    messageListEmphasis: "thread",
-    selfHostBannerDismissed: false,
-    narration: null,
-    skin: "openmuse",
-    proactive: "on",
-  });
-  expect((await createUserPreferencesStore(database).read(id)).skin).toBe(
-    "openmuse",
-  );
-});
-
 test("a stored skin this build does not ship reads as the default", async () => {
   const id = await person();
   await database
     .update(users)
-    .set({ preferences: sql`'{"skin":"retired-skin"}'::jsonb` })
+    .set({ preferences: sql`'{"skin":"openduet"}'::jsonb` })
     .where(eq(users.id, id));
   expect((await store.read(id)).skin).toBe("openbot");
+  expect(await store.patch(id, { narration: "on" })).toMatchObject({
+    skin: "openbot",
+    narration: "on",
+  });
+  const [row] = await database
+    .select({ skin: sql<string>`${users.preferences}->>'skin'` })
+    .from(users)
+    .where(eq(users.id, id));
+  expect(row?.skin).toBe("openduet");
 });
 
 test("check-ins are on for a person who never chose, and their off is kept in the database", async () => {
@@ -138,7 +133,7 @@ test("check-ins are on for a person who never chose, and their off is kept in th
     messageListEmphasis: "thread",
     selfHostBannerDismissed: false,
     narration: null,
-    skin: "openduet",
+    skin: "openbot",
     proactive: "off",
   });
   // The jsonb key the check-in claim filters on, as Postgres holds it.
@@ -169,7 +164,7 @@ test("concurrent starter claims across pools keep one winner and unrelated prefe
     const saved = await secondStore.read(id);
     expect(["first", "second"]).toContain(saved.starterTourChannelId ?? "");
     expect(saved).toMatchObject({
-      skin: "openduet",
+      skin: "openbot",
       narration: "on",
     });
     expect(saved).toHaveProperty("futurePreference", true);
@@ -206,15 +201,13 @@ test.each([
         .values({ channelId, userId: id });
       await store.claimStarterTour(id, matching ? channelId : "different");
       await store.claimStarterTour(other, channelId);
-      await store.patch(id, {
-        skin: "openduet",
-      });
+      await store.patch(id, { narration: "on" });
       await channelStore.softDelete({ id, role: "user" }, channelId, discard);
       const saved = await store.read(id);
       expect(saved.starterTourChannelId).toBe(
         released ? undefined : matching ? channelId : "different",
       );
-      expect(saved.skin).toBe("openduet");
+      expect(saved.narration).toBe("on");
       expect((await store.read(other)).starterTourChannelId).toBe(channelId);
       await store.claimStarterTour(id, "retry");
       expect((await store.read(id)).starterTourChannelId).toBe(

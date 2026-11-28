@@ -1,5 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Stack } from "@astryxdesign/core/Stack";
@@ -29,6 +30,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTranslation } from "@/i18n";
 import {
   defaultAgentId,
   defaultAgentProfile,
@@ -46,6 +48,8 @@ import { useOpenComputerOnRequest } from "@/lib/computers/panel-view";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { useBotActivity } from "@/lib/copilot/bot-activity";
 import { useBotThread } from "@/lib/copilot/bot-thread";
+import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
+import { modelCatalogueQueryOptions } from "@/lib/models/queries";
 import { searchTextEntry } from "@/lib/search-text";
 
 const quickDraftText = z.string();
@@ -102,6 +106,8 @@ const quickBotEnvelope = z.object({
     id: z.string(),
     name: z.string(),
     roleDescription: z.string().nullish(),
+    runsOnOpenBotModel: z.boolean().optional(),
+    visibility: z.enum(["public", "private"]),
   }),
 });
 type BotDetailLookup =
@@ -281,6 +287,8 @@ function RouteComponent() {
       key={agentId}
       name={bot.name}
       purpose={bot.roleDescription?.trim()}
+      runsOnOpenBotModel={bot.runsOnOpenBotModel === true}
+      visibility={bot.visibility}
     />
   );
 }
@@ -290,12 +298,23 @@ function BotChat({
   draftKey,
   name,
   purpose,
+  runsOnOpenBotModel,
+  visibility,
 }: {
   agentId: string;
   draftKey?: string;
   name: string;
   purpose?: string;
+  runsOnOpenBotModel: boolean;
+  visibility: "public" | "private";
 }) {
+  const { t } = useTranslation();
+  const personal =
+    useQuery(deploymentCapabilitiesQueryOptions()).data?.edition === "personal";
+  const models = useQuery({
+    ...modelCatalogueQueryOptions(),
+    enabled: runsOnOpenBotModel,
+  });
   // Tool calls here act on this Bot's own computer.
   useActiveBot(agentId);
   /*
@@ -366,23 +385,34 @@ function BotChat({
               >
                 {name}
               </Heading>
+              {!personal && (
+                <Text color="secondary" type="supporting">
+                  {visibility === "public"
+                    ? t("conversation.scope.public")
+                    : t("conversation.scope.private")}
+                </Text>
+              )}
               {purpose &&
               purpose.toLowerCase() !== name.trim().toLowerCase() ? (
-                <details className="min-w-0 max-w-prose">
-                  <summary className="min-h-11 content-center cursor-pointer text-sm underline underline-offset-4">
-                    About this Bot
-                  </summary>
+                <Collapsible
+                  defaultIsOpen={false}
+                  trigger={t("conversation.quick.about")}
+                >
                   <Text
                     as="p"
-                    className="max-h-24 overflow-y-auto wrap-anywhere"
                     color="secondary"
                     display="block"
+                    style={{
+                      maxBlockSize: "min(25dvh, 6lh)",
+                      overflowY: "auto",
+                      overflowWrap: "anywhere",
+                    }}
                     tabIndex={0}
                     type="supporting"
                   >
                     {purpose}
                   </Text>
-                </details>
+                </Collapsible>
               ) : null}
             </Stack>
             <Stack
@@ -464,6 +494,15 @@ function BotChat({
               role="status"
             />
           )}
+          {runsOnOpenBotModel &&
+            ((models.isError && !models.data) ||
+              models.data?.choicesUnavailable) && (
+              <ConversationReadError
+                title={t("conversation.models.loadFailed")}
+                retry={() => void models.refetch()}
+                retrying={models.isFetching}
+              />
+            )}
           {startFailed && (
             <ConversationReadError
               title="Couldn't start a new conversation."

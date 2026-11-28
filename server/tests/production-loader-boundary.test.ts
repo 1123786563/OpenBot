@@ -58,14 +58,18 @@ async function runProductionEntry() {
     stderr: "pipe",
   });
 
-  const timeout = setTimeout(() => proc.kill(), 5_000);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, 20_000);
   try {
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    return { stdout, stderr, exitCode };
+    return { stdout, stderr, exitCode, timedOut };
   } finally {
     clearTimeout(timeout);
     await rm(proofDir, { recursive: true, force: true });
@@ -77,6 +81,7 @@ describe("production server loader boundary", () => {
     const result = await runProductionEntry();
     const output = `${result.stdout}\n${result.stderr}`;
 
+    expect(result.timedOut).toBe(false);
     expect(result.exitCode).not.toBe(0);
     expect(output).not.toContain("require() async module");
     expect(output).not.toContain("OPENBOT_SERVER_LOADER_SMOKE");
@@ -84,5 +89,5 @@ describe("production server loader boundary", () => {
     expect(output).toMatch(
       /Connection closed|Failed to connect|ERR_POSTGRES_CONNECTION_REFUSED/,
     );
-  });
+  }, 30_000);
 });

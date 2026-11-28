@@ -65,6 +65,8 @@ Use `bash scripts/stop.sh` to take it down: the app, the routine worker, the API
 
 Use `bun run dev` only when you want the app and API server without starting the Docker Bots and computers.
 
+Both launch paths start the API server with `deploy/.local/pilot.env` when it exists: this checkout's own machine settings, such as the [CubeSandbox browser pilot](domain/computer-and-browser/cubesandbox-pilot.md)'s, which no settings file holds. A value there wins over the settings files and over Infisical; what the shell exports still wins over it. The file is optional, and a checkout without one starts the same way.
+
 | Service           | Port                       |
 | ----------------- | -------------------------- |
 | `app`             | 3010                       |

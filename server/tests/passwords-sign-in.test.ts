@@ -400,14 +400,14 @@ describe("the other answers", () => {
 });
 
 describe("the routes", () => {
-  function app(context: ReturnType<typeof setup>) {
+  function app(context: ReturnType<typeof setup>, actorId = "owner") {
     const requireUser = async (
       c: { set: (key: "actor", value: AppVariables["actor"]) => void },
       next: () => Promise<void>,
     ) => {
       c.set("actor", {
-        id: "owner",
-        email: "owner@example.test",
+        id: actorId,
+        email: `${actorId}@example.test`,
       } as AppVariables["actor"]);
       await next();
     };
@@ -466,6 +466,66 @@ describe("the routes", () => {
     ];
     for (const body of bodies) expectNoCredential(body);
     expect(bodies[2]).toContain(USERNAME);
+  });
+
+  test("deleting a saved login removes the owner's, refuses another person's and a repeat, and records the site", async () => {
+    const context = setup();
+    const request = await context.service.request({
+      ownerUserId: "owner",
+      botId: "bot",
+      site: "example.com",
+      actor,
+    });
+    await context.service.submit("owner", request.id, actor, {
+      username: USERNAME,
+      password: PASSWORD,
+      save: true,
+    });
+    const [login] = await context.store.logins("owner");
+    if (!login) throw new Error("not saved");
+
+    const remove = (server: ReturnType<typeof app>) =>
+      server.fetch(
+        new Request(`http://127.0.0.1/api/passwords/${login.id}`, {
+          method: "DELETE",
+        }),
+      );
+
+    // Another person's id answers as a missing one, and leaves the login alone.
+    const stranger = await remove(app(context, "stranger"));
+    expect(stranger.status).toBe(404);
+    expectNoCredential(await stranger.text());
+    expect((await context.store.logins("owner")).map((row) => row.id)).toEqual([
+      login.id,
+    ]);
+
+    const first = await remove(app(context));
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ deleted: true });
+    expectNoCredential(
+      await JSON.stringify(await first.json().catch(() => null)),
+    );
+    expect(await context.store.logins("owner")).toEqual([]);
+
+    // The second press of Delete, answered as what it is.
+    const again = await remove(app(context));
+    expect(again.status).toBe(404);
+    expect(await again.json()).toEqual({
+      error: "There is no such saved login.",
+    });
+
+    const recorded = context.trail.rows.filter(
+      (row) => row.eventType === "password.deleted",
+    );
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      eventType: "password.deleted",
+      targetType: "password",
+      targetId: login.id,
+      actorUserId: "owner",
+      payload: { site: "https://example.com", login: login.id },
+    });
+    expectNoCredential(JSON.stringify(context.trail.rows));
   });
 
   test("an unexpected failure is one fixed sentence, not the error it came from", async () => {

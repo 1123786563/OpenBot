@@ -18,11 +18,11 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
-import { i18n, setLocalePreference } from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { TeamFeaturesDialog } from "@/components/edition/team-features-dialog";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { i18n, setLocalePreference } from "@/i18n";
 import { agentKeys } from "@/lib/agents/queries";
 import { authKeys } from "@/lib/auth/queries";
 import {
@@ -232,8 +232,7 @@ test.each([
     /AI Model and Agent Framework/,
     "/channel/models",
   ],
-  ["Bots", "link", /^Bots/, "/bots"],
-  ["Connections", "link", /^Connections/, "/connections"],
+  ["Apps", "link", /^Apps/, "/connections"],
   ["Teach a Bot", "link", /^Teach a Bot/, "/browser"],
   ["New conversation", "button", /^New conversation$/, "/channel/new"],
 ] as const)(
@@ -246,6 +245,15 @@ test.each([
     expect(app.router.state.location.pathname).toBe(path);
   },
 );
+
+test("All Bots in the Bots pane closes the sheet and opens the roster", async () => {
+  const app = renderNarrowApp();
+  const sheet = await app.openSheet();
+  await app.user.click(within(sheet).getByRole("button", { name: "Bots" }));
+  await app.user.click(within(sheet).getByRole("link", { name: "All Bots" }));
+  await app.sheetCloses();
+  expect(app.router.state.location.pathname).toBe("/bots");
+});
 
 test("Settings in the account menu closes the sheet and opens Settings", async () => {
   const app = renderNarrowApp();
@@ -307,7 +315,9 @@ test("navigation can be opened, dismissed, and followed with the keyboard", asyn
   const nav = within(
     await app.view.findByRole("navigation", { name: "Workspace" }),
   );
-  nav.getByRole("link", { name: "Bots" }).focus();
+  nav.getByRole("button", { name: "Bots" }).focus();
+  await app.user.keyboard("{Enter}");
+  app.view.getByRole("link", { name: "All Bots" }).focus();
   await app.user.keyboard("{Enter}");
   await app.view.findByRole("heading", { name: "/bots" });
   await waitFor(() => {
@@ -316,11 +326,11 @@ test("navigation can be opened, dismissed, and followed with the keyboard", asyn
   });
   await app.user.keyboard("{Enter}");
   const current = within(
-    await app.view.findByRole("navigation", { name: "Workspace" }),
+    await app.view.findByRole("dialog", { name: "Navigation" }),
   );
   expect(
     current
-      .getByRole("link", { name: "Bots", current: "page" })
+      .getByRole("link", { name: "All Bots", current: "page" })
       .getAttribute("href"),
   ).toBe("/bots");
 });
@@ -335,11 +345,13 @@ test("an initial Bots deep link is active in desktop navigation", async () => {
       await app.view.findByRole("navigation", { name: "Workspace" }),
     );
     expect(
-      navigation
-        .getByRole("link", { name: "Bots", current: "page" })
+      app.view
+        .getByRole("link", { name: "All Bots", current: "page" })
         .getAttribute("href"),
     ).toBe("/bots");
-    expect(app.view.queryByRole("link", { name: "Capabilities" })).toBeNull();
+    expect(
+      navigation.getByRole("button", { name: "Bots", pressed: true }),
+    ).toBeTruthy();
     expect(
       app.view
         .getByRole("button", { name: "Close navigation" })

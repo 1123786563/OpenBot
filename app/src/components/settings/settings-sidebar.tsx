@@ -16,6 +16,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
+import type { RefObject } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -27,6 +28,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { useTranslation } from "@/i18n";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
@@ -230,8 +232,16 @@ export function settingsSidebarItems(
 }
 
 export function SettingsSidebar({
+  navId,
+  returnFocus,
   ...props
-}: React.ComponentProps<typeof Sidebar>) {
+}: React.ComponentProps<typeof Sidebar> & {
+  /** The navigation's id: the desktop pane's and the mobile sheet's, so the toggle's aria-controls names it. */
+  navId?: string;
+  /** Where the closed sheet sends focus. */
+  returnFocus?: RefObject<HTMLButtonElement | null>;
+}) {
+  const { isMobile } = useSidebar();
   const { t } = useTranslation();
   const user = useQuery(currentUserQueryOptions()).data;
   const capabilities = useQuery(deploymentCapabilitiesQueryOptions()).data;
@@ -269,7 +279,22 @@ export function SettingsSidebar({
     "Workspace tools",
   ] as const;
   return (
-    <Sidebar variant="inset" {...props}>
+    <Sidebar
+      variant="inset"
+      {...(navId
+        ? {
+            id: isMobile ? undefined : navId,
+            mobileNavigation: {
+              title: t("nav.settings", "Settings"),
+              popup: {
+                id: navId,
+                finalFocus: returnFocus,
+              },
+            },
+          }
+        : {})}
+      {...props}
+    >
       {/* Matched to the app sidebar's header, as Admin's is. See admin-sidebar.tsx. */}
       <SidebarHeader className="h-12 p-2">
         <SidebarMenu>

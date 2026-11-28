@@ -1,3 +1,4 @@
+import { VStack } from "@astryxdesign/core/VStack";
 import {
   IconChalkboardTeacher,
   IconChevronRight,
@@ -18,8 +19,8 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { RowMark } from "@/components/layout/row-mark";
 import { ReadError } from "@/components/layout/read-status";
+import { RowMark } from "@/components/layout/row-mark";
 import { StaggerItem } from "@/components/layout/stagger";
 import { EditSkill } from "@/components/skills/edit-skill";
 import { NewSkill } from "@/components/skills/new-skill";
@@ -46,14 +47,17 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { grantRoster, skillHolderSentence } from "@/lib/agents/grant-roster";
+import { agentListQueryOptions } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { browserStateQueryOptions } from "@/lib/browser/queries";
 import { canKeepCachedRead } from "@/lib/client";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   removeSkillMutationOptions,
   saveSkillMutationOptions,
 } from "@/lib/plugins/mutations";
 import {
+  type PluginSkill,
   pluginsPageQueryOptions,
   skillsAccessDenied,
 } from "@/lib/plugins/queries";
@@ -156,6 +160,9 @@ function SkillsPage() {
     refetch: refetchSkills,
   } = useQuery(pluginsPageQueryOptions());
   const profile = useQuery(currentUserQueryOptions());
+  const agents = useQuery(agentListQueryOptions());
+  /* The ones this person has hidden, so a Bot of theirs holding the skill is still named. */
+  const hiddenAgents = useQuery(agentListQueryOptions(true));
   const browser = useQuery(browserStateQueryOptions());
   const canTeach = browser.data?.available && canKeepCachedRead(browser.error);
   const me = profile.data;
@@ -184,6 +191,24 @@ function SkillsPage() {
   const mine = skills.filter((skill) => skill.ownerUserId === me?.id);
   const deployment = skills.filter((skill) => skill.ownerUserId === null);
   const heading = useRef<HTMLHeadingElement>(null);
+  /**
+   * Which of this person's Bots offer the skill, for the confirmation before deleting it. A personal
+   * skill only reaches Bots they own, so the roster is filtered to those; `undefined` is a roster
+   * that could not be read, which must never be stated as no Bot.
+   */
+  const holdersOf = (skill: PluginSkill) =>
+    agents.isError ||
+    hiddenAgents.isError ||
+    agents.isPending ||
+    hiddenAgents.isPending
+      ? undefined
+      : grantRoster({
+          roster: (agents.data ?? []).filter((agent) => agent.mine),
+          hidden: (hiddenAgents.data ?? []).filter((agent) => agent.mine),
+          holders: skill.grantedTo,
+        })
+          .filter((agent) => skill.grantedTo.includes(agent.id))
+          .map((agent) => agent.name);
   const [search, setSearch] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -320,7 +345,7 @@ function SkillsPage() {
            * screen through a failed refetch, because `data` is still there.
            */}
           {loading ? (
-            <div
+            <VStack
               aria-busy="true"
               aria-label="Loading skills"
               className="mt-4"
@@ -338,9 +363,9 @@ function SkillsPage() {
                   </StaggerItem>
                 ))}
               </PageRows>
-            </div>
+            </VStack>
           ) : readIssue && mine.length === 0 ? null : mine.length === 0 ? (
-            <Empty className="mt-4 h-[180px] border border-dashed">
+            <Empty className="mt-4 h-45 border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
                   No skills yet. Write one with New skill.
@@ -415,8 +440,7 @@ function SkillsPage() {
                                 onClick={() => {
                                   requestConfirmation({
                                     title: `Delete ${skill.title}?`,
-                                    description:
-                                      "Your Bots will stop offering this skill. Deletion is permanent.",
+                                    description: `${skillHolderSentence(holdersOf(skill))} Deletion is permanent.`,
                                     confirmLabel: "Delete skill",
                                     pendingLabel: "Deleting…",
                                     failureMessage:
