@@ -223,7 +223,7 @@ export function ManageSection({
             </ItemMedia>
             <ItemContent>
               <ItemTitle>Pinned</ItemTitle>
-              <ItemDescription>
+              <ItemDescription className="line-clamp-none text-sm">
                 {assigned
                   ? "An admin assigned it to you. It stays at the top of your Bots list."
                   : agent.pinned
@@ -250,7 +250,7 @@ export function ManageSection({
             </ItemMedia>
             <ItemContent>
               <ItemTitle>Hidden</ItemTitle>
-              <ItemDescription>
+              <ItemDescription className="line-clamp-none text-sm">
                 {assigned
                   ? "An admin assigned it to you. You can't hide it."
                   : agent.hidden
@@ -308,7 +308,7 @@ export function ManageSection({
                       ? "Try duplicating again"
                       : "Duplicate"}
               </ItemTitle>
-              <ItemDescription className="line-clamp-none">
+              <ItemDescription className="line-clamp-none text-sm">
                 Make your own copy. Its conversations and keys aren't copied.
               </ItemDescription>
             </ItemContent>
@@ -316,7 +316,7 @@ export function ManageSection({
           {duplicate.isError ? (
             <Item size="sm">
               <ItemDescription
-                className="line-clamp-none text-destructive"
+                className="line-clamp-none text-destructive text-sm"
                 role="alert"
               >
                 {duplicate.error.message}
@@ -338,7 +338,7 @@ export function ManageSection({
             </ItemMedia>
             <ItemContent>
               <ItemTitle>Reset your data</ItemTitle>
-              <ItemDescription className="line-clamp-none">
+              <ItemDescription className="line-clamp-none text-sm">
                 {/* Where memory isn't offered a Bot remembers nothing to delete (see `offersMemory`). */}
                 {memory
                   ? "Delete your conversations with it, what it remembers for you, and its scheduled work. You'll see the list first."
@@ -384,7 +384,7 @@ export function ManageSection({
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>Delete Bot</ItemTitle>
-                  <ItemDescription>
+                  <ItemDescription className="line-clamp-none text-sm">
                     {/* A deleted Bot's conversations stay readable (channel-chat.tsx says so there). */}
                     {personal
                       ? "Deletes it. You can still read your conversations with it. You can't undo this."

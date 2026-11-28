@@ -45,8 +45,8 @@ import {
   type BotNotify,
   botLifecycleQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
-import { desktopShell } from "@/lib/desktop/shell";
 import { computerToolsOffered } from "@/lib/copilot/computer-available";
+import { desktopShell } from "@/lib/desktop/shell";
 import { myCapabilitiesQueryOptions } from "@/lib/enterprise/queries";
 import {
   refreshNotificationPermission,
@@ -188,7 +188,7 @@ export function BotProfile({
                   {/* On means working, the way a responsibility's Active switch reads: titled "Paused",
                     the row showed the word "Paused" beside a switch that was off for a running Bot. */}
                   <ItemTitle>Active</ItemTitle>
-                  <ItemDescription className="line-clamp-none">
+                  <ItemDescription className="line-clamp-none text-sm">
                     {lifecycle.data.paused
                       ? "Paused. Nothing runs for you until you turn it back on."
                       : "Works on its goals, routines, hand-offs and follow-ups for you."}
@@ -214,7 +214,7 @@ export function BotProfile({
                 <ItemContent className="min-w-0">
                   <ItemTitle>Notifications</ItemTitle>
                   <ItemDescription
-                    className="line-clamp-none"
+                    className="line-clamp-none text-sm"
                     id={notificationHelpId}
                   >
                     Choose which updates from this Bot can send notifications.
@@ -267,7 +267,7 @@ export function BotProfile({
                           ? "Desktop notifications"
                           : "Browser notifications"}
                       </ItemTitle>
-                      <ItemDescription className="line-clamp-none">
+                      <ItemDescription className="line-clamp-none text-sm">
                         {permissionCopy[permission]}
                       </ItemDescription>
                     </ItemContent>
@@ -296,7 +296,9 @@ export function BotProfile({
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>Message {agent.name}</ItemTitle>
-                  <ItemDescription>Start a conversation.</ItemDescription>
+                  <ItemDescription className="line-clamp-none text-sm">
+                    Start a conversation.
+                  </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <IconChevronRight className="size-4 text-muted-foreground" />

@@ -230,7 +230,9 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>{title}</ItemTitle>
-                <ItemDescription>{summary}</ItemDescription>
+                <ItemDescription className="line-clamp-none text-sm">
+                  {summary}
+                </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <IconChevronRight className="size-4 text-muted-foreground" />
