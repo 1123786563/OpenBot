@@ -30,6 +30,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { failureMessage } from "@/lib/client";
 import {
   connectGithubMutationOptions,
   issueSlackCodeMutationOptions,
@@ -317,12 +318,18 @@ export function LinkedAccountSection({
       ) : null}
       {issueCode.error ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
-          Couldn't create a Slack code: {issueCode.error.message}
+          {failureMessage(
+            issueCode.error,
+            "Couldn't create a Slack code. Try connecting Slack again.",
+          )}
         </p>
       ) : null}
       {connectGithub.error ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
-          Couldn't connect GitHub: {connectGithub.error.message}
+          {failureMessage(
+            connectGithub.error,
+            "Couldn't connect GitHub. Try again.",
+          )}
         </p>
       ) : null}
       <Dialog
