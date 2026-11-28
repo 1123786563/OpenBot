@@ -785,7 +785,10 @@ function LiveOrderRow({
               <Button
                 label="Check payment"
                 isDisabled={busy}
-                onClick={() => verify.mutate()}
+                onClick={() => {
+                  checkout.reset();
+                  verify.mutate();
+                }}
               />
             </HStack>
             {result?.status === "pending" &&

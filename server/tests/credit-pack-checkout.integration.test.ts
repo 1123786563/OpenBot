@@ -17,7 +17,10 @@ import {
   loadCreditPackTestChannel,
   testRefundTerms,
 } from "../src/billing/credit-pack-test-channel";
-import { createFlexpriceAlipaySweep } from "../src/billing/flexprice-alipay-checkout";
+import {
+  createFlexpriceAlipaySweep,
+  loadFlexpriceAlipaySettings,
+} from "../src/billing/flexprice-alipay-checkout";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import { createTestCreditRoutes } from "../src/billing/test-credit-routes";
@@ -2718,25 +2721,28 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
       return new Response(null, { status: 404 });
     },
   });
-  const settings = {
-    baseUrl: flexprice.url.origin,
-    apiKey: "fixture-flexprice",
-    webhookToken,
-    merchant: "fixture-flexprice-merchant",
-    wechatMerchant: "fixture-wechat-merchant",
-    productCodes: [code],
-    applicationIds: [openbotApp],
-    accountIds: [buyer, accountIds[0]],
+  const environment = {
+    OPENBOT_FLEXPRICE_ALIPAY_URL: flexprice.url.origin,
+    OPENBOT_FLEXPRICE_ALIPAY_API_KEY: "fixture-flexprice",
+    OPENBOT_FLEXPRICE_ALIPAY_WEBHOOK_TOKEN: webhookToken,
+    OPENBOT_FLEXPRICE_ALIPAY_MERCHANT: "fixture-flexprice-merchant",
+    OPENBOT_FLEXPRICE_WECHAT_MERCHANT: "fixture-wechat-merchant",
+    OPENBOT_FLEXPRICE_ALIPAY_PRODUCTS: code,
+    OPENBOT_FLEXPRICE_ALIPAY_APPLICATION_IDS: openbotApp,
+    OPENBOT_FLEXPRICE_ALIPAY_ACCOUNT_IDS: [buyer, accountIds[0]].join(","),
   };
-  const mountFlexprice = (wechatEnabled = true) => {
+  const checkoutSettings = (alipay: boolean, wechat: boolean) =>
+    loadFlexpriceAlipaySettings({
+      ...environment,
+      OPENBOT_FLEXPRICE_ALIPAY_ENABLED: String(alipay),
+      OPENBOT_FLEXPRICE_WECHAT_ENABLED: String(wechat),
+    });
+  const mountFlexprice = (alipay = true, wechat = true) => {
     return createTestCreditRoutes({
       ledger,
       paid: {
         ledger: paid,
-        flexpriceAlipay: {
-          ...settings,
-          wechatMerchant: wechatEnabled ? settings.wechatMerchant : undefined,
-        },
+        flexpriceAlipay: checkoutSettings(alipay, wechat),
       },
       authenticate: async (request) => {
         const subject = request.headers.get("x-fixture-subject");
@@ -2766,6 +2772,13 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
     await approvePaths();
     const product = await publish(2500, 25_000_000n);
     const root = "/paid/credit-pack/alipay/flexprice";
+    billing = mountFlexprice(false, false);
+    expect((await request(root, bob)).status).toBe(404);
+    billing = mountFlexprice(false, true);
+    expect(await (await request(root, bob)).json()).toMatchObject({
+      channels: ["wechat"],
+    });
+    billing = mountFlexprice();
     expect((await request(root, bob)).status).toBe(200);
     const before = BigInt(
       (await (await request("/paid/balance", bob)).json())
@@ -2785,7 +2798,7 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
       status: "pending",
       qrCode: "https://qr.alipay.com/fixture",
     });
-    billing = mountFlexprice(false);
+    billing = mountFlexprice(true, false);
     expect(await (await request(root, bob)).json()).toMatchObject({
       channels: ["alipay"],
     });
@@ -2847,6 +2860,8 @@ test("Flexprice two-channel checkout locks the buyer's CNY quote and settles onl
     reconcileOnQuery = true;
     billing = mountFlexprice();
     const sweepErrors: unknown[] = [];
+    const settings = checkoutSettings(true, true);
+    if (!settings) throw new Error("Expected both checkout channels enabled.");
     await createFlexpriceAlipaySweep({
       settings,
       paid,
