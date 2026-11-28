@@ -3,7 +3,7 @@
  * harness, two verified chat models, two Billing Accounts plus a race account,
  * WeKnora ingestion through the real worker, and the denial/recovery replays —
  * all against the pinned Bifrost gateway, real Zhipu routes, the TEI embedding
- * route, and the self-hosted Lago deployment.
+ * route, and the Flexprice reconciliation subscription.
  *
  *   bun scripts/pilot-matrix.ts <run-dir>
  *
@@ -24,8 +24,7 @@ import {
   AuxiliaryModelBillingError,
   createAuxiliaryModelCompleter,
 } from "../src/billing/auxiliary-model";
-import { createLagoHttpUsageClient } from "../src/billing/lago-client";
-import { createLagoUsageExporter } from "../src/billing/lago-usage";
+import { loadFlexpriceUsageExporter } from "../src/billing/flexprice-usage";
 import { createTestCreditLedger } from "../src/billing/test-credit";
 import {
   createBifrostCreditExecutor,
@@ -46,7 +45,7 @@ import {
   fixtureEmbeddingReport,
   fixtureTraceReport,
 } from "../tests/support/bifrost-evidence";
-import { reconcilePilotMatrixLago } from "./pilot-matrix-lago";
+import { reconcilePilotMatrixFlexprice } from "./pilot-matrix-flexprice";
 import {
   PilotEvidenceFailure,
   pilotFailureReason,
@@ -133,17 +132,8 @@ const meteringRevision = target.gateway.meteringRevision;
 const chatTokenizerUrl =
   process.env.PILOT_CHAT_TOKENIZER_URL ??
   "https://open.bigmodel.cn/api/paas/v4/tokenizer";
-const lagoUrl = target.entry
-  ? requireEnv("PILOT_LAGO_URL")
-  : (process.env.LAGO_URL ?? target.lago.url);
-const lagoKey = target.entry
-  ? requireEnv("LAGO_API_KEY")
-  : (process.env.LAGO_API_KEY ??
-    (
-      await Bun.file(
-        "/Users/wuyj/.local/share/openbot/billing-97/lago-api-key.txt",
-      ).text()
-    ).trim());
+const loadUsageExporter = () =>
+  loadFlexpriceUsageExporter(database, process.env);
 const zhipuKey = target.entry
   ? undefined
   : (process.env.ZHIPU_API_KEY ??
@@ -1051,27 +1041,20 @@ await localScenario("revocation-and-isolation-denials", async (operation) => {
   };
 });
 
-await localScenario("lago-reconciliation", async () => {
+await localScenario("flexprice-reconciliation", async () => {
   const accounts = [
     ["A", identityA],
     ["B", identityB],
   ] as const;
-  const subscriptionId = process.env.LAGO_USAGE_SUBSCRIPTION_ID;
+  const exporter = loadUsageExporter();
   assert(
-    subscriptionId,
-    "Set LAGO_USAGE_SUBSCRIPTION_ID before running the matrix",
+    exporter,
+    "Configure the Flexprice usage exporter before running the matrix",
   );
-  const client = createLagoHttpUsageClient({
-    baseUrl: lagoUrl,
-    apiKey: lagoKey,
-    metricCode: "model-usage",
-    externalSubscriptionId: subscriptionId,
-  });
-  const exporter = createLagoUsageExporter(database, client);
   const flushed = await exporter.flush();
   assert(
     !flushed.unavailable && flushed.paused === 0,
-    "Lago usage did not reconcile",
+    "Flexprice usage did not reconcile",
   );
   const balances: Record<string, unknown> = {};
   for (const [name, identity] of accounts) {
@@ -1125,22 +1108,16 @@ if (target.entry) {
     results.push(result);
     log(result);
   }
-  await scenario("target-lago-reconciliation", async (operation) => {
+  await scenario("target-flexprice-reconciliation", async (operation) => {
     const modelSwitch = legResults.find(
       (result) => result.scenario === "target-model-switch",
     );
     const operationIds =
       modelSwitch?.outcome === "pass" ? modelSwitch.operationIds : [];
     for (const id of operationIds) operation(id);
-    const client = createLagoHttpUsageClient({
-      baseUrl: lagoUrl,
-      apiKey: lagoKey,
-      metricCode: "model-usage",
-      externalSubscriptionId: requireEnv("LAGO_USAGE_SUBSCRIPTION_ID"),
-    });
-    const reconciled = await reconcilePilotMatrixLago(
+    const reconciled = await reconcilePilotMatrixFlexprice(
       database,
-      client,
+      loadUsageExporter,
       operationIds,
     );
     return { reconciled };
@@ -1179,7 +1156,6 @@ await Bun.write(
         embeddingEndpoint: new URL(target.embedding.url).origin,
         tokenizer: chatTokenizerUrl,
       },
-      lago: { url: lagoUrl, version: "v1.57.0" },
       results,
       receipts,
     },

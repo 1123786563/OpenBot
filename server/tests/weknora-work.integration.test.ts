@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { reconcilePilotMatrixLago } from "../scripts/pilot-matrix-lago";
+import { reconcilePilotMatrixFlexprice } from "../scripts/pilot-matrix-flexprice";
 import {
   loadPilotTarget,
   runPilotTargetLegs,
@@ -15,6 +15,7 @@ import {
   publish,
   verify,
 } from "../src/admin/bifrost-catalog";
+import { createFlexpriceUsageExporter } from "../src/billing/flexprice-usage";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createPilotSignoffs } from "../src/billing/pilot-signoffs";
 import { createTestCreditLedger } from "../src/billing/test-credit";
@@ -29,6 +30,7 @@ import {
   billingApplications,
   billingPilotSignoffs,
   enterpriseSettings,
+  flexpriceUsageDeliveries,
   lagoUsageEvents,
   paidCreditAllocations,
   paidEntitlements,
@@ -1230,7 +1232,7 @@ test("the pilot matrix routes execution and account requests through the product
     ]);
     const switchIds = legs[0]?.operationIds ?? [];
     const sent: string[] = [];
-    const matched = await reconcilePilotMatrixLago(
+    const exporter = createFlexpriceUsageExporter(
       db,
       {
         send: async (event) => {
@@ -1238,16 +1240,21 @@ test("the pilot matrix routes execution and account requests through the product
           return "matched";
         },
       },
+      new Date(0),
+    );
+    const matched = await reconcilePilotMatrixFlexprice(
+      db,
+      () => exporter,
       switchIds,
     );
     expect(matched.map(({ operationId }) => operationId)).toEqual(switchIds);
     expect(sent).toEqual(switchIds);
     await expect(
-      reconcilePilotMatrixLago(db, { send: async () => "matched" }, [
+      reconcilePilotMatrixFlexprice(db, () => exporter, [
         crypto.randomUUID(),
         crypto.randomUUID(),
       ]),
-    ).rejects.toMatchObject({ reason: "lago_event_missing" });
+    ).rejects.toMatchObject({ reason: "flexprice_event_missing" });
     // The model switch reserved a named route per call; the refusals never
     // reached the executor.
     expect(legs[0]).toMatchObject({
@@ -1284,6 +1291,13 @@ test("the pilot matrix routes execution and account requests through the product
             identityC.subject,
           ]),
         );
+      const usageEvents = tx
+        .select({ id: lagoUsageEvents.eventId })
+        .from(lagoUsageEvents)
+        .where(inArray(lagoUsageEvents.accountId, subjectAccounts));
+      await tx
+        .delete(flexpriceUsageDeliveries)
+        .where(inArray(flexpriceUsageDeliveries.eventId, usageEvents));
       await tx
         .delete(lagoUsageEvents)
         .where(inArray(lagoUsageEvents.accountId, subjectAccounts));

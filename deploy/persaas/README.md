@@ -32,13 +32,13 @@ docker compose -f data.yml up -d --force-recreate flexprice temporal
 
 API 和 Worker 使用 Runtime 只读机器身份，不能读取 Infrastructure。应用引导文件 `infisical-server.env`、`infisical-worker.env` 仅 root 可读。中间件下发由 A 本机管理脚本完成，旧 Flexprice/Temporal 导出容器和引导文件已移出使用路径。Infisical 自身的数据库、Redis DB0、加密密钥保留本地 env 副本，避免启动循环依赖。Compose、证书和 JSON 文件继续由服务器及 1Panel 管理，不存入集中 env 配置。
 
-新增 Bifrost、Opik、Lago、MySQL 以及 Flexprice 控制台的入口、配置归档和维护步骤见 [中间件指南](extensions/README.md)。
+新增 Bifrost、Opik、MySQL 以及 Flexprice 控制台的入口、配置归档和维护步骤见 [中间件指南](extensions/README.md)。
 
 全量中间件配置的目录、上传、差异检查和下发流程见 [Infisical 中间件管理](INFISICAL-MIDDLEWARE.md)。已按用户确认收窄为 env 文件：23 份非数据库容器 env 已拆为 23 个服务目录、468 个独立变量，包含 B 的 Collector。Runtime 仅保留应用目录。数据库服务自身 env 不上传，应用连接数据库所需的变量仍保留；旧目录与非 env 项已清理。
 
 ## Redis 当前方案
 
-2026-11-28 用户确认先使用单 Redis，后续升级 Sentinel。当前沿用 1Panel 管理的 `persaas-redis`，Infisical 使用 DB0、Opik DB2、Flexprice DB3，Lago 作业 DB6、缓存 DB7、Cable DB8。数据库编号用于应用数据分区，不提供实例级故障隔离。当前无自动故障切换；Sentinel 不作为本阶段验收阻塞项。
+2026-11-28 用户确认先使用单 Redis，后续升级 Sentinel。当前沿用 1Panel 管理的 `persaas-redis`，Infisical 使用 DB0、Opik DB2、Flexprice DB3。数据库编号用于应用数据分区，不提供实例级故障隔离。当前无自动故障切换；Sentinel 不作为本阶段验收阻塞项。
 
 ## 检查服务
 

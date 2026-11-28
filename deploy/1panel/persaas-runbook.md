@@ -4,10 +4,10 @@
 
 ## 核对现有服务器
 
-- 中间件已通过 1Panel 启动。Lago、Lago API、OpenObserve 已验证公网 HTTPS。Infisical 已验证证书和回源，权威 DNS 已发布。先用第 6 节命令核对当前状态。
+- 中间件已通过 1Panel 启动。OpenObserve 已验证公网 HTTPS。Infisical 已验证证书和回源，权威 DNS 已发布。先用第 6 节命令核对当前状态。
 - OpenBot 已用当前仓库源码构建为 Linux amd64 镜像。服务器 Compose 在 `/opt/openbot-server`。Web 和 API 监听 `127.0.0.1:18001`，独立 PostgreSQL 和 Worker 已启动。数据库迁移退出码为 0，应用角色已撤销超级用户权限。
 - 在服务器回环地址调用 OpenBot 后端，智谱 `glm-4.7` 返回 `OPENBOT_SERVER_OK`，流式请求正常结束。OpenBot 容器访问 Hindsight、Opik 和 OTel Collector 均返回 HTTP 200。
-- 当前 OpenBot 以单用户模式运行。正式上线需要配置 OAuth、OpenBot 的 DNS 和 HTTPS 反代。当前模型直连智谱。Bifrost 上游、Agent 真实调用、Lago 正式订阅和 Infisical 机器身份仍待配置。
+- 当前 OpenBot 以单用户模式运行。正式上线需要配置 OAuth、OpenBot 的 DNS 和 HTTPS 反代。当前模型直连智谱。Bifrost 上游、Agent 真实调用和 Infisical 机器身份仍待配置。
 - 部署文件通过临时受限 SSH 密钥上传，密钥设有到期时间。交接时可按第 7 节清理这次上传留下的文件和密钥。
 
 ## 1. 安装 1Panel 中间件
@@ -25,11 +25,10 @@
 | Infisical | 选择 PostgreSQL 和 Redis 实例，保存加密密钥及签名密钥。设置 `SITE_URL=https://infisical.persaas.cn` |
 | Hindsight | 准备支持 pgvector 的 PostgreSQL。当前服务器使用独立的可移植 pgvector 镜像。记下表单中的控制台访问密钥。安装后检查 `127.0.0.1:18888/health` 并实际写入和召回一条测试记忆 |
 | Opik | 选择 MySQL 和 Redis，等待 MySQL 和 ClickHouse 迁移。检查 `127.0.0.1:15173/health` |
-| Lago | 选择支持 `pg_partman` 的 PostgreSQL。当前服务器复用已经安装该扩展的 1Panel PostgreSQL。设置前端和 API 的 HTTPS URL，并检查 API、Worker 和 PDF 服务 |
 | SPIRE | 启动 Server 后签发一次性加入令牌，再启动 Agent。在 Server 中确认 Agent 已注册 |
 | Agents | 准备 Bot、LangGraph、Computer 和 Supervisor 镜像。安装后检查四个回环端口 4200、4201、4100、4500 |
 
-Hindsight 在当前服务器的共享 PostgreSQL 上写入时曾触发 `Illegal instruction`。如果在同一台服务器重装，沿用 Hindsight 的独立 PostgreSQL 和持久卷。Lago 使用其他 PostgreSQL 时，先在目标库验证 `pg_partman` 可用，再执行 Lago 迁移。
+Hindsight 在当前服务器的共享 PostgreSQL 上写入时曾触发 `Illegal instruction`。如果在同一台服务器重装，沿用 Hindsight 的独立 PostgreSQL 和持久卷。
 
 ## 2. 启动 OpenBot 主应用
 
@@ -87,7 +86,7 @@ OPENAI_API_KEY=<智谱 API Key>
 | OpenBot API → Collector | 加入 `openbot-observability`。设置 `OPENBOT_OTEL_EXPORT=on`，将 `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` 指向 Collector 的 `/v1/logs`。查询端用 `DEPLOYMENT_ID` 过滤日志。[日志流和权限配置](../operations.md#openobserve-持续日志采集) |
 | OpenBot API → Hindsight | 加入 `openbot-hindsight`，设置 `OPENBOT_HINDSIGHT_API_URL=http://hindsight:8888` |
 | OpenBot API → Opik | 加入 `openbot-opik`，设置 `OPENBOT_OPIK_API_URL=http://opik-frontend:5173/api/` |
-| Worker → Lago | 加入 `openbot-lago`，填写 `LAGO_URL=http://lago-api:3000`、正式 `LAGO_API_KEY` 和 `LAGO_USAGE_SUBSCRIPTION_ID`。[创建用量订阅和验收](../../docs/billing-lago-usage-export.md) |
+| Worker → Flexprice | [Flexprice 用量对账](../docs/flexprice.md) |
 
 Infisical 首位管理员通过服务器回环地址初始化。当前公网反代限制首次管理员注册。可用已授权的 SSH 隧道把服务器 `127.0.0.1:18082` 转发到本机后进入初始化页面。初始化后建立项目和只读 Universal Auth 机器身份。维护 Compose 时，按部署流程将读取的值写入私有环境文件，再重建对应服务。[Infisical 机器身份和同步说明](../infisical/README.md)
 
@@ -105,8 +104,6 @@ Infisical 首位管理员通过服务器回环地址初始化。当前公网反�
 | 主机记录 | 1Panel 反代地址 |
 | --- | --- |
 | `openbot` | `http://127.0.0.1:18001` |
-| `lago` | `http://127.0.0.1:13001` |
-| `lago-api` | `http://127.0.0.1:13000` |
 | `infisical` | `http://127.0.0.1:18082` |
 | `openobserve` | `http://127.0.0.1:15080` |
 | `bifrost` | `http://127.0.0.1:18080`，保留现有访问限制 |
@@ -114,20 +111,19 @@ Infisical 首位管理员通过服务器回环地址初始化。当前公网反�
 1. 在两台 DNSPod 权威服务器上确认目标 A 记录。命令示例为 `dig @lager.dnspod.net openbot.persaas.cn A +short`。
 2. 在 1Panel 的 **网站 → 创建 → 反向代理** 选择域名和上游。已有 OpenResty 站点时在原配置上调整，避免一个域名出现两份站点配置。
 3. 签发或选择覆盖域名的证书。为 OpenBot 和 Bifrost 关闭响应缓冲和缓存，保留流式响应所需的超时及连接设置。检查 OpenResty 配置并重载。
-4. Hindsight、Opik、SPIRE、Agent 和数据库继续使用内网连接。OTel Collector 采集端口留在私有网络。Lago 和 Infisical 的应用内部站点地址应与各自 HTTPS 域名一致。
+4. Hindsight、Opik、SPIRE、Agent 和数据库继续使用内网连接。OTel Collector 采集端口留在私有网络。Infisical 的应用内部站点地址应与 HTTPS 域名一致。
 
 ## 6. 逐项验收
 
 ```sh
 curl -fsS https://openbot.persaas.cn/health
-curl -fsS https://lago-api.persaas.cn/health
 curl -fsS https://infisical.persaas.cn/api/status
 curl -fsS https://openobserve.persaas.cn/healthz
 ```
 
 1. 在浏览器用管理员身份登录 OpenBot，再开无痕窗口确认普通访客需要登录。用 General Assistant 发送一条测试消息，确认收到完整流式回复。使用 Agent 工具时，再测试一次工具调用及回调。
 2. 搜索本次运行 ID，确认 Opik 能读回追踪。生成带标识的审计事件，在 OpenObserve 查询到同一事件。若启用了记忆，测试写入、召回和撤回。
-3. 为 Lago 准备零费率测试订阅。投递一条用量事件，核对数量和金额，再确认重复投递没有新增记录。
+3. 为 Flexprice 准备零价用量对账订阅。投递一条用量事件，核对数量和金额，再确认重复投递没有新增记录。
 4. 用 Infisical 机器身份读取一项无敏感内容的测试配置。确认应用重新加载配置后可以读到新值。
 
 排查 `502` 时，先在服务器用 `curl` 检查上游，再检查 OpenResty 网络。排查模型 `401` 时，在私有命令环境验证所选接口的对应凭据。排查 DNS 时，先查询权威服务器，再检查本机解析缓存。保留证书校验。
@@ -136,5 +132,5 @@ curl -fsS https://openobserve.persaas.cn/healthz
 
 - 修改 Compose 或环境变量后，运行 `docker compose config --quiet`，再用 `docker compose up -d <服务名>` 应用变更。用 `docker compose logs --tail 80 <服务名>` 检查启动结果。
 - 备份 Compose、私有环境文件、数据库和持久卷。回退应用版本前检查数据库迁移兼容性。需要恢复数据库时，先备份当前数据，再用匹配版本的快照恢复。数据卷由部署保留。
-- 登记证书续期任务并检查续期时的 OpenResty 重载。现有 Lago、Lago API 和 Infisical 共用一张证书。
+- 登记证书续期任务并检查续期时的 OpenResty 重载。
 - 确认 `/opt/openbot-server` 的配置已安全备份后，清理 `/root/openbot-deploy/stage/openbot-bundle.tar.gz` 的临时副本。若 `/root/.ssh/authorized_keys` 中仍有末尾标记 `openbot-server-stage-transfer` 的过期条目，只移除该条目。保留其他登录密钥。

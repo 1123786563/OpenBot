@@ -4,7 +4,8 @@ import { Link } from "@astryxdesign/core/Link";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { PaymentDisputeDetails } from "@/components/billing/payment-dispute";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -391,6 +392,7 @@ function checkoutOffer(path: string, subscription: boolean) {
 export function CreditPackCheckout() {
   return (
     <>
+      <LiveCreditPackCheckout />
       <PaidCheckout kind="credit-pack" channel="WeChat" />
       <PaidCheckout kind="credit-pack" channel="Alipay" />
     </>
@@ -597,5 +599,260 @@ function PeriodRow({
         )}
       </ItemContent>
     </Item>
+  );
+}
+
+const livePath = "/api/billing/paid/credit-pack/alipay/flexprice";
+const qrChannel = z.enum(["alipay", "wechat"]);
+type QRChannel = z.infer<typeof qrChannel>;
+const channelLabel = { alipay: "Alipay", wechat: "WeChat Pay" };
+const liveOffer = z.object({
+  channels: z.array(qrChannel),
+  offers: z.array(
+    availability.extend({
+      productCode: z.string(),
+      product: offerProduct.nullable(),
+      channels: z.array(qrChannel),
+    }),
+  ),
+});
+const liveStatus = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("pending"),
+    channel: qrChannel,
+    qrCode: z.string().min(1).max(4096),
+    expiresAt: z.iso.datetime({ offset: true }),
+  }),
+  z.object({ status: z.enum(["paid", "confirming", "closed", "expired"]) }),
+]);
+
+function LiveCreditPackCheckout() {
+  const queryClient = useQueryClient();
+  const keys = checkoutKeys(livePath);
+  const offer = useQuery({
+    queryKey: keys.offer,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      try {
+        return liveOffer.parse(
+          await (await client(livePath, { signal })).json(),
+        );
+      } catch (error) {
+        if (error instanceof ClientError && error.status === 404) return null;
+        throw error;
+      }
+    },
+  });
+  const orders = useQuery({
+    queryKey: keys.orders,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      try {
+        return z
+          .array(orderSchema)
+          .parse(await (await client(`${livePath}/orders`, { signal })).json());
+      } catch (error) {
+        if (error instanceof ClientError && error.status === 404) return [];
+        throw error;
+      }
+    },
+  });
+  const attempts = useRef(new Map<string, string>());
+  const place = useMutation({
+    mutationFn: async ({
+      productCode,
+      version,
+      channel,
+    }: {
+      productCode: string;
+      version: number;
+      channel: QRChannel;
+    }) => {
+      const key = JSON.stringify([productCode, version]);
+      const orderId = attempts.current.get(key) ?? crypto.randomUUID();
+      attempts.current.set(key, orderId);
+      await client(`${livePath}/orders`, {
+        method: "POST",
+        body: { orderId, version, productCode, channel },
+      });
+      attempts.current.delete(key);
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: billingKeys.all }),
+  });
+  if (!offer.data && !offer.isError && !orders.data?.length) return null;
+  return (
+    <PageSection title="Buy Credit Packs">
+      <PageRows>
+        {offer.data?.offers.map(
+          ({ productCode, product, channels, blockedReason }) => {
+            const channel = channels[0];
+            return (
+              <Item key={productCode}>
+                <ItemContent>
+                  <ItemTitle>
+                    {productCode}
+                    {product ? ` · ${packText(product)}` : ""}
+                  </ItemTitle>
+                  {channel && product ? (
+                    <HStack>
+                      <Button
+                        label="Place Credit Pack order"
+                        isDisabled={place.isPending}
+                        onClick={() =>
+                          place.mutate({
+                            productCode,
+                            version: product.version,
+                            channel,
+                          })
+                        }
+                      />
+                    </HStack>
+                  ) : (
+                    <Text>{blockedReason}</Text>
+                  )}
+                </ItemContent>
+              </Item>
+            );
+          },
+        )}
+        {offer.error || orders.error || place.error ? (
+          <Item>
+            <Text role="alert">
+              {(offer.error ?? orders.error ?? place.error)?.message}
+            </Text>
+          </Item>
+        ) : null}
+        {orders.data?.map((order) => (
+          <LiveOrderRow
+            key={order.id}
+            order={order}
+            channels={offer.data?.channels ?? []}
+          />
+        ))}
+      </PageRows>
+    </PageSection>
+  );
+}
+
+function LiveOrderRow({
+  order,
+  channels,
+}: {
+  order: Order;
+  channels: QRChannel[];
+}) {
+  const queryClient = useQueryClient();
+  const path = `${livePath}/orders/${encodeURIComponent(order.id)}`;
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: billingKeys.all });
+  const checkout = useMutation({
+    mutationFn: async (channel: QRChannel) =>
+      liveStatus.parse(
+        await (
+          await client(`${path}/checkout`, {
+            method: "POST",
+            body: { channel },
+          })
+        ).json(),
+      ),
+    onSuccess: (result) => {
+      if (result.status === "paid" || result.status === "confirming")
+        return refresh();
+    },
+  });
+  const verify = useMutation({
+    mutationFn: async () =>
+      orderSchema.parse(
+        await (await client(`${path}/verify`, { method: "POST" })).json(),
+      ),
+    onSuccess: refresh,
+  });
+  const result = checkout.data;
+  const busy = checkout.isPending || verify.isPending;
+  return (
+    <Item>
+      <ItemContent>
+        <ItemTitle>{packText(order)}</ItemTitle>
+        <ItemDescription>Order {order.id}</ItemDescription>
+        <Text role="status">{states[order.state]}</Text>
+        {order.state === "pending" && (
+          <>
+            <HStack gap={2} wrap="wrap">
+              {channels.map((channel) => (
+                <Button
+                  key={channel}
+                  label={`Pay with ${channelLabel[channel]}`}
+                  isDisabled={busy}
+                  onClick={() => checkout.mutate(channel)}
+                />
+              ))}
+              <Button
+                label="Check payment"
+                isDisabled={busy}
+                onClick={() => {
+                  checkout.reset();
+                  verify.mutate();
+                }}
+              />
+            </HStack>
+            {result?.status === "pending" &&
+            channels.includes(result.channel) ? (
+              <LivePaymentQR
+                key={`${result.channel}:${result.expiresAt}`}
+                result={result}
+              />
+            ) : result?.status === "confirming" || result?.status === "paid" ? (
+              <Text role="status">
+                Payment is being confirmed. Check payment before trying again.
+              </Text>
+            ) : result?.status === "closed" || result?.status === "expired" ? (
+              <Text role="status">
+                This code is no longer payable. Select a payment channel to get
+                a new code.
+              </Text>
+            ) : null}
+          </>
+        )}
+        {checkout.error || verify.error ? (
+          <Text role="alert">{(checkout.error ?? verify.error)?.message}</Text>
+        ) : null}
+      </ItemContent>
+    </Item>
+  );
+}
+
+function LivePaymentQR({
+  result,
+}: {
+  result: Extract<z.infer<typeof liveStatus>, { status: "pending" }>;
+}) {
+  const deadline = Date.parse(result.expiresAt);
+  const [expired, setExpired] = useState(() => Date.now() >= deadline);
+  useEffect(() => {
+    const timeout = setTimeout(
+      () => setExpired(true),
+      Math.max(0, deadline - Date.now()),
+    );
+    return () => clearTimeout(timeout);
+  }, [deadline]);
+  if (expired)
+    return (
+      <Text role="status">
+        This code expired. Select a payment channel to get a new code.
+      </Text>
+    );
+  const label = channelLabel[result.channel];
+  return (
+    <VStack gap={2} align="start">
+      <Text>Scan with {label} to pay.</Text>
+      <QRCodeSVG
+        value={result.qrCode}
+        marginSize={4}
+        title={`${label} payment QR code`}
+        role="img"
+        aria-label={`${label} payment QR code`}
+      />
+    </VStack>
   );
 }

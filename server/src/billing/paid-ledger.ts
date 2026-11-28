@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   desc,
   eq,
   gt,
@@ -51,6 +52,15 @@ import {
 export { PaidLedgerError } from "./paid-ledger-error";
 export { restoreHolds } from "./paid-restore";
 
+const flexpriceOriginalRefund = "flexprice_original_channel";
+const automaticFlexpriceRefundReasons = ["account_suspended", "pilot_closure"];
+const flexpriceRefundReasons = [
+  flexpriceOriginalRefund,
+  ...automaticFlexpriceRefundReasons,
+];
+function isCreditPackChannel(channel: string): channel is CreditPackChannel {
+  return channel === "alipay" || channel === "wechat";
+}
 const customerRefund = "customer";
 const automaticFixtureRefund = "fixture-automatic";
 const fixtureRefundActors = [customerRefund, automaticFixtureRefund];
@@ -524,9 +534,10 @@ export function createPaidCreditLedger(
       merchant: string;
       version: number;
       applicationIds: string[];
-      kind?: "subscription";
-      live?: true;
-    };
+    } & (
+      | { kind?: "subscription"; live?: true; flexprice?: never }
+      | { kind?: never; live: true; flexprice: true }
+    );
   }) {
     const { testPack } = input;
     const fixture = testPack !== undefined && !testPack.live;
@@ -542,7 +553,8 @@ export function createPaidCreditLedger(
           existing.accountId !== input.accountId ||
           existing.testMerchant !==
             (testPack.live ? null : testPack.merchant) ||
-          existing.channel !== input.channel ||
+          existing.flexpriceCheckout !== (testPack.flexprice === true) ||
+          (!existing.flexpriceCheckout && existing.channel !== input.channel) ||
           existing.lockedKind !== (testPack.kind ?? "credit_pack") ||
           existing.productCode !== input.productCode ||
           existing.productVersion !== testPack.version
@@ -607,6 +619,7 @@ export function createPaidCreditLedger(
           renewsOrderId,
           lockedMicrocredits: product.creditsMicrocredits,
           testMerchant: fixture ? testPack?.merchant : null,
+          flexpriceCheckout: testPack?.flexprice === true,
           channel: input.channel,
         })
         .onConflictDoNothing({ target: paidOrders.id })
@@ -656,6 +669,7 @@ export function createPaidCreditLedger(
             eq(paidOrders.accountId, accountId),
             eq(paidOrders.channel, source.channel),
             eq(paidOrders.testMerchant, source.merchant),
+            eq(paidOrders.flexpriceCheckout, false),
             eq(paidOrders.lockedKind, input.kind ?? "credit_pack"),
           ),
         );
@@ -753,17 +767,25 @@ export function createPaidCreditLedger(
     });
   }
 
-  async function testPackOrders(input: {
-    merchant: string;
-    channel: CreditPackChannel;
-    accountId: string;
-    id?: string;
-    kind?: "subscription";
-    fixture?: boolean;
-  }) {
+  async function testPackOrders(
+    input: {
+      accountId: string;
+      id?: string;
+      kind?: "subscription";
+    } & (
+      | {
+          fixture?: boolean;
+          merchant: string;
+          channel: CreditPackChannel;
+          flexprice?: never;
+        }
+      | { fixture: false; flexprice: true }
+    ),
+  ) {
     const rows = await database
       .select({
         id: paidOrders.id,
+        channel: paidOrders.channel,
         productCode: paidOrders.productCode,
         productVersion: paidOrders.productVersion,
         priceCents: paidOrders.priceCents,
@@ -796,7 +818,8 @@ export function createPaidCreditLedger(
           input.fixture === false
             ? isNull(paidOrders.testMerchant)
             : eq(paidOrders.testMerchant, input.merchant),
-          eq(paidOrders.channel, input.channel),
+          input.flexprice ? undefined : eq(paidOrders.channel, input.channel),
+          eq(paidOrders.flexpriceCheckout, input.flexprice === true),
           eq(paidOrders.lockedKind, input.kind ?? "credit_pack"),
           eq(paidOrders.accountId, input.accountId),
           input.id ? eq(paidOrders.id, input.id) : undefined,
@@ -826,6 +849,70 @@ export function createPaidCreditLedger(
     }));
   }
 
+  async function flexpriceOrder(
+    identity: { id: string; accountId: string } | { invoiceId: string },
+  ) {
+    const [order] = await database
+      .select()
+      .from(paidOrders)
+      .where(
+        and(
+          eq(paidOrders.flexpriceCheckout, true),
+          "invoiceId" in identity
+            ? eq(paidOrders.flexpriceInvoiceId, identity.invoiceId)
+            : and(
+                eq(paidOrders.id, identity.id),
+                eq(paidOrders.accountId, identity.accountId),
+              ),
+        ),
+      );
+    return order;
+  }
+
+  async function linkFlexpriceInvoice({
+    orderId,
+    invoiceId,
+  }: {
+    orderId: string;
+    invoiceId: string;
+  }) {
+    const [order] = await database
+      .update(paidOrders)
+      .set({ flexpriceInvoiceId: invoiceId })
+      .where(
+        and(
+          eq(paidOrders.id, orderId),
+          eq(paidOrders.flexpriceCheckout, true),
+          or(
+            isNull(paidOrders.flexpriceInvoiceId),
+            eq(paidOrders.flexpriceInvoiceId, invoiceId),
+          ),
+        ),
+      )
+      .returning();
+    if (!order)
+      throw new PaidLedgerError(
+        "verification_mismatch",
+        "The Flexprice invoice does not match the placed order.",
+      );
+    return order;
+  }
+
+  function pendingFlexpriceOrders(after?: string) {
+    return database
+      .select()
+      .from(paidOrders)
+      .where(
+        and(
+          isNotNull(paidOrders.flexpriceInvoiceId),
+          eq(paidOrders.state, "pending"),
+          after ? gt(paidOrders.id, after) : undefined,
+        ),
+      )
+      .orderBy(asc(paidOrders.id))
+      .limit(50);
+  }
+
   async function activeSubscription(accountId: string) {
     // The latest grant or future claim decides where the next period lands.
     const [latest] = await database
@@ -853,6 +940,7 @@ export function createPaidCreditLedger(
     merchantId?: string;
     currency?: string;
     testChannel?: true;
+    flexpriceInvoiceId?: string;
   }) {
     const result = await database.transaction<OrderVerification>(async (tx) => {
       // Serialize period claims with order placement and account consumption.
@@ -868,12 +956,18 @@ export function createPaidCreditLedger(
         .where(eq(paidOrders.id, input.orderId))
         .for("update");
       if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
-      if (Boolean(order.testMerchant) !== Boolean(input.testChannel))
+      if (
+        Boolean(order.testMerchant) !== Boolean(input.testChannel) ||
+        order.flexpriceCheckout !== (input.flexpriceInvoiceId !== undefined)
+      )
         throw new PaidLedgerError("order_unknown", "Unknown order.");
       if (
-        order.channel !== input.channel ||
+        (!order.flexpriceCheckout && order.channel !== input.channel) ||
         order.priceCents !== input.amountCents ||
-        !paysTheRightMerchant(input) ||
+        (order.flexpriceCheckout
+          ? input.flexpriceInvoiceId !== order.flexpriceInvoiceId ||
+            input.currency !== "CNY"
+          : !paysTheRightMerchant(input)) ||
         (order.testMerchant !== null &&
           (input.merchantId !== order.testMerchant || input.currency !== "CNY"))
       )
@@ -933,6 +1027,7 @@ export function createPaidCreditLedger(
           .update(paidOrders)
           .set({
             state: "refund_pending",
+            channel: input.channel,
             channelOrderRef: input.channelOrderRef,
             verifiedAt: input.paidAt,
           })
@@ -1095,6 +1190,7 @@ export function createPaidCreditLedger(
         .update(paidOrders)
         .set({
           state: "verified",
+          channel: input.channel,
           channelOrderRef: input.channelOrderRef,
           verifiedAt: input.paidAt,
         })
@@ -1159,7 +1255,8 @@ export function createPaidCreditLedger(
       .select()
       .from(paidOrders)
       .where(eq(paidOrders.id, input.id));
-    if (!order) throw new PaidLedgerError("order_unknown", "Unknown order.");
+    if (!order || order.flexpriceCheckout)
+      throw new PaidLedgerError("order_unknown", "Unknown order.");
     if (
       input.currency !== "CNY" ||
       order.testMerchant !==
@@ -1302,7 +1399,7 @@ export function createPaidCreditLedger(
       // A failed refund can be requested again; a confirmed one is final.
       .onConflictDoUpdate({
         target: paidRefunds.orderId,
-        set: { state: "requested", reason, openedBy: by, requestedAt: at },
+        set: { state, reason, openedBy: by, requestedAt: at },
         setWhere: sql`${paidRefunds.state} <> 'confirmed' AND ${paidRefunds.openedBy} not in (${customerRefund}, ${automaticFixtureRefund})`,
       })
       .returning();
@@ -1502,6 +1599,8 @@ export function createPaidCreditLedger(
   ) {
     return database.transaction(async (tx) => {
       const order = await lockRefundOrder(tx, orderId);
+      if (order.flexpriceCheckout)
+        throw new PaidLedgerError("order_unknown", "Unknown order.");
       const existing = await findRefund(tx, orderId);
       if (
         existing &&
@@ -1532,19 +1631,51 @@ export function createPaidCreditLedger(
     kind?: "subscription";
     fixture?: boolean;
   }) {
+    return requestPackRefund({ ...input, source: "legacy" });
+  }
+
+  function approveFlexpricePackRefund(input: {
+    orderId: string;
+    accountId: string;
+    by: string;
+  }) {
+    return requestPackRefund({ ...input, source: "flexprice" });
+  }
+
+  async function requestPackRefund(
+    input:
+      | ({ source: "legacy" } & Parameters<typeof requestTestPackRefund>[0])
+      | ({ source: "flexprice" } & Parameters<
+          typeof approveFlexpricePackRefund
+        >[0]),
+  ) {
+    const flexprice = input.source === "flexprice";
+    const kind = flexprice ? "credit_pack" : (input.kind ?? "credit_pack");
+    const by = flexprice ? input.by : customerRefund;
     return database.transaction(async (tx) => {
       await lockAccount(tx, input.accountId);
       const order = await lockRefundOrder(tx, input.orderId);
       if (
+        order.flexpriceCheckout !== flexprice ||
         order.accountId !== input.accountId ||
-        order.testMerchant !==
-          (input.fixture === false ? null : input.merchant) ||
-        order.channel !== input.channel ||
-        order.lockedKind !== (input.kind ?? "credit_pack")
+        order.lockedKind !== kind ||
+        (flexprice
+          ? !order.flexpriceInvoiceId || !isCreditPackChannel(order.channel)
+          : order.testMerchant !==
+              (input.fixture === false ? null : input.merchant) ||
+            order.channel !== input.channel)
       )
         throw new PaidLedgerError("order_unknown", "Unknown order.");
       const existing = await findRefund(tx, order.id);
-      if (existing) return existing;
+      if (
+        existing &&
+        !(
+          flexprice &&
+          existing.state === "manual_review" &&
+          existing.reason === "reserved_credits"
+        )
+      )
+        return existing;
       if (order.state !== "verified" || !order.channelOrderRef)
         throw new PaidLedgerError(
           "not_verified",
@@ -1555,7 +1686,8 @@ export function createPaidCreditLedger(
           "ledger_restoring",
           "Refund requests are paused during ledger recovery.",
         );
-      const amount = input.amountCents ?? order.priceCents;
+      const amount =
+        (flexprice ? undefined : input.amountCents) ?? order.priceCents;
       if (amount > order.priceCents)
         throw new PaidLedgerError(
           "verification_mismatch",
@@ -1566,7 +1698,7 @@ export function createPaidCreditLedger(
         .from(paidEntitlements)
         .where(eq(paidEntitlements.orderId, order.id))
         .for("update");
-      if (input.kind === "subscription") {
+      if (kind === "subscription") {
         const [source] = sources;
         if (
           !source?.periodStart ||
@@ -1609,13 +1741,18 @@ export function createPaidCreditLedger(
       const wasUsed =
         usage?.wasUsed ||
         sources.some(({ consumedMicrocredits }) => consumedMicrocredits > 0n);
-      if (wasUsed || amount < order.priceCents)
+      if (existing && !wasUsed && usage?.hasHold) return existing;
+      if (wasUsed || amount < order.priceCents || (flexprice && usage?.hasHold))
         return recordRefundWithin(
           tx,
           order,
-          wasUsed ? "used_credits" : "partial_refund",
+          wasUsed
+            ? "used_credits"
+            : usage?.hasHold && flexprice
+              ? "reserved_credits"
+              : "partial_refund",
           now(),
-          customerRefund,
+          by,
           "manual_review",
           amount,
         );
@@ -1627,12 +1764,129 @@ export function createPaidCreditLedger(
       const refund = await recordRefundWithin(
         tx,
         order,
-        "user_request",
+        flexprice ? flexpriceOriginalRefund : "user_request",
         now(),
-        customerRefund,
+        by,
       );
       await freezeForRefund(tx, order.id);
       return refund;
+    });
+  }
+
+  async function flexpricePackRefundDispatch(input: {
+    orderId: string;
+    accountId: string;
+  }) {
+    const [row] = await flexpriceRefundDispatches(
+      and(
+        eq(paidOrders.id, input.orderId),
+        eq(paidOrders.accountId, input.accountId),
+        inArray(paidRefunds.reason, flexpriceRefundReasons),
+      ),
+    );
+    return row;
+  }
+
+  function pendingAutomaticFlexpriceRefunds(after?: string) {
+    return flexpriceRefundDispatches(
+      and(
+        inArray(paidRefunds.reason, automaticFlexpriceRefundReasons),
+        eq(paidRefunds.state, "requested"),
+        eq(paidOrders.state, "refund_pending"),
+        after ? gt(paidOrders.id, after) : undefined,
+      ),
+    );
+  }
+
+  async function flexpriceRefundDispatches(scope: SQL | undefined) {
+    const rows = await database
+      .select({
+        orderId: paidOrders.id,
+        accountId: paidOrders.accountId,
+        refundId: paidRefunds.id,
+        state: paidRefunds.state,
+        amountCents: paidRefunds.amountCents,
+        invoiceId: paidOrders.flexpriceInvoiceId,
+        paymentId: paidOrders.channelOrderRef,
+        channel: paidOrders.channel,
+      })
+      .from(paidRefunds)
+      .innerJoin(paidOrders, eq(paidOrders.id, paidRefunds.orderId))
+      .where(
+        and(
+          eq(paidOrders.flexpriceCheckout, true),
+          isNotNull(paidOrders.flexpriceInvoiceId),
+          isNotNull(paidOrders.channelOrderRef),
+          inArray(paidOrders.channel, ["alipay", "wechat"]),
+          isNull(paidRefunds.dispute),
+          eq(paidRefunds.channel, paidOrders.channel),
+          eq(paidRefunds.amountCents, paidOrders.priceCents),
+          scope,
+        ),
+      )
+      .orderBy(asc(paidOrders.id))
+      .limit(50);
+    return rows.flatMap((row) =>
+      row.invoiceId && row.paymentId && isCreditPackChannel(row.channel)
+        ? [
+            {
+              ...row,
+              invoiceId: row.invoiceId,
+              paymentId: row.paymentId,
+              channel: row.channel,
+            },
+          ]
+        : [],
+    );
+  }
+
+  async function applyFlexpricePackRefund(input: {
+    accountId: string;
+    orderId: string;
+    refundId: string;
+    invoiceId: string;
+    paymentId: string;
+    channel: CreditPackChannel;
+    amountCents: number;
+    state: "confirmed" | "failed";
+  }) {
+    return database.transaction(async (tx) => {
+      await lockAccount(tx, input.accountId);
+      const order = await lockRefundOrder(tx, input.orderId);
+      const refund = await findRefund(tx, order.id);
+      if (
+        !order.flexpriceCheckout ||
+        order.accountId !== input.accountId ||
+        !refund ||
+        refund.dispute ||
+        !flexpriceRefundReasons.includes(refund.reason)
+      )
+        throw new PaidLedgerError(
+          "order_unknown",
+          "Unknown original-channel refund.",
+        );
+      if (
+        refund.id !== input.refundId ||
+        order.flexpriceInvoiceId !== input.invoiceId ||
+        order.channelOrderRef !== input.paymentId ||
+        order.channel !== input.channel ||
+        refund.channel !== input.channel ||
+        order.priceCents !== input.amountCents ||
+        refund.amountCents !== input.amountCents
+      )
+        throw new PaidLedgerError(
+          "verification_mismatch",
+          "Refund receipt does not match the original payment.",
+        );
+      if (refund.state !== "requested") return refund;
+      if (await restoreHolds(tx, order.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "Refund verification is paused during ledger recovery.",
+        );
+      return settleRefundWithin(tx, refund, input.state === "confirmed", {
+        keepOwed: refund.reason === "account_suspended",
+      });
     });
   }
 
@@ -1655,6 +1909,7 @@ export function createPaidCreditLedger(
       .where(
         and(
           eq(paidOrders.id, input.orderId),
+          eq(paidOrders.flexpriceCheckout, false),
           input.fixture === false
             ? isNull(paidOrders.testMerchant)
             : eq(paidOrders.testMerchant, input.merchant),
@@ -1672,6 +1927,7 @@ export function createPaidCreditLedger(
       const order = await lockRefundOrder(tx, input.orderId);
       const refund = await findRefund(tx, order.id);
       if (
+        order.flexpriceCheckout ||
         !refund ||
         (Boolean(order.testMerchant) &&
           !fixtureRefundActors.includes(refund.openedBy))
@@ -1733,7 +1989,7 @@ export function createPaidCreditLedger(
    */
   async function confirmRefund(orderId: string, succeeded: boolean) {
     return database.transaction(async (tx) => {
-      await lockRefundOrder(tx, orderId);
+      const order = await lockRefundOrder(tx, orderId);
       const refund = await findRefund(tx, orderId);
       if (!refund)
         throw new PaidLedgerError(
@@ -1742,6 +1998,7 @@ export function createPaidCreditLedger(
         );
       if (
         refund.dispute ||
+        order.flexpriceCheckout ||
         fixtureRefundActors.includes(refund.openedBy) ||
         refund.state === "awaiting_settlement" ||
         (refund.reason === "pilot_closure" && refund.state === "manual_review")
@@ -1789,6 +2046,7 @@ export function createPaidCreditLedger(
     tx: Transaction,
     refund: Refund,
     succeeded: boolean,
+    { keepOwed = false } = {},
   ) {
     const { orderId } = refund;
     if (refund.state === "confirmed") return refund;
@@ -1830,7 +2088,7 @@ export function createPaidCreditLedger(
         .returning();
       return row;
     }
-    if (refund.reason === "pilot_closure") {
+    if (refund.reason === "pilot_closure" || keepOwed) {
       const [row] = await tx
         .update(paidRefunds)
         .set({ state: "manual_owed" })
@@ -2320,6 +2578,9 @@ export function createPaidCreditLedger(
     creditPackOffer,
     subscriptionOffer,
     testPackOrders,
+    flexpriceOrder,
+    linkFlexpriceInvoice,
+    pendingFlexpriceOrders,
     closeTestPackOrder,
     verifyOrder,
     entitlements,
@@ -2329,6 +2590,10 @@ export function createPaidCreditLedger(
     handleDispute,
     disputeStatus,
     requestTestPackRefund,
+    approveFlexpricePackRefund,
+    flexpricePackRefundDispatch,
+    pendingAutomaticFlexpriceRefunds,
+    applyFlexpricePackRefund,
     testPackRefundDispatch,
     applyTestPackRefundResult,
     confirmRefund,

@@ -10,6 +10,10 @@ import {
 } from "./coordination-model-call";
 import { createCreditPackCheckout } from "./credit-pack-checkout";
 import type { CreditPackTestChannel } from "./credit-pack-test-channel";
+import {
+  createFlexpriceAlipayCheckout,
+  type FlexpriceAlipaySettings,
+} from "./flexprice-alipay-checkout";
 import type { PaidCreditLedger } from "./paid-ledger";
 import type { TestCreditLedger, VerifiedBillingIdentity } from "./test-credit";
 import { UnsentBifrostRequest } from "./test-credit-bifrost";
@@ -89,6 +93,7 @@ type Dependencies = {
     ledger: PaidCreditLedger;
     creditPackTestChannel?: CreditPackTestChannel;
     alipayCreditPackTestChannel?: CreditPackTestChannel;
+    flexpriceAlipay?: FlexpriceAlipaySettings;
   };
   // Whether the caller holds an application's own credential (#111). Absent,
   // a call that names an application answers 503.
@@ -176,6 +181,15 @@ export function createTestCreditRoutes({
   api.use("/authorizations", authorize("account"));
   api.use("/authorizations/*", authorize("account"));
   if (paid) {
+    if (paid.flexpriceAlipay)
+      api.route(
+        "/",
+        createFlexpriceAlipayCheckout({
+          settings: paid.flexpriceAlipay,
+          paid: paid.ledger,
+          ledger,
+        }),
+      );
     for (const channel of [
       paid.creditPackTestChannel,
       paid.alipayCreditPackTestChannel,

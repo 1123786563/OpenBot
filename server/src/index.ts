@@ -106,6 +106,10 @@ import { loadCreditPackLiveChannel } from "./billing/credit-pack-live-channel";
 import { loadCreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import { createCasdoorBillingIdentity } from "./billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "./billing/direct-chat-test-credit-config";
+import {
+  createFlexpriceAlipaySweep,
+  loadFlexpriceAlipaySettings,
+} from "./billing/flexprice-alipay-checkout";
 import { loadIndependentAppBilling } from "./billing/independent-app-config";
 import { createPaidCreditLedger } from "./billing/paid-ledger";
 import { reconcilePilotClosure } from "./billing/pilot-closure";
@@ -2010,6 +2014,24 @@ const paidCreditLedger = createPaidCreditLedger(
   undefined,
   pilotDeployment,
 );
+const flexpriceAlipay = loadFlexpriceAlipaySettings(process.env);
+const flexpriceAlipaySweep = flexpriceAlipay
+  ? repeatAfterEach(
+      createFlexpriceAlipaySweep({
+        settings: flexpriceAlipay,
+        paid: paidCreditLedger,
+        onError: (orderId, error) =>
+          console.error(
+            JSON.stringify({
+              type: "flexprice-alipay-reconciliation-error",
+              orderId,
+              error: error instanceof Error ? error.name : "UnknownError",
+            }),
+          ),
+      }),
+      60_000,
+    )
+  : undefined;
 const creditPackLiveChannel = loadCreditPackLiveChannel(process.env);
 const alipayCreditPackLiveChannel = loadCreditPackLiveChannel(
   process.env,
@@ -4302,6 +4324,7 @@ const app = createApp(
     paidLedger: paidCreditLedger,
     creditPackTestChannel,
     alipayCreditPackTestChannel,
+    flexpriceAlipay,
     casdoorIdentityOf: casdoorBillingIdentity,
     weknora: weknoraBilling,
     independentApplication,
@@ -4405,6 +4428,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     evaluationCleanup?.stop();
     stopScheduledLearning?.();
     testCreditCutoffSweep.stop();
+    flexpriceAlipaySweep?.stop();
     pilotClosureSweep.stop();
     if (firstAutoApproveSweep) clearTimeout(firstAutoApproveSweep);
     if (autoApproveTimer) clearInterval(autoApproveTimer);

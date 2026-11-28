@@ -132,9 +132,6 @@ test("a failed matrix CLI run writes a shareable fixture manifest and exits nonz
         PILOT_TARGET_TOKEN: "fixture-execution-secret",
         PILOT_TARGET_DATABASE_URL:
           "postgres://user:fixture-db-secret@127.0.0.1:1/unused",
-        PILOT_LAGO_URL: fixture.url.origin,
-        LAGO_API_KEY: "fixture-lago-secret",
-        LAGO_USAGE_SUBSCRIPTION_ID: "fixture-subscription",
         PILOT_TOKEN_A: "fixture-token-a",
         PILOT_TOKEN_B: "fixture-token-b",
         PILOT_TOKEN_C: "fixture-token-c",
@@ -170,7 +167,7 @@ test("a failed matrix CLI run writes a shareable fixture manifest and exits nonz
           reason: "product_request_failed",
         },
         {
-          scenario: "target-lago-reconciliation",
+          scenario: "target-flexprice-reconciliation",
           outcome: "fail",
           operationIds: [],
           reason: "model_switch_incomplete",

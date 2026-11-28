@@ -17,7 +17,7 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
-            names = ['openbot', 'casdoor', 'flexprice', 'temporal', 'temporal_visibility', 'infisical', 'bifrost', 'lago']
+            names = ['openbot', 'casdoor', 'flexprice', 'temporal', 'temporal_visibility', 'infisical', 'bifrost']
             with tarfile.open('/opt/persaas/backups/latest.tar.gz') as archive:
                 for filename in [name + '.dump' for name in names] + ['opik.sql']:
                     member = archive.getmember('./' + filename)
@@ -26,7 +26,7 @@ def main():
                     with archive.extractfile(member) as source, (work / filename).open('wb') as target:
                         shutil.copyfileobj(source, target)
             for name in names:
-                container = 'persaas-lago-postgres' if name == 'lago' else '1Panel-pgvector-T1Hu'
+                container = '1Panel-pgvector-T1Hu'
                 database = 'persaas_restorecheck_' + name
                 run(['docker', 'cp', str(work / (name + '.dump')), container + ':/tmp/persaas-restore.dump'])
                 try:

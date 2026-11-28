@@ -1,8 +1,10 @@
 import { afterAll, expect, test } from "bun:test";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
+import { createFlexpricePackRefundRoutes } from "../src/billing/flexprice-pack-refund";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import { createDatabase } from "../src/db/client";
 import {
+  billingApplications,
   paidCreditAllocations,
   paidEntitlements,
   paidOrders,
@@ -23,6 +25,7 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const paidAt = new Date("2026-02-15T04:30:00.000Z"); // Beijing Feb 15 12:30
 const ledger = () => createPaidCreditLedger(database, () => paidAt);
 const run = crypto.randomUUID().slice(0, 8);
+const applicationId = `refund-app-${run}`;
 
 async function freshAccount(tag: string) {
   const [row] = await database
@@ -364,9 +367,16 @@ afterAll(async () => {
     .where(
       inArray(
         testCreditAccounts.issuer,
-        ["full", "retry", "order", "lost", "susp", "dispute"].map(
-          (tag) => `paid-refund-${tag}`,
-        ),
+        [
+          "full",
+          "retry",
+          "order",
+          "lost",
+          "susp",
+          "dispute",
+          "suspension-clock",
+          "flexprice",
+        ].map((tag) => `paid-refund-${tag}`),
       ),
     );
   const ids = accounts.map(({ id }) => id);
@@ -392,8 +402,12 @@ afterAll(async () => {
         "pack-refund-pilot",
         "plan-refund-monthly",
         "pack-b",
+        "pack-flexprice-refund",
       ]),
     );
+  await database
+    .delete(billingApplications)
+    .where(eq(billingApplications.id, applicationId));
   await database.$client.close();
 });
 
@@ -437,4 +451,229 @@ test("suspension is attributed to the channel timestamp even across repeated sus
     channel: "alipay",
   });
   expect(await service.entitlements(accountId)).toHaveLength(1);
+});
+
+async function boughtFlexpricePack(channel: "alipay" | "wechat") {
+  const accountId = await freshAccount("flexprice");
+  await ledger().upsertProduct({
+    code: "pack-flexprice-refund",
+    kind: "credit_pack",
+    priceCents: 7900,
+    creditsMicrocredits: 50n,
+  });
+  const orderId = crypto.randomUUID();
+  await database
+    .insert(billingApplications)
+    .values({
+      id: applicationId,
+      name: "Refund fixture",
+      operator: "platform",
+      resourcePrefix: applicationId,
+      approvedAt: paidAt,
+      approvedBy: "fixture",
+    })
+    .onConflictDoNothing();
+  await ledger().createOrder({
+    accountId,
+    channel: "alipay",
+    productCode: "pack-flexprice-refund",
+    testPack: {
+      id: orderId,
+      version: 1,
+      merchant: "alipay",
+      applicationIds: [applicationId],
+      live: true,
+      flexprice: true,
+    },
+  });
+  const invoiceId = `inv-${orderId}`;
+  const paymentId = `pay-${orderId}`;
+  await ledger().linkFlexpriceInvoice({ orderId, invoiceId });
+  await ledger().verifyOrder({
+    orderId,
+    channel,
+    channelOrderRef: paymentId,
+    amountCents: 7900,
+    currency: "CNY",
+    paidAt,
+    flexpriceInvoiceId: invoiceId,
+  });
+  return {
+    accountId,
+    orderId,
+    invoiceId,
+    paymentId,
+    channel,
+    amountCents: 7900,
+  };
+}
+
+test("an approved Flexprice pack refund is frozen until the original receipt is confirmed", async () => {
+  const order = await boughtFlexpricePack("alipay");
+  const { accountId, orderId } = order;
+  const refund = await ledger().approveFlexpricePackRefund({
+    accountId,
+    orderId,
+    by: "operator",
+  });
+  expect((await ledger().entitlements(accountId))[0].effective).toBe("frozen");
+  expect((await ledger().confirmRefund(orderId, false)).state).toBe(
+    "requested",
+  );
+  const receipt = {
+    ...order,
+    refundId: refund.id,
+    state: "confirmed",
+  } satisfies Parameters<
+    ReturnType<typeof ledger>["applyFlexpricePackRefund"]
+  >[0];
+  await expect(
+    ledger().applyFlexpricePackRefund({ ...receipt, amountCents: 7899 }),
+  ).rejects.toMatchObject({ code: "verification_mismatch" });
+  await ledger().applyFlexpricePackRefund(receipt);
+  await ledger().applyFlexpricePackRefund(receipt);
+  expect((await ledger().entitlements(accountId))[0].effective).toBe("revoked");
+  expect(await ledger().refunds(accountId)).toHaveLength(1);
+});
+
+test("a reservation and a whole-pack refund cannot both claim the credits", async () => {
+  const { accountId, orderId } = await boughtFlexpricePack("wechat");
+  const [reservation, refund] = await Promise.all([
+    ledger().allocate({
+      accountId,
+      operationId: "refund-race",
+      amountMicrocredits: 50n,
+    }),
+    ledger().approveFlexpricePackRefund({ accountId, orderId, by: "operator" }),
+  ]);
+  if (reservation.state === "allocated") {
+    expect(refund).toMatchObject({
+      state: "manual_review",
+      reason: "reserved_credits",
+    });
+    expect(
+      await ledger().flexpricePackRefundDispatch({ accountId, orderId }),
+    ).toBeUndefined();
+  } else {
+    expect(refund.state).toBe("requested");
+    expect((await ledger().entitlements(accountId))[0].effective).toBe(
+      "frozen",
+    );
+  }
+});
+
+test("only an admin can submit or verify the original merchant refund", async () => {
+  const order = await boughtFlexpricePack("wechat");
+  const calls: string[] = [];
+  let state: "unknown" | "failed" = "unknown";
+  const upstream = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const expected = `/v1/invoices/${order.invoiceId}/payments/${order.paymentId}/original-refund`;
+      if (
+        new URL(request.url).pathname !== expected ||
+        request.headers.get("x-api-key") !== "fixture"
+      )
+        return new Response(null, { status: 404 });
+      calls.push(request.method);
+      return Response.json({
+        invoiceId: order.invoiceId,
+        paymentId: order.paymentId,
+        channel: order.channel,
+        amountCents: order.amountCents,
+        state,
+      });
+    },
+  });
+  const api = createFlexpricePackRefundRoutes(
+    ledger(),
+    async (context, next) => {
+      context.set("actor", {
+        id: "operator",
+        email: "operator@example.test",
+        role: context.req.header("admin") ? "admin" : "user",
+      });
+      await next();
+    },
+    { baseUrl: upstream.url.origin, apiKey: "fixture" },
+  );
+  const path = `/accounts/${order.accountId}/credit-pack-orders/${order.orderId}/refund`;
+  const call = (action: string, admin = true) =>
+    api.request(`${path}/${action}`, {
+      method: "POST",
+      headers: admin ? { admin: "fixture" } : {},
+    });
+  try {
+    expect((await call("approve", false)).status).toBe(403);
+    expect((await call("verify", false)).status).toBe(403);
+    expect(calls).toEqual([]);
+    const submitted = await call("approve");
+    expect(submitted.status).toBe(202);
+    const { refundId } = await submitted.json();
+    expect((await ledger().entitlements(order.accountId))[0].effective).toBe(
+      "frozen",
+    );
+    state = "failed";
+    expect(await (await call("verify")).json()).toEqual({
+      refundId,
+      state: "failed",
+    });
+    expect((await ledger().entitlements(order.accountId))[0].effective).toBe(
+      "active",
+    );
+    expect(await (await call("approve")).json()).toMatchObject({
+      refundId,
+      state: "failed",
+    });
+    expect(calls).toEqual(["POST", "GET"]);
+  } finally {
+    await upstream.stop(true);
+  }
+});
+
+test("manual review can release a reserved pack but cannot refund spent credits", async () => {
+  for (const consumed of [false, true]) {
+    const { accountId, orderId } = await boughtFlexpricePack("alipay");
+    const operationId = "review";
+    const input = { accountId, orderId, by: "operator" };
+    expect(
+      (
+        await ledger().allocate({
+          accountId,
+          operationId,
+          amountMicrocredits: 10n,
+        })
+      ).state,
+    ).toBe("allocated");
+    const held = await ledger().approveFlexpricePackRefund(input);
+    expect(held).toMatchObject({
+      state: "manual_review",
+      reason: "reserved_credits",
+    });
+    if (consumed) {
+      await ledger().settleAllocation({
+        accountId,
+        operationId,
+        chargeMicrocredits: 10n,
+      });
+      expect(await ledger().approveFlexpricePackRefund(input)).toMatchObject({
+        id: held.id,
+        state: "manual_review",
+        reason: "used_credits",
+      });
+      expect((await ledger().entitlements(accountId))[0].effective).toBe(
+        "active",
+      );
+    } else {
+      await ledger().releaseAllocation(accountId, operationId);
+      expect(await ledger().approveFlexpricePackRefund(input)).toMatchObject({
+        id: held.id,
+        state: "requested",
+      });
+      expect((await ledger().entitlements(accountId))[0].effective).toBe(
+        "frozen",
+      );
+    }
+  }
 });

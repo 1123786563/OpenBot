@@ -106,6 +106,50 @@ const exists = async (client: postgres.Sql, table: string) => {
   return row?.present !== null && row?.present !== undefined;
 };
 
+test("reconciles the deployed Persaas Flexprice journal and applies Alipay checkout", async () => {
+  const folder = fileURLToPath(new URL("../drizzle", import.meta.url));
+  const deployedFlexpriceStamp = 1795843484377;
+  const promptAttachmentsTag = "0165_direct_chat_prompt_attachments";
+  const migrations = await readMigrationFolder(folder);
+  const deployedMigrations = migrations.filter(
+    ({ tag, when }) =>
+      when <= deployedFlexpriceStamp && tag !== promptAttachmentsTag,
+  );
+  expect(deployedMigrations.at(-1)?.when).toBe(deployedFlexpriceStamp);
+  const deployedFolder = await folderOf(
+    await Promise.all(
+      deployedMigrations.map(async ({ tag, when }) => ({
+        tag: tag.replace(/^0166_flexprice_/, "0165_flexprice_"),
+        when,
+        sql: await readFile(join(folder, `${tag}.sql`), "utf8"),
+      })),
+    ),
+  );
+  const client = postgres(await throwawayDatabase(), {
+    max: 1,
+    onnotice: () => {},
+  });
+  try {
+    await applyMigrations(client, deployedFolder);
+    expect(await exists(client, "flexprice_usage_deliveries")).toBe(true);
+
+    await applyMigrations(client, folder);
+    await applyMigrations(client, folder);
+
+    expect(
+      await client`select prompt_attachments from direct_chat_runs`,
+    ).toHaveLength(0);
+    expect(
+      await client`select event_id from flexprice_usage_deliveries`,
+    ).toHaveLength(0);
+    expect(
+      await client`select flexprice_checkout, flexprice_invoice_id from paid_orders`,
+    ).toHaveLength(0);
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+});
+
 // Stamps recorded by the trial before its migrations moved after SkillHub.
 const originalTrialStamps = [
   1795158327499, 1795160662134, 1795162001225, 1795173234015, 1795174523931,

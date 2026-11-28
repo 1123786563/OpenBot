@@ -4,7 +4,7 @@
 
 **Persaas Runtime → prod 只保留 `/server`、`/worker`**，分别保存 OpenBot API 和 Worker 的独立应用变量。应用连接中间件所需的 URL、密钥仍属于应用配置，保留在 Runtime。
 
-数据库服务自身的 env 不存入 Infisical：排除 MySQL、ClickHouse、pgvector/PostgreSQL、Redis，以及 Lago 内的 PostgreSQL。应用和中间件作为数据库客户端所需的连接变量继续保留。本地数据库 env 和私有备份保留；后续上传也会排除数据库容器。
+数据库服务自身的 env 不存入 Infisical：排除 MySQL、ClickHouse、pgvector/PostgreSQL、Redis。应用和中间件作为数据库客户端所需的连接变量继续保留。本地数据库 env 和私有备份保留；后续上传也会排除数据库容器。
 
 Compose、JSON、证书、模型和管理员账号清单不纳入环境变量管理。迁移前的恢复备份仅在 A 的 root 私有 `/opt/persaas/backups/individual-vars-<时间>/` 保留。
 
@@ -12,7 +12,7 @@ Compose、JSON、证书、模型和管理员账号清单不纳入环境变量管
 
 在服务目录中直接编辑变量名和值，例如 `/bifrost` 下的 `BIFROST_SETUP_TOKEN`，或 `/flexprice` 下的 `FLEXPRICE_POSTGRES_PASSWORD`。不再使用 `ENV_FILE` 或 `ENV_<文件名>_<摘要>` 保存整份文件。每个变量的值只填原始内容，不额外添加 dotenv 引号或把 `$` 写成 `$$`；下发脚本会处理转义。
 
-单 env 服务使用 `/bifrost`、`/casdoor`、`/flexprice`、`/temporal` 等目录。多 env 项目使用服务子目录：`/opik/backend`、`/opik/frontend`、`/opik/python-backend`、`/opik/zookeeper`，以及 `/lago/api`、`/lago/api-worker` 等。同名变量在不同服务中独立保存。没有容器 env 的项目不创建空目录。
+单 env 服务使用 `/bifrost`、`/casdoor`、`/flexprice`、`/temporal` 等目录。多 env 项目使用服务子目录：`/opik/backend`、`/opik/frontend`、`/opik/python-backend`、`/opik/zookeeper` 等。同名变量在不同服务中独立保存。没有容器 env 的项目不创建空目录。
 
 容器环境已整理到各应用原目录的 `.container-<服务名>.env`，Compose 通过 `env_file` 读取；整理前后完整的 Compose 展开结果比较一致。1Panel 的项目 `.env` 仍保留给面板参数使用，但不会因“默认存在”就上传，只有被服务明确声明为 env_file 的文件才纳入管理。
 

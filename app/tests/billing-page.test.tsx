@@ -55,6 +55,7 @@ beforeEach(() => {
         [
           "/api/billing/paid/credit-pack",
           "/api/billing/paid/credit-pack/alipay",
+          "/api/billing/paid/credit-pack/alipay/flexprice",
           "/api/billing/paid/subscription",
         ].includes(path)
       )
@@ -1144,4 +1145,129 @@ test("closed checkout shows usage settlement, manual review and channel confirma
     view.getByText("Credits frozen. WeChat is processing your refund."),
   ).toBeTruthy();
   expect(view.getAllByText("Refund amount CN¥25.00")).toHaveLength(1);
+});
+
+test("Billing switches the same live Credit Pack order after confirmation and renders the QR locally", async () => {
+  const path = "/api/billing/paid/credit-pack/alipay/flexprice";
+  const id = "4a06fd08-73e4-472c-824e-4077bed08946";
+  const product = {
+    version: 3,
+    priceCents: 2500,
+    creditsMicrocredits: "25000000",
+    currency: "CNY",
+  };
+  const channels = ["alipay", "wechat"];
+  let attempts = 0;
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      if (url === path)
+        return Response.json({
+          channels,
+          offers: [
+            {
+              productCode: "pack",
+              product,
+              available: true,
+              blockedReason: null,
+              channels,
+            },
+          ],
+        });
+      if (url === `${path}/orders`)
+        return Response.json([
+          { ...product, id, state: "pending", entitlementId: null },
+        ]);
+      if (url === `${path}/orders/${id}/checkout`) {
+        const { channel } = JSON.parse(String(init?.body));
+        if (channel === "wechat" && attempts++ === 0)
+          return Response.json({ status: "confirming", channel: "alipay" });
+        return Response.json({
+          status: "pending",
+          channel,
+          qrCode:
+            channel === "alipay"
+              ? "https://qr.alipay.com/fixture"
+              : "weixin://wxpay/bizpayurl?fixture",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        });
+      }
+      if (url === `${path}/orders/${id}/verify`)
+        return Response.json(
+          { error: "Payment status unavailable." },
+          { status: 503 },
+        );
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const ui = renderCredits(client());
+  const user = userEvent.setup({ document });
+  await user.click(await ui.findByRole("button", { name: "Pay with Alipay" }));
+  expect(
+    (
+      await ui.findByRole("img", { name: "Alipay payment QR code" })
+    ).tagName.toLowerCase(),
+  ).toBe("svg");
+  await user.click(ui.getByRole("button", { name: "Pay with WeChat Pay" }));
+  await ui.findByText(
+    "Payment is being confirmed. Check payment before trying again.",
+  );
+  expect(ui.queryByRole("img", { name: "Alipay payment QR code" })).toBeNull();
+  await user.click(ui.getByRole("button", { name: "Pay with WeChat Pay" }));
+  expect(
+    (
+      await ui.findByRole("img", { name: "WeChat Pay payment QR code" })
+    ).tagName.toLowerCase(),
+  ).toBe("svg");
+  await user.click(ui.getByRole("button", { name: "Check payment" }));
+  await ui.findByText("Payment status unavailable.");
+  expect(
+    ui.queryByRole("img", { name: "WeChat Pay payment QR code" }),
+  ).toBeNull();
+});
+
+test("Billing keeps existing live orders verifiable when purchases are paused", async () => {
+  const path = "/api/billing/paid/credit-pack/alipay/flexprice";
+  const id = "4a06fd08-73e4-472c-824e-4077bed08946";
+  const order = {
+    id,
+    version: 3,
+    priceCents: 2500,
+    creditsMicrocredits: "25000000",
+    currency: "CNY",
+    entitlementId: null,
+  };
+  let verified = false;
+  const fallback = global.fetch;
+  global.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      if (url === `${path}/orders`)
+        return Response.json([
+          { ...order, state: verified ? "verified" : "pending" },
+        ]);
+      if (url === `${path}/orders/${id}/verify` && init?.method === "POST") {
+        verified = true;
+        return Response.json({ ...order, state: "verified" });
+      }
+      return fallback(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const ui = renderCredits(client());
+  const user = userEvent.setup({ document });
+  await ui.findByText(`Order ${id}`);
+  expect(
+    ui.queryByRole("button", { name: "Place Credit Pack order" }),
+  ).toBeNull();
+  expect(ui.queryByRole("button", { name: "Pay with Alipay" })).toBeNull();
+  await user.click(ui.getByRole("button", { name: "Check payment" }));
+  await waitFor(() => {
+    expect(verified).toBe(true);
+    expect(ui.queryByRole("button", { name: "Check payment" })).toBeNull();
+  });
 });

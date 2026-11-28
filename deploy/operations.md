@@ -36,29 +36,24 @@ OpenBot API 直接发布在宿主机回环端口 `18001`。Bifrost 是当前技�
 
 按下文设置 OpenObserve 日志流、保留期和 Collector 授权。OpenBot 主应用使用 `openbot-observability` 和 Agent 网络，启动前创建观测网络并启动 Agent 项目。Compose 引用的外部网络须先存在。将 `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` 设为 `http://otel-collector:4318/v1/logs`，并按需求启用 `OPENBOT_OTEL_EXPORT`。
 
-### Hindsight、Opik 和 Lago
+### Hindsight 和 Opik
 
 Hindsight 的初始配置仅启用本地索引和召回。首次启动需要下载本地模型。将 OpenBot 连接到 `openbot-hindsight` 网络后，使用 `OPENBOT_HINDSIGHT_API_URL=http://hindsight:8888`。启用 Reflect、删除重放或恢复前，按 [配置说明](../docs/configuration.md#personal-memory-recall-and-reflect) 设置和验收。
 
-Opik 和 Lago 引用各自的上游 Compose。进入对应目录后检出固定版本，再用该目录的 `.env` 和 Compose 启动。见 [Opik 自托管文档](https://www.comet.com/docs/opik/self-host/local_deployment) 和 [Lago 部署文档](https://github.com/getlago/lago/tree/v1.57.0#deploy-lago)。
+Opik 引用上游 Compose。进入对应目录后检出固定版本，再用该目录的 `.env` 和 Compose 启动。见 [Opik 自托管文档](https://www.comet.com/docs/opik/self-host/local_deployment)。
 
 ```sh
 # 在 opik/ 目录
 git clone --depth 1 --branch 2.3.0 https://github.com/comet-ml/opik.git upstream
 docker compose config --quiet
 docker compose up -d --no-build
-
-# 在 lago/ 目录
-git clone --depth 1 --branch v1.57.0 https://github.com/getlago/lago.git upstream
-docker compose config --quiet
-docker compose up -d --no-build
 ```
 
 Opik 的 `MINIO_ROOT_PASSWORD` 使用独立随机密码。OpenBot API 连接 `openbot-opik` 网络后，可配置 `OPENBOT_OPIK_API_URL=http://opik-frontend:5173/api/`。真实样本评测需要另建私有实例，使用不同的 `-p` 项目名、`OPIK_PORT`、`OPIK_CLIENT_NETWORK`、`OPIK_CLIENT_HOSTNAME` 和独立卷。按 [真实样本评测说明](../docs/configuration.md#authorized-real-samples) 配置访问和撤回流程后，再启用 `OPENBOT_OPIK_REAL_EVAL_API_URL`。
 
-Lago 的数据库密码可用 `openssl rand -hex 32` 生成，Rails 签名密钥用 `openssl rand -hex 64`，三个加密值分别用 `openssl rand -hex 16`。用 `openssl genrsa 2048 | openssl base64 -A` 生成 `LAGO_RSA_PRIVATE_KEY`。按 [用量投递配置](../docs/billing-lago-usage-export.md) 创建 API 凭据和用量订阅后，将 OpenBot Worker 连接到 `openbot-lago` 网络，填写 `LAGO_URL=http://lago-api:3000`、`LAGO_API_KEY` 和 `LAGO_USAGE_SUBSCRIPTION_ID`。
+[Flexprice 用量对账与 Lago 退役](docs/flexprice.md)说明 Worker 配置与发布验收。
 
-连接可选中间件时，用 OpenBot 项目的本地 Compose override 给实际调用方加网。下面以 Hindsight 为例。Opik 同样连接 `server`，Lago 则连接 `worker`。保持 Agent 和 Computer 在自身网络内。
+连接可选中间件时，用 OpenBot 项目的本地 Compose override 给实际调用方加网。下面以 Hindsight 为例。Opik 同样连接 `server`。保持 Agent 和 Computer 在自身网络内。
 
 ```yaml
 services:

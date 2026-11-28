@@ -423,11 +423,52 @@ const intelligenceTags: ReadonlySet<string> = new Set(
 export const isIntelligenceMigration = ({ tag }: FolderMigration) =>
   intelligenceTags.has(tag);
 
+function matchesPersaasFlexpriceJournal(
+  folder: readonly FolderMigration[],
+  applied: readonly AppliedMigration[],
+  skipped: readonly FolderMigration[],
+): boolean {
+  const [missing] = skipped;
+  if (
+    skipped.length !== 1 ||
+    missing?.tag !== "0165_direct_chat_prompt_attachments" ||
+    missing.when !== 1795785352191 ||
+    missing.hash !==
+      "c650b1d620109489b51283f1ce8bcb7a37068d16cc1cb2062d9c846e895bd810"
+  )
+    return false;
+
+  const deployed = folder.find(
+    ({ tag, when, hash }) =>
+      tag === "0166_flexprice_usage_deliveries" &&
+      when === 1795843484377 &&
+      hash ===
+        "b9f1a7f151c44fdc8c941ac6b317cfdf81a0d0f01881f882749b53eaf0645d4d",
+  );
+  if (!deployed) return false;
+
+  // Persaas applied the Flexprice table on top of main's 0164 before main shipped
+  // prompt attachments. The shared history and the deployed entry must match.
+  const expected = folder.filter(
+    ({ when }) => when <= deployed.when && when !== missing.when,
+  );
+  const recorded = new Map(
+    applied.map(({ createdAt, hash }) => [createdAt, hash]),
+  );
+  return (
+    applied.length === expected.length &&
+    recorded.size === applied.length &&
+    expected.every(({ when, hash }) => recorded.get(when) === hash)
+  );
+}
+
 export function canMergeMigrationHistories(
   folder: readonly FolderMigration[],
   applied: readonly AppliedMigration[],
   skipped: readonly FolderMigration[],
 ): boolean {
+  if (matchesPersaasFlexpriceJournal(folder, applied, skipped)) return true;
+
   const baseIndex = folder.findIndex(
     ({ tag }) => tag === "0089_direct_chat_runs",
   );

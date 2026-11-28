@@ -48,7 +48,7 @@ services:
   worker:
     <<: *openbot
     command: ["bun", "--no-env-file", "../worker/src/index.ts"]
-    # The worker's own settings (.env.worker.example: the optional Lago export), and the server's:
+    # The worker's own settings (.env.worker.example: the optional Flexprice usage export), and the server's:
     # it runs the server's billing and sign-in code. The database address and the shared secret are
     # the deployment's, given below.
     env_file:

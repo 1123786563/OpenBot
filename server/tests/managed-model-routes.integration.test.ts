@@ -14,6 +14,7 @@ import type { AppVariables } from "../src/auth/guards";
 import { createPilotAuxiliaryModel } from "../src/billing/auxiliary-model";
 import { createCasdoorBillingIdentity } from "../src/billing/direct-chat-test-credit";
 import { loadDirectChatTestCredit } from "../src/billing/direct-chat-test-credit-config";
+import { createFlexpriceUsageExporter } from "../src/billing/flexprice-usage";
 import { createPaidCreditLedger } from "../src/billing/paid-ledger";
 import {
   createTestCreditLedger,
@@ -24,6 +25,7 @@ import { createDatabase } from "../src/db/client";
 import {
   accounts,
   enterpriseSettings,
+  flexpriceUsageDeliveries,
   lagoUsageEvents,
   testCreditAccounts,
   testCreditBatches,
@@ -158,6 +160,17 @@ afterAll(async () => {
     const ids = fixtureAccountIds;
     if (ids.length > 0) {
       await tx
+        .delete(flexpriceUsageDeliveries)
+        .where(
+          inArray(
+            flexpriceUsageDeliveries.eventId,
+            tx
+              .select({ id: lagoUsageEvents.eventId })
+              .from(lagoUsageEvents)
+              .where(inArray(lagoUsageEvents.accountId, ids)),
+          ),
+        );
+      await tx
         .delete(lagoUsageEvents)
         .where(inArray(lagoUsageEvents.accountId, ids));
       await tx
@@ -260,6 +273,33 @@ test("OpenBot's own model call goes through the ledger's entry, settles once and
   expect(dispatched).toHaveLength(1);
   expect(await ledger.balance(identity)).toMatchObject({
     availableMicrocredits: "33",
+    chargedMicrocredits: "7",
+  });
+
+  const [usage] = await database
+    .select({ eventId: lagoUsageEvents.eventId })
+    .from(lagoUsageEvents)
+    .where(eq(lagoUsageEvents.accountId, accountId));
+  if (!usage) throw new Error("Settled call did not produce usage.");
+  let sends = 0;
+  const exporter = createFlexpriceUsageExporter(
+    database,
+    {
+      send: async (event) => {
+        expect(event.operationId).toBe(operation?.id);
+        expect(event.amountMicrocredits).toBe(7n);
+        sends++;
+        return "matched";
+      },
+    },
+    new Date(0),
+  );
+  expect(await exporter.reconcileEvent(usage.eventId)).toBe("matched");
+  expect(await exporter.reconcileEvent(usage.eventId)).toBe("matched");
+  expect(sends).toBe(1);
+  expect(await ledger.balance(identity)).toMatchObject({
+    availableMicrocredits: "33",
+    reservedMicrocredits: "0",
     chargedMicrocredits: "7",
   });
 

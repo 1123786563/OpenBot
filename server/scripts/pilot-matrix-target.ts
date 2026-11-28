@@ -34,7 +34,6 @@ const localDefaults = {
   tokenizerUrl: "http://127.0.0.1:25169/tokenize",
   gatewayRevision: "matrix-fixed6-3skfs9",
   meteringRevision: "matrix-zhipu-tokenizer",
-  lagoUrl: "http://127.0.0.1:32832",
   weknoraUrl: "http://127.0.0.1:25172/api/weknora",
   accountStatusUrl: "http://127.0.0.1:25172/operator",
 } as const;
@@ -45,7 +44,6 @@ export type PilotTarget = PilotProvenance & {
   gateway: { url: string; revision: string; meteringRevision: string };
   embedding: { url: string };
   tokenizer: { url: string };
-  lago: { url: string };
   entry: { url: string; token: string } | undefined;
   // The target's WeKnora product entry (ingestion / post-signout work).
   weknora: { url: string } | undefined;
@@ -95,9 +93,6 @@ export function loadPilotTarget(
         url:
           environment.PILOT_TOKENIZER_URL?.trim() || localDefaults.tokenizerUrl,
       },
-      lago: {
-        url: environment.PILOT_LAGO_URL?.trim() || localDefaults.lagoUrl,
-      },
       entry,
       weknora: {
         url: environment.PILOT_WEKNORA_URL?.trim() || localDefaults.weknoraUrl,
@@ -142,7 +137,6 @@ export function loadPilotTarget(
       url:
         environment.PILOT_TOKENIZER_URL?.trim() || localDefaults.tokenizerUrl,
     },
-    lago: { url: environment.PILOT_LAGO_URL?.trim() || localDefaults.lagoUrl },
     entry,
     weknora: weknoraUrl ? { url: weknoraUrl } : undefined,
     accountStatus:

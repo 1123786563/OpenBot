@@ -13,7 +13,6 @@
 | OpenObserve 和 Collector | [OpenObserve](http://127.0.0.1:15080) · OTLP `127.0.0.1:14318` | 审计通过 `otel-collector:4318/v1/logs`，运行日志通过 Docker 日志采集 |
 | Hindsight | [健康检查](http://127.0.0.1:18888/health) | `hindsight:8888` |
 | Opik | [Opik](http://127.0.0.1:15173) | `opik-frontend:5173/api/` |
-| Lago | [Lago](http://127.0.0.1:13001) · API `127.0.0.1:13000` | Worker 使用 `lago-api:3000` 的本地零价格订阅 |
 | Bot、LangGraph、Computer、Supervisor | `127.0.0.1:4200`、`4201`、`4100`、`4500` | 使用 Agent Compose 内的服务名 |
 | SPIRE | Docker 内部 | SPIRE Server 与 Agent 通过工作负载套接字提供本地身份 |
 
@@ -30,7 +29,7 @@ docker build -f deploy/openbot/Dockerfile -t openbot-local-stack:worktree .
 ./deploy/compose.sh --local openbot up -d --no-build --wait
 ```
 
-查看任一服务组的状态或日志。组件名支持 `postgres`、`bifrost`、`infisical`、`openobserve`、`hindsight`、`opik`、`lago`、`agents`、`openbot` 和 `spire`。
+查看任一服务组的状态或日志。组件名支持 `postgres`、`bifrost`、`infisical`、`openobserve`、`hindsight`、`opik`、`agents`、`openbot` 和 `spire`。
 
 ```sh
 ./deploy/compose.sh --local openbot ps -a
@@ -45,5 +44,5 @@ curl --fail http://127.0.0.1:18001/api/me
 - 主应用完成一轮真实模型对话，PostgreSQL 记录为 `completed`，Opik 记录为已投递，并在 `openbot-runs` 查回 Trace。
 - Bot 和 LangGraph 均收到经过 Bifrost 的真实模型流。Computer 渲染了 Chromium 截图，Supervisor 创建了有 SPIRE 注册的临时 Computer。
 - OpenObserve 查回 API 和 Worker 运行日志以及 OpenBot 审计事件，保留期分别为 30 天和 90 天。
-- Hindsight 写入并召回了合成记忆。Worker 使用自己的配置连到 Lago，读回生效的零价格订阅。
+- Hindsight 写入并召回了合成记忆。Worker 可按 [Flexprice 用量对账](docs/flexprice.md)配置零价订阅。
 - Infisical 的机器身份导出已验证。
