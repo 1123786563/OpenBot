@@ -269,22 +269,24 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                     : "Your original stays saved here."
                 }
               >
-                {failure.matches?.length ? (
-                  <Text
-                    as="p"
-                    className="[overflow-wrap:anywhere]"
-                    color="secondary"
-                    size="sm"
-                  >
-                    Matching Bots: {failure.matches.join(", ")}
-                  </Text>
-                ) : null}
-                {draft.attachments.length > 0 ? (
-                  <Text as="p" color="secondary" size="sm">
-                    You can add the saved files to the new conversation before
-                    sending.
-                  </Text>
-                ) : null}
+                <Stack gap={2}>
+                  {failure.matches?.length ? (
+                    <Text
+                      as="p"
+                      className="[overflow-wrap:anywhere]"
+                      color="secondary"
+                      size="sm"
+                    >
+                      Matching Bots: {failure.matches.join(", ")}
+                    </Text>
+                  ) : null}
+                  {draft.attachments.length > 0 ? (
+                    <Text as="p" color="secondary" size="sm">
+                      You can add the saved files to the new conversation before
+                      sending.
+                    </Text>
+                  ) : null}
+                </Stack>
                 <Stack direction="horizontal" gap={2} wrap="wrap">
                   {draft.text ? (
                     <FirstMessageDraftCopy
