@@ -196,16 +196,18 @@ async function changePerson(
   write: (
     tx: AuditTransaction,
     email: string,
-  ) => Promise<Record<string, unknown>>,
+  ) => Promise<Record<string, unknown> | undefined>,
 ) {
   await withAuditTransaction(database, async (tx, deferTap) => {
     const [person] = await tx
       .select({ email: users.email })
       .from(users)
       .where(eq(users.id, userId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!person) return;
     const payload = await write(tx, person.email);
+    if (!payload) return;
     await recordAuditEvent(auditFor(tx, deferTap), {
       eventType,
       targetType: "person",
@@ -358,12 +360,13 @@ export function createPeopleStore(
             .select({ role: userRoles.role })
             .from(userRoles)
             .where(eq(userRoles.userId, userId));
+          // `admin` wins, as `find` reads it.
+          const from = stored.some((row) => row.role === "admin")
+            ? "admin"
+            : "user";
+          if (from === role) return;
           await setRole(tx, userId, role);
-          return {
-            // `admin` wins, as `find` reads it.
-            from: stored.some((row) => row.role === "admin") ? "admin" : "user",
-            to: role,
-          };
+          return { from, to: role };
         },
       );
     },
@@ -383,12 +386,13 @@ export function createPeopleStore(
         revokedBy,
         "person.access_revoked",
         async (tx, email) => {
-          await tx
+          const [revoked] = await tx
             .insert(revokedAccess)
             .values({ email: normalize(email), revokedBy })
-            .onConflictDoNothing();
+            .onConflictDoNothing()
+            .returning({ email: revokedAccess.email });
           await tx.delete(sessions).where(eq(sessions.userId, userId));
-          return {};
+          return revoked ? {} : undefined;
         },
       );
     },
@@ -418,10 +422,11 @@ export function createPeopleStore(
         by,
         "person.access_restored",
         async (tx, email) => {
-          await tx
+          const [restored] = await tx
             .delete(revokedAccess)
-            .where(eq(revokedAccess.email, normalize(email)));
-          return {};
+            .where(eq(revokedAccess.email, normalize(email)))
+            .returning({ email: revokedAccess.email });
+          return restored ? {} : undefined;
         },
       );
     },
