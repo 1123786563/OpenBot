@@ -1,5 +1,8 @@
 import { createRouter } from "@tanstack/react-router";
-import { RouteLoadError } from "./components/layout/route-recovery";
+import {
+  RouteLoadError,
+  restoreRouteReloadFocus,
+} from "./components/layout/route-recovery";
 import { parseSearchText } from "./lib/search-text";
 import type { RouterContext } from "./router-context";
 import { routeTree } from "./routeTree.gen";
@@ -15,6 +18,8 @@ export const router = createRouter({
    */
   parseSearch: parseSearchText,
 });
+
+restoreRouteReloadFocus(router);
 
 declare module "@tanstack/react-router" {
   interface Register {

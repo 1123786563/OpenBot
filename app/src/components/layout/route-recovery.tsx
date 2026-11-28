@@ -41,10 +41,44 @@ function focusHeading(heading: HTMLElement | null | undefined) {
   heading.focus();
 }
 
-function focusCurrentPage() {
-  focusHeading(
+function currentPageHeading() {
+  return (
     document.querySelector<HTMLHeadingElement>("main h1, [role='main'] h1") ??
-      document.querySelector("h1"),
+    document.querySelector("h1")
+  );
+}
+
+function focusCurrentPage() {
+  focusHeading(currentPageHeading());
+}
+
+const routeReloadState = "openbotRouteReload";
+
+function routeReloadFocus(): boolean | undefined {
+  const focus: unknown = window.history.state?.[routeReloadState];
+  return typeof focus === "boolean" ? focus : undefined;
+}
+
+export function restoreRouteReloadFocus(router: AnyRouter) {
+  if (typeof window === "undefined") return;
+  router.subscribe("onRendered", () => {
+    const requested = routeReloadFocus();
+    if (requested === undefined) return;
+    const heading = currentPageHeading();
+    if (!heading || heading.closest("[data-route-recovery]")) return;
+    const { [routeReloadState]: _removed, ...state } = window.history.state;
+    window.history.replaceState(state, "");
+    if (requested && document.activeElement === document.body)
+      focusHeading(heading);
+  });
+}
+
+function isRouteModuleLoadError(error: unknown) {
+  return (
+    error instanceof Error &&
+    /^(Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed)/.test(
+      error.message,
+    )
   );
 }
 
@@ -56,7 +90,7 @@ type Recovery =
     }
   | {
       kind: "error";
-      retry: () => Promise<boolean>;
+      retry: (restoreFocus: boolean) => Promise<boolean>;
       offline: boolean;
       repeated: boolean;
     };
@@ -127,7 +161,7 @@ function RouteRecovery(recovery: Recovery) {
           const button = event.currentTarget;
           const address = window.location.href;
           const wasFocused = button === document.activeElement;
-          const recovered = await recovery.retry();
+          const recovered = await recovery.retry(wasFocused);
           if (!recovered || !wasFocused) return;
           requestAnimationFrame(() => {
             if (
@@ -154,6 +188,7 @@ function RouteRecovery(recovery: Recovery) {
       as={
         recovery.kind === "missing" && recovery.standalone ? "main" : "section"
       }
+      data-route-recovery={recovery.kind}
       minHeight="min(100svh, 28rem)"
       ref={surface}
       style={{ paddingInline: "var(--spacing-4)" }}
@@ -263,12 +298,15 @@ function subscribeToConnection(listener: () => void) {
   };
 }
 
-export function RouteLoadError({ reset }: ErrorComponentProps) {
+export function RouteLoadError({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
   const entry =
     router.history.location.state.__TSR_key ?? router.history.location.href;
   const [failedEntry, setFailedEntry] = useState(() =>
-    recoveryAttempts.get(router)?.entry === entry ? entry : undefined,
+    recoveryAttempts.get(router)?.entry === entry ||
+    (typeof window !== "undefined" && routeReloadFocus() !== undefined)
+      ? entry
+      : undefined,
   );
   const online = useSyncExternalStore(
     subscribeToConnection,
@@ -281,7 +319,7 @@ export function RouteLoadError({ reset }: ErrorComponentProps) {
       kind="error"
       offline={!online}
       repeated={failedEntry === entry}
-      retry={async () => {
+      retry={async (restoreFocus) => {
         const previous = recoveryAttempts.get(router);
         if (
           !navigator.onLine ||
@@ -290,6 +328,16 @@ export function RouteLoadError({ reset }: ErrorComponentProps) {
           return false;
         const attempt = { entry, pending: true };
         recoveryAttempts.set(router, attempt);
+        if (isRouteModuleLoadError(error)) {
+          // A failed module fetch is cached for this document. Reload the same
+          // history entry so the browser can request the route again.
+          window.history.replaceState(
+            { ...window.history.state, [routeReloadState]: restoreFocus },
+            "",
+          );
+          window.location.reload();
+          return false;
+        }
         try {
           await router.invalidate({ sync: true });
           const current = router.history.location;
