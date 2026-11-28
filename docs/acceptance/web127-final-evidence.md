@@ -152,6 +152,10 @@ Firefox ESR 和 Orca 在主线构建 `bbbbe63fa` 的隔离 Team 环境验证了 
 
 子页和区块定向测试通过 32 项，隔离 PostgreSQL 和 Setup 界面通过 28 项。真实部署的权限范围、完整数据写入、部署隔离开关、各视图读屏与独立评分仍待验。 [子页测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-subpages-main.WjUPYE/results.log) · [隔离权限测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-isolation-main.OFNT9F/results.log)
 
+- [#287](https://github.com/1123786563/OpenBot/pull/287) 已合入。隔离生产构建 `2eff44601` 在 390×844 的 Chromium 和 WebKit 复验了 Bot 目录入口的 Escape、点击弹层外部和浏览器返回。确认舍弃后重新打开为空。会话入口确认舍弃 Bot 草稿后，原收件人和未发送消息保留。 [浏览器记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-route-ids.2dvv7E/browser.json)
+- [#288](https://github.com/1123786563/OpenBot/pull/288) 已合入。隔离 Chromium 构建 `b6b43bb55` 在 390×844、1440×900 及两种主题的四组 Bot 档案截图中，每组 12 条行说明均为 13.125 CSS 像素。小字告警为零，未出现页面异常或横向溢出。暗色梯度告警源自头像的 50×50 元素。浅色嵌套告警对应共享工作区内的分组列表。 [观察记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-profile-readable.s6JbTY/run.json) · [暗色样式](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-profile-readable.s6JbTY/layout-source.json) · [浅色样式](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-profile-readable.s6JbTY/layout-light.json)
+- Firefox ESR 与 Orca 在隔离站读出草稿确认标题、说明和「继续编辑」。首次按 Enter 后焦点进入 Bot 目录，放慢操作后回到名称字段。在 [#289](https://github.com/1123786563/OpenBot/pull/289) 的待合并构建 `c4ad6854b` 上，快慢两轮均回到原字段。Safari VoiceOver 未取得同等读屏输出。 [Orca 输出](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-orca-focus-fast.uMSfqr/speech.txt) · [返回焦点](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-orca-focus-fast.uMSfqr/returned-focus.txt)
+
 ## 逐页记录
 
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
