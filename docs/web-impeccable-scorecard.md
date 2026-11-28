@@ -1903,3 +1903,24 @@ Tasks 和 Ideas 的独立评分见上文。Tasks 内嵌的 Goals 与 Routines �
 设计复评使用 Team 管理员主线 `d6b529f26` 的断线恢复流程、Personal 较早的附件和剪贴板场景，以及 #312 候选的无交接记录场景。断线恢复目的页只验证到达与消息内容，完整单 Bot 和群聊视图仍待独立评分。真实 Intelligence 网关、读屏和时间过期仍待验。 [#176](https://github.com/1123786563/OpenBot/issues/176)
 
 两份构建的独立自动检测覆盖 60 个 Team 管理员 Chromium 场景。4 个警告是宽屏恢复后编辑器的嵌套容器，20 个建议均为桌面缓动。窄屏与新指引未报告问题，全部场景无页面异常与横向溢出。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web176-detector.HXTjlD)
+
+### #187 设备与凭据独立复评
+
+两位评审分别执行设计判断和自动检测。以下分数为整改前暂定分，使用主线 `b4aa5592` 的设备页面及归档的隔离流程。
+
+| 视图 | H1–H10 | 暂定分 |
+|---|---|---:|
+| `/browser` | 2 3 3 3 3 3 2 3 3 3 | 28/40 |
+| `/settings/browsers` | 3 3 3 3 4 3 3 2 3 3 | 30/40 |
+| `/settings/computer` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/admin/computers` | 3 2 3 3 3 3 3 2 3 3 | 28/40 |
+| `/settings/this-computer` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/admin/credentials` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/settings/credentials` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+| `/admin/credentials/new` | 3 3 3 3 4 3 3 3 3 3 | 31/40 |
+| `/settings/credentials/new` | 3 3 3 3 4 3 3 3 3 3 | 31/40 |
+| `/settings/passwords` | 3 3 3 3 3 3 3 3 3 3 | 30/40 |
+
+Team 管理员的 24 台设备样本将文件夹、闲置和网络设置置于清单之后。整改候选在页首加直达入口并验证键盘聚焦区块标题。Personal 与 Team 的 Chromium 设备套件 9/9，覆盖键盘、对比度和触区。Orca 只覆盖两类 Computer 列表恢复。真实本地 Computer 与 PostgreSQL 的 Browser 和 Recorder 集成测试 78/78。原生桌面端、实体触屏与生产角色待验。 [#187](https://github.com/1123786563/OpenBot/issues/187)
+
+独立自动检测在同一主线执行 112 个 Chromium 场景。22 个源码文件未报问题，浏览器检测有 53 个警告和 2 个建议，包含 Saved logins 小字、桌面长行和 Browser 动画。页面异常和横向溢出均为零。桌面端使用模拟桥接。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-detector.6mxzDi)

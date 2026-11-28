@@ -37,6 +37,7 @@ export type Controls = {
 export function ControlsSection({
   title,
   description,
+  headingId,
   children,
   readErrorMessage = "Couldn't load these settings.",
   showWriteError = true,
@@ -44,6 +45,7 @@ export function ControlsSection({
   /** Absent on a page whose only section this is: the page title already names it. */
   title?: string;
   description?: ReactNode | ((data: EnterpriseOverview) => ReactNode);
+  headingId?: string;
   children: (controls: Controls) => ReactNode;
   /** Pass false when another section on the page shows the shared read status. */
   readErrorMessage?: string | false;
@@ -64,6 +66,7 @@ export function ControlsSection({
           ? data && description(data)
           : description
       }
+      headingId={headingId}
       title={title}
     >
       {data ? (

@@ -116,7 +116,7 @@ export function PasswordsPage() {
                     >
                       {login.origin}
                     </ItemTitle>
-                    <ItemDescription className="line-clamp-none wrap-anywhere">
+                    <ItemDescription className="line-clamp-none wrap-anywhere text-sm">
                       {login.username}
                       {login.lastUsedAt
                         ? ` · last used ${new Date(login.lastUsedAt).toLocaleDateString()}`
