@@ -24,6 +24,7 @@ export type GroupMessage = {
   text: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "paused";
   createdAt: string;
+  stopReason?: "stopped" | "context_revoked";
   /** Why a Bot is waiting or paused. */
   reason?: string;
   /** For an answer relayed from another Bot through `message_bot`: which Bot answered. */
@@ -60,6 +61,7 @@ export type GroupConversation = {
   people: GroupPerson[];
   messages: GroupMessage[];
   backgroundRuns?: GroupBackgroundRun[];
+  stoppableTurnIds?: string[];
 };
 
 export const groupKeys = {
@@ -150,8 +152,33 @@ export function awaitingFirstReply(last: GroupMessage | undefined) {
   return (
     last !== undefined &&
     last.agentId === null &&
+    last.stopReason !== "stopped" &&
     Date.now() - Date.parse(last.createdAt) < 10 * 60_000
   );
+}
+
+export function stopGroupTurnMutationOptions(
+  queryClient: QueryClient,
+  channelId: string,
+) {
+  return mutationOptions({
+    mutationFn: async (messageId: string) => {
+      await client(
+        `/api/groups/${encodeURIComponent(channelId)}/turns/${encodeURIComponent(messageId)}/stop`,
+        {
+          method: "POST",
+          fallback: "Couldn't stop this turn. Try again.",
+        },
+      );
+    },
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: groupKeys.detail(channelId),
+        }),
+        queryClient.invalidateQueries({ queryKey: approvalsKey }),
+      ]),
+  });
 }
 
 export function sendGroupMessageMutationOptions(

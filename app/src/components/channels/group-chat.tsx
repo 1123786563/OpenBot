@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   type MouseEvent,
+  type ReactNode,
   type Ref,
   useEffect,
   useLayoutEffect,
@@ -45,6 +46,7 @@ import {
   groupKeys,
   groupQueryOptions,
   sendGroupMessageMutationOptions,
+  stopGroupTurnMutationOptions,
 } from "@/lib/groups";
 import {
   markdownComponents,
@@ -59,7 +61,7 @@ import {
   ConversationReadError,
   ConversationUnavailable,
 } from "./conversation-status";
-import { RUN_STAGE, runOutcomeWords } from "./run-stage";
+import { RUN_STAGE, RUN_WAS_STOPPED, runOutcomeWords } from "./run-stage";
 import { TeamBotConsentCard } from "./team-bot-consent";
 
 const groupSubmission = z.discriminatedUnion("kind", [
@@ -184,6 +186,21 @@ export function GroupChat({
     (bot) => bot.id === askerId,
   );
   const answer = useMutation(answerPersonQuestionMutationOptions(queryClient));
+  const stop = useMutation(
+    stopGroupTurnMutationOptions(queryClient, channelId),
+  );
+  const stopInFlight = useRef(false);
+  async function stopTurn(id: string) {
+    if (stopInFlight.current) return;
+    stopInFlight.current = true;
+    try {
+      await stop.mutateAsync(id);
+    } catch {
+      // The message keeps its Stop control until the server confirms.
+    } finally {
+      stopInFlight.current = false;
+    }
+  }
   const answerTo = async (text: string, questionId: string) => {
     await answer.mutateAsync({ id: questionId, response: text });
     // The answer is in the transcript now, and the Bot's turn on it is queued.
@@ -225,7 +242,10 @@ export function GroupChat({
   const landed = useRef(false);
   const newest = messages.at(-1);
   const awaitingReply =
-    newest?.agentId === null && bots.length > 0 && !question;
+    newest?.agentId === null &&
+    newest.stopReason !== "stopped" &&
+    bots.length > 0 &&
+    !question;
   // Reading dataUpdatedAt keeps this status current even if a poll returns the same transcript.
   const checkingForReply =
     awaitingReply && group.dataUpdatedAt > 0 && awaitingFirstReply(newest);
@@ -386,6 +406,27 @@ export function GroupChat({
                 message.answeredBy
                   ? (names.get(message.answeredBy) ?? "another Bot")
                   : undefined
+              }
+              stopAction={
+                message.ownerUserId === me?.id &&
+                group.data?.stoppableTurnIds?.includes(message.id) ? (
+                  <Stack align="end" gap={1}>
+                    <RecoveryButton
+                      label="Stop this turn"
+                      variant="ghost"
+                      isDisabled={stop.isPending}
+                      isLoading={
+                        stop.isPending && stop.variables === message.id
+                      }
+                      clickAction={() => void stopTurn(message.id)}
+                    />
+                    {stop.isError && stop.variables === message.id ? (
+                      <Text as="p" type="supporting" role="alert">
+                        Couldn't stop this turn. Try again.
+                      </Text>
+                    ) : null}
+                  </Stack>
+                ) : undefined
               }
               mine={message.ownerUserId === me?.id}
               available={message.agentId !== null && names.has(message.agentId)}
@@ -588,6 +629,7 @@ function GroupLine({
   available,
   carryingOn,
   rememberActivityLink,
+  stopAction,
 }: {
   message: GroupMessage;
   name: string;
@@ -597,6 +639,7 @@ function GroupLine({
   available: boolean;
   /** The line waits on an approval the server is carrying on from: the Bot's turn again. */
   carryingOn: boolean;
+  stopAction?: ReactNode;
   rememberActivityLink: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   if (message.agentId === null)
@@ -613,6 +656,12 @@ function GroupLine({
               <span className="whitespace-pre-wrap">{message.text}</span>
             </BubbleContent>
           </Bubble>
+          {stopAction}
+          {message.stopReason === "stopped" ? (
+            <Text as="p" role="status" type="supporting">
+              {RUN_WAS_STOPPED}
+            </Text>
+          ) : null}
         </MessageContent>
       </MessageRow>
     );
@@ -677,6 +726,10 @@ function GroupLine({
               {message.reason ?? message.text}
             </Text>
           </section>
+        ) : message.stopReason === "stopped" ? (
+          <Text as="p" role="status" type="supporting">
+            {RUN_WAS_STOPPED}
+          </Text>
         ) : message.status === "failed" ? (
           <Stack gap={1}>
             <Text

@@ -72,6 +72,9 @@ let failNextAnswer = false;
 let messages: GroupMessage[] = [];
 /** Runs of their own the Bots are making in the group; undefined when there are none. */
 let background: unknown[] | undefined;
+let stoppableTurnIds: string[] = [];
+let stoppedTurns: string[] = [];
+let failStop = false;
 let answers: unknown[] = [];
 let groupSends: unknown[] = [];
 /** The approval inbox's requests, as `/api/approvals` answers them. */
@@ -108,6 +111,21 @@ beforeAll(() => {
           { id: BUDGET, name: "Budget Buddy", avatarSeed: BUDGET },
         ],
       });
+    if (
+      url.pathname === `/api/groups/${CHANNEL}/turns/stop-me/stop` &&
+      method === "POST"
+    ) {
+      stoppedTurns.push("stop-me");
+      if (failStop) return Response.json({}, { status: 503 });
+      stoppableTurnIds = [];
+      messages = [
+        {
+          ...line("stop-me", null, "A turn to stop", "failed"),
+          stopReason: "stopped",
+        },
+      ];
+      return Response.json({ stopped: true });
+    }
     if (url.pathname === `/api/groups/${CHANNEL}`) {
       if (denied)
         return Response.json(
@@ -127,6 +145,7 @@ beforeAll(() => {
           { userId: "me", email: "me@example.test", name: null, creator: true },
         ],
         messages,
+        stoppableTurnIds,
         ...(background ? { backgroundRuns: background } : {}),
       });
     }
@@ -208,6 +227,9 @@ beforeEach(() => {
   decidedRequests = [];
   decisions = [];
   background = undefined;
+  stoppableTurnIds = [];
+  stoppedTurns = [];
+  failStop = false;
   messages = [
     line(
       "m-1",
@@ -349,6 +371,24 @@ test("a group names a queued Bot, a working Bot and a stopped run as every conve
   ).toBeTruthy();
   expect(view.queryByText("Waiting to reply")).toBeNull();
   expect(view.queryByText("Run ended")).toBeNull();
+});
+
+test("a group retries a failed stop and shows the server's stopped state", async () => {
+  showQuestion = false;
+  messages = [line("stop-me", null, "A turn to stop")];
+  stoppableTurnIds = ["stop-me"];
+  failStop = true;
+  const view = conversation();
+  const user = userEvent.setup({ document });
+  const stop = await view.findByRole("button", { name: "Stop this turn" });
+  await user.click(stop);
+  await view.findByText("Couldn't stop this turn. Try again.");
+  failStop = false;
+  await user.click(stop);
+  await view.findByText("The run was stopped.");
+  expect(view.queryByRole("button", { name: "Stop this turn" })).toBeNull();
+  expect(view.queryByText("Message sent. No Bot reply yet.")).toBeNull();
+  expect(stoppedTurns).toEqual(["stop-me", "stop-me"]);
 });
 
 test("an empty group gives the next step as a status", async () => {
