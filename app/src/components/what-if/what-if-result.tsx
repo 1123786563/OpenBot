@@ -81,7 +81,7 @@ const PAGE_WORDS: Record<NonNullable<WhatIfLayer["page"]>, string> = {
 const VERDICTS: Record<WhatIfVerdict, { label: string; tone: string }> = {
   allows: {
     label: "Allows",
-    tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    tone: "bg-emerald-500/10 text-emerald-800 dark:text-emerald-400",
   },
   refuses: { label: "Blocks", tone: "bg-destructive/10 text-destructive" },
   asks: {
@@ -286,7 +286,7 @@ export function WhatIfResultView({
           </div>
         ))}
       </PageRows>
-      <div className="mt-3 flex flex-col gap-1.5 text-muted-foreground text-sm">
+      <div className="mt-3 flex flex-col gap-1.5 text-pretty text-muted-foreground text-sm">
         {result.notApplicable.length > 0 ? (
           <p>
             Doesn't apply to this kind of action:{" "}

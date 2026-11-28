@@ -1781,3 +1781,15 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 | `/ideas` | `23c9dcfed` | 隔离 Personal | 2 3 3 3 3 3 3 3 3 3 | 29/40 | 忽略会解释 30 天影响，取消后复位焦点，提交失败可重试。开始处理时按钮禁用，成功后原先没有回执或直达任务入口。 |
 
 独立自动检测在 390 和 1440 CSS 像素的浅深主题下检查了 16 个 Chromium 场景，包含有建议、忽略确认、忽略重试和启动中。源码检测为 0 项，浏览器检测的 4 项均为桌面浅色嵌套卡片提示，尚未复现具体影响。16 个场景均无页面异常和文档横向溢出。 [自动检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector-ideas.VEapuq/run.json) · [开始处理记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-ideas-start.AzyjhL/run.json) · [忽略记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-ideas-populated.vhs6LC/run.json)
+
+### Admin 概览、Audit 与 Providers 独立复评
+
+两位独立评审分别执行设计判断和自动检测。以下为修复前暂定分。
+
+| 视图 | 构建 | 测试身份 | H1–H10 | 暂定分 | 设计判断 |
+|---|---|---|---|---:|---|
+| `/admin/` | `2eff44601` | 隔离 Team 管理员 | 3 3 3 3 3 2 3 3 3 3 | 29/40 | 任务词搜索和返回焦点通过。默认页先显示静态导航分类，常用任务和待处理事项尚未置顶。 |
+| `/admin/audit` | `c9265edbc`、`2eff44601` | 隔离 Team 管理员及降权后的成员 | 3 3 3 3 3 3 3 3 4 3 | 31/40 | 搜索和 CSV 说明范围，Why? 区分历史决定与当前策略。真实 Keycloak 登录后的降权清除已加载记录。 |
+| `/admin/providers` | `2eff44601` | 隔离 Team 管理员 | 2 2 3 3 3 3 3 3 3 3 | 28/40 | 保存失败保留选项；读取失败文案没有点明受影响的区域。手动输入模型 ID 缺少就近示例。 |
+
+独立自动检测覆盖 44 个 Chromium 状态样本，含桌面和窄屏、浅色和深色、读取失败与恢复。未检测到页面异常。检测器报告 15 项嵌套卡片提示、6 项窄屏孤词提示，以及 Audit 浅色历史解释中的 2 项低对比度提示。正式验收仍为 0/88。 [概览检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector.LUZvII/overview/scans.json) · [Audit 检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector.LUZvII/audit/scans.json) · [Providers 检测](/Users/wuyj/.local/state/openbot-spec-127/evidence/web192-detector.LUZvII/providers/scans.json)

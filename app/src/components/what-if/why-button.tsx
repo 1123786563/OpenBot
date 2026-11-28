@@ -131,7 +131,7 @@ export function WhyButton({ event }: { event: AuditEvent }) {
                 <section className="border-border border-t pt-4">
                   <h3 className="mb-2 font-semibold">With current policy</h3>
                   {differs ? (
-                    <p className="mb-2 text-muted-foreground">
+                    <p className="mb-2 text-pretty text-muted-foreground">
                       The current evaluation differs from the recorded decision.
                     </p>
                   ) : null}
