@@ -94,6 +94,9 @@ Chromium 和 WebKit 各验证了首次使用的进度保存、完成保存与预
 
 使用构建 `9f72e8f5f` 的隔离 API，按 Personal 和 Team 的实际路由要求启用模拟 Arcade 或 Composio。四个目录入口各在桌面、窄屏及浅深两套主题组合复验，16 个样本均进入预期目录。修正后的全量走查仍有 360 个页面样本和 63 个书签样本，未检测到页面异常、文档级横向溢出或未实现的模拟端点。此轮证据覆盖路由和首屏。真实供应商授权和完整任务仍待验。目录读屏补测见下方。 [全量记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/full-broker-corrected.hcLqq1/run.json) · [目录采集修正 PR #261](https://github.com/1123786563/OpenBot/pull/261)
 
+
+- #187 在主线 `f33594577` 上用 Chromium headless shell 完整复跑设备和凭据浏览器套件。9 项通过，共 280 条断言和 300 张截图。范围包括两种部署版本及浅深主题的文字对比度与触区、403、读取失败重试、Recorder 与 Computer 键盘操作、Credentials、This computer 和结果未确认对话框。完整版 Chromium 的本机进程提前结束，改用项目已有的 headless shell 选项后通过。另有 89 项页面与会话接续测试，以及 28 项 Recorder PostgreSQL 测试通过。真实设备、原生桌面窗口和逐页独立评分仍待验。 [完整浏览器日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-device-full.X94xdN/results.log) · [界面与接续测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-device-main.T6xVBP/results.log) · [Recorder 测试](/Users/wuyj/.local/state/openbot-spec-127/evidence/web187-device-full.X94xdN/recorder-postgres.log)
+
 ### #188 Memory 与 #190 供应商目录复验
 
 在主线构建 `bbbbe63fa` 上，Memory 的模拟 403 隐藏新增入口。权限恢复后，键盘重试聚焦 Your memories，搜索与状态筛选可同时生效。Chromium 和 WebKit 共通过 12 个场景，覆盖三种宽度与浅深主题。另用 Orca 复验模拟 503 的重试焦点。Web 和隔离 PostgreSQL 定向回归 139 项通过，3 项自托管 Hindsight 测试跳过。 [权限与筛选场景](/Users/wuyj/.local/state/openbot-spec-127/evidence/memory-permission-browser.s3Ylzs/run.json) · [读屏](/Users/wuyj/.local/state/openbot-spec-127/evidence/orca-memory-recovery.3qUf8a) · [定向回归](/Users/wuyj/.local/state/openbot-spec-127/evidence/web188-current-regression.c8nOgF/results.log)
