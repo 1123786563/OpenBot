@@ -62,6 +62,7 @@ import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import type { CreditPackTestChannel } from "./billing/credit-pack-test-channel";
 import type { FlexpriceAlipaySettings } from "./billing/flexprice-alipay-checkout";
+import { createFlexpricePackRefundRoutes } from "./billing/flexprice-pack-refund";
 import { createPaidCorrectionRoutes } from "./billing/paid-correction-routes";
 import type { PaidCreditLedger } from "./billing/paid-ledger";
 import type {
@@ -1005,6 +1006,15 @@ export function createApp(
       "/api/admin/billing",
       createTrialAdminRoutes(billing.testLedger, requireUser),
     );
+    if (billing.flexpriceAlipay)
+      app.route(
+        "/api/admin/billing",
+        createFlexpricePackRefundRoutes(
+          billing.paidLedger,
+          requireUser,
+          billing.flexpriceAlipay,
+        ),
+      );
     if (billing.weknora && billing.casdoorIdentityOf)
       app.route(
         "/api/weknora",

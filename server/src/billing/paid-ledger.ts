@@ -52,6 +52,10 @@ import {
 export { PaidLedgerError } from "./paid-ledger-error";
 export { restoreHolds } from "./paid-restore";
 
+const flexpriceOriginalRefund = "flexprice_original_channel";
+function isCreditPackChannel(channel: string): channel is CreditPackChannel {
+  return channel === "alipay" || channel === "wechat";
+}
 const customerRefund = "customer";
 const automaticFixtureRefund = "fixture-automatic";
 const fixtureRefundActors = [customerRefund, automaticFixtureRefund];
@@ -1381,7 +1385,7 @@ export function createPaidCreditLedger(
       // A failed refund can be requested again; a confirmed one is final.
       .onConflictDoUpdate({
         target: paidRefunds.orderId,
-        set: { state: "requested", reason, openedBy: by, requestedAt: at },
+        set: { state, reason, openedBy: by, requestedAt: at },
         setWhere: sql`${paidRefunds.state} <> 'confirmed' AND ${paidRefunds.openedBy} not in (${customerRefund}, ${automaticFixtureRefund})`,
       })
       .returning();
@@ -1581,6 +1585,8 @@ export function createPaidCreditLedger(
   ) {
     return database.transaction(async (tx) => {
       const order = await lockRefundOrder(tx, orderId);
+      if (order.flexpriceCheckout)
+        throw new PaidLedgerError("order_unknown", "Unknown order.");
       const existing = await findRefund(tx, orderId);
       if (
         existing &&
@@ -1611,20 +1617,51 @@ export function createPaidCreditLedger(
     kind?: "subscription";
     fixture?: boolean;
   }) {
+    return requestPackRefund({ ...input, source: "legacy" });
+  }
+
+  function approveFlexpricePackRefund(input: {
+    orderId: string;
+    accountId: string;
+    by: string;
+  }) {
+    return requestPackRefund({ ...input, source: "flexprice" });
+  }
+
+  async function requestPackRefund(
+    input:
+      | ({ source: "legacy" } & Parameters<typeof requestTestPackRefund>[0])
+      | ({ source: "flexprice" } & Parameters<
+          typeof approveFlexpricePackRefund
+        >[0]),
+  ) {
+    const flexprice = input.source === "flexprice";
+    const kind = flexprice ? "credit_pack" : (input.kind ?? "credit_pack");
+    const by = flexprice ? input.by : customerRefund;
     return database.transaction(async (tx) => {
       await lockAccount(tx, input.accountId);
       const order = await lockRefundOrder(tx, input.orderId);
       if (
-        order.flexpriceCheckout ||
+        order.flexpriceCheckout !== flexprice ||
         order.accountId !== input.accountId ||
-        order.testMerchant !==
-          (input.fixture === false ? null : input.merchant) ||
-        order.channel !== input.channel ||
-        order.lockedKind !== (input.kind ?? "credit_pack")
+        order.lockedKind !== kind ||
+        (flexprice
+          ? !order.flexpriceInvoiceId || !isCreditPackChannel(order.channel)
+          : order.testMerchant !==
+              (input.fixture === false ? null : input.merchant) ||
+            order.channel !== input.channel)
       )
         throw new PaidLedgerError("order_unknown", "Unknown order.");
       const existing = await findRefund(tx, order.id);
-      if (existing) return existing;
+      if (
+        existing &&
+        !(
+          flexprice &&
+          existing.state === "manual_review" &&
+          existing.reason === "reserved_credits"
+        )
+      )
+        return existing;
       if (order.state !== "verified" || !order.channelOrderRef)
         throw new PaidLedgerError(
           "not_verified",
@@ -1635,7 +1672,8 @@ export function createPaidCreditLedger(
           "ledger_restoring",
           "Refund requests are paused during ledger recovery.",
         );
-      const amount = input.amountCents ?? order.priceCents;
+      const amount =
+        (flexprice ? undefined : input.amountCents) ?? order.priceCents;
       if (amount > order.priceCents)
         throw new PaidLedgerError(
           "verification_mismatch",
@@ -1646,7 +1684,7 @@ export function createPaidCreditLedger(
         .from(paidEntitlements)
         .where(eq(paidEntitlements.orderId, order.id))
         .for("update");
-      if (input.kind === "subscription") {
+      if (kind === "subscription") {
         const [source] = sources;
         if (
           !source?.periodStart ||
@@ -1689,13 +1727,18 @@ export function createPaidCreditLedger(
       const wasUsed =
         usage?.wasUsed ||
         sources.some(({ consumedMicrocredits }) => consumedMicrocredits > 0n);
-      if (wasUsed || amount < order.priceCents)
+      if (existing && !wasUsed && usage?.hasHold) return existing;
+      if (wasUsed || amount < order.priceCents || (flexprice && usage?.hasHold))
         return recordRefundWithin(
           tx,
           order,
-          wasUsed ? "used_credits" : "partial_refund",
+          wasUsed
+            ? "used_credits"
+            : usage?.hasHold && flexprice
+              ? "reserved_credits"
+              : "partial_refund",
           now(),
-          customerRefund,
+          by,
           "manual_review",
           amount,
         );
@@ -1707,12 +1750,88 @@ export function createPaidCreditLedger(
       const refund = await recordRefundWithin(
         tx,
         order,
-        "user_request",
+        flexprice ? flexpriceOriginalRefund : "user_request",
         now(),
-        customerRefund,
+        by,
       );
       await freezeForRefund(tx, order.id);
       return refund;
+    });
+  }
+
+  async function flexpricePackRefundDispatch(input: {
+    orderId: string;
+    accountId: string;
+  }) {
+    const [row] = await database
+      .select({
+        refundId: paidRefunds.id,
+        state: paidRefunds.state,
+        amountCents: paidRefunds.amountCents,
+        invoiceId: paidOrders.flexpriceInvoiceId,
+        paymentId: paidOrders.channelOrderRef,
+        channel: paidOrders.channel,
+      })
+      .from(paidRefunds)
+      .innerJoin(paidOrders, eq(paidOrders.id, paidRefunds.orderId))
+      .where(
+        and(
+          eq(paidOrders.id, input.orderId),
+          eq(paidOrders.accountId, input.accountId),
+          eq(paidOrders.flexpriceCheckout, true),
+          eq(paidRefunds.reason, flexpriceOriginalRefund),
+        ),
+      );
+    if (row?.invoiceId && row.paymentId && isCreditPackChannel(row.channel))
+      return {
+        ...row,
+        invoiceId: row.invoiceId,
+        paymentId: row.paymentId,
+        channel: row.channel,
+      };
+  }
+
+  async function applyFlexpricePackRefund(input: {
+    accountId: string;
+    orderId: string;
+    refundId: string;
+    invoiceId: string;
+    paymentId: string;
+    channel: CreditPackChannel;
+    amountCents: number;
+    state: "confirmed" | "failed";
+  }) {
+    return database.transaction(async (tx) => {
+      await lockAccount(tx, input.accountId);
+      const order = await lockRefundOrder(tx, input.orderId);
+      const refund = await findRefund(tx, order.id);
+      if (
+        !order.flexpriceCheckout ||
+        order.accountId !== input.accountId ||
+        refund?.reason !== flexpriceOriginalRefund
+      )
+        throw new PaidLedgerError(
+          "order_unknown",
+          "Unknown original-channel refund.",
+        );
+      if (
+        refund.id !== input.refundId ||
+        order.flexpriceInvoiceId !== input.invoiceId ||
+        order.channelOrderRef !== input.paymentId ||
+        order.channel !== input.channel ||
+        refund.amountCents !== input.amountCents
+      )
+        throw new PaidLedgerError(
+          "verification_mismatch",
+          "Refund receipt does not match the original payment.",
+        );
+      if (refund.state !== "requested") return refund;
+      if (await restoreHolds(tx, order.accountId))
+        throw new PaidLedgerError(
+          "ledger_restoring",
+          "Refund verification is paused during ledger recovery.",
+        );
+      return settleRefundWithin(tx, refund, input.state === "confirmed");
     });
   }
 
@@ -1815,7 +1934,7 @@ export function createPaidCreditLedger(
    */
   async function confirmRefund(orderId: string, succeeded: boolean) {
     return database.transaction(async (tx) => {
-      await lockRefundOrder(tx, orderId);
+      const order = await lockRefundOrder(tx, orderId);
       const refund = await findRefund(tx, orderId);
       if (!refund)
         throw new PaidLedgerError(
@@ -1824,6 +1943,7 @@ export function createPaidCreditLedger(
         );
       if (
         refund.dispute ||
+        order.flexpriceCheckout ||
         fixtureRefundActors.includes(refund.openedBy) ||
         refund.state === "awaiting_settlement" ||
         (refund.reason === "pilot_closure" && refund.state === "manual_review")
@@ -2414,6 +2534,9 @@ export function createPaidCreditLedger(
     handleDispute,
     disputeStatus,
     requestTestPackRefund,
+    approveFlexpricePackRefund,
+    flexpricePackRefundDispatch,
+    applyFlexpricePackRefund,
     testPackRefundDispatch,
     applyTestPackRefundResult,
     confirmRefund,
