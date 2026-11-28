@@ -84,6 +84,7 @@ let sent: { method: string; path: string; body: unknown }[] = [];
 let originalFetch: typeof fetch;
 let loseGroupSendResponse = false;
 let refuseRoute = false;
+let refuseAttachmentRead = false;
 let groupMessages: unknown[] = [];
 let originalRect: typeof Range.prototype.getBoundingClientRect;
 
@@ -119,6 +120,12 @@ beforeAll(() => {
         path: url.pathname,
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       });
+    if (url.pathname === "/api/attachments/attachment-1" && method === "GET")
+      return refuseAttachmentRead
+        ? NativeResponse.json({}, { status: 503 })
+        : new NativeResponse("Planning brief", {
+            headers: { "content-type": "text/plain" },
+          });
     if (url.pathname === "/api/agents/capabilities")
       return NativeResponse.json({ capabilities: { builtInAvailable: true } });
     if (url.pathname === "/api/me")
@@ -199,6 +206,7 @@ afterEach(() => {
   sent = [];
   loseGroupSendResponse = false;
   refuseRoute = false;
+  refuseAttachmentRead = false;
   groupMessages = [];
   localStorage.clear();
   sessionStorage.clear();
@@ -639,7 +647,7 @@ test("a delivered group start keeps neither message text nor attachment referenc
   expect(sent.filter(({ method }) => method === "POST")).toEqual([]);
 });
 
-test("choosing Bots after a routing refusal carries the saved text and an attachment re-add checklist", async () => {
+test("choosing Bots after a routing refusal carries the saved text and lets the person stage original files", async () => {
   refuseRoute = true;
   const startId = crypto.randomUUID();
   const message = "Carry this text to the new conversation";
@@ -652,8 +660,8 @@ test("choosing Bots after a routing refusal carries the saved text and an attach
       attachments: [
         {
           attachmentId: "attachment-1",
-          name: "brief.pdf",
-          mimeType: "application/pdf",
+          name: "brief.txt",
+          mimeType: "text/plain",
           type: "document",
         },
       ],
@@ -674,18 +682,29 @@ test("choosing Bots after a routing refusal carries the saved text and an attach
   await view.findByRole("heading", { name: "New conversation" });
   const editor = await view.findByRole("textbox", { name: "Message" });
   await waitFor(() => expect(editor.textContent).toBe(message));
-  expect(
-    view.getByText(
-      "Attachments aren’t copied. Attach these again once the conversation opens: brief.pdf.",
-    ),
-  ).toBeTruthy();
+  expect(view.getByText("Original attachments: brief.txt.")).toBeTruthy();
   expect(view.getByText(/Your original message stays saved/)).toBeTruthy();
   expect(view.queryByText(/Original draft kept on Home/)).toBeNull();
-  // Picking a Bot is the page's own navigation and must keep the checklist.
+  // Picking a Bot is the page's own navigation and must keep the original files available.
   await addToTo(view, CLAUDE.name);
-  expect(view.getByText("brief.pdf", { exact: false })).toBeTruthy();
+  expect(view.getByText("brief.txt", { exact: false })).toBeTruthy();
   const editorAfterPick = view.getByRole("textbox", { name: "Message" });
   expect(editorAfterPick.textContent).toBe(message);
+  refuseAttachmentRead = true;
+  const addOriginal = view.getByRole("button", {
+    name: "Add original attachments",
+  });
+  await user.click(addOriginal);
+  await view.findByText(
+    "Couldn't read the original attachments. Try again or add the files yourself.",
+  );
+  expect(view.queryByRole("button", { name: "Remove brief.txt" })).toBeNull();
+  refuseAttachmentRead = false;
+  await user.click(addOriginal);
+  await view.findByRole("button", { name: "Remove brief.txt" });
+  expect(
+    view.queryByRole("button", { name: "Add original attachments" }),
+  ).toBeNull();
   const composition = view.router.state.location.state.newConversation;
   expect(composition).toBeTruthy();
   expect(
@@ -714,7 +733,7 @@ test("choosing Bots after a routing refusal carries the saved text and an attach
   ).toBe(false);
 });
 
-test("a start with only attachments hands over its checklist and no empty draft", async () => {
+test("a start with only attachments offers its original files without writing an empty draft", async () => {
   refuseRoute = true;
   const startId = crypto.randomUUID();
   savePendingStart("new-group-tester", startId, {
@@ -750,8 +769,6 @@ test("a start with only attachments hands over its checklist and no empty draft"
     ),
   ).toBeUndefined();
   expect(
-    view.getByText(
-      "Attachments aren’t copied. Attach these again once the conversation opens: one.pdf, one.pdf, shot.png.",
-    ),
+    view.getByText("Original attachments: one.pdf, one.pdf, shot.png."),
   ).toBeTruthy();
 });
