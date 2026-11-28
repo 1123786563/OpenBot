@@ -39,8 +39,10 @@ import {
   writeComposeDraft,
 } from "@/lib/channels/compose-draft";
 import { canKeepCachedRead } from "@/lib/client";
+import { controlThreadRun } from "@/lib/copilot/thread-messages";
 import {
   awaitingFirstReply,
+  type GroupBackgroundRun,
   type GroupMessage,
   groupKeys,
   groupQueryOptions,
@@ -184,6 +186,18 @@ export function GroupChat({
     (bot) => bot.id === askerId,
   );
   const answer = useMutation(answerPersonQuestionMutationOptions(queryClient));
+  const reconcile = useMutation({
+    mutationFn: (run: GroupBackgroundRun) =>
+      controlThreadRun({
+        action: "reconcile",
+        threadId: run.threadId,
+        agentId: run.agentId,
+        runId: run.id,
+      }),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: groupKeys.detail(channelId) }),
+  });
+
   const answerTo = async (text: string, questionId: string) => {
     await answer.mutateAsync({ id: questionId, response: text });
     // The answer is in the transcript now, and the Bot's turn on it is queued.
@@ -426,7 +440,9 @@ export function GroupChat({
                 )}
                 <Text as="p" role="status" type="supporting">
                   {run.reason ??
-                    runOutcomeWords(run) ??
+                    (run.externalOutcome === "executed" && !run.partialReply
+                      ? "The outcome was verified."
+                      : runOutcomeWords(run)) ??
                     (run.status === "failed"
                       ? RUN_STAGE.ended
                       : run.status === "running"
@@ -434,12 +450,26 @@ export function GroupChat({
                         : RUN_STAGE.completed)}
                 </Text>
               </MessageContent>
-              {/*
-                NO STOP ON A GROUP'S RUN, ON PURPOSE. A Bot's turn here is a run the server owns,
-                and a stop leaves its outcome "unknown" (`direct-chat-replay.ts`). Nothing in a
-                group can then vouch for it, so the Bot answers "busy" to every later turn of its
-                own, for good (`store.start` in `group.ts`). A wait on an approval ends with Deny.
-              */}
+              {run.externalOutcome === "unknown" ? (
+                <Stack align="start" gap={1}>
+                  <RecoveryButton
+                    className="conversation-recovery-action"
+                    label="Check outcome"
+                    variant="ghost"
+                    size="lg"
+                    isDisabled={reconcile.isPending}
+                    isLoading={
+                      reconcile.isPending && reconcile.variables?.id === run.id
+                    }
+                    clickAction={() => reconcile.mutate(run)}
+                  />
+                  {reconcile.isError && reconcile.variables?.id === run.id ? (
+                    <Text as="p" type="supporting" role="alert">
+                      Couldn't check the outcome. Try again.
+                    </Text>
+                  ) : null}
+                </Stack>
+              ) : null}
             </MessageRow>
           ))}
           {awaitingReply && (

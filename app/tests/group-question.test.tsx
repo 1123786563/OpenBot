@@ -72,6 +72,8 @@ let failNextAnswer = false;
 let messages: GroupMessage[] = [];
 /** Runs of their own the Bots are making in the group; undefined when there are none. */
 let background: unknown[] | undefined;
+let reconciliations: string[] = [];
+let failReconciliation = false;
 let answers: unknown[] = [];
 let groupSends: unknown[] = [];
 /** The approval inbox's requests, as `/api/approvals` answers them. */
@@ -129,6 +131,15 @@ beforeAll(() => {
         messages,
         ...(background ? { backgroundRuns: background } : {}),
       });
+    }
+    if (
+      url.pathname.endsWith("/runs/run-unknown/reconcile") &&
+      method === "POST"
+    ) {
+      reconciliations.push(url.pathname + url.search);
+      if (failReconciliation) return Response.json({}, { status: 503 });
+      background = [unknownRun("executed")];
+      return Response.json({ externalOutcome: "executed" });
     }
     if (url.pathname === "/api/approvals")
       return Response.json({
@@ -208,6 +219,8 @@ beforeEach(() => {
   decidedRequests = [];
   decisions = [];
   background = undefined;
+  reconciliations = [];
+  failReconciliation = false;
   messages = [
     line(
       "m-1",
@@ -349,6 +362,39 @@ test("a group names a queued Bot, a working Bot and a stopped run as every conve
   ).toBeTruthy();
   expect(view.queryByText("Waiting to reply")).toBeNull();
   expect(view.queryByText("Run ended")).toBeNull();
+});
+
+function unknownRun(externalOutcome: "unknown" | "executed") {
+  return {
+    id: "run-unknown",
+    agentId: ERRANDS,
+    threadId: ERRANDS_THREAD,
+    status: "failed",
+    waitingForApproval: false,
+    partialReply: null,
+    externalOutcome,
+    stopReason: "stopped",
+  };
+}
+
+test("a group can check the outcome of its stopped Run without repeating its work", async () => {
+  showQuestion = false;
+  background = [unknownRun("unknown")];
+  failReconciliation = true;
+  const view = conversation();
+  const user = userEvent.setup({ document });
+  const check = await view.findByRole("button", { name: "Check outcome" });
+  await user.click(check);
+  await view.findByText("Couldn't check the outcome. Try again.");
+  failReconciliation = false;
+  await user.click(check);
+  await view.findByText("The outcome was verified.");
+  expect(view.queryByRole("button", { name: "Check outcome" })).toBeNull();
+  expect(reconciliations).toEqual([
+    `/api/copilotkit/threads/${ERRANDS_THREAD}/runs/run-unknown/reconcile?agentId=${ERRANDS}`,
+    `/api/copilotkit/threads/${ERRANDS_THREAD}/runs/run-unknown/reconcile?agentId=${ERRANDS}`,
+  ]);
+  expect(groupSends).toEqual([]);
 });
 
 test("an empty group gives the next step as a status", async () => {
