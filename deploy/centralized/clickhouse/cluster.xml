@@ -1,0 +1,11 @@
+<clickhouse>
+  <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+  <timezone>UTC</timezone>
+  <macros><shard>1</shard><replica>clickhouse</replica><cluster>cluster</cluster></macros>
+  <zookeeper><node><host>zookeeper</host><port>2181</port></node></zookeeper>
+  <distributed_ddl><path>/clickhouse/task_queue/ddl</path></distributed_ddl>
+  <remote_servers><cluster><shard><internal_replication>true</internal_replication><replica>
+    <host>clickhouse</host><port>9000</port>
+    <user>opik</user><password from_env="OPIK_CLICKHOUSE_PASSWORD" />
+  </replica></shard></cluster></remote_servers>
+</clickhouse>

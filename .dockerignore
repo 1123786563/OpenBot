@@ -18,3 +18,7 @@ app/dist
 *.log
 .DS_Store
 assets/*.svg
+
+# Multi-host manifests contain resolved role-scoped credentials.
+.openbot
+deploy/centralized/config

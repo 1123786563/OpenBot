@@ -21,7 +21,7 @@ services:
     # Bots run with (deploy/agents/.env.example), so the model key and the tokens live there alone.
     env_file:
       - path: ${OPENBOT_SERVER_ENV_FILE:-.env.server}
-      - path: ../agents/.env
+      - path: ${OPENBOT_AGENT_ENV_FILE:-../agents/.env}
         required: false
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}

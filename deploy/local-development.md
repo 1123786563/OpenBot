@@ -1,5 +1,7 @@
 # 在当前工作区运行 OpenBot
 
+> 新集中部署见[Linux 安装指南](README.md)。本页保留既有部署方式，不会自动迁移数据库、Redis 或对象存储。
+
 本机实例使用仓库中的 Compose 文件。OpenBot API、Web、Worker 以及四个 Agent 服务都从当前工作区的源码构建。每个服务的私有配置放在 Git 忽略的 `deploy/.local/`。主应用使用本地 PostgreSQL 的 `openbot_prod`，Infisical 保持原有本机项目和数据。
 
 | 组件 | 本机入口 | OpenBot 使用的连接 |

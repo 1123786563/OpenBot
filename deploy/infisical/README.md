@@ -1,5 +1,7 @@
 # Infisical
 
+> 新集中部署见[Linux 安装指南](../README.md)。本页保留既有部署方式，不会自动迁移数据库、Redis 或对象存储。
+
 See the [OpenBot deployment overview](../README.md) for the service layout and startup order.
 
 Self-hosted [Infisical](https://infisical.com) that holds OpenBot's configuration, one folder per service, so OpenBot's settings files are generated instead of edited by hand.

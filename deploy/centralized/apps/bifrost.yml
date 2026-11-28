@@ -1,0 +1,13 @@
+name: openbot-central-bifrost
+services:
+  bifrost:
+    networks:
+      - bifrost
+      - middleware
+networks:
+  middleware:
+    external: true
+    name: ${CENTRAL_NETWORK:-openbot-central}
+volumes:
+  bifrost-data:
+    name: openbot-central-bifrost-data

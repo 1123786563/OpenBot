@@ -1,0 +1,87 @@
+name: openbot-central-spire
+services:
+  spire-agent:
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-agent", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    command:
+      - -config
+      - /opt/spire/conf/agent.conf
+      - -joinToken
+      - ${SPIRE_JOIN_TOKEN}
+    depends_on:
+      spire-init:
+        condition: service_completed_successfully
+        required: true
+      spire-server:
+        condition: service_healthy
+        required: true
+    entrypoint: null
+    image: ghcr.io/spiffe/spire-agent:1.15.1
+    networks:
+      - identity
+    pid: host
+    volumes:
+      - ../1panel/apps/spire/1.15.1/agent.conf:/opt/spire/conf/agent.conf:ro
+      - spire-agent-socket:/tmp/spire-agent/public
+      - spire-agent-data:/opt/spire/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+  spire-init:
+    command:
+      - sh
+      - -c
+      - chown -R 1000:1000 /server /agent
+    entrypoint: null
+    image: busybox:1.37
+    networks:
+      - identity
+    user: 0:0
+    volumes:
+      - spire-server-data:/server
+      - spire-agent-data:/agent
+  spire-server:
+    command:
+      - -expandEnv
+      - -config
+      - /opt/spire/conf/server.conf
+    depends_on:
+      spire-init:
+        condition: service_completed_successfully
+        required: true
+    entrypoint: null
+    healthcheck:
+      test:
+        - CMD
+        - /opt/spire/bin/spire-server
+        - healthcheck
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: ghcr.io/spiffe/spire-server:1.15.1
+    networks:
+      - identity
+      - middleware
+    volumes:
+      - ../1panel/apps/spire/1.15.1/server.conf:/opt/spire/conf/server.conf:ro
+      - spire-server-data:/opt/spire/data
+      - spire-server-socket:/tmp/spire-server/private
+    restart: unless-stopped
+    environment:
+      SPIRE_POSTGRES_DSN: postgresql://spire:${SPIRE_DB_PASSWORD:?Set SPIRE_DB_PASSWORD}@postgres:5432/spire?sslmode=disable
+networks:
+  middleware:
+    external: true
+    name: ${CENTRAL_NETWORK:-openbot-central}
+  identity:
+    name: openbot-spire
+volumes:
+  spire-agent-data: {}
+  spire-agent-socket:
+    name: openbot-central-spire-agent-socket
+  spire-server-data: {}
+  spire-server-socket:
+    name: openbot-central-spire-server-socket

@@ -2,9 +2,11 @@
 set -euo pipefail
 
 usage() {
-  printf '%s\n' 'Usage: deploy/compose.sh [--local] <component> <docker compose args...>' \
+  printf '%s\n' 'Usage: deploy/compose.sh [--local|--central] <component> <docker compose args...>' \
     'Components: postgres bifrost infisical openobserve hindsight opik lago agents openbot' \
-    'Local-only component: spire'
+    'Local-only component: spire' \
+    'Central components: infrastructure bifrost infisical openobserve hindsight opik spire agents flexprice openbot' \
+    'Central environment: CENTRAL_ENV_FILE (default deploy/centralized/.env)'
 }
 
 if [[ ${1:-} == --help || $# == 0 ]]; then
@@ -13,6 +15,35 @@ if [[ ${1:-} == --help || $# == 0 ]]; then
 fi
 
 deploy=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [[ $1 == --central ]]; then
+  shift
+  if (( $# < 2 )); then
+    usage >&2
+    exit 2
+  fi
+  component=$1
+  shift
+  central="$deploy/centralized"
+  central_env=${CENTRAL_ENV_FILE:-$central/.env}
+  case "$component" in
+    infrastructure)
+      args=(--project-directory "$central" -f "$central/docker-compose.yml")
+      ;;
+    bifrost|openobserve|openbot)
+      args=(--project-directory "$deploy/$component" -f "$deploy/$component/docker-compose.yml"
+        -f "$central/apps/$component.yml")
+      ;;
+    infisical|hindsight|opik|spire|agents|flexprice)
+      args=(--project-directory "$central" -f "$central/apps/$component.yml")
+      ;;
+    *)
+      printf 'Unknown central component: %s\n' "$component" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  exec docker compose --env-file "$central_env" "${args[@]}" "$@"
+fi
 local_mode=false
 if [[ $1 == --local ]]; then
   local_mode=true

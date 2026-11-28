@@ -1,0 +1,457 @@
+name: openbot-central-infrastructure
+services:
+  postgres:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  postgres-init:
+    restart: no
+    networks:
+      - middleware
+    image: pgvector/pgvector:pg17
+    profiles:
+      - setup
+    entrypoint:
+      - sh
+      - /init.sh
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGDATABASE: postgres
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD}
+      OPENBOT_DB_PASSWORD: ${OPENBOT_DB_PASSWORD:?Set OPENBOT_DB_PASSWORD}
+      BIFROST_DB_PASSWORD: ${BIFROST_DB_PASSWORD:?Set BIFROST_DB_PASSWORD}
+      HINDSIGHT_DB_PASSWORD: ${HINDSIGHT_DB_PASSWORD:?Set HINDSIGHT_DB_PASSWORD}
+      INFISICAL_DB_PASSWORD: ${INFISICAL_DB_PASSWORD:?Set INFISICAL_DB_PASSWORD}
+      OPENOBSERVE_DB_PASSWORD: ${OPENOBSERVE_DB_PASSWORD:?Set OPENOBSERVE_DB_PASSWORD}
+      SPIRE_DB_PASSWORD: ${SPIRE_DB_PASSWORD:?Set SPIRE_DB_PASSWORD}
+      FLEXPRICE_DB_PASSWORD: ${FLEXPRICE_DB_PASSWORD:?Set FLEXPRICE_DB_PASSWORD}
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD}
+    volumes:
+      - ./postgres/init.sh:/init.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+  mysql:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: opik
+      MYSQL_USER: opik
+      MYSQL_PASSWORD: ${OPIK_MYSQL_PASSWORD:?Set OPIK_MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - MYSQL_PWD="$$MYSQL_PASSWORD" mysql -u opik -D opik -e "SELECT 1"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis-primary:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: redis:7-alpine
+    user: redis
+    entrypoint:
+      - sh
+      - /start.sh
+      - primary
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_SENTINEL_PASSWORD:?Set REDIS_SENTINEL_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+      REDIS_NODE_NAME: redis-primary
+    volumes:
+      - redis-primary-data:/data
+      - ./redis/start.sh:/start.sh:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis-replica-1:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: redis:7-alpine
+    user: redis
+    entrypoint:
+      - sh
+      - /start.sh
+      - replica
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_SENTINEL_PASSWORD:?Set REDIS_SENTINEL_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+      REDIS_NODE_NAME: redis-replica-1
+    volumes:
+      - redis-replica-1-data:/data
+      - ./redis/start.sh:/start.sh:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+  redis-replica-2:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: redis:7-alpine
+    user: redis
+    entrypoint:
+      - sh
+      - /start.sh
+      - replica
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_SENTINEL_PASSWORD:?Set REDIS_SENTINEL_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+      REDIS_NODE_NAME: redis-replica-2
+    volumes:
+      - redis-replica-2-data:/data
+      - ./redis/start.sh:/start.sh:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+  sentinel-1:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: redis:7-alpine
+    user: redis
+    entrypoint:
+      - sh
+      - /start.sh
+      - sentinel
+    environment: &a1
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_SENTINEL_PASSWORD:?Set REDIS_SENTINEL_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+    volumes:
+      - sentinel-1-data:/data
+      - ./redis/start.sh:/start.sh:ro
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$REDIS_SENTINEL_PASSWORD" redis-cli -p 26379 SENTINEL get-master-addr-by-name
+          openbot-redis | grep -q 6379
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  sentinel-2:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: redis:7-alpine
+    user: redis
+    entrypoint:
+      - sh
+      - /start.sh
+      - sentinel
+    environment: *a1
+    volumes:
+      - sentinel-2-data:/data
+      - ./redis/start.sh:/start.sh:ro
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$REDIS_SENTINEL_PASSWORD" redis-cli -p 26379 SENTINEL get-master-addr-by-name
+          openbot-redis | grep -q 6379
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  sentinel-3:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: redis:7-alpine
+    user: redis
+    entrypoint:
+      - sh
+      - /start.sh
+      - sentinel
+    environment: *a1
+    volumes:
+      - sentinel-3-data:/data
+      - ./redis/start.sh:/start.sh:ro
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$REDIS_SENTINEL_PASSWORD" redis-cli -p 26379 SENTINEL get-master-addr-by-name
+          openbot-redis | grep -q 6379
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  rustfs:
+    restart: unless-stopped
+    networks:
+      middleware:
+        aliases:
+          - s3.localhost
+    image: ${RUSTFS_IMAGE:-rustfs/rustfs:1.0.7}
+    command:
+      - /data
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY}
+      RUSTFS_ADDRESS: :19000
+      RUSTFS_CONSOLE_ADDRESS: :9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - 127.0.0.1:19000:19000
+      - 127.0.0.1:19001:9001
+    volumes:
+      - rustfs-data:/data
+    depends_on:
+      rustfs-volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - http://127.0.0.1:19000/health
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+  rustfs-init:
+    restart: no
+    networks:
+      - middleware
+    image: amazon/aws-cli:2.27.49
+    profiles:
+      - setup
+    entrypoint:
+      - sh
+      - /init.sh
+    environment:
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:?Run deploy/deploy.sh init}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:?Run deploy/deploy.sh init}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
+      S3_ENDPOINT: http://rustfs:19000
+      S3_BUCKET: opik
+      OPIK_BROWSER_ORIGIN: ${OPIK_BROWSER_ORIGIN:-http://localhost:15173}
+      OPIK_S3_PUBLIC_DOWNLOAD: ${OPIK_S3_PUBLIC_DOWNLOAD:-false}
+    volumes:
+      - ./rustfs/init.sh:/init.sh:ro
+    depends_on:
+      rustfs:
+        condition: service_healthy
+  zookeeper:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: zookeeper:3.9.7
+    environment:
+      ZOO_4LW_COMMANDS_WHITELIST: srvr,ruok
+    volumes:
+      - zookeeper-data:/data
+      - zookeeper-log:/datalog
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - echo ruok | nc localhost 2181 | grep -q imok
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  clickhouse:
+    restart: unless-stopped
+    networks:
+      - middleware
+    image: clickhouse/clickhouse-server:26.3.62.3-alpine
+    environment:
+      CLICKHOUSE_DB: opik
+      CLICKHOUSE_USER: opik
+      CLICKHOUSE_PASSWORD: ${OPIK_CLICKHOUSE_PASSWORD:?Set OPIK_CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      OPIK_CLICKHOUSE_PASSWORD: ${OPIK_CLICKHOUSE_PASSWORD:?Set OPIK_CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./clickhouse/enable_time_type.xml:/etc/clickhouse-server/users.d/enable_time_type.xml:ro
+      - ./clickhouse/distributed_insert_queue.xml:/etc/clickhouse-server/users.d/distributed_insert_queue.xml:ro
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q --spider http://127.0.0.1:8123/ping
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  flexprice-clickhouse:
+    restart: unless-stopped
+    networks:
+      - middleware
+    profiles:
+      - billing
+    image: clickhouse/clickhouse-server:24.9-alpine
+    environment:
+      CLICKHOUSE_DB: flexprice
+      CLICKHOUSE_USER: flexprice
+      CLICKHOUSE_PASSWORD: ${FLEXPRICE_CLICKHOUSE_PASSWORD:?Set FLEXPRICE_CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - flexprice-clickhouse-data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q --spider http://127.0.0.1:8123/ping
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  kafka:
+    restart: unless-stopped
+    networks:
+      - middleware
+    profiles:
+      - billing
+    image: confluentinc/cp-kafka:7.7.1
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - kafka-topics --bootstrap-server kafka:9092 --list
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  temporal:
+    restart: unless-stopped
+    networks:
+      - middleware
+    profiles:
+      - billing
+    image: temporalio/auto-setup:1.26.2
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD}
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      SKIP_DB_CREATE: "true"
+      ENABLE_ES: "false"
+      DEFAULT_NAMESPACE: flexprice
+      TEMPORAL_ADDRESS: temporal:7233
+    depends_on:
+      postgres:
+        condition: service_healthy
+  rustfs-volume-init:
+    image: busybox:1.37
+    restart: no
+    user: 0:0
+    network_mode: none
+    command:
+      - sh
+      - -c
+      - chown 10001:10001 /data
+    volumes:
+      - rustfs-data:/data
+  rustfs-account-init:
+    image: rustfs/rc:v0.1.30
+    profiles:
+      - setup
+    restart: no
+    entrypoint:
+      - sh
+      - /account-init.sh
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?Run deploy/deploy.sh init}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?Run deploy/deploy.sh init}
+      OPIK_S3_ACCESS_KEY: ${OPIK_S3_ACCESS_KEY:?Run deploy/deploy.sh init}
+      OPIK_S3_SECRET_KEY: ${OPIK_S3_SECRET_KEY:?Run deploy/deploy.sh init}
+    volumes:
+      - ./rustfs/account-init.sh:/account-init.sh:ro
+      - ./rustfs/opik-policy.json:/opik-policy.json:ro
+    networks:
+      - middleware
+    depends_on:
+      rustfs:
+        condition: service_healthy
+networks:
+  middleware:
+    name: ${CENTRAL_NETWORK:-openbot-central}
+volumes:
+  postgres-data: {}
+  mysql-data: {}
+  redis-primary-data: {}
+  redis-replica-1-data: {}
+  redis-replica-2-data: {}
+  sentinel-1-data: {}
+  sentinel-2-data: {}
+  sentinel-3-data: {}
+  rustfs-data: {}
+  zookeeper-data: {}
+  zookeeper-log: {}
+  clickhouse-data: {}
+  flexprice-clickhouse-data: {}
+  kafka-data: {}

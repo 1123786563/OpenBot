@@ -1,5 +1,7 @@
 # 1Panel 本地应用商店
 
+> 新集中部署见[Linux 安装指南](../README.md)。本页保留既有部署方式，不会自动迁移数据库、Redis 或对象存储。
+
 [OpenBot 应用包](openbot.tar.gz)运行当前仓库构建的 Web、API 和 Worker 镜像，浏览器由 Agents 应用提供。部署需要 1Panel v2 和 `1panel-network`。先在服务器上构建 Linux amd64 镜像，或填写服务器可拉取的同版本镜像。
 
 ```sh

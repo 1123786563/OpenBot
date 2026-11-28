@@ -2,7 +2,7 @@
 
 从[部署入口](README.md)查看服务拓扑、配置位置和启动顺序。此页记录各服务的配置、迁移和验收。
 
-单用户环境可用 `OPENBOT_SINGLE_USER=true`，多人环境需要注册登录源。OpenBot 的 PostgreSQL 同时承载业务数据和后台任务。Redis 和对象存储由表中使用它们的服务各自管理。Infisical 的密钥需要通过运维流程注入 OpenBot 环境文件。
+单用户环境可用 `OPENBOT_SINGLE_USER=true`，多人环境需要注册登录源。OpenBot 的 PostgreSQL 同时承载业务数据和后台任务。新集中部署的 Redis Sentinel 和 RustFS 由[集中部署操作手册](centralized/README.md)统一管理。以下独立部署步骤用于维护旧实例，保留其原卷和连接。Infisical 的密钥需要通过运维流程注入 OpenBot 环境文件。
 
 ## 需要外部地址或凭据的集成
 

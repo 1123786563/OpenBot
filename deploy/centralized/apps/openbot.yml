@@ -1,0 +1,33 @@
+name: openbot-central-server
+services:
+  migrate:
+    environment:
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:?Run deploy/deploy.sh init}
+  server:
+    networks:
+      hindsight: {}
+      opik: {}
+    env_file:
+      - path: ${OPENBOT_SERVER_ENV_FILE:?Run deploy/deploy.sh init}
+      - path: ${OPENBOT_AGENT_ENV_FILE:?Run deploy/deploy.sh init}
+    environment:
+      OPENBOT_HINDSIGHT_API_URL: http://hindsight:8888
+      OPENBOT_HINDSIGHT_API_KEY: ${HINDSIGHT_API_TENANT_API_KEY:?Run deploy/deploy.sh init}
+      OPENBOT_OPIK_API_URL: http://opik-frontend:5173/api/
+      OPENBOT_OPIK_API_KEY: Basic ${OPIK_BASIC_AUTH}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://otel-collector:4318/v1/logs
+      DEPLOYMENT_ID: ${OPENBOT_DEPLOYMENT_ID}
+      OPENBOT_OTEL_EXPORT: on
+networks:
+  postgres:
+    external: true
+    name: ${CENTRAL_NETWORK:-openbot-central}
+  hindsight:
+    external: true
+    name: openbot-hindsight
+  opik:
+    external: true
+    name: openbot-opik
+  agents:
+    external: true
+    name: openbot-central-agents

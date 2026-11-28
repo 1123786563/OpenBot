@@ -1,82 +1,141 @@
-# OpenBot 部署入口
+# 搭建 OpenBot 平台
 
-在单台 Docker 主机上部署时，按 **PostgreSQL → Agent 服务 → OpenBot** 的顺序启动。OpenBot 的 Compose 还引用观测网络。先创建该网络，需要采集日志时再启动 OpenObserve 和 OTel Collector。模型可以直接使用已配置的供应商，也可以经 Bifrost 转发。
+有三台及以上、私网互通的 Linux 服务器时，使用 **[多服务器安装指南](docs/multi-server.md)**。填写一份清单，由 `./deploy/deploy.sh cluster up` 按角色部署同一套平台。不要逐台执行下文的单机 up。
 
-- 首次部署按下方步骤配置并启动服务。
-- 在 1Panel 安装 OpenBot 或独立中间件时，使用[本地应用商店包](1panel/README.md)。
-- 规划共享数据库、Redis Sentinel、RustFS 和 Flexprice 时，见[中间件集中部署方案](centralized-deployment-plan.md)。
-- 维护现有服务时，使用 `deploy/compose.sh <组件> ps` 或 `deploy/compose.sh <组件> logs --tail 50`。
-- 使用已经搭好的本机全量环境时，见[本机源码部署与验收](local-development.md)。
-- 迁移已有实例、设置日志保留期或使用可选服务时，见[中间件运维手册](operations.md)。
+只有一台服务器时，继续阅读下面的单机流程。
 
-## 服务拓扑
+这份指南面向第一次部署 OpenBot 的开发者。推荐从一台全新 Ubuntu 24.04 服务器开始，在一个目录完成配置、镜像构建、启动和检查。日常操作统一使用 `deploy/deploy.sh`。
 
-```mermaid
-flowchart LR
-    Browser["浏览器"] --> API["OpenBot API + Web"]
-    Worker["OpenBot Worker"] --> API
-    API --> PG[("PostgreSQL")]
-    Worker --> PG
-    Migrator["数据库迁移"] --> PG
-    API --> Agents["Bot · LangGraph · Computer · Supervisor"]
-    Agents -->|LangGraph 工具回调| API
-    API --> Model["模型供应商或 Bifrost"]
-    Agents --> Model
-    Model -. Bifrost 存储 .-> PG
-    API -->|OTLP 审计| Collector["OTel Collector"]
-    DockerLogs["Docker 运行日志"] --> Collector
-    Collector --> Observe["OpenObserve"]
-    API -. 记忆 .-> Hindsight["Hindsight"]
-    API -. 对话追踪 .-> Opik["Opik"]
-    Worker -. 用量投递 .-> Lago["Lago"]
-    Infisical["Infisical"] -. 启动前同步配置 .-> API
-```
+默认安装 OpenBot Web、API、Worker、Bot、LangGraph、浏览器 Computer、Supervisor、Bifrost、Hindsight、Opik、Infisical、OpenObserve、日志采集和 SPIRE，以及它们共用的数据库、Redis Sentinel 和 RustFS。Flexprice 是后续扩展，Lago 不安装。
 
-OpenBot API 和 Worker 通过数据库网络访问 PostgreSQL。Agent 和 Computer 在 `openbot-agents_default`，OpenBot API 在该网络的别名为 `openbot-api`。Collector 通过 `openbot-observability` 接收审计日志，并在观测项目内部写入 OpenObserve。Infisical 有独立数据库和 Redis，通过配置同步工具供给环境文件。
+## 1. 准备服务器
 
-## Compose 项目和配置
+准备能访问 GitHub、容器镜像仓库和模型 API 的 Ubuntu 24.04 服务器。全套服务包含镜像编译、Chromium、向量模型和多个数据库，建议从 8 核、16 GiB 内存、100 GiB SSD 开始。这是初始部署建议，不是容量或性能保证。
 
-| 组件 | 目录 | 默认宿主机端口 | 什么时候启动 |
-| --- | --- | --- | --- |
-| PostgreSQL | [postgres](postgres/docker-compose.yml) | 15432 | 使用 Compose 管理数据库时启动。已有数据库可复用 |
-| OpenBot API、Web、Worker | [openbot](openbot/docker-compose.yml) | 18001 | 主应用。Compose 先执行迁移，再启动 API 和 Worker |
-| Bot、LangGraph、Computer、Supervisor | [agents](agents/docker-compose.yml) | 4200、4201、4100、4500 | 提供对话 Agent 和隔离浏览器 |
-| Bifrost | [bifrost](bifrost/docker-compose.yml) | 18080 | 统一模型路由或启用技能市场 |
-| OpenObserve、OTel Collector | [openobserve](openobserve/docker-compose.yml) | 15080、14318 | 收集和查询运行日志、审计日志 |
-| Infisical | [infisical](infisical/README.md) | 18082 | 统一管理私有配置时使用 |
-| Hindsight | [hindsight](hindsight/docker-compose.yml) | 18888 | 个人记忆召回 |
-| Opik | [opik](opik/docker-compose.yml) | 15173 | Web 对话追踪或评测 |
-| Lago | [lago](lago/docker-compose.yml) | 13000、13001 | Worker 用量事件投递 |
-| SPIRE | [根目录 Compose](../docker-compose.yml) | Docker 内部 | 签发工作负载身份。独立 Agent 项目默认关闭 |
-
-`deploy/compose.sh` 从表中的目录读取 `.env`，并加载同目录的 `docker-compose.override.yml`。OpenBot API 另读 `openbot/.env.server`。现有本机全量环境用 `--local` 加载 `deploy/.local/` 内的配置和网络 override。
-
-## 准备服务器文件
-
-将包含这套部署配置的 OpenBot 源码检出到服务器，例如 `/opt/openbot`。Agent 镜像构建需要仓库根目录的 Compose、源码和锁文件。准备服务器配置时，以各服务自己的 `.env.example` 为起点。服务器环境使用独立凭据，`deploy/.local/`、本机私有 `.env*` 和本机日志留在原机器。
-
-## 首次启动
-
-1. 安装 Docker Engine 和 Docker Compose 2.24.4 或更新版本。在仓库根目录运行后续命令。
-2. 用各组件的 `.env.example` 创建私有 `.env`，填入各自凭据。给 OpenBot 设置 `DATABASE_URL`、`WORKER_SHARED_SECRET` 和 `OPENBOT_IMAGE`，复制 [API 环境样例](openbot/.env.server.example) 到 `openbot/.env.server`、[Worker 环境样例](openbot/.env.worker.example) 到 `openbot/.env.worker` 并按需填写（Lago 用量导出为可选项）。API 服务端同时读取 `agents/.env`，其中的模型密钥和令牌只维护这一份。Agent 端填写源码绝对路径和模型配置，设置 `OPENBOT_TOOL_URL=http://openbot-api:3001/api/agent-tools/call`。两端使用匹配的 Computer、Supervisor、Agent 和工具回调令牌。
-3. 启动 PostgreSQL，按[数据库准备说明](operations.md#postgresql-和登录)创建专用数据库。使用本仓库的 PostgreSQL 项目时，把 OpenBot 的 `MIDDLEWARE_POSTGRES_NETWORK` 设为 `openbot-postgres`。
-4. 建立观测网络，启动 Agent 与 OpenBot。若选择 Bifrost 作为模型入口，先完成 [Bifrost 配置](operations.md#postgresql-和登录)，再给 OpenBot 和 Agent 设置各自容器可到达的模型地址。
+用有 sudo 权限的普通用户通过 SSH 登录。以下安装命令来自 [Docker 的 Ubuntu 安装说明](https://docs.docker.com/engine/install/ubuntu/)。若服务器已有 Docker，跳过安装，直接检查版本。
 
 ```sh
-./deploy/compose.sh postgres config --quiet
-./deploy/compose.sh postgres up -d --wait
-
-docker network inspect openbot-observability >/dev/null 2>&1 \
-  || docker network create --internal openbot-observability
-./deploy/compose.sh agents config --quiet
-./deploy/compose.sh agents up -d --build --wait
-./deploy/compose.sh openbot config --quiet
-./deploy/compose.sh openbot up -d --wait
-
-curl --fail http://127.0.0.1:18001/health
-./deploy/compose.sh openbot ps -a
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git python3
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+. /etc/os-release
+printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: %s\nComponents: stable\nSigned-By: /etc/apt/keyrings/docker.asc\n' "$VERSION_CODENAME" | sudo tee /etc/apt/sources.list.d/docker.sources
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker "$USER"
 ```
 
-从当前源码构建主应用时，先执行 `docker build -f deploy/openbot/Dockerfile -t openbot:local .`，再将 `OPENBOT_IMAGE` 设为 `openbot:local`。多人访问需配置登录和受信任的访问地址。本机单用户模式通过回环地址访问。
+退出 SSH 后重新登录，让 Docker 用户组生效。确认以下命令均成功。
 
-部署可选服务后，按[运维手册](operations.md#应用入口和日志)把对应的容器网络和地址接入 OpenBot。启用观测时，先启动 OpenObserve 配置日志流和写入令牌，再启动 Collector。
+```sh
+docker info
+docker compose version
+python3 --version
+```
+
+需要 Python 3.10+、Docker Engine 和 Compose 2.24.4+。不需要在主机安装 Node.js、Bun、PostgreSQL 或 Redis。Docker 组具有主机管理权限，仅给平台维护人员使用。
+
+## 2. 获取仓库并初始化
+
+使用你有权限访问的 OpenBot Git 仓库地址替换下面的地址。
+
+```sh
+git clone <你的-OpenBot-仓库地址> OpenBot
+cd OpenBot
+./deploy/deploy.sh init
+```
+
+脚本只询问四项：管理员邮箱、OpenAI 兼容模型 API 地址、模型名称和 API key。API key 输入时不回显。填写你的供应商提供的完整 API 基础地址，通常以 `/v1` 结尾，以及该地址实际支持的模型名称。
+
+脚本自动生成其他账号密码、加密密钥、内部连接、数据库账号、Agent 令牌和浏览器配置。生成文件保存在 `deploy/centralized/config/`，权限为 0600，已被 Git 忽略。重复运行不会更换数据库密码或加密密钥。
+
+需要修改邮箱或模型配置时运行 `./deploy/deploy.sh configure`。首次安装不需要自己编辑十几个 `.env`，也不要把旧服务器的数据卷直接挂进来。
+
+## 3. 检查、构建并启动
+
+在仓库根目录依次运行：
+
+```sh
+./deploy/deploy.sh doctor
+./deploy/deploy.sh build
+./deploy/deploy.sh up
+```
+
+`doctor` 检查 Docker、配置、磁盘余量和端口冲突。`build` 构建主应用、Bot、LangGraph、浏览器和 Supervisor。首次构建需要下载较多依赖，终端会持续显示构建日志。
+
+`up` 按顺序启动数据库，初始化独立库与账号，启动 Redis Sentinel、RustFS 和 ClickHouse，再初始化对象存储、管理员、日志采集、SPIRE、Agent 与主应用。你会看到 `[1/10]` 到 `[10/10]` 的进度。某一步失败就停止后续步骤，保留已有数据，给出查看日志的方法。
+
+看到“服务与 HTTP 验收通过”说明容器和入口检查完成。第一次启动 Hindsight 还需要下载模型，下载时间取决于网络。服务检查不能代替最后的业务验收。
+
+## 4. 从自己的电脑打开平台
+
+服务端口默认仅监听服务器回环地址。先在你自己的电脑打开一个新终端，建立 SSH 隧道，替换 `user@server`。
+
+```sh
+ssh -N \
+  -L 18001:127.0.0.1:18001 \
+  -L 15173:127.0.0.1:15173 \
+  -L 18080:127.0.0.1:18080 \
+  -L 18082:127.0.0.1:18082 \
+  -L 15080:127.0.0.1:15080 \
+  -L 18888:127.0.0.1:18888 \
+  -L 19999:127.0.0.1:19999 \
+  -L 19000:127.0.0.1:19000 \
+  -L 19001:127.0.0.1:19001 user@server
+```
+
+保持这个终端打开，在 Chrome 或 Edge 访问以下地址。
+
+| 页面 | 地址 | 凭据 |
+| --- | --- | --- |
+| OpenBot | http://localhost:18001 | 默认个人版，在页面完成首次设置 |
+| Opik | http://localhost:15173 | Opik 用户名与密码 |
+| Bifrost | http://localhost:18080 | Bifrost setup token |
+| Infisical | http://localhost:18082 | 管理员邮箱与平台管理员密码 |
+| OpenObserve | http://localhost:15080 | 管理员邮箱与 OpenObserve 密码 |
+| Hindsight 控制台 | http://localhost:19999 | Hindsight 控制台 key |
+| RustFS 控制台 | http://localhost:19001 | RustFS access key 与 secret key |
+
+在服务器运行 `./deploy/deploy.sh credentials` 查看管理员凭据。该命令会明确显示密码，仅在自己的终端使用，不要复制到工单或聊天。
+
+Opik 的对象地址为 `http://s3.localhost:19000`。浏览器将 `.localhost` 域名解析到你的电脑，SSH 将 19000 转发到服务器；Docker 内同一个域名是 RustFS 的网络别名。若电脑的 DNS 工具不识别该域名，在本机 hosts 文件添加 `127.0.0.1 s3.localhost`。首次安装无需购买域名或配置证书。
+
+默认个人版没有多人登录，入口只通过 SSH 隧道开放。面向团队发布前，另行配置域名、TLS 和企业登录。
+
+## 5. 完成业务验收
+
+按下面顺序检查，任何一步失败都不要宣布安装完成。
+
+1. 在 OpenBot 完成首次设置，发送一条消息，确认模型返回回复。
+2. 打开平台中的浏览器，确认画面可见且能访问网页。
+3. 查看 Opik，确认测试对话的追踪能够写入。
+4. 验证一份记忆的写入与召回，以及一个附件的上传和下载。
+5. 查看 OpenObserve，确认能查询到这次安装产生的日志。
+6. 再运行 `./deploy/deploy.sh check`，确认所有组件仍正常。
+
+Bifrost 已运行，默认模型请求使用初始化时提供的供应商地址。需要把模型统一路由到 Bifrost 时，在它的控制台配置供应商，再用 `configure` 修改模型地址和 key。空的 Bifrost 配置不会自动获得模型供应商额度。
+
+## 日常只需要这些命令
+
+| 要做什么 | 命令 |
+| --- | --- |
+| 看所有服务状态 | `./deploy/deploy.sh status` |
+| 验收容器与 HTTP 入口 | `./deploy/deploy.sh check` |
+| 看主应用日志 | `./deploy/deploy.sh logs openbot` |
+| 看后台依赖日志 | `./deploy/deploy.sh logs infrastructure` |
+| 修改模型输入 | `./deploy/deploy.sh configure`，然后 `./deploy/deploy.sh up` |
+| 更新源码后的镜像 | `./deploy/deploy.sh build`，然后 `./deploy/deploy.sh up` |
+| 停止，保留数据 | `./deploy/deploy.sh stop` |
+| 停止后恢复 | `./deploy/deploy.sh up` |
+
+遇到问题先看[按报错排查](docs/troubleshooting.md)。运行 `up` 可以继续中断的安装，不会自动删除卷。升级前仍需备份数据库、RustFS 对象与私有配置。
+
+## 目录按用途阅读
+
+- [centralized/](centralized/README.md) 是安装器使用的共享存储与应用配置，一般不需要手动操作。
+- [docs/](docs/README.md) 保存架构、扩展、验收和排错资料。
+- [1panel/](1panel/README.md) 是旧安装包，维护现有实例时才使用。
+- `openbot/`、`agents/`、`bifrost/` 等目录是镜像和旧部署资源，安装器复用其中的配置，不是新手需要选择的安装入口。
+- [本机开发](local-development.md) 与[旧独立 Compose](docs/legacy-compose.md) 用于维护原环境。新服务器不要混用这些步骤。

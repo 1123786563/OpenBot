@@ -1,0 +1,8 @@
+{
+  "overlay_cidr": "10.240.0.0/16",
+  "nodes": [
+    {"name": "data", "ssh": "ubuntu@data-server", "private_ip": "10.0.0.11", "directory": "/home/ubuntu/OpenBot", "role": "data"},
+    {"name": "apps", "ssh": "ubuntu@app-server", "private_ip": "10.0.0.12", "directory": "/home/ubuntu/OpenBot", "role": "apps"},
+    {"name": "compute", "ssh": "ubuntu@compute-server", "private_ip": "10.0.0.13", "directory": "/home/ubuntu/OpenBot", "role": "compute"}
+  ]
+}

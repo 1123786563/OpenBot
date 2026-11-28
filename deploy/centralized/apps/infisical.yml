@@ -1,0 +1,46 @@
+name: openbot-central-infisical
+services:
+  backend:
+    image: infisical/infisical:v0.167.16
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SITE_URL: ${INFISICAL_SITE_URL:-http://localhost:18082}
+      ENCRYPTION_KEY: ${INFISICAL_ENCRYPTION_KEY:?Set INFISICAL_ENCRYPTION_KEY}
+      AUTH_SECRET: ${INFISICAL_AUTH_SECRET:?Set INFISICAL_AUTH_SECRET}
+      DB_CONNECTION_URI: postgresql://infisical:${INFISICAL_DB_PASSWORD:?Set
+        INFISICAL_DB_PASSWORD}@postgres:5432/infisical?sslmode=disable
+      REDIS_SENTINEL_HOSTS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
+      REDIS_SENTINEL_MASTER_NAME: openbot-redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_SENTINEL_PASSWORD:?Set REDIS_SENTINEL_PASSWORD}
+      DISABLE_PUBLIC_SECRET_SHARING: "true"
+      TELEMETRY_ENABLED: "false"
+    networks:
+      - middleware
+    ports:
+      - 127.0.0.1:${INFISICAL_PORT:-18082}:8080
+  bootstrap-admin:
+    image: infisical/infisical:v0.167.16
+    restart: no
+    profiles:
+      - setup
+    entrypoint:
+      - node
+      - /bootstrap-admin.mjs
+    volumes:
+      - ../1panel/apps/infisical/0.167.16/bootstrap-admin.mjs:/bootstrap-admin.mjs:ro
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - middleware
+    environment:
+      INITIAL_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:?Run deploy/deploy.sh init}
+      INITIAL_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:?Run deploy/deploy.sh init}
+      INITIAL_ADMIN_FIRST_NAME: OpenBot
+      INITIAL_ORG_NAME: OpenBot
+networks:
+  middleware:
+    external: true
+    name: ${CENTRAL_NETWORK:-openbot-central}

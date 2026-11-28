@@ -1,6 +1,12 @@
 # OpenBot 中间件集中部署方案
 
-核对日期：2026-11-27。本文记录目标架构、兼容性结论和迁移验收条件。当前仓库配置尚未按本方案改造，现有服务器也未执行迁移。
+核对日期：2026-11-27。本文记录目标架构、兼容性结论和迁移验收条件。新服务器使用[Linux 安装指南](README.md)和 `deploy/deploy.sh`。底层[集中配置](centralized/README.md)由安装器调用。现有服务器尚未执行迁移。
+
+## 多服务器部署入口
+
+三台及以上私网 Linux 服务器使用[多服务器安装指南](docs/multi-server.md)与 `deploy/deploy.sh cluster`。清单分别声明 data、apps、compute，安装器生成角色配置、建立加密 overlay、按顺序通过 SSH 部署。Redis 主从与 Sentinel 分散到前三台服务器。SPIRE 与 Supervisor 在 compute 上共享本机 socket。
+
+当前实现是服务按角色分机，其他数据库仍是单实例，apps 与 compute 各一个活跃节点。额外 observer 仅采集本机日志。全平台高可用、多个活跃执行节点自动调度和已有数据的跨主机迁移不由改清单自动完成。
 
 ## 已确认的部署决策
 
@@ -119,7 +125,7 @@ Flexprice 使用独立数据库。OpenBot 的用量导出需要接入 Flexprice�
 
 PostgreSQL、MySQL、ClickHouse、Kafka、Redis、RustFS、ZooKeeper 和应用工作卷各自使用独立持久目录。集中管理备份策略，同时保留按应用恢复的能力。备份写入其他故障域，RustFS 自身的唯一备份不能只存在同一 RustFS 实例里。
 
-Infisical 管理应用凭据。Infisical 自己依赖的数据库、Redis、加密密钥与启动凭据另有离线恢复副本，避免恢复时循环依赖。现有安装密钥在迁移时保持不变。
+Infisical 是应用凭据管理的目标入口。新手初装先使用安装器生成的私有文件，配置导入和机器身份同步另行启用。Infisical 自己依赖的数据库、Redis、加密密钥与启动凭据另有离线恢复副本，避免恢复时循环依赖。现有安装密钥在迁移时保持不变。
 
 监控 PostgreSQL 连接及备份、Redis 内存与复制延迟及 Sentinel quorum、ClickHouse 磁盘与查询、Kafka lag、Temporal 待处理任务、RustFS 容量和应用错误率。OpenObserve 日志保留期单独配置，接入 RustFS 不会自动清理日志。
 
@@ -141,11 +147,11 @@ Redis 验收必须覆盖 Infisical 后台任务、Opik Java 与 Python 评测任
 
 每次迁移在切换前完成数据同步和备份，切换时暂停相关写入并完成最后同步，验收后再开放写入。回退要先确定唯一写入方并处理切换后的新增数据，不能直接把连接改回过期副本。
 
-## 待实施事项
+## 后续迁移与验收事项
 
-- 修改 1Panel 表单与 Compose，提供 Sentinel seed、master set、认证和 DB 配置。
-- Infisical 使用 DB 0，移除直连 URL 的优先级冲突。
-- Opik 同时修改 Java、Python、初始化任务和 RustFS 接入。
+- 集中 Compose 已提供 Sentinel、认证和 DB 配置。1Panel 旧包保持原行为，按迁移验收结果决定是否另行改包。
+- 在迁移环境验收 Infisical DB 0 与原生 Sentinel 连接。
+- 在迁移环境验收 Opik Java、Python 与 RustFS 的完整业务链路。
 - Flexprice 锁定包含 Sentinel 实现的版本并验证所有 Redis 使用点。
 - 验证目标 CPU 上的 pgvector。
 - 完成 ClickHouse 共用兼容测试、RustFS 对象迁移测试及故障演练。

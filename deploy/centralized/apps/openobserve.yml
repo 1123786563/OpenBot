@@ -1,0 +1,18 @@
+name: openbot-central-openobserve
+services:
+  openobserve:
+    image: openobserve/openobserve@sha256:896361d533cac56ef346d940b1ddd6664e04d5f9606bd80b4a2e28069a33020e
+    environment:
+      ZO_META_STORE: postgres
+      ZO_META_POSTGRES_DSN: postgresql://openobserve:${OPENOBSERVE_DB_PASSWORD:?Set
+        OPENOBSERVE_DB_PASSWORD}@postgres:5432/openobserve?sslmode=disable
+    networks:
+      - openobserve
+      - middleware
+networks:
+  middleware:
+    external: true
+    name: ${CENTRAL_NETWORK:-openbot-central}
+volumes:
+  openobserve-data:
+    name: openbot-central-openobserve-data

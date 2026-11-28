@@ -17,6 +17,8 @@ COPY shared shared
 COPY toolkit toolkit
 COPY server server
 COPY examples examples
+ARG TENANT_PACKAGE_DIR=../examples/fintech
+ENV TENANT_PACKAGE_DIR=${TENANT_PACKAGE_DIR}
 RUN bun run --cwd app build
 
 FROM build AS production-dependencies
