@@ -95,6 +95,11 @@ try {
         await page.goto(target);
         const retry = page.getByRole("button", { name: "Try again" });
         await retry.waitFor();
+        const supportCode = page.getByText(
+          "If you contact support, include code WEB-ROUTE-ASSET.",
+          { exact: true },
+        );
+        assert.equal(await supportCode.count(), 0);
         const failedRetry = page.waitForEvent("domcontentloaded");
         await retry.press("Enter");
         await failedRetry;
@@ -106,6 +111,9 @@ try {
           .first()
           .waitFor();
         assert(moduleResponses.includes(503));
+        await supportCode.waitFor();
+        const outageScreenshot = `${engine.name()}-outage.png`;
+        await page.screenshot({ path: join(EVIDENCE_DIR, outageScreenshot) });
 
         unavailable = false;
         await retry.press("Enter");
@@ -131,6 +139,8 @@ try {
             new URL(target).hash,
           moduleResponses: [...moduleResponses],
           focus: "Notifications",
+          supportCode: "WEB-ROUTE-ASSET",
+          outageScreenshot,
           screenshot,
         });
       } finally {
