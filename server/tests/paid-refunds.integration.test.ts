@@ -475,12 +475,12 @@ async function boughtFlexpricePack(channel: "alipay" | "wechat") {
     .onConflictDoNothing();
   await ledger().createOrder({
     accountId,
-    channel,
+    channel: "alipay",
     productCode: "pack-flexprice-refund",
     testPack: {
       id: orderId,
       version: 1,
-      merchant: channel,
+      merchant: "alipay",
       applicationIds: [applicationId],
       live: true,
       flexprice: true,
