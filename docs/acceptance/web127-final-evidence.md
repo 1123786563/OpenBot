@@ -76,6 +76,8 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 
 - #187 在源码 `a0949919f` 上使用 Chromium headless shell 通过 9 项设备和凭据页面测试。测试覆盖两种部署版本及浅深外观、503 原位重试、403、操作触区和键盘流程。完整 Chromium 进程在本机提前退出，同一套测试改用 headless shell 后全部通过。另有 20 项本地 Computer 服务测试通过，覆盖浏览器进程替换后恢复登录、Recorder 和接管交还。两个 Google 外网场景跳过。原生桌面窗口、实体触屏及读屏仍待验。 [页面日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/device-pages.log) · [Computer 日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/computer-service.log)
 
+- #185 在 Web 构建 `87bb5713a` 的 390×844 Chromium 中使用本地 Keycloak 登录 Team 管理员和成员。独立 OpenBot API 创建双 Bot 群聊，成员加入前读取为 404。管理员在浏览器添加成员后，成员可读取群聊并看到两位 Bot 和两位成员。成员移除创建者被拒绝。管理员确认移除成员后，成员请求恢复为 404，重新打开只显示恢复入口。 [群聊权限记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/run.json) · [构建清单](/Users/wuyj/.local/state/openbot-spec-127/evidence/group-team-members.8gMLMu/manifest.json)
+
 ## 逐页记录
 
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
