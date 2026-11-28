@@ -61,11 +61,9 @@ export function ConversationAccessEnded({
   title?: string;
 }) {
   return (
-    <Stack gap={3} padding={5}>
+    <Stack gap={3} style={{ padding: "var(--spacing-5)" }}>
       <Banner collapsible={false} role="alert" status="error" title={title} />
-      <Link href="/" isStandalone>
-        Back to Home
-      </Link>
+      <ReturnHomeLink />
     </Stack>
   );
 }
@@ -98,7 +96,7 @@ export function ConversationUnavailable({
   if (!canKeepCachedRead(error))
     return <ConversationAccessEnded title={denied} />;
   return (
-    <Stack gap={3} padding={5}>
+    <Stack gap={3} style={{ padding: "var(--spacing-5)" }}>
       <ConversationReadError
         description={description}
         retry={retry}
@@ -106,9 +104,24 @@ export function ConversationUnavailable({
         retrying={retrying}
         title={title}
       />
-      <Link href="/" isStandalone>
-        Back to Home
-      </Link>
+      <ReturnHomeLink />
     </Stack>
+  );
+}
+
+function ReturnHomeLink() {
+  return (
+    <Link
+      href="/"
+      isStandalone
+      style={{
+        alignItems: "center",
+        alignSelf: "start",
+        display: "inline-flex",
+        minBlockSize: "var(--spacing-11)",
+      }}
+    >
+      Back to Home
+    </Link>
   );
 }
