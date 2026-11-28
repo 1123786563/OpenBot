@@ -351,7 +351,8 @@ function RouteComponent() {
     if (!row) return;
     restoredEntry.current = entry;
     lastOpenedConnection = undefined;
-    if (document.activeElement === document.body) row.focus();
+    const active = document.activeElement;
+    if (active === document.body || active?.matches("main")) row.focus();
   });
   const plugins = useQuery(pluginsPageQueryOptions());
   const connections = useQuery(connectionsQueryOptions());
