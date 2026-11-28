@@ -80,6 +80,12 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 
 使用构建 `9f72e8f5f` 的隔离 API，按 Personal 和 Team 的实际路由要求启用模拟 Arcade 或 Composio。四个目录入口各在桌面、窄屏及浅深两套主题组合复验，16 个样本均进入预期目录。修正后的全量走查仍有 360 个页面样本和 63 个书签样本，未检测到页面异常、文档级横向溢出或未实现的模拟端点。此轮证据覆盖路由和首屏。真实供应商授权、完整任务和读屏仍待验。 [全量记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/full-broker-corrected.hcLqq1/run.json) · [目录采集修正 PR #261](https://github.com/1123786563/OpenBot/pull/261)
 
+### #189 工作视图复验
+
+Firefox ESR 和 Orca 在 Personal 隔离环境中复验了 Tasks、Ideas、Goals、嵌入式 Routines 和 Activity 的读取失败与键盘重试。Goals 的首次复验发现焦点落在标题。用 `e644eb6ef` 加上 #263 的代码改动重新构建后，焦点回到 Bot 选择器。Ideas 建议读取恢复后聚焦建议区标题。Activity 恢复后聚焦进行中区块，Orca 依次读出三个空态。新建例行任务的调度控件读出了时区与夏令时说明。 [读屏证据索引](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-acceptance-audit.md) · [Goals 修复 #263](https://github.com/1123786563/OpenBot/pull/263)
+
+Chromium 和 WebKit 在三种宽度及浅深主题下通过 12 个 Tasks 并发失败场景。任务与审批各显示一个错误，键盘只重试对应请求，恢复后聚焦任务状态筛选器。两种浏览器也验证了任务和例行任务历史的来源链接。Goals 的 Bot 选择器和导航至少相隔 16 CSS 像素。新建表单实测的四个控件均达到 44 × 44 CSS 像素。这些浏览器场景使用隔离模拟 API。真实角色的保存记录见上方例行任务条目。独立评分仍待完成。 [Chromium 并发恢复](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-concurrent-themed.XCD3BY/run.json) · [WebKit 并发恢复](/Users/wuyj/.local/state/openbot-spec-127/evidence/tasks-concurrent-webkit-en.1nHRMf/run.json) · [布局与触区](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-targets.0ljWZC/run.json)
+
 ## 逐页记录
 
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
@@ -109,8 +115,8 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 | `view-23` | Bot sharing · `/bots/$agentId/sharing` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-24` | Skills · `/capabilities/skills` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-25` | Memory · `/capabilities/memory` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-26` | Routines · `/routines` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-27` | New routine · `/routines/new` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-26` | Routines · `/routines` | Personal | 4/4 首屏。另验历史来源跳转与嵌入视图重试。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-27` | New routine · `/routines/new` | Personal | 4/4 首屏。另验三种本地角色保存、调度读屏和触区。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-28` | Connections · `/connections` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-29` | Team app + grants · `/connections/$key` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-30` | Personal app · `/connections/$key (Personal)` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
@@ -119,11 +125,11 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 | `view-33` | Routines connection · `/connections/routines` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-34` | Arcade directory · `/connections/browse/arcade` | Personal | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-35` | Composio directory · `/connections/browse/composio` | Personal | 4/4。启用对应模拟供应商后进入目录，待验真实授权和完整任务 | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-36` | /tasks · `/tasks` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-37` | /ideas · `/ideas` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-36` | /tasks · `/tasks` | Personal | 4/4 首屏。另验并发故障、键盘重试及源会话跳转。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-37` | /ideas · `/ideas` | Personal | 4/4 首屏。另验 Bot 列表与建议读取的读屏重试。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-38` | /responsibilities · `/responsibilities` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-39` | Goals view · `/responsibilities?view=goals` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
-| `view-40` | Activity · `/s/activity` | Personal | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-39` | Goals view · `/responsibilities?view=goals` | Personal | 4/4 首屏。另验 Bot 选择器的间距与重试焦点。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
+| `view-40` | Activity · `/s/activity` | Personal | 4/4 首屏。另验读屏重试、焦点和三个空态。独立评分待验 | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-41` | Admin home · `/admin/` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-42` | Admin approvals · `/admin/approvals` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
 | `view-43` | Admin approval describe · `/admin/approvals/describe` | Team 管理员 | 4/4。首屏，待验完整任务状态。含未实现的模拟 API | 待 待 待 待 待 待 待 待 待 待 | 40 |
