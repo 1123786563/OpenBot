@@ -189,10 +189,17 @@ export function LinkedAccountSection({
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const slackCommand = useRef<HTMLInputElement>(null);
+  const copyButton = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!issued) return;
     const timer = window.setTimeout(
-      () => setExpired(true),
+      () => {
+        const active = document.activeElement;
+        if (active === slackCommand.current || active === copyButton.current)
+          closeButton.current?.focus();
+        setExpired(true);
+      },
       Math.max(0, Date.parse(issued.expiresAt) - Date.now()),
     );
     return () => window.clearTimeout(timer);
@@ -350,7 +357,11 @@ export function LinkedAccountSection({
             <DialogTitle>Link your Slack account</DialogTitle>
           </DialogHeader>
           <DialogBody className="mt-4">
-            {issued ? (
+            {issued && expired ? (
+              <p className="text-muted-foreground text-sm" role="status">
+                This code expired. Close this window and request a new code.
+              </p>
+            ) : issued ? (
               <VStack gap={3} className="text-sm">
                 <p>
                   In Slack, open a direct message with the OpenBot app. Paste
@@ -375,25 +386,16 @@ export function LinkedAccountSection({
                     command.
                   </p>
                 ) : null}
-                {expired ? (
-                  <p className="text-muted-foreground" role="status">
-                    This code expired. Close this window and request a new code.
-                  </p>
-                ) : (
-                  <p className="text-muted-foreground">
-                    Use this one-time code by{" "}
-                    <time dateTime={issued.expiresAt}>
-                      {new Date(issued.expiresAt).toLocaleTimeString(
-                        undefined,
-                        {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        },
-                      )}
-                    </time>
-                    .
-                  </p>
-                )}
+                <p className="text-muted-foreground">
+                  Use this one-time code by{" "}
+                  <time dateTime={issued.expiresAt}>
+                    {new Date(issued.expiresAt).toLocaleTimeString(undefined, {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                  .
+                </p>
               </VStack>
             ) : null}
           </DialogBody>
@@ -401,6 +403,7 @@ export function LinkedAccountSection({
             <Button
               className="confirmation-action"
               disabled={expired}
+              ref={copyButton}
               size="sm"
               variant="outline"
               onClick={async () => {
@@ -421,6 +424,7 @@ export function LinkedAccountSection({
               className="confirmation-action"
               size="sm"
               onClick={closeDialog}
+              ref={closeButton}
             >
               Close
             </Button>

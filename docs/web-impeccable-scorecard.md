@@ -1703,6 +1703,14 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 
 生产构建 `index-Dw8NKdGL.js` 在 Chromium 和 WebKit 的 1440、390、320 像素验证命令、复制失败、到期、关闭和重新申请。真实 Slack 回调和读屏待验。 [Chromium](/tmp/openbot-device-review/github-slack-final-chromium.log) · [WebKit](/tmp/openbot-device-review/github-slack-final-webkit.log) · [320 像素弹窗](/tmp/openbot-device-review/slack-link-320.png)
 
+
+### Slack 连接页独立复评
+
+候选 `71f43c5a9` 的独立设计评分为 29/40（暂定），H1–H10 为 3 3 3 3 2 3 2 3 4 3。Team 和 Personal 模拟连接码失败、成功、过期和重发共 24 个场景通过。设计复评发现过期后仍可手动复制旧命令，后续候选移除旧命令及发送指引。Firefox ESR + Orca 录到连接失败提示、对话框名与命令字段，关闭后回焦。真实 Slack 投递和连接状态仍待验。 [#311](https://github.com/1123786563/OpenBot/pull/311)
+
+独立自动检测执行 48 个 Chromium 场景。桌面报告 8 个嵌套容器警告和 12 个短尾行提示，窄屏无发现。所有场景无页面异常和横向溢出。7 个源码文件未报问题。夹具未实现 Slack 工具账号读取，连接码证据来自模拟接口。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web190-detector-slack.JtVhv2)
+
+
 ## Routines 内置入口复评
 
 `/connections/routines` 从 39/40 升至 **40/40（100%，暂定）**，H4 加 1 分。Connections 单列 Built-in tools。Routines 不计入外部应用数量，搜索后仍可走原地址。详情说明每个 Bot 都有此内置工具。读取失败沿用 Connections 的重试样式，恢复后聚焦页面标题。
