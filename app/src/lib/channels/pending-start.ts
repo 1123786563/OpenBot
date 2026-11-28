@@ -53,6 +53,9 @@ export type StartRecipient = StartDraft["recipient"];
 export type StartRecord = z.infer<typeof record>;
 export type PendingStart = Extract<StartRecord, { state: "pending" }>;
 
+// Keep the same-tab handoff usable when the browser refuses durable writes.
+const temporaryStarts = new Map<string, StartRecord | null>();
+
 function ownerPrefix(owner: string) {
   return `${startPrefix}${encodeURIComponent(owner)}:`;
 }
@@ -61,8 +64,10 @@ export function readPendingStart(
   owner: string,
   id: string,
 ): StartRecord | null {
+  const key = ownerPrefix(owner) + id;
+  if (temporaryStarts.has(key)) return temporaryStarts.get(key) ?? null;
   try {
-    const saved = localStorage.getItem(ownerPrefix(owner) + id);
+    const saved = localStorage.getItem(key);
     if (saved === null) return null;
     const parsed = record.safeParse(JSON.parse(saved));
     return parsed.success ? parsed.data : null;
@@ -76,13 +81,17 @@ export function savePendingStart(
   id: string,
   start: StartRecord,
 ) {
+  const key = ownerPrefix(owner) + id;
   try {
-    localStorage.setItem(ownerPrefix(owner) + id, JSON.stringify(start));
+    localStorage.setItem(key, JSON.stringify(start));
+    temporaryStarts.delete(key);
   } catch {
-    throw new Error(
-      "This browser couldn't save your message. Check that site storage is available and try again.",
-    );
+    temporaryStarts.set(key, start);
   }
+}
+
+export function isTemporaryStart(owner: string, id: string) {
+  return temporaryStarts.get(ownerPrefix(owner) + id)?.state === "pending";
 }
 
 export function finishPendingStart(
@@ -97,7 +106,13 @@ export function finishPendingStart(
 /** Remove an abandoned start so its text and attachment refs stop being recoverable. */
 export function discardPendingStart(owner: string, id: string) {
   const start = readPendingStart(owner, id);
-  localStorage.removeItem(ownerPrefix(owner) + id);
+  const key = ownerPrefix(owner) + id;
+  try {
+    localStorage.removeItem(key);
+    temporaryStarts.delete(key);
+  } catch {
+    temporaryStarts.set(key, null);
+  }
   if (start?.state === "pending") {
     for (const attachment of start.draft.attachments) {
       if ("localFileKey" in attachment) {
@@ -108,18 +123,22 @@ export function discardPendingStart(owner: string, id: string) {
 }
 
 export function pendingStartsFor(owner: string) {
-  const pending: { id: string; start: PendingStart }[] = [];
+  const prefix = ownerPrefix(owner);
+  const keys = new Set(temporaryStarts.keys());
   try {
-    const prefix = ownerPrefix(owner);
     for (let index = 0; index < localStorage.length; index++) {
       const key = localStorage.key(index);
-      if (!key?.startsWith(prefix)) continue;
-      const id = key.slice(prefix.length);
-      const start = readPendingStart(owner, id);
-      if (start?.state === "pending") pending.push({ id, start });
+      if (key) keys.add(key);
     }
   } catch {
-    return pending;
+    // The current tab can still offer the temporary drafts.
+  }
+  const pending: { id: string; start: PendingStart }[] = [];
+  for (const key of keys) {
+    if (!key.startsWith(prefix)) continue;
+    const id = key.slice(prefix.length);
+    const start = readPendingStart(owner, id);
+    if (start?.state === "pending") pending.push({ id, start });
   }
   return pending;
 }

@@ -26,6 +26,7 @@ import {
 } from "@/lib/channels/compose-draft";
 import {
   discardPendingStart,
+  isTemporaryStart,
   readPendingStart,
 } from "@/lib/channels/pending-start";
 import {
@@ -89,6 +90,7 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
     useState<Pick<BillingQuote, "route" | "priceVersion">>();
 
   const hasStart = start?.state === "pending";
+  const temporary = isTemporaryStart(owner, startId);
   useEffect(() => {
     // This state is intentionally a retry trigger. The effect must restart when the user taps Retry.
     void attempt;
@@ -367,7 +369,20 @@ function StartHandoff({ owner, startId }: { owner: string; startId: string }) {
                 size="sm"
               />
             ) : null}
-            {failure?.kind === "retry" ? (
+            {temporary ? (
+              <Stack align="start" gap={1}>
+                <Text as="p" color="secondary" size="sm" role="status">
+                  This message is saved only in this tab. Copy it before closing
+                  or refreshing this tab.
+                </Text>
+                {draft.text && failure?.kind !== "choose-bot" ? (
+                  <FirstMessageDraftCopy
+                    label="Copy message text"
+                    text={draft.text}
+                  />
+                ) : null}
+              </Stack>
+            ) : failure?.kind === "retry" ? (
               <Text as="p" color="secondary" size="sm">
                 Your message is saved in this browser. You can also resume it
                 from Home.
