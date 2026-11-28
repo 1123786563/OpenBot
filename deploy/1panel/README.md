@@ -46,9 +46,8 @@ tar -xzf openbot.tar.gz -C /opt/1panel/resource/apps/local/
 | Hindsight | API 地址，如 `http://<Hindsight 容器名>:8888`，以及服务启用鉴权时的 API Key |
 | Opik | API 地址，如 `http://<Opik 容器名>-backend:8080/`，可填写项目、工作区和 API Key |
 | OpenObserve | Collector 日志端点，如 `http://otel-collector:4318/v1/logs`，部署标识与 Collector 一致。可填写 OTLP 请求头和控制台地址 |
-| Lago | API 地址（如 `http://<Lago 容器名>-api:3000`）、API Key 和用量订阅外部 ID 三项一起填写 |
 | Infisical | 站点地址、项目 ID、环境和 Universal Auth 机器身份。API 启动时读取该环境根路径，表单中已填写的值优先 |
-| Redis | 安装 Infisical、Lago 或 Opik 时选择 1Panel 托管 Redis。为每个应用准备独立实例，在创建 Redis 时设置独立随机密码，应用安装时复用该密码 |
+| Redis | 安装 Infisical 或 Opik 时选择 1Panel 托管 Redis。为每个应用准备独立实例，在创建 Redis 时设置独立随机密码，应用安装时复用该密码 |
 | SPIRE | 安装 SPIRE 时填 Server 签发的加入令牌。使用独立 Agents 套件时，SPIRE 配置由 Agent/Supervisor 侧管理 |
 
 有初始管理员字段的中间件按各自表单填写。Infisical 新装时填管理员邮箱、密码、名字和组织名称四项，密码至少 14 位。恢复现有实例时可全留空。Infisical 新装时加密密钥和认证密钥留空可自动生成，恢复时填写原值。
@@ -65,16 +64,15 @@ tar -xzf openbot.tar.gz -C /opt/1panel/resource/apps/local/
 | --- | --- | --- |
 | OpenBot | PostgreSQL | 实例需提供 pgvector。1.0.3 首次迁移会创建和删除 `vector` 扩展 |
 | Bifrost、Infisical | PostgreSQL | 为每个应用使用独立的库和用户 |
-| Lago | PostgreSQL | 使用 PostgreSQL 15 或更新版本，且实例已安装 `pg_partman`。1Panel 安装时创建专用库和用户。空库迁移完成后撤销自动创建角色的 `SUPERUSER` 权限 |
 | OpenObserve | PostgreSQL | OpenObserve 将元数据写入 PostgreSQL，日志数据保存在原有数据卷；OTel Collector 随同安装 |
 | SPIRE | PostgreSQL | 将服务端数据存入 PostgreSQL；仍须持久化本地密钥和 Agent 数据，并按下文登记加入令牌 |
 | Opik | MySQL | 使用 MySQL 8.4。ClickHouse、ZooKeeper 和 MinIO 随同安装 |
 
 Hindsight 1.3.0 自带 PostgreSQL（`pgvector/pgvector:pg17`），默认不使用数据库选择器。要改用 1Panel 实例，把安装表单的「PostgreSQL 主机」填成该实例的容器名：实例需提供 pgvector，复用数据库时确认目标库已启用 `vector` 扩展。1Panel 自带的 PostgreSQL 集群镜像里的 pgvector 按 AVX-512 编译，在没有 AVX-512 的机器上一次向量写入就会让数据库后端崩溃，这种机器请保持默认的自带数据库。
 
-Lago、Infisical 和 Opik 在安装表单的「已有 Redis 实例」下拉框中选择 1Panel 管理的 Redis，应用包不再自带 Redis。1Panel 填入 Redis 的容器名和密码，应用通过 `1panel-network` 以端口 6379 连接。Redis 未设密码时，「Redis 密码」留空。密码含 URI 特殊字符时，Lago 填原始值；Infisical 和 Opik 另填「URL 编码后的 Redis 密码」，编码规则与数据库密码相同。
+Infisical 和 Opik 在安装表单的「已有 Redis 实例」下拉框中选择 1Panel 管理的 Redis，应用包不再自带 Redis。1Panel 填入 Redis 的容器名和密码，应用通过 `1panel-network` 以端口 6379 连接。Redis 未设密码时，「Redis 密码」留空。密码含 URI 特殊字符时，另填「URL 编码后的 Redis 密码」，编码规则与数据库密码相同。
 
-升级已安装的实例前，先在 1Panel 安装 Redis。旧包自带 Redis 中的数据不会迁移：Lago 的后台任务队列和 Opik 的评测任务队列保存在 Redis 中，请在任务处理完后再重建。
+升级已安装的实例前，先在 1Panel 安装 Redis。旧包自带 Redis 中的数据不会迁移：Opik 的评测任务队列保存在 Redis 中，请在任务处理完后再重建。
 
 Hindsight 和 Opik 将 API 容器接入 `1panel-network`。同一网络中的容器可以访问这些 API，应只在受信任的 1Panel 容器网络上部署。从此前的常规条目迁移时，先备份数据库、应用数据卷和加密密钥，再按各组件的步骤恢复。新安装使用相同的默认端口，切换前请为新实例指定空闲端口或停止旧实例。
 
@@ -96,7 +94,6 @@ tar -xzf bifrost.tar.gz -C /opt/1panel/resource/apps/local/
 | [Infisical](infisical.tar.gz) | 18082 | 选择 PostgreSQL 和 Redis，并填写初始管理员资料 |
 | [Hindsight](hindsight.tar.gz) | 18888、19999 | 准备本地嵌入和重排模型所需的存储 |
 | [Opik](opik.tar.gz) | 15173 | 选择 MySQL 和 Redis，面板预填 MinIO 密码。首次安装需等待 MySQL 和 ClickHouse 迁移。此包使用进程执行策略，不启用 Docker-in-Docker |
-| [Lago](lago.tar.gz) | 13001、13000 | 选择 PostgreSQL 实例，1Panel 随机填充库名、用户名和密码并自动建库和建用户。新装时 Rails、RSA 和加密参数可留空。填写初始组织名称、管理员邮箱和密码，迁移会创建管理员并关闭注册入口 |
 | [Agents](agents.tar.gz) | 4200、4201、4100、4500 | 在服务器预构建镜像或填写可拉取的镜像标签 |
 | [SPIRE](spire.tar.gz) | Docker 内部 | 启动 Server 后生成一次性加入令牌，填入安装实例参数 |
 
@@ -117,8 +114,8 @@ docker network inspect openbot-spire >/dev/null 2>&1 || docker network create --
 ### 接入可选服务
 
 - 在主应用的模型地址填 `http://openbot-bifrost:8080/v1`，并填写 Bifrost 虚拟密钥及模型名。该地址通过 1Panel 网络访问 Bifrost 的 registry proxy。
-- Hindsight 的控制台用安装表单中的「控制台访问密钥」登录；Hindsight 的 API 和 Opik 的 API 默认没有登录门禁。应用包保留它们各自的私有 Docker 网络与宿主机回环端口。使用时把 OpenBot API 加入对应的 `openbot-hindsight` 或 `openbot-opik` 网络。Lago 的用量投递需要独立 Worker，连接 `openbot-lago`。配置项见[可选服务接入](../operations.md#hindsightopik-和-lago)。
-- Infisical 的密钥生成和机器身份配置见 [Infisical 说明](../infisical/README.md)。Lago 的密钥要求和用量订阅见[用量投递说明](../../docs/billing-lago-usage-export.md)。
+- Hindsight 的控制台用安装表单中的「控制台访问密钥」登录；Hindsight 的 API 和 Opik 的 API 默认没有登录门禁。应用包保留它们各自的私有 Docker 网络与宿主机回环端口。使用时把 OpenBot API 加入对应的 `openbot-hindsight` 或 `openbot-opik` 网络。配置项见[可选服务接入](../operations.md#hindsight-和-opik)。
+- Infisical 的密钥生成和机器身份配置见 [Infisical 说明](../infisical/README.md)。Worker 对账见 [Flexprice 用量对账](../docs/flexprice.md)。
 - 需要独立 Agent 时，从仓库根目录运行下列构建命令。使用另一台主机构建时，将镜像推到 1Panel 主机可以拉取的镜像仓库，并在表单填写相应镜像地址。
 
 ```sh
@@ -142,8 +139,6 @@ SPIRE Server 健康后，执行 `docker exec <SPIRE主容器名> /opt/spire/bin/
 | Bifrost | `bifrost.example.com` | `http://127.0.0.1:18080` | 保留模型 API 的流式响应，关闭代理缓存和缓冲。模型客户端在网站地址后加 `/v1` |
 | OpenObserve | `observe.example.com` | `http://127.0.0.1:15080` | 此地址用于 Web 控制台，Collector 继续通过内部网络接收日志 |
 | Infisical | `infisical.example.com` | `http://127.0.0.1:18082` | 将 `SITE_URL` 设为实际 HTTPS 地址 |
-| Lago 前端 | `lago.example.com` | `http://127.0.0.1:13001` | 将 `LAGO_FRONT_URL` 设为此 HTTPS 地址 |
-| Lago API | `lago-api.example.com` | `http://127.0.0.1:13000` | 将 `LAGO_API_URL` 设为此 HTTPS 地址 |
 | Hindsight 控制台 | `hindsight.example.com` | `http://127.0.0.1:19999` | 登录时输入安装表单中的「控制台访问密钥」 |
 | Hindsight | 内部访问域名 | `http://127.0.0.1:18888` | API 默认无登录门禁，仅通过受限网络或带访问控制的站点使用 |
 | Opik | 内部访问域名 | `http://127.0.0.1:15173` | 代理前端入口，前端会转发 API。默认无登录门禁，仅通过受限网络或带访问控制的站点使用 |

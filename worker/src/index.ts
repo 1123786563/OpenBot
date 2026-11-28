@@ -23,7 +23,7 @@ import {
 } from "../../server/src/billing/bifrost-evidence";
 import { directChatCasdoorProvider } from "../../server/src/billing/direct-chat-test-credit-config";
 import { createDirectChatCreditRecovery } from "../../server/src/billing/direct-chat-test-credit-recovery";
-import { loadLagoUsageExporter } from "../../server/src/billing/lago-usage";
+import { loadFlexpriceUsageExporter } from "../../server/src/billing/flexprice-usage";
 import { createTestCreditLedger } from "../../server/src/billing/test-credit";
 import { createDatabase } from "../../server/src/db/client";
 import { createRoutineStore } from "../../server/src/routines/store";
@@ -71,11 +71,11 @@ const readBifrostEvidence = casdoor && loadBifrostEvidenceReader(process.env);
 const recoverBilledConversations =
   casdoor &&
   createDirectChatCreditRecovery(database, testCreditLedger, casdoor);
-let lagoUsage: ReturnType<typeof loadLagoUsageExporter>;
+let flexpriceUsage: ReturnType<typeof loadFlexpriceUsageExporter>;
 try {
-  lagoUsage = loadLagoUsageExporter(database, process.env);
+  flexpriceUsage = loadFlexpriceUsageExporter(database, process.env);
 } catch {
-  writeRuntimeLog("lago_usage_export_failed");
+  writeRuntimeLog("flexprice_usage_export_failed");
 }
 const queue = createWorkQueue(database);
 const routineStore = createRoutineStore(database);
@@ -191,13 +191,13 @@ async function runOneTick(): Promise<void> {
       writeRuntimeLog("routine_queue_purge_failed");
     }
   }
-  if (lagoUsage) {
+  if (flexpriceUsage) {
     try {
-      const { unavailable, paused } = await lagoUsage.flush();
-      if (unavailable) writeRuntimeLog("lago_usage_export_failed");
-      if (paused > 0) writeRuntimeLog("lago_usage_export_paused");
+      const { unavailable, paused } = await flexpriceUsage.flush();
+      if (unavailable) writeRuntimeLog("flexprice_usage_export_failed");
+      if (paused > 0) writeRuntimeLog("flexprice_usage_export_paused");
     } catch {
-      writeRuntimeLog("lago_usage_export_failed");
+      writeRuntimeLog("flexprice_usage_export_failed");
     }
   }
 }

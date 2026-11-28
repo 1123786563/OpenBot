@@ -1,5 +1,7 @@
 # OpenBot 平台功能验收
 
+> See [Flexprice usage reconciliation](../docs/flexprice.md) for the current usage export and Lago retirement steps.
+
 验收日期：2026-11-28。结论：**核心文字聊天可用，全平台尚未通过验收**。本次使用真实浏览器经 Casdoor 登录 OpenBot，并验证业务写入、执行、持久化和中间件读回；容器健康和页面打开不等同于功能通过。
 
 ## 实际结果

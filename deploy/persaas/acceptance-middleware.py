@@ -70,11 +70,6 @@ def main():
         time.sleep(1)
     check('Opik trace readback', found)
 
-    query = {'query': 'mutation Login($input: LoginUserInput!) { loginUser(input: $input) { token user { id email } } }', 'variables': {'input': {'email': credentials['adminEmail'], 'password': credentials['lagoPassword']}}}
-    status, result = call('https://lago-api.persaas.cn/graphql', query, headers={'Origin': 'https://lago.persaas.cn'})
-    check('Lago administrator login', status == 200 and bool(result.get('data', {}).get('loginUser', {}).get('token')))
-    check('Lago API health', call('https://lago-api.persaas.cn/health')[0] == 200)
-
     flex = 'http://127.0.0.1:18085'
     status, result = call(flex + '/v1/auth/login', {'email': credentials['adminEmail'], 'password': credentials['flexpriceOwnerPassword']})
     check('Flexprice native administrator login', status == 200 and bool(result.get('token')))
@@ -101,14 +96,13 @@ def main():
     spec = spec_from_file_location('rustfs', ROOT / 'provision-rustfs.py')
     storage = module_from_spec(spec)
     spec.loader.exec_module(storage)
-    for name, endpoint in [('opik', opik), ('lago', 'https://lago-api.persaas.cn')]:
-        path = '/' + name + '/acceptance-' + uuid.uuid4().hex
-        access, secret = credentials[name + 'S3AccessKey'], credentials[name + 'S3SecretKey']
-        try:
-            storage.request('PUT', path, access, secret, b'public-https-storage-check', endpoint)
-            check(name + ' RustFS object HTTPS round trip', storage.request('GET', path, access, secret, endpoint=endpoint) == b'public-https-storage-check')
-        finally:
-            storage.request('DELETE', path, access, secret, endpoint=endpoint)
+    path = '/opik/acceptance-' + uuid.uuid4().hex
+    access, secret = credentials['opikS3AccessKey'], credentials['opikS3SecretKey']
+    try:
+        storage.request('PUT', path, access, secret, b'public-https-storage-check', opik)
+        check('Opik RustFS object HTTPS round trip', storage.request('GET', path, access, secret, endpoint=opik) == b'public-https-storage-check')
+    finally:
+        storage.request('DELETE', path, access, secret, endpoint=opik)
     target = ROOT / 'middleware-acceptance-report.json'
     target.write_text(json.dumps({'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'passed': passed, 'opikTraceId': trace_id}, indent=2))
     target.chmod(0o600)

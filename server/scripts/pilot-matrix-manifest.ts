@@ -18,6 +18,8 @@ const failureReasons = z.enum([
   "product_request_failed",
   "gateway_boundary_unverified",
   "model_switch_incomplete",
+  "flexprice_event_missing",
+  "flexprice_event_unmatched",
   "lago_event_missing",
   "lago_event_unmatched",
 ]);

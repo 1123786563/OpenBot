@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   printf '%s\n' 'Usage: deploy/compose.sh [--local|--central] <component> <docker compose args...>' \
-    'Components: postgres bifrost infisical openobserve hindsight opik lago agents openbot' \
+    'Components: postgres bifrost infisical openobserve hindsight opik agents openbot' \
     'Local-only component: spire' \
     'Central components: infrastructure bifrost infisical openobserve hindsight opik spire agents flexprice openbot' \
     'Central environment: CENTRAL_ENV_FILE (default deploy/centralized/.env)'
@@ -58,7 +58,7 @@ shift
 local_config="$deploy/.local"
 
 case "$component" in
-  postgres|bifrost|infisical|openobserve|hindsight|opik|lago|agents|openbot)
+  postgres|bifrost|infisical|openobserve|hindsight|opik|agents|openbot)
     directory="$deploy/$component"
     ;;
   spire)
@@ -83,7 +83,6 @@ if [[ $local_mode == true && $component != infisical ]]; then
     bifrost) args+=(-f "$directory/docker-compose.override.yml.example" -f "$local_config/bifrost.yml") ;;
     agents|openbot) args+=(-f "$local_config/$component.yml") ;;
     opik) export OPIK_SOURCE="$local_config/upstream-opik" ;;
-    lago) export LAGO_SOURCE="$local_config/upstream-lago" ;;
   esac
 else
   args+=(--env-file "$directory/.env")

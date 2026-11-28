@@ -1,5 +1,7 @@
 # Live Lago outbox acceptance
 
+> See [Flexprice usage reconciliation](../deploy/docs/flexprice.md) for the current usage export and Lago retirement steps.
+
 This record covers #97's live acceptance against a self-hosted Lago community
 edition, driven through the durable `lago_usage_events` outbox.
 

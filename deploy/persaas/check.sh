@@ -13,7 +13,6 @@ case "$role" in
     curl --fail --silent --show-error https://infisical.persaas.cn/api/v1/admin/config >/dev/null
     curl --fail --silent --show-error https://openobserve.persaas.cn/healthz >/dev/null
     curl --fail --silent --show-error https://opik.persaas.cn/health
-    curl --fail --silent --show-error https://lago-api.persaas.cn/health
     curl --fail --silent --show-error http://127.0.0.1:18085/healthz
     for url in https://bifrost.persaas.cn/api/providers https://opik.persaas.cn/; do
       status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$url")

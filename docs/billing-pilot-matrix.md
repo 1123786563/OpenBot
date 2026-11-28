@@ -117,7 +117,7 @@ Run the product regression with an isolated, migrated PostgreSQL database:
 
 ```sh
 bun test --no-env-file --env-file=.env.test --timeout 90000 \
-  server/tests/{direct-chat,billing-routes,billing-paths,managed-model-routes,resume-points,lago-usage,provider-cost-limit,test-credit,weknora-work}.integration.test.ts \
+  server/tests/{direct-chat,billing-routes,billing-paths,managed-model-routes,resume-points,flexprice-usage,provider-cost-limit,test-credit,weknora-work}.integration.test.ts \
   server/tests/bifrost-catalog.test.ts
 ```
 
@@ -147,10 +147,9 @@ Provide `PILOT_WEKNORA_URL`, `PILOT_WEKNORA_SERVICE_TOKEN`,
 `PILOT_WEKNORA_SUBJECT`, and `PILOT_WEKNORA_RESOURCE_ID` for the WeKnora leg.
 Use `PILOT_ACCOUNT_STATUS_URL`, `PILOT_WORKSPACE_ID`, and
 `PILOT_OPERATOR_TOKEN` with a dedicated test workspace for the suspension
-leg. Lago reconciliation uses `PILOT_TARGET_DATABASE_URL` for the same
-deployment and `PILOT_LAGO_URL`, `LAGO_API_KEY`, and
-`LAGO_USAGE_SUBSCRIPTION_ID` for its zero-rate destination. Supply credentials
-through the process environment.
+leg. Flexprice reconciliation uses `PILOT_TARGET_DATABASE_URL` for the same
+deployment and the [Worker usage export settings](../deploy/docs/flexprice.md)
+for its zero-price subscription. Supply credentials through the process environment.
 
 Share `<run-dir>/manifest.json` with the reviewer. It records the deployment
 provenance, rerun command, each scenario's result, operation IDs allocated by

@@ -94,7 +94,8 @@ def projects():
             raise RuntimeError('Unexpected Compose path')
         name = labels['com.docker.compose.project']
         name = {'persaas-data': 'data-services', 'redis-cluster-master': 'redis'}.get(name, name)
-        result[name] = path
+        if name not in ('lago', 'persaas-lago'):
+            result[name] = path
     data = ROOT / 'data.yml'
     if data in result.values():
         result.pop('data-services', None)

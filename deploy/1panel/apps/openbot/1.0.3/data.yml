@@ -649,54 +649,118 @@ additionalProperties:
         zh-Hant: OpenObserve 控制台地址
         zh: OpenObserve 控制台地址
         tr: OpenObserve console URL
-    - envKey: LAGO_URL
+    - envKey: FLEXPRICE_URL
       type: text
       default: ""
       required: false
       edit: true
       label:
-        en: Lago API URL (Required when using Lago)
-        es-es: Lago API URL (Required when using Lago)
-        ja: Lago API URL (Required when using Lago)
-        ms: Lago API URL (Required when using Lago)
-        pt-br: Lago API URL (Required when using Lago)
-        ru: Lago API URL (Required when using Lago)
-        ko: Lago API URL (Required when using Lago)
-        zh-Hant: Lago API 地址（啟用 Lago 時必填）
-        zh: Lago API 地址（启用 Lago 时必填）
-        tr: Lago API URL (Required when using Lago)
-    - envKey: LAGO_API_KEY
+        en: Flexprice API origin
+        es-es: Flexprice API origin
+        ja: Flexprice API origin
+        ms: Flexprice API origin
+        pt-br: Flexprice API origin
+        ru: Flexprice API origin
+        ko: Flexprice API origin
+        zh-Hant: Flexprice API origin
+        zh: Flexprice API origin
+        tr: Flexprice API origin
+    - envKey: FLEXPRICE_API_KEY
       type: password
       default: ""
       required: false
       edit: true
       label:
-        en: Lago API key (Required when using Lago)
-        es-es: Lago API key (Required when using Lago)
-        ja: Lago API key (Required when using Lago)
-        ms: Lago API key (Required when using Lago)
-        pt-br: Lago API key (Required when using Lago)
-        ru: Lago API key (Required when using Lago)
-        ko: Lago API key (Required when using Lago)
-        zh-Hant: Lago API 密钥（啟用 Lago 時必填）
-        zh: Lago API 密钥（启用 Lago 时必填）
-        tr: Lago API key (Required when using Lago)
-    - envKey: LAGO_USAGE_SUBSCRIPTION_ID
+        en: Flexprice usage API key
+        es-es: Flexprice usage API key
+        ja: Flexprice usage API key
+        ms: Flexprice usage API key
+        pt-br: Flexprice usage API key
+        ru: Flexprice usage API key
+        ko: Flexprice usage API key
+        zh-Hant: Flexprice usage API key
+        zh: Flexprice usage API key
+        tr: Flexprice usage API key
+    - envKey: FLEXPRICE_USAGE_CUSTOMER_ID
       type: text
       default: ""
       required: false
       edit: true
       label:
-        en: Lago usage subscription external ID (Required when using Lago)
-        es-es: Lago usage subscription external ID (Required when using Lago)
-        ja: Lago usage subscription external ID (Required when using Lago)
-        ms: Lago usage subscription external ID (Required when using Lago)
-        pt-br: Lago usage subscription external ID (Required when using Lago)
-        ru: Lago usage subscription external ID (Required when using Lago)
-        ko: Lago usage subscription external ID (Required when using Lago)
-        zh-Hant: Lago 用量订阅外部 ID（啟用 Lago 時必填）
-        zh: Lago 用量订阅外部 ID（启用 Lago 时必填）
-        tr: Lago usage subscription external ID (Required when using Lago)
+        en: Flexprice usage customer ID
+        es-es: Flexprice usage customer ID
+        ja: Flexprice usage customer ID
+        ms: Flexprice usage customer ID
+        pt-br: Flexprice usage customer ID
+        ru: Flexprice usage customer ID
+        ko: Flexprice usage customer ID
+        zh-Hant: Flexprice usage customer ID
+        zh: Flexprice usage customer ID
+        tr: Flexprice usage customer ID
+    - envKey: FLEXPRICE_USAGE_EXTERNAL_CUSTOMER_ID
+      type: text
+      default: ""
+      required: false
+      edit: true
+      label:
+        en: Flexprice external usage customer ID
+        es-es: Flexprice external usage customer ID
+        ja: Flexprice external usage customer ID
+        ms: Flexprice external usage customer ID
+        pt-br: Flexprice external usage customer ID
+        ru: Flexprice external usage customer ID
+        ko: Flexprice external usage customer ID
+        zh-Hant: Flexprice external usage customer ID
+        zh: Flexprice external usage customer ID
+        tr: Flexprice external usage customer ID
+    - envKey: FLEXPRICE_USAGE_METER_ID
+      type: text
+      default: ""
+      required: false
+      edit: true
+      label:
+        en: Flexprice usage meter ID
+        es-es: Flexprice usage meter ID
+        ja: Flexprice usage meter ID
+        ms: Flexprice usage meter ID
+        pt-br: Flexprice usage meter ID
+        ru: Flexprice usage meter ID
+        ko: Flexprice usage meter ID
+        zh-Hant: Flexprice usage meter ID
+        zh: Flexprice usage meter ID
+        tr: Flexprice usage meter ID
+    - envKey: FLEXPRICE_USAGE_SUBSCRIPTION_ID
+      type: text
+      default: ""
+      required: false
+      edit: true
+      label:
+        en: Flexprice zero-price usage subscription ID
+        es-es: Flexprice zero-price usage subscription ID
+        ja: Flexprice zero-price usage subscription ID
+        ms: Flexprice zero-price usage subscription ID
+        pt-br: Flexprice zero-price usage subscription ID
+        ru: Flexprice zero-price usage subscription ID
+        ko: Flexprice zero-price usage subscription ID
+        zh-Hant: Flexprice zero-price usage subscription ID
+        zh: Flexprice zero-price usage subscription ID
+        tr: Flexprice zero-price usage subscription ID
+    - envKey: FLEXPRICE_USAGE_START_AT
+      type: text
+      default: ""
+      required: false
+      edit: true
+      label:
+        en: Flexprice usage cutover time in UTC (ISO 8601)
+        es-es: Flexprice usage cutover time in UTC (ISO 8601)
+        ja: Flexprice usage cutover time in UTC (ISO 8601)
+        ms: Flexprice usage cutover time in UTC (ISO 8601)
+        pt-br: Flexprice usage cutover time in UTC (ISO 8601)
+        ru: Flexprice usage cutover time in UTC (ISO 8601)
+        ko: Flexprice usage cutover time in UTC (ISO 8601)
+        zh-Hant: Flexprice usage cutover time in UTC (ISO 8601)
+        zh: Flexprice usage cutover time in UTC (ISO 8601)
+        tr: Flexprice usage cutover time in UTC (ISO 8601)
     - envKey: INFISICAL_SITE_URL
       type: text
       default: ""

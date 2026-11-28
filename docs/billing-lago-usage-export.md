@@ -1,5 +1,7 @@
 # Lago usage export
 
+> See [Flexprice usage reconciliation](../deploy/docs/flexprice.md) for the current usage export and Lago retirement steps.
+
 OpenBot writes the Lago outbox row in the same transaction as the Test Credit
 settlement. For a bound Bifrost call, the Bifrost request ID is also the outbox
 event ID and Lago transaction ID. For other settlements, OpenBot derives an
