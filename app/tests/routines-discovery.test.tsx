@@ -79,13 +79,13 @@ function routine(overrides: Partial<RoutineRecord>): RoutineRecord {
 /** `/api/routines` and `/api/agents` in the shapes the server sends them. */
 function draw(
   element: React.ReactNode,
-  page: RoutinesPage,
+  page: RoutinesPage | Promise<RoutinesPage>,
   runs: RoutineRunRecord[] = [],
 ) {
   global.fetch = (async (input: RequestInfo | URL) => {
     const path = String(input);
     if (path.endsWith("/runs")) return Response.json({ runs });
-    if (path.startsWith("/api/routines")) return Response.json(page);
+    if (path.startsWith("/api/routines")) return Response.json(await page);
     if (path.startsWith("/api/agents"))
       return Response.json({
         agents: path.includes("hidden=true")
@@ -107,6 +107,23 @@ function draw(
 
 const newRoutineRole = "link";
 const SWEEP = { lastSweptAt: new Date().toISOString(), working: true };
+
+test("Connections > Routines distinguishes loading from an empty list", async () => {
+  const response = Promise.withResolvers<RoutinesPage>();
+  const view = draw(<RoutinesConnectionPage />, response.promise);
+
+  try {
+    expect(
+      (await view.findByText("Loading your routines…")).getAttribute("role"),
+    ).toBe("status");
+    expect(view.queryByText("No routines yet.")).toBeNull();
+  } finally {
+    response.resolve({ routines: [], sweep: SWEEP });
+  }
+
+  expect(await view.findByText("No routines yet.")).toBeTruthy();
+  expect(view.queryByText("Loading your routines…")).toBeNull();
+});
 
 test("Connections > Routines says what Routines is and leads to the Routines page", async () => {
   const view = draw(<RoutinesConnectionPage />, {

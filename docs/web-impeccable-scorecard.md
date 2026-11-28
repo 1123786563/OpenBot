@@ -1709,6 +1709,14 @@ Connections 清单单列内置调度工具，Routines 不进入外部应用数�
 
 同一生产构建在 Chromium、WebKit 的三种视口通过 Team 与 Personal 模拟复验，24 项定向测试、Web 类型检查、Impeccable 源码检测和 Astryx 构建诊断通过。真实调度和读屏待验。 [基线](/tmp/openbot-device-review/routines-builtin-baseline.log) · [Chromium](/tmp/openbot-device-review/routines-builtin-chromium.log) · [WebKit](/tmp/openbot-device-review/routines-builtin-webkit.log)
 
+
+### Routines 连接页独立复评
+
+主线 `4d1a31ed9` 的独立设计评分为 31/40（暂定），H1–H10 为 2 3 3 3 3 3 3 4 4 3。Team 管理员和 Personal 的 24 个隔离场景覆盖三种宽度、浅深主题和两种浏览器。503 后可原位重试，焦点回到 Routines 标题。打开清单和新建入口均可达。首次读取没有加载提示是本轮发现的问题。 [#190](https://github.com/1123786563/OpenBot/issues/190)
+
+独立自动检测执行 36 个 Chromium 场景，覆盖直接空态、503 和恢复。6 项警告均为 1440 CSS 像素浅色下的嵌套容器，无页面异常和横向溢出。6 个源码文件未报问题。 [检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web190-detector-routines.7apnQH)
+
+
 ## 组件图库使用指引复评
 
 `/settings/components-gallery/` 从 39/40 升至 **40/40（100%，暂定）**。H1–H10 均为 4。H10 加 1 分。搜索旁说明先打开组件查看名称，再请有权限的 Bot 在会话中展示它。生产构建 `index-B-8IqEyn.js` 在 Chromium 和 WebKit 的 1440、390、320 像素通过模拟复验。键盘可进入首个搜索结果，详情显示组件名称，返回后恢复筛选和条目焦点。5 项图库测试通过。真实 Bot 渲染和读屏待验。 [基线](/tmp/openbot-device-review/gallery-help-baseline.log) · [Chromium](/tmp/openbot-device-review/gallery-help-final-chromium.log) · [WebKit](/tmp/openbot-device-review/gallery-help-final-webkit.log) · [320 像素画面](/tmp/openbot-device-review/gallery-help-320.png)
