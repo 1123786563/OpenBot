@@ -24,36 +24,70 @@ afterEach(async () => {
   GlobalRegistrator.unregister();
 });
 
-test.each([
-  { route: IdeasRoute, path: "/ideas", url: "/ideas" },
-  { route: ScreenRoute, path: "/s/$screen", url: "/s/activity" },
+type ScopeRead = "/api/agents" | "/api/me";
+const botListFailure: readonly ScopeRead[] = ["/api/agents"];
+
+test.each<{
+  route: typeof IdeasRoute | typeof GoalsRoute | typeof ScreenRoute;
+  path: string;
+  url: string;
+  failedReads: readonly ScopeRead[];
+}>([
+  {
+    route: IdeasRoute,
+    path: "/ideas",
+    url: "/ideas",
+    failedReads: botListFailure,
+  },
+  {
+    route: ScreenRoute,
+    path: "/s/$screen",
+    url: "/s/activity",
+    failedReads: botListFailure,
+  },
   {
     route: GoalsRoute,
     path: "/responsibilities",
     url: "/responsibilities?view=goals",
+    failedReads: botListFailure,
   },
   {
     route: GoalsRoute,
     path: "/responsibilities",
     url: "/responsibilities?view=goals&panel=routines",
+    failedReads: botListFailure,
+  },
+  {
+    route: GoalsRoute,
+    path: "/responsibilities",
+    url: "/responsibilities?view=goals",
+    failedReads: ["/api/me"],
+  },
+  {
+    route: GoalsRoute,
+    path: "/responsibilities",
+    url: "/responsibilities?view=goals",
+    failedReads: ["/api/agents", "/api/me"],
   },
 ])(
-  "$url restores focus to the Bot selector after retry",
-  async ({ route, path, url }) => {
+  "$url restores focus to the Bot selector after retrying $failedReads",
+  async ({ route, path, url, failedReads }) => {
     GlobalRegistrator.register({ url: "http://openbot.test" });
-    let rosterAvailable = false;
+    let recovered = false;
     using fetchMock = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async (input: RequestInfo | URL) => {
           const path = String(input);
+          if (!recovered && failedReads.some((read) => read === path))
+            return Response.json({}, { status: 503 });
+          if (path === "/api/me") return new Response(null, { status: 401 });
           if (path === "/api/routines")
             return Response.json({ routines: [], sweep: null });
           if (path === "/api/responsibilities")
             return Response.json({ responsibilities: [] });
-          if (path !== "/api/agents") return Response.json({});
-          return rosterAvailable
-            ? Response.json({ agents: [{ id: "desk", name: "Desk" }] })
-            : Response.json({}, { status: 503 });
+          if (path === "/api/agents")
+            return Response.json({ agents: [{ id: "desk", name: "Desk" }] });
+          return Response.json({});
         },
         { preconnect: globalThis.fetch.preconnect },
       ),
@@ -61,7 +95,8 @@ test.each([
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
-    client.setQueryData(currentUserQueryOptions().queryKey, null);
+    if (!failedReads.includes("/api/me"))
+      client.setQueryData(currentUserQueryOptions().queryKey, null);
     client.setQueryData(botActivityQueryOptions("desk").queryKey, null);
     client.setQueryData(proactiveSuggestionsQueryOptions().queryKey, []);
     client.setQueryData(taskListQueryOptions().queryKey, []);
@@ -89,12 +124,18 @@ test.each([
       const retry = await view.findByRole("button", {
         name: "Retry loading Bot choices",
       });
-      rosterAvailable = true;
+      const initialCalls = fetchMock.mock.calls.length;
+      recovered = true;
       retry.focus();
       fireEvent.click(retry);
       const selector = await view.findByRole("combobox", { name: "Bot" });
       await waitFor(() => expect(document.activeElement).toBe(selector));
       if (url.includes("view=goals")) {
+        const retriedReads = fetchMock.mock.calls
+          .slice(initialCalls)
+          .map(([input]) => String(input))
+          .filter((read) => read === "/api/agents" || read === "/api/me");
+        expect(retriedReads.sort()).toEqual([...failedReads].sort());
         expect(
           view.getByRole("heading", { name: "Goals and routines by Bot" }),
         ).toBeTruthy();
