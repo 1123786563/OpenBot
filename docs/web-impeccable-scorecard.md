@@ -1429,6 +1429,8 @@ Bot 档案的删除确认从 27 CSS 像素增至 44 CSS 像素。请求未结束
 
 `/capabilities/memory` 从 38/40 升至 **40/40（100%，暂定）**。H2 加 1 分。用 Added by you 和 Learned by 描述个人和 Bot 的来源。H8 加 1 分。长记忆先显示正文预览。键盘展开可读取原文并保留换行，收起后操作靠近正文，搜索可匹配预览后面的内容，编辑仍加载全文。
 
+#188 在隔离 PostgreSQL 上接入实际 Hindsight 1.2.3，Memory 集成测试 26 项通过。当前已批准版本才进入索引。变更版本后，旧结果立即被 OpenBot 拒绝，重建后可检索当前版本。其他账号或未获范围的 Bot 无法召回该记忆。删除后，索引和召回均不再包含它。两项需要模型的 Reflect 测试仍待验证。该证据覆盖索引与作用域，页内读屏和独立评分仍待验。
+
 生产构建 `index-BenhbPfL.js` 在 Chromium 和 WebKit 通过 1440、390、320 像素复验。技能覆盖 Team 与 Personal 的 12 个场景，记忆覆盖 Team 的 6 个场景。另通过 9 个草稿、读取和权限回归场景、31 项定向测试、Web 类型检查和 Impeccable 源码检测。真实 Bot 工具加载和记忆同步、读屏仍待验。 [基线](/tmp/openbot-order2-review/capabilities-reading-baseline.log) · [Team Chromium](/tmp/openbot-order2-review/capabilities-reading-chromium.log) · [Team WebKit](/tmp/openbot-order2-review/capabilities-reading-webkit.log) · [Personal Chromium](/tmp/openbot-order2-review/capabilities-reading-personal-chromium.log) · [Personal WebKit](/tmp/openbot-order2-review/capabilities-reading-personal-webkit.log) · [320 像素记忆](/tmp/openbot-order2-review/memory-reading-320.png) · [320 像素技能](/tmp/openbot-order2-review/skill-reading-320.png)
 
 ## 审批规则清单查找复评
