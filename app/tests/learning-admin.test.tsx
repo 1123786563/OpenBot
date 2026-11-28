@@ -1140,6 +1140,13 @@ describe("reviewing proposed skills", () => {
     const none = shared();
     await none.findByText("Analysis runs");
     await none.findByText("No container");
+    const participation = none.getByRole("heading", { name: "Participation" });
+    expect(participation.id).toBe("learning-participation");
+    for (const link of none.getAllByRole("link", {
+      name: "Open Participation settings",
+    })) {
+      expect(link.getAttribute("href")).toBe(`#${participation.id}`);
+    }
     expect(none.queryByText("No analysis runs yet")).toBeNull();
   });
 

@@ -32,7 +32,7 @@ import {
 import { ReadError, ReadStatus } from "@/components/layout/read-status";
 import { LearnedSkillDialog } from "@/components/learning/learned-skill-dialog";
 import { ProposalDialog } from "@/components/learning/proposal-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -629,8 +629,9 @@ function LegacyLearningPage() {
           configures what new conversations use, and nothing there changes the lists below. */}
       <PageSection
         headingRef={participationHeading}
+        headingId="learning-participation"
         title="Participation"
-        description="Container changes apply to new conversations. Existing ones keep their first container. Containers must already exist in the same project. Until you save here, OpenBot uses that project's openbot container."
+        description="A Learning container holds the analysis and skills from conversations. Choose an existing container in the same project. Changes apply to new conversations. Until you save here, OpenBot uses the project’s openbot container."
       >
         {settingsQuery.isPending && (
           <ReadStatus kind="loading" message="Loading Learning settings…" />
@@ -814,6 +815,17 @@ const STATUS: Record<LearningProposal["status"], string> = {
  * that container's Bots) or reject, and Learn now. Here because a bundled Intelligence has no
  * dashboard of its own to do it in.
  */
+function ParticipationLink() {
+  return (
+    <a
+      className={buttonVariants({ variant: "outline" })}
+      href="#learning-participation"
+    >
+      Open Participation settings
+    </a>
+  );
+}
+
 function ProposedSkills({ agentId }: { agentId?: string }) {
   const proposals = useQuery(learningProposalsQueryOptions(agentId));
   const learnNow = useMutation(startLearningRunMutationOptions(appQueryClient));
@@ -876,9 +888,12 @@ function ProposedSkills({ agentId }: { agentId?: string }) {
           onRetry={() => void proposals.refetch()}
         />
       ) : !containerId ? (
-        <PageEmpty icon={IconSparkles} title="No container">
-          Choose a container under Participation to see the skills OpenBot
-          proposes for it.
+        <PageEmpty
+          action={<ParticipationLink />}
+          icon={IconSparkles}
+          title="No container"
+        >
+          Choose where Learning stores analyses and proposed skills.
         </PageEmpty>
       ) : proposals.data.proposals.length === 0 ? (
         <PageEmpty icon={IconSparkles} title="No proposed skills yet">
@@ -1031,8 +1046,12 @@ function AnalysisRuns({ agentId }: { agentId?: string }) {
           onRetry={() => void runs.refetch()}
         />
       ) : !runs.data.containerId ? (
-        <PageEmpty icon={IconHistory} title="No container">
-          Choose a container under Participation to see its analysis runs.
+        <PageEmpty
+          action={<ParticipationLink />}
+          icon={IconHistory}
+          title="No container"
+        >
+          Choose where Learning stores the runs that analyze conversations.
         </PageEmpty>
       ) : runs.data.runs.length === 0 ? (
         <PageEmpty icon={IconHistory} title="No analysis runs yet">
@@ -1109,8 +1128,12 @@ function PublishedSkills({ agentId }: { agentId?: string }) {
           onRetry={() => void skills.refetch()}
         />
       ) : !skills.data.containerId ? (
-        <PageEmpty icon={IconSparkles} title="No container">
-          Choose a container under Participation to see its published skills.
+        <PageEmpty
+          action={<ParticipationLink />}
+          icon={IconSparkles}
+          title="No container"
+        >
+          Choose where Learning stores published skills.
         </PageEmpty>
       ) : skills.data.skills.length === 0 ? (
         <PageEmpty icon={IconSparkles} title="No published skills yet">
