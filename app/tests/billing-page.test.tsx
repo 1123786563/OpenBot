@@ -1193,6 +1193,11 @@ test("Billing switches the same live Credit Pack order after confirmation and re
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
         });
       }
+      if (url === `${path}/orders/${id}/verify`)
+        return Response.json(
+          { error: "Payment status unavailable." },
+          { status: 503 },
+        );
       return fallback(input, init);
     },
     { preconnect: originalFetch.preconnect },
@@ -1217,4 +1222,9 @@ test("Billing switches the same live Credit Pack order after confirmation and re
       await ui.findByRole("img", { name: "WeChat Pay payment QR code" })
     ).tagName.toLowerCase(),
   ).toBe("svg");
+  await user.click(ui.getByRole("button", { name: "Check payment" }));
+  await ui.findByText("Payment status unavailable.");
+  expect(
+    ui.queryByRole("img", { name: "WeChat Pay payment QR code" }),
+  ).toBeNull();
 });
