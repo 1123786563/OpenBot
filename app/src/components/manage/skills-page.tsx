@@ -87,6 +87,15 @@ export function SkillsPage() {
     >
       {/* One section, so no title: the page title already names it. */}
       <PageSection>
+        {skills.length > 8 ? (
+          <Input
+            aria-label="Search skills"
+            className="mb-4"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by skill name"
+            value={search}
+          />
+        ) : null}
         {/* A read that failed says so; `isPending` goes false on it too, and it is not "none". */}
         {plugins.isPending ? (
           <VStack
@@ -134,60 +143,49 @@ export function SkillsPage() {
             Nothing matches “{search.trim()}”.
           </p>
         ) : (
-          <>
-            {skills.length > 8 ? (
-              <Input
-                aria-label="Search skills"
-                className="mb-4"
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by skill name"
-                value={search}
-              />
-            ) : null}
-            <PageRows>
-              {listed.map((skill, index) => {
-                /*
-                 * Counted over the same Bots the skill's page draws a switch for, so the number here
-                 * and the switches there always agree. See `grantRoster` for why hidden holders count.
-                 */
-                const bots = grantRoster({
-                  roster: agents ?? [],
-                  hidden: hiddenAgents ?? [],
-                  holders: skill.grantedTo,
-                });
-                const held = bots.filter((bot) =>
-                  skill.grantedTo.includes(bot.id),
-                ).length;
-                return (
-                  <React.Fragment key={skill.slug}>
-                    {/* A real link with no children: children passed to `render` replace the row's own. */}
-                    <Item
-                      render={<Link {...paths.skill(skill.slug)} />}
-                      size="sm"
-                    >
-                      <ItemContent>
-                        <ItemTitle>{skill.title}</ItemTitle>
-                        {/*
-                         * The name and what it is for. Not the command: the `/` menu finds a skill by
-                         * its name, so the command is the skill's key rather than something to read.
-                         */}
-                        {skill.summary ? (
-                          <ItemDescription>{skill.summary}</ItemDescription>
-                        ) : null}
-                      </ItemContent>
-                      <ItemActions>
-                        <span className="text-muted-foreground text-xs">
-                          {grantSummary(held, bots.length)}
-                        </span>
-                        <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                      </ItemActions>
-                    </Item>
-                    {index !== listed.length - 1 && <Separator />}
-                  </React.Fragment>
-                );
-              })}
-            </PageRows>
-          </>
+          <PageRows>
+            {listed.map((skill, index) => {
+              /*
+               * Counted over the same Bots the skill's page draws a switch for, so the number here
+               * and the switches there always agree. See `grantRoster` for why hidden holders count.
+               */
+              const bots = grantRoster({
+                roster: agents ?? [],
+                hidden: hiddenAgents ?? [],
+                holders: skill.grantedTo,
+              });
+              const held = bots.filter((bot) =>
+                skill.grantedTo.includes(bot.id),
+              ).length;
+              return (
+                <React.Fragment key={skill.slug}>
+                  {/* A real link with no children: children passed to `render` replace the row's own. */}
+                  <Item
+                    render={<Link {...paths.skill(skill.slug)} />}
+                    size="sm"
+                  >
+                    <ItemContent>
+                      <ItemTitle>{skill.title}</ItemTitle>
+                      {/*
+                       * The name and what it is for. Not the command: the `/` menu finds a skill by
+                       * its name, so the command is the skill's key rather than something to read.
+                       */}
+                      {skill.summary ? (
+                        <ItemDescription>{skill.summary}</ItemDescription>
+                      ) : null}
+                    </ItemContent>
+                    <ItemActions>
+                      <span className="text-muted-foreground text-xs">
+                        {grantSummary(held, bots.length)}
+                      </span>
+                      <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </ItemActions>
+                  </Item>
+                  {index !== listed.length - 1 && <Separator />}
+                </React.Fragment>
+              );
+            })}
+          </PageRows>
         )}
       </PageSection>
     </CapabilityPage>
