@@ -193,6 +193,21 @@ for (const [engine, theme] of [
     await retryApprovals.press("Enter");
     await retryApprovals.waitFor({ state: "hidden" });
     const mark = page.getByRole("button", { name: labels.mark, exact: true });
+    const metadata = page.locator('[data-slot="item-description"]').filter({
+      hasText: chinese ? "待审阅" : "Ready for review",
+    });
+    await metadata.waitFor({ timeout: 15000 });
+    const metadataLayout = await metadata.evaluate((element) => ({
+      fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+      clipped:
+        element.scrollWidth > element.clientWidth ||
+        element.scrollHeight > element.clientHeight,
+    }));
+    assert(
+      metadataLayout.fontSize >= 12,
+      "Task metadata must be at least 12 CSS pixels",
+    );
+    assert.equal(metadataLayout.clipped, false);
     await mark.press("Enter", { timeout: 15000 });
     const dialog = page.getByRole("alertdialog", {
       name: chinese
@@ -260,6 +275,7 @@ for (const [engine, theme] of [
       browser: engine.name(),
       theme,
       retryFrames,
+      metadataLayout,
       approvalsContrast,
       dialogContrast,
       writeErrorContrast,

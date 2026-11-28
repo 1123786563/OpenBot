@@ -112,7 +112,7 @@ export function TaskRow({
       </ItemMedia>
       <ItemContent>
         <ItemTitle className="line-clamp-none">{task.title}</ItemTitle>
-        <ItemDescription>
+        <ItemDescription className="line-clamp-none break-words text-sm">
           {[taskStatusLabel(status), botName, relativeTime(task.updatedAt)]
             .filter(Boolean)
             .join(" · ")}
