@@ -74,6 +74,8 @@ Web 构建提交为 `ccca02100ed6f9eb68321eb03541053553c04449`，入口 HTML 的
 - 例行任务在独立 OpenBot API 和 PostgreSQL 中验证了三个角色的实际写入。Personal 管理员和两种 Team 角色分别收到一次 201，焦点回到列表标题，刷新后读回任务。Team 两条记录的所有者不同。 [Personal 记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-browser-db.Ik2oB2/run.json) · [Team 记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/routine-team-browser.fydU7n/run.json)
 - 治理页面在桌面、390 和 320 CSS 像素各复跑浅色和深色，使用模拟 API 验证边界读取重试、并发保存和 People 的键盘确认。另有 95 项 Web 与 PostgreSQL 测试通过。 [治理矩阵](/Users/wuyj/.local/state/openbot-spec-127/evidence/governance-320.q9hGHS/run.json)
 
+- #187 在源码 `a0949919f` 上使用 Chromium headless shell 通过 9 项设备和凭据页面测试。测试覆盖两种部署版本及浅深外观、503 原位重试、403、操作触区和键盘流程。完整 Chromium 进程在本机提前退出，同一套测试改用 headless shell 后全部通过。另有 20 项本地 Computer 服务测试通过，覆盖浏览器进程替换后恢复登录、Recorder 和接管交还。两个 Google 外网场景跳过。原生桌面窗口、实体触屏及读屏仍待验。 [页面日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/device-pages.log) · [Computer 日志](/Users/wuyj/.local/state/openbot-spec-127/evidence/device-browser-regression.SUrH9v/computer-service.log)
+
 ## 逐页记录
 
 | ID | 视图与路由 | 模拟身份 | 捕获与具体缺口 | H1–H10 | 满分 |
