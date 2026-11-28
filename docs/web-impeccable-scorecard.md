@@ -1835,3 +1835,5 @@ Tasks 和 Ideas 的独立评分见上文。Tasks 内嵌的 Goals 与 Routines �
 | `/bots/$agentId/activity` | 3 3 3 3 3 3 2 3 3 3 | 29/40 | 读取重试可恢复区块焦点。满数据下的页内筛选与处理能力有限。 |
 
 浏览器样本来自 `c9265ed` 的隔离 Team、Personal 构建和 `e644eb6e` 上的归档修复构建。真实保存来自 `105c9873` 的本地 OpenBot API、隔离 PostgreSQL 与本地 Keycloak，覆盖 Personal 管理员、Team 管理员和成员。三种角色各收到一次 201，焦点回到 Routines，刷新后读回。Firefox ESR + Orca 复验排程播报和 Activity 读取恢复。记录含多个构建，正式 99% 验收仍按 #194 的逐页门槛执行。
+
+**独立自动检测。** Chromium 在 390×844 与 1440×900 的浅深主题完成 50 次隔离检测，新建例行任务另覆盖 320×844。Goals 的 16 次检测有 2 条桌面嵌套容器提示。Routines 的 22 次检测有 5 条桌面浅色嵌套容器提示，Check-ins 摘要和历史行的 11.25 CSS 像素文字触发 16 条小字提示。Activity 的 12 次检测有 3 条桌面浅色嵌套容器提示，含运行项目时触发 4 条状态点动效提示。无页面脚本错误或文档横向溢出。另对主线 `401636d46` 的 20 份 TSX 源码检测，未发现问题。浏览器使用独立选择器修复构建，入口 SHA-256 为 `1924d0dab524360e015cd28b7c9c5a62e2301ff8373bf19b89187fe3e1503839`。检测未复跑满数据 Goals、已移除来源的历史、真实写入或原生辅助技术。 [逐场景检测记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web189-detector-work.DuOPva)
