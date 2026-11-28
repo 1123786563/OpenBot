@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { chromium } from "playwright-core";
+import { chromium, webkit } from "playwright-core";
 
 const { EVIDENCE_DIR, BUILD_MANIFEST, FIXTURE_APP_URL, FIXTURE_API_URL } =
   process.env;
@@ -45,7 +45,12 @@ const conversation = channels.find(
 );
 assert(conversation, "The fixture needs a direct conversation with a Thread");
 
-const browser = await chromium.launch();
+const browserName = process.env.WEBSITE_SIGN_IN_BROWSER ?? "chromium";
+const engine = { chromium, webkit }[browserName];
+assert(engine, "WEBSITE_SIGN_IN_BROWSER must be chromium or webkit");
+const browser = await engine.launch();
+const tabKey =
+  browserName === "webkit" && process.platform === "darwin" ? "Alt+Tab" : "Tab";
 const cases = [];
 try {
   for (const width of [1440, 390]) {
@@ -92,7 +97,7 @@ try {
         const focused = (locator) =>
           locator.evaluate((element) => element === document.activeElement);
         for (let tab = 0; tab < 10 && !(await focused(retry)); tab++)
-          await page.keyboard.press("Tab");
+          await page.keyboard.press(tabKey);
         assert(await focused(retry));
         status = "pending";
         await page.keyboard.press("Enter");
@@ -143,7 +148,7 @@ try {
         const destination = `/channel/${conversation.id}`;
         assert.equal(await returnLink.getAttribute("href"), destination);
         for (let tab = 0; tab < 10 && !(await focused(returnLink)); tab++)
-          await page.keyboard.press("Tab");
+          await page.keyboard.press(tabKey);
         assert(await focused(returnLink));
         await page.keyboard.press("Enter");
         await page.waitForURL(`${FIXTURE_APP_URL}${destination}`);
@@ -169,5 +174,5 @@ try {
 }
 await writeFile(
   join(EVIDENCE_DIR, "run.json"),
-  JSON.stringify({ build, cases }, null, 2),
+  JSON.stringify({ build, browser: browserName, cases }, null, 2),
 );
