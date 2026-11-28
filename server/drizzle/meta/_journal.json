@@ -1163,6 +1163,13 @@
       "when": 1795785352191,
       "tag": "0165_direct_chat_prompt_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1795851004955,
+      "tag": "0166_flexprice_alipay_checkout",
+      "breakpoints": true
     }
   ]
 }

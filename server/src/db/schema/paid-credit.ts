@@ -70,6 +70,8 @@ export const paidOrders = pgTable(
     lockedKind: text("locked_kind", { enum: ["subscription", "credit_pack"] }),
     lockedMicrocredits: bigint("locked_microcredits", { mode: "bigint" }),
     testMerchant: text("test_merchant"),
+    flexpriceCheckout: boolean("flexprice_checkout").notNull().default(false),
+    flexpriceInvoiceId: text("flexprice_invoice_id"),
     channel: text({ enum: ["wechat", "alipay"] }).notNull(),
     // The channel's own order reference, unique per channel once verified, so
     // replayed callbacks can never grant twice.
@@ -88,6 +90,16 @@ export const paidOrders = pgTable(
       .defaultNow(),
   },
   (table) => [
+    uniqueIndex("paid_orders_flexprice_invoice").on(table.flexpriceInvoiceId),
+    index("paid_orders_flexprice_pending")
+      .on(table.id)
+      .where(
+        sql`${table.flexpriceInvoiceId} is not null and ${table.state} = 'pending'`,
+      ),
+    check(
+      "paid_orders_flexprice_checkout",
+      sql`${table.flexpriceInvoiceId} is null or ${table.flexpriceCheckout}`,
+    ),
     uniqueIndex("paid_orders_switch_once").on(table.switchedFromOrderId),
     index("paid_orders_checkout_attempt").on(table.checkoutAttemptId),
     uniqueIndex("paid_orders_channel_ref").on(
