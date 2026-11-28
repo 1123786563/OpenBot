@@ -123,6 +123,17 @@ Web 类型检查、Vite 构建和 83 项定向测试通过。真实发送、审�
 
 快速会话在构建 `index-DgciQld7.js` 验证输入框的可访问名称为 Message。占位符对比度浅色为 4.74∶1，深色为 5.11∶1。两组渲染检测无发现，键盘重试后均聚焦 Bot 标题。
 
+## 主线会话与 Bot 定向回归
+
+以下定向测试在主线源码 `0590736a4` 上运行。数据库测试使用独立 PostgreSQL 实例，Bot 续跑测试使用测试运行器。
+
+| 工单 | 结果 | 已验证行为与剩余验收 |
+|---|---:|---|
+| #176 首发恢复 | 45 项通过 | 并发创建返回原会话，重复请求按原身份和 Bot 选择恢复 Thread，原生直聊从最后收到的事件续传。真实 Intelligence 网关首发断线重发待验。 [测试记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web176-recovery-current.sJ0kTz) |
+| #180 运行与审批 | 26 项通过 | 所有者可停止运行，停止后拒绝迟到的审批并保留输出。获批的语音触发任务只恢复原 Run 一次。真实 Bot 流式回复和审批过期待验。 [测试记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web180-approval-recovery.3r1FAC) |
+| #185 会话页面 | 106 项通过 | 加入成员可读取共享历史。等待所有者审批的回复不会向其他成员流式展示。另验模型不可用、历史离线与首发附件。实体触屏、读屏和独立评分待验。 [测试记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web185-conversation-regression.pGZbZR/results.log) |
+| #186 Bot 与档案 | 117 项通过 | 列表保留搜索状态，Setup 能力读取失败可重试，不可达端点阻止创建，数据库约束限制档案可见性。实际权限下关闭隔离和十二个视图的独立评分待验。 [测试记录](/Users/wuyj/.local/state/openbot-spec-127/evidence/web186-bot-regression.QTSgLZ/results.log) |
+
 ## #176 首发附件和响应丢失
 
 PR #213 在本地 Personal 环境用 Chromium、OpenBot API 和隔离 PostgreSQL 验证了首发恢复。浏览器丢弃已成功的创建响应后，从保存的交接恢复原会话。丢弃上传的 201 响应后，重试确认了原附件。最终历史只匹配一条用户消息，附件下载返回 200，读回内容与 38 字节原文件一致。数据库记录含一个附带附件引用的首发 Run，状态为失败。本轮证据覆盖草稿、会话与附件持久化。真实 Bot 回复及经 Intelligence 网关的断线重发仍待验。 [PR #213](https://github.com/1123786563/OpenBot/pull/213)
